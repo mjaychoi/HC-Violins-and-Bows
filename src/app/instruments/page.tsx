@@ -46,7 +46,7 @@ export default function InstrumentsPage() {
     setSubmitting(true)
     
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('instruments')
         .insert([
           {

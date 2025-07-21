@@ -26,8 +26,9 @@ export default function LoginPage() {
 
       // Redirect to dashboard on successful login
       router.push('/dashboard')
-    } catch (error: any) {
-      setError(error.message || 'An error occurred during login')
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred during login'
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }

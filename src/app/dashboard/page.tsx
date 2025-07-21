@@ -36,8 +36,7 @@ export default function DashboardPage() {
   const [selectedInstrument, setSelectedInstrument] = useState<Instrument | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterStatus, setFilterStatus] = useState('all')
-  const [sortBy, setSortBy] = useState('created_at')
+const [sortBy, setSortBy] = useState('created_at')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
   
@@ -444,25 +443,7 @@ export default function DashboardPage() {
     fetchInstrumentImages(instrument.id)
   }
 
-  const handleEditClick = (e: React.MouseEvent, instrument: Instrument) => {
-    e.stopPropagation() // Prevent row click
-    setSelectedInstrument(instrument)
-    setViewFormData({
-      status: instrument.status,
-      maker: instrument.maker || '',
-      type: instrument.type || '',
-      year: instrument.year || new Date().getFullYear(),
-      certificate: instrument.certificate,
-      size: instrument.size || '',
-      weight: instrument.weight || '',
-      price: instrument.price || 0,
-      ownership: instrument.ownership || ''
-    })
-    setIsEditing(true)
-    setShowViewModal(true)
-    setImagesToDelete([])
-    setSelectedFiles([])
-  }
+
 
   // Get unique values for filter options
 const getUniqueValues = (field: keyof Instrument) => {
@@ -1405,7 +1386,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Images ({instrumentImages.length})</label>
                       <div className="grid grid-cols-2 gap-2">
-                        {instrumentImages.map((image, index) => (
+                        {instrumentImages.map((image) => (
                           <div key={image.id} className="relative group">
                             <img
                               src={image.image_url}
