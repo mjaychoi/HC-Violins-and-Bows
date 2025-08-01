@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
 
 interface Instrument {
   id: string
@@ -14,6 +15,7 @@ interface Instrument {
   weight: string | null
   price: number | null
   ownership: string | null
+  note: string | null
   created_at: string
 }
 
@@ -26,6 +28,28 @@ interface InstrumentImage {
   mime_type: string
   display_order: number
   created_at: string
+}
+
+interface Client {
+  id: string
+  last_name: string | null
+  first_name: string | null
+  contact_number: string | null
+  email: string | null
+  type: 'Musician' | 'Dealer' | 'Collector' | 'Regular'
+  status: 'Active' | 'Browsing' | 'In Negotiation' | 'Inactive'
+  note: string | null
+  created_at: string
+}
+
+interface ClientInstrument {
+  id: string
+  client_id: string
+  instrument_id: string
+  relationship_type: 'Interested' | 'Sold' | 'Booked' | 'Owned'
+  notes: string | null
+  created_at: string
+  client?: Client
 }
 
 export default function DashboardPage() {
@@ -51,11 +75,12 @@ const [sortBy, setSortBy] = useState('created_at')
     priceRange: {
       min: '',
       max: ''
-    }
+    },
+    hasClients: [] as string[]
   })
   
   const [formData, setFormData] = useState({
-    status: 'Available' as 'Available' | 'Booked' | 'Sold',
+    status: 'Available',
     maker: '',
     type: '',
     year: new Date().getFullYear(),
@@ -63,11 +88,12 @@ const [sortBy, setSortBy] = useState('created_at')
     size: '',
     weight: '',
     price: 0,
-    ownership: ''
+    ownership: '',
+    note: ''
   })
   
   const [viewFormData, setViewFormData] = useState({
-    status: 'Available' as 'Available' | 'Booked' | 'Sold',
+    status: 'Available',
     maker: '',
     type: '',
     year: new Date().getFullYear(),
@@ -75,13 +101,49 @@ const [sortBy, setSortBy] = useState('created_at')
     size: '',
     weight: '',
     price: 0,
-    ownership: ''
+    ownership: '',
+    note: ''
   })
   const [submitting, setSubmitting] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploadingImages, setUploadingImages] = useState(false)
   const [instrumentImages, setInstrumentImages] = useState<InstrumentImage[]>([])
   const [imagesToDelete, setImagesToDelete] = useState<string[]>([])
+
+  // Client relationship states
+  const [clientRelationships, setClientRelationships] = useState<ClientInstrument[]>([])
+  const [showClientSearch, setShowClientSearch] = useState(false)
+  const [clientSearchTerm, setClientSearchTerm] = useState('')
+  const [searchResults, setSearchResults] = useState<Client[]>([])
+  const [isSearchingClients, setIsSearchingClients] = useState(false)
+  const [instrumentsWithClients, setInstrumentsWithClients] = useState<Set<string>>(new Set())
+
+  // Add ref for filter panel
+  const filterPanelRef = useRef<HTMLDivElement>(null)
+
+  // Handle click outside filter panel
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      // Don't close if clicking on the filter button
+      const target = event.target as Node
+      const filterButton = document.querySelector('[data-filter-button]')
+      if (filterButton && filterButton.contains(target)) {
+        return
+      }
+      
+      if (filterPanelRef.current && !filterPanelRef.current.contains(target)) {
+        setShowFilters(false)
+      }
+    }
+
+    if (showFilters) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showFilters])
 
   useEffect(() => {
     fetchInstruments()
@@ -96,10 +158,28 @@ const [sortBy, setSortBy] = useState('created_at')
       
       if (error) throw error
       setInstruments(data || [])
+      
+      // Fetch which instruments have clients
+      await fetchInstrumentsWithClients()
     } catch (error) {
       console.error('Error fetching instruments:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchInstrumentsWithClients = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('client_instruments')
+        .select('instrument_id')
+      
+      if (error) throw error
+      
+      const instrumentIds = new Set(data?.map(item => item.instrument_id) || [])
+      setInstrumentsWithClients(instrumentIds)
+    } catch (error) {
+      console.error('Error fetching instruments with clients:', error)
     }
   }
 
@@ -148,7 +228,8 @@ const [sortBy, setSortBy] = useState('created_at')
         size: formData.size,
         weight: formData.weight,
         price: formData.price,
-        ownership: formData.ownership
+              ownership: formData.ownership,
+      note: formData.note
       }
       
       console.log('Attempting to insert data:', insertData)
@@ -186,7 +267,8 @@ const [sortBy, setSortBy] = useState('created_at')
         size: '',
         weight: '',
         price: 0,
-        ownership: ''
+        ownership: '',
+        note: ''
       })
       setSelectedFiles([])
       setShowModal(false)
@@ -236,7 +318,8 @@ const [sortBy, setSortBy] = useState('created_at')
         size: viewFormData.size,
         weight: viewFormData.weight,
         price: viewFormData.price,
-        ownership: viewFormData.ownership
+              ownership: viewFormData.ownership,
+      note: viewFormData.note
       }
       
       console.log('Attempting to update instrument:', selectedInstrument.id, updateData)
@@ -292,7 +375,7 @@ const [sortBy, setSortBy] = useState('created_at')
     }
   }
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target
     setFormData(prev => ({
       ...prev,
@@ -301,7 +384,7 @@ const [sortBy, setSortBy] = useState('created_at')
     }))
   }
 
-  const handleViewInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleViewInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target
     setViewFormData(prev => ({
       ...prev,
@@ -425,6 +508,92 @@ const [sortBy, setSortBy] = useState('created_at')
     }
   }
 
+  const fetchClientRelationships = async (instrumentId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('client_instruments')
+        .select(`
+          *,
+          client:clients(*)
+        `)
+        .eq('instrument_id', instrumentId)
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      setClientRelationships(data || [])
+    } catch (error) {
+      console.error('Error fetching client relationships:', error)
+    }
+  }
+
+  const searchClients = async (searchTerm: string) => {
+    if (searchTerm.length < 2) {
+      setSearchResults([])
+      return
+    }
+
+    setIsSearchingClients(true)
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .or(`last_name.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%`)
+        .limit(10)
+      
+      if (error) throw error
+      setSearchResults(data || [])
+    } catch (error) {
+      console.error('Error searching clients:', error)
+      setSearchResults([])
+    } finally {
+      setIsSearchingClients(false)
+    }
+  }
+
+  const addClientRelationship = async (clientId: string, relationshipType: ClientInstrument['relationship_type'] = 'Interested') => {
+    if (!selectedInstrument) return
+
+    try {
+      const { error } = await supabase
+        .from('client_instruments')
+        .insert({
+          client_id: clientId,
+          instrument_id: selectedInstrument.id,
+          relationship_type: relationshipType
+        })
+
+      if (error) throw error
+
+      // Refresh relationships
+      await fetchClientRelationships(selectedInstrument.id)
+      setShowClientSearch(false)
+      setClientSearchTerm('')
+      setSearchResults([])
+    } catch (error) {
+      console.error('Error adding client relationship:', error)
+      alert('Failed to add client relationship')
+    }
+  }
+
+  const removeClientRelationship = async (relationshipId: string) => {
+    try {
+      const { error } = await supabase
+        .from('client_instruments')
+        .delete()
+        .eq('id', relationshipId)
+
+      if (error) throw error
+
+      // Refresh relationships
+      if (selectedInstrument) {
+        await fetchClientRelationships(selectedInstrument.id)
+      }
+    } catch (error) {
+      console.error('Error removing client relationship:', error)
+      alert('Failed to remove client relationship')
+    }
+  }
+
   const handleRowClick = (instrument: Instrument) => {
     setSelectedInstrument(instrument)
     setViewFormData({
@@ -436,11 +605,15 @@ const [sortBy, setSortBy] = useState('created_at')
       size: instrument.size || '',
       weight: instrument.weight || '',
       price: instrument.price || 0,
-      ownership: instrument.ownership || ''
+      ownership: instrument.ownership || '',
+      note: instrument.note || ''
     })
     setIsEditing(false)
     setShowViewModal(true)
+    
+    // Fetch images and client relationships for this instrument
     fetchInstrumentImages(instrument.id)
+    fetchClientRelationships(instrument.id)
   }
 
 
@@ -489,7 +662,8 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
       type: [],
       ownership: [],
       certificate: [],
-      priceRange: { min: '', max: '' }
+      priceRange: { min: '', max: '' },
+      hasClients: []
     })
   }
 
@@ -523,7 +697,13 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
       const maxPrice = filters.priceRange.max ? parseFloat(filters.priceRange.max) : Infinity
       const matchesPrice = price >= minPrice && price <= maxPrice
       
-      return matchesSearch && matchesStatus && matchesMaker && matchesType && matchesOwnership && matchesCertificate && matchesPrice
+      // Has clients filter
+      const hasClients = instrumentsWithClients.has(instrument.id)
+      const matchesHasClients = filters.hasClients.length === 0 || 
+        (filters.hasClients.includes('Has Clients') && hasClients) ||
+        (filters.hasClients.includes('No Clients') && !hasClients)
+      
+      return matchesSearch && matchesStatus && matchesMaker && matchesType && matchesOwnership && matchesCertificate && matchesPrice && matchesHasClients
     })
     .sort((a, b) => {
       const aValue = a[sortBy as keyof Instrument]
@@ -548,25 +728,67 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
     }
   }
 
+  // Handle column header click for sorting
+  const handleColumnSort = (column: string) => {
+    if (sortBy === column) {
+      // If clicking the same column, toggle sort order
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    } else {
+      // If clicking a different column, set it as sort column and default to asc
+      setSortBy(column)
+      setSortOrder('asc')
+    }
+  }
+
+  // Get sort direction for a column
+  const getSortDirection = (column: string) => {
+    if (sortBy !== column) return 'both'
+    return sortOrder === 'asc' ? 'asc' : 'desc'
+  }
+
+  // Get sort arrow icon
+  const getSortArrow = (column: string) => {
+    const direction = getSortDirection(column)
+    if (direction === 'both') {
+      return (
+        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      )
+    } else if (direction === 'asc') {
+      return (
+        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+        </svg>
+      )
+    } else {
+      return (
+        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      )
+    }
+  }
+
   return (
     <div className="min-h-screen bg-white flex">
-      {/* Collapsible Sidebar */}
-      <div 
-        className={`bg-white shadow-lg transition-all duration-300 ease-in-out ${
-          sidebarExpanded ? 'w-64' : 'w-16'
-        }`}
-        onMouseEnter={() => setSidebarExpanded(true)}
-        onMouseLeave={() => setSidebarExpanded(false)}
-      >
+          {/* Collapsible Sidebar */}
+    <div 
+      className={`bg-white shadow-lg transition-all duration-300 ease-in-out ${
+        sidebarExpanded ? 'w-64' : 'w-1'
+      } overflow-hidden`}
+      onMouseEnter={() => setSidebarExpanded(true)}
+      onMouseLeave={() => setSidebarExpanded(false)}
+    >
         <div className="p-6">
           <h1 className={`text-xl font-bold text-gray-900 transition-opacity duration-300 ${
             sidebarExpanded ? 'opacity-100' : 'opacity-0'
           }`}>
-            Inventory Manager
+            Menu
           </h1>
         </div>
         <nav className="mt-6">
-          <div className={`px-6 py-3 bg-blue-50 border-r-2 border-blue-500 transition-all duration-300 ${
+          <Link href="/dashboard" className={`px-6 py-3 bg-blue-50 border-r-2 border-blue-500 transition-all duration-300 ${
             sidebarExpanded ? 'justify-start' : 'justify-center'
           } flex items-center`}>
             <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -577,8 +799,8 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
             }`}>
               Instruments
             </span>
-          </div>
-          <div className={`px-6 py-3 hover:bg-gray-50 cursor-pointer transition-all duration-300 ${
+          </Link>
+          <Link href="/clients" className={`px-6 py-3 hover:bg-gray-50 cursor-pointer transition-all duration-300 ${
             sidebarExpanded ? 'justify-start' : 'justify-center'
           } flex items-center`}>
             <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -587,9 +809,9 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
             <span className={`ml-3 text-gray-700 transition-opacity duration-300 ${
               sidebarExpanded ? 'opacity-100' : 'opacity-0'
             }`}>
-              Customers
+              Clients
             </span>
-          </div>
+          </Link>
           <div className={`px-6 py-3 hover:bg-gray-50 cursor-pointer transition-all duration-300 ${
             sidebarExpanded ? 'justify-start' : 'justify-center'
           } flex items-center`}>
@@ -610,18 +832,18 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
         showModal || showViewModal ? 'mr-96' : 'mr-0'
       } bg-white`}>
         <div className="p-6">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Instruments</h2>
-            <button
-              onClick={() => setShowModal(true)}
-              className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            </button>
-          </div>
+                  {/* Header */}
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Instruments</h2>
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+          </button>
+        </div>
 
           {/* Search and Filters */}
           <div className="bg-white p-4 rounded-lg shadow mb-6 border border-gray-200">
@@ -636,6 +858,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                 />
               </div>
               <button
+                data-filter-button
                 onClick={() => setShowFilters(!showFilters)}
                 className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700 flex items-center gap-2"
               >
@@ -644,28 +867,11 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                 </svg>
                 Filters
               </button>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-              >
-                <option value="created_at">Date Added</option>
-                <option value="maker">Maker</option>
-                <option value="type">Type</option>
-                <option value="year">Year</option>
-                <option value="price">Price</option>
-              </select>
-              <button
-                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                className="px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700"
-              >
-                {sortOrder === 'asc' ? '↑' : '↓'}
-              </button>
             </div>
             
                          {/* Filter Panel */}
              {showFilters && (
-               <div className="border-t border-gray-200 pt-4 bg-gray-50 rounded-lg p-4">
+               <div ref={filterPanelRef} className="border-t border-gray-200 pt-4 bg-gray-50 rounded-lg p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {/* Status Filter */}
                   <div>
@@ -764,6 +970,31 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                     </div>
                   </div>
                   
+                  {/* Has Clients Filter */}
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Client Connections</h4>
+                    <div className="space-y-2">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={filters.hasClients.includes('Has Clients')}
+                          onChange={() => handleFilterChange('hasClients', 'Has Clients')}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Has Clients</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={filters.hasClients.includes('No Clients')}
+                          onChange={() => handleFilterChange('hasClients', 'No Clients')}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">No Clients</span>
+                      </label>
+                    </div>
+                  </div>
+                  
                   {/* Price Range Filter */}
                   <div>
                     <h4 className="text-sm font-medium text-gray-700 mb-2">Price Range</h4>
@@ -811,13 +1042,69 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Maker</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Certificate</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ownership</th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      onClick={() => handleColumnSort('status')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Status</span>
+                        {getSortArrow('status')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      onClick={() => handleColumnSort('maker')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Maker</span>
+                        {getSortArrow('maker')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      onClick={() => handleColumnSort('type')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Type</span>
+                        {getSortArrow('type')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      onClick={() => handleColumnSort('year')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Year</span>
+                        {getSortArrow('year')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      onClick={() => handleColumnSort('certificate')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Certificate</span>
+                        {getSortArrow('certificate')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      onClick={() => handleColumnSort('price')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Price</span>
+                        {getSortArrow('price')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      onClick={() => handleColumnSort('ownership')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Ownership</span>
+                        {getSortArrow('ownership')}
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -985,6 +1272,18 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                       placeholder="e.g., Personal, Company"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                    <textarea
+                      name="note"
+                      value={formData.note}
+                      onChange={handleInputChange}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 resize-none"
+                      placeholder="Add notes, condition details, or any other information..."
                     />
                   </div>
                 </div>
@@ -1166,6 +1465,142 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                   <div className="flex justify-between">
                     <span className="font-semibold text-gray-700">Ownership:</span>
                     <span className="text-gray-900">{viewFormData.ownership || '-'}</span>
+                  </div>
+                  {viewFormData.note && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <div className="space-y-2">
+                        <span className="font-semibold text-gray-700">Note:</span>
+                        <div className="text-gray-900 bg-gray-50 p-3 rounded-md text-sm whitespace-pre-wrap">
+                          {viewFormData.note}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Client Relationships Section */}
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="font-semibold text-gray-700">Connected Clients</span>
+                      <button
+                        onClick={() => setShowClientSearch(true)}
+                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        Add Client
+                      </button>
+                    </div>
+                    
+                    {/* Client Search Section */}
+                    {showClientSearch && (
+                      <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-sm font-medium text-gray-700">Search Clients</h4>
+                          <button
+                            onClick={() => {
+                              setShowClientSearch(false)
+                              setClientSearchTerm('')
+                              setSearchResults([])
+                            }}
+                            className="text-gray-400 hover:text-gray-600"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="Search by first or last name..."
+                              value={clientSearchTerm}
+                              onChange={(e) => {
+                                setClientSearchTerm(e.target.value)
+                                searchClients(e.target.value)
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+                          
+                          {isSearchingClients && (
+                            <div className="text-center text-gray-500 text-sm">Searching...</div>
+                          )}
+                          
+                          {searchResults.length > 0 && (
+                            <div className="space-y-2">
+                              <h5 className="text-xs font-medium text-gray-600">Results:</h5>
+                              <div className="max-h-32 overflow-y-auto space-y-1">
+                                {searchResults.map((client) => (
+                                  <div
+                                    key={client.id}
+                                    className="p-2 border border-gray-200 rounded-md hover:bg-white cursor-pointer bg-white"
+                                    onClick={() => addClientRelationship(client.id)}
+                                  >
+                                    <div className="font-medium text-gray-900 text-sm">
+                                      {client.first_name} {client.last_name}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {client.email} • {client.contact_number}
+                                    </div>
+                                    <div className="text-xs text-gray-400">
+                                      {client.type} • {client.status}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {clientSearchTerm.length >= 2 && searchResults.length === 0 && !isSearchingClients && (
+                            <div className="text-center text-gray-500 text-sm">No clients found</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Connected Clients List */}
+                    {clientRelationships.length > 0 ? (
+                      <div className="space-y-2">
+                        {clientRelationships.map((relationship) => (
+                          <div key={relationship.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900">
+                                {relationship.client?.first_name} {relationship.client?.last_name}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {relationship.client?.email} • {relationship.client?.contact_number}
+                              </div>
+                              <div className="text-xs text-gray-400">
+                                {relationship.client?.type} • {relationship.client?.status}
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                relationship.relationship_type === 'Interested' ? 'bg-blue-100 text-blue-800' :
+                                relationship.relationship_type === 'Sold' ? 'bg-green-100 text-green-800' :
+                                relationship.relationship_type === 'Booked' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-purple-100 text-purple-800'
+                              }`}>
+                                {relationship.relationship_type}
+                              </span>
+                              <button
+                                onClick={() => removeClientRelationship(relationship.id)}
+                                className="text-red-500 hover:text-red-700"
+                                title="Remove client"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center text-gray-500 py-4">
+                        No clients connected to this instrument
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1364,6 +1799,18 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                       placeholder="e.g., Personal, Company"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                    <textarea
+                      name="note"
+                      value={viewFormData.note}
+                      onChange={handleViewInputChange}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 resize-none"
+                      placeholder="Add notes, condition details, or any other information..."
                     />
                   </div>
                   
