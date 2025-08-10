@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
-interface Instrument {
+interface Item {
   id: string
   status: 'Available' | 'Booked' | 'Sold'
   maker: string | null
@@ -19,9 +19,9 @@ interface Instrument {
   created_at: string
 }
 
-interface InstrumentImage {
+interface ItemImage {
   id: string
-  instrument_id: string
+  item_id: string
   image_url: string
   file_name: string
   file_size: number
@@ -36,16 +36,16 @@ interface Client {
   first_name: string | null
   contact_number: string | null
   email: string | null
-  type: 'Musician' | 'Dealer' | 'Collector' | 'Regular'
-  status: 'Active' | 'Browsing' | 'In Negotiation' | 'Inactive'
+  tags: string[]
+  interest: string | null
   note: string | null
   created_at: string
 }
 
-interface ClientInstrument {
+interface ClientItem {
   id: string
   client_id: string
-  instrument_id: string
+  item_id: string
   relationship_type: 'Interested' | 'Sold' | 'Booked' | 'Owned'
   notes: string | null
   created_at: string
@@ -53,11 +53,11 @@ interface ClientInstrument {
 }
 
 export default function DashboardPage() {
-  const [instruments, setInstruments] = useState<Instrument[]>([])
+  const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [showViewModal, setShowViewModal] = useState(false)
-  const [selectedInstrument, setSelectedInstrument] = useState<Instrument | null>(null)
+  const [selectedItem, setSelectedItem] = useState<Item | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
 const [sortBy, setSortBy] = useState('created_at')
@@ -70,6 +70,7 @@ const [sortBy, setSortBy] = useState('created_at')
     status: [] as string[],
     maker: [] as string[],
     type: [] as string[],
+    subtype: [] as string[],
     ownership: [] as string[],
     certificate: [] as boolean[],
     priceRange: {
@@ -79,44 +80,86 @@ const [sortBy, setSortBy] = useState('created_at')
     hasClients: [] as string[]
   })
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    status: string
+    maker: string
+    category: string
+    subtype: string
+    year: string | number
+    certificate: boolean
+    size: string
+    weight: string
+    price: string | number
+    ownership: string
+    note: string
+  }>({
     status: 'Available',
     maker: '',
-    type: '',
-    year: new Date().getFullYear(),
+    category: 'Instrument',
+    subtype: 'Violin',
+    year: '',
     certificate: false,
     size: '',
     weight: '',
-    price: 0,
+    price: '',
     ownership: '',
     note: ''
   })
+  const [priceInput, setPriceInput] = useState('')
   
-  const [viewFormData, setViewFormData] = useState({
+  const [viewFormData, setViewFormData] = useState<{
+    status: string
+    maker: string
+    category: string
+    subtype: string
+    year: string | number
+    certificate: boolean
+    size: string
+    weight: string
+    price: string | number
+    ownership: string
+    note: string
+  }>({
     status: 'Available',
     maker: '',
-    type: '',
-    year: new Date().getFullYear(),
+    category: 'Instrument',
+    subtype: 'Violin',
+    year: '',
     certificate: false,
     size: '',
     weight: '',
-    price: 0,
+    price: '',
     ownership: '',
     note: ''
   })
+  const [viewPriceInput, setViewPriceInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploadingImages, setUploadingImages] = useState(false)
-  const [instrumentImages, setInstrumentImages] = useState<InstrumentImage[]>([])
+  const [itemImages, setItemImages] = useState<ItemImage[]>([])
   const [imagesToDelete, setImagesToDelete] = useState<string[]>([])
 
   // Client relationship states
-  const [clientRelationships, setClientRelationships] = useState<ClientInstrument[]>([])
+  const [clientRelationships, setClientRelationships] = useState<ClientItem[]>([])
   const [showClientSearch, setShowClientSearch] = useState(false)
   const [clientSearchTerm, setClientSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<Client[]>([])
   const [isSearchingClients, setIsSearchingClients] = useState(false)
-  const [instrumentsWithClients, setInstrumentsWithClients] = useState<Set<string>>(new Set())
+  const [itemsWithClients, setItemsWithClients] = useState<Set<string>>(new Set())
+
+  // New item - connected clients (creation time)
+  const [showClientSearchForNew, setShowClientSearchForNew] = useState(false)
+  const [clientSearchTermForNew, setClientSearchTermForNew] = useState('')
+  const [searchResultsForNew, setSearchResultsForNew] = useState<Client[]>([])
+  const [isSearchingClientsForNew, setIsSearchingClientsForNew] = useState(false)
+  const [selectedClientsForNew, setSelectedClientsForNew] = useState<Array<{ client: Client, relationshipType: ClientItem['relationship_type'] }>>([])
+
+  // New item - ownership client (creation time)
+  const [showOwnershipSearch, setShowOwnershipSearch] = useState(false)
+  const [ownershipSearchTerm, setOwnershipSearchTerm] = useState('')
+  const [ownershipSearchResults, setOwnershipSearchResults] = useState<Client[]>([])
+  const [isSearchingOwnership, setIsSearchingOwnership] = useState(false)
+  const [selectedOwnershipClient, setSelectedOwnershipClient] = useState<Client | null>(null)
 
   // Add ref for filter panel
   const filterPanelRef = useRef<HTMLDivElement>(null)
@@ -146,10 +189,10 @@ const [sortBy, setSortBy] = useState('created_at')
   }, [showFilters])
 
   useEffect(() => {
-    fetchInstruments()
+    fetchItems()
   }, [])
 
-  const fetchInstruments = async () => {
+  const fetchItems = async () => {
     try {
       const { data, error } = await supabase
         .from('instruments')
@@ -157,18 +200,18 @@ const [sortBy, setSortBy] = useState('created_at')
         .order('created_at', { ascending: false })
       
       if (error) throw error
-      setInstruments(data || [])
+      setItems(data || [])
       
-      // Fetch which instruments have clients
-      await fetchInstrumentsWithClients()
+      // Fetch which items have clients
+      await fetchItemsWithClients()
     } catch (error) {
-      console.error('Error fetching instruments:', error)
+      console.error('Error fetching items:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  const fetchInstrumentsWithClients = async () => {
+  const fetchItemsWithClients = async () => {
     try {
       const { data, error } = await supabase
         .from('client_instruments')
@@ -176,10 +219,10 @@ const [sortBy, setSortBy] = useState('created_at')
       
       if (error) throw error
       
-      const instrumentIds = new Set(data?.map(item => item.instrument_id) || [])
-      setInstrumentsWithClients(instrumentIds)
+      const itemIds = new Set(data?.map(item => item.instrument_id) || [])
+      setItemsWithClients(itemIds)
     } catch (error) {
-      console.error('Error fetching instruments with clients:', error)
+      console.error('Error fetching items with clients:', error)
     }
   }
 
@@ -188,9 +231,21 @@ const [sortBy, setSortBy] = useState('created_at')
     console.log('Form submission started')
     
     // Validate required fields
-    if (!formData.maker || !formData.type || !formData.size || !formData.weight || !formData.ownership) {
-      alert('Please fill in all required fields: Maker, Type, Size, Weight, and Ownership')
-      console.log('Validation failed - missing required fields')
+    const needsSubtype = formData.category !== 'Other'
+    const needsSize = formData.category === 'Instrument'
+    const needsWeight = formData.category === 'Bow'
+    
+    let missingFields = []
+    if (!formData.maker) missingFields.push('Maker')
+    if (!formData.category) missingFields.push('Type')
+    if (needsSubtype && !formData.subtype) missingFields.push('Subtype')
+    if (needsSize && !formData.size) missingFields.push('Size')
+    if (needsWeight && !formData.weight) missingFields.push('Weight')
+    if (!selectedOwnershipClient) missingFields.push('Ownership')
+    
+    if (missingFields.length > 0) {
+      alert(`Please fill in all required fields: ${missingFields.join(', ')}`)
+      console.log('Validation failed - missing required fields:', missingFields)
       return
     }
     
@@ -222,13 +277,13 @@ const [sortBy, setSortBy] = useState('created_at')
       const insertData = {
         status: formData.status,
         maker: formData.maker,
-        type: formData.type,
+          type: formData.category === 'Other' ? 'Other' : `${formData.category} / ${formData.subtype}`,
         year: formData.year,
         certificate: formData.certificate,
-        size: formData.size,
-        weight: formData.weight,
+          size: formData.category === 'Instrument' ? formData.size : null,
+          weight: formData.category === 'Bow' ? formData.weight : null,
         price: formData.price,
-              ownership: formData.ownership,
+          ownership: selectedOwnershipClient ? `${selectedOwnershipClient.first_name} ${selectedOwnershipClient.last_name}` : null,
       note: formData.note
       }
       
@@ -241,11 +296,11 @@ const [sortBy, setSortBy] = useState('created_at')
 
       if (error) {
         console.error('Supabase insert error:', error)
-        alert(`Failed to add instrument: ${error.message}`)
+          alert(`Failed to add item: ${error.message}`)
         return
       }
       
-      console.log('Successfully added instrument:', data)
+        console.log('Successfully added item:', data)
       
       // Upload images if any
       if (selectedFiles.length > 0) {
@@ -253,32 +308,34 @@ const [sortBy, setSortBy] = useState('created_at')
           await uploadImages(data[0].id)
         } catch (error) {
           console.error('Error uploading images:', error)
-          alert(`Instrument added successfully, but there was an error uploading images: ${error instanceof Error ? error.message : 'Unknown error'}`)
+            alert(`Item added successfully, but there was an error uploading images: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          }
+        }
+        
+         // If creation-time client selections exist, insert relationships
+         if (selectedClientsForNew.length > 0 && data && data[0]) {
+           const itemId = data[0].id
+           const rows = selectedClientsForNew.map(sc => ({
+             client_id: sc.client.id,
+             instrument_id: itemId,
+             relationship_type: sc.relationshipType
+           }))
+           const { error: relErr } = await supabase.from('client_instruments').insert(rows)
+           if (relErr) {
+             console.error('Failed to add connected clients for new item:', relErr)
         }
       }
       
       // Reset form and close modal
-      setFormData({
-        status: 'Available',
-        maker: '',
-        type: '',
-        year: new Date().getFullYear(),
-        certificate: false,
-        size: '',
-        weight: '',
-        price: 0,
-        ownership: '',
-        note: ''
-      })
-      setSelectedFiles([])
+         resetNewItemForm()
       setShowModal(false)
       
-      // Refresh the instruments list
-      console.log('Refreshing instruments list...')
-      await fetchInstruments()
+        // Refresh the items list
+        console.log('Refreshing items list...')
+        await fetchItems()
       
       // Show success message
-      alert('Instrument added successfully!')
+        alert('Item added successfully!')
       console.log('Form submission completed successfully')
     } catch (error) {
       console.error('Unexpected error during form submission:', error)
@@ -290,17 +347,29 @@ const [sortBy, setSortBy] = useState('created_at')
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedInstrument) return
+    if (!selectedItem) return
     
     console.log('Update submission started')
     
     // Validate required fields
-    if (!viewFormData.maker || !viewFormData.type || !viewFormData.size || !viewFormData.weight || !viewFormData.ownership) {
-      alert('Please fill in all required fields: Maker, Type, Size, Weight, and Ownership')
+    const needsSubtype = viewFormData.category !== 'Other'
+    const needsSize = viewFormData.category === 'Instrument'
+    const needsWeight = viewFormData.category === 'Bow'
+    
+    let missingFields = []
+    if (!viewFormData.maker) missingFields.push('Maker')
+    if (!viewFormData.category) missingFields.push('Type')
+    if (needsSubtype && !viewFormData.subtype) missingFields.push('Subtype')
+    if (needsSize && !viewFormData.size) missingFields.push('Size')
+    if (needsWeight && !viewFormData.weight) missingFields.push('Weight')
+    if (!viewFormData.ownership) missingFields.push('Ownership')
+    
+    if (missingFields.length > 0) {
+      alert(`Please fill in all required fields: ${missingFields.join(', ')}`)
       return
     }
     
-    if (viewFormData.price <= 0) {
+    if (!viewFormData.price || Number(viewFormData.price) <= 0) {
       alert('Please enter a valid price greater than 0')
       return
     }
@@ -308,40 +377,40 @@ const [sortBy, setSortBy] = useState('created_at')
     setSubmitting(true)
     
     try {
-      // Update instrument data
+      // Update item data
       const updateData = {
         status: viewFormData.status,
         maker: viewFormData.maker,
-        type: viewFormData.type,
+        type: viewFormData.category === 'Other' ? 'Other' : `${viewFormData.category} / ${viewFormData.subtype}`,
         year: viewFormData.year,
         certificate: viewFormData.certificate,
-        size: viewFormData.size,
-        weight: viewFormData.weight,
-        price: viewFormData.price,
+        size: viewFormData.category === 'Instrument' ? viewFormData.size : null,
+        weight: viewFormData.category === 'Bow' ? viewFormData.weight : null,
+        price: Number(viewFormData.price),
               ownership: viewFormData.ownership,
       note: viewFormData.note
       }
       
-      console.log('Attempting to update instrument:', selectedInstrument.id, updateData)
+      console.log('Attempting to update item:', selectedItem.id, updateData)
       
       const { data, error } = await supabase
         .from('instruments')
         .update(updateData)
-        .eq('id', selectedInstrument.id)
+        .eq('id', selectedItem.id)
         .select()
 
       if (error) {
         console.error('Supabase update error:', error)
-        alert(`Failed to update instrument: ${error.message}`)
+        alert(`Failed to update item: ${error.message}`)
         return
       }
       
-      console.log('Successfully updated instrument:', data)
+      console.log('Successfully updated item:', data)
       
       // Delete images
       for (const imageId of imagesToDelete) {
         // Get image record
-        const img = instrumentImages.find(img => img.id === imageId)
+        const img = itemImages.find(img => img.id === imageId)
         if (img) {
           // Remove from storage
           const fileName = img.image_url.split('/').pop()?.split('?')[0]
@@ -354,22 +423,66 @@ const [sortBy, setSortBy] = useState('created_at')
       }
       // Upload new images
       if (selectedFiles.length > 0) {
-        await uploadImages(selectedInstrument.id)
+        await uploadImages(selectedItem.id)
       }
       // Refresh images
-      await fetchInstrumentImages(selectedInstrument.id)
+      await fetchItemImages(selectedItem.id)
       setImagesToDelete([])
       setSelectedFiles([])
       setIsEditing(false)
       
-      // Refresh the instruments list
-      await fetchInstruments()
+      // Refresh the items list
+      await fetchItems()
       
       // Show success message
-      alert('Instrument updated successfully!')
+      alert('Item updated successfully!')
     } catch (error) {
       console.error('Unexpected error during update:', error)
       alert('An unexpected error occurred. Please check the console for details.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDeleteItem = async () => {
+    if (!selectedItem) return
+    
+    const confirmed = window.confirm('Are you sure you want to delete this item? This action cannot be undone.')
+    if (!confirmed) return
+    
+    setSubmitting(true)
+    
+    try {
+      // Delete all images first
+      for (const image of itemImages) {
+        try {
+          await supabase.storage.from('instrument-images').remove([image.file_name])
+          await supabase.from('instrument_images').delete().eq('id', image.id)
+        } catch (error) {
+          console.error('Error deleting image:', error)
+        }
+      }
+      
+      // Delete client relationships
+      await supabase.from('client_instruments').delete().eq('instrument_id', selectedItem.id)
+      
+      // Delete the item
+      const { error } = await supabase
+        .from('instruments')
+        .delete()
+        .eq('id', selectedItem.id)
+
+      if (error) throw error
+
+      // Close modal and refresh
+      setShowViewModal(false)
+      setSelectedItem(null)
+      await fetchItems()
+      
+      alert('Item deleted successfully!')
+    } catch (error) {
+      console.error('Error deleting item:', error)
+      alert('Failed to delete item')
     } finally {
       setSubmitting(false)
     }
@@ -412,7 +525,7 @@ const [sortBy, setSortBy] = useState('created_at')
     setSelectedFiles(prev => prev.filter((_, i) => i !== index))
   }
 
-  const uploadImages = async (instrumentId: string): Promise<string[]> => {
+  const uploadImages = async (itemId: string): Promise<string[]> => {
     if (selectedFiles.length === 0) return []
     
     setUploadingImages(true)
@@ -443,7 +556,7 @@ const [sortBy, setSortBy] = useState('created_at')
         
         // Create a unique filename
         const fileExt = file.name.split('.').pop()
-        const fileName = `${instrumentId}_${Date.now()}_${i}.${fileExt}`
+        const fileName = `${itemId}_${Date.now()}_${i}.${fileExt}`
         
         // Upload to Supabase Storage
         const { data, error } = await supabase.storage
@@ -468,7 +581,7 @@ const [sortBy, setSortBy] = useState('created_at')
         const { error: dbError } = await supabase
           .from('instrument_images')
           .insert({
-            instrument_id: instrumentId,
+            instrument_id: itemId,
             image_url: urlData.publicUrl,
             file_name: file.name,
             file_size: file.size,
@@ -493,22 +606,22 @@ const [sortBy, setSortBy] = useState('created_at')
     return uploadedUrls
   }
 
-  const fetchInstrumentImages = async (instrumentId: string) => {
+  const fetchItemImages = async (itemId: string) => {
     try {
       const { data, error } = await supabase
         .from('instrument_images')
         .select('*')
-        .eq('instrument_id', instrumentId)
+        .eq('instrument_id', itemId)
         .order('display_order', { ascending: true })
       
       if (error) throw error
-      setInstrumentImages(data || [])
+      setItemImages(data || [])
     } catch (error) {
-      console.error('Error fetching instrument images:', error)
+      console.error('Error fetching item images:', error)
     }
   }
 
-  const fetchClientRelationships = async (instrumentId: string) => {
+  const fetchClientRelationships = async (itemId: string) => {
     try {
       const { data, error } = await supabase
         .from('client_instruments')
@@ -516,7 +629,7 @@ const [sortBy, setSortBy] = useState('created_at')
           *,
           client:clients(*)
         `)
-        .eq('instrument_id', instrumentId)
+        .eq('instrument_id', itemId)
         .order('created_at', { ascending: false })
       
       if (error) throw error
@@ -550,22 +663,149 @@ const [sortBy, setSortBy] = useState('created_at')
     }
   }
 
-  const addClientRelationship = async (clientId: string, relationshipType: ClientInstrument['relationship_type'] = 'Interested') => {
-    if (!selectedInstrument) return
+  // Creation-time client search and selection (Add New Item)
+  const searchClientsForNew = async (searchTerm: string) => {
+    if (searchTerm.length < 2) {
+      setSearchResultsForNew([])
+      return
+    }
+    setIsSearchingClientsForNew(true)
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .or(`last_name.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%`)
+        .limit(10)
+      if (error) throw error
+      const selectedIds = new Set(selectedClientsForNew.map(sc => sc.client.id))
+      const filtered = (data || []).filter(c => !selectedIds.has(c.id))
+      setSearchResultsForNew(filtered)
+    } catch (error) {
+      console.error('Error searching clients (new item):', error)
+      setSearchResultsForNew([])
+    } finally {
+      setIsSearchingClientsForNew(false)
+    }
+  }
+
+  const addClientForNew = (client: Client, relationshipType: ClientItem['relationship_type'] = 'Interested') => {
+    setSelectedClientsForNew(prev => {
+      if (prev.some(p => p.client.id === client.id)) return prev
+      return [...prev, { client, relationshipType }]
+    })
+    setShowClientSearchForNew(false)
+    setClientSearchTermForNew('')
+    setSearchResultsForNew([])
+  }
+
+  const removeClientForNew = (clientId: string) => {
+    setSelectedClientsForNew(prev => prev.filter(p => p.client.id !== clientId))
+  }
+
+  // Ownership client search and selection (Add New Item)
+  const searchOwnershipClients = async (searchTerm: string) => {
+    if (searchTerm.length < 2) {
+      setOwnershipSearchResults([])
+      return
+    }
+    setIsSearchingOwnership(true)
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .or(`last_name.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%`)
+        .contains('tags', ['Owner'])
+        .limit(10)
+      if (error) throw error
+      const filtered = (data || []).filter(c => c.id !== selectedOwnershipClient?.id)
+      setOwnershipSearchResults(filtered)
+    } catch (error) {
+      console.error('Error searching ownership clients:', error)
+      setOwnershipSearchResults([])
+    } finally {
+      setIsSearchingOwnership(false)
+    }
+  }
+
+  const addOwnershipClient = (client: Client) => {
+    setSelectedOwnershipClient(client)
+    setShowOwnershipSearch(false)
+    setOwnershipSearchTerm('')
+    setOwnershipSearchResults([])
+  }
+
+  const removeOwnershipClient = () => {
+    setSelectedOwnershipClient(null)
+  }
+
+  // Keep subtype valid when switching categories
+  useEffect(() => {
+    if (formData.category === 'Bow' && formData.subtype === 'Other') {
+      setFormData(prev => ({ ...prev, subtype: 'Violin' }))
+    }
+    // Clear size when category changes (no default values)
+    setFormData(prev => ({
+      ...prev,
+      size: ''
+    }))
+  }, [formData.category])
+
+  // Close Add New Item panel on Escape
+  useEffect(() => {
+    if (!showModal) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        resetNewItemForm()
+        setShowModal(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showModal])
+
+  const resetNewItemForm = () => {
+    setFormData({
+      status: 'Available',
+      maker: '',
+      category: 'Instrument',
+      subtype: 'Violin',
+      year: '',
+      certificate: false,
+      size: '',
+      weight: '',
+      price: '',
+      ownership: '',
+      note: ''
+    })
+    setPriceInput('')
+    setSelectedFiles([])
+    setSelectedClientsForNew([])
+    setShowClientSearchForNew(false)
+    setClientSearchTermForNew('')
+    setSearchResultsForNew([])
+    setSelectedOwnershipClient(null)
+    setShowOwnershipSearch(false)
+    setOwnershipSearchTerm('')
+    setOwnershipSearchResults([])
+  }
+
+  const addClientRelationship = async (clientId: string, relationshipType: ClientItem['relationship_type'] = 'Interested') => {
+    if (!selectedItem) return
 
     try {
       const { error } = await supabase
         .from('client_instruments')
         .insert({
           client_id: clientId,
-          instrument_id: selectedInstrument.id,
+          instrument_id: selectedItem.id,
           relationship_type: relationshipType
         })
 
       if (error) throw error
 
       // Refresh relationships
-      await fetchClientRelationships(selectedInstrument.id)
+      await fetchClientRelationships(selectedItem.id)
       setShowClientSearch(false)
       setClientSearchTerm('')
       setSearchResults([])
@@ -585,8 +825,8 @@ const [sortBy, setSortBy] = useState('created_at')
       if (error) throw error
 
       // Refresh relationships
-      if (selectedInstrument) {
-        await fetchClientRelationships(selectedInstrument.id)
+      if (selectedItem) {
+        await fetchClientRelationships(selectedItem.id)
       }
     } catch (error) {
       console.error('Error removing client relationship:', error)
@@ -594,38 +834,50 @@ const [sortBy, setSortBy] = useState('created_at')
     }
   }
 
-  const handleRowClick = (instrument: Instrument) => {
-    setSelectedInstrument(instrument)
+  const handleRowClick = (item: Item) => {
+    setSelectedItem(item)
+    const typeParts = item.type?.split(' / ') || ['Instrument', 'Violin']
     setViewFormData({
-      status: instrument.status,
-      maker: instrument.maker || '',
-      type: instrument.type || '',
-      year: instrument.year || new Date().getFullYear(),
-      certificate: instrument.certificate,
-      size: instrument.size || '',
-      weight: instrument.weight || '',
-      price: instrument.price || 0,
-      ownership: instrument.ownership || '',
-      note: instrument.note || ''
+      status: item.status,
+      maker: item.maker || '',
+      category: typeParts[0] || 'Instrument',
+      subtype: typeParts[1] || 'Violin',
+      year: item.year || '',
+      certificate: item.certificate,
+      size: item.size || '',
+      weight: item.weight || '',
+      price: item.price || '',
+      ownership: item.ownership || '',
+      note: item.note || ''
     })
+    setViewPriceInput(item.price ? item.price.toLocaleString('en-US') : '')
     setIsEditing(false)
     setShowViewModal(true)
     
-    // Fetch images and client relationships for this instrument
-    fetchInstrumentImages(instrument.id)
-    fetchClientRelationships(instrument.id)
+    // Fetch images and client relationships for this item
+    fetchItemImages(item.id)
+    fetchClientRelationships(item.id)
   }
 
 
 
   // Get unique values for filter options
-const getUniqueValues = (field: keyof Instrument) => {
-  const values = instruments.map(instrument => instrument[field]).filter((value): value is string => typeof value === 'string' && value !== null)
+const getUniqueValues = (field: keyof Item) => {
+  const values = items.map(item => item[field]).filter((value): value is string => typeof value === 'string' && value !== null)
   return [...new Set(values)]
 }
 
 const getUniqueMakers = () => getUniqueValues('maker')
 const getUniqueTypes = () => getUniqueValues('type')
+  const getUniqueSubtypes = () => {
+    // subtype is encoded in type as "Category / Subtype" except for Other
+    const subtypes = items
+      .map(i => (i.type || ''))
+      .filter(Boolean)
+      .map(t => (t.includes('/') ? t.split('/')[1].trim() : (t === 'Other' ? 'Other' : '')))
+      .filter(s => s !== '')
+    return [...new Set(subtypes)]
+  }
 const getUniqueOwnership = () => getUniqueValues('ownership')
 
   // Handle filter changes
@@ -660,6 +912,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
       status: [],
       maker: [],
       type: [],
+      subtype: [],
       ownership: [],
       certificate: [],
       priceRange: { min: '', max: '' },
@@ -668,46 +921,50 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
   }
 
   // Enhanced filtering logic
-  const filteredInstruments = instruments
-    .filter(instrument => {
+  const filteredItems = items
+    .filter(item => {
       // Text search
       const matchesSearch = searchTerm === '' || 
-        (instrument.maker?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-        (instrument.type?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-        (instrument.ownership?.toLowerCase().includes(searchTerm.toLowerCase()) || false)
+        (item.maker?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
+        (item.type?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
+        (item.ownership?.toLowerCase().includes(searchTerm.toLowerCase()) || false)
       
       // Status filter
-      const matchesStatus = filters.status.length === 0 || filters.status.includes(instrument.status)
+      const matchesStatus = filters.status.length === 0 || filters.status.includes(item.status)
       
       // Maker filter
-      const matchesMaker = filters.maker.length === 0 || (instrument.maker && filters.maker.includes(instrument.maker))
+      const matchesMaker = filters.maker.length === 0 || (item.maker && filters.maker.includes(item.maker))
       
-      // Type filter
-      const matchesType = filters.type.length === 0 || (instrument.type && filters.type.includes(instrument.type))
+      // Type filter (matches category part before / or 'Other')
+      const itemType = item.type || ''
+      const category = itemType.includes('/') ? itemType.split('/')[0].trim() : itemType
+      const sub = itemType.includes('/') ? itemType.split('/')[1].trim() : (itemType === 'Other' ? 'Other' : '')
+      const matchesType = filters.type.length === 0 || (category && filters.type.includes(category))
+      const matchesSubtype = filters.subtype.length === 0 || (sub && filters.subtype.includes(sub))
       
       // Ownership filter
-      const matchesOwnership = filters.ownership.length === 0 || (instrument.ownership && filters.ownership.includes(instrument.ownership))
+      const matchesOwnership = filters.ownership.length === 0 || (item.ownership && filters.ownership.includes(item.ownership))
       
       // Certificate filter
-      const matchesCertificate = filters.certificate.length === 0 || filters.certificate.includes(instrument.certificate)
+      const matchesCertificate = filters.certificate.length === 0 || filters.certificate.includes(item.certificate)
       
       // Price range filter
-      const price = instrument.price || 0
+      const price = item.price || 0
       const minPrice = filters.priceRange.min ? parseFloat(filters.priceRange.min) : 0
       const maxPrice = filters.priceRange.max ? parseFloat(filters.priceRange.max) : Infinity
       const matchesPrice = price >= minPrice && price <= maxPrice
       
       // Has clients filter
-      const hasClients = instrumentsWithClients.has(instrument.id)
+      const hasClients = itemsWithClients.has(item.id)
       const matchesHasClients = filters.hasClients.length === 0 || 
         (filters.hasClients.includes('Has Clients') && hasClients) ||
         (filters.hasClients.includes('No Clients') && !hasClients)
       
-      return matchesSearch && matchesStatus && matchesMaker && matchesType && matchesOwnership && matchesCertificate && matchesPrice && matchesHasClients
+      return matchesSearch && matchesStatus && matchesMaker && matchesType && matchesSubtype && matchesOwnership && matchesCertificate && matchesPrice && matchesHasClients
     })
     .sort((a, b) => {
-      const aValue = a[sortBy as keyof Instrument]
-      const bValue = b[sortBy as keyof Instrument]
+      const aValue = a[sortBy as keyof Item]
+      const bValue = b[sortBy as keyof Item]
       
       const aVal = aValue ?? 0
       const bVal = bValue ?? 0
@@ -726,6 +983,14 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
       case 'Sold': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
+  }
+
+  const sortTags = (tags: string[]) => {
+    return tags.sort((a, b) => {
+      if (a === 'Owner') return -1
+      if (b === 'Owner') return 1
+      return a.localeCompare(b)
+    })
   }
 
   // Handle column header click for sorting
@@ -797,7 +1062,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
             <span className={`ml-3 text-blue-700 font-medium transition-opacity duration-300 ${
               sidebarExpanded ? 'opacity-100' : 'opacity-0'
             }`}>
-              Instruments
+              Items
             </span>
           </Link>
           <Link href="/clients" className={`px-6 py-3 hover:bg-gray-50 cursor-pointer transition-all duration-300 ${
@@ -812,7 +1077,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
               Clients
             </span>
           </Link>
-          <div className={`px-6 py-3 hover:bg-gray-50 cursor-pointer transition-all duration-300 ${
+          <Link href="/form" className={`px-6 py-3 hover:bg-gray-50 cursor-pointer transition-all duration-300 ${
             sidebarExpanded ? 'justify-start' : 'justify-center'
           } flex items-center`}>
             <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -821,9 +1086,9 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
             <span className={`ml-3 text-gray-700 transition-opacity duration-300 ${
               sidebarExpanded ? 'opacity-100' : 'opacity-0'
             }`}>
-              Forms
+              Connected Clients
             </span>
-          </div>
+          </Link>
         </nav>
       </div>
 
@@ -834,7 +1099,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
         <div className="p-6">
                   {/* Header */}
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Instruments</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Items</h2>
           <button
             onClick={() => setShowModal(true)}
             className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition-colors"
@@ -851,7 +1116,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
               <div className="flex-1 min-w-64">
                 <input
                   type="text"
-                  placeholder="Search instruments..."
+                  placeholder="Search items..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"
@@ -922,6 +1187,24 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                           />
                           <span className="ml-2 text-sm text-gray-700">{type}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Subtype Filter */}
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Subtype</h4>
+                    <div className="space-y-2 max-h-32 overflow-y-auto">
+                      {getUniqueSubtypes().map(sub => (
+                        <label key={sub} className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={filters.subtype.includes(sub)}
+                            onChange={() => handleFilterChange('subtype', sub)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="ml-2 text-sm text-gray-700">{sub}</span>
                         </label>
                       ))}
                     </div>
@@ -1036,7 +1319,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
             )}
           </div>
 
-          {/* Instruments Table */}
+          {/* Items Table */}
           <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -1066,6 +1349,15 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                     >
                       <div className="flex items-center space-x-1">
                         <span>Type</span>
+                        {getSortArrow('type')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      onClick={() => handleColumnSort('type')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>Subtype</span>
                         {getSortArrow('type')}
                       </div>
                     </th>
@@ -1110,30 +1402,31 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                 <tbody className="bg-white divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">Loading instruments...</td>
+                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">Loading items...</td>
                     </tr>
-                  ) : filteredInstruments.length === 0 ? (
+                  ) : filteredItems.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">No instruments found.</td>
+                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">No items found.</td>
                     </tr>
                   ) : (
-                    filteredInstruments.map((instrument) => (
+                    filteredItems.map((item) => (
                       <tr 
-                        key={instrument.id} 
+                        key={item.id} 
                         className="hover:bg-gray-50 cursor-pointer"
-                        onClick={() => handleRowClick(instrument)}
+                        onClick={() => handleRowClick(item)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(instrument.status)}`}>{instrument.status}</span>
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>{item.status}</span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{instrument.maker || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{instrument.type || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{instrument.year || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.maker || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.type?.includes('/') ? item.type.split('/')[0].trim() : item.type || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.type?.includes('/') ? item.type.split('/')[1].trim() : (item.type === 'Other' ? 'Other' : '-')}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.year || '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${instrument.certificate ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{instrument.certificate ? 'Yes' : 'No'}</span>
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${item.certificate ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.certificate ? 'Yes' : 'No'}</span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${instrument.price ? instrument.price.toLocaleString() : '0'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{instrument.ownership || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.price ? item.price.toLocaleString() : '0'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.ownership || '-'}</td>
                       </tr>
                     ))
                   )}
@@ -1151,9 +1444,9 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
             {/* Header */}
             <div className="p-6 border-b border-gray-200">
               <div className="flex justify-between items-center">
-                <h3 className="text-lg font-medium text-gray-900">Add New Instrument</h3>
+                <h3 className="text-lg font-medium text-gray-900">Add New Item</h3>
                 <button
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { resetNewItemForm(); setShowModal(false) }}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1191,39 +1484,64 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       onChange={handleInputChange}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="e.g., Gibson, Fender"
+                      placeholder=""
                     />
                   </div>
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                    <input
-                      type="text"
-                      name="type"
-                      value={formData.type}
+                    <div className="grid grid-cols-1 gap-3">
+                      <select
+                        name="category"
+                        value={formData.category}
                       onChange={handleInputChange}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="e.g., Electric Guitar, Piano"
-                    />
+                      >
+                        <option value="Instrument">Instrument</option>
+                        <option value="Bow">Bow</option>
+                        <option value="Other">Other</option>
+                      </select>
+
+                      {formData.category !== 'Other' && (
+                        <select
+                          name="subtype"
+                          value={formData.subtype}
+                          onChange={handleInputChange}
+                          required
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                        >
+                          <option value="Violin">Violin</option>
+                          <option value="Viola">Viola</option>
+                          <option value="Cello">Cello</option>
+                          <option value="Bass">Bass</option>
+                          {formData.category !== 'Bow' && (
+                            <option value="Other">Other</option>
+                          )}
+                        </select>
+                      )}
+                    </div>
                   </div>
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
                     <input
-                      type="number"
+                      type="text"
                       name="year"
                       value={formData.year}
-                      onChange={handleInputChange}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9]/g, '')
+                        setFormData(prev => ({ ...prev, year: raw === '' ? '' : Number(raw) }))
+                      }}
                       required
-                      min="1900"
-                      max={new Date().getFullYear()}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                      placeholder=""
                     />
                   </div>
                   
+                  {formData.category === 'Instrument' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Size</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Size (mm)</label>
                     <input
                       type="text"
                       name="size"
@@ -1231,12 +1549,14 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       onChange={handleInputChange}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="e.g., Full Size, 3/4"
+                        placeholder=""
                     />
                   </div>
+                  )}
                   
+                  {formData.category === 'Bow' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Weight</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Weight (g)</label>
                     <input
                       type="text"
                       name="weight"
@@ -1244,35 +1564,140 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       onChange={handleInputChange}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="e.g., 8.5 lbs"
+                        placeholder=""
                     />
                   </div>
+                  )}
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Price ($)</label>
                     <input
-                      type="number"
+                      type="text"
                       name="price"
-                      value={formData.price}
-                      onChange={handleInputChange}
+                      value={priceInput}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9]/g, '')
+                        setPriceInput(raw === '' ? '' : Number(raw).toLocaleString('en-US'))
+                        setFormData(prev => ({ ...prev, price: raw === '' ? 0 : Number(raw) }))
+                      }}
+                      onBlur={() => setPriceInput(formData.price ? formData.price.toLocaleString('en-US') : '0')}
                       required
-                      min="0"
-                      step="0.01"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                      placeholder=""
                     />
                   </div>
                   
+                  {/* Ownership Section */}
+                  <div className="mt-6 pt-6 border-t border-gray-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="block text-sm font-medium text-gray-700">Ownership</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowOwnershipSearch(true)}
+                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+
+                    {showOwnershipSearch && (
+                      <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-sm font-medium text-gray-700">Search Owner Clients</h4>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowOwnershipSearch(false)
+                              setOwnershipSearchTerm('')
+                              setOwnershipSearchResults([])
+                            }}
+                            className="text-gray-400 hover:text-gray-600"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+
+                        <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ownership</label>
                     <input
                       type="text"
-                      name="ownership"
-                      value={formData.ownership}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="e.g., Personal, Company"
-                    />
+                              placeholder="Search by first or last name..."
+                              value={ownershipSearchTerm}
+                              onChange={(e) => {
+                                setOwnershipSearchTerm(e.target.value)
+                                searchOwnershipClients(e.target.value)
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+
+                          {isSearchingOwnership && (
+                            <div className="text-center text-gray-500 text-sm">Searching...</div>
+                          )}
+
+                          {ownershipSearchResults.length > 0 && (
+                            <div className="space-y-2">
+                              <h5 className="text-xs font-medium text-gray-600">Results:</h5>
+                              <div className="max-h-32 overflow-y-auto space-y-1">
+                                {ownershipSearchResults.map((client) => (
+                                  <div
+                                    key={client.id}
+                                    className="p-2 border border-gray-200 rounded-md hover:bg-white cursor-pointer bg-white"
+                                    onClick={() => addOwnershipClient(client)}
+                                  >
+                                    <div className="font-medium text-gray-900 text-sm">
+                                      {client.first_name} {client.last_name}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {client.email} • {client.contact_number}
+                                    </div>
+                                    <div className="text-xs text-gray-400">
+                                      {client.tags && client.tags.length > 0 ? sortTags([...client.tags]).join(', ') : 'No tags'}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {ownershipSearchTerm.length >= 2 && ownershipSearchResults.length === 0 && !isSearchingOwnership && (
+                            <div className="text-center text-gray-500 text-sm">No owner clients found</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedOwnershipClient ? (
+                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md border border-gray-200">
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">
+                            {selectedOwnershipClient.first_name} {selectedOwnershipClient.last_name}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {selectedOwnershipClient.email} • {selectedOwnershipClient.contact_number}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {selectedOwnershipClient.tags && selectedOwnershipClient.tags.length > 0 ? sortTags([...selectedOwnershipClient.tags]).join(', ') : 'No tags'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={removeOwnershipClient}
+                          className="text-red-500 hover:text-red-700"
+                          title="Remove owner"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-center text-gray-500 py-4 text-sm border-2 border-dashed border-gray-200 rounded-md">
+                        No owner selected for this item
+                      </div>
+                    )}
                   </div>
                   
                   <div>
@@ -1357,46 +1782,169 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                     </div>
                   )}
                 </div>
+
+                {/* Connected Clients (Creation-time) */}
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <label className="block text-sm font-medium text-gray-700">Interested</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowClientSearchForNew(true)}
+                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                      Add
+                    </button>
+            </div>
+            
+                  {showClientSearchForNew && (
+                    <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-sm font-medium text-gray-700">Search Clients</h4>
+                <button
+                  type="button"
+                          onClick={() => {
+                            setShowClientSearchForNew(false)
+                            setClientSearchTermForNew('')
+                            setSearchResultsForNew([])
+                          }}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <input
+                            type="text"
+                            placeholder="Search by first or last name..."
+                            value={clientSearchTermForNew}
+                            onChange={(e) => {
+                              setClientSearchTermForNew(e.target.value)
+                              searchClientsForNew(e.target.value)
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          />
+                        </div>
+
+                        {isSearchingClientsForNew && (
+                          <div className="text-center text-gray-500 text-sm">Searching...</div>
+                        )}
+
+                        {searchResultsForNew.length > 0 && (
+                          <div className="space-y-2">
+                            <h5 className="text-xs font-medium text-gray-600">Results:</h5>
+                            <div className="max-h-32 overflow-y-auto space-y-1">
+                              {searchResultsForNew.map((client) => (
+                                <div
+                                  key={client.id}
+                                  className="p-2 border border-gray-200 rounded-md hover:bg-white cursor-pointer bg-white"
+                                  onClick={() => addClientForNew(client)}
+                                >
+                                  <div className="font-medium text-gray-900 text-sm">
+                                    {client.first_name} {client.last_name}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {client.email} • {client.contact_number}
+                                  </div>
+                                                                     <div className="text-xs text-gray-400">
+                                     {client.tags && client.tags.length > 0 ? sortTags([...client.tags]).join(', ') : 'No tags'}
+                                   </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {clientSearchTermForNew.length >= 2 && searchResultsForNew.length === 0 && !isSearchingClientsForNew && (
+                          <div className="text-center text-gray-500 text-sm">No clients found</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedClientsForNew.length > 0 ? (
+                    <div className="space-y-2">
+                      {selectedClientsForNew.map((sel) => (
+                        <div key={sel.client.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md border border-gray-200">
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900">
+                              {sel.client.first_name} {sel.client.last_name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {sel.client.email} • {sel.client.contact_number}
+                            </div>
+                                                         <div className="text-xs text-gray-400">
+                               {sel.client.tags && sel.client.tags.length > 0 ? sortTags([...sel.client.tags]).join(', ') : 'No tags'}
+                             </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <select
+                              value={sel.relationshipType}
+                              onChange={(e) => {
+                                const value = e.target.value as ClientItem['relationship_type']
+                                setSelectedClientsForNew(prev => prev.map(p => p.client.id === sel.client.id ? { ...p, relationshipType: value } : p))
+                              }}
+                              className="text-xs border border-gray-300 rounded px-2 py-1"
+                            >
+                              <option value="Interested">Interested</option>
+                              <option value="Booked">Booked</option>
+                              <option value="Sold">Sold</option>
+                              <option value="Owned">Owned</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => removeClientForNew(sel.client.id)}
+                              className="text-red-500 hover:text-red-700"
+                              title="Remove client"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-500 py-4 text-sm border-2 border-dashed border-gray-200 rounded-md">
+                      No clients connected to this item
+                    </div>
+                  )}
+                </div>
               </form>
             </div>
             
-            {/* Footer */}
+            {/* Submit Button */}
             <div className="p-6 border-t border-gray-200">
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Cancel
-                </button>
                 <button
                   onClick={handleSubmit}
                   disabled={submitting || uploadingImages}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {submitting ? 'Adding...' : uploadingImages ? 'Uploading Images...' : 'Add Instrument'}
+                {submitting ? 'Adding...' : uploadingImages ? 'Uploading Images...' : 'Add Item'}
                 </button>
-              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* View/Edit Instrument Side Panel */}
-      {showViewModal && selectedInstrument && (
+      {/* View/Edit Item Side Panel */}
+      {showViewModal && selectedItem && (
         <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-xl z-40 border-l border-gray-200">
           <div className="h-full flex flex-col">
             {/* Header */}
             <div className="p-6 border-b border-gray-200">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-medium text-gray-900">
-                  {isEditing ? 'Edit Instrument' : 'Instrument Details'}
+                  {isEditing ? 'Edit Item' : 'Item Details'}
                 </h3>
                 <button
                   onClick={() => {
                     setShowViewModal(false)
-                    setSelectedInstrument(null)
+                    setSelectedItem(null)
                     setIsEditing(false)
                   }}
                   className="text-gray-400 hover:text-gray-600"
@@ -1412,11 +1960,11 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
             {!isEditing && (
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 {/* Image Gallery */}
-                {instrumentImages.length > 0 && (
+                {itemImages.length > 0 && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Images</label>
                     <div className="grid grid-cols-2 gap-2 mb-4">
-                      {instrumentImages.map((image) => (
+                      {itemImages.map((image) => (
                         <img
                           key={image.id}
                           src={image.image_url}
@@ -1598,7 +2146,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       </div>
                     ) : (
                       <div className="text-center text-gray-500 py-4">
-                        No clients connected to this instrument
+                        No clients connected to this item
                       </div>
                     )}
                   </div>
@@ -1606,93 +2154,12 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
               </div>
             )}
             
-            {/* Edit Mode (leave as-is for now) */}
+            {/* Edit Mode */}
             {isEditing && (
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {/* Existing Images */}
-                {instrumentImages.length > 0 && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Existing Images</label>
-                    <div className="grid grid-cols-2 gap-2 mb-4">
-                      {instrumentImages.filter(img => !imagesToDelete.includes(img.id)).map((image) => (
-                        <div key={image.id} className="relative group">
-                          <img
-                            src={image.image_url}
-                            alt={image.file_name}
-                            className="w-full h-32 object-cover rounded-lg border border-gray-200"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setImagesToDelete(prev => [...prev, image.id])}
-                            className="absolute top-1 right-1 bg-white bg-opacity-80 rounded-full p-1 text-red-600 hover:text-red-800 shadow group-hover:opacity-100 opacity-80"
-                            title="Delete image"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {/* Upload New Images */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Add Images</label>
-                  <div
-                    className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors bg-gray-50"
-                    onDrop={handleFileDrop}
-                    onDragOver={handleDragOver}
-                  >
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                      id="edit-image-upload"
-                    />
-                    <label htmlFor="edit-image-upload" className="cursor-pointer">
-                      <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                      <p className="mt-2 text-sm text-gray-600">
-                        <span className="font-medium text-blue-600 hover:text-blue-500">Click to upload</span> or drag and drop
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">PNG, JPG, GIF up to 10MB each</p>
-                    </label>
-                  </div>
-                  {/* Selected Files Preview */}
-                  {selectedFiles.length > 0 && (
-                    <div className="mt-4">
-                      <h4 className="text-sm font-medium text-gray-700 mb-2">Selected Images ({selectedFiles.length})</h4>
-                      <div className="space-y-2">
-                        {selectedFiles.map((file, index) => (
-                          <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                            <div className="flex items-center space-x-2">
-                              <img
-                                src={URL.createObjectURL(file)}
-                                alt={file.name}
-                                className="w-8 h-8 object-cover rounded"
-                              />
-                              <span className="text-sm text-gray-700">{file.name}</span>
-                              <span className="text-xs text-gray-500">({(file.size / 1024 / 1024).toFixed(1)} MB)</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => removeFile(index)}
-                              className="text-red-500 hover:text-red-700"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-6">
+                  <form className="space-y-6">
+                                         {/* Basic Information */}
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
@@ -1718,39 +2185,64 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       onChange={handleViewInputChange}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="e.g., Gibson, Fender"
+                           placeholder=""
                     />
                   </div>
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                    <input
-                      type="text"
-                      name="type"
-                      value={viewFormData.type}
+                         <div className="grid grid-cols-1 gap-3">
+                           <select
+                             name="category"
+                             value={viewFormData.category}
                       onChange={handleViewInputChange}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="e.g., Electric Guitar, Piano"
-                    />
+                           >
+                             <option value="Instrument">Instrument</option>
+                             <option value="Bow">Bow</option>
+                             <option value="Other">Other</option>
+                           </select>
+
+                           {viewFormData.category !== 'Other' && (
+                             <select
+                               name="subtype"
+                               value={viewFormData.subtype}
+                               onChange={handleViewInputChange}
+                               required
+                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                             >
+                               <option value="Violin">Violin</option>
+                               <option value="Viola">Viola</option>
+                               <option value="Cello">Cello</option>
+                               <option value="Bass">Bass</option>
+                               {viewFormData.category !== 'Bow' && (
+                                 <option value="Other">Other</option>
+                               )}
+                             </select>
+                           )}
+                         </div>
                   </div>
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
                     <input
-                      type="number"
+                           type="text"
                       name="year"
                       value={viewFormData.year}
-                      onChange={handleViewInputChange}
+                           onChange={(e) => {
+                             const raw = e.target.value.replace(/[^0-9]/g, '')
+                             setViewFormData(prev => ({ ...prev, year: raw === '' ? '' : Number(raw) }))
+                           }}
                       required
-                      min="1900"
-                      max={new Date().getFullYear()}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                           placeholder=""
                     />
                   </div>
                   
+                       {viewFormData.category === 'Instrument' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Size</label>
+                           <label className="block text-sm font-medium text-gray-700 mb-1">Size (mm)</label>
                     <input
                       type="text"
                       name="size"
@@ -1758,12 +2250,14 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       onChange={handleViewInputChange}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="e.g., Full Size, 3/4"
+                             placeholder=""
                     />
                   </div>
+                       )}
                   
+                       {viewFormData.category === 'Bow' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Weight</label>
+                           <label className="block text-sm font-medium text-gray-700 mb-1">Weight (g)</label>
                     <input
                       type="text"
                       name="weight"
@@ -1771,35 +2265,28 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       onChange={handleViewInputChange}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="e.g., 8.5 lbs"
+                             placeholder=""
                     />
                   </div>
+                       )}
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Price ($)</label>
                     <input
-                      type="number"
+                           type="text"
                       name="price"
-                      value={viewFormData.price}
-                      onChange={handleViewInputChange}
+                           value={viewPriceInput}
+                           onChange={(e) => {
+                             const raw = e.target.value.replace(/[^0-9]/g, '')
+                             setViewPriceInput(raw === '' ? '' : Number(raw).toLocaleString('en-US'))
+                             setViewFormData(prev => ({ ...prev, price: raw === '' ? 0 : Number(raw) }))
+                           }}
+                           onBlur={() => setViewPriceInput(viewFormData.price ? Number(viewFormData.price).toLocaleString('en-US') : '0')}
                       required
-                      min="0"
-                      step="0.01"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                           placeholder=""
                     />
                   </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ownership</label>
-                    <input
-                      type="text"
-                      name="ownership"
-                      value={viewFormData.ownership}
-                      onChange={handleViewInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="e.g., Personal, Company"
-                    />
                   </div>
                   
                   <div>
@@ -1810,7 +2297,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       onChange={handleViewInputChange}
                       rows={3}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 resize-none"
-                      placeholder="Add notes, condition details, or any other information..."
+                        placeholder=""
                     />
                   </div>
                   
@@ -1828,46 +2315,329 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                     </div>
                   </div>
                   
-                  {/* Images Display */}
-                  {instrumentImages.length > 0 && (
+                     {/* Ownership Section */}
+                     <div className="mt-6 pt-6 border-t border-gray-200">
+                       <div className="flex justify-between items-center mb-3">
+                         <label className="block text-sm font-medium text-gray-700">Ownership</label>
+                         <button
+                           type="button"
+                           onClick={() => setShowOwnershipSearch(true)}
+                           className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                         >
+                           Add
+                         </button>
+                       </div>
+
+                       {showOwnershipSearch && (
+                         <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                           <div className="flex justify-between items-center mb-3">
+                             <h4 className="text-sm font-medium text-gray-700">Search Owner Clients</h4>
+                             <button
+                               type="button"
+                               onClick={() => {
+                                 setShowOwnershipSearch(false)
+                                 setOwnershipSearchTerm('')
+                                 setOwnershipSearchResults([])
+                               }}
+                               className="text-gray-400 hover:text-gray-600"
+                             >
+                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                               </svg>
+                             </button>
+                           </div>
+
+                           <div className="space-y-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Images ({instrumentImages.length})</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {instrumentImages.map((image) => (
-                          <div key={image.id} className="relative group">
-                            <img
-                              src={image.image_url}
-                              alt={image.file_name}
-                              className="w-full h-32 object-cover rounded-lg border border-gray-200"
-                            />
-                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
+                               <input
+                                 type="text"
+                                 placeholder="Search by first or last name..."
+                                 value={ownershipSearchTerm}
+                                 onChange={(e) => {
+                                   setOwnershipSearchTerm(e.target.value)
+                                   searchOwnershipClients(e.target.value)
+                                 }}
+                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                               />
+                             </div>
+
+                             {isSearchingOwnership && (
+                               <div className="text-center text-gray-500 text-sm">Searching...</div>
+                             )}
+
+                             {ownershipSearchResults.length > 0 && (
+                               <div className="space-y-2">
+                                 <h5 className="text-xs font-medium text-gray-600">Results:</h5>
+                                 <div className="max-h-32 overflow-y-auto space-y-1">
+                                   {ownershipSearchResults.map((client) => (
+                                     <div
+                                       key={client.id}
+                                       className="p-2 border border-gray-200 rounded-md hover:bg-white cursor-pointer bg-white"
+                                       onClick={() => addOwnershipClient(client)}
+                                     >
+                                       <div className="font-medium text-gray-900 text-sm">
+                                         {client.first_name} {client.last_name}
+                                       </div>
+                                       <div className="text-xs text-gray-500">
+                                         {client.email} • {client.contact_number}
+                                       </div>
+                                       <div className="text-xs text-gray-400">
+                                         {client.tags && client.tags.length > 0 ? sortTags([...client.tags]).join(', ') : 'No tags'}
+                                       </div>
+                                     </div>
+                                   ))}
+                                 </div>
+                               </div>
+                             )}
+
+                             {ownershipSearchTerm.length >= 2 && ownershipSearchResults.length === 0 && !isSearchingOwnership && (
+                               <div className="text-center text-gray-500 text-sm">No owner clients found</div>
+                             )}
+                           </div>
+                         </div>
+                       )}
+
+                       {selectedOwnershipClient ? (
+                         <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md border border-gray-200">
+                           <div className="flex-1">
+                             <div className="font-medium text-gray-900">
+                               {selectedOwnershipClient.first_name} {selectedOwnershipClient.last_name}
+                             </div>
+                             <div className="text-sm text-gray-500">
+                               {selectedOwnershipClient.email} • {selectedOwnershipClient.contact_number}
+                             </div>
+                             <div className="text-xs text-gray-400">
+                               {selectedOwnershipClient.tags && selectedOwnershipClient.tags.length > 0 ? sortTags([...selectedOwnershipClient.tags]).join(', ') : 'No tags'}
+                             </div>
+                           </div>
+                           <button
+                             type="button"
+                             onClick={removeOwnershipClient}
+                             className="text-red-500 hover:text-red-700"
+                             title="Remove owner"
+                           >
+                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                             </svg>
+                           </button>
+                         </div>
+                       ) : (
+                         <div className="text-center text-gray-500 py-4 text-sm border-2 border-dashed border-gray-200 rounded-md">
+                           No owner selected for this item
+                         </div>
+                       )}
+                     </div>
+
+                    {/* Image Upload Section */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Images</label>
+                      <div
+                        className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors bg-gray-50"
+                        onDrop={handleFileDrop}
+                        onDragOver={handleDragOver}
+                      >
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={handleFileSelect}
+                          className="hidden"
+                          id="edit-image-upload"
+                        />
+                        <label htmlFor="edit-image-upload" className="cursor-pointer">
+                          <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          <p className="mt-2 text-sm text-gray-600">
+                            <span className="font-medium text-blue-600 hover:text-blue-500">Click to upload</span> or drag and drop
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">PNG, JPG, GIF up to 10MB each</p>
+                        </label>
+                      </div>
+                      
+                      {/* Selected Files Preview */}
+                      {selectedFiles.length > 0 && (
+                        <div className="mt-4">
+                          <h4 className="text-sm font-medium text-gray-700 mb-2">Selected Images ({selectedFiles.length})</h4>
+                          <div className="space-y-2">
+                            {selectedFiles.map((file, index) => (
+                              <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                                <div className="flex items-center space-x-2">
+                                  <img
+                                    src={URL.createObjectURL(file)}
+                                    alt={file.name}
+                                    className="w-8 h-8 object-cover rounded"
+                                  />
+                                  <span className="text-sm text-gray-700">{file.name}</span>
+                                  <span className="text-xs text-gray-500">({(file.size / 1024 / 1024).toFixed(1)} MB)</span>
+                                </div>
                               <button
                                 type="button"
-                                onClick={() => window.open(image.image_url, '_blank')}
-                                className="opacity-0 group-hover:opacity-100 text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm transition-opacity duration-200"
+                                  onClick={() => removeFile(index)}
+                                  className="text-red-500 hover:text-red-700"
                               >
-                                View Full Size
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
                               </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Connected Clients Section */}
+                    <div className="mt-6 pt-6 border-t border-gray-200">
+                      <div className="flex justify-between items-center mb-3">
+                        <label className="block text-sm font-medium text-gray-700">Interested</label>
+                        <button
+                          type="button"
+                          onClick={() => setShowClientSearch(true)}
+                          className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                          Add
+                        </button>
+                      </div>
+
+                      {/* Client Search Section */}
+                      {showClientSearch && (
+                        <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                          <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-sm font-medium text-gray-700">Search Clients</h4>
+                            <button
+                              onClick={() => {
+                                setShowClientSearch(false)
+                                setClientSearchTerm('')
+                                setSearchResults([])
+                              }}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                          
+                          <div className="space-y-3">
+                            <div>
+                              <input
+                                type="text"
+                                placeholder="Search by first or last name..."
+                                value={clientSearchTerm}
+                                onChange={(e) => {
+                                  setClientSearchTerm(e.target.value)
+                                  searchClients(e.target.value)
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                              />
+                            </div>
+                            
+                            {isSearchingClients && (
+                              <div className="text-center text-gray-500 text-sm">Searching...</div>
+                            )}
+                            
+                            {searchResults.length > 0 && (
+                              <div className="space-y-2">
+                                <h5 className="text-xs font-medium text-gray-600">Results:</h5>
+                                <div className="max-h-32 overflow-y-auto space-y-1">
+                                  {searchResults.map((client) => (
+                                    <div
+                                      key={client.id}
+                                      className="p-2 border border-gray-200 rounded-md hover:bg-white cursor-pointer bg-white"
+                                      onClick={() => addClientRelationship(client.id)}
+                                    >
+                                      <div className="font-medium text-gray-900 text-sm">
+                                        {client.first_name} {client.last_name}
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        {client.email} • {client.contact_number}
+                                      </div>
+                                      <div className="text-xs text-gray-400">
+                                        {client.tags && client.tags.length > 0 ? sortTags([...client.tags]).join(', ') : 'No tags'}
                             </div>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
+                            
+                            {clientSearchTerm.length >= 2 && searchResults.length === 0 && !isSearchingClients && (
+                              <div className="text-center text-gray-500 text-sm">No clients found</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Connected Clients List */}
+                      {clientRelationships.length > 0 ? (
+                        <div className="space-y-2">
+                          {clientRelationships.map((relationship) => (
+                            <div key={relationship.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md border border-gray-200">
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900">
+                                  {relationship.client?.first_name} {relationship.client?.last_name}
+                                </div>
+                                <div className="text-sm text-gray-500">
+                                  {relationship.client?.email} • {relationship.client?.contact_number}
+                                </div>
+                                <div className="text-xs text-gray-400">
+                                  {relationship.client?.tags && relationship.client.tags.length > 0 ? sortTags([...relationship.client.tags]).join(', ') : 'No tags'}
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                  relationship.relationship_type === 'Interested' ? 'bg-blue-100 text-blue-800' :
+                                  relationship.relationship_type === 'Sold' ? 'bg-green-100 text-green-800' :
+                                  relationship.relationship_type === 'Booked' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-purple-100 text-purple-800'
+                                }`}>
+                                  {relationship.relationship_type}
+                                </span>
+                                <button
+                                  onClick={() => removeClientRelationship(relationship.id)}
+                                  className="text-red-500 hover:text-red-700"
+                                  title="Remove client"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center text-gray-500 py-4 text-sm border-2 border-dashed border-gray-200 rounded-md">
+                          No clients connected to this item
+                        </div>
+                      )}
+                    </div>
+                  </form>
                 </div>
               </div>
             )}
             
             {/* Footer (Edit button in detail view) */}
             <div className="p-6 border-t border-gray-200">
-              <div className="flex justify-end space-x-3">
+              <div className="flex justify-between items-center">
+                <button
+                  type="button"
+                  onClick={handleDeleteItem}
+                  disabled={submitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                >
+                  {submitting ? 'Deleting...' : 'Remove'}
+                </button>
+                
+                <div className="flex space-x-3">
                 {!isEditing ? (
                   <button
                     type="button"
                     onClick={() => setIsEditing(true)}
                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
-                    Edit Instrument
+                      Edit Item
                   </button>
                 ) : (
                   <>
@@ -1883,10 +2653,11 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                       disabled={submitting}
                       className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
                     >
-                      {submitting ? 'Updating...' : 'Update Instrument'}
+                        {submitting ? 'Updating...' : 'Update Item'}
                     </button>
                   </>
                 )}
+                </div>
               </div>
             </div>
           </div>

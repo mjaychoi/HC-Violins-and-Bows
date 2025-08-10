@@ -8,15 +8,15 @@ DROP TABLE IF EXISTS clients CASCADE;
 -- Add note column to existing instruments table
 ALTER TABLE instruments ADD COLUMN note TEXT;
 
--- Create clients table
+-- Create clients table with new tagging system
 CREATE TABLE IF NOT EXISTS clients (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   last_name TEXT,
   first_name TEXT,
   contact_number TEXT,
   email TEXT,
-  type TEXT NOT NULL DEFAULT 'Regular' CHECK (type IN ('Musician', 'Dealer', 'Collector', 'Regular')),
-  status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Browsing', 'In Negotiation', 'Inactive')),
+  tags TEXT[] DEFAULT '{}',
+  interest TEXT,
   note TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -51,15 +51,15 @@ CREATE TABLE instrument_images (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create clients table (updated schema)
+-- Create clients table (updated schema with tagging system)
 CREATE TABLE clients (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   last_name TEXT,
   first_name TEXT,
   contact_number TEXT,
   email TEXT,
-  type TEXT NOT NULL DEFAULT 'Regular' CHECK (type IN ('Musician', 'Dealer', 'Collector', 'Regular')),
-  status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Browsing', 'In Negotiation', 'Inactive')),
+  tags TEXT[] DEFAULT '{}',
+  interest TEXT,
   note TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

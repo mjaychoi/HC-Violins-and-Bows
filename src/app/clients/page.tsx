@@ -10,8 +10,8 @@ interface Client {
   first_name: string | null
   contact_number: string | null
   email: string | null
-  type: 'Musician' | 'Dealer' | 'Collector' | 'Regular'
-  status: 'Active' | 'Browsing' | 'In Negotiation' | 'Inactive'
+  tags: string[]
+  interest: string | null
   note: string | null
   created_at: string
 }
@@ -56,18 +56,29 @@ export default function ClientsPage() {
     first_name: '',
     contact_number: '',
     email: '',
-    type: 'Regular' as Client['type'],
-    status: 'Active' as Client['status'],
+    tags: [] as string[],
+    interest: '',
     note: ''
   })
+
+  // Tagging system states
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [showInterestDropdown, setShowInterestDropdown] = useState(false)
+
+  // New client instrument connection states
+  const [showInstrumentSearchForNew, setShowInstrumentSearchForNew] = useState(false)
+  const [instrumentSearchTermForNew, setInstrumentSearchTermForNew] = useState('')
+  const [searchResultsForNew, setSearchResultsForNew] = useState<Instrument[]>([])
+  const [isSearchingInstrumentsForNew, setIsSearchingInstrumentsForNew] = useState(false)
+  const [selectedInstrumentsForNew, setSelectedInstrumentsForNew] = useState<Array<{instrument: Instrument, relationshipType: ClientInstrument['relationship_type']}>>([])
 
   const [viewFormData, setViewFormData] = useState({
     last_name: '',
     first_name: '',
     contact_number: '',
     email: '',
-    type: 'Regular' as Client['type'],
-    status: 'Active' as Client['status'],
+    tags: [] as string[],
+    interest: '',
     note: ''
   })
 
@@ -91,8 +102,8 @@ export default function ClientsPage() {
     first_name: [] as string[],
     contact_number: [] as string[],
     email: [] as string[],
-    type: [] as string[],
-    status: [] as string[],
+    tags: [] as string[],
+    interest: [] as string[],
     hasInstruments: [] as string[]
   })
 
@@ -121,6 +132,20 @@ export default function ClientsPage() {
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [showFilters])
+
+  // Check if interest dropdown should be shown
+  useEffect(() => {
+    const shouldShowInterest = selectedTags.some(tag => ['Musician', 'Dealer', 'Collector'].includes(tag))
+    setShowInterestDropdown(shouldShowInterest)
+  }, [selectedTags])
+
+  // Check if interest dropdown should be shown for edit window
+  useEffect(() => {
+    if (isEditing) {
+      const shouldShowInterest = viewFormData.tags.some(tag => ['Musician', 'Dealer', 'Collector'].includes(tag))
+      setShowInterestDropdown(shouldShowInterest)
+    }
+  }, [viewFormData.tags, isEditing])
 
   useEffect(() => {
     fetchClients()
@@ -179,6 +204,25 @@ export default function ClientsPage() {
         console.error('Supabase error:', error)
         throw error
       }
+
+      // Add instrument connections if any were selected
+      if (selectedInstrumentsForNew.length > 0 && data && data[0]) {
+        const clientId = data[0].id
+        const connections = selectedInstrumentsForNew.map(item => ({
+          client_id: clientId,
+          instrument_id: item.instrument.id,
+          relationship_type: item.relationshipType
+        }))
+
+        const { error: connectionError } = await supabase
+          .from('client_instruments')
+          .insert(connections)
+
+        if (connectionError) {
+          console.error('Error adding instrument connections:', connectionError)
+          // Don't throw here, client was created successfully
+        }
+      }
       
       // Reset form and close modal
       setFormData({
@@ -186,10 +230,16 @@ export default function ClientsPage() {
         first_name: '',
         contact_number: '',
         email: '',
-        type: 'Regular',
-        status: 'Active',
+        tags: [],
+        interest: '',
         note: ''
       })
+      setSelectedTags([])
+      setShowInterestDropdown(false)
+      setSelectedInstrumentsForNew([])
+      setShowInstrumentSearchForNew(false)
+      setInstrumentSearchTermForNew('')
+      setSearchResultsForNew([])
       setShowModal(false)
       
       // Refresh the clients list
@@ -220,8 +270,8 @@ export default function ClientsPage() {
           first_name: viewFormData.first_name,
           contact_number: viewFormData.contact_number,
           email: viewFormData.email,
-          type: viewFormData.type,
-          status: viewFormData.status,
+          tags: viewFormData.tags,
+          interest: viewFormData.interest,
           note: viewFormData.note
         })
         .eq('id', selectedClient.id)
@@ -233,6 +283,40 @@ export default function ClientsPage() {
     } catch (error) {
       console.error('Error updating client:', error)
       alert('Failed to update client')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDeleteClient = async () => {
+    if (!selectedClient) return
+    
+    const confirmed = window.confirm('Are you sure you want to delete this client? This action cannot be undone.')
+    if (!confirmed) return
+    
+    setSubmitting(true)
+    
+    try {
+      // Delete client relationships first
+      await supabase.from('client_instruments').delete().eq('client_id', selectedClient.id)
+      
+      // Delete the client
+      const { error } = await supabase
+        .from('clients')
+        .delete()
+        .eq('id', selectedClient.id)
+
+      if (error) throw error
+
+      // Close modal and refresh
+      setShowViewModal(false)
+      setSelectedClient(null)
+      await fetchClients()
+      
+      alert('Client deleted successfully!')
+    } catch (error) {
+      console.error('Error deleting client:', error)
+      alert('Failed to delete client')
     } finally {
       setSubmitting(false)
     }
@@ -261,8 +345,8 @@ export default function ClientsPage() {
       first_name: client.first_name || '',
       contact_number: client.contact_number || '',
       email: client.email || '',
-      type: client.type,
-      status: client.status,
+      tags: client.tags || [],
+      interest: client.interest || '',
       note: client.note || ''
     })
     setIsEditing(false)
@@ -312,6 +396,47 @@ export default function ClientsPage() {
     } finally {
       setIsSearchingInstruments(false)
     }
+  }
+
+  const searchInstrumentsForNew = async (searchTerm: string) => {
+    if (searchTerm.length < 2) {
+      setSearchResultsForNew([])
+      return
+    }
+
+    setIsSearchingInstrumentsForNew(true)
+    try {
+      const { data, error } = await supabase
+        .from('instruments')
+        .select('*')
+        .or(`maker.ilike.%${searchTerm}%,type.ilike.%${searchTerm}%`)
+        .limit(10)
+      
+      if (error) throw error
+      // Filter out instruments already selected to prevent duplicates
+      const selectedIds = new Set(selectedInstrumentsForNew.map(si => si.instrument.id))
+      const filtered = (data || []).filter(inst => !selectedIds.has(inst.id))
+      setSearchResultsForNew(filtered)
+    } catch (error) {
+      console.error('Error searching instruments:', error)
+      setSearchResultsForNew([])
+    } finally {
+      setIsSearchingInstrumentsForNew(false)
+    }
+  }
+
+  const addInstrumentForNew = (instrument: Instrument, relationshipType: ClientInstrument['relationship_type'] = 'Interested') => {
+    setSelectedInstrumentsForNew(prev => {
+      if (prev.some(p => p.instrument.id === instrument.id)) return prev
+      return [...prev, { instrument, relationshipType }]
+    })
+    setShowInstrumentSearchForNew(false)
+    setInstrumentSearchTermForNew('')
+    setSearchResultsForNew([])
+  }
+
+  const removeInstrumentForNew = (instrumentId: string) => {
+    setSelectedInstrumentsForNew(prev => prev.filter(item => item.instrument.id !== instrumentId))
   }
 
   const addInstrumentRelationship = async (instrumentId: string, relationshipType: ClientInstrument['relationship_type'] = 'Interested') => {
@@ -368,13 +493,11 @@ export default function ClientsPage() {
   const getUniqueFirstNames = () => getUniqueValues('first_name')
   const getUniqueContactNumbers = () => getUniqueValues('contact_number')
   const getUniqueEmails = () => getUniqueValues('email')
-  const getUniqueTypes = () => getUniqueValues('type')
-  const getUniqueStatuses = () => getUniqueValues('status')
 
   // Handle filter changes
   const handleFilterChange = (category: keyof typeof filters, value: string) => {
     setFilters(prev => {
-      const currentValues = prev[category] as string[]
+      const currentValues = prev[category]
       const newValues = currentValues.includes(value)
         ? currentValues.filter(v => v !== value)
         : [...currentValues, value]
@@ -392,8 +515,8 @@ export default function ClientsPage() {
       first_name: [],
       contact_number: [],
       email: [],
-      type: [],
-      status: [],
+      tags: [],
+      interest: [],
       hasInstruments: []
     })
   }
@@ -453,11 +576,13 @@ export default function ClientsPage() {
       // Email filter
       const matchesEmail = filters.email.length === 0 || (client.email && filters.email.includes(client.email))
       
-      // Type filter
-      const matchesType = filters.type.length === 0 || filters.type.includes(client.type)
+      // Tags filter
+      const matchesTags = filters.tags.length === 0 || 
+        (client.tags && client.tags.some(tag => filters.tags.includes(tag)))
       
-      // Status filter
-      const matchesStatus = filters.status.length === 0 || filters.status.includes(client.status)
+      // Interest filter
+      const matchesInterest = filters.interest.length === 0 || 
+        (client.interest && filters.interest.includes(client.interest))
       
       // Has instruments filter
       const hasInstruments = clientsWithInstruments.has(client.id)
@@ -465,7 +590,7 @@ export default function ClientsPage() {
         (filters.hasInstruments.includes('Has Instruments') && hasInstruments) ||
         (filters.hasInstruments.includes('No Instruments') && !hasInstruments)
       
-      return matchesSearch && matchesLastName && matchesFirstName && matchesContactNumber && matchesEmail && matchesType && matchesStatus && matchesHasInstruments
+      return matchesSearch && matchesLastName && matchesFirstName && matchesContactNumber && matchesEmail && matchesTags && matchesInterest && matchesHasInstruments
     })
     .sort((a, b) => {
       const aValue = a[sortBy as keyof Client]
@@ -481,56 +606,91 @@ export default function ClientsPage() {
       }
     })
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Active': return 'bg-green-100 text-green-800'
-      case 'Browsing': return 'bg-blue-100 text-blue-800'
-      case 'In Negotiation': return 'bg-yellow-100 text-yellow-800'
-      case 'Inactive': return 'bg-red-100 text-red-800'
+  // Tag management functions
+  const addTag = (tag: string) => {
+    if (!selectedTags.includes(tag)) {
+      setSelectedTags([...selectedTags, tag])
+      setFormData(prev => ({ ...prev, tags: [...prev.tags, tag] }))
+    }
+  }
+
+  const removeTag = (tag: string) => {
+    setSelectedTags(selectedTags.filter(t => t !== tag))
+    setFormData(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }))
+  }
+
+  // Tag color function
+  const getTagColor = (tag: string) => {
+    switch (tag) {
+      case 'Musician': return 'bg-blue-100 text-blue-800'
+      case 'Dealer': return 'bg-green-100 text-green-800'
+      case 'Collector': return 'bg-purple-100 text-purple-800'
+      case 'Owner': return 'bg-orange-100 text-orange-800'
+      case 'Other': return 'bg-gray-100 text-gray-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'Musician': return 'bg-purple-100 text-purple-800'
-      case 'Dealer': return 'bg-indigo-100 text-indigo-800'
-      case 'Collector': return 'bg-orange-100 text-orange-800'
-      case 'Regular': return 'bg-gray-100 text-gray-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
+  const sortTags = (tags: string[]) => {
+    return tags.sort((a, b) => {
+      if (a === 'Owner') return -1
+      if (b === 'Owner') return 1
+      return a.localeCompare(b)
+    })
+  }
+
+
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading clients...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-white flex">
       {/* Collapsible Sidebar */}
-      <div 
+      <div
         className={`bg-white shadow-lg transition-all duration-300 ease-in-out ${
           sidebarExpanded ? 'w-64' : 'w-1'
         } overflow-hidden`}
         onMouseEnter={() => setSidebarExpanded(true)}
         onMouseLeave={() => setSidebarExpanded(false)}
       >
-        <div className="p-6">
-          <h1 className={`text-xl font-bold text-gray-900 transition-opacity duration-300 ${
-            sidebarExpanded ? 'opacity-100' : 'opacity-0'
-          }`}>
-            Menu
-          </h1>
+        <div className="p-4">
+          <div className="flex items-center mb-6">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <span className={`ml-3 text-lg font-semibold text-gray-900 transition-opacity duration-300 ${
+              sidebarExpanded ? 'opacity-100' : 'opacity-0'
+            }`}>
+              Inventory App
+            </span>
+          </div>
         </div>
-        <nav className="mt-6">
+        
+        <nav className="space-y-1">
           <Link href="/dashboard" className={`px-6 py-3 hover:bg-gray-50 cursor-pointer transition-all duration-300 ${
             sidebarExpanded ? 'justify-start' : 'justify-center'
           } flex items-center`}>
             <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
             </svg>
             <span className={`ml-3 text-gray-700 transition-opacity duration-300 ${
               sidebarExpanded ? 'opacity-100' : 'opacity-0'
             }`}>
-              Instruments
+              Items
             </span>
           </Link>
+
           <Link href="/clients" className={`px-6 py-3 bg-blue-50 border-r-2 border-blue-500 transition-all duration-300 ${
             sidebarExpanded ? 'justify-start' : 'justify-center'
           } flex items-center`}>
@@ -543,7 +703,7 @@ export default function ClientsPage() {
               Clients
             </span>
           </Link>
-          <div className={`px-6 py-3 hover:bg-gray-50 cursor-pointer transition-all duration-300 ${
+          <Link href="/form" className={`px-6 py-3 hover:bg-gray-50 cursor-pointer transition-all duration-300 ${
             sidebarExpanded ? 'justify-start' : 'justify-center'
           } flex items-center`}>
             <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -552,9 +712,9 @@ export default function ClientsPage() {
             <span className={`ml-3 text-gray-700 transition-opacity duration-300 ${
               sidebarExpanded ? 'opacity-100' : 'opacity-0'
             }`}>
-              Forms
+              Connected Clients
             </span>
-          </div>
+          </Link>
         </nav>
       </div>
 
@@ -676,37 +836,37 @@ export default function ClientsPage() {
                     </div>
                   </div>
                   
-                  {/* Type Filter */}
+                  {/* Tags Filter */}
                   <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Type</h4>
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Tags</h4>
                     <div className="space-y-2">
-                      {['Musician', 'Dealer', 'Collector', 'Regular'].map(type => (
-                        <label key={type} className="flex items-center">
+                      {['Owner', 'Musician', 'Dealer', 'Collector', 'Other'].map(tag => (
+                        <label key={tag} className="flex items-center">
                           <input
                             type="checkbox"
-                            checked={filters.type.includes(type)}
-                            onChange={() => handleFilterChange('type', type)}
+                            checked={filters.tags.includes(tag)}
+                            onChange={() => handleFilterChange('tags', tag)}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                           />
-                          <span className="ml-2 text-sm text-gray-700">{type}</span>
+                          <span className="ml-2 text-sm text-gray-700">{tag}</span>
                         </label>
                       ))}
                     </div>
                   </div>
                   
-                  {/* Status Filter */}
+                  {/* Interest Filter */}
                   <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Status</h4>
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Interest</h4>
                     <div className="space-y-2">
-                      {['Active', 'Browsing', 'In Negotiation', 'Inactive'].map(status => (
-                        <label key={status} className="flex items-center">
+                      {['Active', 'Passive', 'Inactive'].map(interest => (
+                        <label key={interest} className="flex items-center">
                           <input
                             type="checkbox"
-                            checked={filters.status.includes(status)}
-                            onChange={() => handleFilterChange('status', status)}
+                            checked={filters.interest.includes(interest)}
+                            onChange={() => handleFilterChange('interest', interest)}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                           />
-                          <span className="ml-2 text-sm text-gray-700">{status}</span>
+                          <span className="ml-2 text-sm text-gray-700">{interest}</span>
                         </label>
                       ))}
                     </div>
@@ -738,94 +898,87 @@ export default function ClientsPage() {
                   </div>
                 </div>
                 
-                {/* Clear Filters Button */}
                 <div className="mt-4 pt-4 border-t border-gray-200">
                   <button
                     onClick={clearAllFilters}
-                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors"
+                    className="text-sm text-gray-600 hover:text-gray-800 underline"
                   >
-                    Clear All Filters
+                    Clear all filters
                   </button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Customers Table */}
-          <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+          {/* Clients Table */}
+          <div className="bg-white rounded-lg shadow border border-gray-200">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                       onClick={() => handleColumnSort('last_name')}
                     >
-                      <div className="flex items-center space-x-1">
-                        <span>Last Name</span>
+                      <div className="flex items-center">
+                        Last Name
                         {getSortArrow('last_name')}
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                       onClick={() => handleColumnSort('first_name')}
                     >
-                      <div className="flex items-center space-x-1">
-                        <span>First Name</span>
+                      <div className="flex items-center">
+                        First Name
                         {getSortArrow('first_name')}
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                       onClick={() => handleColumnSort('contact_number')}
                     >
-                      <div className="flex items-center space-x-1">
-                        <span>Contact Number</span>
+                      <div className="flex items-center">
+                        Contact
                         {getSortArrow('contact_number')}
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                       onClick={() => handleColumnSort('email')}
                     >
-                      <div className="flex items-center space-x-1">
-                        <span>Email</span>
+                      <div className="flex items-center">
+                        Email
                         {getSortArrow('email')}
                       </div>
                     </th>
-                    <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
-                      onClick={() => handleColumnSort('type')}
-                    >
-                      <div className="flex items-center space-x-1">
-                        <span>Type</span>
-                        {getSortArrow('type')}
-                      </div>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tags
                     </th>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group"
-                      onClick={() => handleColumnSort('status')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleColumnSort('interest')}
                     >
-                      <div className="flex items-center space-x-1">
-                        <span>Status</span>
-                        {getSortArrow('status')}
+                      <div className="flex items-center">
+                        Interest
+                        {getSortArrow('interest')}
                       </div>
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {loading ? (
+                  {filteredClients.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">Loading clients...</td>
-                    </tr>
-                  ) : filteredClients.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">No clients found.</td>
+                      <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                        {searchTerm || Object.values(filters).some(f => f.length > 0) 
+                          ? 'No clients match your search criteria' 
+                          : 'No clients found'}
+                      </td>
                     </tr>
                   ) : (
                     filteredClients.map((client) => (
-                      <tr 
-                        key={client.id} 
+                      <tr
+                        key={client.id}
                         className="hover:bg-gray-50 cursor-pointer"
                         onClick={() => handleRowClick(client)}
                       >
@@ -834,10 +987,20 @@ export default function ClientsPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{client.contact_number || '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{client.email || '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTypeColor(client.type)}`}>{client.type}</span>
+                          <div className="flex flex-wrap gap-1">
+                            {client.tags && client.tags.length > 0 ? (
+                              sortTags([...client.tags]).map((tag, index) => (
+                                <span key={index} className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTagColor(tag)}`}>
+                                  {tag}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-gray-400 text-sm">-</span>
+                            )}
+                          </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(client.status)}`}>{client.status}</span>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {client.interest || '-'}
                         </td>
                       </tr>
                     ))
@@ -849,7 +1012,7 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* Add Customer Side Panel */}
+      {/* Add Client Side Panel */}
       {showModal && (
         <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-xl z-40 border-l border-gray-200">
           <div className="h-full flex flex-col">
@@ -870,7 +1033,7 @@ export default function ClientsPage() {
             
             {/* Form */}
             <div className="flex-1 overflow-y-auto">
-              <form className="p-6 space-y-4 text-gray-900">
+              <form onSubmit={handleSubmit} className="p-6 space-y-4 text-gray-900">
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
@@ -922,37 +1085,41 @@ export default function ClientsPage() {
                     />
                   </div>
                   
+                  {/* Tags Section */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                    <select
-                      name="type"
-                      value={formData.type}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                    >
-                      <option value="Regular">Regular</option>
-                      <option value="Musician">Musician</option>
-                      <option value="Dealer">Dealer</option>
-                      <option value="Collector">Collector</option>
-                    </select>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                    <div className="space-y-2">
+                      {['Owner', 'Musician', 'Dealer', 'Collector', 'Other'].map(tag => (
+                        <label key={tag} className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedTags.includes(tag)}
+                            onChange={(e) => e.target.checked ? addTag(tag) : removeTag(tag)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="ml-2 text-sm text-gray-700">{tag}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
                   
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                    <select
-                      name="status"
-                      value={formData.status}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Browsing">Browsing</option>
-                      <option value="In Negotiation">In Negotiation</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
-                  </div>
+                  {/* Interest Section - Conditional */}
+                  {showInterestDropdown && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Interest</label>
+                      <select
+                        name="interest"
+                        value={formData.interest}
+                        onChange={handleInputChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                      >
+                        <option value="">Select Interest</option>
+                        <option value="Active">Active</option>
+                        <option value="Passive">Passive</option>
+                        <option value="Inactive">Inactive</option>
+                      </select>
+                    </div>
+                  )}
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
@@ -965,28 +1132,126 @@ export default function ClientsPage() {
                       placeholder="Add notes or additional information..."
                     />
                   </div>
+
+                  {/* Instrument Connections Section */}
+                  <div className="mt-6 pt-6 border-t border-gray-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="block text-sm font-medium text-gray-700">Connect Instruments (Optional)</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowInstrumentSearchForNew(true)}
+                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        Add Instrument
+                      </button>
+                    </div>
+                    
+                    {/* Instrument Search Section */}
+                    {showInstrumentSearchForNew && (
+                      <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-sm font-medium text-gray-700">Search Instruments</h4>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowInstrumentSearchForNew(false)
+                              setInstrumentSearchTermForNew('')
+                              setSearchResultsForNew([])
+                            }}
+                            className="text-gray-400 hover:text-gray-600"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="Search by maker or type..."
+                              value={instrumentSearchTermForNew}
+                              onChange={(e) => {
+                                setInstrumentSearchTermForNew(e.target.value)
+                                searchInstrumentsForNew(e.target.value)
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+                          
+                          {isSearchingInstrumentsForNew && (
+                            <div className="text-center text-gray-500 text-sm">Searching...</div>
+                          )}
+                          
+                          {searchResultsForNew.length > 0 && (
+                            <div className="space-y-2">
+                              <h5 className="text-xs font-medium text-gray-600">Results:</h5>
+                              <div className="max-h-32 overflow-y-auto space-y-1">
+                                {searchResultsForNew.map((instrument) => (
+                                  <div
+                                    key={instrument.id}
+                                    className="p-2 border border-gray-200 rounded-md hover:bg-white cursor-pointer bg-white"
+                                    onClick={() => addInstrumentForNew(instrument)}
+                                  >
+                                    <div className="text-sm font-medium text-gray-900">
+                                      {instrument.maker || 'Unknown Maker'}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {instrument.type || 'Unknown Type'}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Selected Instruments */}
+                    {selectedInstrumentsForNew.length > 0 && (
+                      <div className="mt-3">
+                        <h5 className="text-xs font-medium text-gray-600 mb-2">Selected Instruments:</h5>
+                        <div className="space-y-2">
+                          {selectedInstrumentsForNew.map((item) => (
+                            <div key={item.instrument.id} className="flex items-center justify-between p-2 bg-blue-50 rounded-md">
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {item.instrument.maker || 'Unknown Maker'}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {item.instrument.type || 'Unknown Type'}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeInstrumentForNew(item.instrument.id)}
+                                className="ml-2 text-red-500 hover:text-red-700"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Submit Button */}
+                <div className="pt-4 border-t border-gray-200">
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {submitting ? 'Adding Client...' : 'Add Client'}
+                  </button>
                 </div>
               </form>
-            </div>
-            
-            {/* Footer */}
-            <div className="p-6 border-t border-gray-200">
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                >
-                  {submitting ? 'Adding...' : 'Add Client'}
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -1003,11 +1268,7 @@ export default function ClientsPage() {
                   {isEditing ? 'Edit Client' : 'Client Details'}
                 </h3>
                 <button
-                  onClick={() => {
-                    setShowViewModal(false)
-                    setSelectedClient(null)
-                    setIsEditing(false)
-                  }}
+                  onClick={() => setShowViewModal(false)}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1017,50 +1278,287 @@ export default function ClientsPage() {
               </div>
             </div>
             
-            {/* Detail View (not edit mode) */}
-            {!isEditing && (
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {/* Info Card */}
-                <div className="bg-white rounded-lg p-4 shadow border border-gray-200 space-y-3">
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-gray-700">Last Name:</span>
-                    <span className="text-gray-900">{viewFormData.last_name || '-'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-gray-700">First Name:</span>
-                    <span className="text-gray-900">{viewFormData.first_name || '-'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-gray-700">Contact Number:</span>
-                    <span className="text-gray-900">{viewFormData.contact_number || '-'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-gray-700">Email:</span>
-                    <span className="text-gray-900">{viewFormData.email || '-'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-gray-700">Type:</span>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTypeColor(viewFormData.type)}`}>{viewFormData.type}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-gray-700">Status:</span>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(viewFormData.status)}`}>{viewFormData.status}</span>
-                  </div>
-                  {viewFormData.note && (
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <div className="space-y-2">
-                        <span className="font-semibold text-gray-700">Note:</span>
-                        <div className="text-gray-900 bg-gray-50 p-3 rounded-md text-sm whitespace-pre-wrap">
-                          {viewFormData.note}
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto">
+              {isEditing ? (
+                <div className="flex-1 overflow-y-auto">
+                  <form className="p-6 space-y-4 text-gray-900">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                        <input
+                          type="text"
+                          name="last_name"
+                          value={viewFormData.last_name}
+                          onChange={handleViewInputChange}
+                          required
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                          placeholder="Enter last name"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                        <input
+                          type="text"
+                          name="first_name"
+                          value={viewFormData.first_name}
+                          onChange={handleViewInputChange}
+                          required
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                          placeholder="Enter first name"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+                        <input
+                          type="tel"
+                          name="contact_number"
+                          value={viewFormData.contact_number}
+                          onChange={handleViewInputChange}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                          placeholder="Enter contact number"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input
+                          type="email"
+                          name="email"
+                          value={viewFormData.email}
+                          onChange={handleViewInputChange}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                          placeholder="Enter email address"
+                        />
+                      </div>
+                      
+                      {/* Tags Section */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                        <div className="space-y-2">
+                          {['Owner', 'Musician', 'Dealer', 'Collector', 'Other'].map(tag => (
+                            <label key={tag} className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={viewFormData.tags.includes(tag)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    if (!viewFormData.tags.includes(tag)) {
+                                      setViewFormData(prev => ({ ...prev, tags: [...prev.tags, tag] }))
+                                    }
+                                  } else {
+                                    setViewFormData(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }))
+                                  }
+                                }}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                              />
+                              <span className="ml-2 text-sm text-gray-700">{tag}</span>
+                            </label>
+                          ))}
                         </div>
                       </div>
+                      
+                      {/* Interest Section - Conditional */}
+                      {showInterestDropdown && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Interest</label>
+                          <select
+                            name="interest"
+                            value={viewFormData.interest}
+                            onChange={handleViewInputChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                          >
+                            <option value="">Select Interest</option>
+                            <option value="Active">Active</option>
+                            <option value="Passive">Passive</option>
+                            <option value="Inactive">Inactive</option>
+                          </select>
+                        </div>
+                      )}
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                        <textarea
+                          name="note"
+                          value={viewFormData.note}
+                          onChange={handleViewInputChange}
+                          rows={3}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 resize-none"
+                          placeholder="Add notes or additional information..."
+                        />
+                      </div>
+
+                      {/* Instrument Connections Section */}
+                      <div className="mt-6 pt-6 border-t border-gray-200">
+                        <div className="flex justify-between items-center mb-3">
+                          <label className="block text-sm font-medium text-gray-700">Connect Instruments (Optional)</label>
+                          <button
+                            type="button"
+                            onClick={() => setShowInstrumentSearch(true)}
+                            className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                          >
+                            Add Instrument
+                          </button>
+                        </div>
+                        
+                        {/* Instrument Search Section */}
+                        {showInstrumentSearch && (
+                          <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                            <div className="flex justify-between items-center mb-3">
+                              <h4 className="text-sm font-medium text-gray-700">Search Instruments</h4>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowInstrumentSearch(false)
+                                  setInstrumentSearchTerm('')
+                                  setSearchResults([])
+                                }}
+                                className="text-gray-400 hover:text-gray-600"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                            
+                            <div className="space-y-3">
+                              <div>
+                                <input
+                                  type="text"
+                                  placeholder="Search by maker or type..."
+                                  value={instrumentSearchTerm}
+                                  onChange={(e) => {
+                                    setInstrumentSearchTerm(e.target.value)
+                                    searchInstruments(e.target.value)
+                                  }}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                              </div>
+                              
+                              {isSearchingInstruments && (
+                                <div className="text-center text-gray-500 text-sm">Searching...</div>
+                              )}
+                              
+                              {searchResults.length > 0 && (
+                                <div className="space-y-2">
+                                  <h5 className="text-xs font-medium text-gray-600">Results:</h5>
+                                  <div className="max-h-32 overflow-y-auto space-y-1">
+                                    {searchResults.map((instrument) => (
+                                      <div
+                                        key={instrument.id}
+                                        className="p-2 border border-gray-200 rounded-md hover:bg-white cursor-pointer bg-white"
+                                        onClick={() => addInstrumentRelationship(instrument.id)}
+                                      >
+                                        <div className="text-sm font-medium text-gray-900">
+                                          {instrument.maker || 'Unknown Maker'}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                          {instrument.type || 'Unknown Type'}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {instrumentSearchTerm.length >= 2 && searchResults.length === 0 && !isSearchingInstruments && (
+                                <div className="text-center text-gray-500 text-sm">No instruments found</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Selected Instruments */}
+                        {instrumentRelationships.length > 0 ? (
+                          <div className="space-y-2">
+                            {instrumentRelationships.map((relationship) => (
+                              <div key={relationship.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md border border-gray-200">
+                                <div className="flex-1">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {relationship.instrument?.maker || 'Unknown Maker'}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {relationship.instrument?.type || 'Unknown Type'}
+                                  </div>
+                                  <div className="text-xs text-blue-600">
+                                    {relationship.relationship_type}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => removeInstrumentRelationship(relationship.id)}
+                                  className="text-red-500 hover:text-red-700"
+                                  title="Remove instrument"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center text-gray-500 py-4 text-sm border-2 border-dashed border-gray-200 rounded-md">
+                            No instruments connected to this client
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  </form>
+                </div>
+              ) : (
+                <div className="p-6 space-y-4">
+                  {/* Client Details */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-gray-700">Last Name:</span>
+                      <span className="text-gray-900">{selectedClient.last_name || '-'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-gray-700">First Name:</span>
+                      <span className="text-gray-900">{selectedClient.first_name || '-'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-gray-700">Contact Number:</span>
+                      <span className="text-gray-900">{selectedClient.contact_number || '-'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-gray-700">Email:</span>
+                      <span className="text-gray-900">{selectedClient.email || '-'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-gray-700">Tags:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {selectedClient.tags && selectedClient.tags.length > 0 ? (
+                          sortTags([...selectedClient.tags]).map((tag, index) => (
+                            <span key={index} className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTagColor(tag)}`}>
+                              {tag}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-gray-400 text-sm">-</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-gray-700">Interest:</span>
+                      <span className="text-gray-900">{selectedClient.interest || '-'}</span>
+                    </div>
+                    {selectedClient.note && (
+                      <div className="flex justify-between">
+                        <span className="font-semibold text-gray-700">Note:</span>
+                        <span className="text-gray-900 text-sm max-w-xs text-right">{selectedClient.note}</span>
+                      </div>
+                    )}
+                  </div>
                   
-                  {/* Instrument Relationships Section */}
-                  <div className="mt-4 pt-4 border-t border-gray-200">
+
+                  
+                  {/* Instrument Relationships */}
+                  <div className="pt-4 border-t border-gray-200">
                     <div className="flex justify-between items-center mb-3">
-                      <span className="font-semibold text-gray-700">Connected Instruments</span>
+                      <h4 className="text-sm font-medium text-gray-700">Connected Instruments</h4>
                       <button
                         onClick={() => setShowInstrumentSearch(true)}
                         className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
@@ -1069,11 +1567,11 @@ export default function ClientsPage() {
                       </button>
                     </div>
                     
-                    {/* Instrument Search Section */}
+                    {/* Instrument Search */}
                     {showInstrumentSearch && (
-                      <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                      <div className="mb-4 p-3 bg-gray-50 rounded-md border border-gray-200">
                         <div className="flex justify-between items-center mb-3">
-                          <h4 className="text-sm font-medium text-gray-700">Search Instruments</h4>
+                          <h5 className="text-sm font-medium text-gray-700">Search Instruments</h5>
                           <button
                             onClick={() => {
                               setShowInstrumentSearch(false)
@@ -1089,18 +1587,16 @@ export default function ClientsPage() {
                         </div>
                         
                         <div className="space-y-3">
-                          <div>
-                            <input
-                              type="text"
-                              placeholder="Search by maker or type..."
-                              value={instrumentSearchTerm}
-                              onChange={(e) => {
-                                setInstrumentSearchTerm(e.target.value)
-                                searchInstruments(e.target.value)
-                              }}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                          </div>
+                          <input
+                            type="text"
+                            placeholder="Search by maker or type..."
+                            value={instrumentSearchTerm}
+                            onChange={(e) => {
+                              setInstrumentSearchTerm(e.target.value)
+                              searchInstruments(e.target.value)
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          />
                           
                           {isSearchingInstruments && (
                             <div className="text-center text-gray-500 text-sm">Searching...</div>
@@ -1108,7 +1604,7 @@ export default function ClientsPage() {
                           
                           {searchResults.length > 0 && (
                             <div className="space-y-2">
-                              <h5 className="text-xs font-medium text-gray-600">Results:</h5>
+                              <h6 className="text-xs font-medium text-gray-600">Results:</h6>
                               <div className="max-h-32 overflow-y-auto space-y-1">
                                 {searchResults.map((instrument) => (
                                   <div
@@ -1116,206 +1612,96 @@ export default function ClientsPage() {
                                     className="p-2 border border-gray-200 rounded-md hover:bg-white cursor-pointer bg-white"
                                     onClick={() => addInstrumentRelationship(instrument.id)}
                                   >
-                                    <div className="font-medium text-gray-900 text-sm">
-                                      {instrument.maker} {instrument.type}
+                                    <div className="text-sm font-medium text-gray-900">
+                                      {instrument.maker || 'Unknown Maker'}
                                     </div>
                                     <div className="text-xs text-gray-500">
-                                      Year: {instrument.year} • Price: ${instrument.price?.toLocaleString() || '0'}
-                                    </div>
-                                    <div className="text-xs text-gray-400">
-                                      Status: {instrument.status} • Size: {instrument.size}
+                                      {instrument.type || 'Unknown Type'}
                                     </div>
                                   </div>
                                 ))}
                               </div>
                             </div>
                           )}
-                          
-                          {instrumentSearchTerm.length >= 2 && searchResults.length === 0 && !isSearchingInstruments && (
-                            <div className="text-center text-gray-500 text-sm">No instruments found</div>
-                          )}
                         </div>
                       </div>
                     )}
                     
                     {/* Connected Instruments List */}
-                    {instrumentRelationships.length > 0 ? (
-                      <div className="space-y-2">
-                        {instrumentRelationships.map((relationship) => (
-                          <div key={relationship.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                    <div className="space-y-2">
+                      {instrumentRelationships.length === 0 ? (
+                        <p className="text-gray-500 text-sm">No instruments connected to this client.</p>
+                      ) : (
+                        instrumentRelationships.map((relationship) => (
+                          <div key={relationship.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
                             <div className="flex-1">
-                              <div className="font-medium text-gray-900">
-                                {relationship.instrument?.maker} {relationship.instrument?.type}
+                              <div className="text-sm font-medium text-gray-900">
+                                {relationship.instrument?.maker || 'Unknown Maker'}
                               </div>
-                              <div className="text-sm text-gray-500">
-                                Year: {relationship.instrument?.year} • Price: ${relationship.instrument?.price?.toLocaleString() || '0'}
+                              <div className="text-xs text-gray-500">
+                                {relationship.instrument?.type || 'Unknown Type'}
                               </div>
-                              <div className="text-xs text-gray-400">
-                                Status: {relationship.instrument?.status} • Size: {relationship.instrument?.size}
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                relationship.relationship_type === 'Interested' ? 'bg-blue-100 text-blue-800' :
-                                relationship.relationship_type === 'Sold' ? 'bg-green-100 text-green-800' :
-                                relationship.relationship_type === 'Booked' ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-purple-100 text-purple-800'
-                              }`}>
+                              <div className="text-xs text-blue-600">
                                 {relationship.relationship_type}
-                              </span>
-                              <button
-                                onClick={() => removeInstrumentRelationship(relationship.id)}
-                                className="text-red-500 hover:text-red-700"
-                                title="Remove instrument"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </button>
+                              </div>
                             </div>
+                            <button
+                              onClick={() => removeInstrumentRelationship(relationship.id)}
+                              className="ml-2 text-red-500 hover:text-red-700"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
                           </div>
-                        ))}
-                      </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Footer (Edit button in detail view) */}
+              <div className="p-6 border-t border-gray-200">
+                <div className="flex justify-between items-center">
+                  <button
+                    type="button"
+                    onClick={handleDeleteClient}
+                    disabled={submitting}
+                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                  >
+                    {submitting ? 'Deleting...' : 'Remove'}
+                  </button>
+                  
+                  <div className="flex space-x-3">
+                    {!isEditing ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditing(true)}
+                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        Edit Client
+                      </button>
                     ) : (
-                      <div className="text-center text-gray-500 py-4">
-                        No instruments connected to this client
-                      </div>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditing(false)}
+                          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleUpdate}
+                          disabled={submitting}
+                          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                        >
+                          {submitting ? 'Updating...' : 'Update Client'}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
-              </div>
-            )}
-            
-            {/* Edit Mode */}
-            {isEditing && (
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                    <input
-                      type="text"
-                      name="last_name"
-                      value={viewFormData.last_name}
-                      onChange={handleViewInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="Enter last name"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                    <input
-                      type="text"
-                      name="first_name"
-                      value={viewFormData.first_name}
-                      onChange={handleViewInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="Enter first name"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
-                    <input
-                      type="tel"
-                      name="contact_number"
-                      value={viewFormData.contact_number}
-                      onChange={handleViewInputChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="Enter contact number"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={viewFormData.email}
-                      onChange={handleViewInputChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="Enter email address"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                    <select
-                      name="type"
-                      value={viewFormData.type}
-                      onChange={handleViewInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                    >
-                      <option value="Regular">Regular</option>
-                      <option value="Musician">Musician</option>
-                      <option value="Dealer">Dealer</option>
-                      <option value="Collector">Collector</option>
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                    <select
-                      name="status"
-                      value={viewFormData.status}
-                      onChange={handleViewInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Browsing">Browsing</option>
-                      <option value="In Negotiation">In Negotiation</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-                    <textarea
-                      name="note"
-                      value={viewFormData.note}
-                      onChange={handleViewInputChange}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 resize-none"
-                      placeholder="Add notes or additional information..."
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Footer */}
-            <div className="p-6 border-t border-gray-200">
-              <div className="flex justify-end space-x-3">
-                {!isEditing ? (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(true)}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                  >
-                    Edit Client
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditing(false)}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleUpdate}
-                      disabled={submitting}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                    >
-                      {submitting ? 'Updating...' : 'Update Client'}
-                    </button>
-                  </>
-                )}
               </div>
             </div>
           </div>

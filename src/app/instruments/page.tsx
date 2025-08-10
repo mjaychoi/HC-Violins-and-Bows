@@ -4,15 +4,36 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
-interface Instrument {
+interface Item {
   id: string
   maker: string
   name: string
   year: number
 }
 
+interface Client {
+  id: string
+  last_name: string | null
+  first_name: string | null
+  contact_number: string | null
+  email: string | null
+  type: 'Musician' | 'Dealer' | 'Collector' | 'Regular'
+  status: 'Active' | 'Browsing' | 'In Negotiation' | 'Inactive'
+  note: string | null
+  created_at: string
+}
+
+interface ClientInstrument {
+  id: string
+  client_id: string
+  instrument_id: string
+  relationship_type: 'Interested' | 'Sold' | 'Booked' | 'Owned'
+  notes: string | null
+  created_at: string
+}
+
 export default function InstrumentsPage() {
-  const [instruments, setInstruments] = useState<Instrument[]>([])
+  const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState({
@@ -21,6 +42,13 @@ export default function InstrumentsPage() {
     year: ''
   })
   const [submitting, setSubmitting] = useState(false)
+
+  // New instrument client connection states
+  const [showClientSearchForNew, setShowClientSearchForNew] = useState(false)
+  const [clientSearchTermForNew, setClientSearchTermForNew] = useState('')
+  const [searchResultsForNew, setSearchResultsForNew] = useState<Client[]>([])
+  const [isSearchingClientsForNew, setIsSearchingClientsForNew] = useState(false)
+  const [selectedClientsForNew, setSelectedClientsForNew] = useState<Array<{client: Client, relationshipType: ClientInstrument['relationship_type']}>>([])
 
   useEffect(() => {
     fetchInstruments()
@@ -33,7 +61,7 @@ export default function InstrumentsPage() {
         .select('id, maker, name, year')
         .order('created_at', { ascending: false })
       if (error) throw error
-      setInstruments(data || [])
+      setItems(data || [])
     } catch (error) {
       console.error('Error fetching instruments:', error)
     } finally {
@@ -46,7 +74,7 @@ export default function InstrumentsPage() {
     setSubmitting(true)
     
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('instruments')
         .insert([
           {
@@ -58,12 +86,35 @@ export default function InstrumentsPage() {
         .select()
 
       if (error) throw error
+
+      // Add client connections if any were selected
+      if (selectedClientsForNew.length > 0 && data && data[0]) {
+        const instrumentId = data[0].id
+        const connections = selectedClientsForNew.map(item => ({
+          client_id: item.client.id,
+          instrument_id: instrumentId,
+          relationship_type: item.relationshipType
+        }))
+
+        const { error: connectionError } = await supabase
+          .from('client_instruments')
+          .insert(connections)
+
+        if (connectionError) {
+          console.error('Error adding client connections:', connectionError)
+          // Don't throw here, instrument was created successfully
+        }
+      }
       
       // Reset form and close modal
       setFormData({ maker: '', name: '', year: '' })
+      setSelectedClientsForNew([])
+      setShowClientSearchForNew(false)
+      setClientSearchTermForNew('')
+      setSearchResultsForNew([])
       setShowModal(false)
       
-      // Refresh the instruments list
+      // Refresh the items list
       await fetchInstruments()
     } catch (error) {
       console.error('Error adding instrument:', error)
@@ -78,6 +129,47 @@ export default function InstrumentsPage() {
       ...prev,
       [name]: value
     }))
+  }
+
+  const searchClientsForNew = async (searchTerm: string) => {
+    if (searchTerm.length < 2) {
+      setSearchResultsForNew([])
+      return
+    }
+
+    setIsSearchingClientsForNew(true)
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .or(`last_name.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%`)
+        .limit(10)
+      
+      if (error) throw error
+      // Filter out clients already selected to prevent duplicate display
+      const selectedIds = new Set(selectedClientsForNew.map(sc => sc.client.id))
+      const filtered = (data || []).filter(c => !selectedIds.has(c.id))
+      setSearchResultsForNew(filtered)
+    } catch (error) {
+      console.error('Error searching clients:', error)
+      setSearchResultsForNew([])
+    } finally {
+      setIsSearchingClientsForNew(false)
+    }
+  }
+
+  const addClientForNew = (client: Client, relationshipType: ClientInstrument['relationship_type'] = 'Interested') => {
+    setSelectedClientsForNew(prev => {
+      if (prev.some(p => p.client.id === client.id)) return prev
+      return [...prev, { client, relationshipType }]
+    })
+    setShowClientSearchForNew(false)
+    setClientSearchTermForNew('')
+    setSearchResultsForNew([])
+  }
+
+  const removeClientForNew = (clientId: string) => {
+    setSelectedClientsForNew(prev => prev.filter(item => item.client.id !== clientId))
   }
 
   return (
@@ -120,9 +212,9 @@ export default function InstrumentsPage() {
             
             {loading ? (
               <div className="flex justify-center items-center py-12">
-                <div className="text-gray-500">Loading instruments...</div>
+                <div className="text-gray-500">Loading items...</div>
               </div>
-            ) : instruments.length === 0 ? (
+            ) : items.length === 0 ? (
               <div className="text-center py-12">
                 <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
@@ -144,7 +236,7 @@ export default function InstrumentsPage() {
             ) : (
               <div className="overflow-hidden">
                 <ul className="divide-y divide-gray-200">
-                  {instruments.map((instrument) => (
+                  {items.map((item) => (
                     <li key={instrument.id} className="px-4 py-4 transition-colors duration-150 hover:bg-gray-50">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center">
@@ -250,6 +342,147 @@ export default function InstrumentsPage() {
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     placeholder="e.g., 2020"
                   />
+                </div>
+
+                {/* Client Connections Section */}
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <label className="block text-sm font-medium text-gray-700">Connect Clients (Optional)</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowClientSearchForNew(true)}
+                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                      Add Client
+                    </button>
+                  </div>
+                  
+                  {/* Client Search Section */}
+                  {showClientSearchForNew && (
+                    <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-sm font-medium text-gray-700">Search Clients</h4>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowClientSearchForNew(false)
+                            setClientSearchTermForNew('')
+                            setSearchResultsForNew([])
+                          }}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <input
+                            type="text"
+                            placeholder="Search by first or last name..."
+                            value={clientSearchTermForNew}
+                            onChange={(e) => {
+                              setClientSearchTermForNew(e.target.value)
+                              searchClientsForNew(e.target.value)
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          />
+                        </div>
+                        
+                        {isSearchingClientsForNew && (
+                          <div className="text-center text-gray-500 text-sm">Searching...</div>
+                        )}
+                        
+                        {searchResultsForNew.length > 0 && (
+                          <div className="space-y-2">
+                            <h5 className="text-xs font-medium text-gray-600">Results:</h5>
+                            <div className="max-h-32 overflow-y-auto space-y-1">
+                        {searchResultsForNew
+                          .filter(client => !selectedClientsForNew.some(sc => sc.client.id === client.id))
+                          .map((client) => (
+                                <div
+                                  key={client.id}
+                                  className="p-2 border border-gray-200 rounded-md hover:bg-white cursor-pointer bg-white"
+                                  onClick={() => addClientForNew(client)}
+                                >
+                                  <div className="font-medium text-gray-900 text-sm">
+                                    {client.first_name} {client.last_name}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {client.email} • {client.contact_number}
+                                  </div>
+                                  <div className="text-xs text-gray-400">
+                                    {client.type} • {client.status}
+                                  </div>
+                                </div>
+                        ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {clientSearchTermForNew.length >= 2 && searchResultsForNew.length === 0 && !isSearchingClientsForNew && (
+                          <div className="text-center text-gray-500 text-sm">No clients found</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Selected Clients List */}
+                  {selectedClientsForNew.length > 0 ? (
+                    <div className="space-y-2">
+                      {selectedClientsForNew.map((item) => (
+                        <div key={item.client.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900">
+                              {item.client.first_name} {item.client.last_name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {item.client.email} • {item.client.contact_number}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {item.client.type} • {item.client.status}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <select
+                              value={item.relationshipType}
+                              onChange={(e) => {
+                                setSelectedClientsForNew(prev => 
+                                  prev.map(selected => 
+                                    selected.client.id === item.client.id 
+                                      ? { ...selected, relationshipType: e.target.value as ClientInstrument['relationship_type'] }
+                                      : selected
+                                  )
+                                )
+                              }}
+                              className="text-xs border border-gray-300 rounded px-2 py-1"
+                            >
+                              <option value="Interested">Interested</option>
+                              <option value="Booked">Booked</option>
+                              <option value="Sold">Sold</option>
+                              <option value="Owned">Owned</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => removeClientForNew(item.client.id)}
+                              className="text-red-500 hover:text-red-700"
+                              title="Remove client"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-500 py-4 text-sm">
+                      No clients connected to this instrument
+                    </div>
+                  )}
                 </div>
                 
                 <div className="flex justify-end space-x-3 pt-4">
