@@ -235,7 +235,7 @@ const [sortBy, setSortBy] = useState('created_at')
     const needsSize = formData.category === 'Instrument'
     const needsWeight = formData.category === 'Bow'
     
-    let missingFields = []
+    const missingFields = []
     if (!formData.maker) missingFields.push('Maker')
     if (!formData.category) missingFields.push('Type')
     if (needsSubtype && !formData.subtype) missingFields.push('Subtype')
@@ -356,7 +356,7 @@ const [sortBy, setSortBy] = useState('created_at')
     const needsSize = viewFormData.category === 'Instrument'
     const needsWeight = viewFormData.category === 'Bow'
     
-    let missingFields = []
+    const missingFields = []
     if (!viewFormData.maker) missingFields.push('Maker')
     if (!viewFormData.category) missingFields.push('Type')
     if (needsSubtype && !viewFormData.subtype) missingFields.push('Subtype')
