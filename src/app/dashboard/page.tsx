@@ -249,7 +249,7 @@ const [sortBy, setSortBy] = useState('created_at')
       return
     }
     
-    if (formData.price <= 0) {
+    if (!formData.price || Number(formData.price) <= 0) {
       alert('Please enter a valid price greater than 0')
       console.log('Validation failed - invalid price')
       return

@@ -237,7 +237,7 @@ export default function InstrumentsPage() {
               <div className="overflow-hidden">
                 <ul className="divide-y divide-gray-200">
                   {items.map((item) => (
-                    <li key={instrument.id} className="px-4 py-4 transition-colors duration-150 hover:bg-gray-50">
+                    <li key={item.id} className="px-4 py-4 transition-colors duration-150 hover:bg-gray-50">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center">
                           <div className="flex-shrink-0">
@@ -249,16 +249,16 @@ export default function InstrumentsPage() {
                           </div>
                           <div className="ml-4">
                             <div className="text-sm font-medium text-gray-900">
-                              {instrument.maker} - {instrument.name}
+                              {item.maker} - {item.name}
                             </div>
                             <div className="text-sm text-gray-500">
-                              Year: {instrument.year}
+                              Year: {item.year}
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
                           <Link 
-                            href={`/instruments/${instrument.id}`}
+                            href={`/instruments/${item.id}`}
                             className="text-blue-600 hover:text-blue-500 text-sm font-medium"
                           >
                             View Details
