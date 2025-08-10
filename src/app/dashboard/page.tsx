@@ -1988,7 +1988,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                   </div>
                   <div className="flex justify-between">
                     <span className="font-semibold text-gray-700">Type:</span>
-                    <span className="text-gray-900">{viewFormData.type || '-'}</span>
+                    <span className="text-gray-900">{viewFormData.category === 'Other' ? 'Other' : `${viewFormData.category} / ${viewFormData.subtype}` || '-'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-semibold text-gray-700">Year:</span>
@@ -2091,7 +2091,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                                       {client.email} • {client.contact_number}
                                     </div>
                                     <div className="text-xs text-gray-400">
-                                      {client.type} • {client.status}
+                                      {client.tags && client.tags.length > 0 ? sortTags([...client.tags]).join(', ') : 'No tags'} • {client.interest || '-'}
                                     </div>
                                   </div>
                                 ))}
@@ -2119,7 +2119,7 @@ const getUniqueOwnership = () => getUniqueValues('ownership')
                                 {relationship.client?.email} • {relationship.client?.contact_number}
                               </div>
                               <div className="text-xs text-gray-400">
-                                {relationship.client?.type} • {relationship.client?.status}
+                                {relationship.client?.tags && relationship.client.tags.length > 0 ? sortTags([...relationship.client.tags]).join(', ') : 'No tags'} • {relationship.client?.interest || '-'}
                               </div>
                             </div>
                             <div className="flex items-center space-x-2">
