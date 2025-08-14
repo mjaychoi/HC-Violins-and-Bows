@@ -92,6 +92,10 @@ export default function ClientsPage() {
   const [isSearchingInstruments, setIsSearchingInstruments] = useState(false)
   const [clientsWithInstruments, setClientsWithInstruments] = useState<Set<string>>(new Set())
 
+  // Owned items state
+  const [ownedItems, setOwnedItems] = useState<Instrument[]>([])
+  const [loadingOwnedItems, setLoadingOwnedItems] = useState(false)
+
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState('created_at')
@@ -354,6 +358,13 @@ export default function ClientsPage() {
     
     // Fetch instrument relationships for this client
     fetchInstrumentRelationships(client.id)
+    
+    // Fetch owned items if client has Owner tag
+    if (client.tags && client.tags.includes('Owner')) {
+      fetchOwnedItems(client)
+    } else {
+      setOwnedItems([])
+    }
   }
 
   const fetchInstrumentRelationships = async (clientId: string) => {
@@ -371,6 +382,25 @@ export default function ClientsPage() {
       setInstrumentRelationships(data || [])
     } catch (error) {
       console.error('Error fetching instrument relationships:', error)
+    }
+  }
+
+  const fetchOwnedItems = async (client: Client) => {
+    try {
+      setLoadingOwnedItems(true)
+      const { data, error } = await supabase
+        .from('instruments')
+        .select('*')
+        .eq('ownership', `${client.first_name} ${client.last_name}`)
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      setOwnedItems(data || [])
+    } catch (error) {
+      console.error('Error fetching owned items:', error)
+      setOwnedItems([])
+    } finally {
+      setLoadingOwnedItems(false)
     }
   }
 
@@ -593,6 +623,40 @@ export default function ClientsPage() {
       return matchesSearch && matchesLastName && matchesFirstName && matchesContactNumber && matchesEmail && matchesTags && matchesInterest && matchesHasInstruments
     })
     .sort((a, b) => {
+      // Custom sorting for interest field
+      if (sortBy === 'interest') {
+        const interestOrder = ['Active', 'Passive', '', 'Inactive']
+        const aValue = a.interest || ''
+        const bValue = b.interest || ''
+        const aIndex = interestOrder.indexOf(aValue)
+        const bIndex = interestOrder.indexOf(bValue)
+        
+        if (sortOrder === 'asc') {
+          return aIndex - bIndex
+        } else {
+          return bIndex - aIndex
+        }
+      }
+      
+      // Custom sorting for tags field
+      if (sortBy === 'tags') {
+        const aHasOwner = a.tags && a.tags.includes('Owner')
+        const bHasOwner = b.tags && b.tags.includes('Owner')
+        
+        if (sortOrder === 'asc') {
+          // Owners first, then others
+          if (aHasOwner && !bHasOwner) return -1
+          if (!aHasOwner && bHasOwner) return 1
+          return 0
+        } else {
+          // Non-owners first, then owners
+          if (aHasOwner && !bHasOwner) return 1
+          if (!aHasOwner && bHasOwner) return -1
+          return 0
+        }
+      }
+      
+      // Default sorting for other fields
       const aValue = a[sortBy as keyof Client]
       const bValue = b[sortBy as keyof Client]
       
@@ -627,6 +691,16 @@ export default function ClientsPage() {
       case 'Collector': return 'bg-purple-100 text-purple-800'
       case 'Owner': return 'bg-orange-100 text-orange-800'
       case 'Other': return 'bg-gray-100 text-gray-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  // Status color function
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Available': return 'bg-green-100 text-green-800'
+      case 'Booked': return 'bg-yellow-100 text-yellow-800'
+      case 'Sold': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
@@ -952,8 +1026,14 @@ export default function ClientsPage() {
                         {getSortArrow('email')}
                       </div>
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Tags
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleColumnSort('tags')}
+                    >
+                      <div className="flex items-center">
+                        Tags
+                        {getSortArrow('tags')}
+                      </div>
                     </th>
                     <th 
                       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -1553,7 +1633,45 @@ export default function ClientsPage() {
                     )}
                   </div>
                   
-
+                  {/* Owned Items Section */}
+                  {selectedClient.tags && selectedClient.tags.includes('Owner') && (
+                    <div className="pt-4 border-t border-gray-200">
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-sm font-medium text-gray-700">Owned Items</h4>
+                      </div>
+                      
+                      {loadingOwnedItems ? (
+                        <div className="text-center text-gray-500 text-sm">Loading owned items...</div>
+                      ) : ownedItems.length > 0 ? (
+                        <div className="space-y-2">
+                          {ownedItems.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between p-3 bg-green-50 rounded-md border border-green-200">
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {item.maker || 'Unknown Maker'}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {item.type || 'Unknown Type'}
+                                </div>
+                                <div className="text-xs text-green-600">
+                                  ${item.price ? item.price.toLocaleString() : '0'}
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
+                                  {item.status}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center text-gray-500 py-4 text-sm border-2 border-dashed border-gray-200 rounded-md">
+                          No items owned by this client
+                        </div>
+                      )}
+                    </div>
+                  )}
                   
                   {/* Instrument Relationships */}
                   <div className="pt-4 border-t border-gray-200">
