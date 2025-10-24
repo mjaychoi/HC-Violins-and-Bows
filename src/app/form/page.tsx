@@ -1,214 +1,73 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-
-interface Client {
-  id: string
-  last_name: string | null
-  first_name: string | null
-  contact_number: string | null
-  email: string | null
-  tags: string[]
-  interest: string | null
-  note: string | null
-  created_at: string
-}
-
-interface Item {
-  id: string
-  status: 'Available' | 'Booked' | 'Sold'
-  maker: string | null
-  type: string | null
-  year: number | null
-  certificate: boolean
-  size: string | null
-  weight: string | null
-  price: number | null
-  ownership: string | null
-  note: string | null
-  created_at: string
-}
-
-interface ClientItem {
-  id: string
-  client_id: string
-  item_id: string
-  relationship_type: 'Interested' | 'Sold' | 'Booked' | 'Owned'
-  notes: string | null
-  created_at: string
-  client?: Client
-  item?: Item
-}
+import { ClientInstrument } from '@/types'
+import { useConnections, useConnectionForm } from './hooks'
+import { filterConnections, filterClients, filterInstruments, getRelationshipColor } from './utils'
+import { ConnectionModal, ConnectionSearch } from './components'
+import { logError } from '@/utils/logger'
+// import { classNames } from '@/utils/classNames'
+import { useSidebarState } from '@/hooks/useSidebarState'
 
 export default function ConnectedClientsPage() {
-  const [clients, setClients] = useState<Client[]>([])
-  const [items, setItems] = useState<Item[]>([])
-  const [connections, setConnections] = useState<ClientItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  
-  // Form states for new connections
-  const [showConnectionModal, setShowConnectionModal] = useState(false)
-  const [selectedClient, setSelectedClient] = useState<string>('')
-  const [selectedInstrument, setSelectedInstrument] = useState<string>('')
-  const [relationshipType, setRelationshipType] = useState<ClientItem['relationship_type']>('Interested')
-  const [connectionNotes, setConnectionNotes] = useState('')
+  // Custom hooks
+  const {
+    clients,
+    items,
+    connections,
+    loading,
+    submitting,
+    createConnection,
+    deleteConnection
+  } = useConnections()
 
-  // Search and filter states
-  const [clientSearchTerm, setClientSearchTerm] = useState('')
-  const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('')
-  const [connectionSearchTerm, setConnectionSearchTerm] = useState('')
+  const {
+    showConnectionModal,
+    selectedClient,
+    selectedInstrument,
+    relationshipType,
+    connectionNotes,
+    clientSearchTerm,
+    instrumentSearchTerm,
+    connectionSearchTerm,
+    setSelectedClient,
+    setSelectedInstrument,
+    setRelationshipType,
+    setConnectionNotes,
+    setClientSearchTerm,
+    setInstrumentSearchTerm,
+    setConnectionSearchTerm,
+    openModal,
+    closeModal
+  } = useConnectionForm()
 
-  useEffect(() => {
-    fetchData()
-  }, [])
+  // Filter connections
+  const filteredConnections = filterConnections(connections, connectionSearchTerm)
+  const filteredClients = filterClients(clients, clientSearchTerm)
+  const filteredItems = filterInstruments(items, instrumentSearchTerm)
 
-  const fetchData = async () => {
+  const handleCreateConnection = async (clientId: string, itemId: string, relationshipType: 'Booked' | 'Sold' | 'Interested' | 'Owned', notes: string) => {
     try {
-      setLoading(true)
-      
-      // Fetch clients
-      const { data: clientsData, error: clientsError } = await supabase
-        .from('clients')
-        .select('*')
-        .order('created_at', { ascending: false })
-      
-      if (clientsError) throw clientsError
-      setClients(clientsData || [])
-
-      // Fetch instruments (items)
-      const { data: instrumentsData, error: instrumentsError } = await supabase
-        .from('instruments')
-        .select('*')
-        .order('created_at', { ascending: false })
-      
-      if (instrumentsError) throw instrumentsError
-      setItems(instrumentsData || [])
-
-      // Fetch existing connections
-      const { data: connectionsData, error: connectionsError } = await supabase
-        .from('client_instruments')
-        .select(`
-          *,
-          client:clients(*),
-          item:instruments(*)
-        `)
-        .order('created_at', { ascending: false })
-      
-      if (connectionsError) throw connectionsError
-      console.log('Connections data:', connectionsData)
-      setConnections(connectionsData || [])
+      await createConnection(clientId, itemId, relationshipType, notes)
     } catch (error) {
-      console.error('Error fetching data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleCreateConnection = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!selectedClient || !selectedInstrument) {
-      alert('Please select both a client and an instrument')
-      return
-    }
-
-    setSubmitting(true)
-    
-    try {
-      const { error } = await supabase
-        .from('client_instruments')
-        .insert({
-          client_id: selectedClient,
-          instrument_id: selectedInstrument,
-          relationship_type: relationshipType,
-          notes: connectionNotes || null
-        })
-
-      if (error) throw error
-
-      // Reset form
-      setSelectedClient('')
-      setSelectedInstrument('')
-      setRelationshipType('Interested')
-      setConnectionNotes('')
-      setShowConnectionModal(false)
-
-      // Refresh data
-      await fetchData()
-    } catch (error) {
-      console.error('Error creating connection:', error)
+      logError('Error creating connection', error, 'ConnectedClientsPage')
       alert('Failed to create connection')
-    } finally {
-      setSubmitting(false)
     }
   }
 
   const handleDeleteConnection = async (connectionId: string) => {
-    if (!confirm('Are you sure you want to delete this connection?')) return
-
     try {
-      const { error } = await supabase
-        .from('client_instruments')
-        .delete()
-        .eq('id', connectionId)
-
-      if (error) throw error
-
-      // Refresh data
-      await fetchData()
+      await deleteConnection(connectionId)
     } catch (error) {
-      console.error('Error deleting connection:', error)
+      logError('Error deleting connection', error, 'ConnectedClientsPage')
       alert('Failed to delete connection')
     }
   }
 
-  // Filter functions
-  const filteredClients = clients.filter(client => 
-    clientSearchTerm === '' || 
-    (client.last_name?.toLowerCase().includes(clientSearchTerm.toLowerCase()) || false) ||
-    (client.first_name?.toLowerCase().includes(clientSearchTerm.toLowerCase()) || false) ||
-    (client.email?.toLowerCase().includes(clientSearchTerm.toLowerCase()) || false)
-  )
-
-  const filteredItems = items.filter(item => 
-    instrumentSearchTerm === '' || 
-    (item.maker?.toLowerCase().includes(instrumentSearchTerm.toLowerCase()) || false) ||
-    (item.type?.toLowerCase().includes(instrumentSearchTerm.toLowerCase()) || false)
-  )
-
-  const filteredConnections = connections.filter(connection => {
-    if (connectionSearchTerm === '') return true
-    
-    const clientName = `${connection.client?.first_name || ''} ${connection.client?.last_name || ''}`.toLowerCase()
-    const itemName = `${connection.item?.maker || ''} ${connection.item?.type || ''}`.toLowerCase()
-    
-    return clientName.includes(connectionSearchTerm.toLowerCase()) || 
-           itemName.includes(connectionSearchTerm.toLowerCase()) ||
-           connection.relationship_type.toLowerCase().includes(connectionSearchTerm.toLowerCase())
-  })
-
-  const getRelationshipColor = (type: string) => {
-    switch (type) {
-      case 'Interested': return 'bg-blue-100 text-blue-800'
-      case 'Sold': return 'bg-green-100 text-green-800'
-      case 'Booked': return 'bg-yellow-100 text-yellow-800'
-      case 'Owned': return 'bg-purple-100 text-purple-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const sortTags = (tags: string[]) => {
-    return tags.sort((a, b) => {
-      if (a === 'Owner') return -1
-      if (b === 'Owner') return 1
-      return a.localeCompare(b)
-    })
-  }
-
-  const [sidebarExpanded, setSidebarExpanded] = useState(false)
+  const { 
+    isExpanded: sidebarExpanded, 
+    toggleSidebar 
+  } = useSidebarState()
 
   return (
     <div className="min-h-screen bg-white flex">
@@ -217,8 +76,8 @@ export default function ConnectedClientsPage() {
         className={`bg-white shadow-lg transition-all duration-300 ease-in-out ${
           sidebarExpanded ? 'w-64' : 'w-1'
         } overflow-hidden`}
-        onMouseEnter={() => setSidebarExpanded(true)}
-        onMouseLeave={() => setSidebarExpanded(false)}
+        onMouseEnter={() => toggleSidebar()}
+        onMouseLeave={() => toggleSidebar()}
       >
         <div className="p-4">
           <div className="flex items-center mb-6">
@@ -289,7 +148,7 @@ export default function ConnectedClientsPage() {
           {/* Action Bar */}
         <div className="mb-6 flex justify-end">
           <button
-            onClick={() => setShowConnectionModal(true)}
+            onClick={openModal}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -301,12 +160,10 @@ export default function ConnectedClientsPage() {
 
         {/* Search Bar */}
         <div className="mb-6">
-            <input
-            type="text"
-              placeholder="Search connections by client name, item, or relationship type..."
-            value={connectionSearchTerm}
-            onChange={(e) => setConnectionSearchTerm(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          <ConnectionSearch
+            searchTerm={connectionSearchTerm}
+            onSearchChange={setConnectionSearchTerm}
+            placeholder="Search connections by client name, item, or relationship type..."
           />
         </div>
 
@@ -330,7 +187,7 @@ export default function ConnectedClientsPage() {
                 <p className="mt-1 text-sm text-gray-500">Get started by creating your first client-item connection.</p>
                 <div className="mt-6">
                   <button
-                    onClick={() => setShowConnectionModal(true)}
+                    onClick={openModal}
                     className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -388,10 +245,10 @@ export default function ConnectedClientsPage() {
                             </div>
                             <div className="ml-4">
                               <div className="text-sm font-medium text-gray-900">
-                                {connection.item?.maker} {connection.item?.type}
+                                {connection.instrument?.maker} {connection.instrument?.type}
                               </div>
                               <div className="text-sm text-gray-500">
-                                Year: {connection.item?.year || '-'} • Price: ${connection.item?.price ? connection.item.price.toLocaleString() : '0'}
+                                Year: {connection.instrument?.year || '-'} • Type: {connection.instrument?.type || '-'}
                               </div>
                             </div>
                           </div>
@@ -441,7 +298,7 @@ export default function ConnectedClientsPage() {
                   Create New Connection
                 </h3>
                 <button
-                  onClick={() => setShowConnectionModal(false)}
+                  onClick={closeModal}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -450,7 +307,12 @@ export default function ConnectedClientsPage() {
                 </button>
               </div>
               
-              <form onSubmit={handleCreateConnection} className="space-y-4">
+              <form onSubmit={(e) => {
+                e.preventDefault()
+                if (selectedClient && selectedInstrument) {
+                  handleCreateConnection(selectedClient, selectedInstrument, relationshipType, connectionNotes)
+                }
+              }} className="space-y-4">
                 {/* Client Selection */}
                 <div>
                   <label htmlFor="client" className="block text-sm font-medium text-gray-700">
@@ -473,7 +335,7 @@ export default function ConnectedClientsPage() {
                     className="mt-2 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Choose a client</option>
-                    {filteredClients.map((client) => (
+                      {filteredClients.map((client) => (
                       <option key={client.id} value={client.id}>
                         {client.first_name} {client.last_name} ({client.email})
                       </option>
@@ -503,9 +365,9 @@ export default function ConnectedClientsPage() {
                     className="mt-2 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Choose an item</option>
-                    {filteredItems.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.maker} {item.type} ({item.year})
+                    {filteredItems.map((instrument) => (
+                      <option key={instrument.id} value={instrument.id}>
+                        {instrument.maker} {instrument.type} ({instrument.year})
                       </option>
                     ))}
                   </select>
@@ -519,7 +381,7 @@ export default function ConnectedClientsPage() {
                   <select
                     id="relationship"
                     value={relationshipType}
-                    onChange={(e) => setRelationshipType(e.target.value as ClientItem['relationship_type'])}
+                    onChange={(e) => setRelationshipType(e.target.value as ClientInstrument['relationship_type'])}
                     required
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
@@ -548,7 +410,7 @@ export default function ConnectedClientsPage() {
                 <div className="flex justify-end space-x-3 pt-4">
                   <button
                     type="button"
-                    onClick={() => setShowConnectionModal(false)}
+                    onClick={closeModal}
                     className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
                     Cancel
@@ -566,7 +428,29 @@ export default function ConnectedClientsPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      {/* Connection Modal */}
+      <ConnectionModal
+        isOpen={showConnectionModal}
+        onClose={closeModal}
+        onSubmit={handleCreateConnection}
+        clients={clients}
+        items={items}
+        selectedClient={selectedClient}
+        selectedInstrument={selectedInstrument}
+        relationshipType={relationshipType}
+        connectionNotes={connectionNotes}
+        onClientChange={setSelectedClient}
+        onInstrumentChange={setSelectedInstrument}
+        onRelationshipTypeChange={setRelationshipType}
+        onNotesChange={setConnectionNotes}
+        clientSearchTerm={clientSearchTerm}
+        onClientSearchChange={setClientSearchTerm}
+        instrumentSearchTerm={instrumentSearchTerm}
+        onInstrumentSearchChange={setInstrumentSearchTerm}
+        submitting={submitting}
+      />
     </div>
   )
-} 
+}

@@ -3,40 +3,13 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-
-interface Item {
-  id: string
-  maker: string
-  name: string
-  year: number
-}
-
-interface Client {
-  id: string
-  last_name: string | null
-  first_name: string | null
-  contact_number: string | null
-  email: string | null
-  type: 'Musician' | 'Dealer' | 'Collector' | 'Regular'
-  status: 'Active' | 'Browsing' | 'In Negotiation' | 'Inactive'
-  note: string | null
-  created_at: string
-}
-
-interface ClientInstrument {
-  id: string
-  client_id: string
-  instrument_id: string
-  relationship_type: 'Interested' | 'Sold' | 'Booked' | 'Owned'
-  notes: string | null
-  created_at: string
-}
+import { Instrument, Client, ClientInstrument, FormData } from '@/types'
 
 export default function InstrumentsPage() {
-  const [items, setItems] = useState<Item[]>([])
+  const [items, setItems] = useState<Instrument[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     maker: '',
     name: '',
     year: ''
@@ -61,7 +34,20 @@ export default function InstrumentsPage() {
         .select('id, maker, name, year')
         .order('created_at', { ascending: false })
       if (error) throw error
-      setItems(data || [])
+      setItems((data || []).map(item => ({
+        id: item.id,
+        status: 'Available' as const,
+        maker: item.maker,
+        type: item.name,
+        year: item.year,
+        certificate: false,
+        size: null,
+        weight: null,
+        price: null,
+        ownership: null,
+        note: null,
+        created_at: new Date().toISOString()
+      })))
     } catch (error) {
       console.error('Error fetching instruments:', error)
     } finally {
@@ -249,7 +235,7 @@ export default function InstrumentsPage() {
                           </div>
                           <div className="ml-4">
                             <div className="text-sm font-medium text-gray-900">
-                              {item.maker} - {item.name}
+                              {item.maker} - {item.type}
                             </div>
                             <div className="text-sm text-gray-500">
                               Year: {item.year}
