@@ -8,6 +8,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { logError } from '@/utils/logger'
 import { useModalState } from '@/hooks/useModalState'
 import { useSidebarState } from '@/hooks/useSidebarState'
+import { errorHandler } from '@/utils/errorHandler'
 
 export default function ClientsPage() {
   // Error handling
@@ -144,7 +145,7 @@ export default function ClientsPage() {
         // Close modal
         closeClientView()
         // TODO: Replace with toast notification
-        // alert('Client deleted successfully!')
+        //errorHandler.addSuccess('Client deleted successfully!')
       }
     } catch (error) {
       logError('Error deleting client:', error)
