@@ -1,27 +1,29 @@
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase';
 
 export class SupabaseHelpers {
   static async fetchAll<T>(
     table: string,
     options?: {
-      select?: string
-      orderBy?: { column: string; ascending?: boolean }
-      limit?: number
-      signal?: AbortSignal
+      select?: string;
+      orderBy?: { column: string; ascending?: boolean };
+      limit?: number;
+      signal?: AbortSignal;
     }
   ): Promise<{ data: T[] | null; error: unknown }> {
-    let query = supabase.from(table).select(options?.select || '*')
-    
+    let query = supabase.from(table).select(options?.select || '*');
+
     if (options?.orderBy) {
-      query = query.order(options.orderBy.column, { ascending: options.orderBy.ascending ?? true })
+      query = query.order(options.orderBy.column, {
+        ascending: options.orderBy.ascending ?? true,
+      });
     }
-    
+
     if (options?.limit) {
-      query = query.limit(options.limit)
+      query = query.limit(options.limit);
     }
-    
-    const { data, error } = await query
-    return { data: data as T[], error }
+
+    const { data, error } = await query;
+    return { data: data as T[], error };
   }
 
   static async fetchById<T>(
@@ -33,8 +35,8 @@ export class SupabaseHelpers {
       .from(table)
       .select(select || '*')
       .eq('id', id)
-      .single()
-    return { data: data as T, error }
+      .single();
+    return { data: data as T, error };
   }
 
   static async create<T>(
@@ -45,8 +47,8 @@ export class SupabaseHelpers {
       .from(table)
       .insert([data])
       .select()
-      .single()
-    return { data: result as T, error }
+      .single();
+    return { data: result as T, error };
   }
 
   static async update<T>(
@@ -59,19 +61,13 @@ export class SupabaseHelpers {
       .update(data)
       .eq('id', id)
       .select()
-      .single()
-    return { data: result as T, error }
+      .single();
+    return { data: result as T, error };
   }
 
-  static async delete(
-    table: string,
-    id: string
-  ): Promise<{ error: unknown }> {
-    const { error } = await supabase
-      .from(table)
-      .delete()
-      .eq('id', id)
-    return { error }
+  static async delete(table: string, id: string): Promise<{ error: unknown }> {
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    return { error };
   }
 
   static async search<T>(
@@ -79,20 +75,20 @@ export class SupabaseHelpers {
     searchTerm: string,
     columns: string[],
     options?: {
-      limit?: number
-      signal?: AbortSignal
+      limit?: number;
+      signal?: AbortSignal;
     }
   ): Promise<{ data: T[] | null; error: unknown }> {
-    const limit = options?.limit ?? 10
+    const limit = options?.limit ?? 10;
     const orCondition = columns
       .map(col => `${col}.ilike.%${searchTerm}%`)
-      .join(',')
-    
+      .join(',');
+
     const { data, error } = await supabase
       .from(table)
       .select('*')
       .or(orCondition)
-      .limit(limit)
-    return { data: data as T[], error }
+      .limit(limit);
+    return { data: data as T[], error };
   }
 }

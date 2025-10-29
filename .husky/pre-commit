@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+
+# Ensure Node 20+ via nvm (uses project .nvmrc)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+
+# Use the Node version specified in .nvmrc (install if missing)
+if command -v nvm >/dev/null 2>&1; then
+  nvm use >/dev/null 2>&1 || nvm install >/dev/null 2>&1
+fi
+
+# Run lint-staged
+npx lint-staged
+
+# Skip type checking (disabled per request)
+echo "[husky] Skip type-check in pre-commit"
+
+# Run tests for staged files
+npm run test -- --passWithNoTests

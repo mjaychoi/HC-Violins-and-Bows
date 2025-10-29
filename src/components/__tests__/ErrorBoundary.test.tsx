@@ -1,23 +1,23 @@
-import { render, screen } from '@testing-library/react'
-import ErrorBoundary from '../ErrorBoundary'
+import { render, screen } from '@testing-library/react';
+import ErrorBoundary from '../ErrorBoundary';
 
 // Mock console.error to avoid noise in tests
-const originalConsoleError = console.error
+const originalConsoleError = console.error;
 beforeAll(() => {
-  console.error = jest.fn()
-})
+  console.error = jest.fn();
+});
 
 afterAll(() => {
-  console.error = originalConsoleError
-})
+  console.error = originalConsoleError;
+});
 
 // Component that throws an error
 const ThrowError = ({ shouldThrow }: { shouldThrow: boolean }) => {
   if (shouldThrow) {
-    throw new Error('Test error')
+    throw new Error('Test error');
   }
-  return <div>No error</div>
-}
+  return <div>No error</div>;
+};
 
 describe('ErrorBoundary', () => {
   it('should render children when there is no error', () => {
@@ -25,104 +25,126 @@ describe('ErrorBoundary', () => {
       <ErrorBoundary>
         <ThrowError shouldThrow={false} />
       </ErrorBoundary>
-    )
-    
-    expect(screen.getByText('No error')).toBeInTheDocument()
-  })
+    );
+
+    expect(screen.getByText('No error')).toBeInTheDocument();
+  });
 
   it('should render error UI when there is an error', () => {
     render(
       <ErrorBoundary>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
-    )
-    
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument()
-    expect(screen.getByText("We're sorry, but something unexpected happened. Please try again.")).toBeInTheDocument()
-  })
+    );
+
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "We're sorry, but something unexpected happened. Please try again."
+      )
+    ).toBeInTheDocument();
+  });
 
   it('should render custom fallback when provided', () => {
-    const customFallback = <div>Custom error message</div>
-    
+    const customFallback = <div>Custom error message</div>;
+
     render(
       <ErrorBoundary fallback={customFallback}>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
-    )
-    
-    expect(screen.getByText('Custom error message')).toBeInTheDocument()
-  })
+    );
+
+    expect(screen.getByText('Custom error message')).toBeInTheDocument();
+  });
 
   it('should show refresh button', () => {
     render(
       <ErrorBoundary>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
-    )
-    
-    expect(screen.getByText('Reload Page')).toBeInTheDocument()
-  })
+    );
+
+    expect(screen.getByText('Reload Page')).toBeInTheDocument();
+  });
 
   it('should show detailed error info in development', () => {
-    const originalEnv = process.env.NODE_ENV
-    Object.defineProperty(process.env, 'NODE_ENV', { value: 'development', configurable: true, writable: true })
-    
+    const originalEnv = process.env.NODE_ENV;
+    Object.defineProperty(process.env, 'NODE_ENV', {
+      value: 'development',
+      configurable: true,
+      writable: true,
+    });
+
     render(
       <ErrorBoundary>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
-    )
-    
-    expect(screen.getByText('Error Details (Development)')).toBeInTheDocument()
-    
-    Object.defineProperty(process.env, 'NODE_ENV', { value: originalEnv, configurable: true, writable: true })
-  })
+    );
+
+    expect(screen.getByText('Error Details (Development)')).toBeInTheDocument();
+
+    Object.defineProperty(process.env, 'NODE_ENV', {
+      value: originalEnv,
+      configurable: true,
+      writable: true,
+    });
+  });
 
   it('should not show detailed error info in production', () => {
-    const originalEnv = process.env.NODE_ENV
-    Object.defineProperty(process.env, 'NODE_ENV', { value: 'production', configurable: true, writable: true })
-    
+    const originalEnv = process.env.NODE_ENV;
+    Object.defineProperty(process.env, 'NODE_ENV', {
+      value: 'production',
+      configurable: true,
+      writable: true,
+    });
+
     render(
       <ErrorBoundary>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
-    )
-    
-    expect(screen.queryByText('Error Details (Development)')).not.toBeInTheDocument()
-    
-    Object.defineProperty(process.env, 'NODE_ENV', { value: originalEnv, configurable: true, writable: true })
-  })
+    );
+
+    expect(
+      screen.queryByText('Error Details (Development)')
+    ).not.toBeInTheDocument();
+
+    Object.defineProperty(process.env, 'NODE_ENV', {
+      value: originalEnv,
+      configurable: true,
+      writable: true,
+    });
+  });
 
   it('should handle multiple errors correctly', () => {
     const { rerender } = render(
       <ErrorBoundary>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
-    )
-    
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument()
-    
+    );
+
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+
     // Re-render with no error should still show error state
     rerender(
       <ErrorBoundary>
         <ThrowError shouldThrow={false} />
       </ErrorBoundary>
-    )
-    
+    );
+
     // Error boundary should still be in error state
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument()
-  })
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+  });
 
   it('should log error to console', () => {
-    const consoleSpy = jest.spyOn(console, 'error')
-    
+    const consoleSpy = jest.spyOn(console, 'error');
+
     render(
       <ErrorBoundary>
         <ThrowError shouldThrow={true} />
       </ErrorBoundary>
-    )
-    
-    expect(consoleSpy).toHaveBeenCalled()
-    consoleSpy.mockRestore()
-  })
-})
+    );
+
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+});

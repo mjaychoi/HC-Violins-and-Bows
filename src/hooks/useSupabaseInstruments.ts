@@ -1,9 +1,17 @@
 // src/hooks/useSupabaseInstruments.ts
-import { useSupabaseQuery } from './useSupabaseQuery'
-import { Instrument } from '@/types'
+import { useSupabaseQuery } from './useSupabaseQuery';
+import { Instrument } from '@/types';
 
 export function useSupabaseInstruments() {
-  const { data: instruments, loading, error, fetch, create, update, remove: deleteInstrument } = useSupabaseQuery<Instrument>('instruments')
+  const {
+    data: instruments,
+    loading,
+    error,
+    fetch,
+    create,
+    update,
+    remove: deleteInstrument,
+  } = useSupabaseQuery<Instrument>('instruments');
 
   return {
     instruments,
@@ -12,6 +20,6 @@ export function useSupabaseInstruments() {
     fetchInstruments: fetch,
     createInstrument: create,
     updateInstrument: update,
-    deleteInstrument
-  }
+    deleteInstrument,
+  };
 }

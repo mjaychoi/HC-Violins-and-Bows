@@ -1,50 +1,76 @@
-// src/hooks/useLoadingState.ts
-import { useState, useCallback } from 'react'
+import { useState, useCallback } from 'react';
 
-export function useLoadingState(initialState: boolean = false) {
-  const [loading, setLoading] = useState(initialState)
-  const [submitting, setSubmitting] = useState(false)
+interface UseLoadingStateOptions {
+  initialLoading?: boolean;
+  initialSubmitting?: boolean;
+}
 
-  const startLoading = useCallback(() => {
-    setLoading(true)
-  }, [])
+interface UseLoadingStateReturn {
+  loading: boolean;
+  submitting: boolean;
+  setLoading: (loading: boolean) => void;
+  setSubmitting: (submitting: boolean) => void;
+  startLoading: () => void;
+  stopLoading: () => void;
+  startSubmitting: () => void;
+  stopSubmitting: () => void;
+  withLoading: <T>(operation: () => Promise<T>) => Promise<T>;
+  withSubmitting: <T>(operation: () => Promise<T>) => Promise<T>;
+  isLoading: boolean;
+  isSubmitting: boolean;
+}
 
-  const stopLoading = useCallback(() => {
-    setLoading(false)
-  }, [])
+export function useLoadingState(
+  options: UseLoadingStateOptions = {}
+): UseLoadingStateReturn {
+  const { initialLoading = false, initialSubmitting = false } = options;
 
-  const startSubmitting = useCallback(() => {
-    setSubmitting(true)
-  }, [])
+  const [loading, setLoading] = useState(initialLoading);
+  const [submitting, setSubmitting] = useState(initialSubmitting);
 
-  const stopSubmitting = useCallback(() => {
-    setSubmitting(false)
-  }, [])
+  const startLoading = useCallback(() => setLoading(true), []);
+  const stopLoading = useCallback(() => setLoading(false), []);
+  const startSubmitting = useCallback(() => setSubmitting(true), []);
+  const stopSubmitting = useCallback(() => setSubmitting(false), []);
 
-  const withLoading = useCallback(async <T>(
-    operation: () => Promise<T>,
-    useSubmitting: boolean = false
-  ): Promise<T> => {
-    const startState = useSubmitting ? startSubmitting : startLoading
-    const stopState = useSubmitting ? stopSubmitting : stopLoading
+  const withLoading = useCallback(
+    async <T>(operation: () => Promise<T>): Promise<T> => {
+      startLoading();
+      try {
+        const result = await operation();
+        return result;
+      } finally {
+        stopLoading();
+      }
+    },
+    [startLoading, stopLoading]
+  );
 
-    startState()
-    try {
-      return await operation() 
-    } finally {
-      stopState()
-    }
-  }, [startLoading, stopLoading, startSubmitting, stopSubmitting])
+  const withSubmitting = useCallback(
+    async <T>(operation: () => Promise<T>): Promise<T> => {
+      startSubmitting();
+      try {
+        const result = await operation();
+        return result;
+      } finally {
+        stopSubmitting();
+      }
+    },
+    [startSubmitting, stopSubmitting]
+  );
 
   return {
     loading,
     submitting,
+    setLoading,
+    setSubmitting,
     startLoading,
     stopLoading,
     startSubmitting,
     stopSubmitting,
     withLoading,
-    setLoading,
-    setSubmitting
-  }
+    withSubmitting,
+    isLoading: loading,
+    isSubmitting: submitting,
+  };
 }

@@ -1,8 +1,8 @@
-const nextJest = require('next/jest')
+const nextJest = require('next/jest');
 
 const createJestConfig = nextJest({
   dir: './',
-})
+});
 
 const customJestConfig = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
@@ -11,9 +11,19 @@ const customJestConfig = {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(isows|@supabase)/)'
+    '/node_modules/(?!(isows|@supabase/realtime-js|@supabase/supabase-js|@supabase)/)',
   ],
-  testPathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/node_modules/', '<rootDir>/tests/e2e/'],
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
+  globals: {
+    'ts-jest': {
+      useESM: true,
+    },
+  },
+  testPathIgnorePatterns: [
+    '<rootDir>/.next/',
+    '<rootDir>/node_modules/',
+    '<rootDir>/tests/e2e/',
+  ],
   collectCoverageFrom: [
     'src/**/*.{js,jsx,ts,tsx}',
     '!src/**/*.d.ts',
@@ -28,6 +38,6 @@ const customJestConfig = {
       statements: 60,
     },
   },
-}
+};
 
-module.exports = createJestConfig(customJestConfig)
+module.exports = createJestConfig(customJestConfig);

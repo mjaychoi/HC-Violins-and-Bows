@@ -1,31 +1,42 @@
 // src/hooks/useDataState.ts
-import { useState, useCallback } from 'react'
+import { useState, useCallback } from 'react';
 
 // generic data state management hook
-export function useDataState<T>(getId: (item: T) => string, initialState: T[] = []) {
-  const [data, setData] = useState<T[]>(initialState)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<unknown>(null)
+export function useDataState<T>(
+  getId: (item: T) => string,
+  initialState: T[] = []
+) {
+  const [data, setData] = useState<T[]>(initialState);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
 
   const addItem = useCallback((item: T) => {
-    setData(prev => [item, ...prev])
-  }, [])
+    setData(prev => [item, ...prev]);
+  }, []);
 
-  const updateItem = useCallback((id: string, updatedItem: T) => {
-    setData(prev => prev.map(item => getId(item) === id ? updatedItem : item))
-  }, [getId])
+  const updateItem = useCallback(
+    (id: string, updatedItem: T) => {
+      setData(prev =>
+        prev.map(item => (getId(item) === id ? updatedItem : item))
+      );
+    },
+    [getId]
+  );
 
-  const removeItem = useCallback((id: string) => {
-    setData(prev => prev.filter(item => getId(item) !== id))
-  }, [getId])
+  const removeItem = useCallback(
+    (id: string) => {
+      setData(prev => prev.filter(item => getId(item) !== id));
+    },
+    [getId]
+  );
 
   const setItems = useCallback((items: T[]) => {
-    setData(items)
-  }, [])
+    setData(items);
+  }, []);
 
   const clearData = useCallback(() => {
-    setData([])
-  }, [])
+    setData([]);
+  }, []);
 
   return {
     data,
@@ -37,30 +48,30 @@ export function useDataState<T>(getId: (item: T) => string, initialState: T[] = 
     updateItem,
     removeItem,
     setItems,
-    clearData
-  }
+    clearData,
+  };
 }
 
 // search results state management hook
 export function useSearchBoxState<T>(initialState: T[] = []) {
-  const [searchResults, setSearchResults] = useState<T[]>(initialState)
-  const [isSearching, setIsSearching] = useState(false)
+  const [searchResults, setSearchResults] = useState<T[]>(initialState);
+  const [isSearching, setIsSearching] = useState(false);
 
   const setResults = useCallback((results: T[]) => {
-    setSearchResults(results)
-  }, [])
+    setSearchResults(results);
+  }, []);
 
   const clearResults = useCallback(() => {
-    setSearchResults([])
-  }, [])
+    setSearchResults([]);
+  }, []);
 
   const startSearch = useCallback(() => {
-    setIsSearching(true)
-  }, [])
+    setIsSearching(true);
+  }, []);
 
   const stopSearch = useCallback(() => {
-    setIsSearching(false)
-  }, [])
+    setIsSearching(false);
+  }, []);
 
   return {
     searchResults,
@@ -68,6 +79,6 @@ export function useSearchBoxState<T>(initialState: T[] = []) {
     setResults,
     clearResults,
     startSearch,
-    stopSearch
-  }
+    stopSearch,
+  };
 }

@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react';
 // import { Item } from '@/types'
-import { useFormState } from '@/hooks/useFormState'
+import { useFormState } from '@/hooks/useFormState';
 
 export function useDashboardForm() {
   const initialFormData = {
     status: 'Available',
     maker: '',
-    category: 'Instrument',
+    type: 'Instrument',
     subtype: 'Violin',
     year: '',
     certificate: false,
@@ -14,44 +14,40 @@ export function useDashboardForm() {
     weight: '',
     price: '',
     ownership: '',
-    note: ''
-  }
+    note: '',
+  };
 
-  const { 
-    formData, 
-    updateField, 
-    updateFields, 
-    resetForm 
-  } = useFormState(initialFormData)
+  const { formData, updateField, updateFields, resetForm } =
+    useFormState(initialFormData);
 
-  const [priceInput, setPriceInput] = useState('')
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [priceInput, setPriceInput] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   // Sync price input with form data
   useEffect(() => {
-    setPriceInput(formData.price.toString())
-  }, [formData.price])
+    setPriceInput(formData.price.toString());
+  }, [formData.price]);
 
   const handlePriceChange = (value: string) => {
-    setPriceInput(value)
-    updateField('price', value)
-  }
+    setPriceInput(value);
+    updateField('price', value);
+  };
 
   const handleFileChange = (files: FileList | null) => {
     if (files) {
-      setSelectedFiles(Array.from(files))
+      setSelectedFiles(Array.from(files));
     }
-  }
+  };
 
   const removeFile = (index: number) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index))
-  }
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
 
   const resetFormData = () => {
-    resetForm()
-    setPriceInput('')
-    setSelectedFiles([])
-  }
+    resetForm();
+    setPriceInput('');
+    setSelectedFiles([]);
+  };
 
   return {
     formData,
@@ -64,6 +60,6 @@ export function useDashboardForm() {
     selectedFiles,
     setSelectedFiles,
     handleFileChange,
-    removeFile
-  }
+    removeFile,
+  };
 }

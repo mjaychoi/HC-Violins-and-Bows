@@ -1,40 +1,38 @@
-import { useState } from 'react'
-import { Instrument } from '@/types'
-import { useInstruments } from './useInstruments'
-import { logError } from '@/utils/logger'
+import { useState } from 'react';
+import { Instrument } from '@/types';
+import { useInstruments } from './useInstruments';
+import { logError } from '@/utils/logger';
 
 export function useInstrumentSearch() {
-  const [showInstrumentSearch, setShowInstrumentSearch] = useState(false)
-  const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('')
-  
-  const { 
-    searchResults, 
-    searchInstruments: searchInstrumentsHook
-  } = useInstruments()
-  
-  const [isSearchingInstruments, setIsSearchingInstruments] = useState(false)
+  const [showInstrumentSearch, setShowInstrumentSearch] = useState(false);
+  const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
 
-  const searchInstruments = searchInstrumentsHook
+  const { searchResults, searchInstruments: searchInstrumentsHook } =
+    useInstruments();
 
-  const openInstrumentSearch = () => setShowInstrumentSearch(true)
+  const [isSearchingInstruments, setIsSearchingInstruments] = useState(false);
+
+  const searchInstruments = searchInstrumentsHook;
+
+  const openInstrumentSearch = () => setShowInstrumentSearch(true);
   const closeInstrumentSearch = () => {
-    setShowInstrumentSearch(false)
-    setInstrumentSearchTerm('')
-  }
+    setShowInstrumentSearch(false);
+    setInstrumentSearchTerm('');
+  };
 
   const handleInstrumentSearch = async (term: string) => {
-    setInstrumentSearchTerm(term)
+    setInstrumentSearchTerm(term);
     if (term.length >= 2) {
-      setIsSearchingInstruments(true)
+      setIsSearchingInstruments(true);
       try {
-        await searchInstruments(term)
+        await searchInstruments(term);
       } catch (error) {
-        logError('Error searching instruments', error, 'useInstrumentSearch')
+        logError('Error searching instruments', error, 'useInstrumentSearch');
       } finally {
-        setIsSearchingInstruments(false)
+        setIsSearchingInstruments(false);
       }
     }
-  }
+  };
 
   return {
     showInstrumentSearch,
@@ -43,6 +41,6 @@ export function useInstrumentSearch() {
     isSearchingInstruments,
     openInstrumentSearch,
     closeInstrumentSearch,
-    handleInstrumentSearch
-  }
+    handleInstrumentSearch,
+  };
 }
