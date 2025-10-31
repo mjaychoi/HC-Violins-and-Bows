@@ -60,7 +60,8 @@ export function useErrorHandler() {
         error &&
         typeof error === 'object' &&
         'code' in error &&
-        'message' in error
+        'message' in error &&
+        'timestamp' in error
       ) {
         // Already an AppError
         appError = error as AppError;
@@ -147,7 +148,7 @@ export function useErrorHandler() {
     { className: 'fixed top-4 right-4 z-50 space-y-2' },
     errors.map((error, index) =>
       React.createElement(ErrorToast, {
-        key: `${error.timestamp.getTime()}-${index}`,
+        key: `${error.timestamp?.getTime() || Date.now()}-${index}`,
         error: error,
         onClose: () => removeError(index),
       })
@@ -160,7 +161,7 @@ export function useErrorHandler() {
       { className: 'fixed top-4 right-4 z-50 space-y-2' },
       errors.map((error, index) =>
         React.createElement(ErrorToast, {
-          key: `${error.timestamp.getTime()}-${index}`,
+          key: `${error.timestamp?.getTime() || Date.now()}-${index}`,
           error: error,
           onClose: () => removeError(index),
         })
