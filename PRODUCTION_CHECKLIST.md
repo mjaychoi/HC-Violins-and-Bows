@@ -3,7 +3,7 @@
 아래 체크리스트를 순서대로 완료해 프로덕션 품질을 확보하세요. 각 항목은 가능한 한 자동화(CI/CD)로 강제하는 것을 권장합니다.
 
 ### 1) 환경/런타임
-- [x] Node 버전 고정: `.nvmrc=20`, CI Node 20 고정(`.github/workflows/ci.yml`), `package.json`의 `engines.node=20.x`
+- [x] Node 버전 고정: `.nvmrc=20`, CI Node 20 고정(`.github/workflows/ci.yml`), `package.json`의 `engines.node=20.x`, `vercel.json` 함수 런타임 20 지정
 - [ ] 환경 변수 분리: Production/Preview/Development 별로 Vercel Project Env에 설정
   - [ ] `SUPABASE_URL`, `SUPABASE_ANON_KEY` (클라이언트용)
   - [ ] 서버 작업용 서비스 롤 키는 서버 사이드에서만 사용(노출 금지)
