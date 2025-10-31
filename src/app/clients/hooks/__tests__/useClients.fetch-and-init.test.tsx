@@ -67,10 +67,6 @@ describe('useClients - init & fetch', () => {
     });
 
     const { result } = renderHook(() => useClients());
-    await act(async () => {
-      await result.current.fetchClients();
-      await flushPromises();
-    });
 
     await waitFor(() => expect(result.current.clients).toEqual(mockClients), {
       timeout: 10000,
@@ -86,10 +82,6 @@ describe('useClients - init & fetch', () => {
     );
 
     const { result } = renderHook(() => useClients());
-    await act(async () => {
-      await result.current.fetchClients();
-      await flushPromises();
-    });
 
     await waitFor(() => expect(result.current.clients).toEqual([]), {
       timeout: 10000,

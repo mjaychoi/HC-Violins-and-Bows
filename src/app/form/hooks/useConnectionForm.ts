@@ -1,8 +1,13 @@
 import { useState } from 'react';
 import { ClientInstrument } from '@/types';
+import { useModalState } from '@/hooks/useModalState';
 
 export function useConnectionForm() {
-  const [showConnectionModal, setShowConnectionModal] = useState(false);
+  const {
+    isOpen: showConnectionModal,
+    openModal,
+    resetModal,
+  } = useModalState();
   const [selectedClient, setSelectedClient] = useState<string>('');
   const [selectedInstrument, setSelectedInstrument] = useState<string>('');
   const [relationshipType, setRelationshipType] =
@@ -19,14 +24,11 @@ export function useConnectionForm() {
     setSelectedInstrument('');
     setRelationshipType('Interested');
     setConnectionNotes('');
-    setShowConnectionModal(false);
+    resetModal();
   };
 
-  const openModal = () => {
-    setShowConnectionModal(true);
-  };
-
-  const closeModal = () => {
+  const open = () => openModal();
+  const close = () => {
     resetForm();
   };
 
@@ -53,8 +55,8 @@ export function useConnectionForm() {
     setConnectionSearchTerm,
 
     // Modal actions
-    openModal,
-    closeModal,
+    openModal: open,
+    closeModal: close,
     resetForm,
   };
 }

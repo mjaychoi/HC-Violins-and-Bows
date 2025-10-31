@@ -2,6 +2,21 @@ import '@testing-library/jest-dom';
 import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { flushPromises } from '../../../../tests/utils/flushPromises';
+jest.mock('next/dynamic', () => ({
+  __esModule: true,
+  default: (importer: any) => {
+    const src = String(importer);
+    if (src.includes('ClientList')) {
+      // Use the mocked ClientList from '../components'
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      return require('../components').ClientList;
+    }
+    if (src.includes('ClientModal')) {
+      return () => null;
+    }
+    return () => <div data-testid="dynamic" />;
+  },
+}));
 
 // Mock next/navigation to avoid invalid hook call for usePathname
 jest.mock('next/navigation', () => ({
@@ -24,16 +39,35 @@ jest.mock('../components', () => ({
   ClientForm: () => null,
   ClientModal: () => null,
   ClientFilters: () => <div>Filters</div>,
-  ClientList: ({ clients }: any) => (
-    <table role="table">
-      <tbody>
-        {clients?.map((c: any) => (
-          <tr key={c.id}>
-            <td>{`${c.first_name} ${c.last_name}`}</td>
+  ClientList: ({ clients, onClientClick, onColumnSort }: any) => (
+    <div>
+      <table role="table">
+        <thead>
+          <tr>
+            <th>
+              <button
+                onClick={() => onColumnSort && onColumnSort('first_name')}
+              >
+                Name
+              </button>
+            </th>
+            <th>Email</th>
+            <th>Contact</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {clients?.map((c: any) => (
+            <tr key={c.id} onClick={() => onClientClick && onClientClick(c)}>
+              <td>{`${c.first_name} ${c.last_name}`}</td>
+              <td>{c.email}</td>
+              <td>{c.contact_number}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {/* Simplified instrument indicator */}
+      <div>Stradivarius Violin</div>
+    </div>
   ),
 }));
 

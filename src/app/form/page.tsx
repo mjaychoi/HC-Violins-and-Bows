@@ -14,7 +14,7 @@ import {
 } from './components';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { useLoadingState } from '@/hooks/useLoadingState';
-import { useSearchFilter } from '@/hooks/useSearchFilter';
+import { useFilterSort } from '@/hooks/useFilterSort';
 import { AppLayout } from '@/components/layout';
 import { ErrorBoundary } from '@/components/common';
 
@@ -47,26 +47,23 @@ export default function ConnectedClientsPage() {
   const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
   const [connectionSearchTerm] = useState('');
 
-  // Search and filter hooks
-  const { filteredData: filteredConnections } = useSearchFilter({
-    data: connections,
+  // Search and filter hooks (unified)
+  const { items: filteredConnections } = useFilterSort(connections, {
     searchFields: ['notes'],
+    externalSearchTerm: connectionSearchTerm,
     debounceMs: 200,
-    initialSearchTerm: connectionSearchTerm,
   });
 
-  const { filteredData: filteredClients } = useSearchFilter({
-    data: clients,
+  const { items: filteredClients } = useFilterSort(clients, {
     searchFields: ['first_name', 'last_name', 'email'],
+    externalSearchTerm: clientSearchTerm,
     debounceMs: 200,
-    initialSearchTerm: clientSearchTerm,
   });
 
-  const { filteredData: filteredItems } = useSearchFilter({
-    data: instruments,
+  const { items: filteredItems } = useFilterSort(instruments, {
     searchFields: ['maker', 'type'],
+    externalSearchTerm: instrumentSearchTerm,
     debounceMs: 200,
-    initialSearchTerm: instrumentSearchTerm,
   });
 
   // Use connection filters hook
