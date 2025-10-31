@@ -1,0 +1,156 @@
+import { renderHook, act } from '@testing-library/react';
+import { useDashboardForm } from '../useDashboardForm';
+
+describe('useDashboardForm', () => {
+  it('should initialize with default form data', () => {
+    const { result } = renderHook(() => useDashboardForm());
+
+    expect(result.current.formData.status).toBe('Available');
+    expect(result.current.formData.maker).toBe('');
+    expect(result.current.formData.type).toBe('Instrument');
+    expect(result.current.formData.subtype).toBe('Violin');
+    expect(result.current.priceInput).toBe('');
+    expect(result.current.selectedFiles).toHaveLength(0);
+  });
+
+  it('should update individual field', () => {
+    const { result } = renderHook(() => useDashboardForm());
+
+    act(() => {
+      result.current.updateField('maker', 'Stradivari');
+    });
+
+    expect(result.current.formData.maker).toBe('Stradivari');
+  });
+
+  it('should update multiple fields', () => {
+    const { result } = renderHook(() => useDashboardForm());
+
+    act(() => {
+      result.current.updateFields({
+        maker: 'Guarneri',
+        type: 'Violin',
+        year: '1700',
+      });
+    });
+
+    expect(result.current.formData.maker).toBe('Guarneri');
+    expect(result.current.formData.type).toBe('Violin');
+    expect(result.current.formData.year).toBe('1700');
+  });
+
+  it('should handle price change', () => {
+    const { result } = renderHook(() => useDashboardForm());
+
+    act(() => {
+      result.current.handlePriceChange('10000');
+    });
+
+    expect(result.current.priceInput).toBe('10000');
+    expect(result.current.formData.price).toBe('10000');
+  });
+
+  it('should handle file change', () => {
+    const { result } = renderHook(() => useDashboardForm());
+
+    const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fileList = { 0: file, length: 1, item: () => file } as any;
+
+    act(() => {
+      result.current.handleFileChange(fileList);
+    });
+
+    expect(result.current.selectedFiles).toHaveLength(1);
+    expect(result.current.selectedFiles[0].name).toBe('test.jpg');
+  });
+
+  it('should remove file at index', () => {
+    const { result } = renderHook(() => useDashboardForm());
+
+    const file1 = new File(['test1'], 'test1.jpg', { type: 'image/jpeg' });
+    const file2 = new File(['test2'], 'test2.jpg', { type: 'image/jpeg' });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fileList = {
+      0: file1,
+      1: file2,
+      length: 2,
+      item: (i: number) => (i === 0 ? file1 : file2),
+    } as any;
+
+    act(() => {
+      result.current.handleFileChange(fileList);
+    });
+
+    expect(result.current.selectedFiles).toHaveLength(2);
+
+    act(() => {
+      result.current.removeFile(0);
+    });
+
+    expect(result.current.selectedFiles).toHaveLength(1);
+    expect(result.current.selectedFiles[0].name).toBe('test2.jpg');
+  });
+
+  it('should handle null file list', () => {
+    const { result } = renderHook(() => useDashboardForm());
+
+    act(() => {
+      result.current.handleFileChange(null);
+    });
+
+    expect(result.current.selectedFiles).toHaveLength(0);
+  });
+
+  it('should reset form', () => {
+    const { result } = renderHook(() => useDashboardForm());
+
+    act(() => {
+      result.current.updateField('maker', 'Stradivari');
+      result.current.updateField('year', '1700');
+    });
+
+    expect(result.current.formData.maker).toBe('Stradivari');
+    expect(result.current.formData.year).toBe('1700');
+
+    act(() => {
+      result.current.resetForm();
+    });
+
+    expect(result.current.formData.maker).toBe('');
+    expect(result.current.formData.year).toBe('');
+    expect(result.current.priceInput).toBe('');
+    expect(result.current.selectedFiles).toHaveLength(0);
+  });
+
+  it('should sync price input with form data', () => {
+    const { result } = renderHook(() => useDashboardForm());
+
+    act(() => {
+      result.current.updateField('price', '5000');
+    });
+
+    // useEffect should sync priceInput
+    expect(result.current.priceInput).toBe('5000');
+  });
+
+  it('should support all form fields', () => {
+    const { result } = renderHook(() => useDashboardForm());
+
+    act(() => {
+      result.current.updateFields({
+        certificate: true,
+        size: '4/4',
+        weight: '500g',
+        ownership: 'Store',
+        note: 'Test note',
+      });
+    });
+
+    expect(result.current.formData.certificate).toBe(true);
+    expect(result.current.formData.size).toBe('4/4');
+    expect(result.current.formData.weight).toBe('500g');
+    expect(result.current.formData.ownership).toBe('Store');
+    expect(result.current.formData.note).toBe('Test note');
+  });
+});
