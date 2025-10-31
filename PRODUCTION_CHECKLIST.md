@@ -11,7 +11,12 @@
 
 ### 2) 데이터/Supabase
 - [ ] RLS(Row Level Security) 활성화 및 최소권한 정책 적용
+  - 예시 템플릿: `scripts/supabase/rls-template.sql` 참고(테이블/컬럼명에 맞게 수정 후 적용)
 - [ ] 마이그레이션 적용: 모든 `*.sql` (예: `migration-add-subtype.sql`)을 Prod DB에 적용/검증
+  - 방법 1: Vercel/DB 대시보드에서 수동 실행
+  - 방법 2: 스크립트 실행
+    - Unix/MacOS: `DATABASE_URL="<prod_db_url>" bash scripts/supabase/apply-migrations.sh`
+    - 주의: `psql` 설치 필요, 실패 시 즉시 중단(`ON_ERROR_STOP=1`)
 - [ ] 롤백 전략 준비: 각 마이그레이션에 대한 롤백 스크립트/절차 문서화
 - [ ] 인덱스/성능 점검: 느린 쿼리 점검 및 필요한 인덱스 추가
 - [ ] 스토리지/버킷 권한 검증: 퍼블릭/프라이빗 구분, URL 접근 통제
