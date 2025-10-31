@@ -401,13 +401,9 @@ export default function ClientsPage() {
             <ClientFilters
               isOpen={showFilters}
               onClose={() => setShowFilters(false)}
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
               filters={filters}
               filterOptions={filterOptions}
-              onFilterChange={(category: string, value: string) =>
-                handleFilterChange(category as keyof typeof filters, value)
-              }
+              onFilterChange={handleFilterChange}
               onClearAllFilters={clearAllFilters}
               getActiveFiltersCount={getActiveFiltersCount}
             />
@@ -427,13 +423,8 @@ export default function ClientsPage() {
           ) : (
             <ClientList
               clients={filteredClients}
-              clientsWithInstruments={clientsWithInstruments}
               clientInstruments={instrumentRelationships}
               onClientClick={handleRowClick}
-              onEditClient={client => {
-                openClientView(client);
-                startEditing();
-              }}
               onUpdateClient={async (clientId, updates) => {
                 await updateClient(clientId, updates);
               }}

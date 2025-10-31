@@ -1,5 +1,6 @@
 // src/app/clients/utils/clientUtils.ts
 import { Client } from '@/types';
+import { FilterState } from '../types';
 
 // Client utility functions
 export const formatClientName = (client: Client): string => {
@@ -43,7 +44,7 @@ export const getClientDisplayInfo = (client: Client) => {
 export const filterClients = (
   clients: Client[],
   searchTerm: string,
-  filters: Record<string, string[]>,
+  filters: FilterState,
   opts?: { clientsWithInstruments?: Set<string> }
 ): Client[] => {
   const withInst = opts?.clientsWithInstruments ?? new Set<string>();
@@ -113,17 +114,33 @@ export const filterClients = (
   });
 };
 
-export const sortClients = <T extends { [k: string]: unknown }>(
+// Overloads: Client 전용(기본 키 제공) + 제네릭 버전
+export function sortClients(
+  clients: Client[],
+  field?: keyof Client,
+  order?: 'asc' | 'desc'
+): Client[];
+export function sortClients<T extends object>(
   clients: T[],
-  field: keyof T = 'first_name',
+  field: keyof T,
+  order?: 'asc' | 'desc'
+): T[];
+export function sortClients<T extends object>(
+  clients: T[],
+  field?: keyof T,
   order: 'asc' | 'desc' = 'asc'
-): T[] => {
+): T[] {
   const copy = [...clients];
   const dir = order === 'asc' ? 1 : -1;
 
   return copy.sort((a, b) => {
-    const av = a?.[field];
-    const bv = b?.[field];
+    const sortField = field ?? ('first_name' as unknown as keyof T);
+    const av = (a as unknown as Record<string, unknown>)?.[
+      sortField as unknown as string
+    ];
+    const bv = (b as unknown as Record<string, unknown>)?.[
+      sortField as unknown as string
+    ];
 
     // null/undefined는 뒤로
     if (av == null && bv == null) return 0;
@@ -144,4 +161,4 @@ export const sortClients = <T extends { [k: string]: unknown }>(
     if (as2 > bs2) return 1 * dir;
     return 0;
   });
-};
+}

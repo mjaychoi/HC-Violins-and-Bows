@@ -3,6 +3,7 @@
 
 import { useRef, useEffect } from 'react';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
+import { FilterState } from '../types';
 
 interface FilterOptions {
   lastNames: string[];
@@ -16,19 +17,9 @@ interface FilterOptions {
 interface ClientFiltersProps {
   isOpen: boolean;
   onClose: () => void;
-  searchTerm: string;
-  onSearchChange: (value: string) => void;
-  filters: {
-    last_name: string[];
-    first_name: string[];
-    contact_number: string[];
-    email: string[];
-    tags: string[];
-    interest: string[];
-    hasInstruments: string[];
-  };
+  filters: FilterState;
   filterOptions: FilterOptions;
-  onFilterChange: (category: string, value: string) => void;
+  onFilterChange: (category: keyof FilterState, value: string) => void;
   onClearAllFilters: () => void;
   getActiveFiltersCount: () => number;
 }
@@ -47,27 +38,24 @@ export default function ClientFilters({
   // Close filter panel with ESC key
   useEscapeKey(onClose, isOpen);
 
-  // Handle click outside filter panel
+  // Handle click outside filter panel with shadow DOM support
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      const filterButton = document.querySelector('[data-filter-button]');
-      if (filterButton && filterButton.contains(target)) {
+    if (!isOpen) return;
+
+    const filterButton = document.querySelector('[data-filter-button]');
+    const onPointerDown = (event: MouseEvent) => {
+      const path = (event.composedPath?.() ?? []) as Node[];
+      if (filterPanelRef.current && path.includes(filterPanelRef.current))
         return;
-      }
-
-      if (filterPanelRef.current && !filterPanelRef.current.contains(target)) {
-        onClose();
-      }
+      if (filterButton && path.includes(filterButton)) return;
+      onClose();
     };
 
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    document.addEventListener('mousedown', onPointerDown, { capture: true });
+    return () =>
+      document.removeEventListener('mousedown', onPointerDown, {
+        capture: true,
+      });
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -76,11 +64,14 @@ export default function ClientFilters({
     <div
       ref={filterPanelRef}
       data-testid="filters-panel"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="filters-title"
       className="absolute left-0 right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
     >
       <div className="p-4">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-medium text-gray-900">
+          <h3 id="filters-title" className="text-lg font-medium text-gray-900">
             Filters
             {getActiveFiltersCount?.() ? (
               <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -90,6 +81,7 @@ export default function ClientFilters({
           </h3>
           <button
             onClick={onClose}
+            aria-label="Close filters"
             className="text-gray-400 hover:text-gray-600"
           >
             <svg

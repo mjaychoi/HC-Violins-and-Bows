@@ -1,26 +1,30 @@
 // src/app/clients/hooks/useFilters.ts
 import { useState, useMemo } from 'react';
 import { Client } from '@/types';
-import { filterClients, sortClients, getUniqueValues } from '../utils';
-import { useDebounce } from '@/hooks/useDebounce';
+import { filterClients } from '../utils';
+import { getUniqueValues, getUniqueArrayValues } from '@/utils/uniqueValues';
+import {
+  toggleValue,
+  countActiveFilters,
+  arrowToClass,
+} from '@/utils/filterHelpers';
+import { useFilterSort } from '@/hooks/useFilterSort';
+import { FilterState } from '../types';
 
 export const useFilters = (
   clients: Client[],
   clientsWithInstruments?: Set<string>
 ) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const debouncedSearchTerm = useDebounce(searchTerm, 300); // 300ms 디바운싱
-  const [sortBy, setSortBy] = useState<keyof Client>('created_at');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({
-    last_name: [] as string[],
-    first_name: [] as string[],
-    contact_number: [] as string[],
-    email: [] as string[],
-    tags: [] as string[],
-    interest: [] as string[],
-    hasInstruments: [] as string[],
+  const [filters, setFilters] = useState<FilterState>({
+    last_name: [],
+    first_name: [],
+    contact_number: [],
+    email: [],
+    tags: [],
+    interest: [],
+    hasInstruments: [],
   });
 
   // Get unique values for filter options
@@ -30,46 +34,61 @@ export const useFilters = (
       firstNames: getUniqueValues(clients, 'first_name'),
       contactNumbers: getUniqueValues(clients, 'contact_number'),
       emails: getUniqueValues(clients, 'email'),
-      tags: [...new Set(clients.flatMap(client => client.tags || []))],
-      interests: clients
-        .map(client => client.interest)
-        .filter(
-          (interest): interest is string =>
-            typeof interest === 'string' && interest !== null
-        )
-        .filter((value, index, self) => self.indexOf(value) === index),
+      tags: getUniqueArrayValues(clients, 'tags'),
+      interests: getUniqueValues(clients, 'interest'),
     }),
     [clients]
   );
 
-  // Filter and sort clients
-  const filteredClients = useMemo(() => {
-    const filtered = filterClients(clients, debouncedSearchTerm, filters, {
-      clientsWithInstruments,
-    });
-    return sortClients(
-      filtered as unknown as { [k: string]: unknown }[],
-      sortBy,
-      sortOrder
-    ) as unknown as Client[];
-  }, [
-    clients,
-    debouncedSearchTerm,
-    filters,
+  // 1) 필드 기반 필터만 적용 (텍스트 검색 제외)
+  const fieldFiltered = useMemo(() => {
+    return filterClients(clients, '', filters, { clientsWithInstruments });
+  }, [clients, filters, clientsWithInstruments]);
+
+  // 2) 공통 검색/정렬 훅 적용
+  const {
+    items: filteredClients,
+    handleSort,
+    getSortArrow,
     sortBy,
     sortOrder,
-    clientsWithInstruments,
-  ]);
+  } = useFilterSort<Client>(fieldFiltered, {
+    searchFields: [
+      'first_name',
+      'last_name',
+      'contact_number',
+      'email',
+      'interest',
+      'note',
+    ],
+    initialSearchTerm: searchTerm,
+    initialSortBy: 'created_at',
+    initialSortOrder: 'desc',
+    debounceMs: 300,
+    customFilter: (item, term) => {
+      const t = term.toLowerCase();
+      const parts = [
+        item.first_name,
+        item.last_name,
+        item.contact_number,
+        item.email,
+        item.interest,
+        item.note,
+        Array.isArray(item.tags) ? item.tags.join(' ') : '',
+      ]
+        .filter(Boolean)
+        .map(v => String(v).toLowerCase());
+      return parts.some(v => v.includes(t));
+    },
+  });
 
-  const handleFilterChange = (
-    category: keyof typeof filters,
+  const handleFilterChange = <K extends keyof FilterState>(
+    category: K,
     value: string
   ) => {
     setFilters(prev => {
       const currentValues = prev[category];
-      const newValues = currentValues.includes(value)
-        ? currentValues.filter(v => v !== value)
-        : [...currentValues, value];
+      const newValues = toggleValue(currentValues, value);
 
       return {
         ...prev,
@@ -92,31 +111,15 @@ export const useFilters = (
   };
 
   const handleColumnSort = (column: keyof Client) => {
-    if (sortBy === column) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(column);
-      setSortOrder('asc');
-    }
+    handleSort(column);
   };
 
-  const getSortArrow = (column: keyof Client) => {
-    if (sortBy !== column) {
-      return 'sort-neutral';
-    } else if (sortOrder === 'asc') {
-      return 'sort-asc';
-    } else {
-      return 'sort-desc';
-    }
+  const getSortArrowClass = (column: keyof Client) => {
+    return arrowToClass(getSortArrow(column));
   };
 
   const getActiveFiltersCount = () => {
-    return (
-      Object.values(filters).reduce(
-        (count, filterArray) => count + filterArray.length,
-        0
-      ) + (searchTerm ? 1 : 0)
-    );
+    return countActiveFilters(filters) + (searchTerm ? 1 : 0);
   };
 
   return {
@@ -138,7 +141,7 @@ export const useFilters = (
     handleFilterChange,
     clearAllFilters,
     handleColumnSort,
-    getSortArrow,
+    getSortArrow: getSortArrowClass,
     getActiveFiltersCount,
   };
 };

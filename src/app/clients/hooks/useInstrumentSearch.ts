@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Instrument } from '@/types';
-import { useInstruments } from './useInstruments';
+import { useOptimizedInstruments as useInstruments } from '@/hooks/useOptimizedInstruments';
 import { logError } from '@/utils/logger';
 
 export function useInstrumentSearch() {
