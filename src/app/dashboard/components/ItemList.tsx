@@ -215,9 +215,14 @@ const ItemList = memo(function ItemList({
                 <tr key={item.id} className="hover:bg-gray-50 transition">
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-gray-900">
-                      {item.maker}
+                      {item.maker || '—'}
                     </div>
-                    <div className="text-xs text-gray-500">{item.type}</div>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-900">
+                      {item.type || '—'}
+                    </div>
                   </td>
 
                   <td className="px-6 py-4">
