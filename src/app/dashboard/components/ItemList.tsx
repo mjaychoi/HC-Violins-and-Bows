@@ -6,6 +6,7 @@ import {
   formatInstrumentPrice,
   formatInstrumentYear,
 } from '../utils/dashboardUtils';
+import { arrowToClass } from '@/utils/filterHelpers';
 
 interface ItemListProps {
   items: Instrument[];
@@ -122,11 +123,11 @@ const ItemList = memo(function ItemList({
                 <span className="inline-flex items-center gap-1">
                   Maker
                   <span
-                    className={`opacity-0 group-hover:opacity-100 ${getSortArrow('maker') && 'opacity-100 text-gray-900'}`}
+                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('maker')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
                   >
-                    {getSortArrow('maker') === '↑'
+                    {arrowToClass(getSortArrow('maker')) === 'sort-asc'
                       ? '▲'
-                      : getSortArrow('maker') === '↓'
+                      : arrowToClass(getSortArrow('maker')) === 'sort-desc'
                         ? '▼'
                         : '↕'}
                   </span>
@@ -139,11 +140,11 @@ const ItemList = memo(function ItemList({
                 <span className="inline-flex items-center gap-1">
                   Type
                   <span
-                    className={`opacity-0 group-hover:opacity-100 ${getSortArrow('type') && 'opacity-100 text-gray-900'}`}
+                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('type')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
                   >
-                    {getSortArrow('type') === '↑'
+                    {arrowToClass(getSortArrow('type')) === 'sort-asc'
                       ? '▲'
-                      : getSortArrow('type') === '↓'
+                      : arrowToClass(getSortArrow('type')) === 'sort-desc'
                         ? '▼'
                         : '↕'}
                   </span>
@@ -156,11 +157,11 @@ const ItemList = memo(function ItemList({
                 <span className="inline-flex items-center gap-1">
                   Year
                   <span
-                    className={`opacity-0 group-hover:opacity-100 ${getSortArrow('year') && 'opacity-100 text-gray-900'}`}
+                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('year')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
                   >
-                    {getSortArrow('year') === '↑'
+                    {arrowToClass(getSortArrow('year')) === 'sort-asc'
                       ? '▲'
-                      : getSortArrow('year') === '↓'
+                      : arrowToClass(getSortArrow('year')) === 'sort-desc'
                         ? '▼'
                         : '↕'}
                   </span>
@@ -173,11 +174,11 @@ const ItemList = memo(function ItemList({
                 <span className="inline-flex items-center gap-1">
                   Price
                   <span
-                    className={`opacity-0 group-hover:opacity-100 ${getSortArrow('price') && 'opacity-100 text-gray-900'}`}
+                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('price')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
                   >
-                    {getSortArrow('price') === '↑'
+                    {arrowToClass(getSortArrow('price')) === 'sort-asc'
                       ? '▲'
-                      : getSortArrow('price') === '↓'
+                      : arrowToClass(getSortArrow('price')) === 'sort-desc'
                         ? '▼'
                         : '↕'}
                   </span>
@@ -190,11 +191,11 @@ const ItemList = memo(function ItemList({
                 <span className="inline-flex items-center gap-1">
                   Status
                   <span
-                    className={`opacity-0 group-hover:opacity-100 ${getSortArrow('status') && 'opacity-100 text-gray-900'}`}
+                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('status')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
                   >
-                    {getSortArrow('status') === '↑'
+                    {arrowToClass(getSortArrow('status')) === 'sort-asc'
                       ? '▲'
-                      : getSortArrow('status') === '↓'
+                      : arrowToClass(getSortArrow('status')) === 'sort-desc'
                         ? '▼'
                         : '↕'}
                   </span>

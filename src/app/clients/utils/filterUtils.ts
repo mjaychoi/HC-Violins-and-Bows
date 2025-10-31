@@ -1,18 +1,16 @@
 // src/app/clients/utils/filterUtils.ts
 import { Client } from '@/types';
+import {
+  getUniqueValues as getUniqueValuesGeneric,
+  getUniqueArrayValues,
+} from '@/utils/uniqueValues';
+import { toggleValue } from '@/utils/filterHelpers';
 
 // Filter utility functions
 export const getUniqueValues = (
   clients: Client[],
   field: keyof Client
-): string[] => {
-  const values = clients
-    .map(client => client[field])
-    .filter(
-      (value): value is string => typeof value === 'string' && value !== null
-    );
-  return [...new Set(values)];
-};
+): string[] => getUniqueValuesGeneric(clients, field);
 
 export const getUniqueLastNames = (clients: Client[]) =>
   getUniqueValues(clients, 'last_name');
@@ -23,20 +21,11 @@ export const getUniqueContactNumbers = (clients: Client[]) =>
 export const getUniqueEmails = (clients: Client[]) =>
   getUniqueValues(clients, 'email');
 
-export const getUniqueTags = (clients: Client[]): string[] => {
-  const allTags = clients.flatMap(client => client.tags || []);
-  return [...new Set(allTags)];
-};
+export const getUniqueTags = (clients: Client[]): string[] =>
+  getUniqueArrayValues(clients, 'tags');
 
-export const getUniqueInterests = (clients: Client[]): string[] => {
-  const interests = clients
-    .map(client => client.interest)
-    .filter(
-      (interest): interest is string =>
-        typeof interest === 'string' && interest !== null
-    );
-  return [...new Set(interests)];
-};
+export const getUniqueInterests = (clients: Client[]): string[] =>
+  getUniqueValuesGeneric(clients, 'interest');
 
 // Filter change handler
 export const handleFilterChange = (
@@ -45,9 +34,7 @@ export const handleFilterChange = (
   value: string
 ): Record<string, string[]> => {
   const currentValues = currentFilters[category] || [];
-  const newValues = currentValues.includes(value)
-    ? currentValues.filter(v => v !== value)
-    : [...currentValues, value];
+  const newValues = toggleValue(currentValues, value);
 
   return {
     ...currentFilters,

@@ -2,7 +2,8 @@
 
 import React, { useRef, useEffect } from 'react';
 import { Instrument } from '@/types';
-import { getUniqueValues, getPriceRange } from '../utils/dashboardUtils';
+import { getPriceRange } from '../utils/dashboardUtils';
+import { getUniqueValues } from '@/utils/uniqueValues';
 // import { classNames } from '@/utils/classNames'
 // import Button from '@/components/common/Button'
 import { useEscapeKey } from '@/hooks/useEscapeKey';

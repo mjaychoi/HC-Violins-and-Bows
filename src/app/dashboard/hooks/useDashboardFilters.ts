@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
 import { Instrument } from '@/types';
+import { useFilterSort } from '@/hooks/useFilterSort';
+import { toggleValue, countActiveFilters } from '@/utils/filterHelpers';
 
 export function useDashboardFilters(items: Instrument[]) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('created_at');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy] = useState('created_at');
+  const [sortOrder] = useState<'asc' | 'desc'>('desc');
   const [showFilters, setShowFilters] = useState(false);
 
   const [filters, setFilters] = useState({
@@ -88,27 +90,17 @@ export function useDashboardFilters(items: Instrument[]) {
     return filtered;
   }, [items, searchTerm, filters]);
 
-  const sortedItems = useMemo(() => {
-    return [...filteredItems].sort((a, b) => {
-      let aValue = a[sortBy as keyof Instrument];
-      let bValue = b[sortBy as keyof Instrument];
-
-      // Handle null values
-      if (aValue === null && bValue === null) return 0;
-      if (aValue === null) return sortOrder === 'asc' ? 1 : -1;
-      if (bValue === null) return sortOrder === 'asc' ? -1 : 1;
-
-      // Handle different data types
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        aValue = aValue.toLowerCase();
-        bValue = bValue.toLowerCase();
-      }
-
-      if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [filteredItems, sortBy, sortOrder]);
+  const {
+    items: sortedItems,
+    handleSort,
+    getSortArrow,
+  } = useFilterSort<Instrument>(filteredItems, {
+    searchFields: ['maker', 'type'],
+    initialSearchTerm: searchTerm,
+    initialSortBy: sortBy,
+    initialSortOrder: sortOrder,
+    debounceMs: 200,
+  });
 
   const filterOptions = useMemo(() => {
     const uniqueValues = (field: keyof (typeof items)[0]) => {
@@ -128,14 +120,15 @@ export function useDashboardFilters(items: Instrument[]) {
     filterType: keyof typeof filters,
     value: string | boolean
   ) => {
-    setFilters(prev => {
+    setFilters((prev: typeof filters) => {
       const currentFilter = prev[filterType];
       if (Array.isArray(currentFilter)) {
         return {
           ...prev,
-          [filterType]: (currentFilter as (string | boolean)[]).includes(value)
-            ? (currentFilter as (string | boolean)[]).filter(v => v !== value)
-            : [...(currentFilter as (string | boolean)[]), value],
+          [filterType]: toggleValue(
+            currentFilter as (string | boolean)[],
+            value
+          ),
         };
       }
       return prev;
@@ -166,34 +159,14 @@ export function useDashboardFilters(items: Instrument[]) {
     setSearchTerm('');
   };
 
-  const handleSort = (field: string) => {
-    if (sortBy === field) {
-      setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
-    }
+  const handleSortProxy = (field: string) => {
+    handleSort(field);
   };
 
-  const getSortArrow = (field: string) => {
-    if (sortBy !== field) return '';
-    return sortOrder === 'asc' ? '↑' : '↓';
-  };
+  const getSortArrowProxy = (field: string) => getSortArrow(field);
 
   const getActiveFiltersCount = () => {
-    let count = 0;
-    Object.entries(filters).forEach(([key, filter]) => {
-      if (Array.isArray(filter)) {
-        count += filter.length;
-      } else if (
-        key === 'priceRange' &&
-        typeof filter === 'object' &&
-        filter !== null
-      ) {
-        count += Object.values(filter).filter(Boolean).length;
-      }
-    });
-    return count;
+    return countActiveFilters(filters);
   };
 
   return {
@@ -209,8 +182,8 @@ export function useDashboardFilters(items: Instrument[]) {
     handleFilterChange,
     handlePriceRangeChange,
     clearAllFilters,
-    handleSort,
-    getSortArrow,
+    handleSort: handleSortProxy,
+    getSortArrow: getSortArrowProxy,
     getActiveFiltersCount,
   };
 }

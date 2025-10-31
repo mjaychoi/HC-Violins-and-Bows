@@ -1,4 +1,5 @@
 import { Instrument, Client, ClientInstrument } from '@/types';
+import { getUniqueValues as getUniqueValuesGeneric } from '@/utils/uniqueValues';
 
 // Instrument formatting utilities
 export const formatInstrumentName = (instrument: Instrument): string => {
@@ -105,12 +106,7 @@ export const getRelationshipIcon = (
 export const getUniqueValues = (
   instruments: Instrument[],
   field: keyof Instrument
-): string[] => {
-  const values = instruments
-    .map(instrument => instrument[field])
-    .filter(Boolean) as string[];
-  return Array.from(new Set(values));
-};
+): string[] => getUniqueValuesGeneric(instruments, field);
 
 export const getPriceRange = (
   instruments: Instrument[]
