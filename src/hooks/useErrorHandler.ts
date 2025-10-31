@@ -141,6 +141,19 @@ export function useErrorHandler() {
     return errorHandler.getRecoverySuggestions(error);
   }, []);
 
+  // Error toasts as a JSX element (better ergonomics)
+  const ErrorToastsNode = React.createElement(
+    'div',
+    { className: 'fixed top-4 right-4 z-50 space-y-2' },
+    errors.map((error, index) =>
+      React.createElement(ErrorToast, {
+        key: `${error.timestamp.getTime()}-${index}`,
+        error: error,
+        onClose: () => removeError(index),
+      })
+    )
+  );
+
   const ErrorToasts = (): React.JSX.Element => {
     return React.createElement(
       'div',
@@ -167,5 +180,6 @@ export function useErrorHandler() {
     getErrorCount,
     getRecoverySuggestions,
     ErrorToasts,
+    ErrorToastsNode,
   };
 }

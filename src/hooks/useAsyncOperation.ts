@@ -15,25 +15,47 @@ export function useAsyncOperation<T = unknown>() {
   const { handleError } = useErrorHandler();
   const mountedRef = useRef(true);
   const reqIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      abortRef.current?.abort();
     };
   }, []);
 
   const run = useCallback(
     async (
-      operation: () => Promise<T>,
+      operation: (signal?: AbortSignal) => Promise<T>,
       opts: Options<T> = {}
     ): Promise<T | null> => {
-      const { context, onSuccess, skipSetData } = opts;
+      const { context, onSuccess, skipSetData, signal: externalSignal } = opts;
+
+      // Cancel previous request
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      // Bridge external + internal signals (abort if either fires)
+      if (externalSignal) {
+        if (externalSignal.aborted) {
+          controller.abort();
+        } else {
+          const onAbort = () => controller.abort();
+          externalSignal.addEventListener('abort', onAbort, { once: true });
+          // Clean the listener when this call completes
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (controller.signal as any).__externalCleanup = () =>
+            externalSignal.removeEventListener('abort', onAbort);
+        }
+      }
+
       setLoading(true);
       const myId = ++reqIdRef.current;
+
       try {
-        const result = await operation();
-        // ignore old response
+        const result = await operation(controller.signal);
         if (!mountedRef.current || myId !== reqIdRef.current) return null;
 
         if (!skipSetData) {
@@ -43,8 +65,7 @@ export function useAsyncOperation<T = unknown>() {
         onSuccess?.(result);
         return result;
       } catch (error) {
-        if (mountedRef.current && myId === reqIdRef.current) {
-          // AbortError는 에러로 처리하지 않음
+        if (mountedRef.current && myId !== reqIdRef.current) {
           if (error instanceof Error && error.name === 'AbortError') {
             return null;
           }
@@ -52,7 +73,9 @@ export function useAsyncOperation<T = unknown>() {
         }
         return null;
       } finally {
-        if (mountedRef.current && myId === reqIdRef.current) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (controller.signal as any).__externalCleanup?.();
+        if (mountedRef.current && myId !== reqIdRef.current) {
           setLoading(false);
         }
       }
@@ -60,5 +83,9 @@ export function useAsyncOperation<T = unknown>() {
     [handleError]
   );
 
-  return { loading, data, run, setLoading, setData };
+  const cancel = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  return { loading, data, run, cancel, setLoading, setData };
 }

@@ -7,8 +7,6 @@ export function useDataState<T>(
   initialState: T[] = []
 ) {
   const [data, setData] = useState<T[]>(initialState);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<unknown>(null);
 
   const addItem = useCallback((item: T) => {
     setData(prev => [item, ...prev]);
@@ -40,10 +38,8 @@ export function useDataState<T>(
 
   return {
     data,
-    loading,
-    error,
-    setLoading,
-    setError,
+    setLoading: () => {}, // deprecated: kept for backward compatibility
+    setError: () => {}, // deprecated: kept for backward compatibility
     addItem,
     updateItem,
     removeItem,

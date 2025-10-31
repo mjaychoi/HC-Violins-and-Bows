@@ -70,6 +70,7 @@ export function useLoadingState(
     stopSubmitting,
     withLoading,
     withSubmitting,
+    // Alias for convenience (pick one naming scheme)
     isLoading: loading,
     isSubmitting: submitting,
   };

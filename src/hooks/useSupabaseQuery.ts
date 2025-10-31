@@ -1,5 +1,5 @@
 // src/hooks/useSupabaseQuery.ts
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { apiClient } from '@/utils/apiClient';
 import { useErrorHandler } from './useErrorHandler';
 
@@ -8,6 +8,7 @@ export function useSupabaseQuery<T>(table: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const { handleError } = useErrorHandler();
+  const reqIdRef = useRef(0);
 
   const fetch = useCallback(
     async (options?: {
@@ -18,12 +19,15 @@ export function useSupabaseQuery<T>(table: string) {
     }) => {
       setLoading(true);
       setError(null);
+      const myId = ++reqIdRef.current;
 
       try {
         const { data: result, error: queryError } = await apiClient.query<T>(
           table,
           options
         );
+
+        if (myId !== reqIdRef.current) return; // stale
 
         if (queryError) {
           setError(queryError);
@@ -33,9 +37,11 @@ export function useSupabaseQuery<T>(table: string) {
 
         setData(result || []);
       } catch (err) {
+        if (myId !== reqIdRef.current) return;
         const appError = handleError(err, `Fetch ${table}`);
         setError(appError);
       } finally {
+        if (myId !== reqIdRef.current) return;
         setLoading(false);
       }
     },

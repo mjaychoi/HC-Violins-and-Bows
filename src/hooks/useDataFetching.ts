@@ -1,10 +1,10 @@
 // src/hooks/useDataFetching.ts
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { useAsyncOperation } from './useAsyncOperation';
 
 // common useEffect hook for data fetching
 export function useDataFetching<T, P = void>(
-  fetchFunction: (param?: P) => Promise<T[]>,
+  fetchFunction: (param?: P, signal?: AbortSignal) => Promise<T[]>,
   context: string,
   dependencies: unknown[] = []
 ) {
@@ -17,9 +17,12 @@ export function useDataFetching<T, P = void>(
     fetchFunctionRef.current = fetchFunction;
   }, [fetchFunction]);
 
+  // Create a stable signature of dependencies to avoid spreading
+  const depsKey = useMemo(() => JSON.stringify(dependencies), [dependencies]);
+
   const fetchData = useCallback(
     async (param?: P) => {
-      const res = await run(() => fetchFunctionRef.current(param), {
+      const res = await run(signal => fetchFunctionRef.current(param, signal), {
         context,
         onSuccess: setItems,
       });
@@ -30,11 +33,9 @@ export function useDataFetching<T, P = void>(
 
   useEffect(() => {
     fetchData();
-    // deps 배열에 스프레드를 사용하는 경우 정적 검증이 어려워 경고가 발생하므로, 해당 라인에 한해 규칙을 비활성화합니다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchData, ...dependencies]);
+  }, [fetchData, depsKey]);
 
-  return { fetchData, loading, items };
+  return { fetchData, loading, items, setItems };
 }
 
 // hook for initial data loading

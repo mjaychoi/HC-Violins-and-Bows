@@ -11,7 +11,7 @@ export function useEscapeKey(onEscape: () => void, isActive: boolean = true) {
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown, { passive: true });
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onEscape, isActive]);
 }
