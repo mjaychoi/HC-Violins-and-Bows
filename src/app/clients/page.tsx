@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { Client, ClientInstrument } from '@/types';
+import dynamic from 'next/dynamic';
 import { useUnifiedClients } from '@/hooks/useUnifiedData';
 import {
   useClientInstruments,
@@ -9,12 +10,21 @@ import {
   useInstrumentSearch,
   useOwnedItems,
 } from './hooks';
-import {
-  ClientForm,
-  ClientList,
-  ClientFilters,
-  ClientModal,
-} from './components';
+import { ClientForm, ClientFilters } from './components';
+const ClientList = dynamic(() => import('./components/ClientList'), {
+  ssr: true,
+  loading: () => (
+    <div className="bg-white rounded-lg shadow border border-gray-200">
+      <div className="text-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <div className="text-gray-500 text-lg">Loading list...</div>
+      </div>
+    </div>
+  ),
+});
+const ClientModal = dynamic(() => import('./components/ClientModal'), {
+  ssr: false,
+});
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { logError } from '@/utils/logger';
 import { useModalState } from '@/hooks/useModalState';

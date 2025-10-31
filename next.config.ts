@@ -1,6 +1,15 @@
 import type { NextConfig } from 'next';
 
-const nextConfig: NextConfig = {
+// 선택적 번들 분석기: 로컬에서 ANALYZE=1로 켜기 (패키지 설치 시 동작)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let withBundleAnalyzer: any = (config: NextConfig) => config;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  // @ts-expect-error: optional peer (dev) dependency
+  withBundleAnalyzer = require('@next/bundle-analyzer')({ enabled: process.env.ANALYZE === '1' });
+} catch {}
+
+const baseConfig: NextConfig = {
   output: 'standalone',
   outputFileTracingRoot: '/Users/soyeonhong/HC-Violins-and-Bows',
   compress: true,
@@ -33,4 +42,5 @@ const nextConfig: NextConfig = {
   },
 };
 
+const nextConfig = withBundleAnalyzer(baseConfig);
 export default nextConfig;

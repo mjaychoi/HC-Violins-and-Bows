@@ -24,8 +24,9 @@
 ### 3) 앱 품질/성능
 - [ ] 번들 분석: 불필요한 대형 의존성 제거, 다이나믹 임포트/코드 스플리팅 적용
   - `next.config.ts`에 `experimental.optimizePackageImports` 적용(부분 임포트 최적화)
-  - 코드 레벨에서 `next/dynamic` 도입 권장(무거운 컴포넌트 지연 로딩)
-  - 번들 분석은 플러그인 설치 필요(추후 `@next/bundle-analyzer` 도입 권장)
+  - [x] 코드 레벨에서 `next/dynamic` 도입(예: `src/app/clients/page.tsx`의 `ClientList`, `ClientModal`)
+  - [x] 번들 분석기 준비: `ANALYZE=1 next build` 시 동작하도록 `next.config.ts`에 조건부 통합
+    - 설치: `npm i -D @next/bundle-analyzer`
 - [x] 캐싱 전략: 정적 자산 장기 캐시, 이미지 최적화(`next/image`)
   - `next.config.ts`에서 정적 파일 `Cache-Control: max-age=31536000, immutable` 헤더 설정
   - `vercel.json`에도 동일 헤더 반영(플랫폼 레벨 캐시 강화)
