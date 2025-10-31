@@ -82,16 +82,7 @@ const ClientList = memo(function ClientList({
     });
   }, [clients]);
 
-  const clientInstrumentsMap = useMemo(() => {
-    const map = new Map<string, ClientInstrument[]>();
-    clientInstruments.forEach(ci => {
-      if (!map.has(ci.client_id)) {
-        map.set(ci.client_id, []);
-      }
-      map.get(ci.client_id)!.push(ci);
-    });
-    return map;
-  }, [clientInstruments]);
+  // Note: mapping by client id was unused; keep logic simple per-row filter for clarity
 
   if (clients.length === 0) {
     return (

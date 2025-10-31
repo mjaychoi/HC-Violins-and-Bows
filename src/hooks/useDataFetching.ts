@@ -30,6 +30,8 @@ export function useDataFetching<T, P = void>(
 
   useEffect(() => {
     fetchData();
+    // deps 배열에 스프레드를 사용하는 경우 정적 검증이 어려워 경고가 발생하므로, 해당 라인에 한해 규칙을 비활성화합니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchData, ...dependencies]);
 
   return { fetchData, loading, items };
