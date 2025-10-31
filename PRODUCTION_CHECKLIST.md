@@ -23,7 +23,14 @@
 
 ### 3) 앱 품질/성능
 - [ ] 번들 분석: 불필요한 대형 의존성 제거, 다이나믹 임포트/코드 스플리팅 적용
-- [ ] 캐싱 전략: ISR/Route Handlers 캐시 정책, 이미지 최적화(`next/image`) 확인
+  - `next.config.ts`에 `experimental.optimizePackageImports` 적용(부분 임포트 최적화)
+  - 코드 레벨에서 `next/dynamic` 도입 권장(무거운 컴포넌트 지연 로딩)
+  - 번들 분석은 플러그인 설치 필요(추후 `@next/bundle-analyzer` 도입 권장)
+- [x] 캐싱 전략: 정적 자산 장기 캐시, 이미지 최적화(`next/image`)
+  - `next.config.ts`에서 정적 파일 `Cache-Control: max-age=31536000, immutable` 헤더 설정
+  - `vercel.json`에도 동일 헤더 반영(플랫폼 레벨 캐시 강화)
+  - 이미지: AVIF/WEBP 포맷 허용 및 최소 TTL 설정
+  - 페이지 캐시 정책(ISR/Route Handlers)은 페이지별 요구사항에 맞춰 개별 설정 필요
 - [ ] 접근성(A11y): 키보드 탐색/ARIA 라벨 테스트 통과
 - [ ] SEO: `robots.txt`, `sitemap.xml`, 메타/OG 태그 구성
 
