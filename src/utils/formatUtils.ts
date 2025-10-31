@@ -129,7 +129,7 @@ export function formatText(
 }
 
 export function formatName(firstName: string, lastName: string): string {
-  return `${firstName} ${lastName}`.trim();
+  return `${firstName.trim()} ${lastName.trim()}`;
 }
 
 export function formatInitials(firstName: string, lastName: string): string {
@@ -138,7 +138,9 @@ export function formatInitials(firstName: string, lastName: string): string {
 
 // Phone number formatting
 export function formatPhone(phone?: string | null): string {
-  const cleaned = (phone ?? '').replace(/\D/g, '');
+  if (!phone) return '';
+
+  const cleaned = phone.replace(/\D/g, '');
 
   if (cleaned.length === 10) {
     return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
@@ -148,7 +150,7 @@ export function formatPhone(phone?: string | null): string {
     return `+1 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
   }
 
-  return phone ?? ''; // Return original if format doesn't match
+  return ''; // Return empty if format doesn't match
 }
 
 // Email formatting
