@@ -33,8 +33,8 @@
 - [ ] 쿠키/세션 보안: `Secure`, `HttpOnly`, `SameSite` 속성 및 CSRF 고려
 
 ### 5) 테스트/품질 게이트
-- [ ] Lint/Format: ESLint/Prettier 일관 적용, CI에서 강제
-- [ ] 타입체크 복구: `tsc --noEmit` CI 통과(현재 pre-commit에선 임시 비활성 → CI에서 필수)
+- [x] Lint/Format: ESLint/Prettier 일관 적용, CI에서 강제 (`ci.yml`/`code-quality.yml`에 ESLint+Prettier 체크 포함)
+- [x] 타입체크 복구: `tsc --noEmit` CI 통과(Pre-commit에선 비활성 유지, CI에서 필수 실행)
 - [ ] 단위/통합 테스트: Jest `--ci` 그린 상태 유지, 비동기 타임아웃 안정화
 - [ ] E2E 스모크: Playwright 핵심 시나리오(목록/상세/생성/수정/검색) 통과 및 재시도 설정
 
