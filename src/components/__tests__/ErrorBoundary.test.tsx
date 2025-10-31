@@ -1,5 +1,7 @@
 import { render, screen } from '@testing-library/react';
-import ErrorBoundary from '../ErrorBoundary';
+import ErrorBoundary from '../common/ErrorBoundary';
+import { AppError } from '@/types/errors';
+import { ErrorInfo } from 'react';
 
 // Mock console.error to avoid noise in tests
 const originalConsoleError = console.error;
@@ -39,14 +41,15 @@ describe('ErrorBoundary', () => {
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "We're sorry, but something unexpected happened. Please try again."
-      )
+      screen.getByText('An unexpected error occurred. Please try again.')
     ).toBeInTheDocument();
   });
 
   it('should render custom fallback when provided', () => {
-    const customFallback = <div>Custom error message</div>;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const customFallback = (_error: AppError, _errorInfo: ErrorInfo) => (
+      <div>Custom error message</div>
+    );
 
     render(
       <ErrorBoundary fallback={customFallback}>
@@ -64,6 +67,7 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     );
 
+    expect(screen.getByText('Try Again')).toBeInTheDocument();
     expect(screen.getByText('Reload Page')).toBeInTheDocument();
   });
 
