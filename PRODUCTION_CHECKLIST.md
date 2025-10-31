@@ -53,8 +53,8 @@
 ### 7) CI/CD
 - [ ] GitHub Actions 활성화: `.github/workflows/*` 파이프라인에서 아래 수행
   - [ ] Install: `npm ci` (또는 `pnpm i --frozen-lockfile`)
-  - [ ] Lint/Type: `eslint .`, `tsc --noEmit`
-  - [ ] Test: `jest --ci`
+  - [x] Lint/Type: `eslint .`, `tsc --noEmit`
+  - [x] Test: `jest --ci` (현재: `npm run test -- --ci --coverage`)
   - [ ] E2E(optional): `npx playwright install --with-deps && npx playwright test`
 - [ ] 시크릿 등록: `SUPABASE_*`, `SENTRY_AUTH_TOKEN` 등 GitHub 환경 시크릿 저장
 - [ ] 브랜치 보호: `main` 보호 규칙, 필수 리뷰/상태 체크 강제
