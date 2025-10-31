@@ -12,24 +12,39 @@ export const dateFormats = {
 
 export function formatDate(
   date: string | Date,
-  format: keyof typeof dateFormats = 'short'
+  style: keyof typeof dateFormats = 'short'
 ): string {
-  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  const d = typeof date === 'string' ? new Date(date) : date;
 
-  if (isNaN(dateObj.getTime())) {
-    return 'Invalid Date';
-  }
+  if (isNaN(d.getTime())) return 'Invalid Date';
 
-  const options: Intl.DateTimeFormatOptions = {
-    year: 'numeric',
-    month: format.includes('MMM') ? 'short' : 'long',
-    day: '2-digit',
-    hour: format.includes('HH') ? '2-digit' : undefined,
-    minute: format.includes('mm') ? '2-digit' : undefined,
-    hour12: false,
+  // Map allowed styles to Intl options
+  const map: Record<keyof typeof dateFormats, Intl.DateTimeFormatOptions> = {
+    short: { year: 'numeric', month: 'short', day: '2-digit' },
+    long: { year: 'numeric', month: 'long', day: '2-digit' },
+    time: { hour: '2-digit', minute: '2-digit', hour12: false },
+    datetime: {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    },
+    iso: {},
+    display: {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    },
   };
 
-  return new Intl.DateTimeFormat('en-US', options).format(dateObj);
+  if (style === 'iso') return d.toISOString().slice(0, 10); // yyyy-MM-dd
+
+  return new Intl.DateTimeFormat('en-US', map[style]).format(d);
 }
 
 export function formatRelativeTime(date: string | Date): string {
@@ -122,8 +137,8 @@ export function formatInitials(firstName: string, lastName: string): string {
 }
 
 // Phone number formatting
-export function formatPhone(phone: string): string {
-  const cleaned = phone.replace(/\D/g, '');
+export function formatPhone(phone?: string | null): string {
+  const cleaned = (phone ?? '').replace(/\D/g, '');
 
   if (cleaned.length === 10) {
     return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
@@ -133,12 +148,12 @@ export function formatPhone(phone: string): string {
     return `+1 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
   }
 
-  return phone; // Return original if format doesn't match
+  return phone ?? ''; // Return original if format doesn't match
 }
 
 // Email formatting
-export function formatEmail(email: string): string {
-  return email.toLowerCase().trim();
+export function formatEmail(email?: string | null): string {
+  return (email ?? '').toLowerCase().trim();
 }
 
 // File size formatting
@@ -198,11 +213,11 @@ export function formatRelationshipType(type: string): string {
 
 // Instrument formatting
 export function formatInstrumentName(
-  maker: string,
-  name: string,
-  year?: string
+  maker?: string | null,
+  name?: string | null,
+  year?: string | null
 ): string {
-  const parts = [maker, name];
+  const parts = [maker, name].filter(Boolean) as string[];
   if (year) parts.push(`(${year})`);
   return parts.join(' ');
 }
@@ -231,10 +246,15 @@ export function formatTableData<T>(
 }
 
 // Search highlighting
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function highlightSearchTerm(text: string, searchTerm: string): string {
   if (!searchTerm) return text;
 
-  const regex = new RegExp(`(${searchTerm})`, 'gi');
+  const safe = escapeRegex(searchTerm);
+  const regex = new RegExp(`(${safe})`, 'gi');
   return text.replace(regex, '<mark>$1</mark>');
 }
 

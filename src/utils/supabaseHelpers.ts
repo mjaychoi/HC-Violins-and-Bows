@@ -1,5 +1,10 @@
 import { supabase } from '@/lib/supabase';
 
+// Escape ILike special characters
+function escapeILike(s: string): string {
+  return s.replace(/[%_]/g, c => '\\' + c);
+}
+
 export class SupabaseHelpers {
   static async fetchAll<T>(
     table: string,
@@ -80,9 +85,8 @@ export class SupabaseHelpers {
     }
   ): Promise<{ data: T[] | null; error: unknown }> {
     const limit = options?.limit ?? 10;
-    const orCondition = columns
-      .map(col => `${col}.ilike.%${searchTerm}%`)
-      .join(',');
+    const term = escapeILike(searchTerm);
+    const orCondition = columns.map(col => `${col}.ilike.%${term}%`).join(',');
 
     const { data, error } = await supabase
       .from(table)

@@ -1,4 +1,5 @@
 // Validation utility functions for form validation
+import { useState, useCallback, useEffect } from 'react';
 
 export interface ValidationRule<T = unknown> {
   required?: boolean;
@@ -117,13 +118,13 @@ export function validateField<T>(
 // Validate an entire form
 export function validateForm<T extends Record<string, unknown>>(
   data: T,
-  validationSchema: Record<keyof T, ValidationRule<T[keyof T]>[]>
+  validationSchema: Partial<Record<keyof T, ValidationRule<T[keyof T]>[]>>
 ): ValidationResult {
   const errors: Record<string, string> = {};
 
   for (const [fieldName, rules] of Object.entries(validationSchema)) {
     const value = data[fieldName as keyof T];
-    const error = validateField(value, rules, fieldName);
+    const error = validateField(value, rules as ValidationRule[], fieldName);
 
     if (error) {
       errors[fieldName] = error;
@@ -271,6 +272,3 @@ export function useDebouncedValidation<T>(
 
   return { error, isValidating };
 }
-
-// Import React hooks
-import { useState, useCallback, useEffect } from 'react';

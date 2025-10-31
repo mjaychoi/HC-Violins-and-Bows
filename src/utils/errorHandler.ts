@@ -80,12 +80,42 @@ export class ErrorHandler {
     let code = ErrorCodes.DATABASE_ERROR;
     let message = 'Database operation failed';
 
-    // Type guard for PostgrestError
+    // Prefer HTTP status + hint/message; fall back to code
+    if (
+      typeof error === 'object' &&
+      error &&
+      'status' in error &&
+      'message' in error
+    ) {
+      const { status } = error as { status?: number };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const msg = (error as any).message as string | undefined;
+
+      if (status === 401) {
+        code = ErrorCodes.UNAUTHORIZED;
+        message = 'Authentication required';
+      } else if (status === 403) {
+        code = ErrorCodes.FORBIDDEN;
+        message = 'Access denied';
+      } else if (status === 404) {
+        code = ErrorCodes.RECORD_NOT_FOUND;
+        message = 'Resource not found';
+      } else if (status && status >= 500) {
+        code = ErrorCodes.INTERNAL_ERROR;
+        message = 'Server error';
+      } else if (msg?.toLowerCase().includes('duplicate key')) {
+        code = ErrorCodes.DUPLICATE_RECORD;
+        message = 'Record already exists';
+      }
+    }
+
+    // Type guard for PostgrestError - fallback
     if (
       error &&
       typeof error === 'object' &&
       'code' in error &&
-      'message' in error
+      'message' in error &&
+      code === ErrorCodes.DATABASE_ERROR
     ) {
       const pgError = error as {
         code: string;
@@ -395,7 +425,10 @@ export const isNetworkError = (error: unknown): boolean => {
     const name = (error as { name: string }).name;
     return name === 'NetworkError' || name === 'AbortError';
   }
-  return !navigator.onLine;
+  if (typeof navigator !== 'undefined') {
+    return !navigator.onLine;
+  }
+  return false; // SSR: don't assume offline
 };
 
 export const isValidationError = (error: unknown): boolean => {
