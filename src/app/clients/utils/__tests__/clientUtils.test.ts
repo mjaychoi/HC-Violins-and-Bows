@@ -8,6 +8,7 @@ import {
   sortClients,
 } from '../clientUtils';
 import { Client } from '@/types';
+import { FilterState } from '../../types';
 
 describe('Client Utils', () => {
   const mockClient: Client = {
@@ -134,13 +135,14 @@ describe('Client Utils', () => {
     ];
 
     it('should filter by search term', () => {
-      const filters = {
+      const filters: FilterState = {
         last_name: [],
         first_name: [],
         contact_number: [],
         email: [],
         tags: [],
         interest: [],
+        hasInstruments: [],
       };
       const result = filterClients(clients, 'John', filters);
       expect(result).toHaveLength(3); // John, Jane, Bob all contain 'John'
@@ -150,13 +152,14 @@ describe('Client Utils', () => {
     });
 
     it('should filter by tags', () => {
-      const filters = {
+      const filters: FilterState = {
         last_name: [],
         first_name: [],
         contact_number: [],
         email: [],
         tags: ['Owner'],
         interest: [],
+        hasInstruments: [],
       };
       const result = filterClients(clients, '', filters);
       expect(result).toHaveLength(1);
@@ -164,13 +167,14 @@ describe('Client Utils', () => {
     });
 
     it('should filter by multiple criteria', () => {
-      const filters = {
+      const filters: FilterState = {
         last_name: [],
         first_name: [],
         contact_number: [],
         email: [],
         tags: ['Owner', 'Musician'],
         interest: [],
+        hasInstruments: [],
       };
       const result = filterClients(clients, 'John', filters);
       expect(result).toHaveLength(2); // John and Jane both contain 'John' and match tags

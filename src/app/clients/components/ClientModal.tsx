@@ -75,11 +75,10 @@ export default function ClientModal({
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
     >
   ) => {
-    const { name, value, type } = e.target;
+    const { name, value, type, checked } = e.target as HTMLInputElement;
     setViewFormData(prev => ({
       ...prev,
-      [name]:
-        type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
+      [name]: type === 'checkbox' ? checked : value,
     }));
   };
 
@@ -116,10 +115,14 @@ export default function ClientModal({
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="client-modal-title"
       onClick={onClose}
     >
       <div
         className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col"
+        tabIndex={-1}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -133,6 +136,7 @@ export default function ClientModal({
             </h3>
             <button
               onClick={onClose}
+              aria-label="Close modal"
               className="text-gray-400 hover:text-gray-600"
             >
               <svg

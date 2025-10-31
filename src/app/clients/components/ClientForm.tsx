@@ -164,9 +164,6 @@ export default function ClientForm({
       last_name: clientValidation.lastName,
       email: clientValidation.email,
       contact_number: clientValidation.phone,
-      tags: [],
-      interest: [],
-      note: [],
     };
 
     const validation = validateForm(formData, validationSchema);

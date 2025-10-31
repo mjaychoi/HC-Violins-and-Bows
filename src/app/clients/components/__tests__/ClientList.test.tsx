@@ -29,18 +29,14 @@ const mockClients: Client[] = [
   },
 ];
 
-const mockClientsWithInstruments = new Set(['1']);
-
 const mockProps = {
   clients: mockClients,
-  clientsWithInstruments: mockClientsWithInstruments,
   clientInstruments: [],
   onClientClick: jest.fn(),
-  onEditClient: jest.fn(),
   onUpdateClient: jest.fn(),
   onColumnSort: jest.fn(),
   getSortArrow: jest.fn((field: keyof Client) =>
-    field === 'first_name' ? '↑' : ''
+    field === 'first_name' ? 'sort-asc' : 'sort-neutral'
   ),
 };
 
@@ -97,7 +93,7 @@ describe('ClientList', () => {
 
     const nameHeader = screen.getByText('Name');
     const arrowElement = nameHeader.querySelector('span[aria-hidden="true"]');
-    expect(arrowElement).toHaveTextContent('');
+    expect(arrowElement).toHaveClass('sort-asc');
   });
 
   it('shows client tags', () => {

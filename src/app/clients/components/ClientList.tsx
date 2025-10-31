@@ -6,7 +6,7 @@ import {
   sortTags,
   /* formatClientContact, getClientInitials */ getInterestColor,
 } from '../utils';
-import { useState, memo, useMemo, useCallback } from 'react';
+import { useState, memo, useCallback } from 'react';
 
 const SortIcon = ({ cls }: { cls: string }) => (
   <span aria-hidden className={cls} />
@@ -14,10 +14,8 @@ const SortIcon = ({ cls }: { cls: string }) => (
 
 interface ClientListProps {
   clients: Client[];
-  clientsWithInstruments: Set<string>;
   clientInstruments: ClientInstrument[];
   onClientClick: (client: Client) => void;
-  onEditClient: (client: Client) => void;
   onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
   onColumnSort: (column: keyof Client) => void;
   getSortArrow: (column: keyof Client) => string;
@@ -74,16 +72,6 @@ const ClientList = memo(function ClientList({
     []
   );
 
-  // memoized calculated values
-  const sortedClients = useMemo(() => {
-    return [...clients].sort((a, b) => {
-      // default sorting logic (optional)
-      return (a.first_name || '').localeCompare(b.first_name || '');
-    });
-  }, [clients]);
-
-  // Note: mapping by client id was unused; keep logic simple per-row filter for clarity
-
   if (clients.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow border border-gray-200">
@@ -103,41 +91,46 @@ const ClientList = memo(function ClientList({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => onColumnSort('first_name')}
-              >
-                <div className="flex items-center">
-                  Name
-                  <SortIcon cls={getSortArrow('first_name')} />
-                </div>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <button
+                  type="button"
+                  className="flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm hover:bg-gray-100"
+                  onClick={() => onColumnSort('first_name')}
+                  aria-label={`Sort by name ${getSortArrow('first_name') === '↑' ? 'ascending' : getSortArrow('first_name') === '↓' ? 'descending' : ''}`}
+                >
+                  Name <SortIcon cls={getSortArrow('first_name')} />
+                </button>
               </th>
-              <th
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => onColumnSort('contact_number')}
-              >
-                <div className="flex items-center">
-                  Contact
-                  <SortIcon cls={getSortArrow('contact_number')} />
-                </div>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <button
+                  type="button"
+                  className="flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm hover:bg-gray-100"
+                  onClick={() => onColumnSort('contact_number')}
+                  aria-label={`Sort by contact ${getSortArrow('contact_number') === '↑' ? 'ascending' : getSortArrow('contact_number') === '↓' ? 'descending' : ''}`}
+                >
+                  Contact <SortIcon cls={getSortArrow('contact_number')} />
+                </button>
               </th>
-              <th
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => onColumnSort('tags')}
-              >
-                <div className="flex items-center">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <button
+                  type="button"
+                  className="flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm hover:bg-gray-100"
+                  onClick={() => onColumnSort('tags')}
+                  aria-label={`Sort by tags ${getSortArrow('tags') === '↑' ? 'ascending' : getSortArrow('tags') === '↓' ? 'descending' : ''}`}
+                >
                   Tags
                   <SortIcon cls={getSortArrow('tags')} />
-                </div>
+                </button>
               </th>
-              <th
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => onColumnSort('interest')}
-              >
-                <div className="flex items-center">
-                  Interest
-                  <SortIcon cls={getSortArrow('interest')} />
-                </div>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <button
+                  type="button"
+                  className="flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm hover:bg-gray-100"
+                  onClick={() => onColumnSort('interest')}
+                  aria-label={`Sort by interest ${getSortArrow('interest') === '↑' ? 'ascending' : getSortArrow('interest') === '↓' ? 'descending' : ''}`}
+                >
+                  Interest <SortIcon cls={getSortArrow('interest')} />
+                </button>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Instruments
@@ -148,7 +141,7 @@ const ClientList = memo(function ClientList({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {sortedClients.map(client => (
+            {clients.map(client => (
               <tr
                 key={client.id}
                 onClick={() =>
@@ -244,16 +237,19 @@ const ClientList = memo(function ClientList({
                 </td>
                 <td className="px-6 py-3 whitespace-nowrap">
                   {editingClient === client.id ? (
-                    <input
-                      type="text"
+                    <select
                       value={editData.interest || ''}
                       onChange={e =>
                         handleEditFieldChange('interest', e.target.value)
                       }
                       className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                       onClick={e => e.stopPropagation()}
-                      placeholder="Interest"
-                    />
+                    >
+                      <option value="">Select interest</option>
+                      <option value="Active">Active</option>
+                      <option value="Passive">Passive</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
                   ) : (
                     <div className="text-sm">
                       {client.interest ? (
@@ -371,6 +367,7 @@ const ClientList = memo(function ClientList({
                           e.stopPropagation();
                           onClientClick(client);
                         }}
+                        aria-label="View client details"
                         className="text-gray-400 hover:text-blue-500 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-blue-50"
                         title="View client details"
                       >
@@ -399,6 +396,7 @@ const ClientList = memo(function ClientList({
                           e.stopPropagation();
                           startEditing(client);
                         }}
+                        aria-label="Edit client"
                         className="text-gray-400 hover:text-green-500 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-green-50"
                         title="Edit client"
                       >
@@ -420,11 +418,12 @@ const ClientList = memo(function ClientList({
                         onClick={e => {
                           e.stopPropagation();
                           if (client.email) {
-                            window.open(`mailto:${client.email}`, '_self');
+                            window.location.href = `mailto:${client.email}`;
                           } else {
                             alert('No email address available');
                           }
                         }}
+                        aria-label={`Email ${client.email ?? 'client (no email)'}`}
                         className="text-gray-400 hover:text-blue-500 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-blue-50"
                         title="Email client"
                       >
