@@ -10,6 +10,15 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
+  {
+    ignores: [
+      '**/.next/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      '**/playwright-report/**',
+      'test-results/**',
+    ],
+  },
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
   {
     files: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx', 'tests/**/*.{ts,tsx}', 'src/**/__tests__/**/*.{ts,tsx}'],
@@ -20,6 +29,14 @@ const eslintConfig = [
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-unused-vars': 'warn',
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    files: ['**/*.config.{js,cjs,mjs,ts}', 'jest.setup.js', 'jest.config.js', 'next.config.ts', 'playwright.config.ts'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      'react/display-name': 'off',
+      '@typescript-eslint/ban-ts-comment': 'off',
     },
   },
 ];
