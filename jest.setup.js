@@ -37,9 +37,91 @@ jest.mock('next/router', () => ({
 }));
 
 // Mock Next.js Link component
-jest.mock('next/link', () => {
-  return ({ children, href }) => {
-    return <a href={href}>{children}</a>;
+jest.mock('next/link', () => ({
+  __esModule: true,
+  default: ({ children, href }) => <a href={href}>{children}</a>,
+}));
+
+// Mock next/dynamic to return the wrapped component directly
+jest.mock('next/dynamic', () => {
+  return {
+    __esModule: true,
+    default: importer => {
+      const mod = importer();
+      // Handle promise or direct
+      if (mod && typeof mod.then === 'function') {
+        // Not awaiting; return a placeholder that renders nothing until resolved
+        // For unit tests, it's fine to render empty div
+        return () => <div data-testid="dynamic" />;
+      }
+      const Comp = mod.default || mod;
+      return Comp || (() => null);
+    },
+  };
+});
+
+// Mock ErrorBoundary to render children directly in tests
+jest.mock('@/components/common', () => {
+  return {
+    __esModule: true,
+    ErrorBoundary: ({ children }) => children,
+  };
+});
+
+// Mock App Layout components to simple containers
+jest.mock('@/components/layout', () => {
+  return {
+    __esModule: true,
+    AppLayout: ({ title, actionButton, children }) => (
+      <div data-testid="app-layout">
+        {title ? <h1>{title}</h1> : null}
+        {actionButton ? (
+          <button className="bg-blue-600" onClick={actionButton.onClick}>
+            {actionButton.icon}
+            {actionButton.label}
+          </button>
+        ) : null}
+        {children}
+      </div>
+    ),
+    AppHeader: () => <div data-testid="app-header" />,
+    AppSidebar: () => <div data-testid="app-sidebar" />,
+  };
+});
+
+// Mock DataContext hooks to avoid provider requirement in unit tests
+jest.mock('@/contexts/DataContext', () => {
+  const empty = [];
+  const noop = async () => {};
+  return {
+    __esModule: true,
+    useClients: () => ({
+      clients: empty,
+      loading: false,
+      submitting: false,
+      fetchClients: noop,
+      createClient: async () => null,
+      updateClient: async () => null,
+      deleteClient: async () => true,
+    }),
+    useInstruments: () => ({
+      instruments: empty,
+      loading: false,
+      submitting: false,
+      fetchInstruments: noop,
+      createInstrument: async () => null,
+      updateInstrument: async () => null,
+      deleteInstrument: async () => true,
+    }),
+    useConnections: () => ({
+      connections: empty,
+      loading: false,
+      submitting: false,
+      fetchConnections: noop,
+      createConnection: async () => null,
+      updateConnection: async () => null,
+      deleteConnection: async () => true,
+    }),
   };
 });
 
@@ -106,13 +188,4 @@ jest.mock('@/lib/supabase', () => ({
   },
 }));
 
-// Mock Supabase helpers
-jest.mock('@/utils/supabaseHelpers', () => ({
-  SupabaseHelpers: {
-    fetchAll: jest.fn(() => Promise.resolve({ data: [], error: null })),
-    search: jest.fn(() => Promise.resolve({ data: [], error: null })),
-    create: jest.fn(() => Promise.resolve({ data: null, error: null })),
-    update: jest.fn(() => Promise.resolve({ data: null, error: null })),
-    delete: jest.fn(() => Promise.resolve({ data: null, error: null })),
-  },
-}));
+// Note: Supabase helpers are mocked per-test where needed

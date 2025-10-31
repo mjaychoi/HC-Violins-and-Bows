@@ -82,14 +82,6 @@ test.describe('Connection List', () => {
   });
 
   test('should show loading state', async ({ page }) => {
-    // Check for loading indicator
-    const loadingIndicator = page.getByText(/loading/i);
-    const spinner = page.locator('[class*="spinner"], [class*="animate-spin"]');
-
-    const isLoading =
-      (await loadingIndicator.isVisible().catch(() => false)) ||
-      (await spinner.isVisible().catch(() => false));
-
     // Page should load eventually
     await expect(page.getByRole('heading')).toBeVisible();
   });

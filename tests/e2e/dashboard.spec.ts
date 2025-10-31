@@ -110,15 +110,6 @@ test.describe('Item List', () => {
   });
 
   test('should show loading state', async ({ page }) => {
-    // Check for loading spinner or text
-    const loadingIndicator = page.getByText(/loading/i);
-    const spinner = page.locator('[class*="spinner"], [class*="animate-spin"]');
-
-    // Either should be visible during initial load
-    const isLoading =
-      (await loadingIndicator.isVisible().catch(() => false)) ||
-      (await spinner.isVisible().catch(() => false));
-
     // Just verify the page loaded, loading state is transient
     await expect(page.getByRole('heading')).toBeVisible();
   });
