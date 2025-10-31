@@ -29,13 +29,14 @@ export const FilterBar = ({
         </button>
         {relationshipTypeCounts.map(({ type, count }) => {
           const style = getRelationshipTypeStyle(type);
+          const active = selectedFilter === type;
           return (
             <button
               key={type}
               onClick={() => onFilterChange(type)}
               className={`pb-3 px-1 text-sm font-medium transition-all duration-200 border-b-2 ${
-                selectedFilter === type
-                  ? `border-${style.textColor.split('-')[1]}-600 ${style.textColor}`
+                active
+                  ? `${style.activeBorder} ${style.textColor}`
                   : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
               }`}
               title={`Filter by ${type}`}

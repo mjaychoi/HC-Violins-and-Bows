@@ -63,7 +63,12 @@ const ConnectionList = React.memo(function ConnectionList({
                       {connection.relationship_type}
                     </span>
                     <span className="text-sm text-gray-500">
-                      {format(new Date(connection.created_at), 'yyyy-MM-dd')}
+                      {(() => {
+                        const created = new Date(connection.created_at);
+                        return Number.isNaN(created.valueOf())
+                          ? '—'
+                          : format(created, 'yyyy-MM-dd');
+                      })()}
                     </span>
                   </div>
                 </div>
@@ -79,6 +84,7 @@ const ConnectionList = React.memo(function ConnectionList({
             <button
               onClick={() => handleDelete(connection.id)}
               disabled={submitting}
+              aria-disabled={submitting}
               className="ml-4 text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg

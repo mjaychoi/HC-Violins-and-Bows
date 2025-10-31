@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { ClientInstrument } from '@/types';
 import {
   groupConnectionsByType,
@@ -8,8 +8,15 @@ import {
 export const useConnectionFilters = (connections: ClientInstrument[]) => {
   const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
 
-  const groupedConnections = groupConnectionsByType(connections);
-  const relationshipTypeCounts = getRelationshipTypeCounts(groupedConnections);
+  const groupedConnections = useMemo(
+    () => groupConnectionsByType(connections),
+    [connections]
+  );
+
+  const relationshipTypeCounts = useMemo(
+    () => getRelationshipTypeCounts(groupedConnections),
+    [groupedConnections]
+  );
 
   return {
     selectedFilter,

@@ -13,9 +13,9 @@ export const ConnectionCard = memo(function ConnectionCard({
   onEdit,
 }: ConnectionCardProps) {
   const formatTags = useMemo(() => {
-    if (!connection.client?.tags || connection.client.tags.length === 0)
-      return 'No tags';
-    return connection.client.tags
+    const tags = connection.client?.tags ?? [];
+    if (!tags.length) return 'No tags';
+    return [...tags]
       .sort((a, b) => {
         if (a === 'Owner') return -1;
         if (b === 'Owner') return 1;
@@ -60,8 +60,14 @@ export const ConnectionCard = memo(function ConnectionCard({
 
           {/* Instrument Details - Secondary */}
           <p className="text-sm text-gray-500 ml-6">
-            {connection.instrument?.year || 'Unknown Year'} • $
-            {connection.instrument?.price?.toLocaleString() || 'Price TBD'}
+            {connection.instrument?.year || 'Unknown Year'} •{' '}
+            {connection.instrument?.price === null ||
+            connection.instrument?.price === undefined
+              ? 'Price TBD'
+              : new Intl.NumberFormat(undefined, {
+                  style: 'currency',
+                  currency: 'USD',
+                }).format(connection.instrument.price)}
           </p>
 
           {/* Notes - Tertiary */}
