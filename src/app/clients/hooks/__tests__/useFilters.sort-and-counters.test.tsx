@@ -51,8 +51,8 @@ describe('useFilters - 정렬/카운트/표시', () => {
     act(() => {
       result.current.handleColumnSort('first_name');
     });
-    expect(result.current.getSortArrow('first_name')).toBe('sort-asc');
-    expect(result.current.getSortArrow('last_name')).toBe('sort-neutral');
+    expect(result.current.getSortArrow('first_name')).toBe('↑');
+    expect(result.current.getSortArrow('last_name')).toBe('');
   });
 
   it('활성 필터 수 계산', () => {

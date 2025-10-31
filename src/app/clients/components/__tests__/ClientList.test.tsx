@@ -36,7 +36,7 @@ const mockProps = {
   onUpdateClient: jest.fn(),
   onColumnSort: jest.fn(),
   getSortArrow: jest.fn((field: keyof Client) =>
-    field === 'first_name' ? 'sort-asc' : 'sort-neutral'
+    field === 'first_name' ? '↑' : ''
   ),
 };
 
@@ -93,7 +93,7 @@ describe('ClientList', () => {
 
     const nameHeader = screen.getByText('Name');
     const arrowElement = nameHeader.querySelector('span[aria-hidden="true"]');
-    expect(arrowElement).toHaveClass('sort-asc');
+    expect(arrowElement).toHaveTextContent('↑');
   });
 
   it('shows client tags', () => {

@@ -8,8 +8,10 @@ import {
 } from '../utils';
 import { useState, memo, useCallback } from 'react';
 
-const SortIcon = ({ cls }: { cls: string }) => (
-  <span aria-hidden className={cls} />
+const SortIcon = ({ arrow }: { arrow: string }) => (
+  <span aria-hidden className="inline-block w-3">
+    {arrow}
+  </span>
 );
 
 interface ClientListProps {
@@ -98,7 +100,7 @@ const ClientList = memo(function ClientList({
                   onClick={() => onColumnSort('first_name')}
                   aria-label={`Sort by name ${getSortArrow('first_name') === '↑' ? 'ascending' : getSortArrow('first_name') === '↓' ? 'descending' : ''}`}
                 >
-                  Name <SortIcon cls={getSortArrow('first_name')} />
+                  Name <SortIcon arrow={getSortArrow('first_name')} />
                 </button>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -108,7 +110,7 @@ const ClientList = memo(function ClientList({
                   onClick={() => onColumnSort('contact_number')}
                   aria-label={`Sort by contact ${getSortArrow('contact_number') === '↑' ? 'ascending' : getSortArrow('contact_number') === '↓' ? 'descending' : ''}`}
                 >
-                  Contact <SortIcon cls={getSortArrow('contact_number')} />
+                  Contact <SortIcon arrow={getSortArrow('contact_number')} />
                 </button>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -119,7 +121,7 @@ const ClientList = memo(function ClientList({
                   aria-label={`Sort by tags ${getSortArrow('tags') === '↑' ? 'ascending' : getSortArrow('tags') === '↓' ? 'descending' : ''}`}
                 >
                   Tags
-                  <SortIcon cls={getSortArrow('tags')} />
+                  <SortIcon arrow={getSortArrow('tags')} />
                 </button>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -129,7 +131,7 @@ const ClientList = memo(function ClientList({
                   onClick={() => onColumnSort('interest')}
                   aria-label={`Sort by interest ${getSortArrow('interest') === '↑' ? 'ascending' : getSortArrow('interest') === '↓' ? 'descending' : ''}`}
                 >
-                  Interest <SortIcon cls={getSortArrow('interest')} />
+                  Interest <SortIcon arrow={getSortArrow('interest')} />
                 </button>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">

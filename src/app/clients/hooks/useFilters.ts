@@ -3,11 +3,7 @@ import { useState, useMemo } from 'react';
 import { Client } from '@/types';
 import { filterClients } from '../utils';
 import { getUniqueValues, getUniqueArrayValues } from '@/utils/uniqueValues';
-import {
-  toggleValue,
-  countActiveFilters,
-  arrowToClass,
-} from '@/utils/filterHelpers';
+import { toggleValue, countActiveFilters } from '@/utils/filterHelpers';
 import { useFilterSort } from '@/hooks/useFilterSort';
 import { FilterState } from '../types';
 
@@ -114,10 +110,6 @@ export const useFilters = (
     handleSort(column);
   };
 
-  const getSortArrowClass = (column: keyof Client) => {
-    return arrowToClass(getSortArrow(column));
-  };
-
   const getActiveFiltersCount = () => {
     return countActiveFilters(filters) + (searchTerm ? 1 : 0);
   };
@@ -141,7 +133,7 @@ export const useFilters = (
     handleFilterChange,
     clearAllFilters,
     handleColumnSort,
-    getSortArrow: getSortArrowClass,
+    getSortArrow,
     getActiveFiltersCount,
   };
 };
