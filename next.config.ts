@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import path from 'path';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let withBundleAnalyzer: any = (config: NextConfig) => config;
@@ -11,6 +12,8 @@ try {
 const baseConfig: NextConfig = {
   output: 'standalone',
   compress: true,
+  // Set outputFileTracingRoot to avoid workspace root detection warning
+  outputFileTracingRoot: path.join(__dirname),
   images: {
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 60 * 60 * 24, // 1 day

@@ -18,7 +18,16 @@ const eslintConfig = [
       '**/playwright-report/**',
       'test-results/**',
       'next-env.d.ts',
+      'scripts/**/*.js', // Ignore JS files in scripts folder (migration scripts)
     ],
+  },
+  {
+    files: ['scripts/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-require-imports': 'off',
+    },
   },
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
   {
