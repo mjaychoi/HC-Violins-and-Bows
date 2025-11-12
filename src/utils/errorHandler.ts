@@ -6,6 +6,7 @@ import {
   ErrorSeverity,
   ErrorCategory,
 } from '@/types/errors';
+import { logError as structuredLogError } from './logger';
 
 // Error Handler Class
 export class ErrorHandler {
@@ -75,10 +76,43 @@ export class ErrorHandler {
 
   // Handle Supabase errors with PostgrestError type
   handleSupabaseError(error: unknown, context?: string): AppError {
-    console.error('Supabase Error:', error);
+    // 에러 객체를 JSON으로 변환 시도
+    let errorMessage = 'Unknown error';
+    let errorCode: string | undefined;
+    let errorDetails: string | undefined;
+    
+    if (error && typeof error === 'object') {
+      const err = error as { code?: string; message?: string; details?: string; hint?: string };
+      errorCode = err.code;
+      errorMessage = err.message || errorMessage;
+      errorDetails = err.details || err.hint;
+      
+      // 특정 에러 코드에 대한 안내 메시지 추가
+      if (err.code === 'PGRST204' && err.message?.includes('subtype')) {
+        errorMessage = '데이터베이스에 subtype 컬럼이 없습니다. 마이그레이션을 실행해주세요.';
+        errorDetails = 'SUBTYPE_MIGRATION_GUIDE.md 파일을 참고하여 마이그레이션을 실행하세요.';
+        // 개발 환경에서만 상세 로그 출력
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Subtype column missing. Please run migration:', err);
+          console.error('Migration file: migration-add-subtype.sql');
+          console.error('Guide: SUBTYPE_MIGRATION_GUIDE.md');
+        }
+      } else if (process.env.NODE_ENV === 'development') {
+        // 개발 환경에서만 상세 로그 출력
+        console.error('Supabase Error:', error);
+        console.error('Error code:', errorCode);
+        console.error('Error message:', errorMessage);
+        if (errorDetails) {
+          console.error('Error details:', errorDetails);
+        }
+      }
+    }
 
     let code = ErrorCodes.DATABASE_ERROR;
-    let message = 'Database operation failed';
+    // subtype 컬럼 누락 에러는 이미 처리되었으므로 설정된 메시지 사용
+    let message = errorCode === 'PGRST204' && errorMessage.includes('subtype') 
+      ? errorMessage 
+      : 'Database operation failed';
 
     // Prefer HTTP status + hint/message; fall back to code
     if (
@@ -90,6 +124,10 @@ export class ErrorHandler {
       const { status } = error as { status?: number };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const msg = (error as any).message as string | undefined;
+
+      // 개발 환경에서만 상세 로그 출력 (subtype 에러는 이미 처리됨)
+      // 구조화된 로거는 이미 handleSupabaseError 호출 전후에 사용됨
+      // 여기서는 추가 디버깅 정보만 필요시 출력
 
       if (status === 401) {
         code = ErrorCodes.UNAUTHORIZED;
@@ -106,6 +144,9 @@ export class ErrorHandler {
       } else if (msg?.toLowerCase().includes('duplicate key')) {
         code = ErrorCodes.DUPLICATE_RECORD;
         message = 'Record already exists';
+      } else if (!errorCode || errorCode !== 'PGRST204') {
+        // PGRST204가 아니고 다른 메시지가 없으면 추출한 메시지 사용
+        message = errorMessage || msg || 'Database operation failed';
       }
     }
 
@@ -137,12 +178,20 @@ export class ErrorHandler {
           code = ErrorCodes.FORBIDDEN;
           message = 'Access denied';
           break;
+        case 'PGRST204': // Column not found in schema cache
+          code = ErrorCodes.DATABASE_ERROR;
+          if (pgError.message?.includes('subtype')) {
+            message = errorMessage || '데이터베이스에 subtype 컬럼이 없습니다. 마이그레이션을 실행해주세요.';
+          } else {
+            message = pgError.message || 'Database column not found';
+          }
+          break;
         case 'PGRST301': // JWT expired
           code = ErrorCodes.SESSION_EXPIRED;
           message = 'Session expired';
           break;
         default:
-          message = pgError.message || 'Database error occurred';
+          message = errorMessage || pgError.message || 'Database error occurred';
       }
     }
 
@@ -244,41 +293,31 @@ export class ErrorHandler {
     const currentCount = this.errorStats.get(error.code as ErrorCodes) || 0;
     this.errorStats.set(error.code as ErrorCodes, currentCount + 1);
 
-    // Console logging based on severity
-    let errorMessage: string;
-    let errorDetails: unknown;
+    // Use structured logger
+    const metadata = {
+      errorCode: error.code,
+      severity: ErrorSeverity[severity],
+      errorCount: currentCount + 1,
+      timestamp: new Date().toISOString(),
+    };
 
-    if (error instanceof Error) {
-      errorMessage = error.message;
-      errorDetails = error.stack;
-    } else if (typeof error === 'object' && error !== null) {
-      // Supabase errors are objects with message property
-      if ('message' in error) {
-        errorMessage = String((error as { message: unknown }).message);
-      } else {
-        errorMessage = JSON.stringify(error, null, 2);
-      }
-      errorDetails = error;
-    } else {
-      errorMessage = String(error);
-      errorDetails = error;
-    }
+    // Map severity to log level
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : typeof error === 'object' && error !== null && 'message' in error
+      ? String((error as { message: unknown }).message)
+      : String(error);
 
-    switch (severity) {
-      case ErrorSeverity.LOW:
-        console.warn('Low severity error:', errorMessage, errorDetails);
-        break;
-      case ErrorSeverity.MEDIUM:
-        console.error('Medium severity error:', errorMessage, errorDetails);
-        break;
-      case ErrorSeverity.HIGH:
-        console.error('High severity error:', errorMessage, errorDetails);
-        break;
-      case ErrorSeverity.CRITICAL:
-        console.error('CRITICAL ERROR:', errorMessage, errorDetails);
-        // Send to external logging service (Sentry, LogRocket, etc.)
-        this.sendToExternalLogger();
-        break;
+    structuredLogError(
+      `[${ErrorSeverity[severity]}] ${errorMessage}`,
+      error,
+      'ErrorHandler',
+      metadata
+    );
+
+    // For critical errors, send to external logging service
+    if (severity === ErrorSeverity.CRITICAL) {
+      this.sendToExternalLogger();
     }
   }
 
