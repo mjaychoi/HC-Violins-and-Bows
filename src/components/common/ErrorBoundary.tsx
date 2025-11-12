@@ -120,7 +120,7 @@ export default class ErrorBoundary extends Component<
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
           <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6">
             <div className="flex items-center mb-4">
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <svg
                   className="h-8 w-8 text-red-500"
                   fill="none"
