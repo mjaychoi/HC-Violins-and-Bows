@@ -1,6 +1,51 @@
-// common logging utility
-export class Logger {
+// Structured logging utility
+export enum LogLevel {
+  DEBUG = 'DEBUG',
+  INFO = 'INFO',
+  WARN = 'WARN',
+  ERROR = 'ERROR',
+}
+
+export interface LogContext {
+  [key: string]: unknown;
+}
+
+export interface StructuredLog {
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+  context?: string;
+  data?: unknown;
+  error?: {
+    message: string;
+    stack?: string;
+    name?: string;
+    code?: string | number;
+  };
+  metadata?: LogContext;
+  environment: string;
+  userAgent?: string;
+  url?: string;
+}
+
+class Logger {
   private static instance: Logger;
+  private logLevel: LogLevel;
+  private isDevelopment: boolean;
+  private logHistory: StructuredLog[] = [];
+  private maxHistorySize = 100;
+
+  private constructor() {
+    this.isDevelopment = process.env.NODE_ENV === 'development';
+    
+    // Set log level based on environment
+    const envLogLevel = process.env.NEXT_PUBLIC_LOG_LEVEL?.toUpperCase();
+    this.logLevel = envLogLevel && Object.values(LogLevel).includes(envLogLevel as LogLevel)
+      ? (envLogLevel as LogLevel)
+      : this.isDevelopment
+      ? LogLevel.DEBUG
+      : LogLevel.INFO;
+  }
 
   static getInstance(): Logger {
     if (!Logger.instance) {
@@ -9,42 +54,276 @@ export class Logger {
     return Logger.instance;
   }
 
-  constructor() {
-    // Simple logger implementation
+  // Reset instance (useful for testing)
+  static resetInstance(): void {
+    Logger.instance = undefined as unknown as Logger;
   }
 
-  static error(message: string, error: unknown, context?: string) {
-    console.error(`${context ? `[${context}] ` : ''}${message}:`, error);
+  private shouldLog(level: LogLevel): boolean {
+    const levels = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR];
+    const currentIndex = levels.indexOf(this.logLevel);
+    const messageIndex = levels.indexOf(level);
+    return messageIndex >= currentIndex;
   }
 
-  static warn(message: string, context?: string) {
-    console.warn(`${context ? `[${context}] ` : ''}${message}`);
-  }
-
-  static info(message: string, context?: string) {
-    console.info(`${context ? `[${context}] ` : ''}${message}`);
-  }
-
-  static debug(message: string, data?: unknown, context?: string) {
-    if (process.env.NODE_ENV === 'development') {
-      console.debug(`${context ? `[${context}] ` : ''}${message}`, data);
+  private formatError(error: unknown): StructuredLog['error'] {
+    if (error instanceof Error) {
+      const errorWithCode = error as Error & { code?: string | number };
+      const result: StructuredLog['error'] = {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      };
+      if (errorWithCode.code !== undefined) {
+        result.code = errorWithCode.code;
+      }
+      return result;
     }
+
+    if (typeof error === 'object' && error !== null) {
+      const errorObj = error as Record<string, unknown>;
+      const result: StructuredLog['error'] = {
+        message: String(errorObj.message || 'Unknown error'),
+      };
+      if (errorObj.stack) {
+        result.stack = String(errorObj.stack);
+      }
+      if (errorObj.name) {
+        result.name = String(errorObj.name);
+      }
+      if (errorObj.code !== undefined) {
+        result.code = errorObj.code as string | number;
+      }
+      return result;
+    }
+
+    return {
+      message: String(error),
+    };
+  }
+
+  private createStructuredLog(
+    level: LogLevel,
+    message: string,
+    data?: unknown,
+    context?: string,
+    error?: unknown,
+    metadata?: LogContext
+  ): StructuredLog {
+    const log: StructuredLog = {
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+      environment: process.env.NODE_ENV || 'unknown',
+    };
+
+    if (context) {
+      log.context = context;
+    }
+    if (data !== undefined) {
+      log.data = data;
+    }
+    if (error) {
+      log.error = this.formatError(error);
+    }
+    if (metadata) {
+      log.metadata = metadata;
+    }
+
+    // Add browser context in client-side
+    if (typeof window !== 'undefined') {
+      log.userAgent = window.navigator.userAgent;
+      log.url = window.location.href;
+    }
+
+    return log;
+  }
+
+  private addToHistory(log: StructuredLog): void {
+    this.logHistory.push(log);
+    if (this.logHistory.length > this.maxHistorySize) {
+      this.logHistory.shift();
+    }
+  }
+
+  private outputLog(log: StructuredLog): void {
+    if (!this.shouldLog(log.level)) {
+      return;
+    }
+
+    this.addToHistory(log);
+
+    // In development, use pretty-printed format
+    if (this.isDevelopment) {
+      const prefix = `[${log.timestamp}] [${log.level}]${log.context ? ` [${log.context}]` : ''}`;
+      
+      switch (log.level) {
+        case LogLevel.DEBUG:
+          console.debug(prefix, log.message, log.data || log.error || '');
+          break;
+        case LogLevel.INFO:
+          console.info(prefix, log.message, log.data || '');
+          break;
+        case LogLevel.WARN:
+          console.warn(prefix, log.message, log.data || '');
+          break;
+        case LogLevel.ERROR:
+          console.error(prefix, log.message, log.error || log.data || '');
+          break;
+      }
+    } else {
+      // In production, use structured JSON format
+      console.log(JSON.stringify(log));
+    }
+  }
+
+  static error(message: string, error: unknown, context?: string, metadata?: LogContext) {
+    const logger = Logger.getInstance();
+    const log = logger.createStructuredLog(
+      LogLevel.ERROR,
+      message,
+      undefined,
+      context,
+      error,
+      metadata
+    );
+    logger.outputLog(log);
+  }
+
+  static warn(message: string, context?: string, metadata?: LogContext) {
+    const logger = Logger.getInstance();
+    const log = logger.createStructuredLog(LogLevel.WARN, message, undefined, context, undefined, metadata);
+    logger.outputLog(log);
+  }
+
+  static info(message: string, context?: string, metadata?: LogContext) {
+    const logger = Logger.getInstance();
+    const log = logger.createStructuredLog(LogLevel.INFO, message, undefined, context, undefined, metadata);
+    logger.outputLog(log);
+  }
+
+  static debug(message: string, data?: unknown, context?: string, metadata?: LogContext) {
+    const logger = Logger.getInstance();
+    const log = logger.createStructuredLog(LogLevel.DEBUG, message, data, context, undefined, metadata);
+    logger.outputLog(log);
+  }
+
+  // Performance logging
+  static performance(operation: string, duration: number, context?: string, metadata?: LogContext) {
+    const logger = Logger.getInstance();
+    const combinedMetadata: LogContext = { performance: true };
+    if (metadata) {
+      Object.assign(combinedMetadata, metadata);
+    }
+    const log = logger.createStructuredLog(
+      LogLevel.INFO,
+      `Performance: ${operation}`,
+      { duration, operation },
+      context,
+      undefined,
+      combinedMetadata
+    );
+    logger.outputLog(log);
+  }
+
+  // API request logging
+  static apiRequest(
+    method: string,
+    url: string,
+    statusCode?: number,
+    duration?: number,
+    context?: string,
+    metadata?: LogContext
+  ) {
+    const logger = Logger.getInstance();
+    const combinedMetadata: LogContext = { apiRequest: true };
+    if (metadata) {
+      Object.assign(combinedMetadata, metadata);
+    }
+    const log = logger.createStructuredLog(
+      LogLevel.INFO,
+      `API ${method} ${url}`,
+      { method, url, statusCode, duration },
+      context,
+      undefined,
+      combinedMetadata
+    );
+    logger.outputLog(log);
+  }
+
+  // Get log history (useful for debugging)
+  getHistory(level?: LogLevel, limit?: number): StructuredLog[] {
+    let logs = this.logHistory;
+    
+    if (level) {
+      logs = logs.filter(log => log.level === level);
+    }
+    
+    if (limit) {
+      logs = logs.slice(-limit);
+    }
+    
+    return logs;
+  }
+
+  // Clear log history
+  clearHistory(): void {
+    this.logHistory = [];
+  }
+
+  // Export logs as JSON (useful for error reporting)
+  exportLogs(level?: LogLevel): string {
+    const logs = this.getHistory(level);
+    return JSON.stringify(logs, null, 2);
   }
 }
 
-// convenience functions
-export const logError = (message: string, error: unknown, context?: string) => {
-  Logger.error(message, error, context);
+// Convenience functions with enhanced signatures
+export const logError = (
+  message: string,
+  error: unknown,
+  context?: string,
+  metadata?: LogContext
+) => {
+  Logger.error(message, error, context, metadata);
 };
 
-export const logWarn = (message: string, context?: string) => {
-  Logger.warn(message, context);
+export const logWarn = (message: string, context?: string, metadata?: LogContext) => {
+  Logger.warn(message, context, metadata);
 };
 
-export const logInfo = (message: string, context?: string) => {
-  Logger.info(message, context);
+export const logInfo = (message: string, context?: string, metadata?: LogContext) => {
+  Logger.info(message, context, metadata);
 };
 
-export const logDebug = (message: string, data?: unknown, context?: string) => {
-  Logger.debug(message, data, context);
+export const logDebug = (
+  message: string,
+  data?: unknown,
+  context?: string,
+  metadata?: LogContext
+) => {
+  Logger.debug(message, data, context, metadata);
 };
+
+export const logPerformance = (
+  operation: string,
+  duration: number,
+  context?: string,
+  metadata?: LogContext
+) => {
+  Logger.performance(operation, duration, context, metadata);
+};
+
+export const logApiRequest = (
+  method: string,
+  url: string,
+  statusCode?: number,
+  duration?: number,
+  context?: string,
+  metadata?: LogContext
+) => {
+  Logger.apiRequest(method, url, statusCode, duration, context, metadata);
+};
+
+// Export Logger class for advanced usage
+export { Logger };
