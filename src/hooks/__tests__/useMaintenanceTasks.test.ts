@@ -358,7 +358,7 @@ describe('useMaintenanceTasks', () => {
 
       // Check that task was updated in the list
       await waitFor(() => {
-        const task = result.current.tasks.find(t => t.id === '1');
+        const task = result.current.tasks.find((t: MaintenanceTask) => t.id === '1');
         expect(task).toBeDefined();
         if (task) {
           expect(task.title).toBe('Updated Repair');
@@ -429,7 +429,7 @@ describe('useMaintenanceTasks', () => {
       expect(result.current.error).toBe(updateError);
       // Task should not be updated
       await waitFor(() => {
-        const task = result.current.tasks.find(t => t.id === '1');
+        const task = result.current.tasks.find((t: MaintenanceTask) => t.id === '1');
         expect(task).toBeDefined();
         expect(task?.title).toBe('Violin Repair');
       }, { timeout: 3000 });
@@ -488,7 +488,7 @@ describe('useMaintenanceTasks', () => {
 
       // Check that task was removed from the list
       await waitFor(() => {
-        const task = result.current.tasks.find(t => t.id === '1');
+        const task = result.current.tasks.find((t: MaintenanceTask) => t.id === '1');
         expect(task).toBeUndefined();
       }, { timeout: 3000 });
 
@@ -548,7 +548,7 @@ describe('useMaintenanceTasks', () => {
       // Task should not be deleted
       await waitFor(() => {
         expect(result.current.tasks.length).toBeGreaterThan(0);
-        const task = result.current.tasks.find(t => t.id === '1');
+        const task = result.current.tasks.find((t: MaintenanceTask) => t.id === '1');
         expect(task).toBeDefined();
       }, { timeout: 3000 });
     });
