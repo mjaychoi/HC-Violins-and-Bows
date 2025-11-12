@@ -20,8 +20,18 @@ describe('dashboardUtils', () => {
     it('should format instrument name with maker and type', () => {
       const instrument: Instrument = {
         id: '1',
+        status: 'Available',
         maker: 'Stradivari',
         type: 'Violin',
+        subtype: null,
+        year: null,
+        certificate: false,
+        size: null,
+        weight: null,
+        price: null,
+        ownership: null,
+        note: null,
+        serial_number: null,
         created_at: '2024-01-01',
       };
       expect(formatInstrumentName(instrument)).toBe('Stradivari - Violin');
@@ -30,7 +40,18 @@ describe('dashboardUtils', () => {
     it('should handle missing maker', () => {
       const instrument: Instrument = {
         id: '1',
+        status: 'Available',
+        maker: null,
         type: 'Violin',
+        subtype: null,
+        year: null,
+        certificate: false,
+        size: null,
+        weight: null,
+        price: null,
+        ownership: null,
+        note: null,
+        serial_number: null,
         created_at: '2024-01-01',
       };
       expect(formatInstrumentName(instrument)).toBe('Unknown - Violin');
@@ -39,7 +60,18 @@ describe('dashboardUtils', () => {
     it('should handle missing type', () => {
       const instrument: Instrument = {
         id: '1',
+        status: 'Available',
         maker: 'Stradivari',
+        type: null,
+        subtype: null,
+        serial_number: null,
+        year: null,
+        certificate: false,
+        size: null,
+        weight: null,
+        price: null,
+        ownership: null,
+        note: null,
         created_at: '2024-01-01',
       };
       expect(formatInstrumentName(instrument)).toBe('Stradivari - Unknown');
@@ -51,8 +83,8 @@ describe('dashboardUtils', () => {
       expect(formatInstrumentPrice(10000)).toBe('$10,000');
     });
 
-    it('should format string price', () => {
-      expect(formatInstrumentPrice('5000')).toBe('$5,000');
+    it('should format number price as string', () => {
+      expect(formatInstrumentPrice(5000)).toBe('$5,000');
     });
 
     it('should return N/A for null price', () => {
@@ -60,6 +92,8 @@ describe('dashboardUtils', () => {
     });
 
     it('should return N/A for invalid price', () => {
+      // formatInstrumentPrice는 number | string | null을 받음
+      // 'invalid' 문자열은 parseFloat로 NaN이 되어 'N/A'를 반환
       expect(formatInstrumentPrice('invalid')).toBe('N/A');
     });
 
@@ -140,6 +174,12 @@ describe('dashboardUtils', () => {
         id: '1',
         first_name: 'John',
         last_name: 'Doe',
+        contact_number: null,
+        email: null,
+        tags: [],
+        interest: null,
+        note: null,
+        client_number: null,
         created_at: '2024-01-01',
       };
       expect(formatClientName(client)).toBe('John Doe');
@@ -149,6 +189,13 @@ describe('dashboardUtils', () => {
       const client: Client = {
         id: '1',
         first_name: 'John',
+        last_name: null,
+        contact_number: null,
+        email: null,
+        tags: [],
+        interest: null,
+        note: null,
+        client_number: null,
         created_at: '2024-01-01',
       };
       expect(formatClientName(client)).toBe('John');
@@ -157,7 +204,14 @@ describe('dashboardUtils', () => {
     it('should handle missing first name', () => {
       const client: Client = {
         id: '1',
+        first_name: null,
         last_name: 'Doe',
+        contact_number: null,
+        email: null,
+        tags: [],
+        interest: null,
+        note: null,
+        client_number: null,
         created_at: '2024-01-01',
       };
       expect(formatClientName(client)).toBe('Doe');
@@ -166,6 +220,14 @@ describe('dashboardUtils', () => {
     it('should return Unknown Client for empty names', () => {
       const client: Client = {
         id: '1',
+        first_name: null,
+        last_name: null,
+        contact_number: null,
+        email: null,
+        tags: [],
+        interest: null,
+        note: null,
+        client_number: null,
         created_at: '2024-01-01',
       };
       expect(formatClientName(client)).toBe('Unknown Client');
@@ -178,6 +240,12 @@ describe('dashboardUtils', () => {
         id: '1',
         first_name: 'John',
         last_name: 'Doe',
+        contact_number: null,
+        email: null,
+        tags: [],
+        interest: null,
+        note: null,
+        client_number: null,
         created_at: '2024-01-01',
       };
       expect(getClientInitials(client)).toBe('JD');
@@ -187,6 +255,13 @@ describe('dashboardUtils', () => {
       const client: Client = {
         id: '1',
         first_name: 'John',
+        last_name: null,
+        contact_number: null,
+        email: null,
+        tags: [],
+        interest: null,
+        note: null,
+        client_number: null,
         created_at: '2024-01-01',
       };
       expect(getClientInitials(client)).toBe('J');
@@ -195,7 +270,14 @@ describe('dashboardUtils', () => {
     it('should handle missing first name', () => {
       const client: Client = {
         id: '1',
+        first_name: null,
         last_name: 'Doe',
+        contact_number: null,
+        email: null,
+        tags: [],
+        interest: null,
+        note: null,
+        client_number: null,
         created_at: '2024-01-01',
       };
       expect(getClientInitials(client)).toBe('D');
@@ -204,6 +286,14 @@ describe('dashboardUtils', () => {
     it('should return U for empty names', () => {
       const client: Client = {
         id: '1',
+        first_name: null,
+        last_name: null,
+        contact_number: null,
+        email: null,
+        tags: [],
+        interest: null,
+        note: null,
+        client_number: null,
         created_at: '2024-01-01',
       };
       expect(getClientInitials(client)).toBe('U');
@@ -267,17 +357,50 @@ describe('dashboardUtils', () => {
       const instruments: Instrument[] = [
         {
           id: '1',
+          status: 'Available',
+          maker: null,
+          type: null,
+          subtype: null,
+          year: null,
+          certificate: false,
+          size: null,
+          weight: null,
           price: 1000,
+          ownership: null,
+          note: null,
+          serial_number: null,
           created_at: '2024-01-01',
         },
         {
           id: '2',
-          price: '5000',
+          status: 'Available',
+          maker: null,
+          type: null,
+          subtype: null,
+          year: null,
+          certificate: false,
+          size: null,
+          weight: null,
+          price: 5000,
+          ownership: null,
+          note: null,
+          serial_number: null,
           created_at: '2024-01-01',
         },
         {
           id: '3',
+          status: 'Available',
+          maker: null,
+          type: null,
+          subtype: null,
+          year: null,
+          certificate: false,
+          size: null,
+          weight: null,
           price: null,
+          ownership: null,
+          note: null,
+          serial_number: null,
           created_at: '2024-01-01',
         },
       ];
@@ -296,12 +419,34 @@ describe('dashboardUtils', () => {
       const instruments: Instrument[] = [
         {
           id: '1',
+          status: 'Available',
+          maker: null,
+          type: null,
+          subtype: null,
+          year: null,
+          certificate: false,
+          size: null,
+          weight: null,
           price: null,
+          ownership: null,
+          note: null,
+          serial_number: null,
           created_at: '2024-01-01',
         },
         {
           id: '2',
+          status: 'Available',
+          maker: null,
+          type: null,
+          subtype: null,
+          year: null,
+          certificate: false,
+          size: null,
+          weight: null,
           price: null,
+          ownership: null,
+          note: null,
+          serial_number: null,
           created_at: '2024-01-01',
         },
       ];
@@ -330,21 +475,21 @@ describe('dashboardUtils', () => {
       const errors1 = validateInstrumentData({
         maker: 'Stradivari',
         type: 'Violin',
-        year: '999',
+        year: 999,
       });
       expect(errors1).toContain('Year must be a valid year');
 
       const errors2 = validateInstrumentData({
         maker: 'Stradivari',
         type: 'Violin',
-        year: '2100',
+        year: 2100,
       });
       expect(errors2).toContain('Year must be a valid year');
 
       const errors3 = validateInstrumentData({
         maker: 'Stradivari',
         type: 'Violin',
-        year: '1700',
+        year: 1700,
       });
       expect(errors3).not.toContain('Year must be a valid year');
     });
@@ -353,14 +498,14 @@ describe('dashboardUtils', () => {
       const errors1 = validateInstrumentData({
         maker: 'Stradivari',
         type: 'Violin',
-        price: '-100',
+        price: -100,
       });
       expect(errors1).toContain('Price must be a valid positive number');
 
       const errors2 = validateInstrumentData({
         maker: 'Stradivari',
         type: 'Violin',
-        price: '100',
+        price: 100,
       });
       expect(errors2).not.toContain('Price must be a valid positive number');
     });

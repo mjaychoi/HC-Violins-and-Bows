@@ -1,25 +1,25 @@
 'use client';
 
-import { useEffect } from 'react';
 import { Instrument } from '@/types';
 import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
 import { useDashboardFilters, useDashboardForm } from './hooks';
 import { ItemForm, ItemList, ItemFilters } from './components';
 import { useModalState } from '@/hooks/useModalState';
 import { useLoadingState } from '@/hooks/useLoadingState';
-import { logError } from '@/utils/logger';
+import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { AppLayout } from '@/components/layout';
 import { ErrorBoundary } from '@/components/common';
-import Button from '@/components/common/Button';
 
 export default function DashboardPage() {
+  // Error handling
+  const { ErrorToasts, handleError } = useErrorHandler();
+
   // Custom hooks for state management
   const {
     instruments,
     loading,
     submitting,
     clientRelationships,
-    fetchInstruments,
     createInstrument,
     updateInstrument,
     deleteInstrument,
@@ -48,28 +48,28 @@ export default function DashboardPage() {
     isEditing,
     openModal,
     closeModal,
-    openEditModal,
-    openViewModal,
     selectedItem,
   } = useModalState<Instrument>();
 
   // Loading states
   const { withSubmitting } = useLoadingState();
 
-  // Load data on component mount
-  useEffect(() => {
-    fetchInstruments();
-  }, [fetchInstruments]);
+  // 데이터는 useUnifiedDashboard에서 자동으로 로드됨
+  // 추가로 fetchInstruments()를 호출할 필요 없음
 
   // Handle item creation
   const handleCreateItem = async (
     formData: Omit<Instrument, 'id' | 'created_at'>
   ) => {
-    await withSubmitting(async () => {
-      await createInstrument(formData);
-      closeModal();
-      resetForm();
-    });
+    try {
+      await withSubmitting(async () => {
+        await createInstrument(formData);
+        closeModal();
+        resetForm();
+      });
+    } catch (error) {
+      handleError(error, 'Failed to create item');
+    }
   };
 
   // Handle item update
@@ -78,11 +78,15 @@ export default function DashboardPage() {
   ) => {
     if (!selectedItem) return;
 
-    await withSubmitting(async () => {
-      await updateInstrument(selectedItem.id, formData);
-      closeModal();
-      resetForm();
-    });
+    try {
+      await withSubmitting(async () => {
+        await updateInstrument(selectedItem.id, formData);
+        closeModal();
+        resetForm();
+      });
+    } catch (error) {
+      handleError(error, 'Failed to update item');
+    }
   };
 
   // Handle item deletion
@@ -92,18 +96,8 @@ export default function DashboardPage() {
     try {
       await deleteInstrument(itemId);
     } catch (error) {
-      logError('Failed to delete item', error, 'DashboardPage');
+      handleError(error, 'Failed to delete item');
     }
-  };
-
-  // Handle view item
-  const handleViewItem = (item: Instrument) => {
-    openViewModal(item);
-  };
-
-  // Handle edit item
-  const handleEditItem = (item: Instrument) => {
-    openEditModal(item);
   };
 
   // Handle add new item
@@ -141,16 +135,25 @@ export default function DashboardPage() {
           <ItemList
             items={filteredItems}
             loading={loading.any}
-            onItemClick={handleViewItem}
-            onEditClick={handleEditItem}
             onDeleteClick={item => handleDeleteItem(item.id)}
+            onUpdateItem={async (itemId: string, updates: Partial<Instrument>) => {
+              try {
+                const result = await updateInstrument(itemId, updates);
+                if (!result) {
+                  throw new Error('Failed to update item');
+                }
+              } catch (error) {
+                handleError(error, 'Failed to update item');
+                throw error; // Re-throw to prevent saveEditing from closing editing mode
+              }
+            }}
             clientRelationships={clientRelationships}
             getSortArrow={getSortArrow}
             onSort={handleSort}
           />
         </div>
 
-        {/* Item Form Modal */}
+        {/* Item Form Modal - Show when editing or creating */}
         <ItemForm
           isOpen={showModal}
           onClose={closeModal}
@@ -160,103 +163,8 @@ export default function DashboardPage() {
           isEditing={isEditing}
         />
 
-        {/* View Modal */}
-        {selectedItem && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-              <div className="mt-3">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">
-                    Item Details
-                  </h3>
-                  <button
-                    onClick={closeModal}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <svg
-                      className="w-6 h-6"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Maker
-                    </label>
-                    <p className="text-sm text-gray-900">
-                      {selectedItem?.maker || 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Type
-                    </label>
-                    <p className="text-sm text-gray-900">
-                      {selectedItem?.type || 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Status
-                    </label>
-                    <p className="text-sm text-gray-900">
-                      {selectedItem?.status || 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Price
-                    </label>
-                    <p className="text-sm text-gray-900">
-                      ${selectedItem?.price?.toLocaleString() || 'N/A'}
-                    </p>
-                  </div>
-                  {selectedItem?.note && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Note
-                      </label>
-                      <p className="text-sm text-gray-900">
-                        {selectedItem.note}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex justify-end space-x-3 pt-4">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={closeModal}
-                  >
-                    Close
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      closeModal();
-                      if (selectedItem) {
-                        handleEditItem(selectedItem);
-                      }
-                    }}
-                  >
-                    Edit
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Error Toasts */}
+        <ErrorToasts />
       </AppLayout>
     </ErrorBoundary>
   );

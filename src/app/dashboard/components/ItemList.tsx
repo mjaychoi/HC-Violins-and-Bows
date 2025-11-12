@@ -7,13 +7,13 @@ import {
   formatInstrumentYear,
 } from '../utils/dashboardUtils';
 import { arrowToClass } from '@/utils/filterHelpers';
+import { ListSkeleton } from '@/components/common';
 
 interface ItemListProps {
   items: Instrument[];
   loading: boolean;
-  onItemClick: (item: Instrument) => void;
-  onEditClick: (item: Instrument) => void;
   onDeleteClick: (item: Instrument) => void;
+  onUpdateItem?: (itemId: string, updates: Partial<Instrument>) => Promise<void>;
   clientRelationships: ClientInstrument[];
   getSortArrow: (field: string) => string;
   onSort: (field: string) => void;
@@ -22,48 +22,106 @@ interface ItemListProps {
 const ItemList = memo(function ItemList({
   items,
   loading,
-  onItemClick,
-  onEditClick,
   onDeleteClick,
+  onUpdateItem,
   clientRelationships,
   getSortArrow,
   onSort,
 }: ItemListProps) {
-  const getItemClients = useCallback(
-    (itemId: string) => {
-      return clientRelationships.filter(rel => rel.instrument_id === itemId);
-    },
-    [clientRelationships]
-  );
+  const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [editData, setEditData] = useState<{
+    maker?: string;
+    type?: string;
+    subtype?: string;
+    year?: string;
+    price?: string;
+    status?: Instrument['status'];
+    serial_number?: string;
+  }>({});
+  const [isSaving, setIsSaving] = useState(false);
 
-  // 메모이제이션된 계산된 값들
+  // Optimized: Create a Map for O(1) lookups instead of filtering for each item
   const itemsWithClients = useMemo(() => {
+    // Group relationships by instrument_id for O(1) lookup
+    const relationshipsByInstrument = new Map<string, ClientInstrument[]>();
+    
+    clientRelationships.forEach(rel => {
+      const existing = relationshipsByInstrument.get(rel.instrument_id) || [];
+      existing.push(rel);
+      relationshipsByInstrument.set(rel.instrument_id, existing);
+    });
+
+    // Map items with their clients
     return items.map(item => ({
       ...item,
-      clients: getItemClients(item.id),
+      clients: relationshipsByInstrument.get(item.id) || [],
     }));
-  }, [items, getItemClients]);
+  }, [items, clientRelationships]);
+
+  const startEditing = useCallback((item: Instrument) => {
+    setEditingItem(item.id);
+    setEditData({
+      maker: item.maker || '',
+      type: item.type || '',
+      subtype: item.subtype || '',
+      year: item.year?.toString() || '',
+      price: item.price?.toString() || '',
+      status: item.status || 'Available',
+      serial_number: item.serial_number || '',
+    });
+  }, []);
+
+  const cancelEditing = useCallback(() => {
+    setEditingItem(null);
+    setEditData({});
+  }, []);
+
+  const saveEditing = useCallback(async () => {
+    if (!editingItem || !onUpdateItem) return;
+
+    setIsSaving(true);
+    try {
+      // Convert form data to proper types
+      const updates: Partial<Instrument> = {
+        maker: editData.maker?.trim() || null,
+        type: editData.type?.trim() || null,
+        subtype: editData.subtype?.trim() || null,
+        year: (() => {
+          const yearStr = editData.year?.toString().trim();
+          if (!yearStr) return null;
+          const yearNum = parseInt(yearStr, 10);
+          return isNaN(yearNum) ? null : yearNum;
+        })(),
+        price: (() => {
+          const priceStr = editData.price?.toString().trim();
+          if (!priceStr) return null;
+          const priceNum = parseFloat(priceStr);
+          return isNaN(priceNum) ? null : priceNum;
+        })(),
+        status: editData.status as Instrument['status'] || 'Available',
+        serial_number: editData.serial_number?.trim() || null,
+      };
+
+      await onUpdateItem(editingItem, updates);
+      setEditingItem(null);
+      setEditData({});
+    } catch {
+      // Error is handled by parent component's error handler
+      // Don't close editing mode on error - let user see the error and retry
+    } finally {
+      setIsSaving(false);
+    }
+  }, [editingItem, editData, onUpdateItem]);
+
+  const handleEditFieldChange = useCallback(
+    (field: 'maker' | 'type' | 'subtype' | 'year' | 'price' | 'status' | 'serial_number', value: string) => {
+      setEditData(prev => ({ ...prev, [field]: value }));
+    },
+    []
+  );
 
   if (loading) {
-    return (
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
-        <div className="p-6">
-          <div className="space-y-4">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <div className="flex items-center space-x-4">
-                  <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/6"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/6"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/6"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/6"></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    return <ListSkeleton rows={5} columns={8} />;
   }
 
   if (items.length === 0) {
@@ -152,6 +210,23 @@ const ItemList = memo(function ItemList({
               </th>
               <th
                 className="px-6 py-3 text-left text-xs font-semibold text-gray-500 cursor-pointer group select-none"
+                onClick={() => onSort('subtype')}
+              >
+                <span className="inline-flex items-center gap-1">
+                  Subtype
+                  <span
+                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('subtype')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
+                  >
+                    {arrowToClass(getSortArrow('subtype')) === 'sort-asc'
+                      ? '▲'
+                      : arrowToClass(getSortArrow('subtype')) === 'sort-desc'
+                        ? '▼'
+                        : '↕'}
+                  </span>
+                </span>
+              </th>
+              <th
+                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 cursor-pointer group select-none"
                 onClick={() => onSort('year')}
               >
                 <span className="inline-flex items-center gap-1">
@@ -201,6 +276,23 @@ const ItemList = memo(function ItemList({
                   </span>
                 </span>
               </th>
+              <th
+                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 cursor-pointer group select-none"
+                onClick={() => onSort('serial_number')}
+              >
+                <span className="inline-flex items-center gap-1">
+                  Serial #
+                  <span
+                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('serial_number')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
+                  >
+                    {arrowToClass(getSortArrow('serial_number')) === 'sort-asc'
+                      ? '▲'
+                      : arrowToClass(getSortArrow('serial_number')) === 'sort-desc'
+                        ? '▼'
+                        : '↕'}
+                  </span>
+                </span>
+              </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">
                 Clients
               </th>
@@ -210,42 +302,142 @@ const ItemList = memo(function ItemList({
           <tbody className="divide-y divide-gray-100">
             {itemsWithClients.map(item => {
               const itemClients = item.clients;
+              const isEditing = editingItem === item.id;
 
               return (
-                <tr key={item.id} className="hover:bg-gray-50 transition">
+                <tr
+                  key={item.id}
+                  className={`transition ${
+                    isEditing ? 'bg-blue-50' : 'hover:bg-gray-50'
+                  }`}
+                >
                   <td className="px-6 py-4">
-                    <div className="text-sm font-medium text-gray-900">
-                      {item.maker || '—'}
-                    </div>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editData.maker || ''}
+                        onChange={e => handleEditFieldChange('maker', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Maker"
+                      />
+                    ) : (
+                      <div className="text-sm font-medium text-gray-900">
+                        {item.maker || '—'}
+                      </div>
+                    )}
                   </td>
 
                   <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">
-                      {item.type || '—'}
-                    </div>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editData.type || ''}
+                        onChange={e => handleEditFieldChange('type', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Type"
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900">
+                        {item.type || '—'}
+                      </div>
+                    )}
                   </td>
 
                   <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">
-                      {formatInstrumentYear(item.year)}
-                    </div>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editData.subtype || ''}
+                        onChange={e => handleEditFieldChange('subtype', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Subtype"
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900">
+                        {item.subtype || '—'}
+                      </div>
+                    )}
                   </td>
 
                   <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">
-                      {formatInstrumentPrice(item.price)}
-                    </div>
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        value={editData.year || ''}
+                        onChange={e => handleEditFieldChange('year', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Year"
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900">
+                        {formatInstrumentYear(item.year)}
+                      </div>
+                    )}
                   </td>
 
                   <td className="px-6 py-4">
-                    <StatusBadge status={item.status} />
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editData.price || ''}
+                        onChange={e => handleEditFieldChange('price', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Price"
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900">
+                        {formatInstrumentPrice(item.price)}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {isEditing ? (
+                      <select
+                        value={editData.status || 'Available'}
+                        onChange={e => handleEditFieldChange('status', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <option value="Available">Available</option>
+                        <option value="Booked">Booked</option>
+                        <option value="Sold">Sold</option>
+                        <option value="Reserved">Reserved</option>
+                        <option value="Maintenance">Maintenance</option>
+                      </select>
+                    ) : (
+                      <StatusBadge status={item.status} />
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editData.serial_number || ''}
+                        onChange={e => handleEditFieldChange('serial_number', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Serial #"
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900 font-mono">
+                        {item.serial_number || '—'}
+                      </div>
+                    )}
                   </td>
 
                   <td className="px-6 py-4">
                     <div className="flex flex-wrap gap-1">
-                      {itemClients.slice(0, 2).map((rel, index) => (
+                      {itemClients.slice(0, 2).map((rel) => (
                         <ClientPill
-                          key={index}
+                          key={rel.id}
                           name={`${rel.client?.first_name} ${rel.client?.last_name}`}
                         />
                       ))}
@@ -258,11 +450,77 @@ const ItemList = memo(function ItemList({
                   </td>
 
                   <td className="px-6 py-4 text-right">
-                    <RowActions
-                      onView={() => onItemClick(item)}
-                      onEdit={() => onEditClick(item)}
-                      onDelete={() => onDeleteClick(item)}
-                    />
+                    {isEditing ? (
+                      <div className="flex items-center justify-end space-x-1">
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            saveEditing();
+                          }}
+                          disabled={isSaving}
+                          className="text-green-600 hover:text-green-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-green-50"
+                          title="Save changes"
+                        >
+                          {isSaving ? (
+                            <svg
+                              className="w-4 h-4 animate-spin"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                              />
+                            </svg>
+                          ) : (
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                          )}
+                        </button>
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            cancelEditing();
+                          }}
+                          disabled={isSaving}
+                          className="text-red-600 hover:text-red-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-red-50"
+                          title="Cancel editing"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth="2"
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <RowActions
+                        onEdit={() => startEditing(item)}
+                        onDelete={() => onDeleteClick(item)}
+                      />
+                    )}
                   </td>
                 </tr>
               );
@@ -314,11 +572,9 @@ const ClientPill = ({ name }: { name: string }) => (
 
 // Row Actions Component
 const RowActions = ({
-  onView,
   onEdit,
   onDelete,
 }: {
-  onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) => {
@@ -328,7 +584,8 @@ const RowActions = ({
     <div className="relative flex justify-end">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="p-2 rounded-md hover:bg-gray-50"
+        className="p-2 rounded-md hover:bg-gray-50 transition-colors duration-200"
+        aria-label="More actions"
       >
         <svg
           className="w-4 h-4 text-gray-500"
@@ -351,41 +608,13 @@ const RowActions = ({
             className="fixed inset-0 z-10"
             onClick={() => setIsOpen(false)}
           />
-          <div className="absolute right-0 z-20 mt-2 w-36 rounded-md border bg-white shadow-lg">
-            <button
-              onClick={() => {
-                onView();
-                setIsOpen(false);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 hover:bg-gray-50"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                />
-              </svg>
-              View
-            </button>
+          <div className="absolute right-0 z-20 mt-2 w-32 rounded-md border border-gray-200 bg-white shadow-lg">
             <button
               onClick={() => {
                 onEdit();
                 setIsOpen(false);
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 hover:bg-gray-50"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
             >
               <svg
                 className="w-4 h-4"
@@ -407,7 +636,7 @@ const RowActions = ({
                 onDelete();
                 setIsOpen(false);
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-rose-600 hover:bg-rose-50"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 transition-colors duration-200"
             >
               <svg
                 className="w-4 h-4"

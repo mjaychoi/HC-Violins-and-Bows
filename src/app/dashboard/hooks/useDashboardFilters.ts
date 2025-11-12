@@ -31,7 +31,8 @@ export function useDashboardFilters(items: Instrument[]) {
       filtered = filtered.filter(
         item =>
           item.maker?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.type?.toLowerCase().includes(searchTerm.toLowerCase())
+          item.type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.subtype?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -51,6 +52,13 @@ export function useDashboardFilters(items: Instrument[]) {
     if (filters.type.length > 0) {
       filtered = filtered.filter(
         item => item.type && filters.type.includes(item.type)
+      );
+    }
+
+    // Subtype filter
+    if (filters.subtype.length > 0) {
+      filtered = filtered.filter(
+        item => item.subtype && filters.subtype.includes(item.subtype)
       );
     }
 
@@ -95,7 +103,7 @@ export function useDashboardFilters(items: Instrument[]) {
     handleSort,
     getSortArrow,
   } = useFilterSort<Instrument>(filteredItems, {
-    searchFields: ['maker', 'type'],
+    searchFields: ['maker', 'type', 'subtype'],
     initialSearchTerm: searchTerm,
     initialSortBy: sortBy,
     initialSortOrder: sortOrder,
@@ -112,6 +120,7 @@ export function useDashboardFilters(items: Instrument[]) {
       status: uniqueValues('status'),
       maker: uniqueValues('maker'),
       type: uniqueValues('type'),
+      subtype: uniqueValues('subtype'),
       ownership: uniqueValues('ownership'),
     };
   }, [items]);

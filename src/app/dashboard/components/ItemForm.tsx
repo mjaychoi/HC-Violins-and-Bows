@@ -40,19 +40,22 @@ export default function ItemForm({
 
   React.useEffect(() => {
     if (selectedItem && isEditing) {
-      // Populate form with selected item data
-      (Object.keys(formData) as (keyof typeof formData)[]).forEach(key => {
-        const raw = (selectedItem as unknown as { [key: string]: unknown })[
-          key
-        ];
-        if (raw !== null && raw !== undefined) {
-          if (key === 'certificate') {
-            updateField('certificate', Boolean(raw));
-          } else {
-            updateField(key, String(raw));
-          }
-        }
-      });
+      // Populate form with selected item data when editing
+      updateField('status', selectedItem.status || 'Available');
+      updateField('maker', selectedItem.maker || '');
+      updateField('type', selectedItem.type || '');
+      updateField('subtype', selectedItem.subtype || '');
+      updateField('year', selectedItem.year?.toString() || '');
+      updateField('price', selectedItem.price?.toString() || '');
+      updateField('certificate', selectedItem.certificate || false);
+      updateField('size', selectedItem.size || '');
+      updateField('weight', selectedItem.weight || '');
+      updateField('ownership', selectedItem.ownership || '');
+      updateField('note', selectedItem.note || '');
+      updateField('serial_number', selectedItem.serial_number || '');
+    } else if (!isEditing && !selectedItem) {
+      // Reset form when closing modal or switching to create mode
+      resetForm();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedItem, isEditing]);
@@ -70,9 +73,33 @@ export default function ItemForm({
     }
 
     try {
-      await onSubmit(
-        formData as unknown as Omit<Instrument, 'id' | 'created_at'>
-      );
+      // Convert form data to proper types for database
+      const instrumentData: Omit<Instrument, 'id' | 'created_at'> = {
+        status: formData.status as 'Available' | 'Booked' | 'Sold' | 'Reserved' | 'Maintenance',
+        maker: formData.maker?.trim() || null,
+        type: formData.type?.trim() || null,
+        subtype: formData.subtype?.trim() || null,
+        year: (() => {
+          const yearStr = formData.year?.toString().trim();
+          if (!yearStr) return null;
+          const yearNum = parseInt(yearStr, 10);
+          return isNaN(yearNum) ? null : yearNum;
+        })(),
+        price: (() => {
+          const priceStr = formData.price?.toString().trim();
+          if (!priceStr) return null;
+          const priceNum = parseFloat(priceStr);
+          return isNaN(priceNum) ? null : priceNum;
+        })(),
+        certificate: formData.certificate,
+        size: formData.size?.trim() || null,
+        weight: formData.weight?.trim() || null,
+        ownership: formData.ownership?.trim() || null,
+        note: formData.note?.trim() || null,
+        serial_number: formData.serial_number?.trim() || null,
+      };
+
+      await onSubmit(instrumentData);
       resetForm();
       setErrors([]);
       onClose();
@@ -190,6 +217,7 @@ export default function ItemForm({
                   className={classNames.input}
                 >
                   <option value="Available">Available</option>
+                  <option value="Booked">Booked</option>
                   <option value="Sold">Sold</option>
                   <option value="Reserved">Reserved</option>
                   <option value="Maintenance">Maintenance</option>
@@ -230,6 +258,14 @@ export default function ItemForm({
               value={formData.ownership}
               onChange={handleInputChange}
               placeholder="Enter ownership info"
+            />
+
+            <Input
+              label="Serial Number"
+              name="serial_number"
+              value={formData.serial_number}
+              onChange={handleInputChange}
+              placeholder="Enter serial number (e.g., VI001, BO123, mj123)"
             />
 
             <div>

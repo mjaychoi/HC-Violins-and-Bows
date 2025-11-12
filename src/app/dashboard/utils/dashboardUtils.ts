@@ -126,16 +126,16 @@ export const validateInstrumentData = (data: Partial<Instrument>): string[] => {
   if (!data.maker?.trim()) errors.push('Maker is required');
   if (!data.type?.trim()) errors.push('Type is required');
 
-  if (data.year && typeof data.year === 'string') {
-    const year = parseInt(data.year);
-    if (isNaN(year) || year < 1000 || year > new Date().getFullYear()) {
+  if (data.year !== null && data.year !== undefined) {
+    const year = typeof data.year === 'string' ? parseInt(data.year, 10) : data.year;
+    if (typeof year !== 'number' || isNaN(year) || year < 1000 || year > new Date().getFullYear()) {
       errors.push('Year must be a valid year');
     }
   }
 
-  if (data.price && typeof data.price === 'string') {
-    const price = parseFloat(data.price);
-    if (isNaN(price) || price < 0) {
+  if (data.price !== null && data.price !== undefined) {
+    const price = typeof data.price === 'string' ? parseFloat(data.price) : data.price;
+    if (typeof price !== 'number' || isNaN(price) || price < 0) {
       errors.push('Price must be a valid positive number');
     }
   }

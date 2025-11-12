@@ -15,6 +15,7 @@ export function useDashboardForm() {
     price: '',
     ownership: '',
     note: '',
+    serial_number: '',
   };
 
   const { formData, updateField, updateFields, resetForm } =

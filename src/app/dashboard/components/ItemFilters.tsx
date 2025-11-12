@@ -74,6 +74,7 @@ export default function ItemFilters({
     status: getUniqueValues(items, 'status'),
     maker: getUniqueValues(items, 'maker'),
     type: getUniqueValues(items, 'type'),
+    subtype: getUniqueValues(items, 'subtype'),
     ownership: getUniqueValues(items, 'ownership'),
   };
 
@@ -163,6 +164,26 @@ export default function ItemFilters({
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
                     <span className="ml-2 text-sm text-gray-700">{type}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Subtype Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Subtype
+              </label>
+              <div className="space-y-2 max-h-32 overflow-y-auto">
+                {filterOptions.subtype.map(subtype => (
+                  <label key={subtype} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={filters.subtype.includes(subtype)}
+                      onChange={() => onFilterChange('subtype', subtype)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">{subtype}</span>
                   </label>
                 ))}
               </div>
