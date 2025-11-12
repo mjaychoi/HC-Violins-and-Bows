@@ -2,8 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import GroupedTaskList from '../GroupedTaskList';
 import { MaintenanceTask } from '@/types';
-import { formatDate } from '@/utils/formatUtils';
-import { isToday, isTomorrow, isYesterday, parseISO, differenceInDays } from 'date-fns';
+// formatDate, isToday, isTomorrow, isYesterday, parseISO, differenceInDays are not used in tests
 
 // Mock formatDate
 jest.mock('@/utils/formatUtils', () => ({

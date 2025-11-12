@@ -15,7 +15,7 @@ jest.mock('../logger', () => ({
 }));
 
 describe('ErrorHandler - Comprehensive Tests', () => {
-  const { logError, logWarn } = require('../logger');
+  const { logError } = require('../logger');
 
   beforeEach(() => {
     errorHandler.clearErrorLogs();

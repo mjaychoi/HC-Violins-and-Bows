@@ -1,6 +1,6 @@
 import { errorHandler } from './errorHandler';
 import { supabase } from '@/lib/supabase';
-import { logApiRequest, logPerformance, logError } from './logger';
+import { logApiRequest, logError } from './logger';
 
 export class ApiClient {
   private static instance: ApiClient;

@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { logApiRequest, logPerformance, logError } from './logger';
+import { logApiRequest, logError } from './logger';
 import type {
   MaintenanceTask,
   TaskFilters,
