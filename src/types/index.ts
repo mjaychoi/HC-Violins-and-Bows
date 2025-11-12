@@ -1,9 +1,10 @@
 // Database Types
 export interface Instrument {
   id: string;
-  status: 'Available' | 'Booked' | 'Sold';
+  status: 'Available' | 'Booked' | 'Sold' | 'Reserved' | 'Maintenance';
   maker: string | null;
   type: string | null;
+  subtype: string | null;
   year: number | null;
   certificate: boolean;
   size: string | null;
@@ -11,7 +12,9 @@ export interface Instrument {
   price: number | null;
   ownership: string | null;
   note: string | null;
+  serial_number: string | null; // 악기 고유 번호
   created_at: string;
+  updated_at?: string; // Optional: automatically updated by database trigger
 }
 
 export interface InstrumentImage {
@@ -35,6 +38,7 @@ export interface Client {
   tags: string[];
   interest: string | null;
   note: string | null;
+  client_number: string | null; // 클라이언트 고유 번호
   type?: 'Musician' | 'Dealer' | 'Collector' | 'Regular';
   status?: 'Active' | 'Browsing' | 'In Negotiation' | 'Inactive';
   created_at: string;
@@ -74,4 +78,69 @@ export interface ApiResponse<T> {
   data: T;
   error?: string;
   success: boolean;
+}
+
+// Maintenance Task Types
+export type TaskType =
+  | 'repair' // 수리
+  | 'rehair' // 활털 갈기
+  | 'maintenance' // 정기 점검
+  | 'inspection' // 검사
+  | 'setup' // 세팅
+  | 'adjustment' // 조정
+  | 'restoration'; // 복원
+
+export type TaskStatus =
+  | 'pending' // 대기
+  | 'in_progress' // 진행중
+  | 'completed' // 완료
+  | 'cancelled'; // 취소
+
+export type TaskPriority =
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'urgent';
+
+export interface MaintenanceTask {
+  id: string;
+  instrument_id: string;
+  client_id: string | null; // 클라이언트 ID (선택사항)
+  task_type: TaskType;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  received_date: string; // YYYY-MM-DD
+  due_date: string | null; // YYYY-MM-DD
+  personal_due_date: string | null; // YYYY-MM-DD
+  scheduled_date: string | null; // YYYY-MM-DD
+  completed_date: string | null; // YYYY-MM-DD
+  priority: TaskPriority;
+  estimated_hours: number | null;
+  actual_hours: number | null;
+  cost: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  instrument?: Instrument; // 관계 데이터
+  client?: Client; // 관계 데이터
+}
+
+// Calendar Event Types
+export interface CalendarEvent {
+  id: string;
+  date: string; // YYYY-MM-DD
+  tasks: MaintenanceTask[];
+  count: number;
+}
+
+// Task Filter Types
+export interface TaskFilters {
+  instrument_id?: string;
+  status?: TaskStatus;
+  task_type?: TaskType;
+  priority?: TaskPriority;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
 }

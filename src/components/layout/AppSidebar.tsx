@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 interface AppSidebarProps {
   isExpanded: boolean;
@@ -12,6 +13,18 @@ export default function AppSidebar({
   isExpanded,
   currentPath,
 }: AppSidebarProps) {
+  // Use local state to avoid hydration mismatch
+  // Start with false (collapsed) on both server and client
+  const [mounted, setMounted] = useState(false);
+  const [localExpanded, setLocalExpanded] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    setLocalExpanded(isExpanded);
+  }, [isExpanded]);
+
+  // Use localExpanded after mount, isExpanded before mount (for SSR)
+  const expanded = mounted ? localExpanded : false;
   const navigationItems = [
     {
       href: '/dashboard',
@@ -70,16 +83,35 @@ export default function AppSidebar({
         </svg>
       ),
     },
+    {
+      href: '/calendar',
+      label: 'Calendar',
+      icon: (
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+          />
+        </svg>
+      ),
+    },
   ];
 
   return (
     <div
       className={`bg-white shadow-lg transition-all duration-300 ease-in-out ${
-        isExpanded ? 'w-64' : 'w-16'
+        expanded ? 'w-64' : 'w-16'
       } overflow-hidden`}
     >
       <div className="p-4">
-        {isExpanded && (
+        {expanded && (
           <div className="flex items-center mb-6">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <svg
@@ -110,20 +142,20 @@ export default function AppSidebar({
                 key={item.href}
                 href={item.href}
                 className={`py-3 cursor-pointer transition-all duration-300 ${
-                  isExpanded ? 'px-6 justify-start' : 'px-4 justify-center'
+                  expanded ? 'px-6 justify-start' : 'px-4 justify-center'
                 } flex items-center ${
                   isActive
                     ? 'bg-blue-50 border-r-2 border-blue-500'
                     : 'hover:bg-gray-50'
                 }`}
-                title={!isExpanded ? item.label : undefined}
+                title={!expanded ? item.label : undefined}
               >
                 <div
                   className={`w-5 h-5 ${isActive ? 'text-blue-600' : 'text-gray-600'}`}
                 >
                   {item.icon}
                 </div>
-                {isExpanded && (
+                {expanded && (
                   <span
                     className={`ml-3 ${
                       isActive ? 'text-blue-700 font-medium' : 'text-gray-700'

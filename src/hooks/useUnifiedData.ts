@@ -1,5 +1,5 @@
 // unified data management hook - replace existing hooks
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import {
   useDataContext,
   useClients,
@@ -12,8 +12,18 @@ import { RelationshipType } from '@/types';
 export function useUnifiedData() {
   const { state, actions } = useDataContext();
 
-  // initial data loading
+  // initial data loading - 한 번만 실행
   useEffect(() => {
+    // 데이터가 이미 로드되어 있으면 스킵
+    const hasData =
+      state.clients.length > 0 ||
+      state.instruments.length > 0 ||
+      state.connections.length > 0;
+
+    if (hasData) {
+      return;
+    }
+
     const loadAllData = async () => {
       await Promise.all([
         actions.fetchClients(),
@@ -23,7 +33,8 @@ export function useUnifiedData() {
     };
 
     loadAllData();
-  }, [actions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 빈 배열로 초기 마운트 시에만 실행
 
   return {
     // state
@@ -110,8 +121,13 @@ export function useUnifiedConnections() {
 export function useUnifiedDashboard() {
   const { state, actions } = useDataContext();
 
-  // initial data loading
+  // initial data loading - 조건부 실행
   useEffect(() => {
+    // 데이터가 이미 로드되어 있으면 스킵
+    if (state.instruments.length > 0 && state.connections.length > 0) {
+      return;
+    }
+
     const loadDashboardData = async () => {
       await Promise.all([
         actions.fetchInstruments(),
@@ -119,37 +135,29 @@ export function useUnifiedDashboard() {
       ]);
     };
 
-    if (state.instruments.length === 0 && state.connections.length === 0) {
-      loadDashboardData();
-    }
+    loadDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.instruments.length, state.connections.length]);
+  }, [state.instruments.length, state.connections.length]); // 길이만 의존성으로 사용
 
+  // Optimized: Use Map for O(1) lookups instead of O(n) find operations
   // calculate instrument-client relationships
-  const getClientRelationships = useCallback(() => {
+  const clientRelationships = useMemo(() => {
+    const clientMap = new Map(state.clients.map(c => [c.id, c]));
+    const instrumentMap = new Map(state.instruments.map(i => [i.id, i]));
+    
     return state.connections
       .map(connection => ({
         ...connection,
-        client: state.clients.find(c => c.id === connection.client_id),
-        instrument: state.instruments.find(
-          i => i.id === connection.instrument_id
-        ),
+        client: clientMap.get(connection.client_id),
+        instrument: instrumentMap.get(connection.instrument_id),
       }))
       .filter(rel => rel.client && rel.instrument);
   }, [state.connections, state.clients, state.instruments]);
 
-  // calculate client-instrument relationships
-  const getInstrumentRelationships = useCallback(() => {
-    return state.connections
-      .map(connection => ({
-        ...connection,
-        client: state.clients.find(c => c.id === connection.client_id),
-        instrument: state.instruments.find(
-          i => i.id === connection.instrument_id
-        ),
-      }))
-      .filter(rel => rel.client && rel.instrument);
-  }, [state.connections, state.clients, state.instruments]);
+  // calculate client-instrument relationships (same as clientRelationships for now)
+  const instrumentRelationships = useMemo(() => {
+    return clientRelationships;
+  }, [clientRelationships]);
 
   return {
     // basic data
@@ -158,8 +166,8 @@ export function useUnifiedDashboard() {
     clients: state.clients,
 
     // calculated relationships
-    clientRelationships: getClientRelationships(),
-    instrumentRelationships: getInstrumentRelationships(),
+    clientRelationships,
+    instrumentRelationships,
 
     // loading state
     loading: {
@@ -184,8 +192,13 @@ export function useUnifiedDashboard() {
 export function useUnifiedConnectionForm() {
   const { state, actions } = useDataContext();
 
-  // initial data loading
+  // initial data loading - 조건부 실행
   useEffect(() => {
+    // 데이터가 이미 로드되어 있으면 스킵
+    if (state.clients.length > 0 && state.instruments.length > 0) {
+      return;
+    }
+
     const loadFormData = async () => {
       await Promise.all([
         actions.fetchClients(),
@@ -194,10 +207,9 @@ export function useUnifiedConnectionForm() {
       ]);
     };
 
-    if (state.clients.length === 0 || state.instruments.length === 0) {
-      loadFormData();
-    }
-  }, [actions, state.clients.length, state.instruments.length]);
+    loadFormData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.clients.length, state.instruments.length]); // 길이만 의존성으로 사용
 
   // create connection
   const createConnection = useCallback(
@@ -275,13 +287,15 @@ export function useUnifiedSearch() {
         client =>
           (client.first_name || '').toLowerCase().includes(lowerQuery) ||
           (client.last_name || '').toLowerCase().includes(lowerQuery) ||
-          (client.email || '').toLowerCase().includes(lowerQuery)
+          (client.email || '').toLowerCase().includes(lowerQuery) ||
+          (client.client_number || '').toLowerCase().includes(lowerQuery)
       );
 
       const instruments = state.instruments.filter(
         instrument =>
           (instrument.maker || '').toLowerCase().includes(lowerQuery) ||
-          (instrument.type || '').toLowerCase().includes(lowerQuery)
+          (instrument.type || '').toLowerCase().includes(lowerQuery) ||
+          (instrument.serial_number || '').toLowerCase().includes(lowerQuery)
       );
 
       const connections = state.connections.filter(

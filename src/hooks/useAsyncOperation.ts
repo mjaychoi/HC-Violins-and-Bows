@@ -65,18 +65,25 @@ export function useAsyncOperation<T = unknown>() {
         onSuccess?.(result);
         return result;
       } catch (error) {
-        if (mountedRef.current && myId !== reqIdRef.current) {
-          if (error instanceof Error && error.name === 'AbortError') {
-            return null;
-          }
-          handleError(error, context);
+        if (!mountedRef.current || myId !== reqIdRef.current) {
+          // Component unmounted or request superseded
+          return null;
         }
+        // Current request error
+        if (error instanceof Error && error.name === 'AbortError') {
+          return null;
+        }
+        handleError(error, context);
         return null;
       } finally {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (controller.signal as any).__externalCleanup?.();
-        if (mountedRef.current && myId !== reqIdRef.current) {
-          setLoading(false);
+        if (mountedRef.current) {
+          if (myId === reqIdRef.current) {
+            // Current request: set loading to false after completion
+            setLoading(false);
+          }
+          // For non-current requests, loading will be managed by the new request
         }
       }
     },

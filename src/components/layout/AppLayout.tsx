@@ -2,6 +2,9 @@
 
 import { useSidebarState } from '@/hooks/useSidebarState';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import AppHeader from './AppHeader';
 import AppSidebar from './AppSidebar';
 
@@ -22,9 +25,32 @@ export default function AppLayout({
 }: AppLayoutProps) {
   const { isExpanded, toggleSidebar } = useSidebarState();
   const pathname = usePathname();
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  // Protect routes - redirect to login if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/');
+    }
+  }, [user, loading, router]);
+
+  // Show loading state while checking auth
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated
+  if (!user) {
+    return null;
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <AppHeader
         title={title}
@@ -32,12 +58,14 @@ export default function AppLayout({
         actionButton={actionButton}
       />
 
-      <div className="flex">
+      <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <AppSidebar isExpanded={isExpanded} currentPath={pathname} />
+        <div className="flex-shrink-0">
+          <AppSidebar isExpanded={isExpanded} currentPath={pathname} />
+        </div>
 
         {/* Main Content */}
-        <div className={`flex-1 transition-all duration-300 ease-in-out`}>
+        <div className="flex-1 overflow-auto transition-all duration-300 ease-in-out">
           {children}
         </div>
       </div>

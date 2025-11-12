@@ -5,6 +5,7 @@ import React, {
   useContext,
   useReducer,
   useCallback,
+  useMemo,
   ReactNode,
 } from 'react';
 import { Client, Instrument, ClientInstrument } from '@/types';
@@ -86,6 +87,27 @@ const initialState: DataState = {
   },
 };
 
+// Helper function to parse type field: if it contains "/", split into type and subtype
+function parseInstrumentType(item: Instrument): Instrument {
+  if (item.type && typeof item.type === 'string' && item.type.includes('/')) {
+    const parts = item.type.split('/').map(part => part.trim()).filter(part => part.length > 0);
+    if (parts.length >= 2) {
+      return {
+        ...item,
+        type: parts[0] || null,
+        subtype: parts.slice(1).join(' / ') || item.subtype || null,
+      };
+    } else if (parts.length === 1) {
+      return {
+        ...item,
+        type: parts[0] || null,
+        subtype: item.subtype || null,
+      };
+    }
+  }
+  return item;
+}
+
 // 리듀서
 function dataReducer(state: DataState, action: DataAction): DataState {
   switch (action.type) {
@@ -162,7 +184,7 @@ function dataReducer(state: DataState, action: DataAction): DataState {
     case 'ADD_INSTRUMENT':
       return {
         ...state,
-        instruments: [action.payload, ...state.instruments],
+        instruments: [parseInstrumentType(action.payload), ...state.instruments],
         lastUpdated: {
           ...state.lastUpdated,
           instruments: new Date(),
@@ -174,7 +196,7 @@ function dataReducer(state: DataState, action: DataAction): DataState {
         ...state,
         instruments: state.instruments.map(instrument =>
           instrument.id === action.payload.id
-            ? action.payload.instrument
+            ? parseInstrumentType(action.payload.instrument)
             : instrument
         ),
         lastUpdated: {
@@ -448,7 +470,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       );
       if (error) throw error;
-      dispatch({ type: 'SET_INSTRUMENTS', payload: data || [] });
+      
+      // Parse type field: if it contains "/", split into type and subtype
+      const parsedData = (data || []).map(parseInstrumentType);
+      
+      dispatch({ type: 'SET_INSTRUMENTS', payload: parsedData });
     } catch (error) {
       handleError(error, 'Fetch instruments');
     } finally {
@@ -472,9 +498,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         );
         if (error) throw error;
         if (data) {
-          dispatch({ type: 'ADD_INSTRUMENT', payload: data });
+          // Parse type field if it contains "/"
+          const parsedData = parseInstrumentType(data);
+          dispatch({ type: 'ADD_INSTRUMENT', payload: parsedData });
           // 연결된 데이터 캐시 무효화
           invalidateCache('connections');
+          return parsedData;
         }
         return data;
       } catch (error) {
@@ -504,12 +533,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         );
         if (error) throw error;
         if (data) {
+          // Parse type field if it contains "/"
+          const parsedData = parseInstrumentType(data);
           dispatch({
             type: 'UPDATE_INSTRUMENT',
-            payload: { id, instrument: data },
+            payload: { id, instrument: parsedData },
           });
           // 연결된 데이터 캐시 무효화
           invalidateCache('connections');
+          return parsedData;
         }
         return data;
       } catch (error) {
@@ -665,29 +697,48 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [handleError]
   );
 
-  const actions = {
-    // Clients
-    fetchClients,
-    createClient,
-    updateClient,
-    deleteClient,
+  // actions 객체를 useMemo로 메모이제이션하여 무한 루프 방지
+  const actions = useMemo(
+    () => ({
+      // Clients
+      fetchClients,
+      createClient,
+      updateClient,
+      deleteClient,
 
-    // Instruments
-    fetchInstruments,
-    createInstrument,
-    updateInstrument,
-    deleteInstrument,
+      // Instruments
+      fetchInstruments,
+      createInstrument,
+      updateInstrument,
+      deleteInstrument,
 
-    // Connections
-    fetchConnections,
-    createConnection,
-    updateConnection,
-    deleteConnection,
+      // Connections
+      fetchConnections,
+      createConnection,
+      updateConnection,
+      deleteConnection,
 
-    // Cache management
-    invalidateCache,
-    resetState,
-  };
+      // Cache management
+      invalidateCache,
+      resetState,
+    }),
+    [
+      fetchClients,
+      createClient,
+      updateClient,
+      deleteClient,
+      fetchInstruments,
+      createInstrument,
+      updateInstrument,
+      deleteInstrument,
+      fetchConnections,
+      createConnection,
+      updateConnection,
+      deleteConnection,
+      invalidateCache,
+      resetState,
+    ]
+  );
 
   return (
     <DataContext.Provider value={{ state, dispatch, actions }}>

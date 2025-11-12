@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuth } from '@/contexts/AuthContext';
+
 interface AppHeaderProps {
   title: string;
   onToggleSidebar: () => void;
@@ -15,6 +17,12 @@ export default function AppHeader({
   onToggleSidebar,
   actionButton,
 }: AppHeaderProps) {
+  const { user, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
+
   return (
     <div className="bg-white shadow-sm border-b">
       <div className="px-4 sm:px-6 lg:px-8">
@@ -44,8 +52,23 @@ export default function AppHeader({
             </h1>
           </div>
 
-          {actionButton && (
-            <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-4">
+            {user && (
+              <div className="flex items-center space-x-3">
+                <span className="text-sm text-gray-600 hidden sm:inline">
+                  {user.email}
+                </span>
+                <button
+                  onClick={handleSignOut}
+                  className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
+                  aria-label="Sign out"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+
+            {actionButton && (
               <button
                 onClick={actionButton.onClick}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 flex items-center gap-2"
@@ -53,8 +76,8 @@ export default function AppHeader({
                 {actionButton.icon}
                 {actionButton.label}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
