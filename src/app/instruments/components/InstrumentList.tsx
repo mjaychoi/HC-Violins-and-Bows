@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Instrument } from '@/types';
+import { CardSkeleton } from '@/components/common';
 
 interface InstrumentListProps {
   items: Instrument[];
@@ -15,11 +16,7 @@ export default function InstrumentList({
   onAddInstrument,
 }: InstrumentListProps) {
   if (loading) {
-    return (
-      <div className="flex justify-center items-center py-12">
-        <div className="text-gray-500">Loading items...</div>
-      </div>
-    );
+    return <CardSkeleton count={3} />;
   }
 
   if (items.length === 0) {

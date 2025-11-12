@@ -62,9 +62,11 @@ export default function ConnectionModal({
         relationshipType,
         connectionNotes
       );
+      // Only close modal on success - errors are handled by parent
       onClose();
-    } catch (error) {
-      console.error('Error creating connection:', error);
+    } catch {
+      // Error is handled by parent component's error handler
+      // Don't close modal on error - let user see the error and retry
     }
   };
 

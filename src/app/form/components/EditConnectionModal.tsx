@@ -52,10 +52,11 @@ export const EditConnectionModal = ({
         relationshipType,
         notes,
       });
+      // Only close modal on success - errors are handled by parent
       onClose();
-    } catch (error) {
-      console.error('Error updating connection:', error);
-      alert('Failed to update connection');
+    } catch {
+      // Error is handled by parent component's error handler
+      // Don't close modal on error - let user see the error and retry
     } finally {
       setSubmitting(false);
     }

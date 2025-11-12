@@ -20,7 +20,7 @@ import { ErrorBoundary } from '@/components/common';
 
 export default function ConnectedClientsPage() {
   // Error handling
-  const { ErrorToasts } = useErrorHandler();
+  const { ErrorToasts, handleError } = useErrorHandler();
 
   // Custom hooks
   const {
@@ -85,10 +85,14 @@ export default function ConnectedClientsPage() {
     relationshipType: RelationshipType,
     notes: string
   ) => {
-    await withSubmitting(async () => {
-      await createConnection(clientId, itemId, relationshipType, notes);
-      setShowConnectionModal(false);
-    });
+    try {
+      await withSubmitting(async () => {
+        await createConnection(clientId, itemId, relationshipType, notes);
+        setShowConnectionModal(false);
+      });
+    } catch (error) {
+      handleError(error, 'Failed to create connection');
+    }
   };
 
   // Handle connection update
@@ -96,10 +100,14 @@ export default function ConnectedClientsPage() {
     connectionId: string,
     updates: { relationshipType: RelationshipType; notes: string }
   ) => {
-    await withSubmitting(async () => {
-      await updateConnection(connectionId, updates);
-      closeEditModal();
-    });
+    try {
+      await withSubmitting(async () => {
+        await updateConnection(connectionId, updates);
+        closeEditModal();
+      });
+    } catch (error) {
+      handleError(error, 'Failed to update connection');
+    }
   };
 
   return (

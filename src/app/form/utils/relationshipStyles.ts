@@ -1,5 +1,3 @@
-import { RelationshipType } from '@/types';
-
 export interface RelationshipStyle {
   bgColor: string;
   textColor: string;

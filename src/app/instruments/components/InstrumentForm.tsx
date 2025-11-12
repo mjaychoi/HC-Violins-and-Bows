@@ -72,8 +72,8 @@ export default function InstrumentForm({
       const selectedIds = new Set(selectedClients.map(sc => sc.client.id));
       const filtered = (data || []).filter(c => !selectedIds.has(c.id));
       setSearchResults(filtered);
-    } catch (error) {
-      console.error('Error searching clients:', error);
+    } catch {
+      // Error is handled silently - search results will be empty
       setSearchResults([]);
     } finally {
       setIsSearchingClients(false);

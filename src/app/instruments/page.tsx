@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
 import { Instrument } from '@/types';
+import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
-import { useLoadingState } from '@/hooks/useLoadingState';
 import { useModalState } from '@/hooks/useModalState';
+import { useLoadingState } from '@/hooks/useLoadingState';
 import { AppLayout } from '@/components/layout';
 import { ErrorBoundary } from '@/components/common';
 import InstrumentForm from './components/InstrumentForm';
@@ -13,67 +12,56 @@ import InstrumentList from './components/InstrumentList';
 
 export default function InstrumentsPage() {
   // Error handling
-  const { ErrorToasts } = useErrorHandler();
+  const { ErrorToasts, handleError } = useErrorHandler();
 
-  // Main states
-  const [items, setItems] = useState<Instrument[]>([]);
-  const { loading, submitting, withLoading, withSubmitting } = useLoadingState({
-    initialLoading: true,
-  });
+  // Use unified data hook (same as dashboard)
+  const {
+    instruments: items,
+    loading,
+    submitting,
+    createInstrument,
+  } = useUnifiedDashboard();
+
   const { isOpen: showModal, openModal, closeModal } = useModalState();
-
-  const fetchInstruments = useCallback(async () => {
-    await withLoading(async () => {
-      const { data, error } = await supabase
-        .from('instruments')
-        .select('id, maker, name, year')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setItems(
-        (data || []).map(item => ({
-          id: item.id,
-          status: 'Available' as const,
-          maker: item.maker,
-          type: item.name,
-          year: item.year,
-          certificate: false,
-          size: null,
-          weight: null,
-          price: null,
-          ownership: null,
-          note: null,
-          created_at: new Date().toISOString(),
-        }))
-      );
-    });
-  }, [withLoading]);
-
-  useEffect(() => {
-    fetchInstruments();
-  }, [fetchInstruments]);
+  const { withSubmitting } = useLoadingState();
 
   const handleSubmit = async (formData: {
     maker: string;
     name: string;
     year: string;
   }) => {
-    await withSubmitting(async () => {
-      const { error } = await supabase
-        .from('instruments')
-        .insert([
-          {
-            maker: formData.maker,
-            name: formData.name,
-            year: parseInt(formData.year),
-          },
-        ])
-        .select();
+    try {
+      await withSubmitting(async () => {
+        // Convert form data to Instrument format
+        const yearStr = formData.year?.trim();
+        const yearNum = yearStr ? parseInt(yearStr, 10) : null;
+        
+        if (yearStr && isNaN(yearNum!)) {
+          handleError(new Error('Invalid year value'), 'Invalid input');
+          return;
+        }
 
-      if (error) throw error;
+        const instrumentData: Omit<Instrument, 'id' | 'created_at'> = {
+          status: 'Available',
+          maker: formData.maker?.trim() || null,
+          type: formData.name?.trim() || null,
+          subtype: null,
+          year: yearNum,
+          certificate: false,
+          size: null,
+          weight: null,
+          price: null,
+          ownership: null,
+          note: null,
+          serial_number: null,
+        };
 
-      closeModal();
-      await fetchInstruments();
-    });
+        await createInstrument(instrumentData);
+        closeModal();
+      });
+    } catch (error) {
+      handleError(error, 'Failed to create instrument');
+    }
   };
 
   return (
@@ -110,7 +98,7 @@ export default function InstrumentsPage() {
 
               <InstrumentList
                 items={items}
-                loading={loading}
+                loading={loading.any}
                 onAddInstrument={openModal}
               />
             </div>
@@ -122,7 +110,7 @@ export default function InstrumentsPage() {
           isOpen={showModal}
           onClose={closeModal}
           onSubmit={handleSubmit}
-          submitting={submitting}
+          submitting={submitting.any}
         />
 
         {/* Error Toasts */}
