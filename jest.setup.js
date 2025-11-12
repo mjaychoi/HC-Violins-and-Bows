@@ -148,6 +148,15 @@ global.IntersectionObserver = class IntersectionObserver {
   unobserve() {}
 };
 
+// Mock performance.now() for Node.js environment
+if (typeof global.performance === 'undefined') {
+  global.performance = {
+    now: jest.fn(() => Date.now()),
+  };
+} else if (!global.performance.now) {
+  global.performance.now = jest.fn(() => Date.now());
+}
+
 // Mock Supabase to avoid ESM issues
 jest.mock('@/lib/supabase', () => ({
   supabase: {
