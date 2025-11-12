@@ -20,12 +20,18 @@ jest.mock('@/lib/supabase', () => ({
 
 jest.mock('../errorHandler', () => ({
   errorHandler: {
-    handleSupabaseError: jest.fn(error => ({
+    handleSupabaseError: jest.fn(() => ({
       code: 'ERROR',
       message: 'Test error',
       timestamp: new Date(),
     })),
   },
+}));
+
+jest.mock('../logger', () => ({
+  logApiRequest: jest.fn(),
+  logPerformance: jest.fn(),
+  logError: jest.fn(),
 }));
 
 describe('ApiClient', () => {
@@ -59,13 +65,12 @@ describe('ApiClient', () => {
 
     it('should query with eq filter', async () => {
       const mockData = [{ id: '1' }];
-      const mockSelect = jest.fn().mockReturnThis();
       const mockEq = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
 
       (supabase.from as jest.Mock).mockReturnValue({
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         eq: mockEq,
       });
 
@@ -78,13 +83,12 @@ describe('ApiClient', () => {
 
     it('should query with order', async () => {
       const mockData = [{ id: '1' }];
-      const mockSelect = jest.fn().mockReturnThis();
       const mockOrder = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
 
       (supabase.from as jest.Mock).mockReturnValue({
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         order: mockOrder,
       });
 
@@ -99,13 +103,12 @@ describe('ApiClient', () => {
 
     it('should query with limit', async () => {
       const mockData = [{ id: '1' }];
-      const mockSelect = jest.fn().mockReturnThis();
       const mockLimit = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
 
       (supabase.from as jest.Mock).mockReturnValue({
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         limit: mockLimit,
       });
 
@@ -145,14 +148,13 @@ describe('ApiClient', () => {
       const newItem = { name: 'Test' };
       const createdItem = { id: '1', ...newItem };
       const mockInsert = jest.fn().mockReturnThis();
-      const mockSelect = jest.fn().mockReturnThis();
       const mockSingle = jest
         .fn()
         .mockResolvedValue({ data: createdItem, error: null });
 
       (supabase.from as jest.Mock).mockReturnValue({
         insert: mockInsert,
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
@@ -166,14 +168,13 @@ describe('ApiClient', () => {
     it('should handle create errors', async () => {
       const mockError = { message: 'Create failed' };
       const mockInsert = jest.fn().mockReturnThis();
-      const mockSelect = jest.fn().mockReturnThis();
       const mockSingle = jest
         .fn()
         .mockResolvedValue({ data: null, error: mockError });
 
       (supabase.from as jest.Mock).mockReturnValue({
         insert: mockInsert,
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
@@ -186,12 +187,11 @@ describe('ApiClient', () => {
     it('should handle create exceptions', async () => {
       const mockError = new Error('Network error');
       const mockInsert = jest.fn().mockReturnThis();
-      const mockSelect = jest.fn().mockReturnThis();
       const mockSingle = jest.fn().mockRejectedValue(mockError);
 
       (supabase.from as jest.Mock).mockReturnValue({
         insert: mockInsert,
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
@@ -208,7 +208,6 @@ describe('ApiClient', () => {
       const updatedItem = { id: '1', ...updates };
       const mockUpdate = jest.fn().mockReturnThis();
       const mockEq = jest.fn().mockReturnThis();
-      const mockSelect = jest.fn().mockReturnThis();
       const mockSingle = jest
         .fn()
         .mockResolvedValue({ data: updatedItem, error: null });
@@ -216,7 +215,7 @@ describe('ApiClient', () => {
       (supabase.from as jest.Mock).mockReturnValue({
         update: mockUpdate,
         eq: mockEq,
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
@@ -231,7 +230,6 @@ describe('ApiClient', () => {
       const mockError = { message: 'Update failed' };
       const mockUpdate = jest.fn().mockReturnThis();
       const mockEq = jest.fn().mockReturnThis();
-      const mockSelect = jest.fn().mockReturnThis();
       const mockSingle = jest
         .fn()
         .mockResolvedValue({ data: null, error: mockError });
@@ -239,7 +237,7 @@ describe('ApiClient', () => {
       (supabase.from as jest.Mock).mockReturnValue({
         update: mockUpdate,
         eq: mockEq,
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
