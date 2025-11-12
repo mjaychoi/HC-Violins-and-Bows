@@ -2,6 +2,7 @@
 
 import React, { Component, ReactNode } from 'react';
 import { AppError, ErrorCodes } from '@/types/errors';
+import { logError } from '@/utils/logger';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -64,10 +65,17 @@ export default class ErrorBoundary extends Component<
       this.props.onError(appError, errorInfo);
     }
 
-    // Log error to console in development
-    if (process.env.NODE_ENV === 'development') {
-      console.error('ErrorBoundary caught an error:', error, errorInfo);
-    }
+    // Log error with structured logger
+    logError(
+      'ErrorBoundary caught an error',
+      error,
+      'ErrorBoundary',
+      {
+        componentStack: errorInfo.componentStack,
+        errorMessage: error.message,
+        errorStack: error.stack,
+      }
+    );
   }
 
   componentDidUpdate(prevProps: ErrorBoundaryProps) {

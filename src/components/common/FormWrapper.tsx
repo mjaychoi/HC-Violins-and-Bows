@@ -2,6 +2,7 @@
 
 import React, { ReactNode } from 'react';
 import { useFormState } from '@/hooks/useFormState';
+import { logError } from '@/utils/logger';
 
 interface FormWrapperProps<T extends Record<string, unknown>> {
   initialData: T;
@@ -65,7 +66,9 @@ export default function FormWrapper<T extends Record<string, unknown>>({
     try {
       await onSubmit(formData);
     } catch (error) {
-      console.error('Form submission error:', error);
+      logError('Form submission error', error, 'FormWrapper', {
+        formData: Object.keys(formData),
+      });
     }
   };
 
