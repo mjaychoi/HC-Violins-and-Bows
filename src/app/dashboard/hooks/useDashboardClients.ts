@@ -79,7 +79,10 @@ export function useDashboardClients() {
         setSearchResults(results);
       }
     } catch (error) {
-      logError('Error searching clients', error, 'useDashboardClients');
+      logError('Error searching clients', error, 'useDashboardClients', {
+        searchTerm,
+        operation: 'searchClients',
+      });
       setSearchResults([]);
     } finally {
       setIsSearchingClients(false);
@@ -102,7 +105,11 @@ export function useDashboardClients() {
       logError(
         'Error searching ownership clients',
         error,
-        'useDashboardClients'
+        'useDashboardClients',
+        {
+          searchTerm: ownershipSearchTerm,
+          operation: 'searchOwnershipClients',
+        }
       );
       setOwnershipSearchResults([]);
     } finally {
