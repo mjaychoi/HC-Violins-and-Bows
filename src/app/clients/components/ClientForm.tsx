@@ -32,6 +32,7 @@ export default function ClientForm({
     tags: [] as string[],
     interest: '',
     note: '',
+    client_number: '',
   };
 
   const {
@@ -144,7 +145,10 @@ export default function ClientForm({
         setSearchResultsForNew(results);
       }
     } catch (error) {
-      logError('Error searching instruments', error, 'ClientForm');
+      logError('Error searching instruments', error, 'ClientForm', {
+        searchTerm: instrumentSearchTermForNew,
+        action: 'searchInstruments',
+      });
       if (reqId === lastReqIdRef.current) {
         clearSearchResults();
       }
@@ -333,6 +337,20 @@ export default function ClientForm({
                   </select>
                 </div>
               )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Client Number
+                </label>
+                <input
+                  type="text"
+                  name="client_number"
+                  value={formData.client_number}
+                  onChange={handleInputChange}
+                  className={classNames.input}
+                  placeholder="Enter client number (e.g., CL001, mj123)"
+                />
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

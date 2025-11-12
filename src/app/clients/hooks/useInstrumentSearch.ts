@@ -27,7 +27,10 @@ export function useInstrumentSearch() {
       try {
         await searchInstruments(term);
       } catch (error) {
-        logError('Error searching instruments', error, 'useInstrumentSearch');
+        logError('Error searching instruments', error, 'useInstrumentSearch', {
+          searchTerm: term,
+          action: 'searchInstruments',
+        });
       } finally {
         setIsSearchingInstruments(false);
       }

@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ClientInstrument } from '@/types';
+import { logError } from '@/utils/logger';
 
 export const useClientInstruments = () => {
   const [instrumentRelationships, setInstrumentRelationships] = useState<
@@ -23,7 +24,9 @@ export const useClientInstruments = () => {
       const clientIds = new Set(data?.map(item => item.client_id) || []);
       setClientsWithInstruments(clientIds);
     } catch (error) {
-      console.error('Error fetching clients with instruments:', error);
+      logError('Error fetching clients with instruments', error, 'useClientInstruments', {
+        operation: 'fetchClientsWithInstruments',
+      });
     }
   };
 
@@ -55,7 +58,10 @@ export const useClientInstruments = () => {
         });
       }
     } catch (error) {
-      console.error('Error fetching instrument relationships:', error);
+      logError('Error fetching instrument relationships', error, 'useClientInstruments', {
+        operation: 'fetchInstrumentRelationships',
+        clientId,
+      });
     } finally {
       setLoading(false);
     }
@@ -88,7 +94,11 @@ export const useClientInstruments = () => {
       }
       return null;
     } catch (error) {
-      console.error('Error adding instrument relationship:', error);
+      logError('Error adding instrument relationship', error, 'useClientInstruments', {
+        operation: 'addInstrumentRelationship',
+        clientId,
+        instrumentId,
+      });
       return null;
     }
   };
@@ -122,7 +132,10 @@ export const useClientInstruments = () => {
 
       return true;
     } catch (error) {
-      console.error('Error removing instrument relationship:', error);
+      logError('Error removing instrument relationship', error, 'useClientInstruments', {
+        operation: 'removeInstrumentRelationship',
+        relationshipId,
+      });
       return false;
     }
   };
@@ -151,7 +164,11 @@ export const useClientInstruments = () => {
       }
       return null;
     } catch (error) {
-      console.error('Error updating instrument relationship:', error);
+      logError('Error updating instrument relationship', error, 'useClientInstruments', {
+        operation: 'updateInstrumentRelationship',
+        relationshipId,
+        relationshipType,
+      });
       return null;
     }
   };

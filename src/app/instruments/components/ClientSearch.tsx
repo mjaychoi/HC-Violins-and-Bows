@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Client, RelationshipType } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { logError } from '@/utils/logger';
 
 interface ClientSearchProps {
   selectedClients: Array<{
@@ -42,7 +43,10 @@ export default function ClientSearch({
       const filtered = (data || []).filter(c => !selectedIds.has(c.id));
       setSearchResults(filtered);
     } catch (error) {
-      console.error('Error searching clients:', error);
+      logError('Error searching clients', error, 'ClientSearch', {
+        searchTerm,
+        action: 'searchClients',
+      });
       setSearchResults([]);
     } finally {
       setIsSearchingClients(false);

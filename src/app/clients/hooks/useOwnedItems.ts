@@ -19,7 +19,11 @@ export function useOwnedItems() {
       if (error) throw error;
       setOwnedItems(data || []);
     } catch (error) {
-      logError('Error fetching owned items:', error);
+      logError('Error fetching owned items', error, 'useOwnedItems', {
+        clientId: client.id,
+        clientName: `${client.first_name} ${client.last_name}`,
+        operation: 'fetchOwnedItems',
+      });
       setOwnedItems([]);
     } finally {
       setLoadingOwnedItems(false);
