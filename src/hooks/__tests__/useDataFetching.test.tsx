@@ -47,7 +47,7 @@ describe('useDataFetching', () => {
 
   it('should refetch data when dependencies change', async () => {
     const mockFetch = jest.fn().mockResolvedValue([]);
-    const { result, rerender } = renderHook(
+    const { rerender } = renderHook(
       ({ deps }) => useDataFetching(mockFetch, 'test', deps),
       { initialProps: { deps: ['dep1'] } }
     );
