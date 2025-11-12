@@ -47,18 +47,18 @@ npm install
 ```bash
 cp env.template .env.local
 # Edit .env.local with your Supabase credentials
+# Required: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, DATABASE_PASSWORD
 ```
 
 4. **Set up the database**
 
-In your Supabase dashboard, go to SQL Editor and run:
+데이터베이스 마이그레이션은 [마이그레이션 가이드](./docs/migrations/README.md)를 참조하세요.
 
-```sql
--- Run the main schema
--- You can copy the contents of database-schema.sql
+```bash
+# Check current database schema
+npm run schema:check
 
--- Or if you need to add the subtype column separately:
-ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;
+# Run migrations (see docs/migrations/README.md for details)
 ```
 
 5. **Run the development server**
@@ -84,6 +84,8 @@ npm run test:watch   # Run tests in watch mode
 npm run test:coverage # Run tests with coverage
 npm run test:e2e     # Run E2E tests
 npm run type-check   # Run TypeScript type checking
+npm run schema:check # Check database schema
+npm run migrate:subtype # Run subtype migration
 ```
 
 ### Pre-commit Hooks
@@ -175,6 +177,8 @@ npm run build
 npm run start
 ```
 
+자세한 배포 가이드는 [프로덕션 배포 가이드](./docs/DEPLOYMENT.md)를 참조하세요.
+
 ## 🏗️ Project Structure
 
 ```
@@ -194,6 +198,21 @@ src/
 ├── types/                # TypeScript types
 └── utils/                # Utility functions
 ```
+
+## 📚 Documentation
+
+프로젝트의 상세한 문서는 [docs 폴더](./docs/README.md)를 참조하세요.
+
+### 주요 문서
+
+- [마이그레이션 가이드](./docs/migrations/README.md) - 데이터베이스 마이그레이션
+- [프로덕션 배포 가이드](./docs/DEPLOYMENT.md) - 배포 준비 및 실행
+- [데이터베이스 마이그레이션 가이드](./docs/DATABASE_MIGRATION.md) - 데이터베이스 설정
+- [캘린더 설정 가이드](./docs/CALENDAR_SETUP_GUIDE.md) - 캘린더 기능 설정
+- [기능 완성도 분석](./docs/FEATURE_COMPLETION_ANALYSIS.md) - 기능 상태 분석
+- [품질 리포트](./docs/QUALITY_REPORT.md) - 프로젝트 품질 평가
+
+전체 문서 목록은 [문서 인덱스](./docs/README.md)를 확인하세요.
 
 ## 🤝 Contributing
 
