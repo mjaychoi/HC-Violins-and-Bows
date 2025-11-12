@@ -20,7 +20,6 @@ interface YearViewProps {
 export default function YearView({
   currentDate,
   tasks,
-  instruments,
   onSelectEvent,
   onNavigate,
 }: YearViewProps) {
@@ -127,7 +126,7 @@ export default function YearView({
                     <span>{format(day, 'd')}</span>
                     {dayTasks.length > 0 && (
                       <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-0.5 pb-0.5">
-                        {dayTasks.slice(0, 3).map((task, idx) => (
+                        {dayTasks.slice(0, 3).map((task) => (
                           <div
                             key={task.id}
                             className={`w-1 h-1 rounded-full ${getTaskColor(task)}`}
