@@ -26,9 +26,6 @@ describe('SupabaseHelpers', () => {
   describe('fetchAll', () => {
     it('should fetch all items', async () => {
       const mockData = [{ id: '1' }, { id: '2' }];
-      const mockSelect = jest.fn().mockReturnValue({
-        then: jest.fn(callback => callback({ data: mockData, error: null })),
-      });
 
       (supabase.from as jest.Mock).mockReturnValue({
         select: jest.fn(() => ({ data: mockData, error: null })),
@@ -42,13 +39,12 @@ describe('SupabaseHelpers', () => {
 
     it('should fetch with orderBy', async () => {
       const mockData = [{ id: '1' }];
-      const mockSelect = jest.fn().mockReturnThis();
       const mockOrder = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
 
       (supabase.from as jest.Mock).mockReturnValue({
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         order: mockOrder,
       });
 
@@ -63,13 +59,12 @@ describe('SupabaseHelpers', () => {
 
     it('should fetch with limit', async () => {
       const mockData = [{ id: '1' }];
-      const mockSelect = jest.fn().mockReturnThis();
       const mockLimit = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
 
       (supabase.from as jest.Mock).mockReturnValue({
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         limit: mockLimit,
       });
 
@@ -102,14 +97,13 @@ describe('SupabaseHelpers', () => {
       const newItem = { name: 'Test' };
       const createdItem = { id: '1', ...newItem };
       const mockInsert = jest.fn().mockReturnThis();
-      const mockSelect = jest.fn().mockReturnThis();
       const mockSingle = jest
         .fn()
         .mockResolvedValue({ data: createdItem, error: null });
 
       (supabase.from as jest.Mock).mockReturnValue({
         insert: mockInsert,
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
@@ -126,7 +120,6 @@ describe('SupabaseHelpers', () => {
       const updatedItem = { id: '1', ...updates };
       const mockUpdate = jest.fn().mockReturnThis();
       const mockEq = jest.fn().mockReturnThis();
-      const mockSelect = jest.fn().mockReturnThis();
       const mockSingle = jest
         .fn()
         .mockResolvedValue({ data: updatedItem, error: null });
@@ -134,7 +127,7 @@ describe('SupabaseHelpers', () => {
       (supabase.from as jest.Mock).mockReturnValue({
         update: mockUpdate,
         eq: mockEq,
-        select: mockSelect,
+        select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
