@@ -58,7 +58,8 @@ export const filterClients = (
         client.contact_number?.toLowerCase().includes(searchLower) ||
         client.email?.toLowerCase().includes(searchLower) ||
         client.interest?.toLowerCase().includes(searchLower) ||
-        client.note?.toLowerCase().includes(searchLower);
+        client.note?.toLowerCase().includes(searchLower) ||
+        client.client_number?.toLowerCase().includes(searchLower);
 
       if (!matchesSearch) return false;
     }

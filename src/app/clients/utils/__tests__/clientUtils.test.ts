@@ -20,7 +20,8 @@ describe('Client Utils', () => {
     tags: ['Owner', 'Musician'],
     interest: 'Active',
     note: 'Test note',
-    created_at: new Date().toISOString(),
+    client_number: null,
+    created_at: '2023-01-01T00:00:00Z',
   };
 
   describe('formatClientName', () => {

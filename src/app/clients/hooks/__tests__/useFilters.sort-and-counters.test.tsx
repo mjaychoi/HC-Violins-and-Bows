@@ -13,6 +13,7 @@ const mockClients: Client[] = [
     tags: ['Musician'],
     interest: 'Active',
     note: '',
+    client_number: null,
     created_at: '2023-01-01T00:00:00Z',
   },
   {
@@ -24,6 +25,7 @@ const mockClients: Client[] = [
     tags: ['Owner'],
     interest: 'Passive',
     note: '',
+    client_number: null,
     created_at: '2023-01-02T00:00:00Z',
   },
 ];

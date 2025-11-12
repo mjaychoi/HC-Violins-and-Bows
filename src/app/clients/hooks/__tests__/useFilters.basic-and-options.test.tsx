@@ -13,6 +13,7 @@ const mockClients: Client[] = [
     tags: ['Musician'],
     interest: 'Active',
     note: 'Test client',
+    client_number: null,
     created_at: '2023-01-01T00:00:00Z',
   },
   {
@@ -24,6 +25,7 @@ const mockClients: Client[] = [
     tags: ['Owner'],
     interest: 'Passive',
     note: 'Another test client',
+    client_number: null,
     created_at: '2023-01-02T00:00:00Z',
   },
   {
@@ -35,6 +37,7 @@ const mockClients: Client[] = [
     tags: ['Dealer'],
     interest: 'Inactive',
     note: 'Third test client',
+    client_number: null,
     created_at: '2023-01-03T00:00:00Z',
   },
 ];
@@ -208,6 +211,7 @@ describe('useFilters - 기본 필터 & 옵션', () => {
         tags: [],
         interest: null,
         note: null,
+        client_number: null,
         created_at: '2023-01-01T00:00:00Z',
       },
     ];

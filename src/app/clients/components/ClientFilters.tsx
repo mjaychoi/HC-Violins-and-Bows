@@ -20,8 +20,6 @@ interface ClientFiltersProps {
   filters: FilterState;
   filterOptions: FilterOptions;
   onFilterChange: (category: keyof FilterState, value: string) => void;
-  onClearAllFilters: () => void;
-  getActiveFiltersCount: () => number;
 }
 
 export default function ClientFilters({
@@ -30,8 +28,6 @@ export default function ClientFilters({
   filters,
   filterOptions,
   onFilterChange,
-  onClearAllFilters,
-  getActiveFiltersCount,
 }: ClientFiltersProps) {
   const filterPanelRef = useRef<HTMLDivElement>(null);
 
@@ -66,42 +62,9 @@ export default function ClientFilters({
       data-testid="filters-panel"
       role="dialog"
       aria-modal="false"
-      aria-labelledby="filters-title"
-      className="absolute left-0 right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+      className="bg-white border border-gray-200 rounded-lg p-4 shadow-lg"
     >
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-4">
-          <h3 id="filters-title" className="text-lg font-medium text-gray-900">
-            Filters
-            {getActiveFiltersCount?.() ? (
-              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                {getActiveFiltersCount()}
-              </span>
-            ) : null}
-          </h3>
-          <button
-            onClick={onClose}
-            aria-label="Close filters"
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
-
-        {/* Filters */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Last Name Filter */}
           <div>
             <h4 className="text-sm font-medium text-gray-700 mb-2">
@@ -255,16 +218,6 @@ export default function ClientFilters({
                 </span>
               </label>
             </div>
-          </div>
-        </div>
-
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <button
-            onClick={onClearAllFilters}
-            className="text-sm text-gray-600 hover:text-gray-800 underline"
-          >
-            Clear all filters
-          </button>
         </div>
       </div>
     </div>

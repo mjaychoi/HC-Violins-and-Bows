@@ -13,6 +13,7 @@ const mockClient: Client = {
   tags: ['Musician'],
   interest: 'Active',
   note: 'Test client',
+  client_number: null,
   created_at: '2023-01-01T00:00:00Z',
 };
 
@@ -30,6 +31,7 @@ const mockInstrumentRelationships: ClientInstrument[] = [
       status: 'Available',
       maker: 'Stradivari',
       type: 'Violin',
+      subtype: null,
       year: 1700,
       certificate: true,
       size: '4/4',
@@ -37,6 +39,7 @@ const mockInstrumentRelationships: ClientInstrument[] = [
       price: 1000000,
       ownership: 'Museum',
       note: 'Famous violin',
+      serial_number: null,
       created_at: '2023-01-01T00:00:00Z',
     },
   },
@@ -48,6 +51,7 @@ const mockSearchResults: Instrument[] = [
     status: 'Available',
     maker: 'Guarneri',
     type: 'Violin',
+    subtype: null,
     year: 1750,
     certificate: true,
     size: '4/4',
@@ -55,6 +59,7 @@ const mockSearchResults: Instrument[] = [
     price: 800000,
     ownership: 'Private',
     note: 'Another famous violin',
+    serial_number: null,
     created_at: '2023-01-01T00:00:00Z',
   },
 ];

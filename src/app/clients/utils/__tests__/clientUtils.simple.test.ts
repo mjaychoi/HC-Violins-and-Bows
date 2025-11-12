@@ -16,6 +16,7 @@ interface MockClient {
   tags: string[];
   interest: string;
   note: string;
+  client_number: string | null;
   created_at: string;
 }
 
@@ -29,7 +30,8 @@ describe('Client Utils - Simple Tests', () => {
     tags: ['Owner', 'Musician'],
     interest: 'Active',
     note: 'Test note',
-    created_at: new Date().toISOString(),
+    client_number: null,
+    created_at: '2023-01-01T00:00:00Z',
   };
 
   test('should format client name correctly', () => {

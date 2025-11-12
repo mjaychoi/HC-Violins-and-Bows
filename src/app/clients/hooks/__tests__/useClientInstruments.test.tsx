@@ -31,8 +31,9 @@ const mockClient: Client = {
   contact_number: '123-456-7890',
   tags: ['Musician'],
   interest: 'Active',
-  note: 'Test client',
-  created_at: '2023-01-01T00:00:00Z',
+    note: 'Test client',
+    client_number: null,
+    created_at: '2023-01-01T00:00:00Z',
 };
 
 const mockInstrument: Instrument = {
@@ -40,6 +41,7 @@ const mockInstrument: Instrument = {
   status: 'Available',
   maker: 'Stradivari',
   type: 'Violin',
+  subtype: null,
   year: 1700,
   certificate: true,
   size: '4/4',
@@ -47,6 +49,7 @@ const mockInstrument: Instrument = {
   price: 1000000,
   ownership: 'Museum',
   note: 'Famous violin',
+  serial_number: null,
   created_at: '2023-01-01T00:00:00Z',
 };
 

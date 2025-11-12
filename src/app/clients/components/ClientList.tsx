@@ -3,6 +3,7 @@
 import { Client, ClientInstrument } from '@/types';
 import {
   getTagColor,
+  getTagTextColor,
   sortTags,
   /* formatClientContact, getClientInitials */ getInterestColor,
 } from '../utils';
@@ -19,6 +20,7 @@ interface ClientListProps {
   clientInstruments: ClientInstrument[];
   onClientClick: (client: Client) => void;
   onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
+  onDeleteClient?: (clientId: string) => Promise<void>;
   onColumnSort: (column: keyof Client) => void;
   getSortArrow: (column: keyof Client) => string;
 }
@@ -28,6 +30,7 @@ const ClientList = memo(function ClientList({
   clientInstruments,
   onClientClick,
   onUpdateClient,
+  onDeleteClient,
   onColumnSort,
   getSortArrow,
 }: ClientListProps) {
@@ -38,12 +41,14 @@ const ClientList = memo(function ClientList({
   const startEditing = useCallback((client: Client) => {
     setEditingClient(client.id);
     setEditData({
-      first_name: client.first_name,
-      last_name: client.last_name,
-      email: client.email,
-      contact_number: client.contact_number,
-      interest: client.interest,
-      note: client.note,
+      first_name: client.first_name || '',
+      last_name: client.last_name || '',
+      email: client.email || '',
+      contact_number: client.contact_number || '',
+      interest: client.interest || '',
+      note: client.note || '',
+      tags: client.tags || [],
+      client_number: client.client_number || '',
     });
   }, []);
 
@@ -58,10 +63,14 @@ const ClientList = memo(function ClientList({
     setIsSaving(true);
     try {
       await onUpdateClient(editingClient, editData);
+      // Only close editing mode if update was successful
+      // If updateClient returns null or throws an error, editing mode will remain open
       setEditingClient(null);
       setEditData({});
-    } catch (error) {
-      console.error('Error updating client:', error);
+    } catch {
+      // Error is handled by parent component's error handler
+      // Don't close editing mode on error - let user see the error and retry
+      // Editing mode remains open so user can fix the issue and try again
     } finally {
       setIsSaving(false);
     }
@@ -73,6 +82,41 @@ const ClientList = memo(function ClientList({
     },
     []
   );
+
+  // Handle full name change - split into first_name and last_name
+  const handleFullNameChange = useCallback((fullName: string) => {
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      setEditData(prev => ({ ...prev, first_name: '', last_name: '' }));
+      return;
+    }
+
+    const parts = trimmedName.split(/\s+/);
+    if (parts.length === 1) {
+      // Only one word - treat as first name
+      setEditData(prev => ({ ...prev, first_name: parts[0], last_name: '' }));
+    } else {
+      // Multiple words - last word is last name, rest is first name
+      const lastName = parts[parts.length - 1];
+      const firstName = parts.slice(0, -1).join(' ');
+      setEditData(prev => ({ ...prev, first_name: firstName, last_name: lastName }));
+    }
+  }, []);
+
+  // Handle tag toggle
+  const handleTagToggle = useCallback((tag: string) => {
+    setEditData(prev => {
+      const currentTags = prev.tags || [];
+      const tagIndex = currentTags.indexOf(tag);
+      if (tagIndex > -1) {
+        // Remove tag
+        return { ...prev, tags: currentTags.filter(t => t !== tag) };
+      } else {
+        // Add tag
+        return { ...prev, tags: [...currentTags, tag] };
+      }
+    });
+  }, []);
 
   if (clients.length === 0) {
     return (
@@ -90,7 +134,15 @@ const ClientList = memo(function ClientList({
   return (
     <div className="bg-white rounded-lg shadow border border-gray-200">
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+        <table className="min-w-full divide-y divide-gray-200 table-fixed">
+          <colgroup>
+            <col className="w-[20%]" />
+            <col className="w-[15%]" />
+            <col className="w-[15%]" />
+            <col className="w-[12%]" />
+            <col className="w-[18%]" />
+            <col className="w-[20%]" />
+          </colgroup>
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -135,6 +187,16 @@ const ClientList = memo(function ClientList({
                 </button>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <button
+                  type="button"
+                  className="flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm hover:bg-gray-100"
+                  onClick={() => onColumnSort('client_number')}
+                  aria-label={`Sort by client number ${getSortArrow('client_number') === '↑' ? 'ascending' : getSortArrow('client_number') === '↓' ? 'descending' : ''}`}
+                >
+                  Client # <SortIcon arrow={getSortArrow('client_number')} />
+                </button>
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Instruments
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -155,28 +217,16 @@ const ClientList = memo(function ClientList({
                     : 'hover:bg-gray-50 cursor-pointer transition-colors duration-200'
                 }
               >
-                <td className="px-6 py-3 whitespace-nowrap">
+                <td className="px-6 py-3">
                   {editingClient === client.id ? (
-                    <div className="space-y-2">
+                    <div className="min-w-[200px] space-y-2">
                       <input
                         type="text"
-                        value={editData.first_name || ''}
-                        onChange={e =>
-                          handleEditFieldChange('first_name', e.target.value)
-                        }
+                        value={`${editData.first_name || ''} ${editData.last_name || ''}`.trim()}
+                        onChange={e => handleFullNameChange(e.target.value)}
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         onClick={e => e.stopPropagation()}
-                        placeholder="First name"
-                      />
-                      <input
-                        type="text"
-                        value={editData.last_name || ''}
-                        onChange={e =>
-                          handleEditFieldChange('last_name', e.target.value)
-                        }
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        onClick={e => e.stopPropagation()}
-                        placeholder="Last name"
+                        placeholder="Full name"
                       />
                       <input
                         type="email"
@@ -190,7 +240,7 @@ const ClientList = memo(function ClientList({
                       />
                     </div>
                   ) : (
-                    <div>
+                    <div className="min-w-[150px]">
                       <div className="text-sm font-medium text-gray-900">
                         {`${client.first_name || ''} ${client.last_name || ''}`.trim() ||
                           'N/A'}
@@ -203,20 +253,22 @@ const ClientList = memo(function ClientList({
                     </div>
                   )}
                 </td>
-                <td className="px-6 py-3 whitespace-nowrap">
+                <td className="px-6 py-3">
                   {editingClient === client.id ? (
-                    <input
-                      type="tel"
-                      value={editData.contact_number || ''}
-                      onChange={e =>
-                        handleEditFieldChange('contact_number', e.target.value)
-                      }
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      onClick={e => e.stopPropagation()}
-                      placeholder="Phone number"
-                    />
+                    <div className="min-w-[150px]">
+                      <input
+                        type="tel"
+                        value={editData.contact_number || ''}
+                        onChange={e =>
+                          handleEditFieldChange('contact_number', e.target.value)
+                        }
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Phone number"
+                      />
+                    </div>
                   ) : (
-                    <div className="text-sm text-gray-900">
+                    <div className="text-sm text-gray-900 min-w-[120px]">
                       {client.contact_number ? (
                         <span>{client.contact_number}</span>
                       ) : (
@@ -225,35 +277,60 @@ const ClientList = memo(function ClientList({
                     </div>
                   )}
                 </td>
-                <td className="px-6 py-3 whitespace-nowrap">
-                  <div className="flex flex-wrap gap-1">
-                    {sortTags([...client.tags]).map(tag => (
-                      <span
-                        key={tag}
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-6 py-3 whitespace-nowrap">
+                <td className="px-6 py-3">
                   {editingClient === client.id ? (
-                    <select
-                      value={editData.interest || ''}
-                      onChange={e =>
-                        handleEditFieldChange('interest', e.target.value)
-                      }
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      onClick={e => e.stopPropagation()}
-                    >
-                      <option value="">Select interest</option>
-                      <option value="Active">Active</option>
-                      <option value="Passive">Passive</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
+                    <div className="min-w-[150px]">
+                      <div className="space-y-1.5">
+                        {['Owner', 'Musician', 'Dealer', 'Collector', 'Other'].map(tag => (
+                          <label
+                            key={tag}
+                            className="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={(editData.tags || []).includes(tag)}
+                              onChange={() => handleTagToggle(tag)}
+                              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                              onClick={e => e.stopPropagation()}
+                            />
+                            <span className={`ml-2 text-xs font-medium ${getTagTextColor(tag)}`}>{tag}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   ) : (
-                    <div className="text-sm">
+                    <div className="flex flex-wrap gap-1 min-w-[120px]">
+                      {sortTags([...client.tags]).map(tag => (
+                        <span
+                          key={tag}
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td className="px-6 py-3">
+                  {editingClient === client.id ? (
+                    <div className="min-w-[120px]">
+                      <select
+                        value={editData.interest || ''}
+                        onChange={e =>
+                          handleEditFieldChange('interest', e.target.value)
+                        }
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <option value="">Select interest</option>
+                        <option value="Active">Active</option>
+                        <option value="Passive">Passive</option>
+                        <option value="Inactive">Inactive</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="text-sm min-w-[100px]">
                       {client.interest ? (
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getInterestColor(client.interest)}`}
@@ -263,6 +340,24 @@ const ClientList = memo(function ClientList({
                       ) : (
                         <span className="text-gray-400">No interest</span>
                       )}
+                    </div>
+                  )}
+                </td>
+                <td className="px-6 py-3">
+                  {editingClient === client.id ? (
+                    <input
+                      type="text"
+                      value={editData.client_number || ''}
+                      onChange={e =>
+                        handleEditFieldChange('client_number', e.target.value)
+                      }
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onClick={e => e.stopPropagation()}
+                      placeholder="Client #"
+                    />
+                  ) : (
+                    <div className="text-sm text-gray-900 font-mono">
+                      {client.client_number || '—'}
                     </div>
                   )}
                 </td>
@@ -443,6 +538,37 @@ const ClientList = memo(function ClientList({
                           />
                         </svg>
                       </button>
+                      {onDeleteClient && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            if (
+                              window.confirm(
+                                `Are you sure you want to delete ${client.first_name} ${client.last_name}? This action cannot be undone.`
+                              )
+                            ) {
+                              onDeleteClient(client.id);
+                            }
+                          }}
+                          aria-label="Delete client"
+                          className="text-gray-400 hover:text-red-500 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-red-50"
+                          title="Delete client"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth="2"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   )}
                 </td>

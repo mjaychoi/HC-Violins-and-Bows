@@ -14,6 +14,7 @@ const mockClients: Client[] = [
     tags: ['Musician'],
     interest: 'Active',
     note: 'Test client',
+    client_number: null,
     created_at: '2023-01-01T00:00:00Z',
   },
   {
@@ -25,6 +26,7 @@ const mockClients: Client[] = [
     tags: ['Owner'],
     interest: null,
     note: 'Another test client',
+    client_number: null,
     created_at: '2023-01-02T00:00:00Z',
   },
 ];
@@ -137,6 +139,7 @@ describe('ClientList', () => {
       email: null,
       contact_number: null,
       tags: [],
+      client_number: null,
       interest: null,
       note: null,
       created_at: '2023-01-03T00:00:00Z',

@@ -29,7 +29,8 @@ describe('useClients - state', () => {
     tags: ['Owner'],
     interest: 'Active',
     note: 'Test note',
-    created_at: new Date().toISOString(),
+    client_number: null,
+    created_at: '2024-01-01T00:00:00Z',
   };
 
   beforeEach(() => {
@@ -56,6 +57,7 @@ describe('useClients - state', () => {
       tags: ['Musician'],
       interest: 'Passive',
       note: 'New client',
+      client_number: null,
     });
 
     expect(result.current.loading).toBe(true);
