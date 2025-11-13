@@ -1,13 +1,14 @@
 'use client';
 // src/app/clients/components/ClientList.tsx
-import { Client, ClientInstrument } from '@/types';
+import { Client, ClientInstrument, Instrument } from '@/types';
 import {
   getTagColor,
   getTagTextColor,
   sortTags,
   /* formatClientContact, getClientInitials */ getInterestColor,
 } from '../utils';
-import { useState, memo, useCallback } from 'react';
+import { useState, memo, useCallback, useEffect, useRef } from 'react';
+import { useOptimizedInstruments } from '@/hooks/useOptimizedInstruments';
 
 const SortIcon = ({ arrow }: { arrow: string }) => (
   <span aria-hidden className="inline-block w-3">
@@ -23,6 +24,12 @@ interface ClientListProps {
   onDeleteClient?: (clientId: string) => Promise<void>;
   onColumnSort: (column: keyof Client) => void;
   getSortArrow: (column: keyof Client) => string;
+  onAddInstrument?: (
+    clientId: string,
+    instrumentId: string,
+    relationshipType?: ClientInstrument['relationship_type']
+  ) => Promise<void>;
+  onRemoveInstrument?: (relationshipId: string) => Promise<void>;
 }
 
 const ClientList = memo(function ClientList({
@@ -33,10 +40,67 @@ const ClientList = memo(function ClientList({
   onDeleteClient,
   onColumnSort,
   getSortArrow,
+  onAddInstrument,
+  onRemoveInstrument,
 }: ClientListProps) {
   const [editingClient, setEditingClient] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Client>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [showInstrumentDropdown, setShowInstrumentDropdown] = useState<
+    string | null
+  >(null);
+  const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const { searchInstruments, searchResults } = useOptimizedInstruments();
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowInstrumentDropdown(null);
+        setInstrumentSearchTerm('');
+      }
+    };
+
+    if (showInstrumentDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showInstrumentDropdown]);
+
+  // Search instruments when term changes
+  useEffect(() => {
+    if (instrumentSearchTerm.length >= 2) {
+      searchInstruments(instrumentSearchTerm);
+    }
+  }, [instrumentSearchTerm, searchInstruments]);
+
+  const handleAddInstrument = async (
+    clientId: string,
+    instrumentId: string
+  ) => {
+    if (onAddInstrument) {
+      await onAddInstrument(clientId, instrumentId, 'Interested');
+      setShowInstrumentDropdown(null);
+      setInstrumentSearchTerm('');
+    }
+  };
+
+  const handleRemoveInstrument = async (
+    relationshipId: string,
+    clientId: string
+  ) => {
+    if (onRemoveInstrument) {
+      await onRemoveInstrument(relationshipId);
+      // Refresh relationships for the client being edited
+      // Note: This will be handled by the parent component
+    }
+  };
 
   const startEditing = useCallback((client: Client) => {
     setEditingClient(client.id);
@@ -99,7 +163,11 @@ const ClientList = memo(function ClientList({
       // Multiple words - last word is last name, rest is first name
       const lastName = parts[parts.length - 1];
       const firstName = parts.slice(0, -1).join(' ');
-      setEditData(prev => ({ ...prev, first_name: firstName, last_name: lastName }));
+      setEditData(prev => ({
+        ...prev,
+        first_name: firstName,
+        last_name: lastName,
+      }));
     }
   }, []);
 
@@ -197,9 +265,6 @@ const ClientList = memo(function ClientList({
                 </button>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Instruments
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
             </tr>
@@ -260,7 +325,10 @@ const ClientList = memo(function ClientList({
                         type="tel"
                         value={editData.contact_number || ''}
                         onChange={e =>
-                          handleEditFieldChange('contact_number', e.target.value)
+                          handleEditFieldChange(
+                            'contact_number',
+                            e.target.value
+                          )
                         }
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         onClick={e => e.stopPropagation()}
@@ -281,7 +349,13 @@ const ClientList = memo(function ClientList({
                   {editingClient === client.id ? (
                     <div className="min-w-[150px]">
                       <div className="space-y-1.5">
-                        {['Owner', 'Musician', 'Dealer', 'Collector', 'Other'].map(tag => (
+                        {[
+                          'Owner',
+                          'Musician',
+                          'Dealer',
+                          'Collector',
+                          'Other',
+                        ].map(tag => (
                           <label
                             key={tag}
                             className="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
@@ -294,7 +368,11 @@ const ClientList = memo(function ClientList({
                               className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
                               onClick={e => e.stopPropagation()}
                             />
-                            <span className={`ml-2 text-xs font-medium ${getTagTextColor(tag)}`}>{tag}</span>
+                            <span
+                              className={`ml-2 text-xs font-medium ${getTagTextColor(tag)}`}
+                            >
+                              {tag}
+                            </span>
                           </label>
                         ))}
                       </div>
@@ -360,36 +438,6 @@ const ClientList = memo(function ClientList({
                       {client.client_number || '—'}
                     </div>
                   )}
-                </td>
-                <td className="px-6 py-3 whitespace-nowrap">
-                  <div className="flex flex-col gap-1">
-                    {(() => {
-                      const clientInstrumentData = clientInstruments.filter(
-                        ci => ci.client_id === client.id
-                      );
-                      if (clientInstrumentData.length === 0) {
-                        return (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                            None
-                          </span>
-                        );
-                      }
-                      return clientInstrumentData.map(ci => {
-                        const instrumentName = ci.instrument
-                          ? `${ci.instrument.maker || 'Unknown'} ${ci.instrument.type || 'Instrument'}`.trim()
-                          : 'Unknown Instrument';
-                        return (
-                          <span
-                            key={ci.id}
-                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                            title={`${instrumentName} - ${ci.relationship_type}`}
-                          >
-                            {instrumentName}
-                          </span>
-                        );
-                      });
-                    })()}
-                  </div>
                 </td>
                 <td className="px-6 py-3 whitespace-nowrap text-right text-sm font-medium">
                   {editingClient === client.id ? (

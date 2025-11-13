@@ -31,6 +31,7 @@ export default function AppHeader({
             <button
               onClick={onToggleSidebar}
               className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ marginLeft: 'calc(64px / 2 - 20px)' }}
               aria-label="Toggle sidebar"
             >
               <svg

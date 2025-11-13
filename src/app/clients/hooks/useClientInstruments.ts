@@ -1,5 +1,5 @@
 // src/app/clients/hooks/useClientInstruments.ts
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ClientInstrument } from '@/types';
 import { logError } from '@/utils/logger';
@@ -24,11 +24,49 @@ export const useClientInstruments = () => {
       const clientIds = new Set(data?.map(item => item.client_id) || []);
       setClientsWithInstruments(clientIds);
     } catch (error) {
-      logError('Error fetching clients with instruments', error, 'useClientInstruments', {
-        operation: 'fetchClientsWithInstruments',
-      });
+      logError(
+        'Error fetching clients with instruments',
+        error,
+        'useClientInstruments',
+        {
+          operation: 'fetchClientsWithInstruments',
+        }
+      );
     }
   };
+
+  const fetchAllInstrumentRelationships = useCallback(async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase.from('client_instruments').select(
+        `
+          *,
+          client:clients(*),
+          instrument:instruments(*)
+        `
+      );
+
+      if (error) throw error;
+      const relationships = data || [];
+
+      setInstrumentRelationships(relationships);
+
+      // clientsWithInstruments 집합을 동기화
+      const clientIds = new Set(relationships.map(rel => rel.client_id));
+      setClientsWithInstruments(clientIds);
+    } catch (error) {
+      logError(
+        'Error fetching all instrument relationships',
+        error,
+        'useClientInstruments',
+        {
+          operation: 'fetchAllInstrumentRelationships',
+        }
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const fetchInstrumentRelationships = async (clientId: string) => {
     try {
@@ -46,7 +84,17 @@ export const useClientInstruments = () => {
 
       if (error) throw error;
       const relationships = data || [];
-      setInstrumentRelationships(relationships);
+
+      // 기존 관계들을 유지하면서 특정 클라이언트의 관계만 업데이트
+      setInstrumentRelationships(prev => {
+        // 다른 클라이언트의 관계들은 유지
+        const otherRelationships = prev.filter(
+          rel => rel.client_id !== clientId
+        );
+        // 새로 가져온 관계들과 합치기
+        return [...otherRelationships, ...relationships];
+      });
+
       // clientsWithInstruments 집합을 동기화
       if (relationships.length > 0) {
         setClientsWithInstruments(prev => new Set([...prev, clientId]));
@@ -58,10 +106,15 @@ export const useClientInstruments = () => {
         });
       }
     } catch (error) {
-      logError('Error fetching instrument relationships', error, 'useClientInstruments', {
-        operation: 'fetchInstrumentRelationships',
-        clientId,
-      });
+      logError(
+        'Error fetching instrument relationships',
+        error,
+        'useClientInstruments',
+        {
+          operation: 'fetchInstrumentRelationships',
+          clientId,
+        }
+      );
     } finally {
       setLoading(false);
     }
@@ -94,11 +147,16 @@ export const useClientInstruments = () => {
       }
       return null;
     } catch (error) {
-      logError('Error adding instrument relationship', error, 'useClientInstruments', {
-        operation: 'addInstrumentRelationship',
-        clientId,
-        instrumentId,
-      });
+      logError(
+        'Error adding instrument relationship',
+        error,
+        'useClientInstruments',
+        {
+          operation: 'addInstrumentRelationship',
+          clientId,
+          instrumentId,
+        }
+      );
       return null;
     }
   };
@@ -132,10 +190,15 @@ export const useClientInstruments = () => {
 
       return true;
     } catch (error) {
-      logError('Error removing instrument relationship', error, 'useClientInstruments', {
-        operation: 'removeInstrumentRelationship',
-        relationshipId,
-      });
+      logError(
+        'Error removing instrument relationship',
+        error,
+        'useClientInstruments',
+        {
+          operation: 'removeInstrumentRelationship',
+          relationshipId,
+        }
+      );
       return false;
     }
   };
@@ -164,11 +227,16 @@ export const useClientInstruments = () => {
       }
       return null;
     } catch (error) {
-      logError('Error updating instrument relationship', error, 'useClientInstruments', {
-        operation: 'updateInstrumentRelationship',
-        relationshipId,
-        relationshipType,
-      });
+      logError(
+        'Error updating instrument relationship',
+        error,
+        'useClientInstruments',
+        {
+          operation: 'updateInstrumentRelationship',
+          relationshipId,
+          relationshipType,
+        }
+      );
       return null;
     }
   };
@@ -191,6 +259,7 @@ export const useClientInstruments = () => {
     clientsWithInstruments,
     loading,
     fetchClientsWithInstruments,
+    fetchAllInstrumentRelationships,
     fetchInstrumentRelationships,
     addInstrumentRelationship,
     removeInstrumentRelationship,

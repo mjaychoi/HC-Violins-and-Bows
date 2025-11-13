@@ -2,6 +2,7 @@
 import { Client, ClientInstrument } from '@/types';
 import dynamic from 'next/dynamic';
 import { useUnifiedClients } from '@/hooks/useUnifiedData';
+import { generateClientNumber } from '@/utils/uniqueNumberGenerator';
 import {
   useClientInstruments,
   useFilters,
@@ -22,6 +23,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { useModalState } from '@/hooks/useModalState';
 import { AppLayout } from '@/components/layout';
 import { ErrorBoundary, SpinnerLoading } from '@/components/common';
+import { useEffect } from 'react';
 
 export default function ClientsPage() {
   // Error handling
@@ -43,7 +45,13 @@ export default function ClientsPage() {
     addInstrumentRelationship: addInstrumentRelationshipHook,
     removeInstrumentRelationship: removeInstrumentRelationshipHook,
     fetchInstrumentRelationships,
+    fetchAllInstrumentRelationships,
   } = useClientInstruments();
+
+  // 초기 로드 시 모든 클라이언트의 instrument 관계 가져오기
+  useEffect(() => {
+    fetchAllInstrumentRelationships();
+  }, [fetchAllInstrumentRelationships]);
 
   const {
     searchTerm,
@@ -100,6 +108,14 @@ export default function ClientsPage() {
     clientData: Omit<Client, 'id' | 'created_at'>
   ) => {
     try {
+      // client_number가 없으면 자동 생성
+      if (!clientData.client_number) {
+        const existingNumbers = clients
+          .map(c => c.client_number)
+          .filter((num): num is string => num !== null && num !== undefined);
+        clientData.client_number = generateClientNumber(existingNumbers);
+      }
+
       const newClient = await createClient(clientData);
 
       if (newClient) {
@@ -130,7 +146,8 @@ export default function ClientsPage() {
   };
 
   const handleRowClick = (client: Client) => {
-    openClientView(client);
+    // 바로 편집 모드로 열기
+    openClientView(client, true);
 
     // Fetch instrument relationships for this client
     fetchInstrumentRelationships(client.id);
@@ -207,73 +224,98 @@ export default function ClientsPage() {
           </div>
         ) : (
           <div className="p-6">
-          {/* Search and Filters */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <input
-                placeholder="Search clients..."
-                className="w-full max-w-lg h-10 rounded-lg border border-gray-200 bg-gray-50 px-3 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
-              <div className="ml-4">
-                <button
-                  data-filter-button
-                  onClick={() => setShowFilters(!showFilters)}
-                  className="h-10 px-3 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
-                >
-                  Filters {getActiveFiltersCount() > 0 && `(${getActiveFiltersCount()})`}
-                </button>
+            {/* Search and Filters */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <input
+                  placeholder="Search clients..."
+                  className="w-full max-w-lg h-10 rounded-lg border border-gray-200 bg-gray-50 px-3 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+                <div className="ml-4">
+                  <button
+                    data-filter-button
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="h-10 px-3 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                  >
+                    Filters{' '}
+                    {getActiveFiltersCount() > 0 &&
+                      `(${getActiveFiltersCount()})`}
+                  </button>
+                </div>
               </div>
+
+              {/* Filter Panel */}
+              {showFilters && (
+                <ClientFilters
+                  isOpen={showFilters}
+                  onClose={() => setShowFilters(false)}
+                  filters={filters}
+                  filterOptions={filterOptions}
+                  onFilterChange={handleFilterChange}
+                />
+              )}
             </div>
 
-            {/* Filter Panel */}
-            {showFilters && (
-              <ClientFilters
-                isOpen={showFilters}
-                onClose={() => setShowFilters(false)}
-                filters={filters}
-                filterOptions={filterOptions}
-                onFilterChange={handleFilterChange}
+            {/* Clients Table */}
+            {loading ? (
+              <SpinnerLoading message="Loading clients..." />
+            ) : (
+              <ClientList
+                clients={filteredClients}
+                clientInstruments={instrumentRelationships}
+                onClientClick={handleRowClick}
+                onUpdateClient={async (clientId, updates) => {
+                  try {
+                    const result = await updateClient(clientId, updates);
+                    if (!result) {
+                      // updateClient returns null on error
+                      throw new Error('Failed to update client');
+                    }
+                    // Don't return result, just ensure it's not null
+                  } catch (error) {
+                    handleError(error, 'Failed to update client');
+                    throw error; // Re-throw to prevent saveEditing from closing editing mode
+                  }
+                }}
+                onDeleteClient={async (clientId: string) => {
+                  try {
+                    const success = await deleteClient(clientId);
+                    if (!success) {
+                      throw new Error('Failed to delete client');
+                    }
+                  } catch (error) {
+                    handleError(error, 'Failed to delete client');
+                  }
+                }}
+                onColumnSort={handleColumnSort}
+                getSortArrow={getSortArrow}
+                onAddInstrument={async (
+                  clientId,
+                  instrumentId,
+                  relationshipType = 'Interested'
+                ) => {
+                  await addInstrumentRelationshipHook(
+                    clientId,
+                    instrumentId,
+                    relationshipType
+                  );
+                  await fetchInstrumentRelationships(clientId);
+                }}
+                onRemoveInstrument={async (relationshipId: string) => {
+                  await removeInstrumentRelationshipHook(relationshipId);
+                  // Refresh all relationships to update the list
+                  // Find the client ID from the relationship
+                  const relationship = instrumentRelationships.find(
+                    r => r.id === relationshipId
+                  );
+                  if (relationship) {
+                    await fetchInstrumentRelationships(relationship.client_id);
+                  }
+                }}
               />
             )}
-          </div>
-
-          {/* Clients Table */}
-          {loading ? (
-            <SpinnerLoading message="Loading clients..." />
-          ) : (
-            <ClientList
-              clients={filteredClients}
-              clientInstruments={instrumentRelationships}
-              onClientClick={handleRowClick}
-              onUpdateClient={async (clientId, updates) => {
-                try {
-                  const result = await updateClient(clientId, updates);
-                  if (!result) {
-                    // updateClient returns null on error
-                    throw new Error('Failed to update client');
-                  }
-                  // Don't return result, just ensure it's not null
-                } catch (error) {
-                  handleError(error, 'Failed to update client');
-                  throw error; // Re-throw to prevent saveEditing from closing editing mode
-                }
-              }}
-              onDeleteClient={async (clientId: string) => {
-                try {
-                  const success = await deleteClient(clientId);
-                  if (!success) {
-                    throw new Error('Failed to delete client');
-                  }
-                } catch (error) {
-                  handleError(error, 'Failed to delete client');
-                }
-              }}
-              onColumnSort={handleColumnSort}
-              getSortArrow={getSortArrow}
-            />
-          )}
           </div>
         )}
 

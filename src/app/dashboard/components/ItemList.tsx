@@ -13,7 +13,10 @@ interface ItemListProps {
   items: Instrument[];
   loading: boolean;
   onDeleteClick: (item: Instrument) => void;
-  onUpdateItem?: (itemId: string, updates: Partial<Instrument>) => Promise<void>;
+  onUpdateItem?: (
+    itemId: string,
+    updates: Partial<Instrument>
+  ) => Promise<void>;
   clientRelationships: ClientInstrument[];
   getSortArrow: (field: string) => string;
   onSort: (field: string) => void;
@@ -37,6 +40,8 @@ const ItemList = memo(function ItemList({
     price?: string;
     status?: Instrument['status'];
     serial_number?: string;
+    certificate?: boolean;
+    ownership?: string;
   }>({});
   const [isSaving, setIsSaving] = useState(false);
 
@@ -44,7 +49,7 @@ const ItemList = memo(function ItemList({
   const itemsWithClients = useMemo(() => {
     // Group relationships by instrument_id for O(1) lookup
     const relationshipsByInstrument = new Map<string, ClientInstrument[]>();
-    
+
     clientRelationships.forEach(rel => {
       const existing = relationshipsByInstrument.get(rel.instrument_id) || [];
       existing.push(rel);
@@ -68,6 +73,8 @@ const ItemList = memo(function ItemList({
       price: item.price?.toString() || '',
       status: item.status || 'Available',
       serial_number: item.serial_number || '',
+      certificate: item.certificate ?? false,
+      ownership: item.ownership || '',
     });
   }, []);
 
@@ -98,8 +105,10 @@ const ItemList = memo(function ItemList({
           const priceNum = parseFloat(priceStr);
           return isNaN(priceNum) ? null : priceNum;
         })(),
-        status: editData.status as Instrument['status'] || 'Available',
+        status: (editData.status as Instrument['status']) || 'Available',
         serial_number: editData.serial_number?.trim() || null,
+        certificate: editData.certificate ?? false,
+        ownership: editData.ownership?.trim() || null,
       };
 
       await onUpdateItem(editingItem, updates);
@@ -114,14 +123,26 @@ const ItemList = memo(function ItemList({
   }, [editingItem, editData, onUpdateItem]);
 
   const handleEditFieldChange = useCallback(
-    (field: 'maker' | 'type' | 'subtype' | 'year' | 'price' | 'status' | 'serial_number', value: string) => {
+    (
+      field:
+        | 'maker'
+        | 'type'
+        | 'subtype'
+        | 'year'
+        | 'price'
+        | 'status'
+        | 'serial_number'
+        | 'certificate'
+        | 'ownership',
+      value: string | boolean
+    ) => {
       setEditData(prev => ({ ...prev, [field]: value }));
     },
     []
   );
 
   if (loading) {
-    return <ListSkeleton rows={5} columns={8} />;
+    return <ListSkeleton rows={5} columns={9} />;
   }
 
   if (items.length === 0) {
@@ -174,6 +195,41 @@ const ItemList = memo(function ItemList({
         <table className="w-full">
           <thead className="sticky top-0 bg-white/80 backdrop-blur border-b">
             <tr>
+              <th
+                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 cursor-pointer group select-none"
+                onClick={() => onSort('status')}
+              >
+                <span className="inline-flex items-center gap-1">
+                  Status
+                  <span
+                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('status')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
+                  >
+                    {arrowToClass(getSortArrow('status')) === 'sort-asc'
+                      ? '▲'
+                      : arrowToClass(getSortArrow('status')) === 'sort-desc'
+                        ? '▼'
+                        : '↕'}
+                  </span>
+                </span>
+              </th>
+              <th
+                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 cursor-pointer group select-none"
+                onClick={() => onSort('serial_number')}
+              >
+                <span className="inline-flex items-center gap-1">
+                  Serial #
+                  <span
+                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('serial_number')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
+                  >
+                    {arrowToClass(getSortArrow('serial_number')) === 'sort-asc'
+                      ? '▲'
+                      : arrowToClass(getSortArrow('serial_number')) ===
+                          'sort-desc'
+                        ? '▼'
+                        : '↕'}
+                  </span>
+                </span>
+              </th>
               <th
                 className="px-6 py-3 text-left text-xs font-semibold text-gray-500 cursor-pointer group select-none"
                 onClick={() => onSort('maker')}
@@ -259,42 +315,11 @@ const ItemList = memo(function ItemList({
                   </span>
                 </span>
               </th>
-              <th
-                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 cursor-pointer group select-none"
-                onClick={() => onSort('status')}
-              >
-                <span className="inline-flex items-center gap-1">
-                  Status
-                  <span
-                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('status')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
-                  >
-                    {arrowToClass(getSortArrow('status')) === 'sort-asc'
-                      ? '▲'
-                      : arrowToClass(getSortArrow('status')) === 'sort-desc'
-                        ? '▼'
-                        : '↕'}
-                  </span>
-                </span>
-              </th>
-              <th
-                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 cursor-pointer group select-none"
-                onClick={() => onSort('serial_number')}
-              >
-                <span className="inline-flex items-center gap-1">
-                  Serial #
-                  <span
-                    className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('serial_number')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
-                  >
-                    {arrowToClass(getSortArrow('serial_number')) === 'sort-asc'
-                      ? '▲'
-                      : arrowToClass(getSortArrow('serial_number')) === 'sort-desc'
-                        ? '▼'
-                        : '↕'}
-                  </span>
-                </span>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">
+                Certificate
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">
-                Clients
+                Ownership
               </th>
               <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500"></th>
             </tr>
@@ -313,95 +338,11 @@ const ItemList = memo(function ItemList({
                 >
                   <td className="px-6 py-4">
                     {isEditing ? (
-                      <input
-                        type="text"
-                        value={editData.maker || ''}
-                        onChange={e => handleEditFieldChange('maker', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        onClick={e => e.stopPropagation()}
-                        placeholder="Maker"
-                      />
-                    ) : (
-                      <div className="text-sm font-medium text-gray-900">
-                        {item.maker || '—'}
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="px-6 py-4">
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editData.type || ''}
-                        onChange={e => handleEditFieldChange('type', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        onClick={e => e.stopPropagation()}
-                        placeholder="Type"
-                      />
-                    ) : (
-                      <div className="text-sm text-gray-900">
-                        {item.type || '—'}
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="px-6 py-4">
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editData.subtype || ''}
-                        onChange={e => handleEditFieldChange('subtype', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        onClick={e => e.stopPropagation()}
-                        placeholder="Subtype"
-                      />
-                    ) : (
-                      <div className="text-sm text-gray-900">
-                        {item.subtype || '—'}
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="px-6 py-4">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={editData.year || ''}
-                        onChange={e => handleEditFieldChange('year', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        onClick={e => e.stopPropagation()}
-                        placeholder="Year"
-                      />
-                    ) : (
-                      <div className="text-sm text-gray-900">
-                        {formatInstrumentYear(item.year)}
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="px-6 py-4">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editData.price || ''}
-                        onChange={e => handleEditFieldChange('price', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        onClick={e => e.stopPropagation()}
-                        placeholder="Price"
-                      />
-                    ) : (
-                      <div className="text-sm text-gray-900">
-                        {formatInstrumentPrice(item.price)}
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="px-6 py-4">
-                    {isEditing ? (
                       <select
                         value={editData.status || 'Available'}
-                        onChange={e => handleEditFieldChange('status', e.target.value)}
+                        onChange={e =>
+                          handleEditFieldChange('status', e.target.value)
+                        }
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         onClick={e => e.stopPropagation()}
                       >
@@ -421,7 +362,9 @@ const ItemList = memo(function ItemList({
                       <input
                         type="text"
                         value={editData.serial_number || ''}
-                        onChange={e => handleEditFieldChange('serial_number', e.target.value)}
+                        onChange={e =>
+                          handleEditFieldChange('serial_number', e.target.value)
+                        }
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         onClick={e => e.stopPropagation()}
                         placeholder="Serial #"
@@ -434,19 +377,139 @@ const ItemList = memo(function ItemList({
                   </td>
 
                   <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-1">
-                      {itemClients.slice(0, 2).map((rel) => (
-                        <ClientPill
-                          key={rel.id}
-                          name={`${rel.client?.first_name} ${rel.client?.last_name}`}
-                        />
-                      ))}
-                      {itemClients.length > 2 && (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                          +{itemClients.length - 2} more
-                        </span>
-                      )}
-                    </div>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editData.maker || ''}
+                        onChange={e =>
+                          handleEditFieldChange('maker', e.target.value)
+                        }
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Maker"
+                      />
+                    ) : (
+                      <div className="text-sm font-medium text-gray-900">
+                        {item.maker || '—'}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editData.type || ''}
+                        onChange={e =>
+                          handleEditFieldChange('type', e.target.value)
+                        }
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Type"
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900">
+                        {item.type || '—'}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editData.subtype || ''}
+                        onChange={e =>
+                          handleEditFieldChange('subtype', e.target.value)
+                        }
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Subtype"
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900">
+                        {item.subtype || '—'}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        value={editData.year || ''}
+                        onChange={e =>
+                          handleEditFieldChange('year', e.target.value)
+                        }
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Year"
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900">
+                        {formatInstrumentYear(item.year)}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editData.price || ''}
+                        onChange={e =>
+                          handleEditFieldChange('price', e.target.value)
+                        }
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Price"
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900">
+                        {formatInstrumentPrice(item.price)}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {isEditing ? (
+                      <select
+                        value={editData.certificate ? 'Yes' : 'No'}
+                        onChange={e =>
+                          handleEditFieldChange(
+                            'certificate',
+                            e.target.value === 'Yes'
+                          )
+                        }
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
+                      </select>
+                    ) : (
+                      <CertificateBadge certificate={item.certificate} />
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editData.ownership || ''}
+                        onChange={e =>
+                          handleEditFieldChange('ownership', e.target.value)
+                        }
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Ownership"
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900">
+                        {item.ownership || '—'}
+                      </div>
+                    )}
                   </td>
 
                   <td className="px-6 py-4 text-right">
@@ -559,6 +622,25 @@ const StatusBadge = ({ status }: { status: string }) => {
     >
       <span>{icon}</span>
       {status}
+    </span>
+  );
+};
+
+// Certificate Badge Component
+const CertificateBadge = ({ certificate }: { certificate: boolean }) => {
+  const className = certificate
+    ? 'bg-green-50 text-green-700 ring-1 ring-green-100'
+    : 'bg-red-50 text-red-700 ring-1 ring-red-100';
+
+  const icon = certificate ? '✓' : '✗';
+  const text = certificate ? 'Yes' : 'No';
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full ${className}`}
+    >
+      <span>{icon}</span>
+      {text}
     </span>
   );
 };
