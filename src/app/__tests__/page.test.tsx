@@ -18,7 +18,7 @@ jest.mock('@/contexts/AuthContext', () => ({
 jest.mock('@/hooks/useLoadingState', () => ({
   useLoadingState: jest.fn(() => ({
     loading: false,
-    withLoading: jest.fn((fn) => fn()),
+    withLoading: jest.fn(fn => fn()),
   })),
 }));
 
@@ -55,7 +55,9 @@ describe('LoginPage', () => {
 
     expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /sign in/i })
+    ).toBeInTheDocument();
   });
 
   it('should render company logo', () => {
@@ -115,7 +117,10 @@ describe('LoginPage', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(mockSignIn).toHaveBeenCalledWith('test@example.com', 'password123');
+      expect(mockSignIn).toHaveBeenCalledWith(
+        'test@example.com',
+        'password123'
+      );
     });
   });
 
@@ -178,7 +183,7 @@ describe('LoginPage', () => {
     const { useLoadingState } = require('@/hooks/useLoadingState');
     useLoadingState.mockReturnValue({
       loading: true,
-      withLoading: jest.fn((fn) => fn()),
+      withLoading: jest.fn(fn => fn()),
     });
 
     render(<LoginPage />);
@@ -191,7 +196,7 @@ describe('LoginPage', () => {
     const { useLoadingState } = require('@/hooks/useLoadingState');
     useLoadingState.mockReturnValue({
       loading: true,
-      withLoading: jest.fn((fn) => fn()),
+      withLoading: jest.fn(fn => fn()),
     });
 
     render(<LoginPage />);
@@ -235,4 +240,3 @@ describe('LoginPage', () => {
     expect(passwordInput).toHaveAttribute('autoComplete', 'current-password');
   });
 });
-

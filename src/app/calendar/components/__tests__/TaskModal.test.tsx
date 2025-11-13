@@ -134,7 +134,9 @@ describe('TaskModal', () => {
     // Check for create mode title
     expect(screen.getByText('Add New Task')).toBeInTheDocument();
     // Look for create button
-    expect(screen.getByRole('button', { name: /create task/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /create task/i })
+    ).toBeInTheDocument();
   });
 
   it('should render edit mode when isEditing is true', () => {
@@ -154,7 +156,9 @@ describe('TaskModal', () => {
     // Check for edit mode title
     expect(screen.getByText('Edit Task')).toBeInTheDocument();
     // Look for update button
-    expect(screen.getByRole('button', { name: /update task/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /update task/i })
+    ).toBeInTheDocument();
   });
 
   it('should display selected task data when editing', () => {
@@ -210,15 +214,17 @@ describe('TaskModal', () => {
 
     // Fill in required fields
     // Find instrument select by name attribute
-    const instrumentSelect = screen.getByDisplayValue('Select an instrument') || 
-                             document.querySelector('select[name="instrument_id"]');
+    const instrumentSelect =
+      screen.getByDisplayValue('Select an instrument') ||
+      document.querySelector('select[name="instrument_id"]');
     if (instrumentSelect) {
       await user.selectOptions(instrumentSelect as HTMLElement, 'instrument-1');
     }
 
     // Find title input by placeholder or name
-    const titleInput = screen.queryByPlaceholderText(/enter task title/i) ||
-                       document.querySelector('input[name="title"]');
+    const titleInput =
+      screen.queryByPlaceholderText(/enter task title/i) ||
+      document.querySelector('input[name="title"]');
     if (titleInput) {
       await user.type(titleInput as HTMLElement, 'New Task');
     }
@@ -228,13 +234,16 @@ describe('TaskModal', () => {
     await user.click(submitButton);
 
     // Wait for submit to be called or validation error
-    await waitFor(() => {
-      // If validation passes, onSubmit should be called
-      // If validation fails, errors should be displayed
-      const hasError = screen.queryByText(/instrument is required/i) !== null;
-      const wasSubmitted = mockOnSubmit.mock.calls.length > 0;
-      expect(hasError || wasSubmitted).toBe(true);
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        // If validation passes, onSubmit should be called
+        // If validation fails, errors should be displayed
+        const hasError = screen.queryByText(/instrument is required/i) !== null;
+        const wasSubmitted = mockOnSubmit.mock.calls.length > 0;
+        expect(hasError || wasSubmitted).toBe(true);
+      },
+      { timeout: 3000 }
+    );
   });
 
   it('should display loading state when submitting', () => {
@@ -256,4 +265,3 @@ describe('TaskModal', () => {
     expect(screen.getByText('Saving...')).toBeInTheDocument();
   });
 });
-

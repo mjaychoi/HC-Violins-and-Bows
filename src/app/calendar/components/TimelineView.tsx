@@ -1,18 +1,29 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, addWeeks, parseISO } from 'date-fns';
+import {
+  format,
+  startOfWeek,
+  endOfWeek,
+  eachDayOfInterval,
+  isSameDay,
+  addWeeks,
+  parseISO,
+} from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { MaintenanceTask } from '@/types';
 
 interface TimelineViewProps {
   currentDate: Date;
   tasks: MaintenanceTask[];
-  instruments?: Map<string, { 
-    type: string | null; 
-    maker: string | null; 
-    ownership: string | null;
-  }>;
+  instruments?: Map<
+    string,
+    {
+      type: string | null;
+      maker: string | null;
+      ownership: string | null;
+    }
+  >;
   onSelectEvent?: (task: MaintenanceTask) => void;
   onNavigate?: (date: Date) => void;
 }
@@ -25,24 +36,32 @@ export default function TimelineView({
   onNavigate: _onNavigate, // eslint-disable-line @typescript-eslint/no-unused-vars
 }: TimelineViewProps) {
   const [weekOffset, setWeekOffset] = useState(0);
-  
+
   const weekRange = useMemo(() => {
-    const weekStart = startOfWeek(addWeeks(currentDate, weekOffset), { locale: ko });
-    const weekEnd = endOfWeek(addWeeks(currentDate, weekOffset), { locale: ko });
+    const weekStart = startOfWeek(addWeeks(currentDate, weekOffset), {
+      locale: ko,
+    });
+    const weekEnd = endOfWeek(addWeeks(currentDate, weekOffset), {
+      locale: ko,
+    });
     return { weekStart, weekEnd };
   }, [currentDate, weekOffset]);
 
   const days = useMemo(() => {
-    return eachDayOfInterval({ start: weekRange.weekStart, end: weekRange.weekEnd });
+    return eachDayOfInterval({
+      start: weekRange.weekStart,
+      end: weekRange.weekEnd,
+    });
   }, [weekRange]);
 
   const tasksByDay = useMemo(() => {
     const tasksMap = new Map<string, MaintenanceTask[]>();
-    
+
     days.forEach(day => {
       const dayKey = format(day, 'yyyy-MM-dd');
       const dayTasks = tasks.filter(task => {
-        const taskDate = task.scheduled_date || task.due_date || task.personal_due_date;
+        const taskDate =
+          task.scheduled_date || task.due_date || task.personal_due_date;
         if (!taskDate) return false;
         try {
           const taskDateObj = parseISO(taskDate);
@@ -53,7 +72,7 @@ export default function TimelineView({
       });
       tasksMap.set(dayKey, dayTasks);
     });
-    
+
     return tasksMap;
   }, [days, tasks]);
 
@@ -71,8 +90,11 @@ export default function TimelineView({
     return 'bg-gray-500';
   };
 
-  const getTaskTime = (task: MaintenanceTask): { hour: number; minute: number } => {
-    const taskDate = task.scheduled_date || task.due_date || task.personal_due_date;
+  const getTaskTime = (
+    task: MaintenanceTask
+  ): { hour: number; minute: number } => {
+    const taskDate =
+      task.scheduled_date || task.due_date || task.personal_due_date;
     if (!taskDate) return { hour: 9, minute: 0 };
     try {
       const date = parseISO(taskDate);
@@ -87,7 +109,8 @@ export default function TimelineView({
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            {format(weekRange.weekStart, 'yyyy년 M월 d일', { locale: ko })} - {format(weekRange.weekEnd, 'M월 d일', { locale: ko })}
+            {format(weekRange.weekStart, 'yyyy년 M월 d일', { locale: ko })} -{' '}
+            {format(weekRange.weekEnd, 'M월 d일', { locale: ko })}
           </h2>
         </div>
         <div className="flex gap-2">
@@ -111,7 +134,7 @@ export default function TimelineView({
           </button>
         </div>
       </div>
-      
+
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <div className="min-w-full">
@@ -130,12 +153,14 @@ export default function TimelineView({
                     }`}
                   >
                     <div>{format(day, 'EEE', { locale: ko })}</div>
-                    <div className="text-xs mt-1">{format(day, 'M/d', { locale: ko })}</div>
+                    <div className="text-xs mt-1">
+                      {format(day, 'M/d', { locale: ko })}
+                    </div>
                   </div>
                 );
               })}
             </div>
-            
+
             {/* Timeline */}
             <div className="divide-y divide-gray-200">
               {hours.map(hour => (
@@ -151,7 +176,7 @@ export default function TimelineView({
                       return taskHour === hour;
                     });
                     const isToday = isSameDay(day, new Date());
-                    
+
                     return (
                       <div
                         key={`${day.toISOString()}-${hour}`}
@@ -160,7 +185,9 @@ export default function TimelineView({
                         }`}
                       >
                         {hourTasks.map(task => {
-                          const instrument = task.instrument_id ? instruments?.get(task.instrument_id) : undefined;
+                          const instrument = task.instrument_id
+                            ? instruments?.get(task.instrument_id)
+                            : undefined;
                           return (
                             <div
                               key={task.id}
@@ -168,9 +195,13 @@ export default function TimelineView({
                               onClick={() => onSelectEvent?.(task)}
                               title={`${task.title} - ${instrument?.type || 'Unknown'}`}
                             >
-                              <div className="font-medium truncate">{task.title}</div>
+                              <div className="font-medium truncate">
+                                {task.title}
+                              </div>
                               {instrument?.type && (
-                                <div className="text-[10px] opacity-90 truncate">{instrument.type}</div>
+                                <div className="text-[10px] opacity-90 truncate">
+                                  {instrument.type}
+                                </div>
                               )}
                             </div>
                           );
@@ -187,4 +218,3 @@ export default function TimelineView({
     </div>
   );
 }
-

@@ -1,18 +1,32 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, parseISO } from 'date-fns';
+import {
+  format,
+  startOfYear,
+  endOfYear,
+  eachMonthOfInterval,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isSameDay,
+  isSameMonth,
+  parseISO,
+} from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { MaintenanceTask } from '@/types';
 
 interface YearViewProps {
   currentDate: Date;
   tasks: MaintenanceTask[];
-  instruments?: Map<string, { 
-    type: string | null; 
-    maker: string | null; 
-    ownership: string | null;
-  }>;
+  instruments?: Map<
+    string,
+    {
+      type: string | null;
+      maker: string | null;
+      ownership: string | null;
+    }
+  >;
   onSelectEvent?: (task: MaintenanceTask) => void;
   onNavigate?: (date: Date) => void;
 }
@@ -27,15 +41,16 @@ export default function YearView({
     const yearStart = startOfYear(currentDate);
     const yearEnd = endOfYear(currentDate);
     const months = eachMonthOfInterval({ start: yearStart, end: yearEnd });
-    
+
     return months.map(month => {
       const monthStart = startOfMonth(month);
       const monthEnd = endOfMonth(month);
       const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-      
+
       // Get tasks for this month
       const monthTasks = tasks.filter(task => {
-        const taskDate = task.scheduled_date || task.due_date || task.personal_due_date;
+        const taskDate =
+          task.scheduled_date || task.due_date || task.personal_due_date;
         if (!taskDate) return false;
         try {
           const taskDateObj = parseISO(taskDate);
@@ -44,7 +59,7 @@ export default function YearView({
           return false;
         }
       });
-      
+
       return {
         month,
         days,
@@ -98,7 +113,10 @@ export default function YearView({
             <div className="grid grid-cols-7 gap-1">
               {days.map(day => {
                 const dayTasks = monthTasks.filter(task => {
-                  const taskDate = task.scheduled_date || task.due_date || task.personal_due_date;
+                  const taskDate =
+                    task.scheduled_date ||
+                    task.due_date ||
+                    task.personal_due_date;
                   if (!taskDate) return false;
                   try {
                     return isSameDay(parseISO(taskDate), day);
@@ -107,7 +125,7 @@ export default function YearView({
                   }
                 });
                 const isToday = isSameDay(day, new Date());
-                
+
                 return (
                   <div
                     key={day.toISOString()}
@@ -115,10 +133,10 @@ export default function YearView({
                       isToday
                         ? 'bg-blue-100 text-blue-700 font-bold'
                         : isSameMonth(day, month)
-                        ? 'text-gray-700 hover:bg-gray-50'
-                        : 'text-gray-300'
+                          ? 'text-gray-700 hover:bg-gray-50'
+                          : 'text-gray-300'
                     }`}
-                    onClick={(e) => {
+                    onClick={e => {
                       e.stopPropagation();
                       onNavigate?.(day);
                     }}
@@ -126,19 +144,21 @@ export default function YearView({
                     <span>{format(day, 'd')}</span>
                     {dayTasks.length > 0 && (
                       <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-0.5 pb-0.5">
-                        {dayTasks.slice(0, 3).map((task) => (
+                        {dayTasks.slice(0, 3).map(task => (
                           <div
                             key={task.id}
                             className={`w-1 h-1 rounded-full ${getTaskColor(task)}`}
                             title={task.title}
-                            onClick={(e) => {
+                            onClick={e => {
                               e.stopPropagation();
                               onSelectEvent?.(task);
                             }}
                           />
                         ))}
                         {dayTasks.length > 3 && (
-                          <div className="text-[8px] text-gray-500">+{dayTasks.length - 3}</div>
+                          <div className="text-[8px] text-gray-500">
+                            +{dayTasks.length - 3}
+                          </div>
                         )}
                       </div>
                     )}
@@ -152,4 +172,3 @@ export default function YearView({
     </div>
   );
 }
-

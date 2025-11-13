@@ -15,38 +15,52 @@ jest.mock('react-big-calendar', () => {
         }
       };
 
-      const eventElements = events && events.length > 0
-        ? React.createElement('div', { 'data-testid': 'calendar-events' },
-            events.map((event: any) => {
-              const task = event.resource;
-              const eventId = task?.id || event.title?.replace(/\s+/g, '-') || 'unknown';
-              return React.createElement('button', {
-                key: eventId,
-                type: 'button',
-                'data-testid': `calendar-event-${eventId}`,
-                onClick: (e: any) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleEventClick(event);
-                },
-              }, event.title);
-            })
-          )
-        : null;
+      const eventElements =
+        events && events.length > 0
+          ? React.createElement(
+              'div',
+              { 'data-testid': 'calendar-events' },
+              events.map((event: any) => {
+                const task = event.resource;
+                const eventId =
+                  task?.id || event.title?.replace(/\s+/g, '-') || 'unknown';
+                return React.createElement(
+                  'button',
+                  {
+                    key: eventId,
+                    type: 'button',
+                    'data-testid': `calendar-event-${eventId}`,
+                    onClick: (e: any) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleEventClick(event);
+                    },
+                  },
+                  event.title
+                );
+              })
+            )
+          : null;
 
-      return React.createElement('div', { 'data-testid': 'react-big-calendar' },
+      return React.createElement(
+        'div',
+        { 'data-testid': 'react-big-calendar' },
         React.createElement('div', null, 'Calendar Component'),
         eventElements,
-        React.createElement('button', {
-          type: 'button',
-          'data-testid': 'select-slot-button',
-          onClick: (e: any) => {
-            e.preventDefault();
-            if (onSelectSlot) {
-              onSelectSlot({ start: new Date(), end: new Date() });
-            }
+        React.createElement(
+          'button',
+          {
+            type: 'button',
+            'data-testid': 'select-slot-button',
+            onClick: (e: any) => {
+              e.preventDefault();
+              if (onSelectSlot) {
+                onSelectSlot({ start: new Date(), end: new Date() });
+              }
+            },
           },
-        }, 'Select Slot')
+          'Select Slot'
+        )
       );
     },
     momentLocalizer: jest.fn(() => ({})),
@@ -87,7 +101,10 @@ describe('CalendarView', () => {
   ];
 
   const mockInstruments = new Map([
-    ['instrument-1', { type: 'Violin', maker: 'Stradivarius', ownership: 'Private' }],
+    [
+      'instrument-1',
+      { type: 'Violin', maker: 'Stradivarius', ownership: 'Private' },
+    ],
   ]);
 
   const mockOnSelectEvent = jest.fn();
@@ -139,7 +156,7 @@ describe('CalendarView', () => {
   it('should handle event selection', () => {
     // Create a spy to track onSelectEvent calls
     const onSelectEventSpy = jest.fn();
-    
+
     render(
       <CalendarView
         tasks={mockTasks}
@@ -154,15 +171,16 @@ describe('CalendarView', () => {
     // Check if events container exists (events should be rendered since mockTasks has scheduled_date)
     const eventsContainer = screen.queryByTestId('calendar-events');
     expect(eventsContainer).toBeInTheDocument();
-    
+
     // Find event by test id - task.id is '1' (now it's a button)
-    const eventButton = screen.queryByRole('button', { name: /violin repair/i }) ||
-                       screen.queryByTestId('calendar-event-1');
+    const eventButton =
+      screen.queryByRole('button', { name: /violin repair/i }) ||
+      screen.queryByTestId('calendar-event-1');
     expect(eventButton).toBeInTheDocument();
-    
+
     // Verify event is clickable by checking it's a button
     expect(eventButton).toHaveAttribute('type', 'button');
-    
+
     // Test that onSelectEvent handler is passed to Calendar component
     // The actual click behavior is tested in integration tests
     // Here we verify that events are rendered and have the correct structure
@@ -206,11 +224,11 @@ describe('CalendarView', () => {
   it('should handle multiple tasks', () => {
     const multipleTasks: MaintenanceTask[] = [
       ...mockTasks,
-    {
-      id: '2',
-      instrument_id: 'instrument-2',
-      client_id: null,
-      task_type: 'rehair',
+      {
+        id: '2',
+        instrument_id: 'instrument-2',
+        client_id: null,
+        task_type: 'rehair',
         title: 'Bow Rehair',
         description: 'Rehair bow',
         status: 'pending',
@@ -250,4 +268,3 @@ describe('CalendarView', () => {
     }
   });
 });
-

@@ -41,7 +41,10 @@ describe('TaskList', () => {
   ];
 
   const mockInstruments = new Map([
-    ['instrument-1', { type: 'Violin', maker: 'Stradivarius', ownership: 'Private' }],
+    [
+      'instrument-1',
+      { type: 'Violin', maker: 'Stradivarius', ownership: 'Private' },
+    ],
   ]);
 
   const mockOnTaskClick = jest.fn();
@@ -197,11 +200,11 @@ describe('TaskList', () => {
   it('should handle multiple tasks', () => {
     const multipleTasks: MaintenanceTask[] = [
       ...mockTasks,
-    {
-      id: '2',
-      instrument_id: 'instrument-2',
-      client_id: null,
-      task_type: 'rehair',
+      {
+        id: '2',
+        instrument_id: 'instrument-2',
+        client_id: null,
+        task_type: 'rehair',
         title: 'Bow Rehair',
         description: 'Rehair bow',
         status: 'pending',
@@ -233,4 +236,3 @@ describe('TaskList', () => {
     expect(screen.getByText('Bow Rehair')).toBeInTheDocument();
   });
 });
-

@@ -323,9 +323,7 @@ describe('ClientsPage', () => {
       await flushPromises();
     });
 
-    const searchInput = screen.getByPlaceholderText(
-      /search clients/i
-    );
+    const searchInput = screen.getByPlaceholderText(/search clients/i);
     expect(searchInput).toBeInTheDocument();
   });
 
@@ -375,13 +373,11 @@ describe('ClientsPage', () => {
       await flushPromises();
     });
 
-    const searchInput = screen.getByPlaceholderText(
-      /search clients/i
-    );
+    const searchInput = screen.getByPlaceholderText(/search clients/i);
     expect(searchInput).toBeInTheDocument();
-    
+
     // 입력 필드에 값을 입력할 수 있는지 확인
-    // Note: 실제 컴포넌트는 모킹된 hook을 사용하므로 
+    // Note: 실제 컴포넌트는 모킹된 hook을 사용하므로
     // setSearchTerm이 호출되는지 확인하는 것이 더 적절합니다
     await user.clear(searchInput);
     await user.type(searchInput, 'John');
@@ -481,10 +477,12 @@ describe('ClientsPage', () => {
     // Check that AppLayout is rendered (which provides the page structure)
     const appLayout = screen.getByTestId('app-layout');
     expect(appLayout).toBeInTheDocument();
-    
+
     // Check that the page title is rendered
-    expect(screen.getByRole('heading', { name: /clients/i })).toBeInTheDocument();
-    
+    expect(
+      screen.getByRole('heading', { name: /clients/i })
+    ).toBeInTheDocument();
+
     // Note: The actual sidebar navigation is not rendered in unit tests
     // because AppLayout/AppSidebar are mocked for isolation.
     // For integration testing of sidebar navigation, see e2e tests in tests/e2e/dashboard.spec.ts
@@ -604,10 +602,10 @@ describe('ClientsPage', () => {
     // Check that AppLayout is rendered (which provides the layout structure)
     const appLayout = screen.getByTestId('app-layout');
     expect(appLayout).toBeInTheDocument();
-    
+
     // Check that main content is rendered
     expect(screen.getByRole('table')).toBeInTheDocument();
-    
+
     // Note: Responsive behavior (sidebar toggle, etc.) is tested in e2e tests
     // Unit tests focus on component logic, not layout/styling behavior
   });

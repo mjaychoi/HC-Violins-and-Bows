@@ -18,7 +18,7 @@ jest.mock('@/hooks/useLoadingState', () => ({
   useLoadingState: () => {
     const [loading, setLoading] = React.useState(false);
     const [submitting, setSubmitting] = React.useState(false);
-    
+
     React.useEffect(() => {
       mockSetLoading.mockImplementation(setLoading);
       mockSetSubmitting.mockImplementation(setSubmitting);
@@ -52,7 +52,10 @@ jest.mock('@/hooks/useLoadingState', () => ({
 // Mock useAsyncOperation with proper state management
 jest.mock('@/hooks/useAsyncOperation', () => ({
   useAsyncOperation: () => ({
-    run: async <T,>(fn: () => Promise<T>, options?: { onSuccess?: (data: T) => void }) => {
+    run: async <T,>(
+      fn: () => Promise<T>,
+      options?: { onSuccess?: (data: T) => void }
+    ) => {
       try {
         const result = await fn();
         if (options?.onSuccess) {
@@ -112,12 +115,12 @@ describe('useClients - mutations', () => {
       client_number: null,
       created_at: '2024-01-01T00:00:00Z',
     };
-    
+
     // Mock initial fetch to return empty array
     (SupabaseHelpers.fetchAll as jest.Mock).mockResolvedValueOnce({
       data: [],
     });
-    
+
     // Mock create to return the new client
     (SupabaseHelpers.create as jest.Mock).mockResolvedValueOnce({
       data: createdClient,
@@ -127,9 +130,12 @@ describe('useClients - mutations', () => {
     const { result } = renderHook(() => useClients());
 
     // Wait for initial fetch to complete
-    await waitFor(() => {
-      expect(result.current.clients).toEqual([]);
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(result.current.clients).toEqual([]);
+      },
+      { timeout: 3000 }
+    );
 
     let createdClientResult: Client | null = null;
     await act(async () => {
@@ -137,9 +143,12 @@ describe('useClients - mutations', () => {
     });
 
     // Wait for state update after create
-    await waitFor(() => {
-      expect(result.current.clients).toContainEqual(createdClient);
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(result.current.clients).toContainEqual(createdClient);
+      },
+      { timeout: 3000 }
+    );
 
     expect(createdClientResult).toEqual(createdClient);
     expect(SupabaseHelpers.create).toHaveBeenCalledWith(
@@ -260,7 +269,7 @@ describe('useClients - mutations', () => {
     (SupabaseHelpers.fetchAll as jest.Mock).mockResolvedValueOnce({
       data: [mockClient],
     });
-    
+
     // Mock delete to return success
     (SupabaseHelpers.delete as jest.Mock).mockResolvedValueOnce({
       error: null,
@@ -269,9 +278,12 @@ describe('useClients - mutations', () => {
     const { result } = renderHook(() => useClients());
 
     // Wait for initial fetch to complete
-    await waitFor(() => {
-      expect(result.current.clients).toContainEqual(mockClient);
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(result.current.clients).toContainEqual(mockClient);
+      },
+      { timeout: 3000 }
+    );
 
     let deleteResult: boolean = false;
     await act(async () => {
@@ -279,9 +291,12 @@ describe('useClients - mutations', () => {
     });
 
     // Wait for state update after delete
-    await waitFor(() => {
-      expect(result.current.clients.find(c => c.id === '1')).toBeUndefined();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(result.current.clients.find(c => c.id === '1')).toBeUndefined();
+      },
+      { timeout: 3000 }
+    );
 
     expect(deleteResult).toBe(true);
     expect(SupabaseHelpers.delete).toHaveBeenCalledWith('clients', '1');

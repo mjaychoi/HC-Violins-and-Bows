@@ -81,7 +81,7 @@ describe('ClientFilters', () => {
     // Verify that filter options are displayed
     expect(screen.getByText('Tags')).toBeInTheDocument();
     expect(screen.getByText('Interest')).toBeInTheDocument();
-    
+
     // The clear all filters functionality is handled by the parent component
     // through the onClearAllFilters prop, which is called from the parent
   });

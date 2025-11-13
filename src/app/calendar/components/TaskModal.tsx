@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { MaintenanceTask, Instrument, Client, TaskType, TaskStatus, TaskPriority } from '@/types';
+import {
+  MaintenanceTask,
+  Instrument,
+  Client,
+  TaskType,
+  TaskStatus,
+  TaskPriority,
+} from '@/types';
 import { classNames } from '@/utils/classNames';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
@@ -9,7 +16,12 @@ import Input from '@/components/common/Input';
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (task: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'>) => Promise<void>;
+  onSubmit: (
+    task: Omit<
+      MaintenanceTask,
+      'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+    >
+  ) => Promise<void>;
   submitting: boolean;
   selectedTask?: MaintenanceTask | null;
   isEditing?: boolean;
@@ -95,7 +107,9 @@ export default function TaskModal({
   }, [selectedTask, isEditing, isOpen, defaultScheduledDate]);
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
   ) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -126,11 +140,15 @@ export default function TaskModal({
     // Set completed_date if status is completed and it wasn't already completed
     const wasCompleted = selectedTask?.status === 'completed';
     const isNowCompleted = formData.status === 'completed';
-    const completedDate = isNowCompleted && !wasCompleted
-      ? new Date().toISOString().split('T')[0]
-      : selectedTask?.completed_date || null;
+    const completedDate =
+      isNowCompleted && !wasCompleted
+        ? new Date().toISOString().split('T')[0]
+        : selectedTask?.completed_date || null;
 
-    const taskData: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'> = {
+    const taskData: Omit<
+      MaintenanceTask,
+      'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+    > = {
       instrument_id: formData.instrument_id,
       client_id: formData.client_id || null,
       task_type: formData.task_type,
@@ -169,8 +187,21 @@ export default function TaskModal({
 
   if (!isOpen) return null;
 
-  const taskTypes: TaskType[] = ['repair', 'rehair', 'maintenance', 'inspection', 'setup', 'adjustment', 'restoration'];
-  const taskStatuses: TaskStatus[] = ['pending', 'in_progress', 'completed', 'cancelled'];
+  const taskTypes: TaskType[] = [
+    'repair',
+    'rehair',
+    'maintenance',
+    'inspection',
+    'setup',
+    'adjustment',
+    'restoration',
+  ];
+  const taskStatuses: TaskStatus[] = [
+    'pending',
+    'in_progress',
+    'completed',
+    'cancelled',
+  ];
   const priorities: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];
 
   return (
@@ -238,7 +269,10 @@ export default function TaskModal({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+        <form
+          onSubmit={handleSubmit}
+          className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]"
+        >
           {errors.length > 0 && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
               <ul className="list-disc list-inside text-sm text-red-600">
@@ -265,7 +299,8 @@ export default function TaskModal({
                 <option value="">Select an instrument</option>
                 {instruments.map(instrument => (
                   <option key={instrument.id} value={instrument.id}>
-                    {instrument.type || 'Unknown'} - {instrument.maker || 'Unknown Maker'}
+                    {instrument.type || 'Unknown'} -{' '}
+                    {instrument.maker || 'Unknown Maker'}
                     {instrument.ownership ? ` (${instrument.ownership})` : ''}
                   </option>
                 ))}
@@ -274,9 +309,7 @@ export default function TaskModal({
 
             {/* Client Selection */}
             <div>
-              <label className={classNames.formLabel}>
-                Client (Optional)
-              </label>
+              <label className={classNames.formLabel}>Client (Optional)</label>
               <select
                 name="client_id"
                 value={formData.client_id}
@@ -348,7 +381,8 @@ export default function TaskModal({
                 >
                   {taskStatuses.map(status => (
                     <option key={status} value={status}>
-                      {status.replace('_', ' ').charAt(0).toUpperCase() + status.replace('_', ' ').slice(1)}
+                      {status.replace('_', ' ').charAt(0).toUpperCase() +
+                        status.replace('_', ' ').slice(1)}
                     </option>
                   ))}
                 </select>
@@ -388,7 +422,9 @@ export default function TaskModal({
               </div>
 
               <div>
-                <label className={classNames.formLabel}>Due Date (Customer)</label>
+                <label className={classNames.formLabel}>
+                  Due Date (Customer)
+                </label>
                 <input
                   type="date"
                   name="due_date"
@@ -401,7 +437,9 @@ export default function TaskModal({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className={classNames.formLabel}>Personal Due Date</label>
+                <label className={classNames.formLabel}>
+                  Personal Due Date
+                </label>
                 <input
                   type="date"
                   name="personal_due_date"
@@ -484,15 +522,35 @@ export default function TaskModal({
 
           {/* Footer */}
           <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-gray-100 bg-gray-50 -mx-6 -mb-6 px-6 py-4">
-            <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onClose}
+              disabled={submitting}
+            >
               Cancel
             </Button>
             <Button type="submit" variant="primary" disabled={submitting}>
               {submitting ? (
                 <span className="flex items-center gap-2">
-                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  <svg
+                    className="animate-spin h-4 w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
                   </svg>
                   Saving...
                 </span>
@@ -508,4 +566,3 @@ export default function TaskModal({
     </div>
   );
 }
-

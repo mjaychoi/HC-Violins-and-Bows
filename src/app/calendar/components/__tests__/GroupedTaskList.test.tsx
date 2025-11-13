@@ -143,7 +143,9 @@ describe('GroupedTaskList', () => {
     render(<GroupedTaskList tasks={[]} />);
 
     expect(screen.getByText(/no tasks found/i)).toBeInTheDocument();
-    expect(screen.getByText(/get started by creating your first task/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/get started by creating your first task/i)
+    ).toBeInTheDocument();
   });
 
   it('should render tasks grouped by date', () => {
@@ -519,4 +521,3 @@ describe('GroupedTaskList', () => {
     expect(mockOnTaskDelete).toHaveBeenCalled();
   });
 });
-

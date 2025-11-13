@@ -14,7 +14,11 @@ jest.mock('next/dynamic', () => ({
   __esModule: true,
   default: () => {
     return function DynamicComponent(props: any) {
-      return <div data-testid="dynamic-component">{props.children || 'Dynamic Component'}</div>;
+      return (
+        <div data-testid="dynamic-component">
+          {props.children || 'Dynamic Component'}
+        </div>
+      );
     };
   },
 }));
@@ -134,9 +138,13 @@ jest.mock('@/components/common', () => ({
     <div data-testid="error-boundary">{children}</div>
   ),
   SpinnerLoading: () => <div data-testid="spinner-loading">Loading...</div>,
-  Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
-    <button onClick={onClick}>{children}</button>
-  ),
+  Button: ({
+    children,
+    onClick,
+  }: {
+    children: React.ReactNode;
+    onClick?: () => void;
+  }) => <button onClick={onClick}>{children}</button>,
 }));
 
 // Mock calendar components
@@ -179,7 +187,7 @@ jest.mock('../components/TaskList', () => {
             {task.title}
             <button
               data-testid={`delete-task-${task.id}`}
-              onClick={(e) => {
+              onClick={e => {
                 e.stopPropagation();
                 onTaskDelete?.(task.id);
               }}
@@ -207,7 +215,7 @@ jest.mock('../components/GroupedTaskList', () => {
             {task.title}
             <button
               data-testid={`delete-task-${task.id}`}
-              onClick={(e) => {
+              onClick={e => {
                 e.stopPropagation();
                 onTaskDelete?.(task.id);
               }}
@@ -222,19 +230,31 @@ jest.mock('../components/GroupedTaskList', () => {
 });
 
 jest.mock('../components/TaskModal', () => {
-  return function TaskModal({ isOpen, onClose, onSubmit, selectedTask, isEditing }: any) {
+  return function TaskModal({
+    isOpen,
+    onClose,
+    onSubmit,
+    selectedTask,
+    isEditing,
+  }: any) {
     if (!isOpen) return null;
     return (
       <div data-testid="task-modal">
         <div>Task Modal</div>
-        <div data-testid="modal-editing">{isEditing ? 'Editing' : 'Creating'}</div>
-        {selectedTask && <div data-testid="modal-selected-task">{selectedTask.title}</div>}
+        <div data-testid="modal-editing">
+          {isEditing ? 'Editing' : 'Creating'}
+        </div>
+        {selectedTask && (
+          <div data-testid="modal-selected-task">{selectedTask.title}</div>
+        )}
         <button data-testid="modal-close" onClick={onClose}>
           Close
         </button>
         <button
           data-testid="modal-submit"
-          onClick={() => onSubmit?.({ title: 'New Task', instrument_id: 'instrument-1' })}
+          onClick={() =>
+            onSubmit?.({ title: 'New Task', instrument_id: 'instrument-1' })
+          }
         >
           Submit
         </button>
@@ -257,52 +277,70 @@ describe('CalendarPage', () => {
   it('should render the calendar page', async () => {
     render(<CalendarPage />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('app-layout')).toBeInTheDocument();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('app-layout')).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
   });
 
   it('should fetch tasks on mount', async () => {
     render(<CalendarPage />);
 
-    await waitFor(() => {
-      expect(mockFetchTasksByDateRange).toHaveBeenCalled();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(mockFetchTasksByDateRange).toHaveBeenCalled();
+      },
+      { timeout: 3000 }
+    );
   });
 
   it('should render calendar view by default', async () => {
     render(<CalendarPage />);
 
-    await waitFor(() => {
-      expect(mockFetchTasksByDateRange).toHaveBeenCalled();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(mockFetchTasksByDateRange).toHaveBeenCalled();
+      },
+      { timeout: 3000 }
+    );
 
     // Calendar view should be rendered
-    await waitFor(() => {
-      expect(screen.getByTestId('calendar-view')).toBeInTheDocument();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('calendar-view')).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
   });
 
   it('should render task list when view is set to list', async () => {
     const user = userEvent.setup();
     render(<CalendarPage />);
 
-    await waitFor(() => {
-      expect(mockFetchTasksByDateRange).toHaveBeenCalled();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(mockFetchTasksByDateRange).toHaveBeenCalled();
+      },
+      { timeout: 3000 }
+    );
 
     // Find list view button - it should be in the view toggle
     const viewButtons = screen.getAllByRole('button');
-    const listViewButton = viewButtons.find(button => 
+    const listViewButton = viewButtons.find(button =>
       button.textContent?.toLowerCase().includes('list')
     );
-    
+
     if (listViewButton) {
       await user.click(listViewButton);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('task-list')).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByTestId('task-list')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
     }
   });
 
@@ -316,22 +354,28 @@ describe('CalendarPage', () => {
 
     render(<CalendarPage />);
 
-    await waitFor(() => {
-      expect(mockFetchTasksByDateRange).toHaveBeenCalled();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(mockFetchTasksByDateRange).toHaveBeenCalled();
+      },
+      { timeout: 3000 }
+    );
 
     // Switch to list view
     const viewButtons = screen.getAllByRole('button');
-    const listViewButton = viewButtons.find(button => 
+    const listViewButton = viewButtons.find(button =>
       button.textContent?.toLowerCase().includes('list')
     );
-    
+
     if (listViewButton) {
       await user.click(listViewButton);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('task-list')).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByTestId('task-list')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
 
       // Find and click delete button
       const deleteButton = screen.getByTestId('delete-task-1');
@@ -339,9 +383,12 @@ describe('CalendarPage', () => {
         await user.click(deleteButton);
 
         // Wait for delete to be called
-        await waitFor(() => {
-          expect(mockDeleteTask).toHaveBeenCalled();
-        }, { timeout: 3000 });
+        await waitFor(
+          () => {
+            expect(mockDeleteTask).toHaveBeenCalled();
+          },
+          { timeout: 3000 }
+        );
       }
     }
   });
@@ -349,25 +396,33 @@ describe('CalendarPage', () => {
   it('should display tasks', async () => {
     render(<CalendarPage />);
 
-    await waitFor(() => {
-      expect(mockFetchTasksByDateRange).toHaveBeenCalled();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(mockFetchTasksByDateRange).toHaveBeenCalled();
+      },
+      { timeout: 3000 }
+    );
 
     // Tasks should be available in the component
-    await waitFor(() => {
-      expect(screen.getByTestId('calendar-view')).toBeInTheDocument();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('calendar-view')).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
   });
 
   it('should handle date range changes', async () => {
     render(<CalendarPage />);
 
-    await waitFor(() => {
-      expect(mockFetchTasksByDateRange).toHaveBeenCalled();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(mockFetchTasksByDateRange).toHaveBeenCalled();
+      },
+      { timeout: 3000 }
+    );
 
     // fetchTasksByDateRange should be called with date range
     expect(mockFetchTasksByDateRange).toHaveBeenCalled();
   });
 });
-

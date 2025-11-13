@@ -12,7 +12,16 @@ import TaskModal from './components/TaskModal';
 import GroupedTaskList from './components/GroupedTaskList';
 import Button from '@/components/common/Button';
 import { MaintenanceTask, Client } from '@/types';
-import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, startOfWeek, endOfWeek, addWeeks } from 'date-fns';
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  startOfYear,
+  endOfYear,
+  startOfWeek,
+  endOfWeek,
+  addWeeks,
+} from 'date-fns';
 
 export default function CalendarPage() {
   const { ErrorToasts, handleError } = useErrorHandler();
@@ -23,7 +32,7 @@ export default function CalendarPage() {
   const [calendarView, setCalendarView] = useState<ExtendedView>('month');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterOwnership, setFilterOwnership] = useState<string>('all');
-  
+
   // 에러 상태 관리
   const [hasTableError, setHasTableError] = useState(false);
 
@@ -89,15 +98,22 @@ export default function CalendarPage() {
 
   // Fetch tasks based on current view
   useEffect(() => {
-    const { startDate, endDate } = getDateRangeForView(calendarView, currentDate);
-    
-    fetchTasksByDateRange(startDate, endDate).catch((error) => {
+    const { startDate, endDate } = getDateRangeForView(
+      calendarView,
+      currentDate
+    );
+
+    fetchTasksByDateRange(startDate, endDate).catch(error => {
       // 테이블이 없을 수 있는 경우 처리
       const supabaseError = error as { code?: string; message?: string };
       const errorCode = supabaseError?.code;
       const errorMessage = supabaseError?.message || '';
-      
-      if (errorCode === '42P01' || errorMessage.includes('does not exist') || errorMessage.includes('relation')) {
+
+      if (
+        errorCode === '42P01' ||
+        errorMessage.includes('does not exist') ||
+        errorMessage.includes('relation')
+      ) {
         setHasTableError(true);
       }
     });
@@ -118,37 +134,42 @@ export default function CalendarPage() {
 
   // Create instruments map for quick lookup with client info
   const instrumentsMap = useMemo(() => {
-    const map = new Map<string, { 
-      type: string | null; 
-      maker: string | null; 
-      ownership: string | null;
-      clientId?: string | null;
-      clientName?: string | null;
-    }>();
-    
+    const map = new Map<
+      string,
+      {
+        type: string | null;
+        maker: string | null;
+        ownership: string | null;
+        clientId?: string | null;
+        clientName?: string | null;
+      }
+    >();
+
     // Create client map for ownership lookup
     const clientMap = new Map<string, Client>();
     clients.forEach(client => {
-      const fullName = `${client.first_name || ''} ${client.last_name || ''}`.trim();
+      const fullName =
+        `${client.first_name || ''} ${client.last_name || ''}`.trim();
       if (fullName) {
         clientMap.set(fullName, client);
       }
     });
-    
+
     instruments.forEach(instrument => {
       // Try to find matching client by ownership name
       const ownership = instrument.ownership;
       let clientId: string | null = null;
       let clientName: string | null = null;
-      
+
       if (ownership) {
         const client = clientMap.get(ownership);
         if (client) {
           clientId = client.id;
-          clientName = `${client.first_name || ''} ${client.last_name || ''}`.trim();
+          clientName =
+            `${client.first_name || ''} ${client.last_name || ''}`.trim();
         }
       }
-      
+
       map.set(instrument.id, {
         type: instrument.type,
         maker: instrument.maker,
@@ -162,12 +183,15 @@ export default function CalendarPage() {
 
   // Create clients map for quick lookup
   const clientsMap = useMemo(() => {
-    const map = new Map<string, { 
-      firstName: string;
-      lastName: string;
-      email?: string | null;
-    }>();
-    
+    const map = new Map<
+      string,
+      {
+        firstName: string;
+        lastName: string;
+        email?: string | null;
+      }
+    >();
+
     clients.forEach(client => {
       map.set(client.id, {
         firstName: client.first_name || '',
@@ -175,10 +199,10 @@ export default function CalendarPage() {
         email: client.email,
       });
     });
-    
+
     return map;
   }, [clients]);
-  
+
   // Get unique ownership values for filter
   const ownershipOptions = useMemo(() => {
     const ownerships = new Set<string>();
@@ -193,32 +217,40 @@ export default function CalendarPage() {
   // Filter tasks based on status and ownership
   const filteredTasks = useMemo(() => {
     let filtered = tasks;
-    
+
     // Filter by status
     if (filterStatus !== 'all') {
       filtered = filtered.filter(task => task.status === filterStatus);
     }
-    
+
     // Filter by ownership
     if (filterOwnership !== 'all') {
       filtered = filtered.filter(task => {
-        const instrument = task.instrument_id ? instrumentsMap.get(task.instrument_id) : undefined;
+        const instrument = task.instrument_id
+          ? instrumentsMap.get(task.instrument_id)
+          : undefined;
         return instrument?.ownership === filterOwnership;
       });
     }
-    
+
     return filtered;
   }, [tasks, filterStatus, filterOwnership, instrumentsMap]);
 
   // Handle task creation
   const handleCreateTask = async (
-    taskData: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'>
+    taskData: Omit<
+      MaintenanceTask,
+      'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+    >
   ) => {
     try {
       await createTask(taskData);
       closeModal();
       // Refresh tasks based on current view
-      const { startDate, endDate } = getDateRangeForView(calendarView, currentDate);
+      const { startDate, endDate } = getDateRangeForView(
+        calendarView,
+        currentDate
+      );
       await fetchTasksByDateRange(startDate, endDate);
     } catch (error) {
       handleError(error, 'Failed to create task');
@@ -227,14 +259,20 @@ export default function CalendarPage() {
 
   // Handle task update
   const handleUpdateTask = async (
-    taskData: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'>
+    taskData: Omit<
+      MaintenanceTask,
+      'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+    >
   ) => {
     if (!selectedTask) return;
     try {
       await updateTask(selectedTask.id, taskData);
       closeModal();
       // Refresh tasks based on current view
-      const { startDate, endDate } = getDateRangeForView(calendarView, currentDate);
+      const { startDate, endDate } = getDateRangeForView(
+        calendarView,
+        currentDate
+      );
       await fetchTasksByDateRange(startDate, endDate);
     } catch (error) {
       handleError(error, 'Failed to update task');
@@ -246,7 +284,10 @@ export default function CalendarPage() {
     try {
       await deleteTask(taskId);
       // Refresh tasks based on current view
-      const { startDate, endDate } = getDateRangeForView(calendarView, currentDate);
+      const { startDate, endDate } = getDateRangeForView(
+        calendarView,
+        currentDate
+      );
       await fetchTasksByDateRange(startDate, endDate);
     } catch (error) {
       handleError(error, 'Failed to delete task');
@@ -281,7 +322,11 @@ export default function CalendarPage() {
                 데이터베이스 테이블이 없습니다
               </h2>
               <p className="text-yellow-700 mb-4">
-                캘린더 기능을 사용하려면 <code className="bg-yellow-100 px-2 py-1 rounded">maintenance_tasks</code> 테이블이 필요합니다.
+                캘린더 기능을 사용하려면{' '}
+                <code className="bg-yellow-100 px-2 py-1 rounded">
+                  maintenance_tasks
+                </code>{' '}
+                테이블이 필요합니다.
               </p>
               <div className="text-left bg-white p-4 rounded border border-yellow-200 mb-4">
                 <p className="font-semibold mb-2">해결 방법:</p>
@@ -469,7 +514,8 @@ export default function CalendarPage() {
                   />
                 </svg>
                 <span>
-                  {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''}
+                  {filteredTasks.length} task
+                  {filteredTasks.length !== 1 ? 's' : ''}
                 </span>
               </div>
             </div>
@@ -486,7 +532,10 @@ export default function CalendarPage() {
               </div>
             </div>
           ) : view === 'calendar' ? (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" style={{ minHeight: '700px' }}>
+            <div
+              className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden"
+              style={{ minHeight: '700px' }}
+            >
               <CalendarView
                 tasks={filteredTasks}
                 instruments={instrumentsMap}
@@ -522,10 +571,13 @@ export default function CalendarPage() {
                   </div>
                 ) : (
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">All Tasks</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      All Tasks
+                    </h3>
                     {filteredTasks.length > 0 && (
                       <span className="text-sm text-gray-500">
-                        {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''} found
+                        {filteredTasks.length} task
+                        {filteredTasks.length !== 1 ? 's' : ''} found
                       </span>
                     )}
                   </div>
@@ -566,4 +618,3 @@ export default function CalendarPage() {
     </ErrorBoundary>
   );
 }
-

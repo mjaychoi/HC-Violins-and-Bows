@@ -31,9 +31,9 @@ const mockClient: Client = {
   contact_number: '123-456-7890',
   tags: ['Musician'],
   interest: 'Active',
-    note: 'Test client',
-    client_number: null,
-    created_at: '2023-01-01T00:00:00Z',
+  note: 'Test client',
+  client_number: null,
+  created_at: '2023-01-01T00:00:00Z',
 };
 
 const mockInstrument: Instrument = {

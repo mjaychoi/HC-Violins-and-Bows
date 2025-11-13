@@ -27,7 +27,7 @@ export default function ClientForm({
   submitting,
 }: ClientFormProps) {
   const { clients } = useUnifiedClients();
-  
+
   const initialFormData = {
     last_name: '',
     first_name: '',
@@ -357,7 +357,9 @@ export default function ClientForm({
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Client Number
-                  <span className="ml-2 text-xs text-gray-500">(자동 생성)</span>
+                  <span className="ml-2 text-xs text-gray-500">
+                    (자동 생성)
+                  </span>
                 </label>
                 <input
                   type="text"
@@ -365,7 +367,9 @@ export default function ClientForm({
                   value={formData.client_number}
                   onChange={handleInputChange}
                   disabled
-                  className={classNames.input + ' bg-gray-100 cursor-not-allowed'}
+                  className={
+                    classNames.input + ' bg-gray-100 cursor-not-allowed'
+                  }
                   placeholder="자동 생성됨"
                 />
                 <p className="mt-1 text-xs text-gray-500">

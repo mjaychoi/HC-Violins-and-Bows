@@ -6,18 +6,26 @@ import { formatDate } from '@/utils/formatUtils';
 
 interface TaskListProps {
   tasks: MaintenanceTask[];
-  instruments?: Map<string, { 
-    type: string | null; 
-    maker: string | null; 
-    ownership: string | null;
-    clientId?: string | null;
-    clientName?: string | null;
-  }>;
+  instruments?: Map<
+    string,
+    {
+      type: string | null;
+      maker: string | null;
+      ownership: string | null;
+      clientId?: string | null;
+      clientName?: string | null;
+    }
+  >;
   onTaskClick?: (task: MaintenanceTask) => void;
   onTaskDelete?: (taskId: string) => void;
 }
 
-export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete }: TaskListProps) {
+export default function TaskList({
+  tasks,
+  instruments,
+  onTaskClick,
+  onTaskDelete,
+}: TaskListProps) {
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'urgent':
@@ -64,7 +72,9 @@ export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete
             d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
           />
         </svg>
-        <h3 className="text-sm font-medium text-gray-900 mb-1">No tasks found</h3>
+        <h3 className="text-sm font-medium text-gray-900 mb-1">
+          No tasks found
+        </h3>
         <p className="text-sm text-gray-500">
           Get started by creating your first task.
         </p>
@@ -75,45 +85,54 @@ export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete
   return (
     <div className="space-y-3">
       {tasks.map(task => {
-        const instrument = task.instrument_id ? instruments?.get(task.instrument_id) : undefined;
-        
+        const instrument = task.instrument_id
+          ? instruments?.get(task.instrument_id)
+          : undefined;
+
         return (
-        <div
-          key={task.id}
+          <div
+            key={task.id}
             className="group bg-gray-50 border border-gray-200 rounded-lg p-4 hover:bg-white hover:shadow-md transition-all duration-200 cursor-pointer"
-          onClick={() => onTaskClick?.(task)}
-        >
+            onClick={() => onTaskClick?.(task)}
+          >
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 {/* Header */}
                 <div className="flex items-start gap-3 mb-3">
                   <div className="shrink-0 mt-1">
-                    <div className={`w-2 h-2 rounded-full ${
-                      task.status === 'completed' ? 'bg-green-500' :
-                      task.status === 'in_progress' ? 'bg-blue-500' :
-                      task.status === 'cancelled' ? 'bg-gray-400' :
-                      'bg-yellow-500'
-                    }`} />
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        task.status === 'completed'
+                          ? 'bg-green-500'
+                          : task.status === 'in_progress'
+                            ? 'bg-blue-500'
+                            : task.status === 'cancelled'
+                              ? 'bg-gray-400'
+                              : 'bg-yellow-500'
+                      }`}
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-2">
-                      <h4 className="font-semibold text-gray-900 text-base">{task.title}</h4>
-                <span
+                      <h4 className="font-semibold text-gray-900 text-base">
+                        {task.title}
+                      </h4>
+                      <span
                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getPriorityColor(
-                    task.priority
-                  )}`}
-                >
-                  {task.priority}
-                </span>
-                <span
+                          task.priority
+                        )}`}
+                      >
+                        {task.priority}
+                      </span>
+                      <span
                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
-                    task.status
-                  )}`}
-                >
-                  {task.status.replace('_', ' ')}
-                </span>
-              </div>
-                    
+                          task.status
+                        )}`}
+                      >
+                        {task.status.replace('_', ' ')}
+                      </span>
+                    </div>
+
                     {/* Instrument Info */}
                     {instrument && (
                       <div className="flex items-center gap-2 flex-wrap text-sm mb-2">
@@ -131,7 +150,9 @@ export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete
                               d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
                             />
                           </svg>
-                          <span className="font-medium">{instrument.type || 'Unknown'}</span>
+                          <span className="font-medium">
+                            {instrument.type || 'Unknown'}
+                          </span>
                           {instrument.maker && (
                             <>
                               <span className="text-gray-300">•</span>
@@ -155,13 +176,17 @@ export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete
                               />
                             </svg>
                             <span>{instrument.ownership}</span>
-                            {instrument.clientName && instrument.clientName !== instrument.ownership && (
-                              <span className="text-blue-500">({instrument.clientName})</span>
-                            )}
+                            {instrument.clientName &&
+                              instrument.clientName !==
+                                instrument.ownership && (
+                                <span className="text-blue-500">
+                                  ({instrument.clientName})
+                                </span>
+                              )}
                           </div>
                         )}
-                  </div>
-                )}
+                      </div>
+                    )}
 
                     {/* Task Details */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm text-gray-600">
@@ -181,9 +206,9 @@ export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete
                         </svg>
                         <span className="font-medium">Type:</span>
                         <span className="capitalize">{task.task_type}</span>
-                </div>
-                      
-                  {task.received_date && (
+                      </div>
+
+                      {task.received_date && (
                         <div className="flex items-center gap-2">
                           <svg
                             className="w-4 h-4 text-gray-400"
@@ -200,10 +225,10 @@ export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete
                           </svg>
                           <span className="font-medium">Received:</span>
                           <span>{formatDate(task.received_date, 'short')}</span>
-                    </div>
-                  )}
-                      
-                  {task.due_date && (
+                        </div>
+                      )}
+
+                      {task.due_date && (
                         <div className="flex items-center gap-2">
                           <svg
                             className="w-4 h-4 text-gray-400"
@@ -220,10 +245,10 @@ export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete
                           </svg>
                           <span className="font-medium">Due (Customer):</span>
                           <span>{formatDate(task.due_date, 'short')}</span>
-                    </div>
-                  )}
-                      
-                  {task.personal_due_date && (
+                        </div>
+                      )}
+
+                      {task.personal_due_date && (
                         <div className="flex items-center gap-2">
                           <svg
                             className="w-4 h-4 text-amber-500"
@@ -238,12 +263,16 @@ export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete
                               d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                             />
                           </svg>
-                          <span className="font-medium text-amber-700">Personal Due:</span>
-                          <span className="text-amber-700 font-medium">{formatDate(task.personal_due_date, 'short')}</span>
-                    </div>
-                  )}
-                      
-                  {task.scheduled_date && (
+                          <span className="font-medium text-amber-700">
+                            Personal Due:
+                          </span>
+                          <span className="text-amber-700 font-medium">
+                            {formatDate(task.personal_due_date, 'short')}
+                          </span>
+                        </div>
+                      )}
+
+                      {task.scheduled_date && (
                         <div className="flex items-center gap-2">
                           <svg
                             className="w-4 h-4 text-gray-400"
@@ -259,7 +288,9 @@ export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete
                             />
                           </svg>
                           <span className="font-medium">Scheduled:</span>
-                          <span>{formatDate(task.scheduled_date, 'short')}</span>
+                          <span>
+                            {formatDate(task.scheduled_date, 'short')}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -267,46 +298,47 @@ export default function TaskList({ tasks, instruments, onTaskClick, onTaskDelete
                     {/* Description */}
                     {task.description && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
-                        <p className="text-sm text-gray-700 line-clamp-2">{task.description}</p>
-                    </div>
-                  )}
+                        <p className="text-sm text-gray-700 line-clamp-2">
+                          {task.description}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-              
+
               {/* Actions */}
-            {onTaskDelete && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (confirm('Are you sure you want to delete this task?')) {
-                    onTaskDelete(task.id);
-                  }
-                }}
+              {onTaskDelete && (
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (confirm('Are you sure you want to delete this task?')) {
+                      onTaskDelete(task.id);
+                    }
+                  }}
                   className="shrink-0 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
-                aria-label="Delete task"
+                  aria-label="Delete task"
                   title="Delete task"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
-              </button>
-            )}
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
-        </div>
         );
       })}
     </div>
   );
 }
-

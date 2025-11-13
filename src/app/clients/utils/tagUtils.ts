@@ -4,27 +4,41 @@ export const getTagColor = (tag: string): string => {
   // Tag-specific colors for better visual distinction
   const tagColorMap: Record<string, string> = {
     // Ownership tags
-    Owner: 'bg-emerald-100 text-emerald-800 border border-emerald-300 ring-1 ring-emerald-200',
-    Dealer: 'bg-teal-100 text-teal-800 border border-teal-300 ring-1 ring-teal-200',
-    Collector: 'bg-cyan-100 text-cyan-800 border border-cyan-300 ring-1 ring-cyan-200',
-    
+    Owner:
+      'bg-emerald-100 text-emerald-800 border border-emerald-300 ring-1 ring-emerald-200',
+    Dealer:
+      'bg-teal-100 text-teal-800 border border-teal-300 ring-1 ring-teal-200',
+    Collector:
+      'bg-cyan-100 text-cyan-800 border border-cyan-300 ring-1 ring-cyan-200',
+
     // Role tags
-    Musician: 'bg-indigo-100 text-indigo-800 border border-indigo-300 ring-1 ring-indigo-200',
-    Technician: 'bg-violet-100 text-violet-800 border border-violet-300 ring-1 ring-violet-200',
-    Teacher: 'bg-purple-100 text-purple-800 border border-purple-300 ring-1 ring-purple-200',
-    Student: 'bg-blue-100 text-blue-800 border border-blue-300 ring-1 ring-blue-200',
-    
+    Musician:
+      'bg-indigo-100 text-indigo-800 border border-indigo-300 ring-1 ring-indigo-200',
+    Technician:
+      'bg-violet-100 text-violet-800 border border-violet-300 ring-1 ring-violet-200',
+    Teacher:
+      'bg-purple-100 text-purple-800 border border-purple-300 ring-1 ring-purple-200',
+    Student:
+      'bg-blue-100 text-blue-800 border border-blue-300 ring-1 ring-blue-200',
+
     // Status tags
-    Active: 'bg-green-100 text-green-800 border border-green-300 ring-1 ring-green-200',
-    Passive: 'bg-amber-100 text-amber-800 border border-amber-300 ring-1 ring-amber-200',
-    Inactive: 'bg-gray-100 text-gray-800 border border-gray-300 ring-1 ring-gray-200',
-    
+    Active:
+      'bg-green-100 text-green-800 border border-green-300 ring-1 ring-green-200',
+    Passive:
+      'bg-amber-100 text-amber-800 border border-amber-300 ring-1 ring-amber-200',
+    Inactive:
+      'bg-gray-100 text-gray-800 border border-gray-300 ring-1 ring-gray-200',
+
     // Other common tags
-    Other: 'bg-slate-100 text-slate-800 border border-slate-300 ring-1 ring-slate-200',
+    Other:
+      'bg-slate-100 text-slate-800 border border-slate-300 ring-1 ring-slate-200',
   };
 
   // Return specific color if tag exists in map, otherwise use default
-  return tagColorMap[tag] || 'bg-gray-100 text-gray-700 border border-gray-300 ring-1 ring-gray-200';
+  return (
+    tagColorMap[tag] ||
+    'bg-gray-100 text-gray-700 border border-gray-300 ring-1 ring-gray-200'
+  );
 };
 
 // Extract text color class from tag color for use in editing mode

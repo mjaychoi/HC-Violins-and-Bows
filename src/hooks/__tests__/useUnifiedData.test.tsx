@@ -588,7 +588,7 @@ describe('useUnifiedData', () => {
       mockState.connections = [connection];
 
       const { result } = renderHook(() => useUnifiedSearch());
-      const searchResult = result.current.searchAll('Owns');
+      const searchResult = result.current.searchAll('Owned');
 
       expect(searchResult.connections).toHaveLength(1);
     });

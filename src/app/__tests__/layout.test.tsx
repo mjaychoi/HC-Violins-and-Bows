@@ -3,17 +3,23 @@ import RootLayout from '../layout';
 
 // Mock ErrorBoundary
 jest.mock('@/components/common', () => ({
-  ErrorBoundary: ({ children }: { children: React.ReactNode }) => <div data-testid="error-boundary">{children}</div>,
+  ErrorBoundary: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="error-boundary">{children}</div>
+  ),
 }));
 
 // Mock DataProvider
 jest.mock('@/contexts/DataContext', () => ({
-  DataProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="data-provider">{children}</div>,
+  DataProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="data-provider">{children}</div>
+  ),
 }));
 
 // Mock AuthProvider
 jest.mock('@/contexts/AuthContext', () => ({
-  AuthProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="auth-provider">{children}</div>,
+  AuthProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="auth-provider">{children}</div>
+  ),
 }));
 
 describe('RootLayout', () => {
@@ -64,9 +70,15 @@ describe('RootLayout', () => {
       </RootLayout>
     );
 
-    const errorBoundary = container.querySelector('[data-testid="error-boundary"]');
-    const authProvider = container.querySelector('[data-testid="auth-provider"]');
-    const dataProvider = container.querySelector('[data-testid="data-provider"]');
+    const errorBoundary = container.querySelector(
+      '[data-testid="error-boundary"]'
+    );
+    const authProvider = container.querySelector(
+      '[data-testid="auth-provider"]'
+    );
+    const dataProvider = container.querySelector(
+      '[data-testid="data-provider"]'
+    );
 
     expect(errorBoundary).toBeInTheDocument();
     expect(authProvider).toBeInTheDocument();
@@ -90,4 +102,3 @@ describe('RootLayout', () => {
     expect(true).toBe(true);
   });
 });
-

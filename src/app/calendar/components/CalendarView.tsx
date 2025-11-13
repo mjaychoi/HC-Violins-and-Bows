@@ -13,17 +13,26 @@ const localizer = momentLocalizer(moment);
 
 // Extended view type to include custom views
 // Only allow specific views we support
-export type ExtendedView = 'month' | 'week' | 'day' | 'agenda' | 'year' | 'timeline';
+export type ExtendedView =
+  | 'month'
+  | 'week'
+  | 'day'
+  | 'agenda'
+  | 'year'
+  | 'timeline';
 
 interface CalendarViewProps {
   tasks: MaintenanceTask[];
-  instruments?: Map<string, { 
-    type: string | null; 
-    maker: string | null; 
-    ownership: string | null;
-    clientId?: string | null;
-    clientName?: string | null;
-  }>;
+  instruments?: Map<
+    string,
+    {
+      type: string | null;
+      maker: string | null;
+      ownership: string | null;
+      clientId?: string | null;
+      clientName?: string | null;
+    }
+  >;
   onSelectEvent?: (task: MaintenanceTask) => void;
   onSelectSlot?: (slotInfo: { start: Date; end: Date }) => void;
   currentDate?: Date;
@@ -43,7 +52,7 @@ export default function CalendarView({
   onViewChange,
 }: CalendarViewProps) {
   const [internalView, setInternalView] = useState<ExtendedView>(currentView);
-  
+
   // Set moment locale
   useEffect(() => {
     moment.locale('ko');
@@ -56,7 +65,13 @@ export default function CalendarView({
 
   const handleViewChange = (view: View | ExtendedView) => {
     // Type guard: only accept views that are in our ExtendedView type
-    const validViews: ExtendedView[] = ['month', 'week', 'agenda', 'year', 'timeline'];
+    const validViews: ExtendedView[] = [
+      'month',
+      'week',
+      'agenda',
+      'year',
+      'timeline',
+    ];
     if (validViews.includes(view as ExtendedView)) {
       const extendedView = view as ExtendedView;
       setInternalView(extendedView);
@@ -67,27 +82,32 @@ export default function CalendarView({
   // Convert tasks to calendar events
   const events: Event[] = useMemo(() => {
     return tasks
-      .filter(task => task.scheduled_date || task.due_date || task.personal_due_date)
+      .filter(
+        task => task.scheduled_date || task.due_date || task.personal_due_date
+      )
       .map(task => {
         // Use scheduled_date if available, otherwise use due_date or personal_due_date
-        const dateStr = task.scheduled_date || task.due_date || task.personal_due_date;
+        const dateStr =
+          task.scheduled_date || task.due_date || task.personal_due_date;
         if (!dateStr) return null;
 
         const date = moment(dateStr).toDate();
         const endDate = moment(dateStr).endOf('day').toDate();
 
         // Get instrument info from instruments map if available
-        const instrument = task.instrument_id ? instruments?.get(task.instrument_id) : undefined;
+        const instrument = task.instrument_id
+          ? instruments?.get(task.instrument_id)
+          : undefined;
         const ownership = instrument?.ownership;
         const instrumentType = instrument?.type || 'Unknown';
-        
+
         // Build event title with ownership badge
         let eventTitle = task.title;
         if (ownership) {
           // Add ownership with icon indicator
           eventTitle = `${task.title} 👤 ${ownership}`;
         }
-        
+
         // Add instrument type if available
         if (instrumentType !== 'Unknown') {
           eventTitle = `${instrumentType} - ${eventTitle}`;
@@ -109,12 +129,12 @@ export default function CalendarView({
   const eventStyleGetter = (event: Event) => {
     const task = event.resource as MaintenanceTask;
     const now = new Date();
-    
+
     // Check if task is overdue
     let isOverdue = false;
     let isUpcoming = false;
     let targetDate: Date | null = null;
-    
+
     if (task.due_date) {
       targetDate = new Date(task.due_date);
     } else if (task.personal_due_date) {
@@ -122,13 +142,19 @@ export default function CalendarView({
     } else if (task.scheduled_date) {
       targetDate = new Date(task.scheduled_date);
     }
-    
-    if (targetDate && task.status !== 'completed' && task.status !== 'cancelled') {
-      const daysDiff = Math.floor((targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (
+      targetDate &&
+      task.status !== 'completed' &&
+      task.status !== 'cancelled'
+    ) {
+      const daysDiff = Math.floor(
+        (targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+      );
       isOverdue = daysDiff < 0;
       isUpcoming = daysDiff >= 0 && daysDiff <= 3;
     }
-    
+
     const style: React.CSSProperties = {
       backgroundColor: '#3b82f6', // Default Blue-500
       borderColor: '#3b82f6',
@@ -181,7 +207,7 @@ export default function CalendarView({
         style.borderColor = '#16a34a'; // Green-600
         style.fontWeight = '500';
       }
-      
+
       // Status-based colors (override priority for completed/cancelled)
       if (task.status === 'completed') {
         style.backgroundColor = '#10b981'; // Green-500
@@ -192,10 +218,22 @@ export default function CalendarView({
         style.backgroundColor = '#6b7280'; // Gray-500
         style.borderColor = '#4b5563'; // Gray-600
         style.opacity = 0.6;
-      } else if (task.status === 'in_progress' && !isOverdue && !isUpcoming && task.priority !== 'urgent' && task.priority !== 'high') {
+      } else if (
+        task.status === 'in_progress' &&
+        !isOverdue &&
+        !isUpcoming &&
+        task.priority !== 'urgent' &&
+        task.priority !== 'high'
+      ) {
         style.backgroundColor = '#3b82f6'; // Blue-500
         style.borderColor = '#2563eb'; // Blue-600
-      } else if (task.status === 'pending' && !isOverdue && !isUpcoming && task.priority !== 'urgent' && task.priority !== 'high') {
+      } else if (
+        task.status === 'pending' &&
+        !isOverdue &&
+        !isUpcoming &&
+        task.priority !== 'urgent' &&
+        task.priority !== 'high'
+      ) {
         style.backgroundColor = '#f59e0b'; // Amber-500
         style.borderColor = '#d97706'; // Amber-600
       }
@@ -226,7 +264,10 @@ export default function CalendarView({
   if (internalView === 'year' || internalView === 'timeline') {
     if (internalView === 'year') {
       return (
-        <div className="w-full calendar-container" style={{ minHeight: '700px', padding: '1rem' }}>
+        <div
+          className="w-full calendar-container"
+          style={{ minHeight: '700px', padding: '1rem' }}
+        >
           <YearView
             currentDate={currentDate}
             tasks={tasks}
@@ -237,10 +278,13 @@ export default function CalendarView({
         </div>
       );
     }
-    
+
     if (internalView === 'timeline') {
       return (
-        <div className="w-full calendar-container" style={{ minHeight: '700px', padding: '1rem' }}>
+        <div
+          className="w-full calendar-container"
+          style={{ minHeight: '700px', padding: '1rem' }}
+        >
           <TimelineView
             currentDate={currentDate}
             tasks={tasks}
@@ -255,7 +299,10 @@ export default function CalendarView({
 
   // Render standard react-big-calendar views
   return (
-    <div className="w-full calendar-container" style={{ height: '700px', minHeight: '700px', padding: '1rem' }}>
+    <div
+      className="w-full calendar-container"
+      style={{ height: '700px', minHeight: '700px', padding: '1rem' }}
+    >
       <Calendar
         localizer={localizer}
         events={events}
@@ -263,7 +310,7 @@ export default function CalendarView({
         endAccessor="end"
         style={{ height: '100%', minHeight: '600px' }}
         eventPropGetter={eventStyleGetter}
-        onSelectEvent={(event) => {
+        onSelectEvent={event => {
           if (onSelectEvent && event.resource) {
             onSelectEvent(event.resource as MaintenanceTask);
           }
@@ -290,4 +337,3 @@ export default function CalendarView({
     </div>
   );
 }
-
