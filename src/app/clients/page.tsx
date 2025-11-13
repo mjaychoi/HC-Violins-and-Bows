@@ -50,7 +50,12 @@ export default function ClientsPage() {
 
   // 초기 로드 시 모든 클라이언트의 instrument 관계 가져오기
   useEffect(() => {
-    fetchAllInstrumentRelationships();
+    if (
+      fetchAllInstrumentRelationships &&
+      typeof fetchAllInstrumentRelationships === 'function'
+    ) {
+      fetchAllInstrumentRelationships();
+    }
   }, [fetchAllInstrumentRelationships]);
 
   const {
