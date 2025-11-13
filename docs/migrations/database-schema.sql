@@ -30,6 +30,7 @@ CREATE TABLE instruments (
   status TEXT NOT NULL DEFAULT 'Available' CHECK (status IN ('Available', 'Booked', 'Sold')),
   maker TEXT,
   type TEXT,
+  subtype TEXT,
   year INTEGER,
   certificate BOOLEAN DEFAULT false,
   size TEXT,
