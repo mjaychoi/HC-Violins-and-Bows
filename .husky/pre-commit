@@ -1,20 +1,20 @@
 #!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
 
-# Ensure Node 20+ via nvm (uses project .nvmrc)
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-[ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+echo "🔍 Running pre-commit checks..."
 
-# Use the Node version specified in .nvmrc (install if missing)
-if command -v nvm >/dev/null 2>&1; then
-  nvm use >/dev/null 2>&1 || nvm install >/dev/null 2>&1
-fi
+# Run lint-staged (formatting and linting)
+echo "📝 Running lint-staged (formatting & linting)..."
+npx lint-staged || {
+  echo "❌ lint-staged failed"
+  exit 1
+}
 
-# Run lint-staged
-npx lint-staged
+# Run type-check
+echo "🔎 Running TypeScript type-check..."
+npm run type-check || {
+  echo "❌ TypeScript type-check failed"
+  exit 1
+}
 
-# Skip type checking (disabled per request)
-echo "[husky] Skip type-check in pre-commit"
-
-# Run tests for staged files
-npm run test -- --passWithNoTests
+echo "✅ All pre-commit checks passed!"
