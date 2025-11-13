@@ -1,7 +1,7 @@
 'use client';
 
 import { Instrument } from '@/types';
-import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
+import { useUnifiedDashboard, useUnifiedInstruments } from '@/hooks/useUnifiedData';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { useModalState } from '@/hooks/useModalState';
 import { useLoadingState } from '@/hooks/useLoadingState';
@@ -9,6 +9,7 @@ import { AppLayout } from '@/components/layout';
 import { ErrorBoundary } from '@/components/common';
 import InstrumentForm from './components/InstrumentForm';
 import InstrumentList from './components/InstrumentList';
+import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
 
 export default function InstrumentsPage() {
   // Error handling
@@ -21,6 +22,8 @@ export default function InstrumentsPage() {
     submitting,
     createInstrument,
   } = useUnifiedDashboard();
+
+  const { instruments: allInstruments } = useUnifiedInstruments();
 
   const { isOpen: showModal, openModal, closeModal } = useModalState();
   const { withSubmitting } = useLoadingState();
@@ -41,6 +44,15 @@ export default function InstrumentsPage() {
           return;
         }
 
+        // 자동으로 serial number 생성
+        const existingNumbers = allInstruments
+          .map(i => i.serial_number)
+          .filter((num): num is string => num !== null && num !== undefined);
+        const autoSerialNumber = generateInstrumentSerialNumber(
+          formData.name?.trim() || null,
+          existingNumbers
+        );
+
         const instrumentData: Omit<Instrument, 'id' | 'created_at'> = {
           status: 'Available',
           maker: formData.maker?.trim() || null,
@@ -53,7 +65,7 @@ export default function InstrumentsPage() {
           price: null,
           ownership: null,
           note: null,
-          serial_number: null,
+          serial_number: autoSerialNumber,
         };
 
         await createInstrument(instrumentData);
