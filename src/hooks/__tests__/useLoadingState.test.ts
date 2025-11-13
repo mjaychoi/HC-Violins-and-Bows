@@ -120,9 +120,7 @@ describe('useLoadingState', () => {
     let operationResult: string | null = null;
 
     await act(async () => {
-      operationResult = await result.current.withLoading(() =>
-        mockOperation()
-      );
+      operationResult = await result.current.withLoading(() => mockOperation());
     });
 
     expect(mockOperation).toHaveBeenCalledTimes(1);
@@ -278,4 +276,3 @@ describe('useLoadingState', () => {
     expect(result.current.isSubmitting).toBe(result.current.submitting);
   });
 });
-

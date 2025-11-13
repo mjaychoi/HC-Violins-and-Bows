@@ -31,7 +31,14 @@ const eslintConfig = [
   },
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
   {
-    files: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx', 'tests/**/*.{ts,tsx}', 'src/**/__tests__/**/*.{ts,tsx}'],
+    files: [
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      '**/*.spec.ts',
+      '**/*.spec.tsx',
+      'tests/**/*.{ts,tsx}',
+      'src/**/__tests__/**/*.{ts,tsx}',
+    ],
     linterOptions: {
       reportUnusedDisableDirectives: 'off',
     },
@@ -42,7 +49,13 @@ const eslintConfig = [
     },
   },
   {
-    files: ['**/*.config.{js,cjs,mjs,ts}', 'jest.setup.js', 'jest.config.js', 'next.config.ts', 'playwright.config.ts'],
+    files: [
+      '**/*.config.{js,cjs,mjs,ts}',
+      'jest.setup.js',
+      'jest.config.js',
+      'next.config.ts',
+      'playwright.config.ts',
+    ],
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
       'react/display-name': 'off',

@@ -7,7 +7,9 @@ interface SkeletonProps {
 }
 
 // 기본 스켈레톤 원소
-const SkeletonElement = memo(function SkeletonElement({ className }: SkeletonProps) {
+const SkeletonElement = memo(function SkeletonElement({
+  className,
+}: SkeletonProps) {
   return (
     <div className={`animate-pulse bg-gray-200 rounded ${className || ''}`} />
   );
@@ -47,7 +49,9 @@ export const ListSkeleton = memo(function ListSkeleton({
   className = '',
 }: ListSkeletonProps) {
   return (
-    <div className={`rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}>
+    <div
+      className={`rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}
+    >
       <div className="p-6">
         <div className="space-y-4">
           {[...Array(rows)].map((_, i) => (
@@ -84,7 +88,10 @@ export const CardSkeleton = memo(function CardSkeleton({
   return (
     <div className={className}>
       {[...Array(count)].map((_, i) => (
-        <div key={i} className="animate-pulse bg-white rounded-lg shadow border border-gray-200 p-6 mb-4">
+        <div
+          key={i}
+          className="animate-pulse bg-white rounded-lg shadow border border-gray-200 p-6 mb-4"
+        >
           <div className="space-y-4">
             <SkeletonElement className="h-4 w-3/4" />
             <SkeletonElement className="h-4 w-1/2" />
@@ -107,7 +114,9 @@ export const SpinnerLoading = memo(function SpinnerLoading({
   className = '',
 }: SpinnerLoadingProps) {
   return (
-    <div className={`bg-white rounded-lg shadow border border-gray-200 ${className}`}>
+    <div
+      className={`bg-white rounded-lg shadow border border-gray-200 ${className}`}
+    >
       <div className="text-center py-12">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4" />
         <div className="text-gray-500 text-lg">{message}</div>
@@ -136,7 +145,10 @@ export const TableSkeleton = memo(function TableSkeleton({
             <thead className="bg-gray-50">
               <tr>
                 {[...Array(columns)].map((_, i) => (
-                  <th key={i} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th
+                    key={i}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
                     <SkeletonElement className="h-3 w-20" />
                   </th>
                 ))}
@@ -164,4 +176,3 @@ const SkeletonComponents = {
 };
 
 export default SkeletonComponents;
-

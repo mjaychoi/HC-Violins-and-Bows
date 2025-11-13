@@ -66,16 +66,11 @@ export default class ErrorBoundary extends Component<
     }
 
     // Log error with structured logger
-    logError(
-      'ErrorBoundary caught an error',
-      error,
-      'ErrorBoundary',
-      {
-        componentStack: errorInfo.componentStack,
-        errorMessage: error.message,
-        errorStack: error.stack,
-      }
-    );
+    logError('ErrorBoundary caught an error', error, 'ErrorBoundary', {
+      componentStack: errorInfo.componentStack,
+      errorMessage: error.message,
+      errorStack: error.stack,
+    });
   }
 
   componentDidUpdate(prevProps: ErrorBoundaryProps) {

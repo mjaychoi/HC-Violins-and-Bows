@@ -96,11 +96,7 @@ export type TaskStatus =
   | 'completed' // 완료
   | 'cancelled'; // 취소
 
-export type TaskPriority =
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'urgent';
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export interface MaintenanceTask {
   id: string;

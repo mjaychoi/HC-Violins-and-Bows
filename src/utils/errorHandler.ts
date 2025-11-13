@@ -80,23 +80,35 @@ export class ErrorHandler {
     let errorMessage = 'Unknown error';
     let errorCode: string | undefined;
     let errorDetails: string | undefined;
-    
+
     if (error && typeof error === 'object') {
-      const err = error as { code?: string; message?: string; details?: string; hint?: string };
+      const err = error as {
+        code?: string;
+        message?: string;
+        details?: string;
+        hint?: string;
+      };
       errorCode = err.code;
       errorMessage = err.message || errorMessage;
       errorDetails = err.details || err.hint;
-      
+
       // 특정 에러 코드에 대한 안내 메시지 추가
       if (err.code === 'PGRST204' && err.message?.includes('subtype')) {
-        errorMessage = '데이터베이스에 subtype 컬럼이 없습니다. 마이그레이션을 실행해주세요.';
-        errorDetails = 'SUBTYPE_MIGRATION_GUIDE.md 파일을 참고하여 마이그레이션을 실행하세요.';
+        errorMessage =
+          '데이터베이스에 subtype 컬럼이 없습니다. 마이그레이션을 실행해주세요.';
+        errorDetails =
+          'SUBTYPE_MIGRATION_GUIDE.md 파일을 참고하여 마이그레이션을 실행하세요.';
         // 개발 환경에서만 상세 로그 출력
         if (process.env.NODE_ENV === 'development') {
-          structuredLogError('Subtype column missing. Please run migration', err, 'ErrorHandler', {
-            migrationFile: 'migration-add-subtype.sql',
-            guide: 'SUBTYPE_MIGRATION_GUIDE.md',
-          });
+          structuredLogError(
+            'Subtype column missing. Please run migration',
+            err,
+            'ErrorHandler',
+            {
+              migrationFile: 'migration-add-subtype.sql',
+              guide: 'SUBTYPE_MIGRATION_GUIDE.md',
+            }
+          );
         }
       } else if (process.env.NODE_ENV === 'development') {
         // 개발 환경에서만 상세 로그 출력
@@ -110,9 +122,10 @@ export class ErrorHandler {
 
     let code = ErrorCodes.DATABASE_ERROR;
     // subtype 컬럼 누락 에러는 이미 처리되었으므로 설정된 메시지 사용
-    let message = errorCode === 'PGRST204' && errorMessage.includes('subtype') 
-      ? errorMessage 
-      : 'Database operation failed';
+    let message =
+      errorCode === 'PGRST204' && errorMessage.includes('subtype')
+        ? errorMessage
+        : 'Database operation failed';
 
     // Prefer HTTP status + hint/message; fall back to code
     if (
@@ -181,7 +194,9 @@ export class ErrorHandler {
         case 'PGRST204': // Column not found in schema cache
           code = ErrorCodes.DATABASE_ERROR;
           if (pgError.message?.includes('subtype')) {
-            message = errorMessage || '데이터베이스에 subtype 컬럼이 없습니다. 마이그레이션을 실행해주세요.';
+            message =
+              errorMessage ||
+              '데이터베이스에 subtype 컬럼이 없습니다. 마이그레이션을 실행해주세요.';
           } else {
             message = pgError.message || 'Database column not found';
           }
@@ -191,7 +206,8 @@ export class ErrorHandler {
           message = 'Session expired';
           break;
         default:
-          message = errorMessage || pgError.message || 'Database error occurred';
+          message =
+            errorMessage || pgError.message || 'Database error occurred';
       }
     }
 
@@ -304,11 +320,12 @@ export class ErrorHandler {
     };
 
     // Map severity to log level
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : typeof error === 'object' && error !== null && 'message' in error
-      ? String((error as { message: unknown }).message)
-      : String(error);
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'message' in error
+          ? String((error as { message: unknown }).message)
+          : String(error);
 
     structuredLogError(
       `[${ErrorSeverity[severity]}] ${errorMessage}`,

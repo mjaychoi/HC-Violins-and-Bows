@@ -11,6 +11,7 @@ npm run migrate
 ```
 
 이 명령어는 다음 방법을 순서대로 시도합니다:
+
 1. PostgreSQL 직접 연결 (DATABASE_PASSWORD가 있으면)
 2. Supabase CLI (설치되어 있으면)
 3. 실패 시 수동 실행 안내
@@ -77,4 +78,3 @@ supabase login
 ### 에러: "프로젝트 참조를 찾을 수 없습니다"
 
 `NEXT_PUBLIC_SUPABASE_URL` 환경 변수가 올바르게 설정되어 있는지 확인하세요.
-

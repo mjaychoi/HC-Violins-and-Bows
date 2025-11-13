@@ -37,14 +37,15 @@ class Logger {
 
   private constructor() {
     this.isDevelopment = process.env.NODE_ENV === 'development';
-    
+
     // Set log level based on environment
     const envLogLevel = process.env.NEXT_PUBLIC_LOG_LEVEL?.toUpperCase();
-    this.logLevel = envLogLevel && Object.values(LogLevel).includes(envLogLevel as LogLevel)
-      ? (envLogLevel as LogLevel)
-      : this.isDevelopment
-      ? LogLevel.DEBUG
-      : LogLevel.INFO;
+    this.logLevel =
+      envLogLevel && Object.values(LogLevel).includes(envLogLevel as LogLevel)
+        ? (envLogLevel as LogLevel)
+        : this.isDevelopment
+          ? LogLevel.DEBUG
+          : LogLevel.INFO;
   }
 
   static getInstance(): Logger {
@@ -60,7 +61,12 @@ class Logger {
   }
 
   private shouldLog(level: LogLevel): boolean {
-    const levels = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR];
+    const levels = [
+      LogLevel.DEBUG,
+      LogLevel.INFO,
+      LogLevel.WARN,
+      LogLevel.ERROR,
+    ];
     const currentIndex = levels.indexOf(this.logLevel);
     const messageIndex = levels.indexOf(level);
     return messageIndex >= currentIndex;
@@ -156,7 +162,7 @@ class Logger {
     // In development, use pretty-printed format
     if (this.isDevelopment) {
       const prefix = `[${log.timestamp}] [${log.level}]${log.context ? ` [${log.context}]` : ''}`;
-      
+
       switch (log.level) {
         case LogLevel.DEBUG:
           console.debug(prefix, log.message, log.data || log.error || '');
@@ -177,7 +183,12 @@ class Logger {
     }
   }
 
-  static error(message: string, error: unknown, context?: string, metadata?: LogContext) {
+  static error(
+    message: string,
+    error: unknown,
+    context?: string,
+    metadata?: LogContext
+  ) {
     const logger = Logger.getInstance();
     const log = logger.createStructuredLog(
       LogLevel.ERROR,
@@ -192,24 +203,55 @@ class Logger {
 
   static warn(message: string, context?: string, metadata?: LogContext) {
     const logger = Logger.getInstance();
-    const log = logger.createStructuredLog(LogLevel.WARN, message, undefined, context, undefined, metadata);
+    const log = logger.createStructuredLog(
+      LogLevel.WARN,
+      message,
+      undefined,
+      context,
+      undefined,
+      metadata
+    );
     logger.outputLog(log);
   }
 
   static info(message: string, context?: string, metadata?: LogContext) {
     const logger = Logger.getInstance();
-    const log = logger.createStructuredLog(LogLevel.INFO, message, undefined, context, undefined, metadata);
+    const log = logger.createStructuredLog(
+      LogLevel.INFO,
+      message,
+      undefined,
+      context,
+      undefined,
+      metadata
+    );
     logger.outputLog(log);
   }
 
-  static debug(message: string, data?: unknown, context?: string, metadata?: LogContext) {
+  static debug(
+    message: string,
+    data?: unknown,
+    context?: string,
+    metadata?: LogContext
+  ) {
     const logger = Logger.getInstance();
-    const log = logger.createStructuredLog(LogLevel.DEBUG, message, data, context, undefined, metadata);
+    const log = logger.createStructuredLog(
+      LogLevel.DEBUG,
+      message,
+      data,
+      context,
+      undefined,
+      metadata
+    );
     logger.outputLog(log);
   }
 
   // Performance logging
-  static performance(operation: string, duration: number, context?: string, metadata?: LogContext) {
+  static performance(
+    operation: string,
+    duration: number,
+    context?: string,
+    metadata?: LogContext
+  ) {
     const logger = Logger.getInstance();
     const combinedMetadata: LogContext = { performance: true };
     if (metadata) {
@@ -254,15 +296,15 @@ class Logger {
   // Get log history (useful for debugging)
   getHistory(level?: LogLevel, limit?: number): StructuredLog[] {
     let logs = this.logHistory;
-    
+
     if (level) {
       logs = logs.filter(log => log.level === level);
     }
-    
+
     if (limit) {
       logs = logs.slice(-limit);
     }
-    
+
     return logs;
   }
 
@@ -288,11 +330,19 @@ export const logError = (
   Logger.error(message, error, context, metadata);
 };
 
-export const logWarn = (message: string, context?: string, metadata?: LogContext) => {
+export const logWarn = (
+  message: string,
+  context?: string,
+  metadata?: LogContext
+) => {
   Logger.warn(message, context, metadata);
 };
 
-export const logInfo = (message: string, context?: string, metadata?: LogContext) => {
+export const logInfo = (
+  message: string,
+  context?: string,
+  metadata?: LogContext
+) => {
   Logger.info(message, context, metadata);
 };
 

@@ -63,7 +63,10 @@ export default function ItemForm({
       const existingNumbers = instruments
         .map(i => i.serial_number)
         .filter((num): num is string => num !== null && num !== undefined);
-      const autoSerialNumber = generateInstrumentSerialNumber(null, existingNumbers);
+      const autoSerialNumber = generateInstrumentSerialNumber(
+        null,
+        existingNumbers
+      );
       updateField('serial_number', autoSerialNumber);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,7 +99,12 @@ export default function ItemForm({
 
       // Convert form data to proper types for database
       const instrumentData: Omit<Instrument, 'id' | 'created_at'> = {
-        status: formData.status as 'Available' | 'Booked' | 'Sold' | 'Reserved' | 'Maintenance',
+        status: formData.status as
+          | 'Available'
+          | 'Booked'
+          | 'Sold'
+          | 'Reserved'
+          | 'Maintenance',
         maker: formData.maker?.trim() || null,
         type: formData.type?.trim() || null,
         subtype: formData.subtype?.trim() || null,
@@ -142,13 +150,16 @@ export default function ItemForm({
       );
     } else {
       updateField(name as keyof typeof formData, value as string);
-      
+
       // 타입이 변경되면 serial number 자동 재생성 (새 악기 추가 시에만)
       if (name === 'type' && !isEditing) {
         const existingNumbers = instruments
           .map(i => i.serial_number)
           .filter((num): num is string => num !== null && num !== undefined);
-        const newSerialNumber = generateInstrumentSerialNumber(value || null, existingNumbers);
+        const newSerialNumber = generateInstrumentSerialNumber(
+          value || null,
+          existingNumbers
+        );
         updateField('serial_number', newSerialNumber);
       }
     }
@@ -294,7 +305,9 @@ export default function ItemForm({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Serial Number
                 {!isEditing && (
-                  <span className="ml-2 text-xs text-gray-500">(자동 생성)</span>
+                  <span className="ml-2 text-xs text-gray-500">
+                    (자동 생성)
+                  </span>
                 )}
               </label>
               <input
@@ -303,8 +316,15 @@ export default function ItemForm({
                 value={formData.serial_number}
                 onChange={handleInputChange}
                 disabled={!isEditing}
-                className={classNames.input + (isEditing ? '' : ' bg-gray-100 cursor-not-allowed')}
-                placeholder={isEditing ? "Enter serial number (e.g., VI001, BO123, mj123)" : "자동 생성됨"}
+                className={
+                  classNames.input +
+                  (isEditing ? '' : ' bg-gray-100 cursor-not-allowed')
+                }
+                placeholder={
+                  isEditing
+                    ? 'Enter serial number (e.g., VI001, BO123, mj123)'
+                    : '자동 생성됨'
+                }
               />
               {!isEditing && (
                 <p className="mt-1 text-xs text-gray-500">

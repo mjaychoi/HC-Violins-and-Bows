@@ -144,19 +144,43 @@ describe('ErrorHandler - Comprehensive Tests', () => {
 
   describe('getUserFriendlyMessage - All Error Codes', () => {
     const errorCodeTests = [
-      { code: ErrorCodes.NETWORK_ERROR, expected: 'Please check your network connection.' },
-      { code: ErrorCodes.TIMEOUT_ERROR, expected: 'Request timeout. Please try again.' },
+      {
+        code: ErrorCodes.NETWORK_ERROR,
+        expected: 'Please check your network connection.',
+      },
+      {
+        code: ErrorCodes.TIMEOUT_ERROR,
+        expected: 'Request timeout. Please try again.',
+      },
       { code: ErrorCodes.UNAUTHORIZED, expected: 'Login required.' },
       { code: ErrorCodes.FORBIDDEN, expected: 'Access denied.' },
-      { code: ErrorCodes.SESSION_EXPIRED, expected: 'Session expired. Please login again.' },
+      {
+        code: ErrorCodes.SESSION_EXPIRED,
+        expected: 'Session expired. Please login again.',
+      },
       { code: ErrorCodes.DATABASE_ERROR, expected: 'Database error occurred.' },
-      { code: ErrorCodes.RECORD_NOT_FOUND, expected: 'Requested data not found.' },
+      {
+        code: ErrorCodes.RECORD_NOT_FOUND,
+        expected: 'Requested data not found.',
+      },
       { code: ErrorCodes.DUPLICATE_RECORD, expected: 'Data already exists.' },
-      { code: ErrorCodes.VALIDATION_ERROR, expected: 'Please check your input data.' },
-      { code: ErrorCodes.REQUIRED_FIELD, expected: 'Please fill in required fields.' },
-      { code: ErrorCodes.INVALID_FORMAT, expected: 'Please enter in correct format.' },
+      {
+        code: ErrorCodes.VALIDATION_ERROR,
+        expected: 'Please check your input data.',
+      },
+      {
+        code: ErrorCodes.REQUIRED_FIELD,
+        expected: 'Please fill in required fields.',
+      },
+      {
+        code: ErrorCodes.INVALID_FORMAT,
+        expected: 'Please enter in correct format.',
+      },
       { code: ErrorCodes.FILE_TOO_LARGE, expected: 'File size is too large.' },
-      { code: ErrorCodes.INVALID_FILE_TYPE, expected: 'Unsupported file type.' },
+      {
+        code: ErrorCodes.INVALID_FILE_TYPE,
+        expected: 'Unsupported file type.',
+      },
       { code: ErrorCodes.UPLOAD_FAILED, expected: 'File upload failed.' },
       { code: ErrorCodes.UNKNOWN_ERROR, expected: 'Unknown error occurred.' },
       { code: ErrorCodes.INTERNAL_ERROR, expected: 'Server error occurred.' },
@@ -184,7 +208,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
 
   describe('getRecoverySuggestions - All Error Codes', () => {
     it('should provide suggestions for NETWORK_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
+      const error = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       expect(suggestions).toContain('Check your internet connection');
@@ -192,7 +219,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
     });
 
     it('should provide suggestions for TIMEOUT_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.TIMEOUT_ERROR, 'Timeout');
+      const error = errorHandler.createError(
+        ErrorCodes.TIMEOUT_ERROR,
+        'Timeout'
+      );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       expect(suggestions).toContain('Request timeout occurred');
@@ -200,7 +230,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
     });
 
     it('should provide suggestions for UNAUTHORIZED', () => {
-      const error = errorHandler.createError(ErrorCodes.UNAUTHORIZED, 'Unauthorized');
+      const error = errorHandler.createError(
+        ErrorCodes.UNAUTHORIZED,
+        'Unauthorized'
+      );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       expect(suggestions).toContain('Redirecting to login page');
@@ -210,11 +243,16 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       const error = errorHandler.createError(ErrorCodes.FORBIDDEN, 'Forbidden');
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Contact administrator for permission request');
+      expect(suggestions).toContain(
+        'Contact administrator for permission request'
+      );
     });
 
     it('should provide suggestions for DATABASE_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.DATABASE_ERROR, 'DB error');
+      const error = errorHandler.createError(
+        ErrorCodes.DATABASE_ERROR,
+        'DB error'
+      );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       expect(suggestions).toContain('Check database connection');
@@ -222,14 +260,20 @@ describe('ErrorHandler - Comprehensive Tests', () => {
     });
 
     it('should provide suggestions for VALIDATION_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.VALIDATION_ERROR, 'Invalid');
+      const error = errorHandler.createError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid'
+      );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       expect(suggestions).toContain('Please verify your input information');
     });
 
     it('should provide suggestions for DUPLICATE_RECORD', () => {
-      const error = errorHandler.createError(ErrorCodes.DUPLICATE_RECORD, 'Duplicate');
+      const error = errorHandler.createError(
+        ErrorCodes.DUPLICATE_RECORD,
+        'Duplicate'
+      );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       expect(suggestions).toContain('Data already exists');
@@ -244,79 +288,138 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       expect(suggestions).toContain('Please try again later');
-      expect(suggestions).toContain('Contact administrator if problem persists');
+      expect(suggestions).toContain(
+        'Contact administrator if problem persists'
+      );
     });
   });
 
   describe('getErrorCategory - All Categories', () => {
     it('should categorize NETWORK_ERROR as NETWORK', () => {
-      const error = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
+      const error = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
       expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.NETWORK);
     });
 
     it('should categorize TIMEOUT_ERROR as NETWORK', () => {
-      const error = errorHandler.createError(ErrorCodes.TIMEOUT_ERROR, 'Timeout');
+      const error = errorHandler.createError(
+        ErrorCodes.TIMEOUT_ERROR,
+        'Timeout'
+      );
       expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.NETWORK);
     });
 
     it('should categorize UNAUTHORIZED as AUTHENTICATION', () => {
-      const error = errorHandler.createError(ErrorCodes.UNAUTHORIZED, 'Unauthorized');
-      expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.AUTHENTICATION);
+      const error = errorHandler.createError(
+        ErrorCodes.UNAUTHORIZED,
+        'Unauthorized'
+      );
+      expect(errorHandler.getErrorCategory(error)).toBe(
+        ErrorCategory.AUTHENTICATION
+      );
     });
 
     it('should categorize FORBIDDEN as AUTHENTICATION', () => {
       const error = errorHandler.createError(ErrorCodes.FORBIDDEN, 'Forbidden');
-      expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.AUTHENTICATION);
+      expect(errorHandler.getErrorCategory(error)).toBe(
+        ErrorCategory.AUTHENTICATION
+      );
     });
 
     it('should categorize SESSION_EXPIRED as AUTHENTICATION', () => {
-      const error = errorHandler.createError(ErrorCodes.SESSION_EXPIRED, 'Expired');
-      expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.AUTHENTICATION);
+      const error = errorHandler.createError(
+        ErrorCodes.SESSION_EXPIRED,
+        'Expired'
+      );
+      expect(errorHandler.getErrorCategory(error)).toBe(
+        ErrorCategory.AUTHENTICATION
+      );
     });
 
     it('should categorize DATABASE_ERROR as DATABASE', () => {
-      const error = errorHandler.createError(ErrorCodes.DATABASE_ERROR, 'DB error');
+      const error = errorHandler.createError(
+        ErrorCodes.DATABASE_ERROR,
+        'DB error'
+      );
       expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.DATABASE);
     });
 
     it('should categorize RECORD_NOT_FOUND as DATABASE', () => {
-      const error = errorHandler.createError(ErrorCodes.RECORD_NOT_FOUND, 'Not found');
+      const error = errorHandler.createError(
+        ErrorCodes.RECORD_NOT_FOUND,
+        'Not found'
+      );
       expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.DATABASE);
     });
 
     it('should categorize DUPLICATE_RECORD as DATABASE', () => {
-      const error = errorHandler.createError(ErrorCodes.DUPLICATE_RECORD, 'Duplicate');
+      const error = errorHandler.createError(
+        ErrorCodes.DUPLICATE_RECORD,
+        'Duplicate'
+      );
       expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.DATABASE);
     });
 
     it('should categorize VALIDATION_ERROR as VALIDATION', () => {
-      const error = errorHandler.createError(ErrorCodes.VALIDATION_ERROR, 'Invalid');
-      expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.VALIDATION);
+      const error = errorHandler.createError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid'
+      );
+      expect(errorHandler.getErrorCategory(error)).toBe(
+        ErrorCategory.VALIDATION
+      );
     });
 
     it('should categorize REQUIRED_FIELD as VALIDATION', () => {
-      const error = errorHandler.createError(ErrorCodes.REQUIRED_FIELD, 'Required');
-      expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.VALIDATION);
+      const error = errorHandler.createError(
+        ErrorCodes.REQUIRED_FIELD,
+        'Required'
+      );
+      expect(errorHandler.getErrorCategory(error)).toBe(
+        ErrorCategory.VALIDATION
+      );
     });
 
     it('should categorize INVALID_FORMAT as VALIDATION', () => {
-      const error = errorHandler.createError(ErrorCodes.INVALID_FORMAT, 'Invalid format');
-      expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.VALIDATION);
+      const error = errorHandler.createError(
+        ErrorCodes.INVALID_FORMAT,
+        'Invalid format'
+      );
+      expect(errorHandler.getErrorCategory(error)).toBe(
+        ErrorCategory.VALIDATION
+      );
     });
 
     it('should categorize FILE_TOO_LARGE as FILE_UPLOAD', () => {
-      const error = errorHandler.createError(ErrorCodes.FILE_TOO_LARGE, 'File too large');
-      expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.FILE_UPLOAD);
+      const error = errorHandler.createError(
+        ErrorCodes.FILE_TOO_LARGE,
+        'File too large'
+      );
+      expect(errorHandler.getErrorCategory(error)).toBe(
+        ErrorCategory.FILE_UPLOAD
+      );
     });
 
     it('should categorize INVALID_FILE_TYPE as FILE_UPLOAD', () => {
-      const error = errorHandler.createError(ErrorCodes.INVALID_FILE_TYPE, 'Invalid type');
-      expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.FILE_UPLOAD);
+      const error = errorHandler.createError(
+        ErrorCodes.INVALID_FILE_TYPE,
+        'Invalid type'
+      );
+      expect(errorHandler.getErrorCategory(error)).toBe(
+        ErrorCategory.FILE_UPLOAD
+      );
     });
 
     it('should categorize UPLOAD_FAILED as FILE_UPLOAD', () => {
-      const error = errorHandler.createError(ErrorCodes.UPLOAD_FAILED, 'Upload failed');
-      expect(errorHandler.getErrorCategory(error)).toBe(ErrorCategory.FILE_UPLOAD);
+      const error = errorHandler.createError(
+        ErrorCodes.UPLOAD_FAILED,
+        'Upload failed'
+      );
+      expect(errorHandler.getErrorCategory(error)).toBe(
+        ErrorCategory.FILE_UPLOAD
+      );
     });
 
     it('should categorize unknown error codes as SYSTEM', () => {
@@ -330,7 +433,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
 
   describe('shouldRetry - Retry Limits', () => {
     it('should allow retry when attempts are below maxRetries', () => {
-      const error = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
+      const error = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
       const operationId = 'test-operation';
 
       errorHandler.recordRetryAttempt(operationId);
@@ -341,7 +447,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
     });
 
     it('should not allow retry when attempts exceed maxRetries', () => {
-      const error = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
+      const error = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
       const operationId = 'test-operation';
 
       // Record 3 attempts (maxRetries is 3, so 3 attempts means no more retries)
@@ -354,7 +463,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
     });
 
     it('should not allow retry for non-retryable errors', () => {
-      const error = errorHandler.createError(ErrorCodes.VALIDATION_ERROR, 'Invalid');
+      const error = errorHandler.createError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid'
+      );
       const operationId = 'test-operation';
 
       const shouldRetry = errorHandler.shouldRetry(error, operationId);
@@ -455,12 +567,12 @@ describe('ErrorHandler - Comprehensive Tests', () => {
 
     it('should check navigator.onLine when available and error has no name', () => {
       const originalNavigator = global.navigator;
-      
+
       // Create a mock navigator with onLine: false
       const mockNavigator = {
         onLine: false,
       } as Navigator;
-      
+
       Object.defineProperty(global, 'navigator', {
         value: mockNavigator,
         writable: true,
@@ -482,12 +594,12 @@ describe('ErrorHandler - Comprehensive Tests', () => {
 
     it('should return false when navigator.onLine is true and no error name', () => {
       const originalNavigator = global.navigator;
-      
+
       // Create a mock navigator with onLine: true
       const mockNavigator = {
         onLine: true,
       } as Navigator;
-      
+
       Object.defineProperty(global, 'navigator', {
         value: mockNavigator,
         writable: true,
@@ -551,9 +663,18 @@ describe('ErrorHandler - Comprehensive Tests', () => {
 
   describe('Error Statistics', () => {
     it('should track multiple error types', () => {
-      const error1 = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
-      const error2 = errorHandler.createError(ErrorCodes.VALIDATION_ERROR, 'Invalid');
-      const error3 = errorHandler.createError(ErrorCodes.DATABASE_ERROR, 'DB error');
+      const error1 = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
+      const error2 = errorHandler.createError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid'
+      );
+      const error3 = errorHandler.createError(
+        ErrorCodes.DATABASE_ERROR,
+        'DB error'
+      );
 
       errorHandler.logError(error1);
       errorHandler.logError(error2);
@@ -571,7 +692,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
 
   describe('Error Logs', () => {
     it('should return a copy of error logs', () => {
-      const error = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
+      const error = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
       errorHandler.logError(error);
 
       const logs1 = errorHandler.getErrorLogs();
@@ -582,7 +706,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
     });
 
     it('should clear all error logs and statistics', () => {
-      const error = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
+      const error = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
       errorHandler.logError(error);
       errorHandler.recordRetryAttempt('operation-1');
 
@@ -608,7 +735,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
     });
 
     it('should create error without optional parameters', () => {
-      const error = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
+      const error = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
 
       expect(error.details).toBeUndefined();
       expect(error.context).toBeUndefined();
@@ -642,4 +772,3 @@ describe('ErrorHandler - Comprehensive Tests', () => {
     });
   });
 });
-

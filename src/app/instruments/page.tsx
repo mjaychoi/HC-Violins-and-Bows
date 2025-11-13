@@ -1,7 +1,10 @@
 'use client';
 
 import { Instrument } from '@/types';
-import { useUnifiedDashboard, useUnifiedInstruments } from '@/hooks/useUnifiedData';
+import {
+  useUnifiedDashboard,
+  useUnifiedInstruments,
+} from '@/hooks/useUnifiedData';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { useModalState } from '@/hooks/useModalState';
 import { useLoadingState } from '@/hooks/useLoadingState';
@@ -38,7 +41,7 @@ export default function InstrumentsPage() {
         // Convert form data to Instrument format
         const yearStr = formData.year?.trim();
         const yearNum = yearStr ? parseInt(yearStr, 10) : null;
-        
+
         if (yearStr && isNaN(yearNum!)) {
           handleError(new Error('Invalid year value'), 'Invalid input');
           return;

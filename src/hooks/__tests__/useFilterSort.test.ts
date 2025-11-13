@@ -94,7 +94,9 @@ describe('useFilterSort', () => {
 
       await waitFor(() => {
         expect(result.current.items.length).toBeGreaterThan(0);
-        expect(result.current.items.every(item => item.tags?.includes('fruit'))).toBe(true);
+        expect(
+          result.current.items.every(item => item.tags?.includes('fruit'))
+        ).toBe(true);
       });
     });
 
@@ -456,4 +458,3 @@ describe('useFilterSort', () => {
     });
   });
 });
-

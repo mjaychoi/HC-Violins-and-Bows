@@ -1,6 +1,6 @@
 /**
  * 예시 데이터 생성 스크립트
- * 
+ *
  * 이 스크립트는 Supabase 데이터베이스에 테스트용 예시 데이터를 생성합니다.
  * - 클라이언트 (10명)
  * - 악기 (20개)
@@ -21,43 +21,286 @@ dotenv.config({ path: '.env.local' });
 
 // 샘플 데이터
 const sampleClients = [
-  { first_name: 'Julie', last_name: 'Chung', email: 'julie.chung@example.com', contact_number: '010-1234-5678', tags: ['Owner', 'Musician'], interest: 'Active' },
-  { first_name: 'Michael', last_name: 'Kim', email: 'michael.kim@example.com', contact_number: '010-2345-6789', tags: ['Dealer'], interest: 'Active' },
-  { first_name: 'Sarah', last_name: 'Park', email: 'sarah.park@example.com', contact_number: '010-3456-7890', tags: ['Collector'], interest: 'Passive' },
-  { first_name: 'David', last_name: 'Lee', email: 'david.lee@example.com', contact_number: '010-4567-8901', tags: ['Owner'], interest: null },
-  { first_name: 'Emily', last_name: 'Yoon', email: 'emily.yoon@example.com', contact_number: '010-5678-9012', tags: ['Musician'], interest: 'Active' },
-  { first_name: 'James', last_name: 'Jung', email: 'james.jung@example.com', contact_number: '010-6789-0123', tags: ['Dealer', 'Collector'], interest: 'Active' },
-  { first_name: 'Lisa', last_name: 'Han', email: 'lisa.han@example.com', contact_number: '010-7890-1234', tags: ['Owner'], interest: null },
-  { first_name: 'Robert', last_name: 'Choi', email: 'robert.choi@example.com', contact_number: '010-8901-2345', tags: ['Musician'], interest: 'Active' },
-  { first_name: 'Anna', last_name: 'Kang', email: 'anna.kang@example.com', contact_number: '010-9012-3456', tags: ['Collector'], interest: 'Passive' },
-  { first_name: 'Tom', last_name: 'Shin', email: 'tom.shin@example.com', contact_number: '010-0123-4567', tags: ['Dealer'], interest: 'Active' },
+  {
+    first_name: 'Julie',
+    last_name: 'Chung',
+    email: 'julie.chung@example.com',
+    contact_number: '010-1234-5678',
+    tags: ['Owner', 'Musician'],
+    interest: 'Active',
+  },
+  {
+    first_name: 'Michael',
+    last_name: 'Kim',
+    email: 'michael.kim@example.com',
+    contact_number: '010-2345-6789',
+    tags: ['Dealer'],
+    interest: 'Active',
+  },
+  {
+    first_name: 'Sarah',
+    last_name: 'Park',
+    email: 'sarah.park@example.com',
+    contact_number: '010-3456-7890',
+    tags: ['Collector'],
+    interest: 'Passive',
+  },
+  {
+    first_name: 'David',
+    last_name: 'Lee',
+    email: 'david.lee@example.com',
+    contact_number: '010-4567-8901',
+    tags: ['Owner'],
+    interest: null,
+  },
+  {
+    first_name: 'Emily',
+    last_name: 'Yoon',
+    email: 'emily.yoon@example.com',
+    contact_number: '010-5678-9012',
+    tags: ['Musician'],
+    interest: 'Active',
+  },
+  {
+    first_name: 'James',
+    last_name: 'Jung',
+    email: 'james.jung@example.com',
+    contact_number: '010-6789-0123',
+    tags: ['Dealer', 'Collector'],
+    interest: 'Active',
+  },
+  {
+    first_name: 'Lisa',
+    last_name: 'Han',
+    email: 'lisa.han@example.com',
+    contact_number: '010-7890-1234',
+    tags: ['Owner'],
+    interest: null,
+  },
+  {
+    first_name: 'Robert',
+    last_name: 'Choi',
+    email: 'robert.choi@example.com',
+    contact_number: '010-8901-2345',
+    tags: ['Musician'],
+    interest: 'Active',
+  },
+  {
+    first_name: 'Anna',
+    last_name: 'Kang',
+    email: 'anna.kang@example.com',
+    contact_number: '010-9012-3456',
+    tags: ['Collector'],
+    interest: 'Passive',
+  },
+  {
+    first_name: 'Tom',
+    last_name: 'Shin',
+    email: 'tom.shin@example.com',
+    contact_number: '010-0123-4567',
+    tags: ['Dealer'],
+    interest: 'Active',
+  },
 ];
 
 const sampleInstruments = [
-  { type: 'Violin', maker: 'Stradivarius', year: 1720, status: 'Available', price: 5000000, certificate: true, ownership: 'Julie Chung' },
-  { type: 'Violin', maker: 'Guarneri', year: 1740, status: 'Booked', price: 3000000, certificate: true, ownership: 'Michael Kim' },
-  { type: 'Viola', maker: 'Amati', year: 1680, status: 'Available', price: 2000000, certificate: true, ownership: null },
-  { type: 'Cello', maker: 'Montagnana', year: 1750, status: 'Sold', price: 8000000, certificate: true, ownership: 'Sarah Park' },
-  { type: 'Violin', maker: 'Bergonzi', year: 1730, status: 'Reserved', price: 4000000, certificate: true, ownership: 'David Lee' },
-  { type: 'Bow', maker: 'Tourte', year: 1800, status: 'Available', price: 500000, certificate: false, ownership: null },
-  { type: 'Violin', maker: 'Gagliano', year: 1760, status: 'Maintenance', price: 1500000, certificate: true, ownership: 'Emily Yoon' },
-  { type: 'Viola', maker: 'Guadagnini', year: 1780, status: 'Available', price: 2500000, certificate: true, ownership: null },
-  { type: 'Cello', maker: 'Ruggeri', year: 1700, status: 'Booked', price: 6000000, certificate: true, ownership: 'James Jung' },
-  { type: 'Violin', maker: 'Storioni', year: 1790, status: 'Available', price: 1800000, certificate: true, ownership: null },
-  { type: 'Bow', maker: 'Pecatte', year: 1850, status: 'Available', price: 300000, certificate: false, ownership: 'Lisa Han' },
-  { type: 'Violin', maker: 'Pressenda', year: 1820, status: 'Available', price: 1200000, certificate: true, ownership: null },
-  { type: 'Viola', maker: 'Rocca', year: 1900, status: 'Booked', price: 800000, certificate: false, ownership: 'Robert Choi' },
-  { type: 'Cello', maker: 'Goffriller', year: 1720, status: 'Available', price: 7000000, certificate: true, ownership: null },
-  { type: 'Violin', maker: 'Vuillaume', year: 1860, status: 'Reserved', price: 1000000, certificate: true, ownership: 'Anna Kang' },
-  { type: 'Bow', maker: 'Sartory', year: 1920, status: 'Available', price: 400000, certificate: false, ownership: null },
-  { type: 'Violin', maker: 'Landolfi', year: 1750, status: 'Available', price: 2200000, certificate: true, ownership: null },
-  { type: 'Viola', maker: 'Testore', year: 1730, status: 'Maintenance', price: 1500000, certificate: true, ownership: 'Tom Shin' },
-  { type: 'Cello', maker: 'Cremonese', year: 1690, status: 'Available', price: 5500000, certificate: true, ownership: null },
-  { type: 'Bow', maker: 'Lamy', year: 1880, status: 'Available', price: 350000, certificate: false, ownership: null },
+  {
+    type: 'Violin',
+    maker: 'Stradivarius',
+    year: 1720,
+    status: 'Available',
+    price: 5000000,
+    certificate: true,
+    ownership: 'Julie Chung',
+  },
+  {
+    type: 'Violin',
+    maker: 'Guarneri',
+    year: 1740,
+    status: 'Booked',
+    price: 3000000,
+    certificate: true,
+    ownership: 'Michael Kim',
+  },
+  {
+    type: 'Viola',
+    maker: 'Amati',
+    year: 1680,
+    status: 'Available',
+    price: 2000000,
+    certificate: true,
+    ownership: null,
+  },
+  {
+    type: 'Cello',
+    maker: 'Montagnana',
+    year: 1750,
+    status: 'Sold',
+    price: 8000000,
+    certificate: true,
+    ownership: 'Sarah Park',
+  },
+  {
+    type: 'Violin',
+    maker: 'Bergonzi',
+    year: 1730,
+    status: 'Reserved',
+    price: 4000000,
+    certificate: true,
+    ownership: 'David Lee',
+  },
+  {
+    type: 'Bow',
+    maker: 'Tourte',
+    year: 1800,
+    status: 'Available',
+    price: 500000,
+    certificate: false,
+    ownership: null,
+  },
+  {
+    type: 'Violin',
+    maker: 'Gagliano',
+    year: 1760,
+    status: 'Maintenance',
+    price: 1500000,
+    certificate: true,
+    ownership: 'Emily Yoon',
+  },
+  {
+    type: 'Viola',
+    maker: 'Guadagnini',
+    year: 1780,
+    status: 'Available',
+    price: 2500000,
+    certificate: true,
+    ownership: null,
+  },
+  {
+    type: 'Cello',
+    maker: 'Ruggeri',
+    year: 1700,
+    status: 'Booked',
+    price: 6000000,
+    certificate: true,
+    ownership: 'James Jung',
+  },
+  {
+    type: 'Violin',
+    maker: 'Storioni',
+    year: 1790,
+    status: 'Available',
+    price: 1800000,
+    certificate: true,
+    ownership: null,
+  },
+  {
+    type: 'Bow',
+    maker: 'Pecatte',
+    year: 1850,
+    status: 'Available',
+    price: 300000,
+    certificate: false,
+    ownership: 'Lisa Han',
+  },
+  {
+    type: 'Violin',
+    maker: 'Pressenda',
+    year: 1820,
+    status: 'Available',
+    price: 1200000,
+    certificate: true,
+    ownership: null,
+  },
+  {
+    type: 'Viola',
+    maker: 'Rocca',
+    year: 1900,
+    status: 'Booked',
+    price: 800000,
+    certificate: false,
+    ownership: 'Robert Choi',
+  },
+  {
+    type: 'Cello',
+    maker: 'Goffriller',
+    year: 1720,
+    status: 'Available',
+    price: 7000000,
+    certificate: true,
+    ownership: null,
+  },
+  {
+    type: 'Violin',
+    maker: 'Vuillaume',
+    year: 1860,
+    status: 'Reserved',
+    price: 1000000,
+    certificate: true,
+    ownership: 'Anna Kang',
+  },
+  {
+    type: 'Bow',
+    maker: 'Sartory',
+    year: 1920,
+    status: 'Available',
+    price: 400000,
+    certificate: false,
+    ownership: null,
+  },
+  {
+    type: 'Violin',
+    maker: 'Landolfi',
+    year: 1750,
+    status: 'Available',
+    price: 2200000,
+    certificate: true,
+    ownership: null,
+  },
+  {
+    type: 'Viola',
+    maker: 'Testore',
+    year: 1730,
+    status: 'Maintenance',
+    price: 1500000,
+    certificate: true,
+    ownership: 'Tom Shin',
+  },
+  {
+    type: 'Cello',
+    maker: 'Cremonese',
+    year: 1690,
+    status: 'Available',
+    price: 5500000,
+    certificate: true,
+    ownership: null,
+  },
+  {
+    type: 'Bow',
+    maker: 'Lamy',
+    year: 1880,
+    status: 'Available',
+    price: 350000,
+    certificate: false,
+    ownership: null,
+  },
 ];
 
-const sampleTaskTypes = ['repair', 'rehair', 'maintenance', 'inspection', 'setup', 'adjustment', 'restoration'] as const;
-const sampleStatuses = ['pending', 'in_progress', 'completed', 'cancelled'] as const;
+const sampleTaskTypes = [
+  'repair',
+  'rehair',
+  'maintenance',
+  'inspection',
+  'setup',
+  'adjustment',
+  'restoration',
+] as const;
+const sampleStatuses = [
+  'pending',
+  'in_progress',
+  'completed',
+  'cancelled',
+] as const;
 const samplePriorities = ['low', 'medium', 'high', 'urgent'] as const;
 
 function getRandomDate(start: Date, end: Date): string {
@@ -85,7 +328,9 @@ async function seedSampleData() {
     const dbPassword = process.env.DATABASE_PASSWORD;
 
     if (!supabaseUrl) {
-      throw new Error('NEXT_PUBLIC_SUPABASE_URL 환경 변수가 설정되지 않았습니다.');
+      throw new Error(
+        'NEXT_PUBLIC_SUPABASE_URL 환경 변수가 설정되지 않았습니다.'
+      );
     }
 
     if (!dbPassword) {
@@ -93,14 +338,22 @@ async function seedSampleData() {
     }
 
     // Extract project reference from URL
-    const projectRef = supabaseUrl.match(/https?:\/\/([^.]+)\.supabase\.co/)?.[1];
+    const projectRef = supabaseUrl.match(
+      /https?:\/\/([^.]+)\.supabase\.co/
+    )?.[1];
     if (!projectRef) {
       throw new Error('Supabase URL에서 프로젝트 참조를 추출할 수 없습니다.');
     }
 
     // Connect to database
-    const regions = ['us-east-2', 'us-east-1', 'us-west-1', 'eu-west-1', 'ap-southeast-1'];
-    
+    const regions = [
+      'us-east-2',
+      'us-east-1',
+      'us-west-1',
+      'eu-west-1',
+      'ap-southeast-1',
+    ];
+
     for (const region of regions) {
       try {
         console.log(`🔌 ${region} 지역 pooler 연결 시도...`);
@@ -138,10 +391,16 @@ async function seedSampleData() {
 
     // 1. 기존 데이터 확인
     console.log('📊 기존 데이터 확인 중...');
-    const existingClients = await client.query('SELECT COUNT(*) as count FROM clients');
-    const existingInstruments = await client.query('SELECT COUNT(*) as count FROM instruments');
-    const existingTasks = await client.query('SELECT COUNT(*) as count FROM maintenance_tasks');
-    
+    const existingClients = await client.query(
+      'SELECT COUNT(*) as count FROM clients'
+    );
+    const existingInstruments = await client.query(
+      'SELECT COUNT(*) as count FROM instruments'
+    );
+    const existingTasks = await client.query(
+      'SELECT COUNT(*) as count FROM maintenance_tasks'
+    );
+
     console.log(`  • 클라이언트: ${existingClients.rows[0].count}개`);
     console.log(`  • 악기: ${existingInstruments.rows[0].count}개`);
     console.log(`  • 작업: ${existingTasks.rows[0].count}개\n`);
@@ -151,8 +410,12 @@ async function seedSampleData() {
     const existingClientsResult = await client.query(
       'SELECT client_number FROM clients WHERE client_number IS NOT NULL'
     );
-    const existingClientNumbers = existingClientsResult.rows.map(r => r.client_number);
-    console.log(`  • 기존 클라이언트 번호: ${existingClientNumbers.length}개\n`);
+    const existingClientNumbers = existingClientsResult.rows.map(
+      r => r.client_number
+    );
+    console.log(
+      `  • 기존 클라이언트 번호: ${existingClientNumbers.length}개\n`
+    );
 
     // 3. 클라이언트 생성
     console.log('👥 클라이언트 생성 중...');
@@ -167,7 +430,8 @@ async function seedSampleData() {
           const match = num.match(/\d+$/);
           return match ? parseInt(match[0], 10) : 0;
         });
-      const maxNumber = samePrefixNumbers.length > 0 ? Math.max(...samePrefixNumbers) : 0;
+      const maxNumber =
+        samePrefixNumbers.length > 0 ? Math.max(...samePrefixNumbers) : 0;
       const nextNumber = maxNumber + 1;
       return `${prefix}${nextNumber.toString().padStart(3, '0')}`;
     }
@@ -193,7 +457,9 @@ async function seedSampleData() {
         ]
       );
       clientIds.push(result.rows[0].id);
-      console.log(`  ✓ ${clientData.first_name} ${clientData.last_name} (${clientNumber})`);
+      console.log(
+        `  ✓ ${clientData.first_name} ${clientData.last_name} (${clientNumber})`
+      );
     }
     console.log(`✅ ${clientIds.length}개의 클라이언트 생성 완료\n`);
 
@@ -202,7 +468,9 @@ async function seedSampleData() {
     const existingInstrumentsResult = await client.query(
       'SELECT serial_number FROM instruments WHERE serial_number IS NOT NULL'
     );
-    const existingSerialNumbers = existingInstrumentsResult.rows.map(r => r.serial_number);
+    const existingSerialNumbers = existingInstrumentsResult.rows.map(
+      r => r.serial_number
+    );
     console.log(`  • 기존 악기 번호: ${existingSerialNumbers.length}개\n`);
 
     // 5. 악기 생성
@@ -231,7 +499,8 @@ async function seedSampleData() {
           const match = num.match(/\d+$/);
           return match ? parseInt(match[0], 10) : 0;
         });
-      const maxNumber = samePrefixNumbers.length > 0 ? Math.max(...samePrefixNumbers) : 0;
+      const maxNumber =
+        samePrefixNumbers.length > 0 ? Math.max(...samePrefixNumbers) : 0;
       const nextNumber = maxNumber + 1;
       return `${prefix}${nextNumber.toString().padStart(3, '0')}`;
     }
@@ -239,7 +508,10 @@ async function seedSampleData() {
     for (const instrumentData of sampleInstruments) {
       // Generate unique serial number
       const allSerialNumbers = [...existingSerialNumbers, ...newSerialNumbers];
-      const serialNumber = generateInstrumentSerialNumber(instrumentData.type, allSerialNumbers);
+      const serialNumber = generateInstrumentSerialNumber(
+        instrumentData.type,
+        allSerialNumbers
+      );
       newSerialNumbers.push(serialNumber);
 
       const result = await client.query(
@@ -258,7 +530,9 @@ async function seedSampleData() {
         ]
       );
       instrumentIds.push(result.rows[0].id);
-      console.log(`  ✓ ${instrumentData.type} - ${instrumentData.maker} (${serialNumber})`);
+      console.log(
+        `  ✓ ${instrumentData.type} - ${instrumentData.maker} (${serialNumber})`
+      );
     }
     console.log(`✅ ${instrumentIds.length}개의 악기 생성 완료\n`);
 
@@ -338,13 +612,22 @@ async function seedSampleData() {
       const title = taskTitles[i % taskTitles.length];
 
       const receivedDate = getRandomDate(threeMonthsAgo, now);
-      const dueDate = status === 'completed' ? null : getRandomDate(now, threeMonthsLater);
-      const personalDueDate = status === 'completed' ? null : getRandomDate(now, threeMonthsLater);
-      const scheduledDate = status === 'completed' ? null : getRandomDate(now, threeMonthsLater);
-      const completedDate = status === 'completed' ? getRandomDate(new Date(receivedDate), now) : null;
+      const dueDate =
+        status === 'completed' ? null : getRandomDate(now, threeMonthsLater);
+      const personalDueDate =
+        status === 'completed' ? null : getRandomDate(now, threeMonthsLater);
+      const scheduledDate =
+        status === 'completed' ? null : getRandomDate(now, threeMonthsLater);
+      const completedDate =
+        status === 'completed'
+          ? getRandomDate(new Date(receivedDate), now)
+          : null;
 
       const estimatedHours = getRandomInt(1, 8);
-      const actualHours = status === 'completed' ? getRandomInt(estimatedHours - 2, estimatedHours + 3) : null;
+      const actualHours =
+        status === 'completed'
+          ? getRandomInt(estimatedHours - 2, estimatedHours + 3)
+          : null;
       const cost = status === 'completed' ? getRandomInt(50000, 500000) : null;
 
       await client.query(
@@ -390,13 +673,7 @@ async function seedSampleData() {
       await client.query(
         `INSERT INTO sales_history (instrument_id, client_id, sale_price, sale_date, notes)
          VALUES ($1, $2, $3, $4, $5)`,
-        [
-          instrumentId,
-          clientId,
-          salePrice,
-          saleDate,
-          `판매 완료: ${saleDate}`,
-        ]
+        [instrumentId, clientId, salePrice, saleDate, `판매 완료: ${saleDate}`]
       );
       salesCount++;
       console.log(`  ✓ 판매: ${salePrice.toLocaleString()}원 (${saleDate})`);
@@ -414,7 +691,6 @@ async function seedSampleData() {
     console.log(`  • 유지보수 작업: ${taskCount}개`);
     console.log(`  • 판매 이력: ${salesCount}개`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-
   } catch (error) {
     console.error('❌ 에러 발생:', error);
     if (error instanceof Error) {
@@ -435,4 +711,3 @@ seedSampleData().catch(error => {
 });
 
 export { seedSampleData };
-

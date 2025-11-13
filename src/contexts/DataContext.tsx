@@ -90,7 +90,10 @@ const initialState: DataState = {
 // Helper function to parse type field: if it contains "/", split into type and subtype
 function parseInstrumentType(item: Instrument): Instrument {
   if (item.type && typeof item.type === 'string' && item.type.includes('/')) {
-    const parts = item.type.split('/').map(part => part.trim()).filter(part => part.length > 0);
+    const parts = item.type
+      .split('/')
+      .map(part => part.trim())
+      .filter(part => part.length > 0);
     if (parts.length >= 2) {
       return {
         ...item,
@@ -184,7 +187,10 @@ function dataReducer(state: DataState, action: DataAction): DataState {
     case 'ADD_INSTRUMENT':
       return {
         ...state,
-        instruments: [parseInstrumentType(action.payload), ...state.instruments],
+        instruments: [
+          parseInstrumentType(action.payload),
+          ...state.instruments,
+        ],
         lastUpdated: {
           ...state.lastUpdated,
           instruments: new Date(),
@@ -470,10 +476,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       );
       if (error) throw error;
-      
+
       // Parse type field: if it contains "/", split into type and subtype
       const parsedData = (data || []).map(parseInstrumentType);
-      
+
       dispatch({ type: 'SET_INSTRUMENTS', payload: parsedData });
     } catch (error) {
       handleError(error, 'Fetch instruments');

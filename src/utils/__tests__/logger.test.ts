@@ -19,17 +19,17 @@ describe('Logger', () => {
     jest.spyOn(console, 'info').mockImplementation(() => {});
     jest.spyOn(console, 'debug').mockImplementation(() => {});
     jest.spyOn(console, 'log').mockImplementation(() => {});
-    
+
     // Reset logger instance to pick up new NODE_ENV
     Logger.resetInstance();
-    
+
     // Set to development mode for most tests
     Object.defineProperty(process.env, 'NODE_ENV', {
       value: 'development',
       writable: true,
       configurable: true,
     });
-    
+
     // Clear history before each test
     Logger.getInstance().clearHistory();
   });
@@ -203,11 +203,14 @@ describe('Logger', () => {
       Logger.performance('Database query', 150, 'Database');
 
       expect(console.info).toHaveBeenCalled();
-      
+
       const history = Logger.getInstance().getHistory(LogLevel.INFO);
       const perfLog = history.find(log => log.metadata?.performance);
       expect(perfLog).toBeDefined();
-      expect(perfLog?.data).toMatchObject({ duration: 150, operation: 'Database query' });
+      expect(perfLog?.data).toMatchObject({
+        duration: 150,
+        operation: 'Database query',
+      });
     });
   });
 
@@ -216,7 +219,7 @@ describe('Logger', () => {
       Logger.apiRequest('GET', '/api/clients', 200, 50, 'API');
 
       expect(console.info).toHaveBeenCalled();
-      
+
       const history = Logger.getInstance().getHistory(LogLevel.INFO);
       const apiLog = history.find(log => log.metadata?.apiRequest);
       expect(apiLog).toBeDefined();
@@ -245,12 +248,14 @@ describe('Logger', () => {
       Logger.error('Error 1', new Error('Test'));
 
       const errorHistory = Logger.getInstance().getHistory(LogLevel.ERROR);
-      expect(errorHistory.every(log => log.level === LogLevel.ERROR)).toBe(true);
+      expect(errorHistory.every(log => log.level === LogLevel.ERROR)).toBe(
+        true
+      );
     });
 
     it('should limit history size', () => {
       const logger = Logger.getInstance();
-      
+
       // Add more logs than maxHistorySize
       for (let i = 0; i < 150; i++) {
         Logger.info(`Info ${i}`);

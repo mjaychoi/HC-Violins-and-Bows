@@ -124,4 +124,3 @@ describe('useSidebarState', () => {
     expect(result.current.isExpanded).toBe(false);
   });
 });
-

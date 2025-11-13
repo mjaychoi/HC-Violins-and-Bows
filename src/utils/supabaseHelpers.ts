@@ -1,9 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { logApiRequest, logError } from './logger';
-import type {
-  MaintenanceTask,
-  TaskFilters,
-} from '@/types';
+import type { MaintenanceTask, TaskFilters } from '@/types';
 
 // Supabase error type for better type safety
 interface SupabaseError {
@@ -30,7 +27,7 @@ export class SupabaseHelpers {
   ): Promise<{ data: T[] | null; error: unknown }> {
     const startTime = performance.now();
     const url = `supabase://${table}`;
-    
+
     try {
       let query = supabase.from(table).select(options?.select || '*');
 
@@ -65,12 +62,11 @@ export class SupabaseHelpers {
       return { data: data as T[], error: null };
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
-      logError(
-        `fetchAll failed: ${table}`,
-        error,
-        'SupabaseHelpers',
-        { table, operation: 'fetchAll', duration }
-      );
+      logError(`fetchAll failed: ${table}`, error, 'SupabaseHelpers', {
+        table,
+        operation: 'fetchAll',
+        duration,
+      });
       return { data: null, error };
     }
   }
@@ -82,7 +78,7 @@ export class SupabaseHelpers {
   ): Promise<{ data: T | null; error: unknown }> {
     const startTime = performance.now();
     const url = `supabase://${table}/${id}`;
-    
+
     try {
       const { data, error } = await supabase
         .from(table)
@@ -110,12 +106,12 @@ export class SupabaseHelpers {
       return { data: data as T, error: null };
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
-      logError(
-        `fetchById failed: ${table}`,
-        error,
-        'SupabaseHelpers',
-        { table, id, operation: 'fetchById', duration }
-      );
+      logError(`fetchById failed: ${table}`, error, 'SupabaseHelpers', {
+        table,
+        id,
+        operation: 'fetchById',
+        duration,
+      });
       return { data: null, error };
     }
   }
@@ -126,7 +122,7 @@ export class SupabaseHelpers {
   ): Promise<{ data: T | null; error: unknown }> {
     const startTime = performance.now();
     const url = `supabase://${table}`;
-    
+
     try {
       const { data: result, error } = await supabase
         .from(table)
@@ -153,12 +149,11 @@ export class SupabaseHelpers {
       return { data: result as T, error: null };
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
-      logError(
-        `create failed: ${table}`,
-        error,
-        'SupabaseHelpers',
-        { table, operation: 'create', duration }
-      );
+      logError(`create failed: ${table}`, error, 'SupabaseHelpers', {
+        table,
+        operation: 'create',
+        duration,
+      });
       return { data: null, error };
     }
   }
@@ -170,7 +165,7 @@ export class SupabaseHelpers {
   ): Promise<{ data: T | null; error: unknown }> {
     const startTime = performance.now();
     const url = `supabase://${table}/${id}`;
-    
+
     try {
       const { data: result, error } = await supabase
         .from(table)
@@ -199,12 +194,12 @@ export class SupabaseHelpers {
       return { data: result as T, error: null };
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
-      logError(
-        `update failed: ${table}`,
-        error,
-        'SupabaseHelpers',
-        { table, id, operation: 'update', duration }
-      );
+      logError(`update failed: ${table}`, error, 'SupabaseHelpers', {
+        table,
+        id,
+        operation: 'update',
+        duration,
+      });
       return { data: null, error };
     }
   }
@@ -212,7 +207,7 @@ export class SupabaseHelpers {
   static async delete(table: string, id: string): Promise<{ error: unknown }> {
     const startTime = performance.now();
     const url = `supabase://${table}/${id}`;
-    
+
     try {
       const { error } = await supabase.from(table).delete().eq('id', id);
       const duration = Math.round(performance.now() - startTime);
@@ -236,12 +231,12 @@ export class SupabaseHelpers {
       return { error: null };
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
-      logError(
-        `delete failed: ${table}`,
-        error,
-        'SupabaseHelpers',
-        { table, id, operation: 'delete', duration }
-      );
+      logError(`delete failed: ${table}`, error, 'SupabaseHelpers', {
+        table,
+        id,
+        operation: 'delete',
+        duration,
+      });
       return { error };
     }
   }
@@ -258,10 +253,12 @@ export class SupabaseHelpers {
     const startTime = performance.now();
     const url = `supabase://${table}/search`;
     const limit = options?.limit ?? 10;
-    
+
     try {
       const term = escapeILike(searchTerm);
-      const orCondition = columns.map(col => `${col}.ilike.%${term}%`).join(',');
+      const orCondition = columns
+        .map(col => `${col}.ilike.%${term}%`)
+        .join(',');
 
       const { data, error } = await supabase
         .from(table)
@@ -292,12 +289,13 @@ export class SupabaseHelpers {
       return { data: data as T[], error: null };
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
-      logError(
-        `search failed: ${table}`,
-        error,
-        'SupabaseHelpers',
-        { table, searchTerm, columns, operation: 'search', duration }
-      );
+      logError(`search failed: ${table}`, error, 'SupabaseHelpers', {
+        table,
+        searchTerm,
+        columns,
+        operation: 'search',
+        duration,
+      });
       return { data: null, error };
     }
   }
@@ -378,15 +376,19 @@ export class SupabaseHelpers {
         .lte('received_date', endDate)
         .order('scheduled_date', { ascending: true })
         .order('due_date', { ascending: true });
-      
+
       // If error occurs due to relationship issue, try without relationship
       if (error) {
         const supabaseError = error as SupabaseError;
         const errorCode = supabaseError?.code;
         const errorMessage = supabaseError?.message || '';
-        
+
         // If it's a relationship error (PGRST200), retry without relationship (silently)
-        if (errorCode === 'PGRST200' || errorMessage.includes('relationship') || errorMessage.includes('foreign key')) {
+        if (
+          errorCode === 'PGRST200' ||
+          errorMessage.includes('relationship') ||
+          errorMessage.includes('foreign key')
+        ) {
           // Relationship query failed, fetch without relation (this is expected if foreign key is not set up in Supabase)
           const retryResult = await supabase
             .from('maintenance_tasks')
@@ -395,7 +397,7 @@ export class SupabaseHelpers {
             .lte('received_date', endDate)
             .order('scheduled_date', { ascending: true })
             .order('due_date', { ascending: true });
-          
+
           data = retryResult.data;
           error = retryResult.error;
         }
@@ -406,15 +408,28 @@ export class SupabaseHelpers {
         const supabaseError = error as SupabaseError;
         const errorCode = supabaseError?.code;
         const errorMessage = supabaseError?.message || '';
-        
+
         // 테이블이 없을 수 있는 경우를 위한 체크
-        if (errorCode === '42P01' || errorMessage.includes('does not exist') || errorMessage.includes('relation')) {
-          logError('maintenance_tasks 테이블이 존재하지 않습니다', error, 'SupabaseHelpers', {
-            operation: 'fetchTasksByDateRange',
-            errorCode,
-            migrationGuide: 'https://supabase.com/dashboard/project/dmilmlhquttcozxlpfxw/sql/new',
-          });
-        } else if (errorCode === 'PGRST116' || errorMessage.includes('permission denied')) {
+        if (
+          errorCode === '42P01' ||
+          errorMessage.includes('does not exist') ||
+          errorMessage.includes('relation')
+        ) {
+          logError(
+            'maintenance_tasks 테이블이 존재하지 않습니다',
+            error,
+            'SupabaseHelpers',
+            {
+              operation: 'fetchTasksByDateRange',
+              errorCode,
+              migrationGuide:
+                'https://supabase.com/dashboard/project/dmilmlhquttcozxlpfxw/sql/new',
+            }
+          );
+        } else if (
+          errorCode === 'PGRST116' ||
+          errorMessage.includes('permission denied')
+        ) {
           // RLS 정책 문제
           logError('RLS 정책 문제가 발생했습니다', error, 'SupabaseHelpers', {
             operation: 'fetchTasksByDateRange',
@@ -423,10 +438,15 @@ export class SupabaseHelpers {
           });
         } else {
           // Other errors - log for debugging
-          logError('Supabase fetchTasksByDateRange error', error, 'SupabaseHelpers', {
-            operation: 'fetchTasksByDateRange',
-            errorCode,
-          });
+          logError(
+            'Supabase fetchTasksByDateRange error',
+            error,
+            'SupabaseHelpers',
+            {
+              operation: 'fetchTasksByDateRange',
+              errorCode,
+            }
+          );
         }
       }
 
@@ -440,7 +460,7 @@ export class SupabaseHelpers {
             task.personal_due_date,
             task.received_date,
           ].filter((date): date is string => Boolean(date));
-          
+
           return dates.some(date => date >= startDate && date <= endDate);
         });
         return { data: filteredData as MaintenanceTask[], error };
@@ -448,9 +468,14 @@ export class SupabaseHelpers {
 
       return { data: data as MaintenanceTask[] | null, error };
     } catch (err) {
-      logError('Unexpected error in fetchTasksByDateRange', err, 'SupabaseHelpers', {
-        operation: 'fetchTasksByDateRange',
-      });
+      logError(
+        'Unexpected error in fetchTasksByDateRange',
+        err,
+        'SupabaseHelpers',
+        {
+          operation: 'fetchTasksByDateRange',
+        }
+      );
       return { data: null, error: err };
     }
   }
@@ -474,7 +499,10 @@ export class SupabaseHelpers {
   static async updateMaintenanceTask(
     id: string,
     updates: Partial<
-      Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'>
+      Omit<
+        MaintenanceTask,
+        'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+      >
     >
   ): Promise<{ data: MaintenanceTask | null; error: unknown }> {
     // Fetch task without instrument relation to avoid foreign key relationship errors
@@ -488,9 +516,7 @@ export class SupabaseHelpers {
     return { data: data as MaintenanceTask, error };
   }
 
-  static async deleteMaintenanceTask(
-    id: string
-  ): Promise<{ error: unknown }> {
+  static async deleteMaintenanceTask(id: string): Promise<{ error: unknown }> {
     const { error } = await supabase
       .from('maintenance_tasks')
       .delete()

@@ -136,7 +136,10 @@ export default function DashboardPage() {
             items={filteredItems}
             loading={loading.any}
             onDeleteClick={item => handleDeleteItem(item.id)}
-            onUpdateItem={async (itemId: string, updates: Partial<Instrument>) => {
+            onUpdateItem={async (
+              itemId: string,
+              updates: Partial<Instrument>
+            ) => {
               try {
                 const result = await updateInstrument(itemId, updates);
                 if (!result) {

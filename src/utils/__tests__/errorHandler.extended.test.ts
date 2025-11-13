@@ -17,7 +17,10 @@ describe('ErrorHandler - Extended Tests', () => {
         status: 401,
         message: 'Unauthorized',
       };
-      const error = errorHandler.handleSupabaseError(supabaseError, 'Test operation');
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
 
       expect(error.code).toBe(ErrorCodes.UNAUTHORIZED);
       expect(error.message).toBe('Authentication required');
@@ -28,7 +31,10 @@ describe('ErrorHandler - Extended Tests', () => {
         status: 403,
         message: 'Forbidden',
       };
-      const error = errorHandler.handleSupabaseError(supabaseError, 'Test operation');
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
 
       expect(error.code).toBe(ErrorCodes.FORBIDDEN);
       expect(error.message).toBe('Access denied');
@@ -39,7 +45,10 @@ describe('ErrorHandler - Extended Tests', () => {
         status: 404,
         message: 'Not found',
       };
-      const error = errorHandler.handleSupabaseError(supabaseError, 'Test operation');
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
 
       expect(error.code).toBe(ErrorCodes.RECORD_NOT_FOUND);
       expect(error.message).toBe('Resource not found');
@@ -50,7 +59,10 @@ describe('ErrorHandler - Extended Tests', () => {
         status: 500,
         message: 'Internal server error',
       };
-      const error = errorHandler.handleSupabaseError(supabaseError, 'Test operation');
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
 
       expect(error.code).toBe(ErrorCodes.INTERNAL_ERROR);
       expect(error.message).toBe('Server error');
@@ -61,7 +73,10 @@ describe('ErrorHandler - Extended Tests', () => {
         status: 400,
         message: 'Duplicate key violation',
       };
-      const error = errorHandler.handleSupabaseError(supabaseError, 'Test operation');
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
 
       expect(error.code).toBe(ErrorCodes.DUPLICATE_RECORD);
       expect(error.message).toBe('Record already exists');
@@ -72,7 +87,10 @@ describe('ErrorHandler - Extended Tests', () => {
         code: 'PGRST301',
         message: 'JWT expired',
       };
-      const error = errorHandler.handleSupabaseError(supabaseError, 'Test operation');
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
 
       expect(error.code).toBe(ErrorCodes.SESSION_EXPIRED);
       expect(error.message).toBe('Session expired');
@@ -83,7 +101,10 @@ describe('ErrorHandler - Extended Tests', () => {
         code: '23502',
         message: 'Not null violation',
       };
-      const error = errorHandler.handleSupabaseError(supabaseError, 'Test operation');
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
 
       expect(error.code).toBe(ErrorCodes.DATABASE_ERROR);
       expect(error.message).toBe('Not null violation');
@@ -96,7 +117,10 @@ describe('ErrorHandler - Extended Tests', () => {
         details: 'Key (id)=(1) already exists',
         hint: 'Use UPDATE instead',
       };
-      const error = errorHandler.handleSupabaseError(supabaseError, 'Test operation');
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
 
       expect(error.code).toBe(ErrorCodes.DUPLICATE_RECORD);
       expect(error.details).toBe('Key (id)=(1) already exists');
@@ -113,7 +137,10 @@ describe('ErrorHandler - Extended Tests', () => {
       const supabaseError = {
         message: 'Custom error message',
       };
-      const error = errorHandler.handleSupabaseError(supabaseError, 'Test operation');
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
 
       expect(error.code).toBe(ErrorCodes.DATABASE_ERROR);
       expect(error.message).toBe('Database operation failed');
@@ -214,63 +241,90 @@ describe('ErrorHandler - Extended Tests', () => {
 
   describe('getUserFriendlyMessage - Extended', () => {
     it('should return friendly message for DATABASE_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.DATABASE_ERROR, 'Database failed');
+      const error = errorHandler.createError(
+        ErrorCodes.DATABASE_ERROR,
+        'Database failed'
+      );
       const message = errorHandler.getUserFriendlyMessage(error);
 
       expect(message).toBe('Database error occurred.');
     });
 
     it('should return friendly message for VALIDATION_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.VALIDATION_ERROR, 'Invalid data');
+      const error = errorHandler.createError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid data'
+      );
       const message = errorHandler.getUserFriendlyMessage(error);
 
       expect(message).toBe('Please check your input data.');
     });
 
     it('should return friendly message for UNAUTHORIZED', () => {
-      const error = errorHandler.createError(ErrorCodes.UNAUTHORIZED, 'Not authorized');
+      const error = errorHandler.createError(
+        ErrorCodes.UNAUTHORIZED,
+        'Not authorized'
+      );
       const message = errorHandler.getUserFriendlyMessage(error);
 
       expect(message).toBe('Login required.');
     });
 
     it('should return friendly message for FORBIDDEN', () => {
-      const error = errorHandler.createError(ErrorCodes.FORBIDDEN, 'Access denied');
+      const error = errorHandler.createError(
+        ErrorCodes.FORBIDDEN,
+        'Access denied'
+      );
       const message = errorHandler.getUserFriendlyMessage(error);
 
       expect(message).toBe('Access denied.');
     });
 
     it('should return friendly message for SESSION_EXPIRED', () => {
-      const error = errorHandler.createError(ErrorCodes.SESSION_EXPIRED, 'Session expired');
+      const error = errorHandler.createError(
+        ErrorCodes.SESSION_EXPIRED,
+        'Session expired'
+      );
       const message = errorHandler.getUserFriendlyMessage(error);
 
       expect(message).toBe('Session expired. Please login again.');
     });
 
     it('should return friendly message for DUPLICATE_RECORD', () => {
-      const error = errorHandler.createError(ErrorCodes.DUPLICATE_RECORD, 'Duplicate');
+      const error = errorHandler.createError(
+        ErrorCodes.DUPLICATE_RECORD,
+        'Duplicate'
+      );
       const message = errorHandler.getUserFriendlyMessage(error);
 
       expect(message).toBe('Data already exists.');
     });
 
     it('should return friendly message for RECORD_NOT_FOUND', () => {
-      const error = errorHandler.createError(ErrorCodes.RECORD_NOT_FOUND, 'Not found');
+      const error = errorHandler.createError(
+        ErrorCodes.RECORD_NOT_FOUND,
+        'Not found'
+      );
       const message = errorHandler.getUserFriendlyMessage(error);
 
       expect(message).toBe('Requested data not found.');
     });
 
     it('should return friendly message for TIMEOUT_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.TIMEOUT_ERROR, 'Timeout');
+      const error = errorHandler.createError(
+        ErrorCodes.TIMEOUT_ERROR,
+        'Timeout'
+      );
       const message = errorHandler.getUserFriendlyMessage(error);
 
       expect(message).toBe('Request timeout. Please try again.');
     });
 
     it('should return friendly message for INTERNAL_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.INTERNAL_ERROR, 'Internal error');
+      const error = errorHandler.createError(
+        ErrorCodes.INTERNAL_ERROR,
+        'Internal error'
+      );
       const message = errorHandler.getUserFriendlyMessage(error);
 
       expect(message).toBe('Server error occurred.');
@@ -279,7 +333,10 @@ describe('ErrorHandler - Extended Tests', () => {
 
   describe('getRecoverySuggestions - Extended', () => {
     it('should provide suggestions for DATABASE_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.DATABASE_ERROR, 'Database error');
+      const error = errorHandler.createError(
+        ErrorCodes.DATABASE_ERROR,
+        'Database error'
+      );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       expect(suggestions).toContain('Please try again later');
@@ -287,7 +344,10 @@ describe('ErrorHandler - Extended Tests', () => {
     });
 
     it('should provide suggestions for UNAUTHORIZED', () => {
-      const error = errorHandler.createError(ErrorCodes.UNAUTHORIZED, 'Not authorized');
+      const error = errorHandler.createError(
+        ErrorCodes.UNAUTHORIZED,
+        'Not authorized'
+      );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       expect(suggestions).toContain('Redirecting to login page');
@@ -297,11 +357,16 @@ describe('ErrorHandler - Extended Tests', () => {
       const error = errorHandler.createError(ErrorCodes.FORBIDDEN, 'Forbidden');
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Contact administrator for permission request');
+      expect(suggestions).toContain(
+        'Contact administrator for permission request'
+      );
     });
 
     it('should provide suggestions for SESSION_EXPIRED', () => {
-      const error = errorHandler.createError(ErrorCodes.SESSION_EXPIRED, 'Expired');
+      const error = errorHandler.createError(
+        ErrorCodes.SESSION_EXPIRED,
+        'Expired'
+      );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       // SESSION_EXPIRED는 UNAUTHORIZED와 같은 카테고리이므로 비슷한 제안이 나올 수 있음
@@ -309,7 +374,10 @@ describe('ErrorHandler - Extended Tests', () => {
     });
 
     it('should provide suggestions for TIMEOUT_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.TIMEOUT_ERROR, 'Timeout');
+      const error = errorHandler.createError(
+        ErrorCodes.TIMEOUT_ERROR,
+        'Timeout'
+      );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
       expect(suggestions).toContain('Request timeout occurred');
@@ -319,35 +387,50 @@ describe('ErrorHandler - Extended Tests', () => {
 
   describe('shouldRetry - Extended', () => {
     it('should allow retry for TIMEOUT_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.TIMEOUT_ERROR, 'Timeout');
+      const error = errorHandler.createError(
+        ErrorCodes.TIMEOUT_ERROR,
+        'Timeout'
+      );
       const shouldRetry = errorHandler.shouldRetry(error, 'test-operation');
 
       expect(shouldRetry).toBe(true);
     });
 
     it('should allow retry for INTERNAL_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.INTERNAL_ERROR, 'Internal error');
+      const error = errorHandler.createError(
+        ErrorCodes.INTERNAL_ERROR,
+        'Internal error'
+      );
       const shouldRetry = errorHandler.shouldRetry(error, 'test-operation');
 
       expect(shouldRetry).toBe(true);
     });
 
     it('should not allow retry for VALIDATION_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.VALIDATION_ERROR, 'Invalid');
+      const error = errorHandler.createError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid'
+      );
       const shouldRetry = errorHandler.shouldRetry(error, 'test-operation');
 
       expect(shouldRetry).toBe(false);
     });
 
     it('should not allow retry for DUPLICATE_RECORD', () => {
-      const error = errorHandler.createError(ErrorCodes.DUPLICATE_RECORD, 'Duplicate');
+      const error = errorHandler.createError(
+        ErrorCodes.DUPLICATE_RECORD,
+        'Duplicate'
+      );
       const shouldRetry = errorHandler.shouldRetry(error, 'test-operation');
 
       expect(shouldRetry).toBe(false);
     });
 
     it('should not allow retry for UNAUTHORIZED', () => {
-      const error = errorHandler.createError(ErrorCodes.UNAUTHORIZED, 'Unauthorized');
+      const error = errorHandler.createError(
+        ErrorCodes.UNAUTHORIZED,
+        'Unauthorized'
+      );
       const shouldRetry = errorHandler.shouldRetry(error, 'test-operation');
 
       expect(shouldRetry).toBe(false);
@@ -356,28 +439,40 @@ describe('ErrorHandler - Extended Tests', () => {
 
   describe('getErrorCategory - Extended', () => {
     it('should categorize VALIDATION_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.VALIDATION_ERROR, 'Invalid');
+      const error = errorHandler.createError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid'
+      );
       const category = errorHandler.getErrorCategory(error);
 
       expect(category).toBe(ErrorCategory.VALIDATION);
     });
 
     it('should categorize DATABASE_ERROR', () => {
-      const error = errorHandler.createError(ErrorCodes.DATABASE_ERROR, 'DB error');
+      const error = errorHandler.createError(
+        ErrorCodes.DATABASE_ERROR,
+        'DB error'
+      );
       const category = errorHandler.getErrorCategory(error);
 
       expect(category).toBe(ErrorCategory.DATABASE);
     });
 
     it('should categorize SESSION_EXPIRED as AUTHENTICATION', () => {
-      const error = errorHandler.createError(ErrorCodes.SESSION_EXPIRED, 'Expired');
+      const error = errorHandler.createError(
+        ErrorCodes.SESSION_EXPIRED,
+        'Expired'
+      );
       const category = errorHandler.getErrorCategory(error);
 
       expect(category).toBe(ErrorCategory.AUTHENTICATION);
     });
 
     it('should categorize TIMEOUT_ERROR as NETWORK', () => {
-      const error = errorHandler.createError(ErrorCodes.TIMEOUT_ERROR, 'Timeout');
+      const error = errorHandler.createError(
+        ErrorCodes.TIMEOUT_ERROR,
+        'Timeout'
+      );
       const category = errorHandler.getErrorCategory(error);
 
       expect(category).toBe(ErrorCategory.NETWORK);
@@ -386,7 +481,10 @@ describe('ErrorHandler - Extended Tests', () => {
 
   describe('error logging - Extended', () => {
     it('should log errors', () => {
-      const error = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
+      const error = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
       errorHandler.logError(error);
 
       const errorLogs = errorHandler.getErrorLogs();
@@ -395,7 +493,10 @@ describe('ErrorHandler - Extended Tests', () => {
     });
 
     it('should clear error logs', () => {
-      const error = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
+      const error = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
       errorHandler.logError(error);
       errorHandler.clearErrorLogs();
 
@@ -404,9 +505,18 @@ describe('ErrorHandler - Extended Tests', () => {
     });
 
     it('should track error counts by code', () => {
-      const error1 = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
-      const error2 = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed again');
-      const error3 = errorHandler.createError(ErrorCodes.VALIDATION_ERROR, 'Invalid');
+      const error1 = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
+      const error2 = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed again'
+      );
+      const error3 = errorHandler.createError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid'
+      );
 
       errorHandler.logError(error1);
       errorHandler.logError(error2);
@@ -417,8 +527,14 @@ describe('ErrorHandler - Extended Tests', () => {
     });
 
     it('should get error statistics', () => {
-      const error1 = errorHandler.createError(ErrorCodes.NETWORK_ERROR, 'Network failed');
-      const error2 = errorHandler.createError(ErrorCodes.VALIDATION_ERROR, 'Invalid');
+      const error1 = errorHandler.createError(
+        ErrorCodes.NETWORK_ERROR,
+        'Network failed'
+      );
+      const error2 = errorHandler.createError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid'
+      );
 
       errorHandler.logError(error1);
       errorHandler.logError(error2);
@@ -452,4 +568,3 @@ describe('ErrorHandler - Extended Tests', () => {
     });
   });
 });
-

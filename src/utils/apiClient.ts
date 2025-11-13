@@ -23,7 +23,7 @@ export class ApiClient {
   ): Promise<{ data: T[] | null; error: unknown }> {
     const startTime = performance.now();
     const url = `supabase://${table}`;
-    
+
     try {
       let query = supabase.from(table).select(options?.select || '*');
 
@@ -72,12 +72,11 @@ export class ApiClient {
         error,
         `Query ${table}`
       );
-      logError(
-        `Query failed: ${table}`,
-        error,
-        'ApiClient',
-        { table, operation: 'query', duration }
-      );
+      logError(`Query failed: ${table}`, error, 'ApiClient', {
+        table,
+        operation: 'query',
+        duration,
+      });
       return { data: null, error: appError };
     }
   }
@@ -88,7 +87,7 @@ export class ApiClient {
   ): Promise<{ data: T | null; error: unknown }> {
     const startTime = performance.now();
     const url = `supabase://${table}`;
-    
+
     try {
       const { data: result, error } = await supabase
         .from(table)
@@ -125,12 +124,11 @@ export class ApiClient {
         error,
         `Create ${table}`
       );
-      logError(
-        `Create failed: ${table}`,
-        error,
-        'ApiClient',
-        { table, operation: 'create', duration }
-      );
+      logError(`Create failed: ${table}`, error, 'ApiClient', {
+        table,
+        operation: 'create',
+        duration,
+      });
       return { data: null, error: appError };
     }
   }
@@ -142,7 +140,7 @@ export class ApiClient {
   ): Promise<{ data: T | null; error: unknown }> {
     const startTime = performance.now();
     const url = `supabase://${table}/${id}`;
-    
+
     try {
       const { data: result, error } = await supabase
         .from(table)
@@ -181,12 +179,12 @@ export class ApiClient {
         error,
         `Update ${table}`
       );
-      logError(
-        `Update failed: ${table}`,
-        error,
-        'ApiClient',
-        { table, id, operation: 'update', duration }
-      );
+      logError(`Update failed: ${table}`, error, 'ApiClient', {
+        table,
+        id,
+        operation: 'update',
+        duration,
+      });
       return { data: null, error: appError };
     }
   }
@@ -197,7 +195,7 @@ export class ApiClient {
   ): Promise<{ success: boolean; error: unknown }> {
     const startTime = performance.now();
     const url = `supabase://${table}/${id}`;
-    
+
     try {
       const { error } = await supabase.from(table).delete().eq('id', id);
       const duration = Math.round(performance.now() - startTime);
@@ -230,12 +228,12 @@ export class ApiClient {
         error,
         `Delete ${table}`
       );
-      logError(
-        `Delete failed: ${table}`,
-        error,
-        'ApiClient',
-        { table, id, operation: 'delete', duration }
-      );
+      logError(`Delete failed: ${table}`, error, 'ApiClient', {
+        table,
+        id,
+        operation: 'delete',
+        duration,
+      });
       return { success: false, error: appError };
     }
   }

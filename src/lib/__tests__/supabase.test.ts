@@ -6,7 +6,7 @@ describe('supabase', () => {
     // The supabase client is mocked in jest.setup.js
     // We can verify the mock structure
     const { supabase } = require('../supabase');
-    
+
     expect(supabase).toBeDefined();
     expect(supabase).toHaveProperty('from');
     expect(typeof supabase.from).toBe('function');
@@ -14,10 +14,9 @@ describe('supabase', () => {
 
   it('should have supabase client structure', () => {
     const { supabase } = require('../supabase');
-    
+
     // Verify the mocked structure matches expected Supabase client interface
     expect(supabase).toBeDefined();
     expect(supabase.from).toBeDefined();
   });
 });
-

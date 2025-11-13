@@ -68,25 +68,34 @@ describe('useMaintenanceTasks', () => {
         task_type: 'repair' as TaskType,
       };
 
-      (SupabaseHelpers.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.fetchMaintenanceTasks as jest.Mock
+      ).mockResolvedValueOnce({
         data: [mockTask],
         error: null,
       });
 
       const { result } = renderHook(() => useMaintenanceTasks(initialFilters));
 
-      await waitFor(() => {
-        expect(result.current.tasks.length).toBeGreaterThan(0);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.tasks.length).toBeGreaterThan(0);
+        },
+        { timeout: 3000 }
+      );
 
-      expect(SupabaseHelpers.fetchMaintenanceTasks).toHaveBeenCalledWith(initialFilters);
+      expect(SupabaseHelpers.fetchMaintenanceTasks).toHaveBeenCalledWith(
+        initialFilters
+      );
     });
   });
 
   describe('fetchTasks', () => {
     it('should fetch tasks successfully', async () => {
       const mockTasks = [mockTask];
-      (SupabaseHelpers.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.fetchMaintenanceTasks as jest.Mock
+      ).mockResolvedValueOnce({
         data: mockTasks,
         error: null,
       });
@@ -97,17 +106,22 @@ describe('useMaintenanceTasks', () => {
         await result.current.fetchTasks();
       });
 
-      await waitFor(() => {
-        expect(result.current.tasks).toEqual(mockTasks);
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.tasks).toEqual(mockTasks);
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(SupabaseHelpers.fetchMaintenanceTasks).toHaveBeenCalled();
     });
 
     it('should handle fetch tasks error', async () => {
       const fetchError = new Error('Fetch failed');
-      (SupabaseHelpers.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.fetchMaintenanceTasks as jest.Mock
+      ).mockResolvedValueOnce({
         data: null,
         error: fetchError,
       });
@@ -118,10 +132,13 @@ describe('useMaintenanceTasks', () => {
         await result.current.fetchTasks();
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-        expect(result.current.error).toBe(fetchError);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+          expect(result.current.error).toBe(fetchError);
+        },
+        { timeout: 3000 }
+      );
 
       expect(result.current.tasks).toEqual([]);
     });
@@ -132,7 +149,9 @@ describe('useMaintenanceTasks', () => {
         task_type: 'repair' as TaskType,
       };
       const mockTasks = [mockTask];
-      (SupabaseHelpers.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.fetchMaintenanceTasks as jest.Mock
+      ).mockResolvedValueOnce({
         data: mockTasks,
         error: null,
       });
@@ -143,17 +162,24 @@ describe('useMaintenanceTasks', () => {
         await result.current.fetchTasks(filters);
       });
 
-      await waitFor(() => {
-        expect(result.current.tasks).toEqual(mockTasks);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.tasks).toEqual(mockTasks);
+        },
+        { timeout: 3000 }
+      );
 
-      expect(SupabaseHelpers.fetchMaintenanceTasks).toHaveBeenCalledWith(filters);
+      expect(SupabaseHelpers.fetchMaintenanceTasks).toHaveBeenCalledWith(
+        filters
+      );
     });
   });
 
   describe('fetchTaskById', () => {
     it('should fetch task by id successfully', async () => {
-      (SupabaseHelpers.fetchMaintenanceTaskById as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.fetchMaintenanceTaskById as jest.Mock
+      ).mockResolvedValueOnce({
         data: mockTask,
         error: null,
       });
@@ -165,17 +191,24 @@ describe('useMaintenanceTasks', () => {
         fetchedTask = await result.current.fetchTaskById('1');
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(fetchedTask).toEqual(mockTask);
-      expect(SupabaseHelpers.fetchMaintenanceTaskById).toHaveBeenCalledWith('1');
+      expect(SupabaseHelpers.fetchMaintenanceTaskById).toHaveBeenCalledWith(
+        '1'
+      );
     });
 
     it('should handle fetch task by id error', async () => {
       const fetchError = new Error('Fetch failed');
-      (SupabaseHelpers.fetchMaintenanceTaskById as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.fetchMaintenanceTaskById as jest.Mock
+      ).mockResolvedValueOnce({
         data: null,
         error: fetchError,
       });
@@ -187,9 +220,12 @@ describe('useMaintenanceTasks', () => {
         fetchedTask = await result.current.fetchTaskById('1');
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(fetchedTask).toBeNull();
       expect(result.current.error).toBe(fetchError);
@@ -226,7 +262,9 @@ describe('useMaintenanceTasks', () => {
         updated_at: '2024-01-01T00:00:00Z',
       };
 
-      (SupabaseHelpers.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.createMaintenanceTask as jest.Mock
+      ).mockResolvedValueOnce({
         data: createdTask,
         error: null,
       });
@@ -239,18 +277,26 @@ describe('useMaintenanceTasks', () => {
       });
 
       // Wait for state update
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       // Check that task was added to the list
-      await waitFor(() => {
-        expect(result.current.tasks.length).toBeGreaterThan(0);
-        expect(result.current.tasks[0].id).toBe(createdTask.id);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.tasks.length).toBeGreaterThan(0);
+          expect(result.current.tasks[0].id).toBe(createdTask.id);
+        },
+        { timeout: 3000 }
+      );
 
       expect(createdTaskResult).toEqual(createdTask);
-      expect(SupabaseHelpers.createMaintenanceTask).toHaveBeenCalledWith(newTaskData);
+      expect(SupabaseHelpers.createMaintenanceTask).toHaveBeenCalledWith(
+        newTaskData
+      );
     });
 
     it('should handle create task error', async () => {
@@ -274,7 +320,9 @@ describe('useMaintenanceTasks', () => {
       };
 
       const createError = new Error('Create failed');
-      (SupabaseHelpers.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.createMaintenanceTask as jest.Mock
+      ).mockResolvedValueOnce({
         data: null,
         error: createError,
       });
@@ -286,9 +334,12 @@ describe('useMaintenanceTasks', () => {
         createdTaskResult = await result.current.createTask(newTaskData);
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(createdTaskResult).toBeNull();
       expect(result.current.error).toBe(createError);
@@ -304,7 +355,9 @@ describe('useMaintenanceTasks', () => {
         status: 'in_progress' as TaskStatus,
       };
 
-      (SupabaseHelpers.updateMaintenanceTask as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.updateMaintenanceTask as jest.Mock
+      ).mockResolvedValueOnce({
         data: updatedTask,
         error: null,
       });
@@ -312,7 +365,9 @@ describe('useMaintenanceTasks', () => {
       const { result } = renderHook(() => useMaintenanceTasks());
 
       // First, manually set up tasks by creating one
-      (SupabaseHelpers.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.createMaintenanceTask as jest.Mock
+      ).mockResolvedValueOnce({
         data: mockTask,
         error: null,
       });
@@ -339,9 +394,12 @@ describe('useMaintenanceTasks', () => {
       });
 
       // Wait for task to be created
-      await waitFor(() => {
-        expect(result.current.tasks.length).toBeGreaterThan(0);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.tasks.length).toBeGreaterThan(0);
+        },
+        { timeout: 3000 }
+      );
 
       let updatedTaskResult: MaintenanceTask | null = null;
       await act(async () => {
@@ -352,19 +410,27 @@ describe('useMaintenanceTasks', () => {
       });
 
       // Wait for loading to complete
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       // Check that task was updated in the list
-      await waitFor(() => {
-        const task = result.current.tasks.find((t: MaintenanceTask) => t.id === '1');
-        expect(task).toBeDefined();
-        if (task) {
-          expect(task.title).toBe('Updated Repair');
-          expect(task.status).toBe('in_progress');
-        }
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          const task = result.current.tasks.find(
+            (t: MaintenanceTask) => t.id === '1'
+          );
+          expect(task).toBeDefined();
+          if (task) {
+            expect(task.title).toBe('Updated Repair');
+            expect(task.status).toBe('in_progress');
+          }
+        },
+        { timeout: 3000 }
+      );
 
       expect(updatedTaskResult).toEqual(updatedTask);
       expect(SupabaseHelpers.updateMaintenanceTask).toHaveBeenCalledWith('1', {
@@ -375,7 +441,9 @@ describe('useMaintenanceTasks', () => {
 
     it('should handle update task error', async () => {
       const updateError = new Error('Update failed');
-      (SupabaseHelpers.updateMaintenanceTask as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.updateMaintenanceTask as jest.Mock
+      ).mockResolvedValueOnce({
         data: null,
         error: updateError,
       });
@@ -383,7 +451,9 @@ describe('useMaintenanceTasks', () => {
       const { result } = renderHook(() => useMaintenanceTasks());
 
       // First, manually set up tasks by creating one
-      (SupabaseHelpers.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.createMaintenanceTask as jest.Mock
+      ).mockResolvedValueOnce({
         data: mockTask,
         error: null,
       });
@@ -410,9 +480,12 @@ describe('useMaintenanceTasks', () => {
       });
 
       // Wait for task to be created
-      await waitFor(() => {
-        expect(result.current.tasks.length).toBeGreaterThan(0);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.tasks.length).toBeGreaterThan(0);
+        },
+        { timeout: 3000 }
+      );
 
       let updatedTaskResult: MaintenanceTask | null = null;
       await act(async () => {
@@ -421,31 +494,43 @@ describe('useMaintenanceTasks', () => {
         });
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(updatedTaskResult).toBeNull();
       expect(result.current.error).toBe(updateError);
       // Task should not be updated
-      await waitFor(() => {
-        const task = result.current.tasks.find((t: MaintenanceTask) => t.id === '1');
-        expect(task).toBeDefined();
-        expect(task?.title).toBe('Violin Repair');
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          const task = result.current.tasks.find(
+            (t: MaintenanceTask) => t.id === '1'
+          );
+          expect(task).toBeDefined();
+          expect(task?.title).toBe('Violin Repair');
+        },
+        { timeout: 3000 }
+      );
     });
   });
 
   describe('deleteTask', () => {
     it('should delete task successfully', async () => {
-      (SupabaseHelpers.deleteMaintenanceTask as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.deleteMaintenanceTask as jest.Mock
+      ).mockResolvedValueOnce({
         error: null,
       });
 
       const { result } = renderHook(() => useMaintenanceTasks());
 
       // First, manually set up tasks by creating one
-      (SupabaseHelpers.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.createMaintenanceTask as jest.Mock
+      ).mockResolvedValueOnce({
         data: mockTask,
         error: null,
       });
@@ -472,9 +557,12 @@ describe('useMaintenanceTasks', () => {
       });
 
       // Wait for task to be created
-      await waitFor(() => {
-        expect(result.current.tasks.length).toBeGreaterThan(0);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.tasks.length).toBeGreaterThan(0);
+        },
+        { timeout: 3000 }
+      );
 
       // Now delete the task
       await act(async () => {
@@ -482,29 +570,41 @@ describe('useMaintenanceTasks', () => {
       });
 
       // Wait for loading to complete
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       // Check that task was removed from the list
-      await waitFor(() => {
-        const task = result.current.tasks.find((t: MaintenanceTask) => t.id === '1');
-        expect(task).toBeUndefined();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          const task = result.current.tasks.find(
+            (t: MaintenanceTask) => t.id === '1'
+          );
+          expect(task).toBeUndefined();
+        },
+        { timeout: 3000 }
+      );
 
       expect(SupabaseHelpers.deleteMaintenanceTask).toHaveBeenCalledWith('1');
     });
 
     it('should handle delete task error', async () => {
       const deleteError = new Error('Delete failed');
-      (SupabaseHelpers.deleteMaintenanceTask as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.deleteMaintenanceTask as jest.Mock
+      ).mockResolvedValueOnce({
         error: deleteError,
       });
 
       const { result } = renderHook(() => useMaintenanceTasks());
 
       // First, manually set up tasks by creating one
-      (SupabaseHelpers.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.createMaintenanceTask as jest.Mock
+      ).mockResolvedValueOnce({
         data: mockTask,
         error: null,
       });
@@ -531,33 +631,46 @@ describe('useMaintenanceTasks', () => {
       });
 
       // Wait for task to be created
-      await waitFor(() => {
-        expect(result.current.tasks.length).toBeGreaterThan(0);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.tasks.length).toBeGreaterThan(0);
+        },
+        { timeout: 3000 }
+      );
 
       // Now try to delete the task (should fail)
       await act(async () => {
         await result.current.deleteTask('1');
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(result.current.error).toBe(deleteError);
       // Task should not be deleted
-      await waitFor(() => {
-        expect(result.current.tasks.length).toBeGreaterThan(0);
-        const task = result.current.tasks.find((t: MaintenanceTask) => t.id === '1');
-        expect(task).toBeDefined();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.tasks.length).toBeGreaterThan(0);
+          const task = result.current.tasks.find(
+            (t: MaintenanceTask) => t.id === '1'
+          );
+          expect(task).toBeDefined();
+        },
+        { timeout: 3000 }
+      );
     });
   });
 
   describe('fetchTasksByDateRange', () => {
     it('should fetch tasks by date range successfully', async () => {
       const mockTasks = [mockTask];
-      (SupabaseHelpers.fetchTasksByDateRange as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.fetchTasksByDateRange as jest.Mock
+      ).mockResolvedValueOnce({
         data: mockTasks,
         error: null,
       });
@@ -566,29 +679,43 @@ describe('useMaintenanceTasks', () => {
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
-        fetchedTasks = await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+        fetchedTasks = await result.current.fetchTasksByDateRange(
+          '2024-01-01',
+          '2024-01-31'
+        );
       });
 
       // Wait for loading to complete
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       // Check that tasks were fetched
       expect(fetchedTasks).toEqual(mockTasks);
-      expect(SupabaseHelpers.fetchTasksByDateRange).toHaveBeenCalledWith('2024-01-01', '2024-01-31');
-      
+      expect(SupabaseHelpers.fetchTasksByDateRange).toHaveBeenCalledWith(
+        '2024-01-01',
+        '2024-01-31'
+      );
+
       // Note: fetchTasksByDateRange merges tasks into the existing tasks array
       // Since we start with an empty array, the tasks should be added
-      await waitFor(() => {
-        // Tasks should be merged into the state
-        expect(result.current.tasks.length).toBeGreaterThan(0);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          // Tasks should be merged into the state
+          expect(result.current.tasks.length).toBeGreaterThan(0);
+        },
+        { timeout: 3000 }
+      );
     });
 
     it('should handle fetch tasks by date range error', async () => {
       const fetchError = new Error('Fetch failed');
-      (SupabaseHelpers.fetchTasksByDateRange as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.fetchTasksByDateRange as jest.Mock
+      ).mockResolvedValueOnce({
         data: null,
         error: fetchError,
       });
@@ -597,12 +724,18 @@ describe('useMaintenanceTasks', () => {
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
-        fetchedTasks = await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+        fetchedTasks = await result.current.fetchTasksByDateRange(
+          '2024-01-01',
+          '2024-01-31'
+        );
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(fetchedTasks).toEqual([]);
       expect(result.current.error).toBe(fetchError);
@@ -612,7 +745,9 @@ describe('useMaintenanceTasks', () => {
   describe('fetchTasksByScheduledDate', () => {
     it('should fetch tasks by scheduled date successfully', async () => {
       const mockTasks = [mockTask];
-      (SupabaseHelpers.fetchTasksByScheduledDate as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.fetchTasksByScheduledDate as jest.Mock
+      ).mockResolvedValueOnce({
         data: mockTasks,
         error: null,
       });
@@ -621,20 +756,28 @@ describe('useMaintenanceTasks', () => {
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
-        fetchedTasks = await result.current.fetchTasksByScheduledDate('2024-01-05');
+        fetchedTasks =
+          await result.current.fetchTasksByScheduledDate('2024-01-05');
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(fetchedTasks).toEqual(mockTasks);
-      expect(SupabaseHelpers.fetchTasksByScheduledDate).toHaveBeenCalledWith('2024-01-05');
+      expect(SupabaseHelpers.fetchTasksByScheduledDate).toHaveBeenCalledWith(
+        '2024-01-05'
+      );
     });
 
     it('should handle fetch tasks by scheduled date error', async () => {
       const fetchError = new Error('Fetch failed');
-      (SupabaseHelpers.fetchTasksByScheduledDate as jest.Mock).mockResolvedValueOnce({
+      (
+        SupabaseHelpers.fetchTasksByScheduledDate as jest.Mock
+      ).mockResolvedValueOnce({
         data: null,
         error: fetchError,
       });
@@ -643,12 +786,16 @@ describe('useMaintenanceTasks', () => {
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
-        fetchedTasks = await result.current.fetchTasksByScheduledDate('2024-01-05');
+        fetchedTasks =
+          await result.current.fetchTasksByScheduledDate('2024-01-05');
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(fetchedTasks).toEqual([]);
       expect(result.current.error).toBe(fetchError);
@@ -670,9 +817,12 @@ describe('useMaintenanceTasks', () => {
         fetchedTasks = await result.current.fetchOverdueTasks();
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(fetchedTasks).toEqual(mockTasks);
       expect(SupabaseHelpers.fetchOverdueTasks).toHaveBeenCalled();
@@ -692,9 +842,12 @@ describe('useMaintenanceTasks', () => {
         fetchedTasks = await result.current.fetchOverdueTasks();
       });
 
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
 
       expect(fetchedTasks).toEqual([]);
       expect(result.current.error).toBe(fetchError);
@@ -703,8 +856,13 @@ describe('useMaintenanceTasks', () => {
 
   describe('Loading state', () => {
     it('should set loading state correctly during fetch', async () => {
-      let resolveFetch: ((value: { data: MaintenanceTask[]; error: null }) => void) | null = null;
-      const fetchPromise = new Promise<{ data: MaintenanceTask[]; error: null }>(resolve => {
+      let resolveFetch:
+        | ((value: { data: MaintenanceTask[]; error: null }) => void)
+        | null = null;
+      const fetchPromise = new Promise<{
+        data: MaintenanceTask[];
+        error: null;
+      }>(resolve => {
         resolveFetch = resolve;
       });
 
@@ -720,9 +878,12 @@ describe('useMaintenanceTasks', () => {
       });
 
       // Wait for loading to be true
-      await waitFor(() => {
-        expect(result.current.loading).toBe(true);
-      }, { timeout: 1000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(true);
+        },
+        { timeout: 1000 }
+      );
 
       // Resolve the promise
       await act(async () => {
@@ -732,10 +893,12 @@ describe('useMaintenanceTasks', () => {
       });
 
       // Wait for loading to be false
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(result.current.loading).toBe(false);
+        },
+        { timeout: 3000 }
+      );
     });
   });
 });
-

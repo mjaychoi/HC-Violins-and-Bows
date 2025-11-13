@@ -324,4 +324,3 @@ describe('useFormState', () => {
     expect(result.current.formData.name).toBe('Jane');
   });
 });
-

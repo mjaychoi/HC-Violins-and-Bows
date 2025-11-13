@@ -1,6 +1,6 @@
 /**
  * Supabase 데이터베이스 스키마 확인 및 비교 스크립트
- * 
+ *
  * 이 스크립트는 Supabase 데이터베이스의 실제 스키마를 확인하고
  * 레포지토리의 마이그레이션 파일들과 비교합니다.
  */
@@ -41,7 +41,9 @@ async function getSupabaseConnection(): Promise<Client> {
   const dbPassword = process.env.DATABASE_PASSWORD;
 
   if (!supabaseUrl) {
-    throw new Error('NEXT_PUBLIC_SUPABASE_URL 환경 변수가 설정되지 않았습니다.');
+    throw new Error(
+      'NEXT_PUBLIC_SUPABASE_URL 환경 변수가 설정되지 않았습니다.'
+    );
   }
 
   if (!dbPassword) {
@@ -55,7 +57,13 @@ async function getSupabaseConnection(): Promise<Client> {
 
   // Pooler 연결 시도 - Supabase 대시보드에서 제공한 형식 사용
   // 포트: 5432, 사용자: postgres.프로젝트참조
-  const regions = ['us-east-2', 'us-east-1', 'us-west-1', 'eu-west-1', 'ap-southeast-1'];
+  const regions = [
+    'us-east-2',
+    'us-east-1',
+    'us-west-1',
+    'eu-west-1',
+    'ap-southeast-1',
+  ];
   let client: Client | null = null;
 
   console.log('🔌 Pooler 연결 시도 (포트 5432)...\n');
@@ -63,11 +71,11 @@ async function getSupabaseConnection(): Promise<Client> {
   for (const region of regions) {
     try {
       console.log(`🔌 ${region} 지역 pooler 연결 시도...`);
-      
+
       client = new Client({
         host: `aws-0-${region}.pooler.supabase.com`,
-        port: 5432,  // Pooler는 포트 5432 사용
-        user: `postgres.${projectRef}`,  // 사용자 이름 형식: postgres.프로젝트참조
+        port: 5432, // Pooler는 포트 5432 사용
+        user: `postgres.${projectRef}`, // 사용자 이름 형식: postgres.프로젝트참조
         password: dbPassword,
         database: 'postgres',
         ssl: {
@@ -102,8 +110,8 @@ async function getSupabaseConnection(): Promise<Client> {
         'message' in error &&
         typeof error.message === 'string' &&
         (error.message.includes('self-signed certificate') ||
-         error.message.includes('certificate') ||
-         error.message.includes('SSL'))
+          error.message.includes('certificate') ||
+          error.message.includes('SSL'))
       ) {
         console.log(`⚠️  ${region} 지역 SSL 인증서 오류, 다음 지역 시도...\n`);
         continue;
@@ -118,8 +126,12 @@ async function getSupabaseConnection(): Promise<Client> {
         break;
       } else {
         // 상세한 에러 정보 출력
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const errorCode = error && typeof error === 'object' && 'code' in error ? error.code : 'unknown';
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const errorCode =
+          error && typeof error === 'object' && 'code' in error
+            ? error.code
+            : 'unknown';
         console.log(`⚠️  ${region} 지역 연결 오류:`);
         console.log(`   코드: ${errorCode}`);
         console.log(`   메시지: ${errorMessage}\n`);
@@ -131,7 +143,10 @@ async function getSupabaseConnection(): Promise<Client> {
   throw new Error('모든 지역에 대한 연결 시도가 실패했습니다.');
 }
 
-async function getTableColumns(client: Client, tableName: string): Promise<ColumnInfo[]> {
+async function getTableColumns(
+  client: Client,
+  tableName: string
+): Promise<ColumnInfo[]> {
   const query = `
     SELECT 
       column_name,
@@ -148,7 +163,10 @@ async function getTableColumns(client: Client, tableName: string): Promise<Colum
   return result.rows as ColumnInfo[];
 }
 
-async function getTableConstraints(client: Client, tableName: string): Promise<ConstraintInfo[]> {
+async function getTableConstraints(
+  client: Client,
+  tableName: string
+): Promise<ConstraintInfo[]> {
   const query = `
     SELECT 
       conname AS constraint_name,
@@ -176,7 +194,10 @@ async function getTables(client: Client): Promise<string[]> {
   return result.rows.map(row => row.table_name);
 }
 
-async function getTableInfo(client: Client, tableName: string): Promise<TableInfo> {
+async function getTableInfo(
+  client: Client,
+  tableName: string
+): Promise<TableInfo> {
   const columns = await getTableColumns(client, tableName);
   const constraints = await getTableConstraints(client, tableName);
 
@@ -231,7 +252,7 @@ function saveSchemaToFile(tables: TableInfo[], outputPath: string): void {
 
     const columnDefinitions = table.columns.map(col => {
       let def = `  ${col.column_name} `;
-      
+
       // Data type
       if (col.data_type === 'character varying') {
         def += 'VARCHAR';
@@ -321,34 +342,56 @@ async function checkSchema() {
     console.log('🔍 주요 테이블 상세 정보');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-    const importantTables = ['instruments', 'clients', 'client_instruments', 'instrument_images', 'sales_history', 'maintenance_tasks'];
-    
+    const importantTables = [
+      'instruments',
+      'clients',
+      'client_instruments',
+      'instrument_images',
+      'sales_history',
+      'maintenance_tasks',
+    ];
+
     for (const tableName of importantTables) {
       const table = tables.find(t => t.table_name === tableName);
       if (table) {
         console.log(`✅ ${tableName} 테이블 존재`);
-        
+
         // Check for important columns
         if (tableName === 'instruments') {
-          const hasSubtype = table.columns.some(c => c.column_name === 'subtype');
-          const hasUpdatedAt = table.columns.some(c => c.column_name === 'updated_at');
-          const statusConstraint = table.constraints.find(c => 
-            c.constraint_name.includes('status') && 
-            c.constraint_definition.includes('CHECK')
+          const hasSubtype = table.columns.some(
+            c => c.column_name === 'subtype'
+          );
+          const hasUpdatedAt = table.columns.some(
+            c => c.column_name === 'updated_at'
+          );
+          const statusConstraint = table.constraints.find(
+            c =>
+              c.constraint_name.includes('status') &&
+              c.constraint_definition.includes('CHECK')
           );
 
-          console.log(`  • subtype 컬럼: ${hasSubtype ? '✅ 있음' : '❌ 없음'}`);
-          console.log(`  • updated_at 컬럼: ${hasUpdatedAt ? '✅ 있음' : '❌ 없음'}`);
-          console.log(`  • status 제약조건: ${statusConstraint ? '✅ 있음' : '❌ 없음'}`);
-          
+          console.log(
+            `  • subtype 컬럼: ${hasSubtype ? '✅ 있음' : '❌ 없음'}`
+          );
+          console.log(
+            `  • updated_at 컬럼: ${hasUpdatedAt ? '✅ 있음' : '❌ 없음'}`
+          );
+          console.log(
+            `  • status 제약조건: ${statusConstraint ? '✅ 있음' : '❌ 없음'}`
+          );
+
           if (statusConstraint) {
-            const hasReserved = statusConstraint.constraint_definition.includes('Reserved');
-            const hasMaintenance = statusConstraint.constraint_definition.includes('Maintenance');
+            const hasReserved =
+              statusConstraint.constraint_definition.includes('Reserved');
+            const hasMaintenance =
+              statusConstraint.constraint_definition.includes('Maintenance');
             console.log(`    - Reserved 허용: ${hasReserved ? '✅' : '❌'}`);
-            console.log(`    - Maintenance 허용: ${hasMaintenance ? '✅' : '❌'}`);
+            console.log(
+              `    - Maintenance 허용: ${hasMaintenance ? '✅' : '❌'}`
+            );
           }
         }
-        
+
         console.log('');
       } else {
         console.log(`❌ ${tableName} 테이블 없음\n`);
@@ -358,9 +401,9 @@ async function checkSchema() {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('✅ 스키마 확인 완료!');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     console.error('❌ 에러:', errorMessage);
     process.exit(1);
   } finally {
@@ -377,4 +420,3 @@ checkSchema().catch(error => {
 });
 
 export { checkSchema };
-

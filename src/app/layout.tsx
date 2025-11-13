@@ -10,7 +10,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <ErrorBoundary>
           <AuthProvider>
-          <DataProvider>{children}</DataProvider>
+            <DataProvider>{children}</DataProvider>
           </AuthProvider>
         </ErrorBoundary>
       </body>

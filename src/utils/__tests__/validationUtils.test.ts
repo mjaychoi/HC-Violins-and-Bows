@@ -93,23 +93,43 @@ describe('validationUtils', () => {
       const error = validateField('ab', [commonRules.minLength(5)], 'Field');
       expect(error).toContain('at least 5');
 
-      const noError = validateField('abcde', [commonRules.minLength(5)], 'Field');
+      const noError = validateField(
+        'abcde',
+        [commonRules.minLength(5)],
+        'Field'
+      );
       expect(noError).toBeNull();
     });
 
     it('should validate maxLength', () => {
-      const error = validateField('abcdefghijk', [commonRules.maxLength(10)], 'Field');
+      const error = validateField(
+        'abcdefghijk',
+        [commonRules.maxLength(10)],
+        'Field'
+      );
       expect(error).toContain('no more than 10');
 
-      const noError = validateField('abcde', [commonRules.maxLength(10)], 'Field');
+      const noError = validateField(
+        'abcde',
+        [commonRules.maxLength(10)],
+        'Field'
+      );
       expect(noError).toBeNull();
     });
 
     it('should validate pattern', () => {
-      const error = validateField('invalid-email', [commonRules.email()], 'Field');
+      const error = validateField(
+        'invalid-email',
+        [commonRules.email()],
+        'Field'
+      );
       expect(error).toBe('Please enter a valid email address');
 
-      const noError = validateField('test@example.com', [commonRules.email()], 'Field');
+      const noError = validateField(
+        'test@example.com',
+        [commonRules.email()],
+        'Field'
+      );
       expect(noError).toBeNull();
     });
 
@@ -164,7 +184,11 @@ describe('validationUtils', () => {
       const error1 = validateField(null, [commonRules.required()], 'Field');
       expect(error1).toBe('This field is required');
 
-      const error2 = validateField(undefined, [commonRules.required()], 'Field');
+      const error2 = validateField(
+        undefined,
+        [commonRules.required()],
+        'Field'
+      );
       expect(error2).toBe('This field is required');
     });
   });
@@ -246,10 +270,18 @@ describe('validationUtils', () => {
       const error1 = validateField('', clientValidation.firstName, 'firstName');
       expect(error1).toBe('First name is required');
 
-      const error2 = validateField('A', clientValidation.firstName, 'firstName');
+      const error2 = validateField(
+        'A',
+        clientValidation.firstName,
+        'firstName'
+      );
       expect(error2).toContain('at least 2');
 
-      const noError = validateField('John', clientValidation.firstName, 'firstName');
+      const noError = validateField(
+        'John',
+        clientValidation.firstName,
+        'firstName'
+      );
       expect(noError).toBeNull();
     });
 
@@ -257,7 +289,11 @@ describe('validationUtils', () => {
       const error1 = validateField('', clientValidation.lastName, 'lastName');
       expect(error1).toBe('Last name is required');
 
-      const noError = validateField('Doe', clientValidation.lastName, 'lastName');
+      const noError = validateField(
+        'Doe',
+        clientValidation.lastName,
+        'lastName'
+      );
       expect(noError).toBeNull();
     });
 
@@ -268,7 +304,11 @@ describe('validationUtils', () => {
       const error2 = validateField('invalid', clientValidation.email, 'email');
       expect(error2).toBe('Please enter a valid email address');
 
-      const noError = validateField('test@example.com', clientValidation.email, 'email');
+      const noError = validateField(
+        'test@example.com',
+        clientValidation.email,
+        'email'
+      );
       expect(noError).toBeNull();
     });
 
@@ -276,7 +316,11 @@ describe('validationUtils', () => {
       const error = validateField('abc', clientValidation.phone, 'phone');
       expect(error).toBe('Please enter a valid phone number');
 
-      const noError = validateField('1234567890', clientValidation.phone, 'phone');
+      const noError = validateField(
+        '1234567890',
+        clientValidation.phone,
+        'phone'
+      );
       expect(noError).toBeNull();
     });
 
@@ -284,7 +328,11 @@ describe('validationUtils', () => {
       const error = validateField('123', clientValidation.address, 'address');
       expect(error).toBe('Please enter a complete address');
 
-      const noError = validateField('123 Main St', clientValidation.address, 'address');
+      const noError = validateField(
+        '123 Main St',
+        clientValidation.address,
+        'address'
+      );
       expect(noError).toBeNull();
     });
   });
@@ -294,7 +342,11 @@ describe('validationUtils', () => {
       const error1 = validateField('', instrumentValidation.maker, 'maker');
       expect(error1).toBe('Maker is required');
 
-      const noError = validateField('Stradivarius', instrumentValidation.maker, 'maker');
+      const noError = validateField(
+        'Stradivarius',
+        instrumentValidation.maker,
+        'maker'
+      );
       expect(noError).toBeNull();
     });
 
@@ -302,7 +354,11 @@ describe('validationUtils', () => {
       const error1 = validateField('', instrumentValidation.name, 'name');
       expect(error1).toBe('Instrument name is required');
 
-      const noError = validateField('Violin', instrumentValidation.name, 'name');
+      const noError = validateField(
+        'Violin',
+        instrumentValidation.name,
+        'name'
+      );
       expect(noError).toBeNull();
     });
 
@@ -318,7 +374,11 @@ describe('validationUtils', () => {
     });
 
     it('should validate price', () => {
-      const error1 = validateField('invalid', instrumentValidation.price, 'price');
+      const error1 = validateField(
+        'invalid',
+        instrumentValidation.price,
+        'price'
+      );
       expect(error1).toBe('Please enter a valid price');
 
       // '-100'은 decimal 패턴에 맞지 않으므로 decimal 규칙에서 실패
@@ -327,11 +387,19 @@ describe('validationUtils', () => {
       expect(error2).toBe('Please enter a valid price'); // decimal 규칙에서 실패
 
       // 유효한 decimal이지만 범위를 초과하는 경우
-      const error3 = validateField('2000000', instrumentValidation.price, 'price');
+      const error3 = validateField(
+        '2000000',
+        instrumentValidation.price,
+        'price'
+      );
       expect(error3).toBe('Price seems too high');
 
       // 유효한 decimal이고 범위 내인 경우
-      const noError = validateField('1000', instrumentValidation.price, 'price');
+      const noError = validateField(
+        '1000',
+        instrumentValidation.price,
+        'price'
+      );
       expect(noError).toBeNull();
     });
   });
@@ -339,10 +407,18 @@ describe('validationUtils', () => {
   describe('connectionValidation', () => {
     it('should validate notes', () => {
       const longNotes = 'a'.repeat(501);
-      const error = validateField(longNotes, connectionValidation.notes, 'notes');
+      const error = validateField(
+        longNotes,
+        connectionValidation.notes,
+        'notes'
+      );
       expect(error).toContain('500 characters');
 
-      const noError = validateField('Short note', connectionValidation.notes, 'notes');
+      const noError = validateField(
+        'Short note',
+        connectionValidation.notes,
+        'notes'
+      );
       expect(noError).toBeNull();
     });
 
@@ -605,4 +681,3 @@ describe('validationUtils', () => {
     });
   });
 });
-

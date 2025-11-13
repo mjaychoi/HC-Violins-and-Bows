@@ -1,6 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { User, Session, AuthError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
@@ -10,8 +16,14 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  signUp: (
+    email: string,
+    password: string
+  ) => Promise<{ error: AuthError | null }>;
+  signIn: (
+    email: string,
+    password: string
+  ) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
 }
@@ -30,8 +42,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
         // Invalid refresh token 오류 처리
-        if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
-          logInfo('Invalid refresh token detected, clearing session', 'AuthContext');
+        if (
+          error.message?.includes('Invalid Refresh Token') ||
+          error.message?.includes('Refresh Token Not Found')
+        ) {
+          logInfo(
+            'Invalid refresh token detected, clearing session',
+            'AuthContext'
+          );
           // 세션 클리어
           supabase.auth.signOut().catch(() => {
             // 무시 - 이미 로그아웃 상태일 수 있음
@@ -42,9 +60,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           logError('Failed to get initial session', error, 'AuthContext');
         }
       } else {
-        logInfo('Initial session loaded', 'AuthContext', { 
+        logInfo('Initial session loaded', 'AuthContext', {
           hasSession: !!session,
-          userId: session?.user?.id 
+          userId: session?.user?.id,
         });
       }
       setSession(session);
@@ -67,7 +85,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
 
       // Redirect to login if signed out or token error
-      if (!session && (_event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED')) {
+      if (
+        !session &&
+        (_event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED')
+      ) {
         // TOKEN_REFRESHED 이벤트에서 session이 null이면 토큰 오류
         if (_event === 'TOKEN_REFRESHED' && !session) {
           logInfo('Token refresh failed, redirecting to login', 'AuthContext');
@@ -83,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string) => {
     const startTime = performance.now();
-    
+
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -92,11 +113,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const duration = Math.round(performance.now() - startTime);
 
       if (error) {
-        logApiRequest('POST', 'auth/signup', undefined, duration, 'AuthContext', {
-          operation: 'signUp',
-          error: true,
-          errorCode: error.message,
-        });
+        logApiRequest(
+          'POST',
+          'auth/signup',
+          undefined,
+          duration,
+          'AuthContext',
+          {
+            operation: 'signUp',
+            error: true,
+            errorCode: error.message,
+          }
+        );
         logError('Sign up failed', error, 'AuthContext', { email });
         return { error };
       }
@@ -108,7 +136,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           operation: 'signUp',
           userId: data.user?.id,
         });
-        logInfo('User signed up successfully', 'AuthContext', { userId: data.user?.id, email });
+        logInfo('User signed up successfully', 'AuthContext', {
+          userId: data.user?.id,
+          email,
+        });
       }
 
       return { error: null };
@@ -121,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const startTime = performance.now();
-    
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -130,11 +161,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const duration = Math.round(performance.now() - startTime);
 
       if (error) {
-        logApiRequest('POST', 'auth/signin', undefined, duration, 'AuthContext', {
-          operation: 'signIn',
-          error: true,
-          errorCode: error.message,
-        });
+        logApiRequest(
+          'POST',
+          'auth/signin',
+          undefined,
+          duration,
+          'AuthContext',
+          {
+            operation: 'signIn',
+            error: true,
+            errorCode: error.message,
+          }
+        );
         logError('Sign in failed', error, 'AuthContext', { email });
         return { error };
       }
@@ -147,7 +185,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           operation: 'signIn',
           userId: data.user?.id,
         });
-        logInfo('User signed in successfully', 'AuthContext', { userId: data.user?.id, email });
+        logInfo('User signed in successfully', 'AuthContext', {
+          userId: data.user?.id,
+          email,
+        });
       }
 
       return { error: null };
@@ -161,16 +202,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     const startTime = performance.now();
     const userId = user?.id;
-    
+
     try {
       const { error } = await supabase.auth.signOut();
       const duration = Math.round(performance.now() - startTime);
 
       if (error) {
-        logApiRequest('POST', 'auth/signout', undefined, duration, 'AuthContext', {
-          operation: 'signOut',
-          error: true,
-        });
+        logApiRequest(
+          'POST',
+          'auth/signout',
+          undefined,
+          duration,
+          'AuthContext',
+          {
+            operation: 'signOut',
+            error: true,
+          }
+        );
         logError('Sign out failed', error, 'AuthContext', { userId });
       } else {
         logApiRequest('POST', 'auth/signout', 200, duration, 'AuthContext', {
@@ -185,7 +233,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       router.push('/');
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
-      logError('Sign out exception', error, 'AuthContext', { userId, duration });
+      logError('Sign out exception', error, 'AuthContext', {
+        userId,
+        duration,
+      });
       setSession(null);
       setUser(null);
       router.push('/');
@@ -194,21 +245,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshSession = async () => {
     const startTime = performance.now();
-    
+
     try {
       const { data, error } = await supabase.auth.refreshSession();
       const duration = Math.round(performance.now() - startTime);
 
       if (error) {
-        logApiRequest('POST', 'auth/refresh', undefined, duration, 'AuthContext', {
-          operation: 'refreshSession',
-          error: true,
-        });
+        logApiRequest(
+          'POST',
+          'auth/refresh',
+          undefined,
+          duration,
+          'AuthContext',
+          {
+            operation: 'refreshSession',
+            error: true,
+          }
+        );
         logError('Session refresh failed', error, 'AuthContext');
-        
+
         // Invalid refresh token 오류 처리
-        if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
-          logInfo('Invalid refresh token, clearing session and redirecting to login', 'AuthContext');
+        if (
+          error.message?.includes('Invalid Refresh Token') ||
+          error.message?.includes('Refresh Token Not Found')
+        ) {
+          logInfo(
+            'Invalid refresh token, clearing session and redirecting to login',
+            'AuthContext'
+          );
           // 세션 클리어
           await supabase.auth.signOut();
           setSession(null);
@@ -225,7 +289,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           operation: 'refreshSession',
           userId: data.session.user?.id,
         });
-        logInfo('Session refreshed successfully', 'AuthContext', { userId: data.session.user?.id });
+        logInfo('Session refreshed successfully', 'AuthContext', {
+          userId: data.session.user?.id,
+        });
       } else {
         // 세션이 없으면 로그아웃 처리
         logInfo('No session after refresh, clearing auth state', 'AuthContext');
@@ -236,10 +302,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
       logError('Session refresh exception', error, 'AuthContext', { duration });
-      
+
       // 예외 발생 시에도 세션 클리어
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('Invalid Refresh Token') || errorMessage.includes('Refresh Token Not Found')) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (
+        errorMessage.includes('Invalid Refresh Token') ||
+        errorMessage.includes('Refresh Token Not Found')
+      ) {
         setSession(null);
         setUser(null);
         router.push('/');
@@ -267,4 +337,3 @@ export function useAuth() {
   }
   return context;
 }
-

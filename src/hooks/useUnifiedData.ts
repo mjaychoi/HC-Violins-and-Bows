@@ -144,7 +144,7 @@ export function useUnifiedDashboard() {
   const clientRelationships = useMemo(() => {
     const clientMap = new Map(state.clients.map(c => [c.id, c]));
     const instrumentMap = new Map(state.instruments.map(i => [i.id, i]));
-    
+
     return state.connections
       .map(connection => ({
         ...connection,

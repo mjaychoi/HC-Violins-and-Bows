@@ -2,6 +2,13 @@ import { SupabaseHelpers } from '../supabaseHelpers';
 import { supabase } from '@/lib/supabase';
 import type { MaintenanceTask, TaskFilters } from '@/types';
 
+// Mock logger
+const mockLogError = jest.fn();
+jest.mock('../logger', () => ({
+  logError: (...args: unknown[]) => mockLogError(...args),
+  logApiRequest: jest.fn(),
+}));
+
 // Mock supabase
 jest.mock('@/lib/supabase', () => ({
   supabase: {
@@ -33,11 +40,14 @@ const mockMaintenanceTask: MaintenanceTask = {
 };
 
 // Helper to create a chainable mock that returns a Promise when awaited
-function createChainableMockQuery(mockData: MaintenanceTask[] | null, mockError: unknown = null) {
+function createChainableMockQuery(
+  mockData: MaintenanceTask[] | null,
+  mockError: unknown = null
+) {
   // When error exists, data should be null (Supabase behavior)
   const data = mockError ? null : mockData;
   const mockPromise = Promise.resolve({ data, error: mockError });
-  
+
   const chain = {
     eq: jest.fn().mockReturnThis(),
     order: jest.fn().mockReturnThis(),
@@ -59,11 +69,7 @@ function createChainableMockQuery(mockData: MaintenanceTask[] | null, mockError:
 describe('SupabaseHelpers - Maintenance Tasks', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.spyOn(console, 'error').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
+    mockLogError.mockClear();
   });
 
   describe('fetchMaintenanceTasks', () => {
@@ -83,7 +89,9 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
       expect(result.data).toEqual(mockData);
       expect(result.error).toBeNull();
       expect(supabase.from).toHaveBeenCalledWith('maintenance_tasks');
-      expect(mockOrder).toHaveBeenCalledWith('received_date', { ascending: false });
+      expect(mockOrder).toHaveBeenCalledWith('received_date', {
+        ascending: false,
+      });
     });
 
     it('should fetch tasks with filters', async () => {
@@ -213,7 +221,10 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
-      const result = await SupabaseHelpers.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      const result = await SupabaseHelpers.fetchTasksByDateRange(
+        '2024-01-01',
+        '2024-01-31'
+      );
 
       expect(mockQuery.gte).toHaveBeenCalledWith('received_date', '2024-01-01');
       expect(mockQuery.lte).toHaveBeenCalledWith('received_date', '2024-01-31');
@@ -241,7 +252,10 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
-      const result = await SupabaseHelpers.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      const result = await SupabaseHelpers.fetchTasksByDateRange(
+        '2024-01-01',
+        '2024-01-31'
+      );
 
       // task1은 scheduled_date가 범위 내이므로 포함되어야 함
       // task2는 due_date가 범위 밖이지만 received_date가 범위 내이므로 포함되어야 함
@@ -261,10 +275,13 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
-      const result = await SupabaseHelpers.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      const result = await SupabaseHelpers.fetchTasksByDateRange(
+        '2024-01-01',
+        '2024-01-31'
+      );
 
       expect(result.error).toEqual(mockError);
-      expect(console.error).toHaveBeenCalled();
+      expect(mockLogError).toHaveBeenCalled();
     });
 
     it('should handle RLS policy error', async () => {
@@ -279,10 +296,13 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
-      const result = await SupabaseHelpers.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      const result = await SupabaseHelpers.fetchTasksByDateRange(
+        '2024-01-01',
+        '2024-01-31'
+      );
 
       expect(result.error).toEqual(mockError);
-      expect(console.error).toHaveBeenCalled();
+      expect(mockLogError).toHaveBeenCalled();
     });
 
     it('should handle unexpected errors', async () => {
@@ -292,7 +312,10 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
         throw mockError;
       });
 
-      const result = await SupabaseHelpers.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      const result = await SupabaseHelpers.fetchTasksByDateRange(
+        '2024-01-01',
+        '2024-01-31'
+      );
 
       expect(result.error).toEqual(mockError);
       expect(result.data).toBeNull();
@@ -301,7 +324,10 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
   describe('createMaintenanceTask', () => {
     it('should create a maintenance task', async () => {
-      const newTask: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'> = {
+      const newTask: Omit<
+        MaintenanceTask,
+        'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+      > = {
         instrument_id: 'inst-1',
         client_id: null,
         task_type: 'repair',
@@ -336,7 +362,10 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
     });
 
     it('should handle errors when creating task', async () => {
-      const newTask: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'> = {
+      const newTask: Omit<
+        MaintenanceTask,
+        'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+      > = {
         instrument_id: 'inst-1',
         client_id: null,
         task_type: 'repair',
@@ -464,7 +493,8 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
-      const result = await SupabaseHelpers.fetchTasksByScheduledDate('2024-01-01');
+      const result =
+        await SupabaseHelpers.fetchTasksByScheduledDate('2024-01-01');
 
       expect(result.data).toEqual(mockData);
       expect(result.error).toBeNull();
@@ -479,7 +509,8 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
-      const result = await SupabaseHelpers.fetchTasksByScheduledDate('2024-01-01');
+      const result =
+        await SupabaseHelpers.fetchTasksByScheduledDate('2024-01-01');
 
       expect(result.error).toEqual(mockError);
       expect(result.data).toBeNull();
@@ -499,7 +530,10 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
       expect(result.data).toEqual(mockData);
       expect(result.error).toBeNull();
-      expect(mockQuery.in).toHaveBeenCalledWith('status', ['pending', 'in_progress']);
+      expect(mockQuery.in).toHaveBeenCalledWith('status', [
+        'pending',
+        'in_progress',
+      ]);
       expect(mockQuery.or).toHaveBeenCalled();
     });
 

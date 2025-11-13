@@ -4,10 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { SupabaseHelpers } from '@/utils/supabaseHelpers';
 import { useErrorHandler } from './useErrorHandler';
 import { logError } from '@/utils/logger';
-import type {
-  MaintenanceTask,
-  TaskFilters,
-} from '@/types';
+import type { MaintenanceTask, TaskFilters } from '@/types';
 
 interface UseMaintenanceTasksReturn {
   tasks: MaintenanceTask[];
@@ -24,7 +21,10 @@ interface UseMaintenanceTasksReturn {
   updateTask: (
     id: string,
     updates: Partial<
-      Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'>
+      Omit<
+        MaintenanceTask,
+        'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+      >
     >
   ) => Promise<MaintenanceTask | null>;
   deleteTask: (id: string) => Promise<void>;
@@ -51,7 +51,9 @@ export function useMaintenanceTasks(
 
       try {
         const { data, error: fetchError } =
-          await SupabaseHelpers.fetchMaintenanceTasks(filters || initialFilters);
+          await SupabaseHelpers.fetchMaintenanceTasks(
+            filters || initialFilters
+          );
 
         if (fetchError) {
           throw fetchError;
@@ -131,7 +133,10 @@ export function useMaintenanceTasks(
     async (
       id: string,
       updates: Partial<
-        Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'>
+        Omit<
+          MaintenanceTask,
+          'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+        >
       >
     ): Promise<MaintenanceTask | null> => {
       setLoading(true);
@@ -146,9 +151,7 @@ export function useMaintenanceTasks(
         }
 
         if (data) {
-          setTasks(prev =>
-            prev.map(task => (task.id === id ? data : task))
-          );
+          setTasks(prev => prev.map(task => (task.id === id ? data : task)));
         }
 
         return data;
@@ -263,7 +266,9 @@ export function useMaintenanceTasks(
     [handleError]
   );
 
-  const fetchOverdueTasks = useCallback(async (): Promise<MaintenanceTask[]> => {
+  const fetchOverdueTasks = useCallback(async (): Promise<
+    MaintenanceTask[]
+  > => {
     setLoading(true);
     setError(null);
 
@@ -306,4 +311,3 @@ export function useMaintenanceTasks(
     fetchOverdueTasks,
   };
 }
-

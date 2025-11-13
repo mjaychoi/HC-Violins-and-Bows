@@ -60,7 +60,11 @@ describe('useDataState', () => {
         { id: '2', name: 'Item 2' },
       ];
       const { result } = renderHook(() => useDataState(getId, initialState));
-      const updatedItem: TestItem = { id: '1', name: 'Updated Item 1', value: 100 };
+      const updatedItem: TestItem = {
+        id: '1',
+        name: 'Updated Item 1',
+        value: 100,
+      };
 
       act(() => {
         result.current.updateItem('1', updatedItem);
@@ -340,4 +344,3 @@ describe('useDataState', () => {
     });
   });
 });
-

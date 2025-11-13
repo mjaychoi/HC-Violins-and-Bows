@@ -85,10 +85,9 @@ describe('useEscapeKey', () => {
     const mockOnEscape1 = jest.fn();
     const mockOnEscape2 = jest.fn();
 
-    const { rerender } = renderHook(
-      ({ onEscape }) => useEscapeKey(onEscape),
-      { initialProps: { onEscape: mockOnEscape1 } }
-    );
+    const { rerender } = renderHook(({ onEscape }) => useEscapeKey(onEscape), {
+      initialProps: { onEscape: mockOnEscape1 },
+    });
 
     const escapeEvent = new KeyboardEvent('keydown', {
       key: 'Escape',
@@ -174,4 +173,3 @@ describe('useEscapeKey', () => {
     addEventListenerSpy.mockRestore();
   });
 });
-

@@ -194,7 +194,9 @@ describe('uniqueNumberGenerator', () => {
     it('should return invalid for invalid format (special characters)', () => {
       const result = validateUniqueNumber('CL-001', []);
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('고유 번호는 영문자와 숫자만 사용할 수 있으며, 최대 20자까지 가능합니다.');
+      expect(result.error).toBe(
+        '고유 번호는 영문자와 숫자만 사용할 수 있으며, 최대 20자까지 가능합니다.'
+      );
     });
 
     it('should return invalid for invalid format (lowercase letters)', () => {
@@ -214,7 +216,9 @@ describe('uniqueNumberGenerator', () => {
       const longNumber = 'A'.repeat(21);
       const result = validateUniqueNumber(longNumber, []);
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('고유 번호는 영문자와 숫자만 사용할 수 있으며, 최대 20자까지 가능합니다.');
+      expect(result.error).toBe(
+        '고유 번호는 영문자와 숫자만 사용할 수 있으며, 최대 20자까지 가능합니다.'
+      );
     });
 
     it('should return valid for maximum length number', () => {
@@ -233,7 +237,9 @@ describe('uniqueNumberGenerator', () => {
     it('should handle numbers with spaces (invalid)', () => {
       const result = validateUniqueNumber('CL 001', []);
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('고유 번호는 영문자와 숫자만 사용할 수 있으며, 최대 20자까지 가능합니다.');
+      expect(result.error).toBe(
+        '고유 번호는 영문자와 숫자만 사용할 수 있으며, 최대 20자까지 가능합니다.'
+      );
     });
   });
 
@@ -279,4 +285,3 @@ describe('uniqueNumberGenerator', () => {
     });
   });
 });
-

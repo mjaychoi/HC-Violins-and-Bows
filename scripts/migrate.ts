@@ -1,6 +1,6 @@
 /**
  * Supabase 마이그레이션 통합 스크립트
- * 
+ *
  * 이 스크립트는 다음 방법을 순서대로 시도합니다:
  * 1. PostgreSQL 직접 연결 (DATABASE_PASSWORD가 있으면)
  * 2. Supabase CLI (설치되어 있으면)
@@ -31,10 +31,14 @@ async function migrate(options: MigrationOptions = {}) {
     const dbPassword = process.env.DATABASE_PASSWORD;
 
     if (!supabaseUrl) {
-      throw new Error('NEXT_PUBLIC_SUPABASE_URL 환경 변수가 설정되지 않았습니다.');
+      throw new Error(
+        'NEXT_PUBLIC_SUPABASE_URL 환경 변수가 설정되지 않았습니다.'
+      );
     }
 
-    const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1];
+    const projectRef = supabaseUrl.match(
+      /https:\/\/([^.]+)\.supabase\.co/
+    )?.[1];
     if (!projectRef) {
       throw new Error('프로젝트 참조를 찾을 수 없습니다.');
     }
@@ -44,7 +48,10 @@ async function migrate(options: MigrationOptions = {}) {
     console.log('');
 
     // 마이그레이션 파일 읽기
-    const migrationPath = path.join(process.cwd(), 'migration-maintenance-tasks.sql');
+    const migrationPath = path.join(
+      process.cwd(),
+      'migration-maintenance-tasks.sql'
+    );
     if (!fs.existsSync(migrationPath)) {
       throw new Error(`마이그레이션 파일을 찾을 수 없습니다: ${migrationPath}`);
     }
@@ -54,7 +61,12 @@ async function migrate(options: MigrationOptions = {}) {
 
     // 방법 선택
     if (method === 'postgres' || (method === 'auto' && dbPassword)) {
-      await migrateWithPostgreSQL(projectRef, dbPassword, migrationSQL, verbose);
+      await migrateWithPostgreSQL(
+        projectRef,
+        dbPassword,
+        migrationSQL,
+        verbose
+      );
       return;
     }
 
@@ -68,9 +80,9 @@ async function migrate(options: MigrationOptions = {}) {
 
     // 모든 방법이 실패하면 안내
     showManualInstructions(projectRef, migrationSQL);
-
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     const errorCode =
       error && typeof error === 'object' && 'code' in error
         ? error.code
@@ -156,7 +168,9 @@ async function migrateWithPostgreSQL(
             errorMessage.includes('duplicate')
           ) {
             if (verbose) {
-              console.log(`⚠️  ${i + 1}/${statements.length} 건너뜀 (이미 존재)`);
+              console.log(
+                `⚠️  ${i + 1}/${statements.length} 건너뜀 (이미 존재)`
+              );
             }
           } else {
             throw error;
@@ -166,11 +180,12 @@ async function migrateWithPostgreSQL(
 
       console.log('\n✅ 마이그레이션 완료!');
       console.log('🎉 maintenance_tasks 테이블이 생성되었습니다.');
-      console.log('📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n');
+      console.log(
+        '📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n'
+      );
 
       await client.end();
       return;
-
     } catch (error: unknown) {
       if (client) {
         try {
@@ -221,7 +236,9 @@ async function migrateWithCLI(
 
   try {
     // CLI 버전 확인
-    const version = execSync('supabase --version', { encoding: 'utf-8' }).trim();
+    const version = execSync('supabase --version', {
+      encoding: 'utf-8',
+    }).trim();
     if (verbose) {
       console.log(`✅ Supabase CLI: ${version}\n`);
     }
@@ -230,7 +247,9 @@ async function migrateWithCLI(
     try {
       execSync('supabase projects list', { stdio: 'ignore' });
     } catch {
-      throw new Error('Supabase CLI에 로그인되어 있지 않습니다. `supabase login`을 실행하세요.');
+      throw new Error(
+        'Supabase CLI에 로그인되어 있지 않습니다. `supabase login`을 실행하세요.'
+      );
     }
 
     // 마이그레이션 파일 준비
@@ -239,7 +258,10 @@ async function migrateWithCLI(
       fs.mkdirSync(migrationsDir, { recursive: true });
     }
 
-    const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[-:]/g, '')
+      .split('.')[0];
     const migrationFile = path.join(
       migrationsDir,
       `${timestamp}_maintenance_tasks.sql`
@@ -252,7 +274,9 @@ async function migrateWithCLI(
 
     // 프로젝트 링크
     try {
-      execSync(`supabase link --project-ref ${projectRef}`, { stdio: 'ignore' });
+      execSync(`supabase link --project-ref ${projectRef}`, {
+        stdio: 'ignore',
+      });
     } catch {
       // 이미 링크되어 있을 수 있음
       if (verbose) {
@@ -262,15 +286,16 @@ async function migrateWithCLI(
 
     // 마이그레이션 실행
     console.log('🚀 마이그레이션 실행 중...\n');
-    execSync('supabase db push --include-all', { 
+    execSync('supabase db push --include-all', {
       stdio: 'inherit',
-      timeout: 60000 
+      timeout: 60000,
     });
 
     console.log('\n✅ 마이그레이션 완료!');
     console.log('🎉 maintenance_tasks 테이블이 생성되었습니다.');
-    console.log('📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n');
-
+    console.log(
+      '📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n'
+    );
   } catch (error: unknown) {
     if (error instanceof Error && error.message.includes('로그인')) {
       throw error;
@@ -310,16 +335,23 @@ function parseSQL(sql: string): string[] {
 /**
  * 수동 실행 안내
  */
-function showManualInstructions(projectRef: string, migrationSQL: string): void {
+function showManualInstructions(
+  projectRef: string,
+  migrationSQL: string
+): void {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('📝 수동 실행 안내');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  console.log('자동 마이그레이션이 불가능합니다. 다음 방법 중 하나를 사용하세요:');
+  console.log(
+    '자동 마이그레이션이 불가능합니다. 다음 방법 중 하나를 사용하세요:'
+  );
   console.log('');
   console.log('방법 1: Supabase 대시보드 (가장 빠름, 추천)');
   console.log('──────────────────────────────────────────────────────');
-  console.log(`1. https://supabase.com/dashboard/project/${projectRef}/sql/new 접속`);
+  console.log(
+    `1. https://supabase.com/dashboard/project/${projectRef}/sql/new 접속`
+  );
   console.log('2. migration-maintenance-tasks.sql 파일 내용 복사');
   console.log('3. SQL Editor에 붙여넣기');
   console.log('4. "Run" 버튼 클릭 (Ctrl+Enter / Cmd+Enter)');
@@ -334,7 +366,9 @@ function showManualInstructions(projectRef: string, migrationSQL: string): void 
   console.log('');
   console.log('방법 3: Supabase CLI 사용');
   console.log('──────────────────────────────────────────────────────');
-  console.log('1. brew install supabase/tap/supabase (또는 npm install -g supabase)');
+  console.log(
+    '1. brew install supabase/tap/supabase (또는 npm install -g supabase)'
+  );
   console.log('2. supabase login');
   console.log('3. npm run migrate:cli 실행');
   console.log('');
@@ -344,7 +378,9 @@ function showManualInstructions(projectRef: string, migrationSQL: string): void 
   if (migrationSQL) {
     console.log(migrationSQL.substring(0, 300) + '...');
     console.log('');
-    console.log('(전체 내용은 migration-maintenance-tasks.sql 파일을 참고하세요)');
+    console.log(
+      '(전체 내용은 migration-maintenance-tasks.sql 파일을 참고하세요)'
+    );
   }
   console.log('');
 }
@@ -355,8 +391,8 @@ const args = process.argv.slice(2);
 const method = args.includes('--postgres')
   ? 'postgres'
   : args.includes('--cli')
-  ? 'cli'
-  : 'auto';
+    ? 'cli'
+    : 'auto';
 const verbose = args.includes('--verbose') || args.includes('-v');
 
 migrate({ method, verbose }).catch(error => {
@@ -365,4 +401,3 @@ migrate({ method, verbose }).catch(error => {
 });
 
 export { migrate };
-

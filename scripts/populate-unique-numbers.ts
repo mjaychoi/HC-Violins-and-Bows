@@ -1,6 +1,6 @@
 /**
  * 기존 데이터에 고유 번호 추가 스크립트
- * 
+ *
  * 이 스크립트는 기존 instruments와 clients 데이터에
  * serial_number와 client_number를 자동으로 생성하여 추가합니다.
  */
@@ -18,10 +18,13 @@ dotenv.config({ path: '.env.local' });
 // 고유 번호 생성 함수들
 function getInstrumentPrefix(type: string | null): string {
   if (!type) return 'IN';
-  
+
   const normalizedType = type.toLowerCase().trim();
-  
-  if (normalizedType.includes('violin') || normalizedType.includes('바이올린')) {
+
+  if (
+    normalizedType.includes('violin') ||
+    normalizedType.includes('바이올린')
+  ) {
     return 'VI';
   }
   if (normalizedType.includes('viola') || normalizedType.includes('비올라')) {
@@ -36,7 +39,7 @@ function getInstrumentPrefix(type: string | null): string {
   if (normalizedType.includes('bow') || normalizedType.includes('활')) {
     return 'BO';
   }
-  
+
   return 'IN';
 }
 
@@ -45,39 +48,37 @@ function generateInstrumentSerialNumber(
   existingNumbers: string[]
 ): string {
   const prefix = getInstrumentPrefix(type);
-  
+
   const samePrefixNumbers = existingNumbers
     .filter(num => num && num.toUpperCase().startsWith(prefix))
     .map(num => {
       const match = num.match(/\d+$/);
       return match ? parseInt(match[0], 10) : 0;
     });
-  
-  const maxNumber = samePrefixNumbers.length > 0 
-    ? Math.max(...samePrefixNumbers) 
-    : 0;
+
+  const maxNumber =
+    samePrefixNumbers.length > 0 ? Math.max(...samePrefixNumbers) : 0;
   const nextNumber = maxNumber + 1;
   const paddedNumber = nextNumber.toString().padStart(3, '0');
-  
+
   return `${prefix}${paddedNumber}`;
 }
 
 function generateClientNumber(existingNumbers: string[]): string {
   const prefix = 'CL';
-  
+
   const samePrefixNumbers = existingNumbers
     .filter(num => num && num.toUpperCase().startsWith(prefix))
     .map(num => {
       const match = num.match(/\d+$/);
       return match ? parseInt(match[0], 10) : 0;
     });
-  
-  const maxNumber = samePrefixNumbers.length > 0 
-    ? Math.max(...samePrefixNumbers) 
-    : 0;
+
+  const maxNumber =
+    samePrefixNumbers.length > 0 ? Math.max(...samePrefixNumbers) : 0;
   const nextNumber = maxNumber + 1;
   const paddedNumber = nextNumber.toString().padStart(3, '0');
-  
+
   return `${prefix}${paddedNumber}`;
 }
 
@@ -90,14 +91,18 @@ async function populateUniqueNumbers() {
     const dbPassword = process.env.DATABASE_PASSWORD;
 
     if (!supabaseUrl) {
-      throw new Error('NEXT_PUBLIC_SUPABASE_URL 환경 변수가 설정되지 않았습니다.');
+      throw new Error(
+        'NEXT_PUBLIC_SUPABASE_URL 환경 변수가 설정되지 않았습니다.'
+      );
     }
 
     if (!dbPassword) {
       throw new Error('DATABASE_PASSWORD 환경 변수가 설정되지 않았습니다.');
     }
 
-    const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1];
+    const projectRef = supabaseUrl.match(
+      /https:\/\/([^.]+)\.supabase\.co/
+    )?.[1];
     if (!projectRef) {
       throw new Error('프로젝트 참조를 찾을 수 없습니다.');
     }
@@ -107,7 +112,13 @@ async function populateUniqueNumbers() {
     console.log('');
 
     // PostgreSQL 연결
-    const regions = ['us-east-2', 'us-east-1', 'us-west-1', 'eu-west-1', 'ap-southeast-1'];
+    const regions = [
+      'us-east-2',
+      'us-east-1',
+      'us-west-1',
+      'eu-west-1',
+      'ap-southeast-1',
+    ];
     let client: Client | null = null;
 
     for (const region of regions) {
@@ -174,7 +185,10 @@ async function populateUniqueNumbers() {
       `);
       console.log('✅ clients.client_number 인덱스 확인 완료\n');
     } catch (error) {
-      console.log('⚠️  마이그레이션 실행 중 오류 (이미 존재할 수 있음):', error instanceof Error ? error.message : String(error));
+      console.log(
+        '⚠️  마이그레이션 실행 중 오류 (이미 존재할 수 있음):',
+        error instanceof Error ? error.message : String(error)
+      );
     }
 
     // 2. 기존 클라이언트 번호 가져오기
@@ -211,7 +225,7 @@ async function populateUniqueNumbers() {
       if (!clientRecord.client_number) {
         const newNumber = generateClientNumber(existingClientNumbers);
         existingClientNumbers.push(newNumber);
-        
+
         await client.query(
           `UPDATE clients SET client_number = $1 WHERE id = $2`,
           [newNumber, clientRecord.id]
@@ -232,13 +246,15 @@ async function populateUniqueNumbers() {
           existingSerialNumbers
         );
         existingSerialNumbers.push(newNumber);
-        
+
         await client.query(
           `UPDATE instruments SET serial_number = $1 WHERE id = $2`,
           [newNumber, instrumentRecord.id]
         );
         instrumentUpdated++;
-        console.log(`  ✓ ${instrumentRecord.id.substring(0, 8)}... (${instrumentRecord.type || 'N/A'}) → ${newNumber}`);
+        console.log(
+          `  ✓ ${instrumentRecord.id.substring(0, 8)}... (${instrumentRecord.type || 'N/A'}) → ${newNumber}`
+        );
       }
     }
     console.log(`✅ ${instrumentUpdated}개의 악기 번호 생성 완료\n`);
@@ -253,7 +269,8 @@ async function populateUniqueNumbers() {
 
     await client.end();
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     console.error('❌ 오류:', errorMessage);
     process.exit(1);
   }
@@ -264,4 +281,3 @@ populateUniqueNumbers().catch(error => {
   console.error('❌ 에러:', error);
   process.exit(1);
 });
-
