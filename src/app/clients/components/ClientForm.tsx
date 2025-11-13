@@ -8,6 +8,8 @@ import { useFormState } from '@/hooks/useFormState';
 import { logError } from '@/utils/logger';
 import { classNames } from '@/utils/classNames';
 import { clientValidation, validateForm } from '@/utils/validationUtils';
+import { generateClientNumber } from '@/utils/uniqueNumberGenerator';
+import { useUnifiedClients } from '@/hooks/useUnifiedData';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
 
@@ -24,6 +26,8 @@ export default function ClientForm({
   onSubmit,
   submitting,
 }: ClientFormProps) {
+  const { clients } = useUnifiedClients();
+  
   const initialFormData = {
     last_name: '',
     first_name: '',
@@ -199,6 +203,18 @@ export default function ClientForm({
     setShowInterestDropdown(shouldShowInterest);
   }, [formData.tags]);
 
+  // 자동으로 client number 생성
+  useEffect(() => {
+    if (isOpen && !formData.client_number) {
+      const existingNumbers = clients
+        .map(c => c.client_number)
+        .filter((num): num is string => num !== null && num !== undefined);
+      const autoClientNumber = generateClientNumber(existingNumbers);
+      updateField('client_number', autoClientNumber);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, clients]);
+
   if (!isOpen) return null;
 
   return (
@@ -341,15 +357,20 @@ export default function ClientForm({
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Client Number
+                  <span className="ml-2 text-xs text-gray-500">(자동 생성)</span>
                 </label>
                 <input
                   type="text"
                   name="client_number"
                   value={formData.client_number}
                   onChange={handleInputChange}
-                  className={classNames.input}
-                  placeholder="Enter client number (e.g., CL001, mj123)"
+                  disabled
+                  className={classNames.input + ' bg-gray-100 cursor-not-allowed'}
+                  placeholder="자동 생성됨"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  클라이언트 추가 시 자동으로 생성됩니다
+                </p>
               </div>
 
               <div>

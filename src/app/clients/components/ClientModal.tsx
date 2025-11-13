@@ -300,6 +300,107 @@ export default function ClientModal({
                   </div>
                 </div>
 
+                {/* Instrument Connections - Edit Mode */}
+                <div className="pt-4 border-t border-gray-200">
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="text-sm font-medium text-gray-700">
+                      Instrument Connections
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={onToggleInstrumentSearch}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      {showInstrumentSearch ? 'Hide Search' : 'Add Instrument'}
+                    </button>
+                  </div>
+
+                  {showInstrumentSearch && (
+                    <div className="mb-4 space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Search instruments..."
+                        value={instrumentSearchTerm}
+                        onChange={e => {
+                          onInstrumentSearchTermChange(e.target.value);
+                          onSearchInstruments(e.target.value);
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+
+                      {isSearchingInstruments && (
+                        <div className="text-center py-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mx-auto"></div>
+                        </div>
+                      )}
+
+                      {searchResults.length > 0 && (
+                        <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md">
+                          {searchResults.map(instrument => (
+                            <div
+                              key={instrument.id}
+                              className="p-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                            >
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <div className="text-sm font-medium">
+                                    {instrument.maker}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {instrument.type} ({instrument.year})
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onAddInstrument(instrument.id, 'Interested')
+                                  }
+                                  className="text-blue-600 hover:text-blue-800 text-sm"
+                                >
+                                  Add
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {instrumentRelationships.length > 0 ? (
+                    <div className="space-y-2">
+                      {instrumentRelationships.map(relationship => (
+                        <div
+                          key={relationship.id}
+                          className="flex justify-between items-center bg-gray-50 p-3 rounded-md"
+                        >
+                          <div>
+                            <div className="text-sm font-medium">
+                              {relationship.instrument?.maker} -{' '}
+                              {relationship.instrument?.type}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {relationship.instrument?.year} •{' '}
+                              {relationship.relationship_type}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onRemoveInstrument(relationship.id)}
+                            className="text-red-600 hover:text-red-800 text-sm"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm">
+                      No instrument connections
+                    </p>
+                  )}
+                </div>
+
                 {/* Action Buttons */}
                 <div className="pt-4 border-t border-gray-200 flex space-x-3">
                   <button

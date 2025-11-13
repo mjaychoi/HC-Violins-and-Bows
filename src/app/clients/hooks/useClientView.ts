@@ -25,7 +25,7 @@ export function useClientView() {
     setShowInterestDropdown(shouldShowInterest);
   }, [viewFormData.tags]);
 
-  const openClientView = (client: Client) => {
+  const openClientView = (client: Client, editMode: boolean = true) => {
     setSelectedClient(client);
     setViewFormData({
       last_name: client.last_name || '',
@@ -36,7 +36,7 @@ export function useClientView() {
       interest: client.interest || '',
       note: client.note || '',
     });
-    setIsEditing(false);
+    setIsEditing(editMode);
     setShowViewModal(true);
   };
 
