@@ -158,6 +158,7 @@ jest.mock('../hooks', () => ({
     ],
     clientsWithInstruments: new Set(['1']),
     fetchInstrumentRelationships: mockFetchInstrumentRelationships,
+    fetchAllInstrumentRelationships: jest.fn(),
     addInstrumentRelationship: mockAddInstrumentRelationship,
     removeInstrumentRelationship: mockRemoveInstrumentRelationship,
   }),
