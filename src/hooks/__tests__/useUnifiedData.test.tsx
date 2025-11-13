@@ -140,8 +140,10 @@ describe('useUnifiedData', () => {
     });
 
     it('should not fetch data when data already exists', async () => {
-      mockState.clients = [{ id: '1', first_name: 'Test', last_name: 'Client' } as Client];
-      
+      mockState.clients = [
+        { id: '1', first_name: 'Test', last_name: 'Client' } as Client,
+      ];
+
       renderHook(() => useUnifiedData());
 
       await waitFor(() => {
@@ -166,7 +168,7 @@ describe('useUnifiedData', () => {
     it('should return lastUpdated times', () => {
       const now = new Date();
       mockState.lastUpdated.clients = now;
-      
+
       const { result } = renderHook(() => useUnifiedData());
 
       expect(result.current.lastUpdated.clients).toBe(now);
@@ -193,8 +195,10 @@ describe('useUnifiedData', () => {
     });
 
     it('should not fetch when clients exist', async () => {
-      mockState.clients = [{ id: '1', first_name: 'Test', last_name: 'Client' } as Client];
-      
+      mockState.clients = [
+        { id: '1', first_name: 'Test', last_name: 'Client' } as Client,
+      ];
+
       renderHook(() => useUnifiedClients());
 
       await waitFor(() => {
@@ -249,13 +253,23 @@ describe('useUnifiedData', () => {
     });
 
     it('should calculate client relationships', () => {
-      const client: Client = { id: '1', first_name: 'John', last_name: 'Doe' } as Client;
-      const instrument: Instrument = { id: '2', type: 'Violin', maker: 'Test' } as Instrument;
+      const client: Client = {
+        id: '1',
+        first_name: 'John',
+        last_name: 'Doe',
+      } as Client;
+      const instrument: Instrument = {
+        id: '2',
+        type: 'Violin',
+        maker: 'Test',
+      } as Instrument;
       const connection: ClientInstrument = {
         id: '3',
         client_id: '1',
         instrument_id: '2',
-        relationship_type: 'Owns',
+        relationship_type: 'Owned',
+        notes: null,
+        created_at: '2024-01-01T00:00:00Z',
       } as ClientInstrument;
 
       mockState.clients = [client];
@@ -266,7 +280,9 @@ describe('useUnifiedData', () => {
 
       expect(result.current.clientRelationships).toHaveLength(1);
       expect(result.current.clientRelationships[0].client).toEqual(client);
-      expect(result.current.clientRelationships[0].instrument).toEqual(instrument);
+      expect(result.current.clientRelationships[0].instrument).toEqual(
+        instrument
+      );
     });
 
     it('should filter out invalid relationships', () => {
@@ -274,7 +290,9 @@ describe('useUnifiedData', () => {
         id: '3',
         client_id: '1',
         instrument_id: '2',
-        relationship_type: 'Owns',
+        relationship_type: 'Owned',
+        notes: null,
+        created_at: '2024-01-01T00:00:00Z',
       } as ClientInstrument;
 
       mockState.clients = [];
@@ -287,13 +305,23 @@ describe('useUnifiedData', () => {
     });
 
     it('should return instrument relationships', () => {
-      const client: Client = { id: '1', first_name: 'John', last_name: 'Doe' } as Client;
-      const instrument: Instrument = { id: '2', type: 'Violin', maker: 'Test' } as Instrument;
+      const client: Client = {
+        id: '1',
+        first_name: 'John',
+        last_name: 'Doe',
+      } as Client;
+      const instrument: Instrument = {
+        id: '2',
+        type: 'Violin',
+        maker: 'Test',
+      } as Instrument;
       const connection: ClientInstrument = {
         id: '3',
         client_id: '1',
         instrument_id: '2',
-        relationship_type: 'Owns',
+        relationship_type: 'Owned',
+        notes: null,
+        created_at: '2024-01-01T00:00:00Z',
       } as ClientInstrument;
 
       mockState.clients = [client];
@@ -302,7 +330,9 @@ describe('useUnifiedData', () => {
 
       const { result } = renderHook(() => useUnifiedDashboard());
 
-      expect(result.current.instrumentRelationships).toEqual(result.current.clientRelationships);
+      expect(result.current.instrumentRelationships).toEqual(
+        result.current.clientRelationships
+      );
     });
 
     it('should fetch dashboard data when empty', async () => {
@@ -316,7 +346,9 @@ describe('useUnifiedData', () => {
 
     it('should not fetch when data exists', async () => {
       mockState.instruments = [{ id: '1', type: 'Violin' } as Instrument];
-      mockState.connections = [{ id: '1', client_id: '1', instrument_id: '1' } as ClientInstrument];
+      mockState.connections = [
+        { id: '1', client_id: '1', instrument_id: '1' } as ClientInstrument,
+      ];
 
       renderHook(() => useUnifiedDashboard());
 
@@ -339,12 +371,17 @@ describe('useUnifiedData', () => {
     it('should provide createConnection function', async () => {
       const { result } = renderHook(() => useUnifiedConnectionForm());
 
-      await result.current.createConnection('client-1', 'instrument-1', 'Owns', 'Notes');
+      await result.current.createConnection(
+        'client-1',
+        'instrument-1',
+        'Owned',
+        'Notes'
+      );
 
       expect(mockActions.createConnection).toHaveBeenCalledWith({
         client_id: 'client-1',
         instrument_id: 'instrument-1',
-        relationship_type: 'Owns',
+        relationship_type: 'Owned',
         notes: 'Notes',
       });
     });
@@ -352,12 +389,17 @@ describe('useUnifiedData', () => {
     it('should handle null notes in createConnection', async () => {
       const { result } = renderHook(() => useUnifiedConnectionForm());
 
-      await result.current.createConnection('client-1', 'instrument-1', 'Owns', '');
+      await result.current.createConnection(
+        'client-1',
+        'instrument-1',
+        'Owned',
+        ''
+      );
 
       expect(mockActions.createConnection).toHaveBeenCalledWith({
         client_id: 'client-1',
         instrument_id: 'instrument-1',
-        relationship_type: 'Owns',
+        relationship_type: 'Owned',
         notes: null,
       });
     });
@@ -370,10 +412,13 @@ describe('useUnifiedData', () => {
         notes: 'Updated notes',
       });
 
-      expect(mockActions.updateConnection).toHaveBeenCalledWith('connection-1', {
-        relationship_type: 'Interested',
-        notes: 'Updated notes',
-      });
+      expect(mockActions.updateConnection).toHaveBeenCalledWith(
+        'connection-1',
+        {
+          relationship_type: 'Interested',
+          notes: 'Updated notes',
+        }
+      );
     });
 
     it('should handle null notes in updateConnection', async () => {
@@ -384,10 +429,13 @@ describe('useUnifiedData', () => {
         notes: '',
       });
 
-      expect(mockActions.updateConnection).toHaveBeenCalledWith('connection-1', {
-        relationship_type: 'Interested',
-        notes: null,
-      });
+      expect(mockActions.updateConnection).toHaveBeenCalledWith(
+        'connection-1',
+        {
+          relationship_type: 'Interested',
+          notes: null,
+        }
+      );
     });
 
     it('should fetch form data when empty', async () => {
@@ -533,7 +581,9 @@ describe('useUnifiedData', () => {
         id: '1',
         client_id: '1',
         instrument_id: '1',
-        relationship_type: 'Owns',
+        relationship_type: 'Owned',
+        notes: null,
+        created_at: '2024-01-01T00:00:00Z',
       } as ClientInstrument;
       mockState.connections = [connection];
 
@@ -594,4 +644,3 @@ describe('useUnifiedData', () => {
     });
   });
 });
-
