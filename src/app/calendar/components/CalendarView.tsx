@@ -56,7 +56,7 @@ export default function CalendarView({
 
   const handleViewChange = (view: View | ExtendedView) => {
     // Type guard: only accept views that are in our ExtendedView type
-    const validViews: ExtendedView[] = ['month', 'week', 'day', 'agenda', 'year', 'timeline'];
+    const validViews: ExtendedView[] = ['month', 'week', 'agenda', 'year', 'timeline'];
     if (validViews.includes(view as ExtendedView)) {
       const extendedView = view as ExtendedView;
       setInternalView(extendedView);
@@ -275,11 +275,11 @@ export default function CalendarView({
         view={internalView as View}
         onView={(view: View) => {
           // Only handle standard react-big-calendar views
-          if (view === 'month' || view === 'week' || view === 'day' || view === 'agenda') {
+          if (view === 'month' || view === 'week' || view === 'agenda') {
             handleViewChange(view);
           }
         }}
-        views={['month', 'week', 'day', 'agenda']}
+        views={['month', 'week', 'agenda']}
         messages={messages}
         popup
         showMultiDayTimes

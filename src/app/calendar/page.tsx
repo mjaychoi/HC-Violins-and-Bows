@@ -487,32 +487,6 @@ export default function CalendarPage() {
             </div>
           ) : view === 'calendar' ? (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" style={{ minHeight: '700px' }}>
-              {/* Calendar View Selector */}
-              {view === 'calendar' && (
-                <div className="p-4 border-b border-gray-200 bg-gray-50">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-gray-700">뷰:</span>
-                    {(['month', 'week', 'day', 'agenda', 'year', 'timeline'] as ExtendedView[]).map((viewOption) => (
-                      <button
-                        key={viewOption}
-                        onClick={() => setCalendarView(viewOption)}
-                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
-                          calendarView === viewOption
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
-                        }`}
-                      >
-                        {viewOption === 'month' && '월'}
-                        {viewOption === 'week' && '주'}
-                        {viewOption === 'day' && '일'}
-                        {viewOption === 'agenda' && '일정'}
-                        {viewOption === 'year' && '년'}
-                        {viewOption === 'timeline' && '타임라인'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
               <CalendarView
                 tasks={filteredTasks}
                 instruments={instrumentsMap}

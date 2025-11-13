@@ -111,8 +111,7 @@ body {
 }
 
 .calendar-container .rbc-toolbar {
-  margin-bottom: 20px;
-  padding: 0 4px;
+  display: none; /* 메인 컨트롤 바의 뷰 토글만 사용 */
 }
 
 .calendar-container .rbc-toolbar button {
