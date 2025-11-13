@@ -93,14 +93,18 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
 
-      - name: Download build artifacts
+      - name: Download build artifacts (optional)
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: build-files
           path: .next/
 
       - name: Run E2E tests
         run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key' }}
 
       - name: Upload E2E test results
         uses: actions/upload-artifact@v4
