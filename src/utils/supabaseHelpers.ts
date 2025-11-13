@@ -409,18 +409,24 @@ export class SupabaseHelpers {
         
         // 테이블이 없을 수 있는 경우를 위한 체크
         if (errorCode === '42P01' || errorMessage.includes('does not exist') || errorMessage.includes('relation')) {
-          console.error('⚠️  maintenance_tasks 테이블이 존재하지 않습니다.');
-          console.error('📝 마이그레이션을 실행해주세요:');
-          console.error('   1. https://supabase.com/dashboard/project/dmilmlhquttcozxlpfxw/sql/new');
-          console.error('   2. migration-maintenance-tasks.sql 파일 내용 복사');
-          console.error('   3. 붙여넣기 후 Run 클릭');
+          logError('maintenance_tasks 테이블이 존재하지 않습니다', error, 'SupabaseHelpers', {
+            operation: 'fetchTasksByDateRange',
+            errorCode,
+            migrationGuide: 'https://supabase.com/dashboard/project/dmilmlhquttcozxlpfxw/sql/new',
+          });
         } else if (errorCode === 'PGRST116' || errorMessage.includes('permission denied')) {
           // RLS 정책 문제
-          console.error('⚠️  RLS 정책 문제가 발생했습니다.');
-          console.error('📝 Supabase 대시보드에서 RLS 정책을 확인해주세요.');
+          logError('RLS 정책 문제가 발생했습니다', error, 'SupabaseHelpers', {
+            operation: 'fetchTasksByDateRange',
+            errorCode,
+            suggestion: 'Supabase 대시보드에서 RLS 정책을 확인해주세요',
+          });
         } else {
           // Other errors - log for debugging
-          console.error('Supabase fetchTasksByDateRange error:', error);
+          logError('Supabase fetchTasksByDateRange error', error, 'SupabaseHelpers', {
+            operation: 'fetchTasksByDateRange',
+            errorCode,
+          });
         }
       }
 
@@ -442,7 +448,9 @@ export class SupabaseHelpers {
 
       return { data: data as MaintenanceTask[] | null, error };
     } catch (err) {
-      console.error('Unexpected error in fetchTasksByDateRange:', err);
+      logError('Unexpected error in fetchTasksByDateRange', err, 'SupabaseHelpers', {
+        operation: 'fetchTasksByDateRange',
+      });
       return { data: null, error: err };
     }
   }

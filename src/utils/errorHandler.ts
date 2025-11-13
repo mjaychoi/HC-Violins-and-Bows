@@ -93,18 +93,18 @@ export class ErrorHandler {
         errorDetails = 'SUBTYPE_MIGRATION_GUIDE.md 파일을 참고하여 마이그레이션을 실행하세요.';
         // 개발 환경에서만 상세 로그 출력
         if (process.env.NODE_ENV === 'development') {
-          console.error('Subtype column missing. Please run migration:', err);
-          console.error('Migration file: migration-add-subtype.sql');
-          console.error('Guide: SUBTYPE_MIGRATION_GUIDE.md');
+          structuredLogError('Subtype column missing. Please run migration', err, 'ErrorHandler', {
+            migrationFile: 'migration-add-subtype.sql',
+            guide: 'SUBTYPE_MIGRATION_GUIDE.md',
+          });
         }
       } else if (process.env.NODE_ENV === 'development') {
         // 개발 환경에서만 상세 로그 출력
-        console.error('Supabase Error:', error);
-        console.error('Error code:', errorCode);
-        console.error('Error message:', errorMessage);
-        if (errorDetails) {
-          console.error('Error details:', errorDetails);
-        }
+        structuredLogError('Supabase Error', error, 'ErrorHandler', {
+          errorCode,
+          errorMessage,
+          errorDetails,
+        });
       }
     }
 
@@ -208,7 +208,9 @@ export class ErrorHandler {
 
   // Handle network errors
   handleNetworkError(error: unknown, endpoint?: string): ApiError {
-    console.error('Network Error:', error);
+    structuredLogError('Network Error', error, 'ErrorHandler', {
+      endpoint,
+    });
 
     let code = ErrorCodes.NETWORK_ERROR;
     let message = 'Network request failed';

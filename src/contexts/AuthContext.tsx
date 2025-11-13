@@ -29,7 +29,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
-        logError('Failed to get initial session', error, 'AuthContext');
+        // Invalid refresh token 오류 처리
+        if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
+          logInfo('Invalid refresh token detected, clearing session', 'AuthContext');
+          // 세션 클리어
+          supabase.auth.signOut().catch(() => {
+            // 무시 - 이미 로그아웃 상태일 수 있음
+          });
+          setSession(null);
+          setUser(null);
+        } else {
+          logError('Failed to get initial session', error, 'AuthContext');
+        }
       } else {
         logInfo('Initial session loaded', 'AuthContext', { 
           hasSession: !!session,
@@ -55,9 +66,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       setLoading(false);
 
-      // Redirect to login if signed out
-      if (!session && _event === 'SIGNED_OUT') {
-        router.push('/');
+      // Redirect to login if signed out or token error
+      if (!session && (_event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED')) {
+        // TOKEN_REFRESHED 이벤트에서 session이 null이면 토큰 오류
+        if (_event === 'TOKEN_REFRESHED' && !session) {
+          logInfo('Token refresh failed, redirecting to login', 'AuthContext');
+          router.push('/');
+        } else if (_event === 'SIGNED_OUT') {
+          router.push('/');
+        }
       }
     });
 
@@ -188,6 +205,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           error: true,
         });
         logError('Session refresh failed', error, 'AuthContext');
+        
+        // Invalid refresh token 오류 처리
+        if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
+          logInfo('Invalid refresh token, clearing session and redirecting to login', 'AuthContext');
+          // 세션 클리어
+          await supabase.auth.signOut();
+          setSession(null);
+          setUser(null);
+          router.push('/');
+        }
         return;
       }
 
@@ -199,10 +226,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userId: data.session.user?.id,
         });
         logInfo('Session refreshed successfully', 'AuthContext', { userId: data.session.user?.id });
+      } else {
+        // 세션이 없으면 로그아웃 처리
+        logInfo('No session after refresh, clearing auth state', 'AuthContext');
+        setSession(null);
+        setUser(null);
+        router.push('/');
       }
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
       logError('Session refresh exception', error, 'AuthContext', { duration });
+      
+      // 예외 발생 시에도 세션 클리어
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('Invalid Refresh Token') || errorMessage.includes('Refresh Token Not Found')) {
+        setSession(null);
+        setUser(null);
+        router.push('/');
+      }
     }
   };
 
