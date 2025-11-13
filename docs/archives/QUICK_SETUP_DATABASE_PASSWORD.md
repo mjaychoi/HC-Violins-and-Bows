@@ -57,12 +57,14 @@ npm run schema:check
 ## 📍 Supabase 대시보드에서 비밀번호 찾는 위치
 
 **경로:**
+
 1. Supabase 대시보드 접속
 2. 왼쪽 사이드바 → ⚙️ **Settings** 클릭
 3. **Database** 메뉴 클릭
 4. **Database password** 섹션에서 확인
 
 **스크린샷 기준:**
+
 - 왼쪽 사이드바에서 ⚙️ **Settings** 아이콘 클릭
 - Settings 메뉴에서 **Database** 클릭
 - "Database password" 섹션에서 비밀번호 확인
@@ -90,6 +92,7 @@ npm run schema:check
 ### 문제 1: "DATABASE_PASSWORD 환경 변수가 설정되지 않았습니다"
 
 **해결 방법:**
+
 1. `.env.local` 파일이 프로젝트 루트에 있는지 확인
 2. `DATABASE_PASSWORD` 변수가 정확히 이 이름으로 저장되어 있는지 확인
 3. 파일 저장 후 터미널 재시작
@@ -97,6 +100,7 @@ npm run schema:check
 ### 문제 2: "비밀번호 인증 실패"
 
 **해결 방법:**
+
 1. 비밀번호를 다시 확인 (복사/붙여넣기 오류 확인)
 2. 공백이나 특수문자가 포함되어 있는지 확인
 3. 필요시 비밀번호 재설정
@@ -104,6 +108,7 @@ npm run schema:check
 ### 문제 3: ".env.local 파일을 찾을 수 없습니다"
 
 **해결 방법:**
+
 1. 프로젝트 루트 디렉토리에 `.env.local` 파일 생성
 2. 파일 이름이 정확히 `.env.local`인지 확인 (앞에 점 포함)
 3. 파일 권한 확인
@@ -127,4 +132,3 @@ tsx scripts/check-schema.ts
 ---
 
 **팁**: 비밀번호를 설정한 후 `npm run schema:check`를 실행하여 데이터베이스 스키마를 확인하세요!
-

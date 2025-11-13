@@ -18,6 +18,7 @@ DATABASE_PASSWORD=your_database_password
 ```
 
 **비밀번호 확인 방법:**
+
 - Supabase Dashboard → Settings → Database
 - "Database password" 섹션에서 확인
 
@@ -42,6 +43,7 @@ npm run migrate:subtype
 **파일**: `supabase/migrations/20241112141803_add_subtype_column.sql`
 
 **SQL:**
+
 ```sql
 ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;
 ```
@@ -51,12 +53,13 @@ ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;
 **파일**: `supabase/migrations/20241112141804_update_status_constraint.sql`
 
 **SQL:**
+
 ```sql
-ALTER TABLE public.instruments 
+ALTER TABLE public.instruments
 DROP CONSTRAINT IF EXISTS instruments_status_check;
 
 ALTER TABLE public.instruments
-ADD CONSTRAINT instruments_status_check 
+ADD CONSTRAINT instruments_status_check
 CHECK (status::text = ANY (ARRAY[
   'Available'::text,
   'Booked'::text,
@@ -83,6 +86,7 @@ npm run schema:check
 ```
 
 이 스크립트는 다음을 확인합니다:
+
 - 테이블 목록
 - 컬럼 정보
 - 제약조건
@@ -106,17 +110,20 @@ npm run schema:check
 ### 마이그레이션 실행 방법
 
 **방법 1: Supabase 대시보드 (권장)**
+
 1. Supabase Dashboard → SQL Editor
 2. 마이그레이션 파일 내용 복사
 3. SQL Editor에 붙여넣기
 4. Run 버튼 클릭
 
 **방법 2: npm 스크립트**
+
 ```bash
 npm run migrate:subtype
 ```
 
 **방법 3: Supabase CLI**
+
 ```bash
 supabase db push
 ```
@@ -144,4 +151,3 @@ supabase db push
 ---
 
 **마지막 업데이트**: 2024-11-12
-

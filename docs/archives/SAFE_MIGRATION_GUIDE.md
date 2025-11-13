@@ -16,9 +16,11 @@ Supabase 대시보드에서 `DROP CONSTRAINT` 명령어를 실행하면 "destruc
 ### 📋 마이그레이션 내용
 
 **기존 제약조건:**
+
 - 'Available', 'Booked', 'Sold'만 허용
 
 **새로운 제약조건:**
+
 - 'Available', 'Booked', 'Sold', 'Reserved', 'Maintenance' 허용
 
 ### 🔄 실행 과정
@@ -38,6 +40,7 @@ Supabase 대시보드에서 `DROP CONSTRAINT` 명령어를 실행하면 "destruc
 **파일**: `supabase/migrations/20241112141804_update_status_constraint_safe.sql`
 
 이 버전은:
+
 - 제약조건이 존재하는지 확인 후 제거
 - 더 명확한 오류 메시지 제공
 - 실행 후 검증 메시지 표시
@@ -60,7 +63,7 @@ Supabase 대시보드에서 `DROP CONSTRAINT` 명령어를 실행하면 "destruc
 
 ```sql
 -- 1. 현재 제약조건 확인
-SELECT 
+SELECT
     conname AS constraint_name,
     pg_get_constraintdef(oid) AS constraint_definition
 FROM pg_constraint
@@ -68,13 +71,13 @@ WHERE conrelid = 'instruments'::regclass
   AND conname LIKE '%status%';
 
 -- 2. 현재 status 값 확인
-SELECT DISTINCT status, COUNT(*) 
-FROM instruments 
+SELECT DISTINCT status, COUNT(*)
+FROM instruments
 GROUP BY status;
 
 -- 3. Reserved 또는 Maintenance 상태가 있는지 확인
-SELECT COUNT(*) 
-FROM instruments 
+SELECT COUNT(*)
+FROM instruments
 WHERE status IN ('Reserved', 'Maintenance');
 ```
 
@@ -86,7 +89,7 @@ WHERE status IN ('Reserved', 'Maintenance');
 
 ```sql
 -- 1. 새로운 제약조건 확인
-SELECT 
+SELECT
     conname AS constraint_name,
     pg_get_constraintdef(oid) AS constraint_definition
 FROM pg_constraint
@@ -94,14 +97,14 @@ WHERE conrelid = 'instruments'::regclass
   AND conname = 'instruments_status_check';
 
 -- 2. Reserved 상태 테스트 (에러가 나지 않아야 함)
-UPDATE instruments 
-SET status = 'Reserved' 
+UPDATE instruments
+SET status = 'Reserved'
 WHERE id = (SELECT id FROM instruments LIMIT 1)
 RETURNING id, status;
 
 -- 3. Maintenance 상태 테스트 (에러가 나지 않아야 함)
-UPDATE instruments 
-SET status = 'Maintenance' 
+UPDATE instruments
+SET status = 'Maintenance'
 WHERE id = (SELECT id FROM instruments LIMIT 1)
 RETURNING id, status;
 ```
@@ -114,12 +117,12 @@ RETURNING id, status;
 
 ```sql
 -- 1. 새로운 제약조건 제거
-ALTER TABLE public.instruments 
+ALTER TABLE public.instruments
 DROP CONSTRAINT IF EXISTS instruments_status_check;
 
 -- 2. 원래 제약조건 복원
 ALTER TABLE public.instruments
-ADD CONSTRAINT instruments_status_check 
+ADD CONSTRAINT instruments_status_check
 CHECK (status::text = ANY (ARRAY[
   'Available'::text,
   'Booked'::text,
@@ -143,7 +146,7 @@ CHECK (status::text = ANY (ARRAY[
 ## 🆘 도움이 필요한 경우
 
 문제가 발생하면:
+
 1. Supabase 대시보드의 "Database" > "Backups"에서 백업 확인
 2. 롤백 쿼리 실행
 3. 문제 상황을 문서화하여 지원팀에 문의
-

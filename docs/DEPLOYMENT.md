@@ -175,6 +175,7 @@ Branch name pattern: main
 Settings > Environment Variables에서 다음 추가:
 
 **Production:**
+
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
@@ -184,6 +185,7 @@ NODE_ENV=production
 ```
 
 **Preview:**
+
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
@@ -193,6 +195,7 @@ NODE_ENV=preview
 ```
 
 **Development:**
+
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
@@ -206,6 +209,7 @@ NODE_ENV=development
 #### 빌드 설정 확인
 
 Settings > General:
+
 ```
 Framework Preset: Next.js
 Build Command: npm run build
@@ -226,6 +230,7 @@ Node.js Version: 20.x
    - `migration-maintenance-tasks.sql` (캘린더 기능용)
 
 **또는 CLI 사용:**
+
 ```bash
 # 설정
 export DATABASE_URL="postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres"
@@ -344,6 +349,7 @@ curl -I https://your-domain.vercel.app | grep -i "x-frame-options\|x-content-typ
 ```
 
 예상 출력:
+
 ```
 X-Frame-Options: DENY
 X-Content-Type-Options: nosniff
@@ -360,6 +366,7 @@ npx lighthouse https://your-domain.vercel.app --view
 ```
 
 목표 점수:
+
 - Performance: 90+
 - Accessibility: 95+
 - Best Practices: 95+
@@ -471,4 +478,3 @@ npx playwright test
 ---
 
 **배포 준비 완료! 🎉**
-

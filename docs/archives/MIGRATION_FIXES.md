@@ -7,28 +7,34 @@
 ### 1. ⚠️ Status CHECK 제약조건 불일치 (필수 수정)
 
 **문제:**
+
 - DB: `status` CHECK 제약조건이 'Available', 'Booked', 'Sold'만 허용
 - 코드: 'Reserved', 'Maintenance'도 사용
 
 **영향:**
+
 - 'Reserved' 또는 'Maintenance' 상태로 저장 시도 시 에러 발생
 - 코드에서 사용하는 모든 status 값이 작동하지 않음
 
 **해결:**
+
 - `supabase/migrations/20241112141804_update_status_constraint.sql` 마이그레이션 실행
 
 ### 2. ✅ Updated_at 트리거 (선택적)
 
 **상황:**
+
 - DB에 `updated_at` 컬럼이 있음
 - 코드에서 직접 사용하지 않지만, 자동 업데이트 트리거가 없을 수 있음
 
 **해결:**
+
 - `supabase/migrations/20241112141805_add_updated_at_trigger.sql` 마이그레이션 실행
 
 ### 3. ✅ TypeScript 타입 업데이트 (완료)
 
 **수정:**
+
 - `Instrument` 인터페이스에 `updated_at?: string` 추가
 
 ---
@@ -45,14 +51,15 @@
    - "New query" 버튼 클릭
 
 3. **마이그레이션 1: Status 제약조건 업데이트 (필수)**
+
    ```sql
    -- Drop the existing constraint
-   ALTER TABLE public.instruments 
+   ALTER TABLE public.instruments
    DROP CONSTRAINT IF EXISTS instruments_status_check;
 
    -- Add new constraint with all status values
    ALTER TABLE public.instruments
-   ADD CONSTRAINT instruments_status_check 
+   ADD CONSTRAINT instruments_status_check
    CHECK (status::text = ANY (ARRAY[
      'Available'::text,
      'Booked'::text,
@@ -61,9 +68,11 @@
      'Maintenance'::text
    ]));
    ```
+
    - Run 버튼 클릭
 
 4. **마이그레이션 2: Updated_at 트리거 추가 (선택적)**
+
    ```sql
    -- Create or replace the update_updated_at_column function
    CREATE OR REPLACE FUNCTION public.update_updated_at_column()
@@ -82,6 +91,7 @@
      FOR EACH ROW
      EXECUTE FUNCTION public.update_updated_at_column();
    ```
+
    - Run 버튼 클릭
 
 ### 방법 2: 마이그레이션 파일 직접 실행
@@ -99,7 +109,7 @@
 
 ```sql
 -- 1. Status 제약조건 확인
-SELECT 
+SELECT
   conname AS constraint_name,
   pg_get_constraintdef(oid) AS constraint_definition
 FROM pg_constraint
@@ -107,7 +117,7 @@ WHERE conrelid = 'instruments'::regclass
   AND conname = 'instruments_status_check';
 
 -- 2. Updated_at 트리거 확인
-SELECT 
+SELECT
   trigger_name,
   event_manipulation,
   event_object_table,
@@ -117,13 +127,13 @@ WHERE event_object_table = 'instruments'
   AND trigger_name = 'update_instruments_updated_at';
 
 -- 3. Status 값 테스트
-UPDATE instruments 
-SET status = 'Reserved' 
+UPDATE instruments
+SET status = 'Reserved'
 WHERE id = (SELECT id FROM instruments LIMIT 1);
 
 -- 4. Updated_at 자동 업데이트 테스트
-UPDATE instruments 
-SET note = 'Test' 
+UPDATE instruments
+SET note = 'Test'
 WHERE id = (SELECT id FROM instruments LIMIT 1)
 RETURNING updated_at;
 ```
@@ -169,4 +179,3 @@ RETURNING updated_at;
 ---
 
 **중요**: Status 제약조건 업데이트는 필수입니다! 코드에서 'Reserved', 'Maintenance' 상태를 사용 중입니다.
-

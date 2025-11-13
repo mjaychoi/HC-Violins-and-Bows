@@ -326,7 +326,6 @@ const ItemList = memo(function ItemList({
           </thead>
           <tbody className="divide-y divide-gray-100">
             {itemsWithClients.map(item => {
-              const itemClients = item.clients;
               const isEditing = editingItem === item.id;
 
               return (
@@ -646,11 +645,7 @@ const CertificateBadge = ({ certificate }: { certificate: boolean }) => {
 };
 
 // Client Pill Component
-const ClientPill = ({ name }: { name: string }) => (
-  <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 text-xs px-2 py-1">
-    {name}
-  </span>
-);
+// ClientPill component removed - no longer used
 
 // Row Actions Component
 const RowActions = ({

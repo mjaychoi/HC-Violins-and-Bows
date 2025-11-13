@@ -1,6 +1,6 @@
 'use client';
 // src/app/clients/components/ClientList.tsx
-import { Client, ClientInstrument, Instrument } from '@/types';
+import { Client, ClientInstrument } from '@/types';
 import {
   getTagColor,
   getTagTextColor,
@@ -34,7 +34,7 @@ interface ClientListProps {
 
 const ClientList = memo(function ClientList({
   clients,
-  clientInstruments,
+  clientInstruments: _clientInstruments, // eslint-disable-line @typescript-eslint/no-unused-vars
   onClientClick,
   onUpdateClient,
   onDeleteClient,
@@ -52,7 +52,7 @@ const ClientList = memo(function ClientList({
   const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { searchInstruments, searchResults } = useOptimizedInstruments();
+  const { searchInstruments } = useOptimizedInstruments();
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -80,6 +80,8 @@ const ClientList = memo(function ClientList({
     }
   }, [instrumentSearchTerm, searchInstruments]);
 
+  // These functions are kept for future use when instrument management is added to inline editing
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleAddInstrument = async (
     clientId: string,
     instrumentId: string
@@ -91,10 +93,8 @@ const ClientList = memo(function ClientList({
     }
   };
 
-  const handleRemoveInstrument = async (
-    relationshipId: string,
-    clientId: string
-  ) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleRemoveInstrument = async (relationshipId: string) => {
     if (onRemoveInstrument) {
       await onRemoveInstrument(relationshipId);
       // Refresh relationships for the client being edited

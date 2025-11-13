@@ -3,18 +3,22 @@
 ## 1️⃣ UX/UI 개선 (중요도: 높음)
 
 ### ❌ 1. Delete 확인 대화상자
+
 **현재**: 브라우저 기본 `confirm()` 사용
+
 ```typescript
 // src/app/dashboard/page.tsx:90
 if (!confirm('Are you sure you want to delete this item?')) return;
 ```
 
 **문제점**:
+
 - 스타일 부족
 - 접근성 낮음
 - 모바일에서 일관성 부족
 
 **개선안**: 커스텀 모달 컴포넌트 제작
+
 ```typescript
 <ConfirmDialog
   isOpen={showDeleteConfirm}
@@ -32,7 +36,9 @@ if (!confirm('Are you sure you want to delete this item?')) return;
 ---
 
 ### ⚠️ 2. View Modal 코드 중복
+
 **현재**: Dashboard page 내부에 인라인 모달
+
 ```typescript
 // src/app/dashboard/page.tsx:164-259
 {selectedItem && (
@@ -43,11 +49,13 @@ if (!confirm('Are you sure you want to delete this item?')) return;
 ```
 
 **문제점**:
+
 - ClientModal과 패턴 중복
 - 재사용 불가
 - 유지보수 어려움
 
 **개선안**: 공통 `ItemModal` 컴포넌트
+
 ```typescript
 // src/app/dashboard/components/ItemModal.tsx
 export default function ItemModal({ item, isOpen, onClose, onEdit }) {
@@ -60,7 +68,9 @@ export default function ItemModal({ item, isOpen, onClose, onEdit }) {
 ---
 
 ### ⚠️ 3. 로딩 스켈레톤 불일치
-**현재**: 
+
+**현재**:
+
 - Dashboard ItemList: skeleton 있음 ✅
 - Clients ClientList: dynamic import만, skeleton 없음 ❌
 
@@ -73,6 +83,7 @@ const ClientList = dynamic(() => import('./components/ClientList'), {
 ```
 
 **개선안**: Skeleton 컴포넌트 일관성
+
 ```typescript
 const ClientList = dynamic(() => import('./components/ClientList'), {
   ssr: true,
@@ -87,7 +98,9 @@ const ClientList = dynamic(() => import('./components/ClientList'), {
 ## 2️⃣ 성능 최적화 (중요도: 중간)
 
 ### ⚠️ 4. 불필요한 재계산
+
 **현재**: useUnifiedDashboard에서 매번 관계 계산
+
 ```typescript
 // src/hooks/useUnifiedData.ts:129-139
 const getClientRelationships = useCallback(() => {
@@ -95,7 +108,9 @@ const getClientRelationships = useCallback(() => {
     .map(connection => ({
       ...connection,
       client: state.clients.find(c => c.id === connection.client_id),
-      instrument: state.instruments.find(i => i.id === connection.instrument_id),
+      instrument: state.instruments.find(
+        i => i.id === connection.instrument_id
+      ),
     }))
     .filter(rel => rel.client && rel.instrument);
 }, [state.connections, state.clients, state.instruments]);
@@ -104,11 +119,12 @@ const getClientRelationships = useCallback(() => {
 **문제점**: O(n²) 복잡도, 매 렌더링마다 실행
 
 **개선안**: Map 기반 조회로 O(n)
+
 ```typescript
 const getClientRelationships = useMemo(() => {
   const clientMap = new Map(state.clients.map(c => [c.id, c]));
   const instrumentMap = new Map(state.instruments.map(i => [i.id, i]));
-  
+
   return state.connections
     .map(connection => ({
       ...connection,
@@ -124,7 +140,9 @@ const getClientRelationships = useMemo(() => {
 ---
 
 ### ⚠️ 5. ItemList 중복 클라이언트 조회
+
 **현재**: 매 아이템마다 필터링
+
 ```typescript
 // src/app/dashboard/components/ItemList.tsx:40-45
 const itemsWithClients = useMemo(() => {
@@ -136,6 +154,7 @@ const itemsWithClients = useMemo(() => {
 ```
 
 **개선안**: 단일 루프로 최적화
+
 ```typescript
 const itemsWithClients = useMemo(() => {
   const clientMap = new Map<string, ClientInstrument[]>();
@@ -143,7 +162,7 @@ const itemsWithClients = useMemo(() => {
     const existing = clientMap.get(rel.instrument_id) || [];
     clientMap.set(rel.instrument_id, [...existing, rel]);
   });
-  
+
   return items.map(item => ({
     ...item,
     clients: clientMap.get(item.id) || [],
@@ -158,7 +177,9 @@ const itemsWithClients = useMemo(() => {
 ## 3️⃣ 에러 처리 (중요도: 높음)
 
 ### ❌ 6. Delete 에러 핸들링 부족
+
 **현재**: 에러를 로그만 찍고 사용자에게 알림 안함
+
 ```typescript
 // src/app/dashboard/page.tsx:89-97
 const handleDeleteItem = async (itemId: string) => {
@@ -173,6 +194,7 @@ const handleDeleteItem = async (itemId: string) => {
 ```
 
 **개선안**: ErrorToast 표시
+
 ```typescript
 const handleDeleteItem = async (itemId: string) => {
   if (!confirm('...')) return;
@@ -190,7 +212,9 @@ const handleDeleteItem = async (itemId: string) => {
 ---
 
 ### ⚠️ 7. useEffect 누락 의존성
+
 **현재**: eslint-disable로 무시
+
 ```typescript
 // src/app/dashboard/page.tsx:60-62
 useEffect(() => {
@@ -205,6 +229,7 @@ useEffect(() => {
 ```
 
 **개선안**: 의존성 명확화
+
 ```typescript
 useEffect(() => {
   if (selectedItem && isEditing) {
@@ -220,7 +245,9 @@ useEffect(() => {
 ## 4️⃣ 접근성 (중요도: 높음)
 
 ### ❌ 8. Button 로딩 상태 정보 부족
+
 **현재**: disabled만 표시
+
 ```typescript
 // src/components/common/Button.tsx:38
 disabled={disabled || loading}
@@ -229,6 +256,7 @@ disabled={disabled || loading}
 **문제점**: screen reader가 로딩 상태를 인식 못함
 
 **개선안**: aria-label 추가
+
 ```typescript
 <button
   disabled={disabled || loading}
@@ -246,7 +274,9 @@ disabled={disabled || loading}
 ---
 
 ### ⚠️ 9. Modal 키보드 포커스 관리
+
 **현재**: ClientModal에만 useEscapeKey
+
 ```typescript
 // src/app/clients/components/ClientModal.tsx:59
 useEscapeKey(onClose, isOpen);
@@ -255,6 +285,7 @@ useEscapeKey(onClose, isOpen);
 **문제점**: Dashboard ItemModal에는 ESC 지원 없음
 
 **개선안**: 공통 Modal wrapper에 적용
+
 ```typescript
 // src/components/common/Modal.tsx
 export default function Modal({ isOpen, onClose, children }) {
@@ -271,13 +302,16 @@ export default function Modal({ isOpen, onClose, children }) {
 ## 5️⃣ 코드 품질 (중요도: 낮음)
 
 ### ⚠️ 10. 확인 모달 제거
+
 **현재**: 코드 참조에서 확인 모달 미사용
+
 ```typescript
 // src/app/dashboard/page.tsx:164-259
 <div>Item Details</div> // 단순 뷰 모달
 ```
 
 **개선안**: 상세 모달 개선
+
 ```typescript
 <ViewModal
   title={`${item.maker} ${item.type}`}
@@ -302,16 +336,19 @@ export default function Modal({ isOpen, onClose, children }) {
 ## 📊 우선순위 요약
 
 ### 즉시 개선 필요 (P0)
+
 1. ✅ Delete 확인 대화상자
 2. ✅ Delete 에러 핸들링
 
 ### 이번 스프린트 (P1)
+
 3. ⚠️ View Modal 코드 중복
 4. ⚠️ 불필요한 재계산
 5. ⚠️ Button 로딩 접근성
 6. ⚠️ Modal 키보드 관리
 
 ### 다음 스프린트 (P2)
+
 7. ⚠️ 로딩 스켈레톤 일관성
 8. ⚠️ ItemList 최적화
 9. ⚠️ useEffect 의존성
@@ -321,12 +358,12 @@ export default function Modal({ isOpen, onClose, children }) {
 
 ## 🎯 예상 효과
 
-| 개선사항 | 성능 | UX | 유지보수 | 접근성 |
-|---------|------|----|----------|---------|
-| Delete 모달 | - | ⬆️⬆️⬆️ | ⬆️ | ⬆️⬆️ |
-| 코드 중복 제거 | - | - | ⬆️⬆️⬆️ | - |
-| useMemo 최적화 | ⬆️⬆️⬆️ | - | ⬆️ | - |
-| 에러 핸들링 | - | ⬆️⬆️⬆️ | ⬆️ | - |
-| 접근성 개선 | - | ⬆️⬆️ | ⬆️ | ⬆️⬆️⬆️ |
+| 개선사항       | 성능   | UX     | 유지보수 | 접근성 |
+| -------------- | ------ | ------ | -------- | ------ |
+| Delete 모달    | -      | ⬆️⬆️⬆️ | ⬆️       | ⬆️⬆️   |
+| 코드 중복 제거 | -      | -      | ⬆️⬆️⬆️   | -      |
+| useMemo 최적화 | ⬆️⬆️⬆️ | -      | ⬆️       | -      |
+| 에러 핸들링    | -      | ⬆️⬆️⬆️ | ⬆️       | -      |
+| 접근성 개선    | -      | ⬆️⬆️   | ⬆️       | ⬆️⬆️⬆️ |
 
 **총 예상 개선**: 유지보수성 +30%, 사용자 경험 +20%, 접근성 +15%

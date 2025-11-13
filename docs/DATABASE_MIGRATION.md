@@ -64,11 +64,13 @@
 ### 방법 1: Supabase 대시보드 (권장, 가장 쉬움)
 
 **장점:**
+
 - 추가 설정 불필요
 - 즉시 실행 가능
 - 1분 이내 완료
 
 **단계:**
+
 1. Supabase 대시보드 접속
 2. SQL Editor 열기
 3. 마이그레이션 파일 내용 복사/붙여넣기
@@ -77,15 +79,18 @@
 ### 방법 2: Supabase CLI (자동화 가능)
 
 **장점:**
+
 - 자동화 가능
 - 버전 관리 용이
 - CI/CD 통합 가능
 
 **전제 조건:**
+
 - Supabase CLI 설치: `npm install -g supabase`
 - Supabase 계정 로그인: `supabase login`
 
 **단계:**
+
 ```bash
 # 1. 프로젝트 연결
 supabase link --project-ref YOUR_PROJECT_REF
@@ -101,10 +106,12 @@ supabase db push
 ### 방법 3: psql 직접 연결 (고급)
 
 **전제 조건:**
+
 - `psql` 설치
 - 데이터베이스 비밀번호 필요
 
 **단계:**
+
 ```bash
 # 환경 변수 설정
 export DATABASE_URL="postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres"
@@ -114,6 +121,7 @@ psql $DATABASE_URL -f migration-maintenance-tasks.sql
 ```
 
 **또는 스크립트 사용:**
+
 ```bash
 # Unix/MacOS
 DATABASE_URL="<prod_db_url>" bash scripts/supabase/apply-migrations.sh
@@ -128,11 +136,13 @@ DATABASE_URL="<prod_db_url>" bash scripts/supabase/apply-migrations.sh
 ### Service Role Key만으로는 SQL 실행 불가
 
 **이유:**
+
 1. Supabase REST API는 DDL(SQL 실행)을 지원하지 않습니다
 2. PostgreSQL 직접 연결에는 데이터베이스 비밀번호가 필요합니다
 3. Service Role Key는 데이터 접근 권한이지, SQL 실행 권한이 아닙니다
 
 **해결 방법:**
+
 - 방법 1 (대시보드) 사용 권장
 - 또는 데이터베이스 비밀번호를 사용하여 psql로 직접 연결
 
@@ -145,8 +155,8 @@ DATABASE_URL="<prod_db_url>" bash scripts/supabase/apply-migrations.sh
 ```sql
 -- SQL Editor에서 실행
 SELECT EXISTS (
-  SELECT FROM information_schema.tables 
-  WHERE table_schema = 'public' 
+  SELECT FROM information_schema.tables
+  WHERE table_schema = 'public'
   AND table_name = 'maintenance_tasks'
 );
 ```
@@ -163,7 +173,7 @@ ORDER BY ordinal_position;
 ### RLS 정책 확인
 
 ```sql
-SELECT * FROM pg_policies 
+SELECT * FROM pg_policies
 WHERE tablename = 'maintenance_tasks';
 ```
 
@@ -185,6 +195,7 @@ SELECT * FROM maintenance_tasks LIMIT 1;
 **원인:** 테이블이 이미 존재함
 
 **해결:**
+
 - 마이그레이션 파일의 `CREATE TABLE IF NOT EXISTS` 사용 (이미 적용됨)
 - 또는 기존 테이블 삭제 후 재실행 (주의: 데이터 손실 가능)
 
@@ -193,6 +204,7 @@ SELECT * FROM maintenance_tasks LIMIT 1;
 **원인:** RLS 정책이 제대로 설정되지 않음
 
 **해결:**
+
 1. 마이그레이션 파일의 RLS 정책 부분 재실행
 2. Supabase Dashboard > Authentication > Policies에서 수동 확인
 
@@ -201,6 +213,7 @@ SELECT * FROM maintenance_tasks LIMIT 1;
 **원인:** 참조하는 테이블이 없음
 
 **해결:**
+
 1. 먼저 `database-schema.sql` 실행 확인
 2. `instruments` 테이블이 존재하는지 확인
 
@@ -209,6 +222,7 @@ SELECT * FROM maintenance_tasks LIMIT 1;
 **원인:** 컬럼이 이미 추가됨
 
 **해결:**
+
 - 마이그레이션 파일의 `ADD COLUMN IF NOT EXISTS` 사용 (이미 적용됨)
 - 또는 무시해도 됨
 
@@ -249,11 +263,13 @@ SELECT * FROM maintenance_tasks LIMIT 1;
 ## ✅ 체크리스트
 
 마이그레이션 실행 전:
+
 - [ ] 데이터베이스 백업 완료
 - [ ] 마이그레이션 파일 내용 확인
 - [ ] 실행 순서 확인
 
 마이그레이션 실행 후:
+
 - [ ] 테이블 생성 확인
 - [ ] RLS 정책 확인
 - [ ] 인덱스 생성 확인
@@ -262,4 +278,3 @@ SELECT * FROM maintenance_tasks LIMIT 1;
 ---
 
 **마이그레이션 완료! 🎉**
-

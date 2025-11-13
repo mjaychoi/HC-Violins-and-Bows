@@ -8,6 +8,7 @@
 **이후**: `docs/migrations/` 폴더로 이동 및 통합
 
 **이동된 파일들:**
+
 - `QUICK_SETUP_DATABASE_PASSWORD.md` → `docs/migrations/`
 - `GET_DATABASE_PASSWORD.md` → `docs/migrations/`
 - `SCHEMA_CHECK_GUIDE.md` → `docs/migrations/`
@@ -21,22 +22,26 @@
 ### 2. 중복 마이그레이션 파일 삭제
 
 **삭제된 파일들:**
+
 - `migration-add-subtype.sql` (이미 `supabase/migrations/`에 있음)
 - `migration-maintenance-tasks.sql` (이미 `supabase/migrations/`에 있음)
 - `supabase/migrations/20241112141804_update_status_constraint_safe.sql` (중복)
 
 **이동된 파일:**
+
 - `migration-tagging-system.sql` → `docs/migrations/`
 
 ### 3. 통합 마이그레이션 가이드 작성
 
 **새로 생성된 파일:**
+
 - `docs/migrations/README.md` - 통합 마이그레이션 가이드
 - `docs/migrations/INDEX.md` - 마이그레이션 문서 인덱스
 
 ### 4. .gitignore 업데이트
 
 **추가된 항목:**
+
 - `/test-results` - 테스트 결과 파일
 - `/playwright-report` - Playwright 리포트
 - `supabase-schema-export.sql` - 생성된 스키마 파일
@@ -45,6 +50,7 @@
 ### 5. README.md 업데이트
 
 **업데이트된 내용:**
+
 - 마이그레이션 가이드 링크 업데이트
 - 스키마 확인 스크립트 추가
 - 마이그레이션 스크립트 추가
@@ -84,20 +90,24 @@
 ## 🎯 개선 사항
 
 ### 1. 문서 구조 개선
+
 - 마이그레이션 관련 문서를 `docs/migrations/`로 통합
 - 통합 마이그레이션 가이드 작성
 - 문서 인덱스 추가
 
 ### 2. 파일 정리
+
 - 중복 마이그레이션 파일 삭제
 - 루트 디렉토리 정리
 - 불필요한 파일 제거
 
 ### 3. 스크립트 추가
+
 - `npm run schema:check` - 스키마 확인
 - `npm run migrate:subtype` - subtype 마이그레이션
 
 ### 4. .gitignore 개선
+
 - 테스트 결과 파일 제외
 - 생성된 스키마 파일 제외
 - 환경 변수 템플릿 파일 포함
@@ -123,6 +133,7 @@
 레포지토리가 깔끔하게 정리되었습니다!
 
 **주요 변경사항:**
+
 - ✅ 마이그레이션 가이드 파일 통합
 - ✅ 중복 파일 삭제
 - ✅ 문서 구조 개선
@@ -132,4 +143,3 @@
 ---
 
 **마지막 업데이트**: 2024-11-12
-

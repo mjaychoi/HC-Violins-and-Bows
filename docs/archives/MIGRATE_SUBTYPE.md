@@ -1,6 +1,7 @@
 # subtype 컬럼 마이그레이션 가이드
 
 ## 🎯 목표
+
 `instruments` 테이블에 `subtype` 컬럼을 추가합니다.
 
 ## 🚀 실행 방법 (3가지)
@@ -12,6 +13,7 @@ npm run migrate:subtype
 ```
 
 **필수 조건:**
+
 - `.env.local` 파일에 `DATABASE_PASSWORD` 설정 필요
 - Supabase Dashboard > Settings > Database에서 비밀번호 확인
 
@@ -25,6 +27,7 @@ npm run migrate:subtype
    - "New query" 버튼 클릭
 
 3. **SQL 실행**
+
    ```sql
    ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;
    ```
@@ -76,4 +79,3 @@ AND column_name = 'subtype';
 ---
 
 **참고**: `IF NOT EXISTS`를 사용했으므로 여러 번 실행해도 안전합니다.
-

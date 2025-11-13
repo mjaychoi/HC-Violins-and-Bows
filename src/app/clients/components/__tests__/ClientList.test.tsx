@@ -56,21 +56,8 @@ describe('ClientList', () => {
     expect(screen.getByText('jane@example.com')).toBeInTheDocument();
   });
 
-  it('shows instrument indicator for clients with instruments', () => {
-    render(<ClientList {...mockProps} />);
-
-    // John Doe should have instrument indicator
-    const johnRow = screen.getByText('John Doe').closest('tr');
-    expect(johnRow).toHaveTextContent('None'); // No instruments in test data
-  });
-
-  it('does not show instrument indicator for clients without instruments', () => {
-    render(<ClientList {...mockProps} />);
-
-    // Jane Smith should not have instrument indicator
-    const janeRow = screen.getByText('Jane Smith').closest('tr');
-    expect(janeRow).not.toHaveTextContent('🎵');
-  });
+  // Note: Instruments column was removed, so these tests are no longer applicable
+  // Instrument management is now done through inline editing
 
   it('handles client row click', () => {
     render(<ClientList {...mockProps} />);
@@ -124,12 +111,8 @@ describe('ClientList', () => {
     expect(screen.getByText('098-765-4321')).toBeInTheDocument();
   });
 
-  it('shows instrument connection status', () => {
-    render(<ClientList {...mockProps} />);
-
-    // Should show instrument connection status
-    expect(screen.getAllByText('None')).toHaveLength(2);
-  });
+  // Note: Instruments column was removed, so this test is no longer applicable
+  // Instrument connection status is no longer displayed in the table
 
   it('handles clients with missing optional fields', () => {
     const clientWithMissingFields: Client = {
