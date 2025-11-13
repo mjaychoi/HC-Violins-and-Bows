@@ -26,6 +26,9 @@
     "migrate:cli": "tsx scripts/migrate.ts --cli",
     "migrate:sh": "bash scripts/migrate.sh",
     "migrate:subtype": "tsx scripts/migrate-subtype.ts",
+    "migrate:maintenance": "tsx scripts/migrate-maintenance-tasks.ts",
+    "populate:numbers": "tsx scripts/populate-unique-numbers.ts",
+    "seed:data": "tsx scripts/seed-sample-data.ts",
     "schema:check": "tsx scripts/check-schema.ts",
     "schema:export": "tsx scripts/check-schema.ts"
   },

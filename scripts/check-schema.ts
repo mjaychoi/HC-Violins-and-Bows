@@ -10,6 +10,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 
+// 로컬 환경에서 SSL 인증서 검증 비활성화
+if (process.env.NODE_ENV !== 'production') {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
+
 dotenv.config({ path: '.env.local' });
 
 interface ColumnInfo {
@@ -48,34 +53,77 @@ async function getSupabaseConnection(): Promise<Client> {
     throw new Error('프로젝트 참조를 찾을 수 없습니다.');
   }
 
-  const regions = ['us-east-1', 'us-west-1', 'eu-west-1', 'ap-southeast-1'];
+  // Pooler 연결 시도 - Supabase 대시보드에서 제공한 형식 사용
+  // 포트: 5432, 사용자: postgres.프로젝트참조
+  const regions = ['us-east-2', 'us-east-1', 'us-west-1', 'eu-west-1', 'ap-southeast-1'];
+  let client: Client | null = null;
+
+  console.log('🔌 Pooler 연결 시도 (포트 5432)...\n');
 
   for (const region of regions) {
     try {
-      const connectionString = `postgresql://postgres.${projectRef}:${encodeURIComponent(
-        dbPassword
-      )}@aws-0-${region}.pooler.supabase.com:6543/postgres?sslmode=require`;
-
-      const client = new Client({
-        connectionString: connectionString,
+      console.log(`🔌 ${region} 지역 pooler 연결 시도...`);
+      
+      client = new Client({
+        host: `aws-0-${region}.pooler.supabase.com`,
+        port: 5432,  // Pooler는 포트 5432 사용
+        user: `postgres.${projectRef}`,  // 사용자 이름 형식: postgres.프로젝트참조
+        password: dbPassword,
+        database: 'postgres',
         ssl: {
           rejectUnauthorized: false,
         },
       });
 
       await client.connect();
-      console.log(`✅ ${region} 지역 연결 성공!\n`);
+      console.log(`✅ ${region} 지역 pooler 연결 성공!\n`);
       return client;
     } catch (error) {
+      if (client) {
+        try {
+          await client.end();
+        } catch {
+          // ignore
+        }
+        client = null;
+      }
+
       if (
         error &&
         typeof error === 'object' &&
         'code' in error &&
         (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED')
       ) {
+        console.log(`⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`);
         continue;
+      } else if (
+        error &&
+        typeof error === 'object' &&
+        'message' in error &&
+        typeof error.message === 'string' &&
+        (error.message.includes('self-signed certificate') ||
+         error.message.includes('certificate') ||
+         error.message.includes('SSL'))
+      ) {
+        console.log(`⚠️  ${region} 지역 SSL 인증서 오류, 다음 지역 시도...\n`);
+        continue;
+      } else if (
+        error &&
+        typeof error === 'object' &&
+        'message' in error &&
+        typeof error.message === 'string' &&
+        error.message.includes('password authentication failed')
+      ) {
+        console.log(`❌ 비밀번호 인증 실패\n`);
+        break;
       } else {
-        throw error;
+        // 상세한 에러 정보 출력
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorCode = error && typeof error === 'object' && 'code' in error ? error.code : 'unknown';
+        console.log(`⚠️  ${region} 지역 연결 오류:`);
+        console.log(`   코드: ${errorCode}`);
+        console.log(`   메시지: ${errorMessage}\n`);
+        continue;
       }
     }
   }
