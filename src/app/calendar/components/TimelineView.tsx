@@ -22,7 +22,7 @@ export default function TimelineView({
   tasks,
   instruments,
   onSelectEvent,
-  onNavigate,
+  onNavigate: _onNavigate, // eslint-disable-line @typescript-eslint/no-unused-vars
 }: TimelineViewProps) {
   const [weekOffset, setWeekOffset] = useState(0);
   

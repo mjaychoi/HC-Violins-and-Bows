@@ -37,7 +37,7 @@ export default function GroupedTaskList({
   onTaskDelete 
 }: GroupedTaskListProps) {
   // Group tasks by scheduled_date (or due_date if scheduled_date is not available)
-  const groupedTasks = useMemo(() => {
+  const groupedTasks: GroupedTasks[] = useMemo(() => {
     const groups = new Map<string, MaintenanceTask[]>();
     
     tasks.forEach(task => {
@@ -174,85 +174,63 @@ export default function GroupedTaskList({
     return { status: 'normal', days: daysDiff };
   };
 
-  // Enhanced priority color with stronger distinction
-  const getPriorityColorEnhanced = (priority: string) => {
-    switch (priority) {
-      case 'urgent':
-        return {
-          bg: 'bg-red-100',
-          text: 'text-red-800',
-          border: 'border-red-300',
-          dot: 'bg-red-500',
-        };
-      case 'high':
-        return {
-          bg: 'bg-orange-100',
-          text: 'text-orange-800',
-          border: 'border-orange-300',
-          dot: 'bg-orange-500',
-        };
-      case 'medium':
-        return {
-          bg: 'bg-yellow-100',
-          text: 'text-yellow-800',
-          border: 'border-yellow-300',
-          dot: 'bg-yellow-500',
-        };
-      case 'low':
-        return {
-          bg: 'bg-green-100',
-          text: 'text-green-800',
-          border: 'border-green-300',
-          dot: 'bg-green-500',
-        };
+  // Instrument icon based on type
+  const getInstrumentIcon = (instrumentType: string | null | undefined): string => {
+    if (!instrumentType) return '🎼';
+    const type = instrumentType.toLowerCase();
+    if (type.includes('violin') || type.includes('바이올린')) return '🎻';
+    if (type.includes('viola') || type.includes('비올라')) return '🎼';
+    if (type.includes('cello') || type.includes('첼로')) return '🎼';
+    if (type.includes('bass') || type.includes('베이스')) return '🎼';
+    if (type.includes('bow') || type.includes('활')) return '🎵';
+    return '🎼';
+  };
+
+  // Status pill color
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return 'bg-green-100 text-green-800 border-green-200';
+      case 'in_progress':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'pending':
+        return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'cancelled':
+        return 'bg-gray-100 text-gray-800 border-gray-200';
       default:
-        return {
-          bg: 'bg-gray-100',
-          text: 'text-gray-800',
-          border: 'border-gray-300',
-          dot: 'bg-gray-500',
-        };
+        return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
-  // Enhanced status color with stronger distinction
-  const getStatusColorEnhanced = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return {
-          bg: 'bg-green-100',
-          text: 'text-green-800',
-          border: 'border-green-300',
-          dot: 'bg-green-500',
-        };
-      case 'in_progress':
-        return {
-          bg: 'bg-blue-100',
-          text: 'text-blue-800',
-          border: 'border-blue-300',
-          dot: 'bg-blue-500',
-        };
-      case 'pending':
-        return {
-          bg: 'bg-yellow-100',
-          text: 'text-yellow-800',
-          border: 'border-yellow-300',
-          dot: 'bg-yellow-500',
-        };
-      case 'cancelled':
-        return {
-          bg: 'bg-red-100',
-          text: 'text-red-800',
-          border: 'border-red-300',
-          dot: 'bg-red-500',
-        };
+  // Priority pill color
+  const getPriorityColor = (priority: string) => {
+    switch (priority.toLowerCase()) {
+      case 'urgent':
+        return 'bg-red-100 text-red-800 border-red-200';
+      case 'high':
+        return 'bg-red-100 text-red-800 border-red-200';
+      case 'medium':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'low':
+        return 'bg-gray-100 text-gray-800 border-gray-200';
       default:
-        return {
-          bg: 'bg-gray-100',
-          text: 'text-gray-800',
-          border: 'border-gray-300',
-          dot: 'bg-gray-500',
-        };
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  // Date text color (adjusted)
+  const getDateColor = (dateType: 'received' | 'due' | 'personal' | 'scheduled') => {
+    switch (dateType) {
+      case 'received':
+        return 'text-[#2563EB]'; // 파랑
+      case 'due':
+        return 'text-[#D97706]'; // 주황
+      case 'personal':
+        return 'text-gray-700';
+      case 'scheduled':
+        return 'text-green-600';
+      default:
+        return 'text-gray-700';
     }
   };
 
@@ -281,74 +259,82 @@ export default function GroupedTaskList({
   }
 
   return (
-    <div className="space-y-6" data-testid="task-list">
-      {groupedTasks.map(group => {
+    <div className="space-y-20" data-testid="task-list">
+      {groupedTasks.map((group: GroupedTasks) => {
         // Create summary message for tasks on this date
-        const rehairTasks = group.tasks.filter(t => t.task_type === 'rehair');
-        const repairTasks = group.tasks.filter(t => t.task_type === 'repair');
-        const otherTasks = group.tasks.filter(t => t.task_type !== 'rehair' && t.task_type !== 'repair');
+        const rehairTasks = group.tasks.filter((t: MaintenanceTask) => t.task_type === 'rehair');
+        const repairTasks = group.tasks.filter((t: MaintenanceTask) => t.task_type === 'repair');
+        const otherTasks = group.tasks.filter((t: MaintenanceTask) => t.task_type !== 'rehair' && t.task_type !== 'repair');
         
         const dateObj = parseISO(group.date);
         const isTodayDate = isToday(dateObj);
         const isTomorrowDate = isTomorrow(dateObj);
+        const daysDiff = differenceInDays(dateObj, new Date());
         
         return (
-          <div key={group.date} className="space-y-3">
-            {/* Date Header with improved styling */}
+          <div key={group.date} className="space-y-2 pb-2">
+            {/* Date Header - Improved format */}
             {(() => {
-              const dateInfo = getRelativeDateDisplay(group.date);
-              const hasOverdue = group.tasks.some(task => getDateStatus(task).status === 'overdue');
-              const hasUpcoming = group.tasks.some(task => getDateStatus(task).status === 'upcoming');
+              // Format header text
+              let headerText = '';
+              let statusColor = 'text-gray-700';
+              let statusBg = 'bg-gray-50';
+              let statusBorder = 'border-gray-200';
+              if (isTodayDate) {
+                headerText = `Due Today`;
+                statusColor = 'text-blue-700';
+                statusBg = 'bg-blue-50';
+                statusBorder = 'border-blue-200';
+              } else if (isTomorrowDate) {
+                headerText = `Due Tomorrow`;
+                statusColor = 'text-amber-700';
+                statusBg = 'bg-amber-50';
+                statusBorder = 'border-amber-200';
+              } else if (daysDiff > 0 && daysDiff <= 7) {
+                headerText = `Due in ${daysDiff} day${daysDiff > 1 ? 's' : ''}`;
+                statusColor = 'text-gray-700';
+                statusBg = 'bg-gray-50';
+                statusBorder = 'border-gray-200';
+              } else if (daysDiff < 0 && daysDiff >= -7) {
+                headerText = `Overdue ${Math.abs(daysDiff)} day${Math.abs(daysDiff) > 1 ? 's' : ''}`;
+                statusColor = 'text-red-700';
+                statusBg = 'bg-red-50';
+                statusBorder = 'border-red-200';
+              } else {
+                headerText = '';
+                statusColor = 'text-gray-700';
+                statusBg = 'bg-gray-50';
+                statusBorder = 'border-gray-200';
+              }
               
               return (
-                <div className={`flex items-center justify-between pb-2 border-b-2 ${
-                  hasOverdue ? 'border-red-300' : 
-                  hasUpcoming ? 'border-amber-300' : 
-                  'border-gray-200'
-                }`}>
+                <div className="flex items-center justify-between py-3 px-1">
                   <div className="flex items-center gap-3">
-                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${dateInfo.bgColor} border ${dateInfo.color === 'text-red-700' ? 'border-red-200' : dateInfo.color === 'text-amber-700' ? 'border-amber-200' : 'border-gray-200'}`}>
-                      <svg
-                        className={`w-4 h-4 ${dateInfo.color} shrink-0`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                        />
-                      </svg>
-                      <h3 className={`text-lg font-semibold ${dateInfo.color}`}>
-                        {dateInfo.text}
-                      </h3>
-                      <span className={`text-xs ${dateInfo.color} opacity-75`}>
-                        ({formatDate(group.date, 'short')})
+                    {headerText && (
+                      <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${statusColor} ${statusBg} border ${statusBorder}`}>
+                        {headerText}
                       </span>
-                    </div>
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                      hasOverdue ? 'bg-red-100 text-red-700 border border-red-200' :
-                      hasUpcoming ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                      'bg-blue-50 text-blue-700 border border-blue-200'
-                    }`}>
-                      {group.tasks.length} {group.tasks.length === 1 ? 'task' : 'tasks'}
+                    )}
+                    <span className="text-base font-bold text-gray-900">
+                      {formatDate(group.date, 'short')}
                     </span>
                   </div>
+                  <span className="text-sm font-medium text-gray-600">
+                    {group.tasks.length} {group.tasks.length === 1 ? 'task' : 'tasks'}
+                  </span>
                 </div>
               );
             })()}
             
               {/* Summary Message */}
             {(isTodayDate || isTomorrowDate) && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-5 mb-4">
                 <p className="text-sm font-medium text-blue-900">
                   {isTomorrowDate ? 'Tomorrow' : 'Today'}, 
                   {rehairTasks.length > 0 && (
                     <span>
                       {' '}bow{rehairTasks.length > 1 ? 's' : ''}{' '}
-                      {rehairTasks.map((task, idx) => {
+                      {rehairTasks.map((task: MaintenanceTask, idx: number) => {
                         const instrument = task.instrument_id ? instruments?.get(task.instrument_id) : undefined;
                         const instrumentName = instrument?.type || instrument?.maker || 'Unknown';
                         return (
@@ -365,7 +351,7 @@ export default function GroupedTaskList({
                     <span>
                       {rehairTasks.length > 0 ? ' and ' : ' '}
                       instrument{repairTasks.length > 1 ? 's' : ''}{' '}
-                      {repairTasks.map((task, idx) => {
+                      {repairTasks.map((task: MaintenanceTask, idx: number) => {
                         const instrument = task.instrument_id ? instruments?.get(task.instrument_id) : undefined;
                         const instrumentName = instrument?.type || instrument?.maker || 'Unknown';
                         return (
@@ -390,361 +376,77 @@ export default function GroupedTaskList({
             )}
 
             {/* Tasks */}
-            <div className="space-y-3">
-              {group.tasks.map(task => {
+            <div className="space-y-4">
+              {group.tasks.map((task: MaintenanceTask) => {
                 const instrument = task.instrument_id ? instruments?.get(task.instrument_id) : undefined;
                 const client = task.client_id ? clients?.get(task.client_id) : undefined;
                 const dateStatus = getDateStatus(task);
-                const priorityColors = getPriorityColorEnhanced(task.priority);
-                const statusColors = getStatusColorEnhanced(task.status);
                 
-                // Determine task card border color based on status
-                const getTaskBorderColor = () => {
-                  if (dateStatus.status === 'overdue') {
-                    return 'border-red-300 border-2';
-                  } else if (dateStatus.status === 'upcoming') {
-                    return 'border-amber-300 border-2';
-                  } else if (task.priority === 'urgent') {
-                    return 'border-red-200 border-2';
-                  } else if (task.priority === 'high') {
-                    return 'border-orange-200';
-                  }
-                  return 'border-gray-200';
-                };
-                
-                // Determine task background color
-                const getTaskBgColor = () => {
-                  if (dateStatus.status === 'overdue' && task.status !== 'completed') {
-                    return 'bg-red-50';
-                  } else if (dateStatus.status === 'upcoming' && task.status !== 'completed') {
-                    return 'bg-amber-50';
-                  }
-                  return 'bg-gray-50';
-                };
+                // Get due date for display
+                const dueDate = task.due_date || task.personal_due_date || task.scheduled_date;
+                const dueDateObj = dueDate ? parseISO(dueDate) : null;
+                const isDueOverdue = dueDateObj && dueDateObj < new Date() && task.status !== 'completed';
+                const isDueUpcoming = dueDateObj && differenceInDays(dueDateObj, new Date()) > 0 && differenceInDays(dueDateObj, new Date()) <= 3;
                 
                 return (
                   <div
                     key={task.id}
                     data-testid={`task-${task.id}`}
-                    className={`group ${getTaskBgColor()} ${getTaskBorderColor()} rounded-lg p-4 hover:bg-white hover:shadow-lg transition-all duration-200 cursor-pointer`}
+                    className="group bg-white rounded-lg p-5 hover:shadow-sm transition-all duration-200 cursor-pointer border border-gray-100"
                     onClick={() => onTaskClick?.(task)}
                     title={`${task.title} - ${task.status} - ${task.priority} priority${dateStatus.status === 'overdue' ? ' (OVERDUE)' : dateStatus.status === 'upcoming' ? ' (UPCOMING)' : ''}`}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        {/* Header */}
-                        <div className="flex items-start gap-3 mb-3">
-                          <div className="shrink-0 mt-1">
-                            <div className={`w-3 h-3 rounded-full ${statusColors.dot} ring-2 ${statusColors.border.replace('border-', 'ring-')}`} />
+                    <div className="flex items-start justify-between gap-5">
+                      <div className="flex-1 min-w-0 space-y-4">
+                        {/* Title Header - Main */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-2 flex-1">
+                              {instrument && (
+                                <span className="text-lg">{getInstrumentIcon(instrument.type)}</span>
+                              )}
+                              <h4 className="font-bold text-gray-900 text-lg flex-1">{task.title}</h4>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm shrink-0">
+                              <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${getStatusColor(task.status)}`}>
+                                {task.status.replace('_', ' ')}
+                              </span>
+                              <span className="text-gray-400">•</span>
+                              <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${getPriorityColor(task.priority)}`}>
+                                {task.priority}
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap mb-2">
-                              <h4 className="font-semibold text-gray-900 text-base">{task.title}</h4>
-                              {dateStatus.status === 'overdue' && (
-                                <span className="inline-flex items-center px-2 py-0.5 bg-red-600 text-white rounded-full text-xs font-bold border-2 border-red-700 animate-pulse">
-                                  <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                  </svg>
-                                  OVERDUE
-                                </span>
-                              )}
-                              {dateStatus.status === 'upcoming' && (
-                                <span className="inline-flex items-center px-2 py-0.5 bg-amber-500 text-white rounded-full text-xs font-semibold border border-amber-600">
-                                  <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                                  </svg>
-                                  UPCOMING
-                                </span>
-                              )}
-                              <span
-                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border-2 ${priorityColors.bg} ${priorityColors.text} ${priorityColors.border}`}
-                                title={`Priority: ${task.priority}`}
-                              >
-                                <span className={`w-1.5 h-1.5 ${priorityColors.dot} rounded-full mr-1.5`}></span>
-                                {task.priority.toUpperCase()}
-                              </span>
-                              <span
-                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${statusColors.bg} ${statusColors.text} ${statusColors.border}`}
-                                title={`Status: ${task.status.replace('_', ' ')}`}
-                              >
-                                <span className={`w-1.5 h-1.5 ${statusColors.dot} rounded-full mr-1.5`}></span>
-                                {task.status.replace('_', ' ').toUpperCase()}
-                              </span>
+                          
+                          {/* Instrument/Bow and Client - Inline */}
+                          {instrument && (
+                            <div className="text-sm text-gray-700">
+                              {instrument.type || 'Unknown'}
+                              {instrument.maker && ` – ${instrument.maker}`}
+                              {instrument.ownership && ` (${instrument.ownership})`}
                             </div>
-                            
-                            {/* Instrument Info */}
-                            {instrument && (
-                              <div className="flex items-center gap-2 flex-wrap text-sm mb-2">
-                                <div className="flex items-center gap-2 text-gray-600">
-                                  <svg
-                                    className="w-4 h-4 text-gray-400"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-                                    />
-                                  </svg>
-                                  <span className="font-medium">{instrument.type || 'Unknown'}</span>
-                                  {instrument.maker && (
-                                    <>
-                                      <span className="text-gray-300">•</span>
-                                      <span>{instrument.maker}</span>
-                                    </>
-                                  )}
-                                </div>
-                                {instrument.ownership && (
-                                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium border border-blue-200">
-                                    <svg
-                                      className="w-3.5 h-3.5"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                                      />
-                                    </svg>
-                                    <span>{instrument.ownership}</span>
-                                    {instrument.clientName && instrument.clientName !== instrument.ownership && (
-                                      <span className="text-blue-500">({instrument.clientName})</span>
-                                    )}
-                                  </div>
-                                )}
-                                {client && (
-                                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-medium border border-purple-200">
-                                    <svg
-                                      className="w-3.5 h-3.5"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                                      />
-                                    </svg>
-                                    <span>{client.firstName} {client.lastName}</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Date Information - Improved UI with relative dates and colors */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm mb-3">
-                              {task.received_date && (() => {
-                                const receivedInfo = getRelativeDateDisplay(task.received_date);
-                                const isReceivedOverdue = parseISO(task.received_date) < new Date();
-                                return (
-                                  <div 
-                                    className={`flex items-center gap-2 p-2.5 rounded-md border ${receivedInfo.bgColor} ${isReceivedOverdue ? 'border-red-200' : 'border-gray-200'}`}
-                                    title={`Received: ${formatDate(task.received_date, 'long')} (${receivedInfo.text})`}
-                                  >
-                                    <svg
-                                      className={`w-4 h-4 ${receivedInfo.color} shrink-0`}
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                      />
-                                    </svg>
-                                    <div className="flex-1 min-w-0">
-                                      <div className={`text-xs font-medium ${receivedInfo.color}`}>Received</div>
-                                      <div className={`font-semibold ${receivedInfo.color}`}>{formatDate(task.received_date, 'short')}</div>
-                                      {receivedInfo.text !== formatDate(task.received_date, 'short') && (
-                                        <div className="text-xs opacity-75">{receivedInfo.text}</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                              
-                              {task.due_date && (() => {
-                                const dueInfo = getRelativeDateDisplay(task.due_date);
-                                const dueDateObj = parseISO(task.due_date);
-                                const isDueOverdue = dueDateObj < new Date() && task.status !== 'completed';
-                                const isDueUpcoming = differenceInDays(dueDateObj, new Date()) > 0 && differenceInDays(dueDateObj, new Date()) <= 3;
-                                return (
-                                  <div 
-                                    className={`flex items-center gap-2 p-2.5 rounded-md border-2 ${
-                                      isDueOverdue ? 'bg-red-100 border-red-300' :
-                                      isDueUpcoming ? 'bg-amber-100 border-amber-300' :
-                                      'bg-blue-50 border-blue-200'
-                                    }`}
-                                    title={`Due (Customer): ${formatDate(task.due_date, 'long')} (${dueInfo.text})${isDueOverdue ? ' - OVERDUE!' : isDueUpcoming ? ' - UPCOMING!' : ''}`}
-                                  >
-                                    <svg
-                                      className={`w-4 h-4 shrink-0 ${
-                                        isDueOverdue ? 'text-red-600' :
-                                        isDueUpcoming ? 'text-amber-600' :
-                                        'text-blue-600'
-                                      }`}
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                      />
-                                    </svg>
-                                    <div className="flex-1 min-w-0">
-                                      <div className={`text-xs font-semibold ${
-                                        isDueOverdue ? 'text-red-700' :
-                                        isDueUpcoming ? 'text-amber-700' :
-                                        'text-blue-700'
-                                      }`}>
-                                        Due (Customer)
-                                        {isDueOverdue && <span className="ml-1 font-bold">⚠️</span>}
-                                        {isDueUpcoming && !isDueOverdue && <span className="ml-1">⏰</span>}
-                                      </div>
-                                      <div className={`font-bold ${
-                                        isDueOverdue ? 'text-red-900' :
-                                        isDueUpcoming ? 'text-amber-900' :
-                                        'text-blue-900'
-                                      }`}>{formatDate(task.due_date, 'short')}</div>
-                                      {dueInfo.text !== formatDate(task.due_date, 'short') && (
-                                        <div className={`text-xs font-medium ${
-                                          isDueOverdue ? 'text-red-600' :
-                                          isDueUpcoming ? 'text-amber-600' :
-                                          'text-blue-600'
-                                        }`}>{dueInfo.text}</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                              
-                              {task.personal_due_date && (() => {
-                                const personalInfo = getRelativeDateDisplay(task.personal_due_date);
-                                const personalDateObj = parseISO(task.personal_due_date);
-                                const isPersonalOverdue = personalDateObj < new Date() && task.status !== 'completed';
-                                const isPersonalUpcoming = differenceInDays(personalDateObj, new Date()) > 0 && differenceInDays(personalDateObj, new Date()) <= 3;
-                                return (
-                                  <div 
-                                    className={`flex items-center gap-2 p-2.5 rounded-md border-2 ${
-                                      isPersonalOverdue ? 'bg-red-100 border-red-300' :
-                                      isPersonalUpcoming ? 'bg-amber-100 border-amber-300' :
-                                      'bg-amber-50 border-amber-200'
-                                    }`}
-                                    title={`Personal Due: ${formatDate(task.personal_due_date, 'long')} (${personalInfo.text})${isPersonalOverdue ? ' - OVERDUE!' : isPersonalUpcoming ? ' - UPCOMING!' : ''}`}
-                                  >
-                                    <svg
-                                      className={`w-4 h-4 shrink-0 ${
-                                        isPersonalOverdue ? 'text-red-600' :
-                                        isPersonalUpcoming ? 'text-amber-600' :
-                                        'text-amber-500'
-                                      }`}
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                      />
-                                    </svg>
-                                    <div className="flex-1 min-w-0">
-                                      <div className={`text-xs font-semibold ${
-                                        isPersonalOverdue ? 'text-red-700' :
-                                        isPersonalUpcoming ? 'text-amber-700' :
-                                        'text-amber-600'
-                                      }`}>
-                                        Personal Due
-                                        {isPersonalOverdue && <span className="ml-1 font-bold">⚠️</span>}
-                                        {isPersonalUpcoming && !isPersonalOverdue && <span className="ml-1">⏰</span>}
-                                      </div>
-                                      <div className={`font-bold ${
-                                        isPersonalOverdue ? 'text-red-900' :
-                                        isPersonalUpcoming ? 'text-amber-900' :
-                                        'text-amber-900'
-                                      }`}>{formatDate(task.personal_due_date, 'short')}</div>
-                                      {personalInfo.text !== formatDate(task.personal_due_date, 'short') && (
-                                        <div className={`text-xs font-medium ${
-                                          isPersonalOverdue ? 'text-red-600' :
-                                          isPersonalUpcoming ? 'text-amber-600' :
-                                          'text-amber-600'
-                                        }`}>{personalInfo.text}</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                              
-                              {task.scheduled_date && (() => {
-                                const scheduledInfo = getRelativeDateDisplay(task.scheduled_date);
-                                const scheduledDateObj = parseISO(task.scheduled_date);
-                                const isScheduledUpcoming = isToday(scheduledDateObj) || isTomorrow(scheduledDateObj);
-                                return (
-                                  <div 
-                                    className={`flex items-center gap-2 p-2.5 rounded-md border-2 ${
-                                      isScheduledUpcoming ? 'bg-green-100 border-green-300' :
-                                      'bg-green-50 border-green-200'
-                                    }`}
-                                    title={`Scheduled: ${formatDate(task.scheduled_date, 'long')} (${scheduledInfo.text})${isScheduledUpcoming ? ' - TODAY/TOMORROW!' : ''}`}
-                                  >
-                                    <svg
-                                      className={`w-4 h-4 shrink-0 ${
-                                        isScheduledUpcoming ? 'text-green-600' :
-                                        'text-green-500'
-                                      }`}
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                      />
-                                    </svg>
-                                    <div className="flex-1 min-w-0">
-                                      <div className={`text-xs font-semibold ${
-                                        isScheduledUpcoming ? 'text-green-700' :
-                                        'text-green-600'
-                                      }`}>
-                                        Scheduled
-                                        {isScheduledUpcoming && <span className="ml-1">📅</span>}
-                                      </div>
-                                      <div className={`font-bold ${
-                                        isScheduledUpcoming ? 'text-green-900' :
-                                        'text-green-900'
-                                      }`}>{formatDate(task.scheduled_date, 'short')}</div>
-                                      {scheduledInfo.text !== formatDate(task.scheduled_date, 'short') && (
-                                        <div className={`text-xs font-medium ${
-                                          isScheduledUpcoming ? 'text-green-600' :
-                                          'text-green-600'
-                                        }`}>{scheduledInfo.text}</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
+                          )}
+                          
+                          {/* Client */}
+                          {client && (
+                            <div className="text-sm text-gray-600">
+                              {client.firstName} {client.lastName}
+                              {client.email && ` (${client.email})`}
                             </div>
-
-                            {/* Task Type */}
-                            <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+                          )}
+                          
+                          {/* Task Type */}
+                          <div className="text-sm text-gray-600 capitalize">
+                            {task.task_type}
+                          </div>
+                        </div>
+                        
+                        {/* Dates - 2-column grid */}
+                        {(task.received_date || task.due_date || task.personal_due_date || task.scheduled_date) && (
+                          <div className="pt-4 border-t border-gray-100">
+                            <div className="flex items-center gap-2 mb-3">
                               <svg
-                                className="w-4 h-4 text-gray-400"
+                                className="w-5 h-5 text-gray-600"
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
@@ -753,21 +455,157 @@ export default function GroupedTaskList({
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
                                   strokeWidth={2}
-                                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                                 />
                               </svg>
-                              <span className="font-medium">Type:</span>
-                              <span className="capitalize">{task.task_type}</span>
+                              <div className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Dates</div>
                             </div>
-
-                            {/* Description */}
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                              {task.received_date && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-gray-600">Received:</span>
+                                  <span className={`text-base font-semibold ${getDateColor('received')}`}>{formatDate(task.received_date, 'short')}</span>
+                                  {(() => {
+                                    const receivedInfo = getRelativeDateDisplay(task.received_date);
+                                    if (receivedInfo.text !== formatDate(task.received_date, 'short')) {
+                                      return <span className="text-gray-500 text-xs">({receivedInfo.text})</span>;
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              )}
+                              {task.personal_due_date && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-gray-600">Personal Due:</span>
+                                  <span className={`text-base font-semibold ${getDateColor('personal')}`}>{formatDate(task.personal_due_date, 'short')}</span>
+                                  {(() => {
+                                    const personalInfo = getRelativeDateDisplay(task.personal_due_date);
+                                    if (personalInfo.text !== formatDate(task.personal_due_date, 'short')) {
+                                      return <span className="text-gray-500 text-xs">({personalInfo.text})</span>;
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              )}
+                              {task.due_date && (
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-sm text-gray-600 ${isDueOverdue || isDueUpcoming ? 'font-semibold' : ''}`}>Customer Due:</span>
+                                  <span className={`text-base font-bold ${getDateColor('due')} ${isDueOverdue || isDueUpcoming ? '' : ''}`}>
+                                    {formatDate(task.due_date, 'short')}
+                                  </span>
+                                  {(() => {
+                                    const dueInfo = getRelativeDateDisplay(task.due_date);
+                                    if (dueInfo.text !== formatDate(task.due_date, 'short')) {
+                                      return <span className="text-gray-500 text-xs">({dueInfo.text})</span>;
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              )}
+                              {task.scheduled_date && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-gray-600">Scheduled:</span>
+                                  <span className={`text-base font-semibold ${getDateColor('scheduled')}`}>{formatDate(task.scheduled_date, 'short')}</span>
+                                  {(() => {
+                                    const scheduledInfo = getRelativeDateDisplay(task.scheduled_date);
+                                    if (scheduledInfo.text !== formatDate(task.scheduled_date, 'short')) {
+                                      return <span className="text-gray-500 text-xs">({scheduledInfo.text})</span>;
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Hours & Cost - 2-column grid */}
+                        {(task.estimated_hours !== null || task.actual_hours !== null || task.cost !== null) && (
+                          <div className="pt-4 border-t border-gray-100">
+                            <div className="flex items-center gap-2 mb-3">
+                              <svg
+                                className="w-5 h-5 text-gray-600"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                              </svg>
+                              <div className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Workload</div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-gray-600">
+                              {task.estimated_hours !== null && (
+                                <div>
+                                  Estimated Hours: <span className="text-gray-900 font-medium">{task.estimated_hours}</span>
+                                </div>
+                              )}
+                              {task.actual_hours !== null && (
+                                <div>
+                                  Actual Hours: <span className="text-gray-900 font-medium">{task.actual_hours}</span>
+                                </div>
+                              )}
+                              {task.cost !== null && (
+                                <div>
+                                  Cost: <span className="text-gray-900 font-medium">${task.cost.toFixed(2)}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Description & Notes - Clean style */}
+                        {(task.description || task.notes) && (
+                          <div className="pt-4 border-t border-gray-100">
                             {task.description && (
-                              <div className="mt-3 pt-3 border-t border-gray-200">
-                                <p className="text-sm text-gray-700 line-clamp-2">{task.description}</p>
+                              <div className="text-sm mb-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <svg
+                                    className="w-5 h-5 text-gray-600"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                    />
+                                  </svg>
+                                  <div className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Description</div>
+                                </div>
+                                <p className="text-gray-700 line-clamp-3">{task.description}</p>
+                              </div>
+                            )}
+                            
+                            {task.notes && (
+                              <div className="text-sm">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <svg
+                                    className="w-5 h-5 text-gray-600"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                    />
+                                  </svg>
+                                  <div className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Notes</div>
+                                </div>
+                                <p className="text-gray-600 italic line-clamp-3">{task.notes}</p>
                               </div>
                             )}
                           </div>
-                        </div>
+                        )}
                       </div>
                       
                       {/* Actions */}
