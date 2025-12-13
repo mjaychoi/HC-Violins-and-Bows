@@ -59,6 +59,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -72,6 +74,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={null}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -85,6 +89,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -98,6 +104,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -112,6 +120,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -130,6 +140,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -147,6 +159,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -165,6 +179,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -194,6 +210,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -216,6 +234,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={failingOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -241,6 +261,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={slowOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -263,6 +285,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -284,6 +308,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -302,6 +328,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -319,6 +347,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -335,6 +365,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -351,6 +383,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={newConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 
@@ -373,6 +407,8 @@ describe('EditConnectionModal', () => {
         onClose={mockOnClose}
         onSave={mockOnSave}
         connection={connectionWithoutNotes}
+        clients={[mockClient]}
+        items={[mockInstrument]}
       />
     );
 

@@ -1,2 +1,2 @@
-// Re-export the optimized version
-export { useOptimizedConnections as useConnections } from '@/hooks/useOptimizedConnections';
+// Re-export from DataContext
+export { useConnections } from '@/contexts/DataContext';
