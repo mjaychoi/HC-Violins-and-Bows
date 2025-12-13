@@ -21,6 +21,8 @@ export const EditConnectionModal = ({
   onClose,
   onSave,
   connection,
+  clients,
+  items,
 }: EditConnectionModalProps) => {
   const [relationshipType, setRelationshipType] = useState<
     'Booked' | 'Sold' | 'Interested' | 'Owned'
