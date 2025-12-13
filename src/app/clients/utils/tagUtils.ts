@@ -109,7 +109,6 @@ export const getInterestColor = (interest: string | null): string => {
   // Low interest - 연한 초록
   if (
     lowerInterest.includes('low') ||
-    lowerInterest.includes('passive') ||
     lowerInterest.includes('maybe') ||
     lowerInterest.includes('someday')
   ) {

@@ -1,4 +1,5 @@
 // src/app/clients/hooks/__tests__/useClients.state.test.tsx
+import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useClients } from '../useClients';
 import { Client } from '@/types';
@@ -8,6 +9,85 @@ jest.mock('@/hooks/useErrorHandler', () => ({
     handleError: jest.fn(),
   }),
 }));
+
+jest.mock('@/hooks/useUnifiedData', () => {
+  const { SupabaseHelpers } = require('@/utils/supabaseHelpers');
+  return {
+    useUnifiedClients: () => {
+      const [clients, setClients] = React.useState<Client[]>([]);
+      const [loading, setLoading] = React.useState(false);
+      const [submitting, setSubmitting] = React.useState(false);
+
+      const fetchClients = React.useCallback(async () => {
+        setLoading(true);
+        const { data } = await SupabaseHelpers.fetchAll('clients');
+        setClients(data || []);
+        setLoading(false);
+      }, []);
+
+      const createClient = React.useCallback(
+        async (client: Partial<Client>) => {
+          setLoading(true);
+          const { data, error } = await SupabaseHelpers.create('clients', client);
+          setLoading(false);
+          if (error) {
+            throw error;
+          }
+          if (data) {
+            setClients(prev => [...prev, data]);
+          }
+          return data ?? null;
+        },
+        []
+      );
+
+      const updateClient = React.useCallback(
+        async (id: string, updates: Partial<Client>) => {
+          setSubmitting(true);
+          const { data, error } = await SupabaseHelpers.update('clients', id, updates);
+          setSubmitting(false);
+          if (error) {
+            throw error;
+          }
+          if (data) {
+            setClients(prev =>
+              prev.map(client => (client.id === id ? data : client))
+            );
+          }
+          return data ?? null;
+        },
+        []
+      );
+
+      const deleteClient = React.useCallback(async (id: string) => {
+        setSubmitting(true);
+        const { error } = await SupabaseHelpers.delete('clients', id);
+        setSubmitting(false);
+        if (error) {
+          throw error;
+        }
+        setClients(prev => prev.filter(client => client.id !== id));
+        return true;
+      }, []);
+
+      return {
+        clients,
+        loading: {
+          clients: loading,
+          any: loading,
+        },
+        submitting: {
+          clients: submitting,
+          any: submitting,
+        },
+        fetchClients,
+        createClient,
+        updateClient,
+        deleteClient,
+      };
+    },
+  };
+});
 
 jest.mock('@/utils/supabaseHelpers', () => ({
   SupabaseHelpers: {
@@ -37,7 +117,7 @@ describe('useClients - state', () => {
     jest.clearAllMocks();
   });
 
-  it.skip('loading 상태 전환 확인', async () => {
+  it('loading 상태 전환 확인', async () => {
     (SupabaseHelpers.create as jest.Mock).mockImplementation(
       () =>
         new Promise(resolve =>
@@ -47,7 +127,7 @@ describe('useClients - state', () => {
 
     const { result } = renderHook(() => useClients());
 
-    expect(result.current.loading).toBe(false);
+    expect(result.current.loading.any).toBe(false);
 
     const createPromise = result.current.createClient({
       first_name: 'Jane',
@@ -60,7 +140,9 @@ describe('useClients - state', () => {
       client_number: null,
     });
 
-    expect(result.current.loading).toBe(true);
+    await waitFor(() => {
+      expect(result.current.loading.any).toBe(true);
+    });
 
     await act(async () => {
       await createPromise;
@@ -68,7 +150,7 @@ describe('useClients - state', () => {
 
     await waitFor(
       () => {
-        expect(result.current.loading).toBe(false);
+        expect(result.current.loading.any).toBe(false);
       },
       { timeout: 10000 }
     );

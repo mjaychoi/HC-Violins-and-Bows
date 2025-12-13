@@ -1,8 +1,13 @@
 'use client';
 
 import React from 'react';
-import { MaintenanceTask } from '@/types';
+import type { MaintenanceTask } from '@/types';
 import { formatDate } from '@/utils/formatUtils';
+import {
+  getPriorityPillClasses,
+  getStatusColorClasses,
+} from '@/utils/tasks/style';
+import { EmptyTaskState } from '@/components/tasks/EmptyTaskState';
 
 interface TaskListProps {
   tasks: MaintenanceTask[];
@@ -17,7 +22,7 @@ interface TaskListProps {
     }
   >;
   onTaskClick?: (task: MaintenanceTask) => void;
-  onTaskDelete?: (taskId: string) => void;
+  onTaskDelete?: (task: MaintenanceTask) => void;
 }
 
 export default function TaskList({
@@ -26,60 +31,8 @@ export default function TaskList({
   onTaskClick,
   onTaskDelete,
 }: TaskListProps) {
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'high':
-        return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low':
-        return 'bg-green-100 text-green-800 border-green-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'bg-green-100 text-green-800';
-      case 'in_progress':
-        return 'bg-blue-100 text-blue-800';
-      case 'pending':
-        return 'bg-gray-100 text-gray-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   if (tasks.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <svg
-          className="mx-auto h-12 w-12 text-gray-400 mb-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-          />
-        </svg>
-        <h3 className="text-sm font-medium text-gray-900 mb-1">
-          No tasks found
-        </h3>
-        <p className="text-sm text-gray-500">
-          Get started by creating your first task.
-        </p>
-      </div>
-    );
+    return <EmptyTaskState />;
   }
 
   return (
@@ -92,7 +45,7 @@ export default function TaskList({
         return (
           <div
             key={task.id}
-            className="group bg-gray-50 border border-gray-200 rounded-lg p-4 hover:bg-white hover:shadow-md transition-all duration-200 cursor-pointer"
+            className="group bg-white border border-slate-100 rounded-lg p-4 hover:border-blue-200 hover:shadow-sm transition-all duration-200 cursor-pointer"
             onClick={() => onTaskClick?.(task)}
           >
             <div className="flex items-start justify-between gap-4">
@@ -100,15 +53,14 @@ export default function TaskList({
                 {/* Header */}
                 <div className="flex items-start gap-3 mb-3">
                   <div className="shrink-0 mt-1">
+                    {/* Status indicator dot - uses status color for consistency with pills */}
                     <div
                       className={`w-2 h-2 rounded-full ${
-                        task.status === 'completed'
-                          ? 'bg-green-500'
-                          : task.status === 'in_progress'
-                            ? 'bg-blue-500'
-                            : task.status === 'cancelled'
-                              ? 'bg-gray-400'
-                              : 'bg-yellow-500'
+                        task.status === 'in_progress'
+                          ? 'bg-blue-500'
+                          : task.status === 'completed' || task.status === 'cancelled'
+                            ? 'bg-slate-400'
+                            : 'bg-slate-400'
                       }`}
                     />
                   </div>
@@ -118,14 +70,14 @@ export default function TaskList({
                         {task.title}
                       </h4>
                       <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getPriorityColor(
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getPriorityPillClasses(
                           task.priority
                         )}`}
                       >
                         {task.priority}
                       </span>
                       <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColorClasses(
                           task.status
                         )}`}
                       >
@@ -251,7 +203,7 @@ export default function TaskList({
                       {task.personal_due_date && (
                         <div className="flex items-center gap-2">
                           <svg
-                            className="w-4 h-4 text-amber-500"
+                            className="w-4 h-4 text-slate-400"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -263,10 +215,10 @@ export default function TaskList({
                               d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                             />
                           </svg>
-                          <span className="font-medium text-amber-700">
+                          <span className="font-medium text-slate-700">
                             Personal Due:
                           </span>
-                          <span className="text-amber-700 font-medium">
+                          <span className="text-slate-700 font-medium">
                             {formatDate(task.personal_due_date, 'short')}
                           </span>
                         </div>
@@ -312,9 +264,7 @@ export default function TaskList({
                 <button
                   onClick={e => {
                     e.stopPropagation();
-                    if (confirm('Are you sure you want to delete this task?')) {
-                      onTaskDelete(task.id);
-                    }
+                    onTaskDelete(task);
                   }}
                   className="shrink-0 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
                   aria-label="Delete task"

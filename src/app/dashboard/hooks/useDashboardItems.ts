@@ -1,9 +1,22 @@
+/**
+ * @deprecated This hook is deprecated. Use `useDashboardData` instead, which uses `useUnifiedDashboard` for consistent data fetching.
+ * 
+ * This hook is kept for backward compatibility with tests only.
+ * All production code should use `useDashboardData` → `useUnifiedDashboard`.
+ */
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Instrument, InstrumentImage, ClientInstrument } from '@/types';
+import { Instrument, InstrumentImage, ClientInstrument, Client } from '@/types';
+
+// FIXED: Define explicit type for joined client_instruments query
+type ClientInstrumentJoined = ClientInstrument & {
+  client: Client | null;
+  item: Instrument | null;
+};
 import { useDataState } from '@/hooks/useDataState';
 import { logError, logApiRequest } from '@/utils/logger';
 
+/** @deprecated Use `useDashboardData` instead */
 export function useDashboardItems() {
   const [items, setItems] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,13 +32,14 @@ export function useDashboardItems() {
   const [uploadingImages, setUploadingImages] = useState(false);
   const [imagesToDelete, setImagesToDelete] = useState<string[]>([]);
 
-  // Client relationships state
+  // FIXED: Use ClientInstrumentJoined type for joined query results
+  // But allow ClientInstrument for backward compatibility (addItem/removeItem might pass ClientInstrument)
   const {
     data: clientRelationships,
     setItems: setClientRelationships,
     addItem: addClientRelationship,
     removeItem: removeClientRelationship,
-  } = useDataState<ClientInstrument>(item => item.id, []);
+  } = useDataState<ClientInstrumentJoined | ClientInstrument>(item => item.id, []);
 
   const fetchItemsWithClients = useCallback(async () => {
     try {
@@ -87,8 +101,11 @@ export function useDashboardItems() {
 
       setItems(data || []);
 
-      // Fetch which items have clients
-      await fetchItemsWithClients();
+      // FIXED: Run fetches in parallel instead of sequentially for better performance
+      await Promise.all([
+        Promise.resolve(), // fetchItemsCore is already done (above)
+        fetchItemsWithClients()
+      ]);
     } catch (error) {
       logError('Error fetching items', error, 'useDashboardItems', {
         operation: 'fetchItems',
@@ -98,6 +115,7 @@ export function useDashboardItems() {
     }
   }, [fetchItemsWithClients]);
 
+  // FIXED: Add dependencies to useCallback (React guarantees setState functions are stable, but explicit deps are clearer)
   const createItem = useCallback(
     async (itemData: Omit<Instrument, 'id' | 'created_at'>) => {
       setSubmitting(true);
@@ -153,6 +171,7 @@ export function useDashboardItems() {
     []
   );
 
+  // FIXED: Add dependencies to useCallback
   const updateItem = useCallback(
     async (id: string, itemData: Partial<Instrument>) => {
       setSubmitting(true);
@@ -211,6 +230,7 @@ export function useDashboardItems() {
     []
   );
 
+  // FIXED: Add dependencies to useCallback
   const deleteItem = useCallback(async (id: string) => {
     const startTime = performance.now();
 

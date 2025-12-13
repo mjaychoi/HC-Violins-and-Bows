@@ -43,8 +43,11 @@ const mockProps = {
 };
 
 describe('ClientList', () => {
+  let confirmSpy: jest.SpyInstance;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
   });
 
   it('renders client list', () => {
@@ -101,7 +104,9 @@ describe('ClientList', () => {
   it('handles empty client list', () => {
     render(<ClientList {...mockProps} clients={[]} />);
 
-    expect(screen.getByText('No clients found')).toBeInTheDocument();
+    expect(
+      screen.getByText(/등록된 고객이 없습니다|No clients found/i)
+    ).toBeInTheDocument();
   });
 
   it('displays client contact information', () => {
@@ -132,5 +137,102 @@ describe('ClientList', () => {
 
     expect(screen.getByText('Bob Johnson')).toBeInTheDocument();
     expect(screen.getByText('No contact')).toBeInTheDocument(); // For missing contact
+  });
+
+  it('handles client with null tags safely', () => {
+    const clientWithNullTags: Client = {
+      id: '4',
+      first_name: 'Alice',
+      last_name: 'Williams',
+      email: 'alice@example.com',
+      contact_number: '111-222-3333',
+      tags: null as unknown as string[], // null tags - edge case
+      client_number: null,
+      interest: null,
+      note: null,
+      created_at: '2023-01-04T00:00:00Z',
+    };
+
+    // null tags가 있어도 에러 없이 렌더링되어야 함
+    expect(() => {
+      render(<ClientList {...mockProps} clients={[clientWithNullTags]} />);
+    }).not.toThrow();
+
+    expect(screen.getByText('Alice Williams')).toBeInTheDocument();
+  });
+
+  it('handles client with undefined tags safely', () => {
+    const clientWithUndefinedTags: Client = {
+      id: '5',
+      first_name: 'Charlie',
+      last_name: 'Brown',
+      email: 'charlie@example.com',
+      contact_number: '444-555-6666',
+      tags: undefined as unknown as string[], // undefined tags - edge case
+      client_number: null,
+      interest: null,
+      note: null,
+      created_at: '2023-01-05T00:00:00Z',
+    };
+
+    // undefined tags가 있어도 에러 없이 렌더링되어야 함
+    expect(() => {
+      render(<ClientList {...mockProps} clients={[clientWithUndefinedTags]} />);
+    }).not.toThrow();
+
+    expect(screen.getByText('Charlie Brown')).toBeInTheDocument();
+  });
+
+  it('handles row click without editing mode interference', () => {
+    render(<ClientList {...mockProps} />);
+
+    const johnRow = screen.getByText('John Doe').closest('tr');
+    // 편집 모드가 아닐 때 클릭 시 expand/collapse 동작
+    fireEvent.click(johnRow!);
+
+    expect(mockProps.onClientClick).toHaveBeenCalledWith(mockClients[0]);
+  });
+
+  it('renders tags using null-safe operator', () => {
+    const clientWithEmptyTags: Client = {
+      id: '6',
+      first_name: 'David',
+      last_name: 'Lee',
+      email: 'david@example.com',
+      contact_number: '777-888-9999',
+      tags: [], // empty array
+      client_number: null,
+      interest: null,
+      note: null,
+      created_at: '2023-01-06T00:00:00Z',
+    };
+
+    render(<ClientList {...mockProps} clients={[clientWithEmptyTags]} />);
+
+    // 빈 tags 배열이 있어도 에러 없이 렌더링되어야 함
+    expect(screen.getByText('David Lee')).toBeInTheDocument();
+  });
+
+  it('calls onDeleteClient with client object (not window.confirm)', () => {
+    const onDeleteClient = jest.fn();
+    render(
+      <ClientList
+        {...mockProps}
+        onDeleteClient={onDeleteClient}
+      />
+    );
+
+    // Find delete button (should be in actions column)
+    const deleteButtons = screen.getAllByLabelText('Delete client');
+    expect(deleteButtons.length).toBeGreaterThan(0);
+
+    fireEvent.click(deleteButtons[0]);
+
+    // Should call onDeleteClient with the full client object, not just ID
+    expect(onDeleteClient).toHaveBeenCalledWith(mockClients[0]);
+    expect(onDeleteClient).toHaveBeenCalledTimes(1);
+    
+    // Should NOT use window.confirm
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 });

@@ -1,54 +1,33 @@
 // src/app/clients/hooks/useFilters.ts
-import { useState, useMemo } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Client } from '@/types';
-import { filterClients } from '../utils';
-import { getUniqueValues, getUniqueArrayValues } from '@/utils/uniqueValues';
-import { toggleValue, countActiveFilters } from '@/utils/filterHelpers';
-import { useFilterSort } from '@/hooks/useFilterSort';
-import { FilterState } from '../types';
+import {
+  filterClients,
+  EMPTY_FILTER_STATE,
+  handleFilterChange as updateFilterState,
+  clearAllFilters as resetFilterState,
+} from '../utils';
+import { usePageFilters } from '@/hooks/usePageFilters';
+import { ClientFilterOptions, FilterState } from '../types';
 
 export const useFilters = (
   clients: Client[],
   clientsWithInstruments?: Set<string>
 ) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState<FilterState>({
-    last_name: [],
-    first_name: [],
-    contact_number: [],
-    email: [],
-    tags: [],
-    interest: [],
-    hasInstruments: [],
-  });
-
-  // Get unique values for filter options
-  const filterOptions = useMemo(
-    () => ({
-      lastNames: getUniqueValues(clients, 'last_name'),
-      firstNames: getUniqueValues(clients, 'first_name'),
-      contactNumbers: getUniqueValues(clients, 'contact_number'),
-      emails: getUniqueValues(clients, 'email'),
-      tags: getUniqueArrayValues(clients, 'tags'),
-      interests: getUniqueValues(clients, 'interest'),
-    }),
-    [clients]
-  );
-
-  // 1) 필드 기반 필터만 적용 (텍스트 검색 제외)
-  const fieldFiltered = useMemo(() => {
-    return filterClients(clients, '', filters, { clientsWithInstruments });
-  }, [clients, filters, clientsWithInstruments]);
-
-  // 2) 공통 검색/정렬 훅 적용
-  const {
-    items: filteredClients,
-    handleSort,
-    getSortArrow,
-    sortBy,
-    sortOrder,
-  } = useFilterSort<Client>(fieldFiltered, {
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20; // Clients per page
+  // usePageFilters를 기반으로 필터링 로직 구현
+  const baseFilters = usePageFilters<Record<string, unknown>>({
+    items: clients as unknown as Record<string, unknown>[],
+    filterOptionsConfig: {
+      last_name: 'simple',
+      first_name: 'simple',
+      contact_number: 'simple',
+      email: 'simple',
+      tags: 'array',
+      interest: 'simple',
+    },
     searchFields: [
       'first_name',
       'last_name',
@@ -56,21 +35,41 @@ export const useFilters = (
       'email',
       'interest',
       'note',
-    ],
-    initialSearchTerm: searchTerm,
+      'client_number',
+    ] as string[],
     initialSortBy: 'created_at',
     initialSortOrder: 'desc',
     debounceMs: 300,
+    initialFilters: EMPTY_FILTER_STATE as Record<string, unknown>,
+    resetFilters: () => resetFilterState() as Record<string, unknown>,
+    syncWithURL: true, // URL 쿼리 파라미터와 상태 동기화
+    urlParamMapping: {
+      searchTerm: 'search',
+    },
+    customFieldFilter: (items, filters) => {
+      const clients = items as unknown as Client[];
+      const result = filterClients(
+        clients,
+        '',
+        filters as FilterState,
+        {
+          clientsWithInstruments,
+        }
+      );
+      return result as unknown as Record<string, unknown>[];
+    },
     customFilter: (item, term) => {
+      const client = item as unknown as Client;
       const t = term.toLowerCase();
       const parts = [
-        item.first_name,
-        item.last_name,
-        item.contact_number,
-        item.email,
-        item.interest,
-        item.note,
-        Array.isArray(item.tags) ? item.tags.join(' ') : '',
+        client.first_name,
+        client.last_name,
+        client.contact_number,
+        client.email,
+        client.interest,
+        client.note,
+        client.client_number,
+        Array.isArray(client.tags) ? client.tags.join(' ') : '',
       ]
         .filter(Boolean)
         .map(v => String(v).toLowerCase());
@@ -78,62 +77,98 @@ export const useFilters = (
     },
   });
 
+  // 필터 옵션을 ClientFilterOptions 형식으로 변환
+  const filterOptions: ClientFilterOptions = useMemo(() => {
+    const options = baseFilters.filterOptions;
+    return {
+      lastNames: options.last_name || [],
+      firstNames: options.first_name || [],
+      contactNumbers: options.contact_number || [],
+      emails: options.email || [],
+      tags: options.tags || [],
+      interests: options.interest || [],
+    };
+  }, [baseFilters.filterOptions]);
+
+  // handleFilterChange는 updateFilterState를 사용하도록 래핑
   const handleFilterChange = <K extends keyof FilterState>(
     category: K,
     value: string
   ) => {
-    setFilters(prev => {
-      const currentValues = prev[category];
-      const newValues = toggleValue(currentValues, value);
+    baseFilters.setFilters((prev: Record<string, unknown>) => {
+      return updateFilterState(
+        prev as Record<string, string[]>,
+        category as string,
+        value
+      ) as FilterState;
+    });
+  };
 
-      return {
-        ...prev,
-        [category]: newValues,
+  // Special handler for hasInstruments: single-selection filter
+  // Selecting one option clears the other
+  const handleHasInstrumentsChange = (value: string) => {
+    baseFilters.setFilters((prev: Record<string, unknown>) => {
+      const prevFilters = prev as unknown as FilterState;
+      const isCurrentlySelected = prevFilters.hasInstruments.includes(value);
+      // If already selected, clear it; otherwise, set it (and clear the other)
+      const updated: FilterState = {
+        ...prevFilters,
+        hasInstruments: isCurrentlySelected ? [] : [value],
       };
+      return updated as unknown as Record<string, unknown>;
     });
   };
 
-  const clearAllFilters = () => {
-    setFilters({
-      last_name: [],
-      first_name: [],
-      contact_number: [],
-      email: [],
-      tags: [],
-      interest: [],
-      hasInstruments: [],
-    });
-    setSearchTerm('');
-  };
+  // Pagination calculations
+  const totalCount = baseFilters.filteredItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [baseFilters.searchTerm, baseFilters.filters]);
 
-  const handleColumnSort = (column: keyof Client) => {
-    handleSort(column);
-  };
+  // Paginated clients
+  const paginatedClients = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return baseFilters.filteredItems.slice(startIndex, endIndex) as unknown as Client[];
+  }, [baseFilters.filteredItems, currentPage, pageSize]);
 
-  const getActiveFiltersCount = () => {
-    return countActiveFilters(filters) + (searchTerm ? 1 : 0);
-  };
+  // Handle page change
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  }, [totalPages]);
 
   return {
     // State
-    searchTerm,
-    setSearchTerm,
-    sortBy,
-    sortOrder,
-    showFilters,
-    setShowFilters,
-    filters,
-    setFilters,
+    searchTerm: baseFilters.searchTerm,
+    setSearchTerm: baseFilters.setSearchTerm,
+    sortBy: baseFilters.sortBy,
+    sortOrder: baseFilters.sortOrder,
+    showFilters: baseFilters.showFilters,
+    setShowFilters: baseFilters.setShowFilters,
+    filters: baseFilters.filters as FilterState,
+    setFilters: baseFilters.setFilters,
 
     // Computed values
-    filteredClients,
+    filteredClients: baseFilters.filteredItems as unknown as Client[],
+    paginatedClients,
     filterOptions,
 
     // Actions
     handleFilterChange,
-    clearAllFilters,
-    handleColumnSort,
-    getSortArrow,
-    getActiveFiltersCount,
+    handleHasInstrumentsChange,
+    clearAllFilters: baseFilters.clearAllFilters,
+    handleColumnSort: baseFilters.handleColumnSort,
+    getSortArrow: baseFilters.getSortArrow,
+    getActiveFiltersCount: baseFilters.getActiveFiltersCount,
+    
+    // Pagination
+    currentPage,
+    totalPages,
+    totalCount,
+    pageSize,
+    setPage: handlePageChange,
   };
 };

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Client, RelationshipType } from '@/types';
-import { supabase } from '@/lib/supabase';
+// Removed direct supabase import to reduce bundle size - using API routes instead
 import { logError } from '@/utils/logger';
 
 interface ClientSearchProps {
@@ -32,15 +32,18 @@ export default function ClientSearch({
 
     setIsSearchingClients(true);
     try {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('*')
-        .or(`last_name.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%`)
-        .limit(10);
-
-      if (error) throw error;
+      // Use API route instead of direct Supabase client to reduce bundle size
+      const params = new URLSearchParams({
+        search: searchTerm,
+        limit: '10',
+      });
+      const response = await fetch(`/api/clients?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Failed to search clients: ${response.statusText}`);
+      }
+      const result = await response.json();
       const selectedIds = new Set(selectedClients.map(sc => sc.client.id));
-      const filtered = (data || []).filter(c => !selectedIds.has(c.id));
+      const filtered = (result.data || []).filter((c: Client) => !selectedIds.has(c.id));
       setSearchResults(filtered);
     } catch (error) {
       logError('Error searching clients', error, 'ClientSearch', {

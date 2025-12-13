@@ -1,47 +1,47 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Instrument } from '@/types';
-import { useOptimizedInstruments as useInstruments } from '@/hooks/useOptimizedInstruments';
-import { logError } from '@/utils/logger';
+import { useUnifiedInstruments } from '@/hooks/useUnifiedData';
 
 export function useInstrumentSearch() {
   const [showInstrumentSearch, setShowInstrumentSearch] = useState(false);
   const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
 
-  const { searchResults, searchInstruments: searchInstrumentsHook } =
-    useInstruments();
+  const { instruments } = useUnifiedInstruments();
 
-  const [isSearchingInstruments, setIsSearchingInstruments] = useState(false);
+  // Client-side search using useMemo for performance
+  const searchResults = useMemo<Instrument[]>(() => {
+    if (instrumentSearchTerm.length < 2) {
+      return [];
+    }
 
-  const searchInstruments = searchInstrumentsHook;
+    const searchLower = instrumentSearchTerm.toLowerCase();
+    return instruments.filter(
+      instrument =>
+        (instrument.maker || '').toLowerCase().includes(searchLower) ||
+        (instrument.type || '').toLowerCase().includes(searchLower) ||
+        (instrument.subtype || '').toLowerCase().includes(searchLower) ||
+        (instrument.serial_number || '').toLowerCase().includes(searchLower)
+    );
+  }, [instruments, instrumentSearchTerm]);
 
-  const openInstrumentSearch = () => setShowInstrumentSearch(true);
-  const closeInstrumentSearch = () => {
+  const openInstrumentSearch = useCallback(() => {
+    setShowInstrumentSearch(true);
+  }, []);
+
+  const closeInstrumentSearch = useCallback(() => {
     setShowInstrumentSearch(false);
     setInstrumentSearchTerm('');
-  };
+  }, []);
 
-  const handleInstrumentSearch = async (term: string) => {
+  const handleInstrumentSearch = useCallback((term: string) => {
     setInstrumentSearchTerm(term);
-    if (term.length >= 2) {
-      setIsSearchingInstruments(true);
-      try {
-        await searchInstruments(term);
-      } catch (error) {
-        logError('Error searching instruments', error, 'useInstrumentSearch', {
-          searchTerm: term,
-          action: 'searchInstruments',
-        });
-      } finally {
-        setIsSearchingInstruments(false);
-      }
-    }
-  };
+  }, []);
 
   return {
     showInstrumentSearch,
     instrumentSearchTerm,
-    searchResults: searchResults as Instrument[],
-    isSearchingInstruments,
+    searchResults,
+    isSearchingInstruments: false, // No longer async, so always false
     openInstrumentSearch,
     closeInstrumentSearch,
     handleInstrumentSearch,

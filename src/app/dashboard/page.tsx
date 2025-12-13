@@ -1,173 +1,337 @@
 'use client';
 
-import { Instrument } from '@/types';
-import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
-import { useDashboardFilters, useDashboardForm } from './hooks';
+import { useDashboardFilters } from './hooks';
+import { useDashboardModal } from './hooks/useDashboardModal';
+import { useDashboardData } from './hooks/useDashboardData';
 import { ItemForm, ItemList, ItemFilters } from './components';
-import { useModalState } from '@/hooks/useModalState';
-import { useLoadingState } from '@/hooks/useLoadingState';
-import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { AppLayout } from '@/components/layout';
-import { ErrorBoundary } from '@/components/common';
+import { ErrorBoundary, ConfirmDialog, NotificationBadge } from '@/components/common';
+import { usePageNotifications } from '@/hooks/usePageNotifications';
+import React, { useCallback, useMemo, useEffect } from 'react';
+import { Instrument } from '@/types';
 
 export default function DashboardPage() {
-  // Error handling
-  const { ErrorToasts, handleError } = useErrorHandler();
+  const { ErrorToasts, SuccessToasts, showSuccess } = useAppFeedback();
+  
+  // FIXED: useUnifiedData is now called at root layout level
+  // No need to call it here - data is already fetched
+  
+  // Page notifications (badge with click handler)
+  // NOTE: Dashboard doesn't use maintenance tasks, so we pass empty array
+  // Consider removing usePageNotifications from dashboard if notifications are not needed
+  const { notificationBadge } = usePageNotifications({
+    tasks: [], // Dashboard doesn't use maintenance tasks
+    navigateTo: '/calendar',
+    showToastOnClick: true,
+    showSuccess,
+  });
 
-  // Custom hooks for state management
+  // Dashboard data and CRUD operations
   const {
     instruments,
+    clientRelationships,
+    clients,
     loading,
     submitting,
-    clientRelationships,
-    createInstrument,
-    updateInstrument,
-    deleteInstrument,
-  } = useUnifiedDashboard();
+    handleCreateItem,
+    handleUpdateItem,
+    handleUpdateItemInline,
+    handleDeleteItem,
+  } = useDashboardData();
+  
+  // Track clients loading state separately
+  const clientsLoading = useMemo(() => {
+    // Check if clients array is empty but we're still loading
+    return clients.length === 0 && loading.any;
+  }, [clients.length, loading.any]);
 
+  // FIXED: Enrich items with clients array for HAS_CLIENTS filter
+  // This ensures filterDashboardItems can properly check hasClients without type casting
+  type EnrichedInstrument = Instrument & {
+    clients: typeof clientRelationships;
+  };
+  const enrichedItems = useMemo<EnrichedInstrument[]>(() => {
+    // Group relationships by instrument_id for O(1) lookup
+    type RelationshipType = typeof clientRelationships[number];
+    const relationshipsByInstrument = new Map<string, RelationshipType[]>();
+    clientRelationships.forEach((rel: RelationshipType) => {
+      if (rel.instrument_id) {
+        const existing = relationshipsByInstrument.get(rel.instrument_id) || [];
+        existing.push(rel);
+        relationshipsByInstrument.set(rel.instrument_id, existing);
+      }
+    });
+
+    // Map instruments with their clients
+    return instruments.map((item: Instrument) => ({
+      ...item,
+      clients: relationshipsByInstrument.get(item.id) || [],
+    })) as EnrichedInstrument[];
+  }, [instruments, clientRelationships]);
+
+  // Debug: Log clients loading state
+  useEffect(() => {
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      console.log('[Dashboard] Clients state:', {
+        clientsCount: clients?.length ?? 0,
+        loading: loading.any,
+        sampleClientIds: clients?.slice(0, 3).map((c: { id: string }) => c.id) ?? [],
+        clientRelationshipsCount: clientRelationships?.length ?? 0,
+        sampleRelationships: clientRelationships?.slice(0, 3).map((rel: typeof clientRelationships[number]) => ({
+          instrument_id: rel.instrument_id,
+          client_id: rel.client_id,
+          relationship_type: rel.relationship_type,
+          hasClient: !!rel.client,
+          hasInstrument: !!rel.instrument,
+        })) ?? [],
+        enrichedItemsCount: enrichedItems.length,
+        itemsWithClients: enrichedItems.filter((i: EnrichedInstrument) => i.clients.length > 0).length,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients?.length, loading.any, clientRelationships?.length, enrichedItems.length]);
+
+  // Dashboard filters - use enrichedItems instead of instruments
   const {
     searchTerm,
     setSearchTerm,
     showFilters,
     setShowFilters,
     filters,
-    filteredItems,
+    paginatedItems,
     handleFilterChange,
     handlePriceRangeChange,
     clearAllFilters,
     handleSort,
     getSortArrow,
     getActiveFiltersCount,
-  } = useDashboardFilters(instruments);
+    dateRange,
+    setDateRange,
+    filterOperator,
+    setFilterOperator,
+    // Pagination
+    currentPage,
+    totalPages,
+    totalCount,
+    pageSize,
+    setPage,
+  } = useDashboardFilters(enrichedItems);
 
-  const { resetForm } = useDashboardForm();
-
-  // Modal and sidebar states
+  // Dashboard modal state
   const {
-    isOpen: showModal,
+    showModal,
     isEditing,
-    openModal,
-    closeModal,
     selectedItem,
-  } = useModalState<Instrument>();
+    closeModal,
+    handleAddItem,
+    confirmItem,
+    isConfirmDialogOpen,
+    handleRequestDelete,
+    handleCancelDelete,
+  } = useDashboardModal();
 
-  // Loading states
-  const { withSubmitting } = useLoadingState();
+  // Calculate existing serial numbers for ItemForm validation
+  // This avoids duplicate data fetching in ItemForm (DashboardPage already has instruments)
+  const existingSerialNumbers = useMemo(
+    () =>
+      instruments
+        .map((i: Instrument) => i.serial_number)
+        .filter((num: string | null | undefined): num is string => num !== null && num !== undefined),
+    [instruments]
+  );
 
-  // 데이터는 useUnifiedDashboard에서 자동으로 로드됨
-  // 추가로 fetchInstruments()를 호출할 필요 없음
-
-  // Handle item creation
-  const handleCreateItem = async (
-    formData: Omit<Instrument, 'id' | 'created_at'>
-  ) => {
+  // Handle confirmed deletion
+  const handleConfirmDelete = useCallback(async () => {
+    if (!confirmItem) return;
     try {
-      await withSubmitting(async () => {
-        await createInstrument(formData);
-        closeModal();
-        resetForm();
-      });
-    } catch (error) {
-      handleError(error, 'Failed to create item');
+      await handleDeleteItem(confirmItem.id);
+      handleCancelDelete();
+    } catch {
+      // Error already handled in handleDeleteItem
     }
-  };
-
-  // Handle item update
-  const handleUpdateItem = async (
-    formData: Omit<Instrument, 'id' | 'created_at'>
-  ) => {
-    if (!selectedItem) return;
-
-    try {
-      await withSubmitting(async () => {
-        await updateInstrument(selectedItem.id, formData);
-        closeModal();
-        resetForm();
-      });
-    } catch (error) {
-      handleError(error, 'Failed to update item');
-    }
-  };
-
-  // Handle item deletion
-  const handleDeleteItem = async (itemId: string) => {
-    if (!confirm('Are you sure you want to delete this item?')) return;
-
-    try {
-      await deleteInstrument(itemId);
-    } catch (error) {
-      handleError(error, 'Failed to delete item');
-    }
-  };
-
-  // Handle add new item
-  const handleAddItem = () => {
-    openModal();
-  };
+  }, [confirmItem, handleDeleteItem, handleCancelDelete]);
 
   return (
     <ErrorBoundary>
       <AppLayout
-        title="Dashboard"
+        title="Items"
         actionButton={{
           label: 'Add Item',
           onClick: handleAddItem,
         }}
-      >
-        <div className="p-6">
-          {/* Filters */}
-          <ItemFilters
-            items={instruments}
-            searchTerm={searchTerm}
-            onSearchChange={setSearchTerm}
-            filters={filters}
-            onFilterChange={(filterType: string, value: string | boolean) =>
-              handleFilterChange(filterType as keyof typeof filters, value)
-            }
-            onPriceRangeChange={handlePriceRangeChange}
-            onClearFilters={clearAllFilters}
-            showFilters={showFilters}
-            onToggleFilters={() => setShowFilters(!showFilters)}
-            activeFiltersCount={getActiveFiltersCount()}
+        headerActions={
+          <NotificationBadge
+            overdue={notificationBadge.overdue}
+            upcoming={notificationBadge.upcoming}
+            today={notificationBadge.today}
+            onClick={notificationBadge.onClick}
           />
+        }
+      >
+        <div className="p-6 space-y-4">
+          {/* UX: Quick Filters - Always visible for common use cases */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex-1 min-w-[200px]">
+              <input
+                type="text"
+                placeholder="Search items by maker, type, serial..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full h-10 px-4 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                aria-label="Search items"
+              />
+            </div>
+            
+            {/* UX: Quick Filter Pills - Common use cases */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* UX: Quick filter for "Has Clients" - toggle boolean filter */}
+              <button
+                onClick={() => {
+                  // handleFilterChange toggles the value, so just call it
+                  handleFilterChange('hasClients', true);
+                }}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  filters.hasClients.includes(true)
+                    ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                aria-pressed={filters.hasClients.includes(true)}
+                type="button"
+              >
+                Has Clients
+              </button>
+              {/* UX: Quick filter for "No Clients" - toggle boolean filter */}
+              <button
+                onClick={() => {
+                  // handleFilterChange toggles the value, so just call it
+                  handleFilterChange('hasClients', false);
+                }}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  filters.hasClients.includes(false)
+                    ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                aria-pressed={filters.hasClients.includes(false)}
+                type="button"
+              >
+                No Clients
+              </button>
+              
+              {/* More Filters Button - Secondary action */}
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors flex items-center gap-2 ${
+                  showFilters || getActiveFiltersCount() > 0
+                    ? 'border-blue-500 text-blue-600 bg-blue-50'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                  />
+                </svg>
+                More Filters
+                {getActiveFiltersCount() > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium text-white bg-blue-600 rounded-full">
+                    {getActiveFiltersCount()}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Advanced Filters Panel - Collapsible */}
+          {showFilters && (
+            <ItemFilters
+              items={instruments}
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              filters={filters}
+              onFilterChange={(filterType, value) =>
+                handleFilterChange(filterType, value)
+              }
+              onPriceRangeChange={handlePriceRangeChange}
+              onClearFilters={clearAllFilters}
+              showFilters={showFilters}
+              onToggleFilters={() => setShowFilters(!showFilters)}
+              activeFiltersCount={getActiveFiltersCount()}
+              dateRange={dateRange}
+              onDateRangeChange={setDateRange}
+              filterOperator={filterOperator}
+              onOperatorChange={setFilterOperator}
+            />
+          )}
 
           {/* Items List */}
           <ItemList
-            items={filteredItems}
+            items={paginatedItems}
             loading={loading.any}
-            onDeleteClick={item => handleDeleteItem(item.id)}
-            onUpdateItem={async (
-              itemId: string,
-              updates: Partial<Instrument>
-            ) => {
-              try {
-                const result = await updateInstrument(itemId, updates);
-                if (!result) {
-                  throw new Error('Failed to update item');
-                }
-              } catch (error) {
-                handleError(error, 'Failed to update item');
-                throw error; // Re-throw to prevent saveEditing from closing editing mode
-              }
-            }}
+            onDeleteClick={handleRequestDelete}
+            onUpdateItem={handleUpdateItemInline}
             clientRelationships={clientRelationships}
+            allClients={clients}
+            clientsLoading={clientsLoading}
             getSortArrow={getSortArrow}
             onSort={handleSort}
+            onAddClick={handleAddItem}
+            emptyState={{
+              hasActiveFilters: getActiveFiltersCount() > 0 || Boolean(searchTerm) || Boolean(dateRange?.from) || Boolean(dateRange?.to),
+              message: getActiveFiltersCount() > 0 || Boolean(searchTerm) || Boolean(dateRange?.from) || Boolean(dateRange?.to)
+                ? 'No items found matching your filters'
+                : undefined,
+            }}
+            // Pagination props
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            pageSize={pageSize}
+            onPageChange={setPage}
           />
         </div>
 
         {/* Item Form Modal - Show when editing or creating */}
+        {/* Note: Form state management is handled internally by ItemForm via useDashboardForm.
+            ItemForm handles form reset and modal close on successful submit. */}
         <ItemForm
           isOpen={showModal}
           onClose={closeModal}
-          onSubmit={isEditing ? handleUpdateItem : handleCreateItem}
+          onSubmit={
+            isEditing && selectedItem
+              ? async (formData) => {
+                  await handleUpdateItem(selectedItem.id, formData);
+                }
+              : handleCreateItem
+          }
           submitting={submitting.any}
           selectedItem={selectedItem}
           isEditing={isEditing}
+          existingSerialNumbers={existingSerialNumbers}
         />
 
         {/* Error Toasts */}
         <ErrorToasts />
+        {/* Success Toasts */}
+        <SuccessToasts />
+        <ConfirmDialog
+          isOpen={isConfirmDialogOpen}
+          title="Delete item?"
+          message="This item will be permanently removed. This action cannot be undone."
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          onConfirm={handleConfirmDelete}
+          onCancel={handleCancelDelete}
+        />
       </AppLayout>
     </ErrorBoundary>
   );

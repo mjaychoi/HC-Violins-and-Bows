@@ -1,9 +1,8 @@
 import { useState, useCallback } from 'react';
 import { Client } from '@/types';
 import { useDataState } from '@/hooks/useDataState';
-import { useDataFetching } from '@/hooks/useDataFetching';
-import { supabase } from '@/lib/supabase';
 import { logError } from '@/utils/logger';
+// Removed direct supabase import to reduce bundle size - using API routes instead
 
 export function useDashboardClients() {
   const [showClientSearch, setShowClientSearch] = useState(false);
@@ -25,46 +24,53 @@ export function useDashboardClients() {
   const { data: ownershipSearchResults, setItems: setOwnershipSearchResults } =
     useDataState<Client>(item => item.id, []);
 
-  // Use useDataFetching for client search
-  const searchClientsFunction = useCallback(async () => {
-    if (clientSearchTerm.length < 2) return [];
+  // FIXED: Make search functions accept term parameter to use passed searchTerm arg
+  // Use API route instead of direct Supabase client to reduce bundle size
+  const searchClientsFunction = useCallback(async (term: string) => {
+    if (term.length < 2) return [];
 
-    const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .or(
-        `first_name.ilike.%${clientSearchTerm}%,last_name.ilike.%${clientSearchTerm}%,email.ilike.%${clientSearchTerm}%`
-      )
-      .limit(10);
+    try {
+      const params = new URLSearchParams({
+        search: term,
+        limit: '10',
+      });
+      const response = await fetch(`/api/clients?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Failed to search clients: ${response.statusText}`);
+      }
+      const result = await response.json();
+      return result.data || [];
+    } catch (error) {
+      logError('Error searching clients', error, 'useDashboardClients', {
+        searchTerm: term,
+        action: 'searchClientsFunction',
+      });
+      return [];
+    }
+  }, []);
 
-    if (error) throw error;
-    return data || [];
-  }, [clientSearchTerm]);
+  const searchOwnershipClientsFunction = useCallback(async (term: string) => {
+    if (term.length < 2) return [];
 
-  const { fetchData: searchClients } = useDataFetching<Client>(
-    searchClientsFunction,
-    'Search clients'
-  );
-
-  const searchOwnershipClientsFunction = useCallback(async () => {
-    if (ownershipSearchTerm.length < 2) return [];
-
-    const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .or(
-        `first_name.ilike.%${ownershipSearchTerm}%,last_name.ilike.%${ownershipSearchTerm}%,email.ilike.%${ownershipSearchTerm}%`
-      )
-      .limit(10);
-
-    if (error) throw error;
-    return data || [];
-  }, [ownershipSearchTerm]);
-
-  const { fetchData: searchOwnershipClients } = useDataFetching<Client>(
-    searchOwnershipClientsFunction,
-    'Search ownership clients'
-  );
+    try {
+      const params = new URLSearchParams({
+        search: term,
+        limit: '10',
+      });
+      const response = await fetch(`/api/clients?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Failed to search clients: ${response.statusText}`);
+      }
+      const result = await response.json();
+      return result.data || [];
+    } catch (error) {
+      logError('Error searching ownership clients', error, 'useDashboardClients', {
+        searchTerm: term,
+        action: 'searchOwnershipClientsFunction',
+      });
+      return [];
+    }
+  }, []);
 
   const handleClientSearch = async (searchTerm: string) => {
     if (searchTerm.length < 2) {
@@ -74,10 +80,9 @@ export function useDashboardClients() {
 
     setIsSearchingClients(true);
     try {
-      const results = await searchClients();
-      if (results) {
-        setSearchResults(results);
-      }
+      // FIXED: Pass searchTerm directly to function instead of relying on closure
+      const results = await searchClientsFunction(searchTerm);
+      setSearchResults(results);
     } catch (error) {
       logError('Error searching clients', error, 'useDashboardClients', {
         searchTerm,
@@ -97,17 +102,16 @@ export function useDashboardClients() {
 
     setIsSearchingOwnership(true);
     try {
-      const results = await searchOwnershipClients();
-      if (results) {
-        setOwnershipSearchResults(results);
-      }
+      // FIXED: Pass searchTerm directly to function instead of relying on closure
+      const results = await searchOwnershipClientsFunction(searchTerm);
+      setOwnershipSearchResults(results);
     } catch (error) {
       logError(
         'Error searching ownership clients',
         error,
         'useDashboardClients',
         {
-          searchTerm: ownershipSearchTerm,
+          searchTerm,
           operation: 'searchOwnershipClients',
         }
       );

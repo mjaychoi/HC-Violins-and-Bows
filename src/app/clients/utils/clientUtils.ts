@@ -1,6 +1,7 @@
 // src/app/clients/utils/clientUtils.ts
 import { Client } from '@/types';
 import { FilterState } from '../types';
+import { HAS_INSTRUMENTS_FILTER_OPTIONS } from '../constants';
 
 // Client utility functions
 export const formatClientName = (client: Client): string => {
@@ -59,7 +60,8 @@ export const filterClients = (
         client.email?.toLowerCase().includes(searchLower) ||
         client.interest?.toLowerCase().includes(searchLower) ||
         client.note?.toLowerCase().includes(searchLower) ||
-        client.client_number?.toLowerCase().includes(searchLower);
+        client.client_number?.toLowerCase().includes(searchLower) ||
+        client.tags?.some(tag => tag.toLowerCase().includes(searchLower));
 
       if (!matchesSearch) return false;
     }
@@ -103,11 +105,19 @@ export const filterClients = (
     }
 
     // hasInstruments filter
-    if (filters.hasInstruments && filters.hasInstruments.length > 0) {
+    // UI에서 최대 1개만 선택되도록 보장됨 (0개 또는 2개는 필터 미적용)
+    // 선택된 옵션이 정확히 1개일 때만 필터 적용
+    if (filters.hasInstruments.length === 1) {
       const has = withInst.has(client.id);
-      if (filters.hasInstruments.includes('Has Instruments') && !has)
+      if (
+        filters.hasInstruments[0] === HAS_INSTRUMENTS_FILTER_OPTIONS.HAS &&
+        !has
+      )
         return false;
-      if (filters.hasInstruments.includes('No Instruments') && has)
+      if (
+        filters.hasInstruments[0] === HAS_INSTRUMENTS_FILTER_OPTIONS.NO &&
+        has
+      )
         return false;
     }
 

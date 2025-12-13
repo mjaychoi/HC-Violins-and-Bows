@@ -1,3 +1,3 @@
 // src/app/clients/hooks/useInstruments.ts
-// Re-export the optimized instruments hook for convenient imports
-export { useOptimizedInstruments as useInstruments } from '@/hooks/useOptimizedInstruments';
+// Re-export the unified version (Context API based)
+export { useUnifiedInstruments as useInstruments } from '@/hooks/useUnifiedData';

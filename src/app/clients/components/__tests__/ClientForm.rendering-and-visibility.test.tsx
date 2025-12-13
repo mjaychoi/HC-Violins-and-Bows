@@ -4,6 +4,14 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ClientForm from '../ClientForm';
 
+jest.mock('@/hooks/useUnifiedData', () => ({
+  useUnifiedClients: jest.fn(() => ({
+    clients: [],
+    loading: false,
+    fetchClients: jest.fn(),
+  })),
+}));
+
 jest.mock('@/hooks/useDataState', () => ({
   useDataState: jest.fn(() => ({
     data: [],

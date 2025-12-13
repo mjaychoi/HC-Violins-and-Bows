@@ -1,192 +1,239 @@
-import { useState, useMemo } from 'react';
-import { Instrument } from '@/types';
-import { useFilterSort } from '@/hooks/useFilterSort';
-import { toggleValue, countActiveFilters } from '@/utils/filterHelpers';
+import React, { useMemo, useState, useCallback } from 'react';
+import { Instrument, ClientInstrument } from '@/types';
+import { FilterOperator } from '@/types/search';
+import {
+  DashboardFilters,
+  DashboardFilterOptions,
+  DashboardSortField,
+  DashboardArrayFilterKeys,
+} from '../types';
+import { buildDashboardFilterOptions } from '../constants';
+import { usePageFilters, DateRange } from '@/hooks/usePageFilters';
+import { filterDashboardItems, EMPTY_DASHBOARD_FILTERS } from '../utils/filterUtils';
 
-export function useDashboardFilters(items: Instrument[]) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy] = useState('created_at');
-  const [sortOrder] = useState<'asc' | 'desc'>('desc');
-  const [showFilters, setShowFilters] = useState(false);
+// FIXED: Accept enriched items (Instrument with clients array) for HAS_CLIENTS filter
+type EnrichedInstrument = Instrument & {
+  clients?: ClientInstrument[];
+};
 
-  const [filters, setFilters] = useState({
-    status: [] as string[],
-    maker: [] as string[],
-    type: [] as string[],
-    subtype: [] as string[],
-    ownership: [] as string[],
-    certificate: [] as boolean[],
-    priceRange: {
-      min: '',
-      max: '',
+export function useDashboardFilters(items: EnrichedInstrument[] | Instrument[]) {
+  const [dateRange, setDateRange] = useState<DateRange | null>(null);
+  // TODO: filterOperator is currently unused - implement AND/OR logic for multiple filter combinations
+  // When implementing, update filterDashboardItems to accept FilterOperator parameter
+  const [filterOperator, setFilterOperator] = useState<FilterOperator>('AND');
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20; // Items per page
+
+  // 기본 필터/검색/정렬은 공용 훅을 사용한다.
+  // dateRange를 customFieldFilter에서 직접 사용하도록 개선
+  const baseFilters = usePageFilters<Instrument>({
+    items,
+    filterOptionsConfig: {
+      status: 'simple',
+      maker: 'simple',
+      type: 'simple',
+      subtype: 'simple',
+      ownership: 'simple',
     },
-    hasClients: [] as string[],
+    searchFields: ['maker', 'type', 'subtype'],
+    initialSortBy: 'created_at',
+    initialSortOrder: 'desc',
+    debounceMs: 200,
+    initialFilters: EMPTY_DASHBOARD_FILTERS,
+    resetFilters: () => EMPTY_DASHBOARD_FILTERS,
+    enableDateRange: false, // 직접 관리
+    enableFilterOperator: false, // 직접 관리
+    syncWithURL: true, // URL 쿼리 파라미터와 상태 동기화
+    urlParamMapping: {
+      searchTerm: 'search',
+    },
+    // FIXED: Don't rely on customFieldFilter closure for dateRange - apply it outside
+    customFieldFilter: (items, filters) => {
+      const instruments = items as EnrichedInstrument[];
+      const dashboardFilters = filters as DashboardFilters;
+      // Apply filters except dateRange (dateRange applied outside)
+      return filterDashboardItems(
+        instruments as Instrument[],
+        dashboardFilters,
+        null // dateRange is applied outside customFieldFilter
+      ) as EnrichedInstrument[];
+    },
+    customFilter: (item, term) => {
+      const lowerTerm = term.toLowerCase();
+      return (
+        item.maker?.toLowerCase().includes(lowerTerm) ||
+        item.type?.toLowerCase().includes(lowerTerm) ||
+        item.subtype?.toLowerCase().includes(lowerTerm) ||
+        false
+      );
+    },
   });
 
+  // FIXED: Apply dateRange outside customFieldFilter to ensure re-filtering when dateRange changes
+  // This ensures React dependency graph is clear and dateRange changes trigger re-filtering
   const filteredItems = useMemo(() => {
-    let filtered = items;
-
-    // Search filter
-    if (searchTerm) {
-      filtered = filtered.filter(
-        item =>
-          item.maker?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.subtype?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+    // Apply dateRange filter after baseFilters.filteredItems
+    if (!dateRange?.from && !dateRange?.to) {
+      return baseFilters.filteredItems;
     }
+    return filterDashboardItems(
+      baseFilters.filteredItems as EnrichedInstrument[] as Instrument[],
+      baseFilters.filters as DashboardFilters,
+      dateRange
+    ) as EnrichedInstrument[];
+  }, [baseFilters.filteredItems, baseFilters.filters, dateRange]);
 
-    // Status filter
-    if (filters.status.length > 0) {
-      filtered = filtered.filter(item => filters.status.includes(item.status));
-    }
+  // Pagination calculations
+  const totalCount = filteredItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  
+  // Reset to page 1 when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [baseFilters.searchTerm, baseFilters.filters, dateRange]);
 
-    // Maker filter
-    if (filters.maker.length > 0) {
-      filtered = filtered.filter(
-        item => item.maker && filters.maker.includes(item.maker)
-      );
-    }
+  // Paginated items
+  const paginatedItems = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return filteredItems.slice(startIndex, endIndex);
+  }, [filteredItems, currentPage, pageSize]);
 
-    // Type filter
-    if (filters.type.length > 0) {
-      filtered = filtered.filter(
-        item => item.type && filters.type.includes(item.type)
-      );
-    }
+  // Handle page change
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  }, [totalPages]);
 
-    // Subtype filter
-    if (filters.subtype.length > 0) {
-      filtered = filtered.filter(
-        item => item.subtype && filters.subtype.includes(item.subtype)
-      );
-    }
+  // 필터 옵션 변환 (buildDashboardFilterOptions only needs Instrument fields, not clients)
+  const filterOptions: DashboardFilterOptions = useMemo(
+    () => buildDashboardFilterOptions(items as Instrument[]),
+    [items]
+  );
 
-    // Ownership filter
-    if (filters.ownership.length > 0) {
-      filtered = filtered.filter(
-        item => item.ownership && filters.ownership.includes(item.ownership)
-      );
-    }
+  // handleFilterChange는 toggleValue 로직 사용 (배열 필터 전용)
+  const handleFilterChange = <K extends DashboardArrayFilterKeys>(
+    filterType: K,
+    value: DashboardFilters[K][number]
+  ) => {
+    baseFilters.setFilters(prev => {
+      const dashboardFilters = prev as DashboardFilters;
+      const currentFilter = dashboardFilters[filterType] as DashboardFilters[K];
+      const includes = (currentFilter as Array<unknown>).some(v => v === value);
+      return {
+        ...dashboardFilters,
+        [filterType]: includes
+          ? (currentFilter as Array<unknown>).filter(v => v !== value) as DashboardFilters[K]
+          : ([...(currentFilter as Array<unknown>), value] as DashboardFilters[K]),
+      } as unknown as Record<string, unknown>;
+    });
+  };
 
-    // Certificate filter
-    if (filters.certificate.length > 0) {
-      filtered = filtered.filter(item =>
-        filters.certificate.includes(item.certificate)
-      );
-    }
+  // Price range 변경 핸들러
+  const handlePriceRangeChange = (field: 'min' | 'max', value: string) => {
+    baseFilters.setFilters(prev => {
+      const dashboardFilters = prev as DashboardFilters;
+      return {
+        ...dashboardFilters,
+        priceRange: {
+          ...dashboardFilters.priceRange,
+          [field]: value,
+        },
+      } as unknown as Record<string, unknown>;
+    });
+  };
 
-    // Price range filter
-    if (filters.priceRange.min || filters.priceRange.max) {
-      filtered = filtered.filter(item => {
-        if (item.price === null || item.price === undefined) return false;
-        const priceNum =
-          typeof item.price === 'string' ? parseFloat(item.price) : item.price;
-        if (Number.isNaN(priceNum)) return false;
+  // 활성 필터 수 계산 (dateRange 포함) - clearAllFilters보다 먼저 정의
+  const getActiveFiltersCount = useCallback(() => {
+    // baseFilters.getActiveFiltersCount()는 이미 searchTerm을 포함하고 있음
+    let count = baseFilters.getActiveFiltersCount();
+    // baseFilters의 getActiveFiltersCount에 이미 dateRange가 포함되어 있지만
+    // enableDateRange가 false이므로 수동으로 추가
+    if (dateRange?.from || dateRange?.to) count++;
+    return count;
+  }, [baseFilters, dateRange]);
 
-        const min = filters.priceRange.min
-          ? parseFloat(filters.priceRange.min)
-          : 0;
-        const max = filters.priceRange.max
-          ? parseFloat(filters.priceRange.max)
-          : Infinity;
-
-        return priceNum >= min && priceNum <= max;
+  // clearAllFilters - reset all filters and close filter panel
+  const clearAllFilters = useCallback(() => {
+    // DEBUG: Log before clearing
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      const dashboardFilters = baseFilters.filters as DashboardFilters;
+      const beforeCount = getActiveFiltersCount();
+      console.log('[useDashboardFilters] clearAllFilters called', {
+        before: {
+          searchTerm: baseFilters.searchTerm,
+          dateRange,
+          activeCount: beforeCount,
+          filters: {
+            hasClients: dashboardFilters.hasClients.length,
+            status: dashboardFilters.status.length,
+            maker: dashboardFilters.maker.length,
+            type: dashboardFilters.type.length,
+            subtype: dashboardFilters.subtype.length,
+            ownership: dashboardFilters.ownership.length,
+            certificate: dashboardFilters.certificate.length,
+            priceRange: dashboardFilters.priceRange,
+          },
+        },
       });
     }
+    
+    // Reset all base filters (including searchTerm)
+    // This will reset to EMPTY_DASHBOARD_FILTERS which has all arrays empty
+    baseFilters.clearAllFilters();
+    
+    // Reset dateRange (managed separately)
+    setDateRange(null);
+    
+    // UX: Close filter panel when clearing filters
+    baseFilters.setShowFilters(false);
+    
+    // DEBUG: Log after clearing - use setTimeout to see updated state
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      setTimeout(() => {
+        const afterFilters = baseFilters.filters as DashboardFilters;
+        const afterCount = getActiveFiltersCount();
+        console.log('[useDashboardFilters] clearAllFilters completed', {
+          after: {
+            searchTerm: baseFilters.searchTerm || '(empty)',
+            dateRange: null,
+            activeCount: afterCount,
+            filters: {
+              hasClients: afterFilters.hasClients.length,
+              status: afterFilters.status.length,
+              maker: afterFilters.maker.length,
+              type: afterFilters.type.length,
+              subtype: afterFilters.subtype.length,
+              ownership: afterFilters.ownership.length,
+              certificate: afterFilters.certificate.length,
+              priceRange: afterFilters.priceRange,
+            },
+          },
+        });
+      }, 100);
+    }
+  }, [baseFilters, dateRange, getActiveFiltersCount]);
 
-    return filtered;
-  }, [items, searchTerm, filters]);
-
-  const {
-    items: sortedItems,
-    handleSort,
-    getSortArrow,
-  } = useFilterSort<Instrument>(filteredItems, {
-    searchFields: ['maker', 'type', 'subtype'],
-    initialSearchTerm: searchTerm,
-    initialSortBy: sortBy,
-    initialSortOrder: sortOrder,
-    debounceMs: 200,
-  });
-
-  const filterOptions = useMemo(() => {
-    const uniqueValues = (field: keyof (typeof items)[0]) => {
-      const values = items.map(item => item[field]).filter(Boolean) as string[];
-      return Array.from(new Set(values));
-    };
-
-    return {
-      status: uniqueValues('status'),
-      maker: uniqueValues('maker'),
-      type: uniqueValues('type'),
-      subtype: uniqueValues('subtype'),
-      ownership: uniqueValues('ownership'),
-    };
-  }, [items]);
-
-  const handleFilterChange = (
-    filterType: keyof typeof filters,
-    value: string | boolean
-  ) => {
-    setFilters((prev: typeof filters) => {
-      const currentFilter = prev[filterType];
-      if (Array.isArray(currentFilter)) {
-        return {
-          ...prev,
-          [filterType]: toggleValue(
-            currentFilter as (string | boolean)[],
-            value
-          ),
-        };
-      }
-      return prev;
-    });
+  // handleSort와 getSortArrow는 그대로 사용
+  const handleSortProxy = (field: DashboardSortField | string) => {
+    baseFilters.handleColumnSort(field);
   };
 
-  const handlePriceRangeChange = (field: 'min' | 'max', value: string) => {
-    setFilters(prev => ({
-      ...prev,
-      priceRange: {
-        ...prev.priceRange,
-        [field]: value,
-      },
-    }));
-  };
+  const getSortArrowProxy = (field: DashboardSortField | string) =>
+    baseFilters.getSortArrow(field);
 
-  const clearAllFilters = () => {
-    setFilters({
-      status: [],
-      maker: [],
-      type: [],
-      subtype: [],
-      ownership: [],
-      certificate: [],
-      priceRange: { min: '', max: '' },
-      hasClients: [],
-    });
-    setSearchTerm('');
-  };
-
-  const handleSortProxy = (field: string) => {
-    handleSort(field);
-  };
-
-  const getSortArrowProxy = (field: string) => getSortArrow(field);
-
-  const getActiveFiltersCount = () => {
-    return countActiveFilters(filters);
-  };
 
   return {
-    searchTerm,
-    setSearchTerm,
-    sortBy,
-    sortOrder,
-    showFilters,
-    setShowFilters,
-    filters,
-    filteredItems: sortedItems,
+    searchTerm: baseFilters.searchTerm,
+    setSearchTerm: baseFilters.setSearchTerm,
+    sortBy: baseFilters.sortBy as DashboardSortField,
+    sortOrder: baseFilters.sortOrder,
+    showFilters: baseFilters.showFilters,
+    setShowFilters: baseFilters.setShowFilters,
+    filters: baseFilters.filters as DashboardFilters,
+    filteredItems,
+    paginatedItems,
     filterOptions,
     handleFilterChange,
     handlePriceRangeChange,
@@ -194,5 +241,16 @@ export function useDashboardFilters(items: Instrument[]) {
     handleSort: handleSortProxy,
     getSortArrow: getSortArrowProxy,
     getActiveFiltersCount,
+    // 고급 검색
+    dateRange,
+    setDateRange,
+    filterOperator,
+    setFilterOperator,
+    // Pagination
+    currentPage,
+    totalPages,
+    totalCount,
+    pageSize,
+    setPage: handlePageChange,
   };
 }

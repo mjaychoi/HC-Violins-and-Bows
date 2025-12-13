@@ -1,10 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Client, RelationshipType } from '@/types';
-import { supabase } from '@/lib/supabase';
-// import { FormWrapper } from '@/components/common'
-// import { instrumentValidation, validateForm } from '@/utils/validationUtils'
+import { useOutsideClose } from '@/hooks/useOutsideClose';
+import Button from '@/components/common/Button';
 
 interface InstrumentFormProps {
   isOpen: boolean;
@@ -49,6 +48,13 @@ export default function InstrumentForm({
     setSearchResults([]);
   };
 
+  // Close modal with ESC key and outside click
+  const modalRef = useRef<HTMLDivElement>(null);
+  useOutsideClose(modalRef, {
+    isOpen,
+    onClose,
+  });
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -62,15 +68,18 @@ export default function InstrumentForm({
 
     setIsSearchingClients(true);
     try {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('*')
-        .or(`last_name.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%`)
-        .limit(10);
-
-      if (error) throw error;
+      // Use API route instead of direct Supabase client to reduce bundle size
+      const params = new URLSearchParams({
+        search: searchTerm,
+        limit: '10',
+      });
+      const response = await fetch(`/api/clients?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Failed to search clients: ${response.statusText}`);
+      }
+      const result = await response.json();
       const selectedIds = new Set(selectedClients.map(sc => sc.client.id));
-      const filtered = (data || []).filter(c => !selectedIds.has(c.id));
+      const filtered = (result.data || []).filter((c: Client) => !selectedIds.has(c.id));
       setSearchResults(filtered);
     } catch {
       // Error is handled silently - search results will be empty
@@ -102,8 +111,18 @@ export default function InstrumentForm({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+    <div 
+      className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div 
+        ref={modalRef}
+        className="relative mx-auto p-5 border w-96 shadow-lg rounded-md bg-white"
+      >
         <div className="mt-3">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium text-gray-900">
@@ -195,13 +214,14 @@ export default function InstrumentForm({
                 <label className="block text-sm font-medium text-gray-700">
                   Connect Clients (Optional)
                 </label>
-                <button
+                <Button
                   type="button"
                   onClick={() => setShowClientSearch(true)}
-                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  variant="primary"
+                  size="sm"
                 >
                   Add Client
-                </button>
+                </Button>
               </div>
 
               {/* Client Search Section */}
@@ -375,20 +395,21 @@ export default function InstrumentForm({
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <button
+              <Button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                variant="secondary"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
                 disabled={submitting}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                variant="primary"
+                loading={submitting}
               >
                 {submitting ? 'Adding...' : 'Add Instrument'}
-              </button>
+              </Button>
             </div>
           </form>
         </div>

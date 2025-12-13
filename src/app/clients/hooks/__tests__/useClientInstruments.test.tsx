@@ -3,26 +3,6 @@ import { useClientInstruments } from '../useClientInstruments';
 import { Client, ClientInstrument, Instrument } from '@/types';
 import { flushPromises } from '../../../../../tests/utils/flushPromises';
 
-// Mock Supabase
-jest.mock('@/lib/supabase', () => ({
-  supabase: {
-    from: jest.fn(() => ({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => ({ data: [], error: null })),
-      })),
-      insert: jest.fn(() => ({
-        select: jest.fn(() => ({ data: [], error: null })),
-      })),
-      delete: jest.fn(() => ({
-        eq: jest.fn(() => ({ data: null, error: null })),
-      })),
-      update: jest.fn(() => ({
-        eq: jest.fn(() => ({ data: [], error: null })),
-      })),
-    })),
-  },
-}));
-
 const mockClient: Client = {
   id: '1',
   first_name: 'John',
@@ -64,35 +44,34 @@ const mockInstrumentRelationship: ClientInstrument = {
   instrument: mockInstrument,
 };
 
+const mockFetchResponse = (data: unknown, ok = true) =>
+  Promise.resolve({
+    ok,
+    json: () => Promise.resolve(data),
+  });
+
 describe('useClientInstruments', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (global as any).fetch = jest.fn(() => mockFetchResponse({ data: [] }));
   });
 
   it('initializes with default values', async () => {
     const { result } = renderHook(() => useClientInstruments());
 
-    // 초기값은 동기 즉시 검증 가능
     expect(result.current.instrumentRelationships).toEqual([]);
     expect(result.current.clientsWithInstruments).toEqual(new Set());
     expect(result.current.loading).toBe(false);
 
-    // 이펙트 + 비동기 한 턴
     await act(async () => {
       await flushPromises();
     });
   });
 
   it('fetches instrument relationships', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-    mockSupabase.from.mockReturnValue({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: [mockInstrumentRelationship],
-          error: null,
-        })),
-      })),
-    });
+    (fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({ data: [mockInstrumentRelationship] })
+    );
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -105,15 +84,12 @@ describe('useClientInstruments', () => {
   });
 
   it('handles fetch error', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-    mockSupabase.from.mockReturnValue({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: null,
-          error: new Error('Fetch failed'),
-        })),
-      })),
-    });
+    (fetch as jest.Mock).mockResolvedValueOnce(
+      Promise.resolve({
+        ok: false,
+        json: () => Promise.resolve({ error: new Error('Fetch failed') }),
+      })
+    );
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -121,20 +97,13 @@ describe('useClientInstruments', () => {
       await result.current.fetchInstrumentRelationships('1');
     });
 
-    // Error handling is done through the hook's internal state
     expect(result.current.instrumentRelationships).toEqual([]);
   });
 
   it('adds instrument relationship', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-    mockSupabase.from.mockReturnValue({
-      insert: jest.fn(() => ({
-        select: jest.fn(() => ({
-          data: [mockInstrumentRelationship],
-          error: null,
-        })),
-      })),
-    });
+    (fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({ data: mockInstrumentRelationship })
+    );
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -147,12 +116,12 @@ describe('useClientInstruments', () => {
   });
 
   it('handles add relationship error', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-    mockSupabase.from.mockReturnValue({
-      insert: jest.fn(() => ({
-        select: jest.fn(() => ({ data: null, error: new Error('Add failed') })),
-      })),
-    });
+    (fetch as jest.Mock).mockResolvedValueOnce(
+      Promise.resolve({
+        ok: false,
+        json: () => Promise.resolve({ error: new Error('Add failed') }),
+      })
+    );
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -160,38 +129,23 @@ describe('useClientInstruments', () => {
       await result.current.addInstrumentRelationship('1', '1', 'Interested');
     });
 
-    // Error handling is done through the hook's internal state
     expect(result.current.instrumentRelationships).toEqual([]);
   });
 
   it('removes instrument relationship', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-    mockSupabase.from.mockReturnValue({
-      delete: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: null,
-          error: null,
-        })),
-      })),
-    });
+    (fetch as jest.Mock)
+      .mockResolvedValueOnce(
+        mockFetchResponse({ data: [mockInstrumentRelationship] })
+      ) // fetchInstrumentRelationships
+      .mockResolvedValueOnce(mockFetchResponse({ data: null })); // removeInstrumentRelationship
 
     const { result } = renderHook(() => useClientInstruments());
 
-    // First add a relationship
-    const mockFetch = jest.fn(() => ({
-      data: [mockInstrumentRelationship],
-      error: null,
-    }));
-    mockSupabase.from.mockReturnValueOnce({
-      select: jest.fn(() => ({ eq: mockFetch })),
-    });
     await act(async () => {
       await result.current.fetchInstrumentRelationships('1');
     });
-
     expect(result.current.instrumentRelationships).toHaveLength(1);
 
-    // Then remove it
     await act(async () => {
       await result.current.removeInstrumentRelationship('1');
     });
@@ -201,15 +155,12 @@ describe('useClientInstruments', () => {
   });
 
   it('handles remove relationship error', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-    mockSupabase.from.mockReturnValue({
-      delete: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: null,
-          error: new Error('Remove failed'),
-        })),
-      })),
-    });
+    (fetch as jest.Mock).mockResolvedValueOnce(
+      Promise.resolve({
+        ok: false,
+        json: () => Promise.resolve({ error: new Error('Remove failed') }),
+      })
+    );
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -221,15 +172,9 @@ describe('useClientInstruments', () => {
   });
 
   it('updates clients with instruments set correctly', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-    mockSupabase.from.mockReturnValue({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: [mockInstrumentRelationship],
-          error: null,
-        })),
-      })),
-    });
+    (fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({ data: [mockInstrumentRelationship] })
+    );
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -241,75 +186,60 @@ describe('useClientInstruments', () => {
   });
 
   it('removes client from set when no relationships remain', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-    // Seed with one relationship for client '1'
-    mockSupabase.from.mockReturnValueOnce({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: [mockInstrumentRelationship],
-          error: null,
-        })),
-      })),
-    });
+    (fetch as jest.Mock)
+      .mockResolvedValueOnce(
+        mockFetchResponse({ data: [mockInstrumentRelationship] })
+      )
+      .mockResolvedValueOnce(mockFetchResponse({ data: null }));
+
     const { result } = renderHook(() => useClientInstruments());
+
     await act(async () => {
       await result.current.fetchInstrumentRelationships('1');
     });
     expect(result.current.clientsWithInstruments.has('1')).toBe(true);
-    // Now remove it
-    mockSupabase.from.mockReturnValueOnce({
-      delete: jest.fn(() => ({
-        eq: jest.fn(() => ({ data: null, error: null })),
-      })),
-    });
+
     await act(async () => {
       await result.current.removeInstrumentRelationship('1');
     });
+
     expect(result.current.clientsWithInstruments.has('1')).toBe(false);
   });
 
   it('keeps client in set when other relationships exist', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-    // Seed with two relationships
     const rel2 = { ...mockInstrumentRelationship, id: '2' };
-    mockSupabase.from.mockReturnValueOnce({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: [mockInstrumentRelationship, rel2],
-          error: null,
-        })),
-      })),
-    });
+    (fetch as jest.Mock)
+      .mockResolvedValueOnce(
+        mockFetchResponse({ data: [mockInstrumentRelationship, rel2] })
+      )
+      .mockResolvedValueOnce(mockFetchResponse({ data: null }));
+
     const { result } = renderHook(() => useClientInstruments());
+
     await act(async () => {
       await result.current.fetchInstrumentRelationships('1');
     });
     expect(result.current.clientsWithInstruments.has('1')).toBe(true);
-    // Remove one relationship
-    mockSupabase.from.mockReturnValueOnce({
-      delete: jest.fn(() => ({
-        eq: jest.fn(() => ({ data: null, error: null })),
-      })),
-    });
+
     await act(async () => {
       await result.current.removeInstrumentRelationship('1');
     });
-    // Still has other rel, so remains in set
+
     expect(result.current.clientsWithInstruments.has('1')).toBe(true);
   });
 
   it('handles loading states correctly', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-    let resolvePromise: (value: unknown) => void;
-    const promise = new Promise(resolve => {
-      resolvePromise = resolve;
+    let resolveJson: (value: unknown) => void;
+    const jsonPromise = new Promise(resolve => {
+      resolveJson = resolve;
     });
 
-    mockSupabase.from.mockReturnValue({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => promise),
-      })),
-    });
+    (fetch as jest.Mock).mockResolvedValueOnce(
+      Promise.resolve({
+        ok: true,
+        json: () => jsonPromise,
+      })
+    );
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -322,43 +252,29 @@ describe('useClientInstruments', () => {
     expect(result.current.loading).toBe(true);
 
     await act(async () => {
-      resolvePromise!({ data: [], error: null });
+      resolveJson!({ data: [] });
+      await flushPromises();
     });
 
     expect(result.current.loading).toBe(false);
   });
 
   it('clears error when new operation succeeds', async () => {
-    const mockSupabase = jest.mocked(require('@/lib/supabase')).supabase;
-
-    // First operation fails
-    mockSupabase.from.mockReturnValueOnce({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: null,
-          error: new Error('First error'),
-        })),
-      })),
-    });
+    (fetch as jest.Mock)
+      .mockResolvedValueOnce(
+        Promise.resolve({
+          ok: false,
+          json: () => Promise.resolve({ error: new Error('First error') }),
+        })
+      )
+      .mockResolvedValueOnce(mockFetchResponse({ data: [] }));
 
     const { result } = renderHook(() => useClientInstruments());
 
     await act(async () => {
       await result.current.fetchInstrumentRelationships('1');
     });
-
-    // Error handling is done through the hook's internal state
     expect(result.current.instrumentRelationships).toEqual([]);
-
-    // Second operation succeeds
-    mockSupabase.from.mockReturnValueOnce({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: [],
-          error: null,
-        })),
-      })),
-    });
 
     await act(async () => {
       await result.current.fetchInstrumentRelationships('1');

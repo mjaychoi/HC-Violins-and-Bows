@@ -1,14 +1,18 @@
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { Instrument } from '@/types';
 import { useDashboardForm } from '../hooks/useDashboardForm';
 import { validateInstrumentData } from '../utils/dashboardUtils';
 import { classNames } from '@/utils/classNames';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
-import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
-import { useUnifiedInstruments } from '@/hooks/useUnifiedData';
+import { useOutsideClose } from '@/hooks/useOutsideClose';
+import {
+  generateInstrumentSerialNumber,
+  normalizeInstrumentSerial,
+  validateInstrumentSerial,
+} from '@/utils/uniqueNumberGenerator';
 
 interface ItemFormProps {
   isOpen: boolean;
@@ -17,6 +21,7 @@ interface ItemFormProps {
   submitting: boolean;
   selectedItem?: Instrument | null;
   isEditing?: boolean;
+  existingSerialNumbers: string[]; // Serial numbers from existing instruments for validation
 }
 
 export default function ItemForm({
@@ -26,6 +31,7 @@ export default function ItemForm({
   submitting,
   selectedItem,
   isEditing = false,
+  existingSerialNumbers,
 }: ItemFormProps) {
   const {
     formData,
@@ -37,12 +43,19 @@ export default function ItemForm({
     handleFileChange,
     removeFile,
   } = useDashboardForm();
-
-  const { instruments } = useUnifiedInstruments();
   const [errors, setErrors] = React.useState<string[]>([]);
+  const [success, setSuccess] = React.useState(false);
+  const lastInitializedItemId = React.useRef<string | null>(null);
+  const hasInitializedCreate = React.useRef(false);
 
   React.useEffect(() => {
+    if (!isOpen) return;
+
     if (selectedItem && isEditing) {
+      // Prevent re-initializing the same item on every render
+      if (lastInitializedItemId.current === selectedItem.id) return;
+      lastInitializedItemId.current = selectedItem.id;
+      hasInitializedCreate.current = false;
       // Populate form with selected item data when editing
       updateField('status', selectedItem.status || 'Available');
       updateField('maker', selectedItem.maker || '');
@@ -50,27 +63,32 @@ export default function ItemForm({
       updateField('subtype', selectedItem.subtype || '');
       updateField('year', selectedItem.year?.toString() || '');
       updateField('price', selectedItem.price?.toString() || '');
-      updateField('certificate', selectedItem.certificate || false);
+      updateField('certificate', selectedItem.certificate ?? false);
       updateField('size', selectedItem.size || '');
       updateField('weight', selectedItem.weight || '');
       updateField('ownership', selectedItem.ownership || '');
       updateField('note', selectedItem.note || '');
       updateField('serial_number', selectedItem.serial_number || '');
-    } else if (!isEditing && !selectedItem) {
+    } else if (!isEditing && !selectedItem && !hasInitializedCreate.current) {
       // Reset form when closing modal or switching to create mode
+      lastInitializedItemId.current = null;
       resetForm();
       // 새 악기 추가 시 serial number 자동 생성
-      const existingNumbers = instruments
-        .map(i => i.serial_number)
-        .filter((num): num is string => num !== null && num !== undefined);
       const autoSerialNumber = generateInstrumentSerialNumber(
         null,
-        existingNumbers
+        existingSerialNumbers
       );
       updateField('serial_number', autoSerialNumber);
+      hasInitializedCreate.current = true;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedItem, isEditing, instruments]);
+  }, [
+    selectedItem,
+    isEditing,
+    resetForm,
+    updateField,
+    isOpen,
+    existingSerialNumbers,
+  ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,13 +106,21 @@ export default function ItemForm({
       // 새 악기 추가 시 serial number 자동 생성 (없는 경우)
       let serialNumber = formData.serial_number?.trim() || null;
       if (!isEditing && !serialNumber) {
-        const existingNumbers = instruments
-          .map(i => i.serial_number)
-          .filter((num): num is string => num !== null && num !== undefined);
         serialNumber = generateInstrumentSerialNumber(
           formData.type?.trim() || null,
-          existingNumbers
+          existingSerialNumbers
         );
+      }
+
+      const normalizedSerial = normalizeInstrumentSerial(serialNumber);
+      const serialValidation = validateInstrumentSerial(
+        normalizedSerial,
+        existingSerialNumbers,
+        isEditing ? selectedItem?.serial_number ?? null : undefined
+      );
+      if (!serialValidation.valid) {
+        setErrors([serialValidation.error || 'Invalid serial number']);
+        return;
       }
 
       // Convert form data to proper types for database
@@ -125,15 +151,26 @@ export default function ItemForm({
         weight: formData.weight?.trim() || null,
         ownership: formData.ownership?.trim() || null,
         note: formData.note?.trim() || null,
-        serial_number: serialNumber,
+        serial_number: serialValidation.normalizedSerial || normalizedSerial,
       };
 
       await onSubmit(instrumentData);
-      resetForm();
       setErrors([]);
-      onClose();
+      
+      // UX: Show success state instead of immediately closing
+      if (isEditing) {
+        // For editing, just close and let parent show success toast
+        resetForm();
+        onClose();
+      } else {
+        // For creating, show success message with action buttons
+        setSuccess(true);
+        // Store created item ID if available (might need to be passed from parent)
+        // For now, we'll just show success state
+      }
     } catch {
       setErrors(['Failed to save item. Please try again.']);
+      setSuccess(false);
     }
   };
 
@@ -153,23 +190,37 @@ export default function ItemForm({
 
       // 타입이 변경되면 serial number 자동 재생성 (새 악기 추가 시에만)
       if (name === 'type' && !isEditing) {
-        const existingNumbers = instruments
-          .map(i => i.serial_number)
-          .filter((num): num is string => num !== null && num !== undefined);
         const newSerialNumber = generateInstrumentSerialNumber(
           value || null,
-          existingNumbers
+          existingSerialNumbers
         );
         updateField('serial_number', newSerialNumber);
       }
     }
   };
 
+  // Close modal with ESC key and outside click
+  const modalRef = useRef<HTMLDivElement>(null);
+  useOutsideClose(modalRef, {
+    isOpen,
+    onClose,
+  });
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+    <div 
+      className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div 
+        ref={modalRef}
+        className="relative mx-auto p-5 border w-96 shadow-lg rounded-md bg-white"
+      >
         <div className="mt-3">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-medium text-gray-900">
@@ -195,6 +246,68 @@ export default function ItemForm({
             </button>
           </div>
 
+          {/* UX: Success message with action buttons */}
+          {success && !isEditing && (
+            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-start">
+                <svg
+                  className="w-5 h-5 text-green-600 mt-0.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <div className="ml-3 flex-1">
+                  <h4 className="text-sm font-medium text-green-800">
+                    Item created successfully!
+                  </h4>
+                  <p className="mt-1 text-sm text-green-700">
+                    What would you like to do next?
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        setSuccess(false);
+                        resetForm();
+                        // Auto-generate new serial for next item
+                        const autoSerialNumber = generateInstrumentSerialNumber(
+                          null,
+                          existingSerialNumbers
+                        );
+                        updateField('serial_number', autoSerialNumber);
+                      }}
+                      variant="success"
+                      size="sm"
+                      className="bg-white border border-green-300 text-green-700 hover:bg-green-50"
+                    >
+                      Add Another
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        resetForm();
+                        setSuccess(false);
+                        onClose();
+                      }}
+                      variant="success"
+                      size="sm"
+                    >
+                      Done
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {errors.length > 0 && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
               <ul className="list-disc list-inside">
@@ -205,7 +318,7 @@ export default function ItemForm({
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" style={{ display: success && !isEditing ? 'none' : 'block' }}>
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Maker"
@@ -214,6 +327,7 @@ export default function ItemForm({
                 onChange={handleInputChange}
                 required
                 placeholder="Enter maker name"
+                helperText="The manufacturer or brand name of the instrument"
               />
 
               <Input
@@ -223,6 +337,7 @@ export default function ItemForm({
                 onChange={handleInputChange}
                 required
                 placeholder="Enter type"
+                helperText="Primary category (e.g., Violin, Viola, Cello, Bow)"
               />
             </div>
 
@@ -272,6 +387,7 @@ export default function ItemForm({
                 value={priceInput}
                 onChange={e => handlePriceChange(e.target.value)}
                 placeholder="Enter price"
+                helperText="Selling price in your currency (optional)"
               />
             </div>
 
@@ -316,13 +432,15 @@ export default function ItemForm({
                 value={formData.serial_number}
                 onChange={handleInputChange}
                 disabled={!isEditing}
+                pattern="[A-Za-z]{2}[0-9]{7}"
+                title="2 letters + 7 digits (e.g., VI0000123)"
                 className={
                   classNames.input +
                   (isEditing ? '' : ' bg-gray-100 cursor-not-allowed')
                 }
                 placeholder={
                   isEditing
-                    ? 'Enter serial number (e.g., VI001, BO123, mj123)'
+                    ? 'Enter serial number (e.g., VI0000123, BO0000456)'
                     : '자동 생성됨'
                 }
               />
@@ -392,6 +510,9 @@ export default function ItemForm({
                 className={classNames.input}
                 placeholder="Enter any additional notes"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Any additional information about condition, history, or special features
+              </p>
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">

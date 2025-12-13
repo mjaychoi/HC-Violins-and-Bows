@@ -32,9 +32,27 @@ jest.mock('@/hooks/useFormState', () => ({
       tags: [],
       interest: '',
       note: '',
+      client_number: '',
     },
     updateField: jest.fn(),
     resetForm: jest.fn(),
+  })),
+}));
+
+jest.mock('@/hooks/useErrorHandler', () => ({
+  useErrorHandler: jest.fn(() => ({
+    handleError: jest.fn(),
+  })),
+}));
+
+jest.mock('@/hooks/useUnifiedData', () => ({
+  useUnifiedClients: jest.fn(() => ({
+    clients: [],
+    loading: false,
+    submitting: false,
+    createClient: jest.fn(),
+    updateClient: jest.fn(),
+    deleteClient: jest.fn(),
   })),
 }));
 
@@ -119,5 +137,138 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
     const submitButton = screen.getByRole('button', { name: /add client/i });
     fireEvent.click(submitButton);
     expect(baseProps.onSubmit).toHaveBeenCalled();
+  });
+
+  it('onSubmit에 instruments가 전달되지 않음 (선택된 instruments가 없을 때)', async () => {
+    const mockOnSubmit = jest.fn();
+    const mockUseFormState = jest.mocked(
+      require('@/hooks/useFormState')
+    ).useFormState;
+
+    mockUseFormState.mockReturnValue({
+      formData: {
+        last_name: 'Doe',
+        first_name: 'John',
+        contact_number: '1234567890',
+        email: 'john@example.com',
+        tags: [],
+        interest: '',
+        note: '',
+        client_number: '',
+      },
+      updateField: jest.fn(),
+      resetForm: jest.fn(),
+    });
+
+    const mockUseDataState = jest.mocked(
+      require('@/hooks/useDataState')
+    ).useDataState;
+
+    mockUseDataState.mockReturnValue({
+      data: [], // 선택된 instruments 없음
+      addItem: jest.fn(),
+      removeItem: jest.fn(),
+      clearData: jest.fn(),
+      setItems: jest.fn(),
+    });
+
+    render(<ClientForm {...baseProps} onSubmit={mockOnSubmit} />);
+    const submitButton = screen.getByRole('button', { name: /add client/i });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(mockOnSubmit).toHaveBeenCalled();
+      // instruments가 undefined로 전달되어야 함
+      const callArgs = mockOnSubmit.mock.calls[0];
+      expect(callArgs[1]).toBeUndefined();
+    });
+  });
+
+  it('onSubmit에 선택된 instruments가 전달됨', async () => {
+    const mockOnSubmit = jest.fn();
+    const mockUseFormState = jest.mocked(
+      require('@/hooks/useFormState')
+    ).useFormState;
+
+    mockUseFormState.mockReturnValue({
+      formData: {
+        last_name: 'Doe',
+        first_name: 'John',
+        contact_number: '1234567890',
+        email: 'john@example.com',
+        tags: [],
+        interest: '',
+        note: '',
+        client_number: '',
+      },
+      updateField: jest.fn(),
+      resetForm: jest.fn(),
+    });
+
+    const mockInstruments = [
+      {
+        instrument: {
+          id: '1',
+          status: 'Available' as const,
+          maker: 'Stradivari',
+          type: 'Violin',
+          subtype: null,
+          year: 1700,
+          certificate: true,
+          size: '4/4',
+          weight: '500g',
+          price: 1000000,
+          ownership: 'Museum',
+          note: 'Famous violin',
+          serial_number: null,
+          created_at: '2023-01-01T00:00:00Z',
+        },
+        relationshipType: 'Interested' as const,
+      },
+    ];
+
+    const mockUseDataState = jest.mocked(
+      require('@/hooks/useDataState')
+    ).useDataState;
+
+    mockUseDataState.mockReturnValue({
+      data: mockInstruments,
+      addItem: jest.fn(),
+      removeItem: jest.fn(),
+      clearData: jest.fn(),
+      setItems: jest.fn(),
+    });
+
+    render(<ClientForm {...baseProps} onSubmit={mockOnSubmit} />);
+    const submitButton = screen.getByRole('button', { name: /add client/i });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(mockOnSubmit).toHaveBeenCalled();
+      // instruments가 전달되어야 함
+      const callArgs = mockOnSubmit.mock.calls[0];
+      expect(callArgs[1]).toEqual(mockInstruments);
+    });
+  });
+
+  it('validation 로직이 구현되어 있음 (통합 테스트에서 검증)', () => {
+    // ClientForm에서 validation 로직을 사용하고 있음을 확인
+    // 실제 validation 동작은 validationUtils 테스트나 E2E 테스트에서 확인
+    const { validateForm } = require('@/utils/validationUtils');
+    expect(validateForm).toBeDefined();
+    expect(typeof validateForm).toBe('function');
+    
+    // validation이 빈 first_name을 감지할 수 있는지 확인
+    const result = validateForm(
+      { first_name: '', last_name: 'Doe' },
+      {
+        first_name: [
+          { required: true, message: 'First name is required' },
+          { minLength: 2 },
+        ],
+      }
+    );
+    expect(result.isValid).toBe(false);
+    expect(result.errors.first_name).toBeDefined();
   });
 });

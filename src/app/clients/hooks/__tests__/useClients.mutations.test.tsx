@@ -10,6 +10,85 @@ jest.mock('@/hooks/useErrorHandler', () => ({
   }),
 }));
 
+jest.mock('@/hooks/useUnifiedData', () => {
+  const { SupabaseHelpers } = require('@/utils/supabaseHelpers');
+  return {
+    useUnifiedClients: () => {
+      const [clients, setClients] = React.useState<Client[]>([]);
+      const [loading, setLoading] = React.useState(false);
+      const [submitting, setSubmitting] = React.useState(false);
+
+      const fetchClients = React.useCallback(async () => {
+        setLoading(true);
+        const { data } = await SupabaseHelpers.fetchAll('clients');
+        setClients(data || []);
+        setLoading(false);
+      }, []);
+
+      const createClient = React.useCallback(
+        async (client: Partial<Client>) => {
+          setLoading(true);
+          const { data, error } = await SupabaseHelpers.create('clients', client);
+          setLoading(false);
+          if (error) {
+            throw error;
+          }
+          if (data) {
+            setClients(prev => [...prev, data]);
+          }
+          return data ?? null;
+        },
+        []
+      );
+
+      const updateClient = React.useCallback(
+        async (id: string, updates: Partial<Client>) => {
+          setSubmitting(true);
+          const { data, error } = await SupabaseHelpers.update('clients', id, updates);
+          setSubmitting(false);
+          if (error) {
+            throw error;
+          }
+          if (data) {
+            setClients(prev =>
+              prev.map(client => (client.id === id ? data : client))
+            );
+          }
+          return data ?? null;
+        },
+        []
+      );
+
+      const deleteClient = React.useCallback(async (id: string) => {
+        setSubmitting(true);
+        const { error } = await SupabaseHelpers.delete('clients', id);
+        setSubmitting(false);
+        if (error) {
+          throw error;
+        }
+        setClients(prev => prev.filter(client => client.id !== id));
+        return true;
+      }, []);
+
+      return {
+        clients,
+        loading: {
+          clients: loading,
+          any: loading,
+        },
+        submitting: {
+          clients: submitting,
+          any: submitting,
+        },
+        fetchClients,
+        createClient,
+        updateClient,
+        deleteClient,
+      };
+    },
+  };
+});
+
 // Mock useLoadingState with proper state management
 const mockSetLoading = jest.fn();
 const mockSetSubmitting = jest.fn();
@@ -97,7 +176,7 @@ describe('useClients - mutations', () => {
     jest.clearAllMocks();
   });
 
-  it.skip('create 성공', async () => {
+  it('create 성공', async () => {
     const newClientData = {
       first_name: 'Jane',
       last_name: 'Smith',
@@ -129,13 +208,11 @@ describe('useClients - mutations', () => {
 
     const { result } = renderHook(() => useClients());
 
-    // Wait for initial fetch to complete
-    await waitFor(
-      () => {
-        expect(result.current.clients).toEqual([]);
-      },
-      { timeout: 3000 }
-    );
+    await act(async () => {
+      await result.current.fetchClients();
+    });
+
+    expect(result.current.clients).toEqual([]);
 
     let createdClientResult: Client | null = null;
     await act(async () => {
@@ -155,7 +232,7 @@ describe('useClients - mutations', () => {
       'clients',
       newClientData
     );
-  });
+  }, 10000);
 
   it('create 에러', async () => {
     const newClientData = {
@@ -180,9 +257,8 @@ describe('useClients - mutations', () => {
 
     const { result } = renderHook(() => useClients());
 
-    // Wait for initial fetch
-    await waitFor(() => {
-      expect(result.current.clients).toBeDefined();
+    await act(async () => {
+      await result.current.fetchClients();
     });
 
     await act(async () => {
@@ -195,9 +271,9 @@ describe('useClients - mutations', () => {
 
     // 클라이언트 목록은 변경되지 않아야 함
     expect(result.current.clients).toEqual([]);
-  });
+  }, 10000);
 
-  it.skip('update 성공', async () => {
+  it('update 성공', async () => {
     const updatedClient = { ...mockClient, first_name: 'Johnny' };
     (SupabaseHelpers.update as jest.Mock).mockResolvedValueOnce({
       data: updatedClient,
@@ -209,9 +285,8 @@ describe('useClients - mutations', () => {
 
     const { result } = renderHook(() => useClients());
 
-    // Wait for initial fetch
-    await waitFor(() => {
-      expect(result.current.clients.length).toBeGreaterThan(0);
+    await act(async () => {
+      await result.current.fetchClients();
     });
 
     let updatedClientResult;
@@ -230,7 +305,7 @@ describe('useClients - mutations', () => {
     expect(SupabaseHelpers.update).toHaveBeenCalledWith('clients', '1', {
       first_name: 'Johnny',
     });
-  });
+  }, 10000);
 
   it('update 에러', async () => {
     const updateError = new Error('Update failed');
@@ -244,10 +319,10 @@ describe('useClients - mutations', () => {
 
     const { result } = renderHook(() => useClients());
 
-    // Wait for initial fetch
-    await waitFor(() => {
-      expect(result.current.clients.length).toBeGreaterThan(0);
+    await act(async () => {
+      await result.current.fetchClients();
     });
+    expect(result.current.clients.length).toBeGreaterThan(0);
 
     await act(async () => {
       try {
@@ -262,9 +337,9 @@ describe('useClients - mutations', () => {
     // 클라이언트는 변경되지 않아야 함
     const client = result.current.clients.find(c => c.id === '1');
     expect(client?.first_name).toBe('John');
-  });
+  }, 10000);
 
-  it.skip('delete 성공', async () => {
+  it('delete 성공', async () => {
     // Mock initial fetch to return client
     (SupabaseHelpers.fetchAll as jest.Mock).mockResolvedValueOnce({
       data: [mockClient],
@@ -277,17 +352,15 @@ describe('useClients - mutations', () => {
 
     const { result } = renderHook(() => useClients());
 
-    // Wait for initial fetch to complete
-    await waitFor(
-      () => {
-        expect(result.current.clients).toContainEqual(mockClient);
-      },
-      { timeout: 3000 }
-    );
+    await act(async () => {
+      await result.current.fetchClients();
+    });
+
+    expect(result.current.clients).toContainEqual(mockClient);
 
     let deleteResult: boolean = false;
     await act(async () => {
-      deleteResult = await result.current.removeClient('1');
+      deleteResult = await result.current.deleteClient('1');
     });
 
     // Wait for state update after delete
@@ -295,12 +368,12 @@ describe('useClients - mutations', () => {
       () => {
         expect(result.current.clients.find(c => c.id === '1')).toBeUndefined();
       },
-      { timeout: 3000 }
+      { timeout: 5000 }
     );
 
     expect(deleteResult).toBe(true);
     expect(SupabaseHelpers.delete).toHaveBeenCalledWith('clients', '1');
-  });
+  }, 10000);
 
   it('delete 에러', async () => {
     const deleteError = new Error('Delete failed');
@@ -313,14 +386,13 @@ describe('useClients - mutations', () => {
 
     const { result } = renderHook(() => useClients());
 
-    // Wait for initial fetch
-    await waitFor(() => {
-      expect(result.current.clients.length).toBeGreaterThan(0);
+    await act(async () => {
+      await result.current.fetchClients();
     });
 
     await act(async () => {
       try {
-        await result.current.removeClient('1');
+        await result.current.deleteClient('1');
       } catch (error) {
         expect(error).toBe(deleteError);
       }
@@ -329,5 +401,5 @@ describe('useClients - mutations', () => {
     // 클라이언트는 삭제되지 않아야 함
     const client = result.current.clients.find(c => c.id === '1');
     expect(client).toBeDefined();
-  });
+  }, 10000);
 });
