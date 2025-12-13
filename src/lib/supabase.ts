@@ -36,14 +36,23 @@ export function getSupabase(): SupabaseClient {
  * @deprecated Use getSupabase() instead for lazy initialization
  * Kept for backward compatibility - using lazy getter to reduce initial bundle size
  * This defers the Supabase SDK import until actually used
+ * Note: This is now async-compatible but may cause issues in sync contexts
  */
 let _supabaseInstance: SupabaseClient | null = null;
 export const supabase = new Proxy({} as SupabaseClient, {
   get(target, prop) {
     if (!_supabaseInstance) {
-      _supabaseInstance = getSupabase();
+      // For sync access, try to use existing instance or throw
+      if (!_supabase) {
+        throw new Error(
+          'Supabase client accessed synchronously before initialization. Use async getSupabase() or await initialization.'
+        );
+      }
+      _supabaseInstance = _supabase;
     }
-    const value = (_supabaseInstance as unknown as Record<string, unknown>)[prop as string];
+    const value = (_supabaseInstance as unknown as Record<string, unknown>)[
+      prop as string
+    ];
     if (typeof value === 'function') {
       return value.bind(_supabaseInstance);
     }

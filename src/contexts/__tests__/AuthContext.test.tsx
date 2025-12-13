@@ -2,9 +2,9 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from '../AuthContext';
 import { useRouter } from 'next/navigation';
 
-const mockGetSupabase = jest.fn();
-jest.mock('@/lib/supabase', () => ({
-  getSupabase: () => mockGetSupabase(),
+const mockGetSupabaseClient = jest.fn();
+jest.mock('@/lib/supabase-client', () => ({
+  getSupabaseClient: () => mockGetSupabaseClient(),
 }));
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
@@ -41,7 +41,7 @@ describe('AuthContext', () => {
       auth: mockAuth,
     };
 
-    mockGetSupabase.mockReturnValue(mockSupabaseClient as any);
+    mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient as any);
   });
 
   it('should provide auth context', () => {
@@ -104,7 +104,10 @@ describe('AuthContext', () => {
     });
 
     await act(async () => {
-      const response = await result.current.signUp('test@example.com', 'password123');
+      const response = await result.current.signUp(
+        'test@example.com',
+        'password123'
+      );
       expect(response.error).toBeNull();
     });
 
@@ -141,7 +144,10 @@ describe('AuthContext', () => {
     });
 
     await act(async () => {
-      const response = await result.current.signIn('test@example.com', 'password123');
+      const response = await result.current.signIn(
+        'test@example.com',
+        'password123'
+      );
       expect(response.error).toBeNull();
     });
 

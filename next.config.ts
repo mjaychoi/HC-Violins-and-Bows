@@ -21,6 +21,7 @@ const baseConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['date-fns', 'react-window'],
   },
+  // Webpack config only applies when NOT using Turbopack
   webpack: (config, { isServer }) => {
     // Optimize bundle size: prevent client-side bundling of server-only dependencies
     if (!isServer) {
@@ -31,7 +32,7 @@ const baseConfig: NextConfig = {
         net: false,
         tls: false,
       };
-      
+
       // Optimize large dependencies that come from Supabase SDK chain
       // tr46/mappingTable.json is part of whatwg-url → tr46 dependency chain
       // These are URL parsing utilities that may not be needed in all client contexts
