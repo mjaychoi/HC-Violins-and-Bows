@@ -8,6 +8,7 @@ import { Client } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
+import { logError, logInfo } from '@/utils/logger';
 
 // 로컬 환경에서 SSL 인증서 검증 비활성화
 if (process.env.NODE_ENV !== 'production') {
@@ -18,7 +19,7 @@ dotenv.config({ path: '.env.local' });
 
 async function migrateSubtype() {
   try {
-    console.log('🔄 subtype 컬럼 추가 마이그레이션 실행...\n');
+    logInfo('🔄 subtype 컬럼 추가 마이그레이션 실행...\n', 'migrateSubtype');
 
     // 환경 변수 확인
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -31,16 +32,13 @@ async function migrateSubtype() {
     }
 
     if (!dbPassword) {
-      console.log('⚠️  DATABASE_PASSWORD 환경 변수가 없습니다.');
-      console.log('📝 Supabase 대시보드에서 수동 실행하세요:');
-      console.log('   1. https://supabase.com/dashboard 접속');
-      console.log('   2. SQL Editor 열기');
-      console.log('   3. 다음 SQL 실행:');
-      console.log('');
-      console.log(
-        '   ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;'
-      );
-      console.log('');
+      logInfo('⚠️  DATABASE_PASSWORD 환경 변수가 없습니다.', 'migrateSubtype');
+      logInfo('📝 Supabase 대시보드에서 수동 실행하세요:', 'migrateSubtype');
+      logInfo('   1. https://supabase.com/dashboard 접속', 'migrateSubtype');
+      logInfo('   2. SQL Editor 열기', 'migrateSubtype');
+      logInfo('   3. 다음 SQL 실행:', 'migrateSubtype');
+      logInfo('   ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;', 'migrateSubtype');
+      logInfo('', 'migrateSubtype');
       return;
     }
 
@@ -51,9 +49,9 @@ async function migrateSubtype() {
       throw new Error('프로젝트 참조를 찾을 수 없습니다.');
     }
 
-    console.log('📦 프로젝트:', projectRef);
-    console.log('📋 Supabase URL:', supabaseUrl);
-    console.log('');
+    logInfo(`📦 프로젝트: ${projectRef}`, 'migrateSubtype');
+    logInfo(`📋 Supabase URL: ${supabaseUrl}`, 'migrateSubtype');
+    logInfo('', 'migrateSubtype');
 
     // SQL 읽기
     const migrationPath = path.join(
@@ -67,7 +65,7 @@ async function migrateSubtype() {
     }
 
     const migrationSQL = fs.readFileSync(migrationPath, 'utf-8');
-    console.log('✅ 마이그레이션 파일 읽기 완료\n');
+    logInfo('✅ 마이그레이션 파일 읽기 완료\n', 'migrateSubtype');
 
     // PostgreSQL 연결 시도 - Pooler 사용 (포트 5432)
     const regions = [
@@ -81,7 +79,7 @@ async function migrateSubtype() {
 
     for (const region of regions) {
       try {
-        console.log(`🔌 ${region} 지역 pooler 연결 시도...`);
+        logInfo(`🔌 ${region} 지역 pooler 연결 시도...`, 'migrateSubtype');
 
         client = new Client({
           host: `aws-0-${region}.pooler.supabase.com`,
@@ -95,16 +93,16 @@ async function migrateSubtype() {
         });
 
         await client.connect();
-        console.log(`✅ ${region} 지역 연결 성공!\n`);
+        logInfo(`✅ ${region} 지역 연결 성공!\n`, 'migrateSubtype');
 
         // SQL 실행
-        console.log('🚀 마이그레이션 실행 중...\n');
+        logInfo('🚀 마이그레이션 실행 중...\n', 'migrateSubtype');
         await client.query(migrationSQL);
 
-        console.log('✅ 마이그레이션 완료!');
-        console.log('🎉 subtype 컬럼이 instruments 테이블에 추가되었습니다.');
-        console.log(
-          '📝 이제 Dashboard 페이지에서 subtype 필드를 사용할 수 있습니다.\n'
+        logInfo('✅ 마이그레이션 완료!', 'migrateSubtype');
+        logInfo('🎉 subtype 컬럼이 instruments 테이블에 추가되었습니다.', 'migrateSubtype');
+        logInfo(
+          '📝 이제 Dashboard 페이지에서 subtype 필드를 사용할 수 있습니다.\n', 'migrateSubtype'
         );
 
         await client.end();
@@ -125,7 +123,7 @@ async function migrateSubtype() {
           'code' in error &&
           (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED')
         ) {
-          console.log(`⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`);
+          logInfo(`⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`, 'migrateSubtype');
           continue;
         } else if (
           error &&
@@ -136,8 +134,9 @@ async function migrateSubtype() {
             error.message.includes('certificate') ||
             error.message.includes('SSL'))
         ) {
-          console.log(
-            `⚠️  ${region} 지역 SSL 인증서 오류, 다음 지역 시도...\n`
+          logInfo(
+            `⚠️  ${region} 지역 SSL 인증서 오류, 다음 지역 시도...\n`,
+            'migrateSubtype'
           );
           continue;
         } else if (
@@ -147,7 +146,7 @@ async function migrateSubtype() {
           typeof error.message === 'string' &&
           error.message.includes('password authentication failed')
         ) {
-          console.log(`❌ 비밀번호 인증 실패\n`);
+          logInfo(`❌ 비밀번호 인증 실패\n`, 'migrateSubtype');
           break;
         } else if (
           error &&
@@ -157,8 +156,8 @@ async function migrateSubtype() {
           (error.message.includes('already exists') ||
             error.message.includes('duplicate'))
         ) {
-          console.log('⚠️  subtype 컬럼이 이미 존재합니다.');
-          console.log('✅ 마이그레이션이 이미 완료된 것으로 보입니다.\n');
+          logInfo('⚠️  subtype 컬럼이 이미 존재합니다.', 'migrateSubtype');
+          logInfo('✅ 마이그레이션이 이미 완료된 것으로 보입니다.\n', 'migrateSubtype');
           return;
         } else {
           throw error;
@@ -170,30 +169,31 @@ async function migrateSubtype() {
   } catch (error: unknown) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';
-    console.error('❌ 마이그레이션 실패:', errorMessage);
-    console.error('');
+    logError('❌ 마이그레이션 실패:', errorMessage, 'migrateSubtype');
+    logInfo('', 'migrateSubtype');
 
     const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL?.match(
       /https:\/\/([^.]+)\.supabase\.co/
     )?.[1];
 
     if (projectRef) {
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('📝 수동 실행 안내');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('');
-      console.log(
+      logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'migrateSubtype');
+      logInfo('📝 수동 실행 안내', 'migrateSubtype');
+      logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'migrateSubtype');
+      logInfo('', 'migrateSubtype');
+      logInfo(
         '1. https://supabase.com/dashboard/project/' +
           projectRef +
-          '/sql/new 접속'
+          '/sql/new 접속',
+        'migrateSubtype'
       );
-      console.log('2. 다음 SQL 실행:');
-      console.log('');
-      console.log(
-        '   ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;'
+      logInfo('2. 다음 SQL 실행:', 'migrateSubtype');
+      logInfo('', 'migrateSubtype');
+      logInfo(
+        '   ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;', 'migrateSubtype'
       );
-      console.log('');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logInfo('', 'migrateSubtype');
+      logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'migrateSubtype');
     }
 
     process.exit(1);
@@ -202,7 +202,7 @@ async function migrateSubtype() {
 
 // 실행
 migrateSubtype().catch(error => {
-  console.error('❌ 에러:', error);
+  logError('❌ 에러:', error, 'migrateSubtype');
   process.exit(1);
 });
 

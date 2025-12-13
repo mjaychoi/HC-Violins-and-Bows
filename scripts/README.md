@@ -78,3 +78,13 @@ supabase login
 ### 에러: "프로젝트 참조를 찾을 수 없습니다"
 
 `NEXT_PUBLIC_SUPABASE_URL` 환경 변수가 올바르게 설정되어 있는지 확인하세요.
+
+## 샘플 데이터 생성
+
+개발에서 참고할 수 있는 더미 클라이언트/악기/작업/판매 이력을 JSON으로 만들려면 다음을 실행합니다:
+
+```bash
+npm run generate:sample-data
+```
+
+파일은 `data/sample-data.json`으로 저장됩니다.

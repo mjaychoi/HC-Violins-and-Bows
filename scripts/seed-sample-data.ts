@@ -2,15 +2,18 @@
  * 예시 데이터 생성 스크립트
  *
  * 이 스크립트는 Supabase 데이터베이스에 테스트용 예시 데이터를 생성합니다.
- * - 클라이언트 (10명)
- * - 악기 (20개)
- * - 클라이언트-악기 관계 (15개)
- * - 유지보수 작업 (30개)
- * - 판매 이력 (5개)
+ * - 클라이언트 (50명)
+ * - 악기 (100개)
+ * - 클라이언트-악기 관계 (150개)
+ * - 유지보수 작업 (200개)
+ * - 판매 이력 (30개)
+ * 
+ * 실행: npm run seed:data
  */
 
 import { Client } from 'pg';
 import * as dotenv from 'dotenv';
+import { logError, logInfo } from '@/utils/logger';
 
 // 로컬 환경에서 SSL 인증서 검증 비활성화
 if (process.env.NODE_ENV !== 'production') {
@@ -322,7 +325,7 @@ async function seedSampleData() {
   let client: Client | null = null;
 
   try {
-    console.log('🌱 예시 데이터 생성 시작...\n');
+    logInfo('🌱 예시 데이터 생성 시작...\n');
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const dbPassword = process.env.DATABASE_PASSWORD;
@@ -356,7 +359,7 @@ async function seedSampleData() {
 
     for (const region of regions) {
       try {
-        console.log(`🔌 ${region} 지역 pooler 연결 시도...`);
+        logInfo(`🔌 ${region} 지역 pooler 연결 시도...`);
         client = new Client({
           host: `aws-0-${region}.pooler.supabase.com`,
           port: 5432,
@@ -369,7 +372,7 @@ async function seedSampleData() {
         });
 
         await client.connect();
-        console.log(`✅ ${region} 지역 연결 성공!\n`);
+        logInfo(`✅ ${region} 지역 연결 성공!\n`);
         break;
       } catch {
         if (client) {
@@ -380,7 +383,7 @@ async function seedSampleData() {
           }
           client = null;
         }
-        console.log(`⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`);
+        logError('⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n', undefined, 'seedSampleData');
         continue;
       }
     }
@@ -390,7 +393,7 @@ async function seedSampleData() {
     }
 
     // 1. 기존 데이터 확인
-    console.log('📊 기존 데이터 확인 중...');
+    logInfo('📊 기존 데이터 확인 중...', 'seedSampleData');
     const existingClients = await client.query(
       'SELECT COUNT(*) as count FROM clients'
     );
@@ -401,24 +404,24 @@ async function seedSampleData() {
       'SELECT COUNT(*) as count FROM maintenance_tasks'
     );
 
-    console.log(`  • 클라이언트: ${existingClients.rows[0].count}개`);
-    console.log(`  • 악기: ${existingInstruments.rows[0].count}개`);
-    console.log(`  • 작업: ${existingTasks.rows[0].count}개\n`);
+    logInfo(`  • 클라이언트: ${existingClients.rows[0].count}개`, 'seedSampleData');
+    logInfo(`  • 악기: ${existingInstruments.rows[0].count}개`, 'seedSampleData');
+    logInfo(`  • 작업: ${existingTasks.rows[0].count}개\n`, 'seedSampleData');
 
     // 2. 기존 클라이언트 번호 가져오기
-    console.log('📋 기존 클라이언트 번호 확인 중...');
+    logInfo('📋 기존 클라이언트 번호 확인 중...', 'seedSampleData');
     const existingClientsResult = await client.query(
       'SELECT client_number FROM clients WHERE client_number IS NOT NULL'
     );
     const existingClientNumbers = existingClientsResult.rows.map(
       r => r.client_number
     );
-    console.log(
+    logInfo(
       `  • 기존 클라이언트 번호: ${existingClientNumbers.length}개\n`
     );
 
     // 3. 클라이언트 생성
-    console.log('👥 클라이언트 생성 중...');
+    logInfo('👥 클라이언트 생성 중...', 'seedSampleData');
     const clientIds: string[] = [];
     const newClientNumbers: string[] = [];
 
@@ -436,7 +439,42 @@ async function seedSampleData() {
       return `${prefix}${nextNumber.toString().padStart(3, '0')}`;
     }
 
+    // 샘플 클라이언트를 기반으로 더 많은 클라이언트 생성 (50개)
+    const firstNames = ['James', 'Mary', 'John', 'Patricia', 'Robert', 'Jennifer', 'Michael', 'Linda', 'William', 'Elizabeth', 'David', 'Barbara', 'Richard', 'Susan', 'Joseph', 'Jessica', 'Thomas', 'Sarah', 'Charles', 'Karen', 'Christopher', 'Nancy', 'Daniel', 'Lisa', 'Matthew', 'Betty', 'Anthony', 'Margaret', 'Mark', 'Sandra', 'Donald', 'Ashley', 'Steven', 'Kimberly', 'Paul', 'Emily', 'Andrew', 'Donna', 'Joshua', 'Michelle', 'Kenneth', 'Carol', 'Kevin', 'Amanda', 'Brian', 'Dorothy', 'George', 'Melissa', 'Edward', 'Deborah'];
+    const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker', 'Young', 'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill', 'Flores', 'Green', 'Adams', 'Nelson', 'Baker', 'Hall', 'Rivera', 'Campbell', 'Mitchell', 'Carter', 'Roberts', 'Gomez', 'Phillips'];
+    const tagsOptions = [['Owner'], ['Musician'], ['Dealer'], ['Collector'], ['Owner', 'Musician'], ['Dealer', 'Collector'], ['Owner', 'Dealer']];
+    const interestOptions = ['Active', 'Passive', null];
+
+    // 기존 이메일 확인
+    const existingEmailsResult = await client.query(
+      'SELECT email FROM clients WHERE email IS NOT NULL'
+    );
+    const existingEmails = new Set(
+      existingEmailsResult.rows.map(r => r.email?.toLowerCase())
+    );
+
+    // 기존 샘플 클라이언트 먼저 생성
+    // 클라이언트 이름 -> ID 매핑 (나중에 악기의 ownership 변환에 사용)
+    const clientNameToIdMap = new Map<string, string>();
+    
     for (const clientData of sampleClients) {
+      // 이메일 중복 체크 - 이미 존재하는 경우 기존 클라이언트 ID 조회
+      if (existingEmails.has(clientData.email.toLowerCase())) {
+        logInfo(
+          `  ⚠️  ${clientData.first_name} ${clientData.last_name} - 이메일 중복으로 스킵 (${clientData.email})`
+        );
+        // 기존 클라이언트 ID 조회하여 매핑에 추가
+        const existingClientResult = await client.query(
+          'SELECT id FROM clients WHERE email = $1',
+          [clientData.email]
+        );
+        if (existingClientResult.rows.length > 0) {
+          const fullName = `${clientData.first_name} ${clientData.last_name}`;
+          clientNameToIdMap.set(fullName, existingClientResult.rows[0].id);
+        }
+        continue;
+      }
+
       // Generate unique client number
       const allClientNumbers = [...existingClientNumbers, ...newClientNumbers];
       const clientNumber = generateClientNumber(allClientNumbers);
@@ -456,25 +494,68 @@ async function seedSampleData() {
           clientNumber,
         ]
       );
-      clientIds.push(result.rows[0].id);
-      console.log(
+      const clientId = result.rows[0].id;
+      clientIds.push(clientId);
+      existingEmails.add(clientData.email.toLowerCase());
+      
+      // 클라이언트 이름 -> ID 매핑 추가
+      const fullName = `${clientData.first_name} ${clientData.last_name}`;
+      clientNameToIdMap.set(fullName, clientId);
+      
+      logInfo(
         `  ✓ ${clientData.first_name} ${clientData.last_name} (${clientNumber})`
       );
     }
-    console.log(`✅ ${clientIds.length}개의 클라이언트 생성 완료\n`);
+
+    // 추가 클라이언트 생성 (총 50개)
+    for (let i = sampleClients.length; clientIds.length < 50; i++) {
+      const allClientNumbers = [...existingClientNumbers, ...newClientNumbers];
+      const clientNumber = generateClientNumber(allClientNumbers);
+      newClientNumbers.push(clientNumber);
+
+      const firstName = getRandomElement(firstNames);
+      const lastName = getRandomElement(lastNames);
+      // 고유한 이메일 생성 (중복 방지)
+      let email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}${i}@example.com`;
+      let emailAttempts = 0;
+      while (existingEmails.has(email.toLowerCase()) && emailAttempts < 10) {
+        email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}${i}${emailAttempts}@example.com`;
+        emailAttempts++;
+      }
+      
+      if (existingEmails.has(email.toLowerCase())) {
+        logInfo(`  ⚠️  이메일 생성 실패, 다음 클라이언트로 건너뜀`);
+        continue;
+      }
+
+      const contactNumber = `010-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+      const tags = getRandomElement(tagsOptions);
+      const interest = getRandomElement(interestOptions);
+
+      const result = await client.query(
+        `INSERT INTO clients (first_name, last_name, email, contact_number, tags, interest, client_number)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id`,
+        [firstName, lastName, email, contactNumber, tags, interest, clientNumber]
+      );
+      clientIds.push(result.rows[0].id);
+      existingEmails.add(email.toLowerCase());
+      logInfo(`  ✓ ${firstName} ${lastName} (${clientNumber})`);
+    }
+    logInfo(`✅ ${clientIds.length}개의 클라이언트 생성 완료\n`, 'seedSampleData');
 
     // 4. 기존 악기 번호 가져오기
-    console.log('📋 기존 악기 번호 확인 중...');
+    logInfo('📋 기존 악기 번호 확인 중...', 'seedSampleData');
     const existingInstrumentsResult = await client.query(
       'SELECT serial_number FROM instruments WHERE serial_number IS NOT NULL'
     );
     const existingSerialNumbers = existingInstrumentsResult.rows.map(
       r => r.serial_number
     );
-    console.log(`  • 기존 악기 번호: ${existingSerialNumbers.length}개\n`);
+    logInfo(`  • 기존 악기 번호: ${existingSerialNumbers.length}개\n`, 'seedSampleData');
 
     // 5. 악기 생성
-    console.log('🎻 악기 생성 중...');
+    logInfo('🎻 악기 생성 중...', 'seedSampleData');
     const instrumentIds: string[] = [];
     const newSerialNumbers: string[] = [];
 
@@ -502,9 +583,11 @@ async function seedSampleData() {
       const maxNumber =
         samePrefixNumbers.length > 0 ? Math.max(...samePrefixNumbers) : 0;
       const nextNumber = maxNumber + 1;
-      return `${prefix}${nextNumber.toString().padStart(3, '0')}`;
+      // 애플리케이션과 동일하게 7자리 숫자 사용 (예: VI0000001)
+      return `${prefix}${nextNumber.toString().padStart(7, '0')}`;
     }
 
+    // 기존 샘플 악기 먼저 생성
     for (const instrumentData of sampleInstruments) {
       // Generate unique serial number
       const allSerialNumbers = [...existingSerialNumbers, ...newSerialNumbers];
@@ -513,6 +596,20 @@ async function seedSampleData() {
         allSerialNumbers
       );
       newSerialNumbers.push(serialNumber);
+
+      // Convert ownership from client name to client ID (UUID)
+      let ownershipValue = instrumentData.ownership;
+      if (ownershipValue && typeof ownershipValue === 'string') {
+        const clientId = clientNameToIdMap.get(ownershipValue);
+        if (clientId) {
+          ownershipValue = clientId;
+        } else {
+          // If client name not found, set to null or keep as string?
+          // Setting to null for consistency - ownership should be UUID or null
+          logInfo(`  ⚠️  클라이언트 이름 "${ownershipValue}"을 찾을 수 없어 ownership을 null로 설정`);
+          ownershipValue = null;
+        }
+      }
 
       const result = await client.query(
         `INSERT INTO instruments (type, maker, year, status, price, certificate, ownership, serial_number)
@@ -525,23 +622,55 @@ async function seedSampleData() {
           instrumentData.status,
           instrumentData.price,
           instrumentData.certificate,
-          instrumentData.ownership,
+          ownershipValue,
           serialNumber,
         ]
       );
       instrumentIds.push(result.rows[0].id);
-      console.log(
+      logInfo(
         `  ✓ ${instrumentData.type} - ${instrumentData.maker} (${serialNumber})`
       );
     }
-    console.log(`✅ ${instrumentIds.length}개의 악기 생성 완료\n`);
+
+    // 추가 악기 생성 (총 100개)
+    const instrumentTypes = ['Violin', 'Viola', 'Cello', 'Bow'];
+    const makers = ['Stradivarius', 'Guarneri', 'Amati', 'Montagnana', 'Bergonzi', 'Tourte', 'Gagliano', 'Guadagnini', 'Ruggeri', 'Storioni', 'Pecatte', 'Pressenda', 'Rocca', 'Goffriller', 'Vuillaume', 'Sartory', 'Landolfi', 'Testore', 'Cremonese', 'Lamy', 'Dodd', 'Hill', 'Voirin', 'Persoit', 'Lupot', 'Chanot', 'Silvestre', 'Panormo', 'Forster', 'Stainer'];
+    const statuses = ['Available', 'Booked', 'Sold', 'Reserved', 'Maintenance'];
+    const ownershipOptions = [...clientIds.map(id => id), null];
+
+    for (let i = sampleInstruments.length; i < 100; i++) {
+      const allSerialNumbers = [...existingSerialNumbers, ...newSerialNumbers];
+      const type = getRandomElement(instrumentTypes);
+      const serialNumber = generateInstrumentSerialNumber(type, allSerialNumbers);
+      newSerialNumbers.push(serialNumber);
+
+      const maker = getRandomElement(makers);
+      const year = getRandomInt(1650, 1950);
+      const status = getRandomElement(statuses);
+      const price = getRandomInt(100000, 10000000);
+      const certificate = Math.random() > 0.3; // 70% 확률로 인증서 있음
+      const ownership = status === 'Sold' || status === 'Booked' || status === 'Reserved' 
+        ? getRandomElement(ownershipOptions) 
+        : null;
+
+      const result = await client.query(
+        `INSERT INTO instruments (type, maker, year, status, price, certificate, ownership, serial_number)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id`,
+        [type, maker, year, status, price, certificate, ownership, serialNumber]
+      );
+      instrumentIds.push(result.rows[0].id);
+      logInfo(`  ✓ ${type} - ${maker} (${serialNumber})`);
+    }
+    logInfo(`✅ ${instrumentIds.length}개의 악기 생성 완료\n`, 'seedSampleData');
 
     // 6. 클라이언트-악기 관계 생성
-    console.log('🔗 클라이언트-악기 관계 생성 중...');
+    logInfo('🔗 클라이언트-악기 관계 생성 중...', 'seedSampleData');
     const relationshipTypes = ['Interested', 'Sold', 'Booked', 'Owned'];
     let relationshipCount = 0;
 
-    for (let i = 0; i < 15; i++) {
+    // 더 많은 관계 생성 (150개)
+    for (let i = 0; i < 150; i++) {
       const clientId = getRandomElement(clientIds);
       const instrumentId = getRandomElement(instrumentIds);
       const relationshipType = getRandomElement(relationshipTypes);
@@ -561,10 +690,10 @@ async function seedSampleData() {
         relationshipCount++;
       }
     }
-    console.log(`✅ ${relationshipCount}개의 관계 생성 완료\n`);
+    logInfo(`✅ ${relationshipCount}개의 관계 생성 완료\n`, 'seedSampleData');
 
     // 7. 유지보수 작업 생성
-    console.log('🔧 유지보수 작업 생성 중...');
+    logInfo('🔧 유지보수 작업 생성 중...', 'seedSampleData');
     const now = new Date();
     const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     const threeMonthsLater = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
@@ -603,7 +732,8 @@ async function seedSampleData() {
     ];
 
     let taskCount = 0;
-    for (let i = 0; i < 30; i++) {
+    // 더 많은 작업 생성 (200개)
+    for (let i = 0; i < 200; i++) {
       const instrumentId = getRandomElement(instrumentIds);
       const clientId = Math.random() > 0.3 ? getRandomElement(clientIds) : null; // 70% 확률로 클라이언트 연결
       const taskType = getRandomElement([...sampleTaskTypes]);
@@ -657,14 +787,15 @@ async function seedSampleData() {
         ]
       );
       taskCount++;
-      console.log(`  ✓ ${title} (${status}, ${priority})`);
+      logInfo(`  ✓ ${title} (${status}, ${priority})`, 'seedSampleData');
     }
-    console.log(`✅ ${taskCount}개의 작업 생성 완료\n`);
+    logInfo(`✅ ${taskCount}개의 작업 생성 완료\n`, 'seedSampleData');
 
     // 8. 판매 이력 생성
-    console.log('💰 판매 이력 생성 중...');
+    logInfo('💰 판매 이력 생성 중...', 'seedSampleData');
     let salesCount = 0;
-    for (let i = 0; i < 5; i++) {
+    // 더 많은 판매 이력 생성 (30개)
+    for (let i = 0; i < 30; i++) {
       const instrumentId = getRandomElement(instrumentIds);
       const clientId = getRandomElement(clientIds);
       const salePrice = getRandomInt(1000000, 10000000);
@@ -676,26 +807,26 @@ async function seedSampleData() {
         [instrumentId, clientId, salePrice, saleDate, `판매 완료: ${saleDate}`]
       );
       salesCount++;
-      console.log(`  ✓ 판매: ${salePrice.toLocaleString()}원 (${saleDate})`);
+      logInfo(`  ✓ 판매: ${salePrice.toLocaleString()}원 (${saleDate})`, 'seedSampleData');
     }
-    console.log(`✅ ${salesCount}개의 판매 이력 생성 완료\n`);
+    logInfo(`✅ ${salesCount}개의 판매 이력 생성 완료\n`, 'seedSampleData');
 
     // 7. 최종 통계
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('✅ 예시 데이터 생성 완료!');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log(`📊 생성된 데이터:`);
-    console.log(`  • 클라이언트: ${clientIds.length}개`);
-    console.log(`  • 악기: ${instrumentIds.length}개`);
-    console.log(`  • 클라이언트-악기 관계: ${relationshipCount}개`);
-    console.log(`  • 유지보수 작업: ${taskCount}개`);
-    console.log(`  • 판매 이력: ${salesCount}개`);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'seedSampleData');
+    logInfo('✅ 예시 데이터 생성 완료!', 'seedSampleData');
+    logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'seedSampleData');
+    logInfo(`📊 생성된 데이터:`, 'seedSampleData');
+    logInfo(`  • 클라이언트: ${clientIds.length}개`, 'seedSampleData');
+    logInfo(`  • 악기: ${instrumentIds.length}개`, 'seedSampleData');
+    logInfo(`  • 클라이언트-악기 관계: ${relationshipCount}개`, 'seedSampleData');
+    logInfo(`  • 유지보수 작업: ${taskCount}개`, 'seedSampleData');
+    logInfo(`  • 판매 이력: ${salesCount}개`, 'seedSampleData');
+    logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n', 'seedSampleData');
   } catch (error) {
-    console.error('❌ 에러 발생:', error);
+    logError('❌ 에러 발생:', error, 'seedSampleData');
     if (error instanceof Error) {
-      console.error('   메시지:', error.message);
-      console.error('   스택:', error.stack);
+      logError('   메시지:', error.message, 'seedSampleData');
+      logError('   스택:', error.stack, 'seedSampleData');
     }
     process.exit(1);
   } finally {
@@ -706,7 +837,7 @@ async function seedSampleData() {
 }
 
 seedSampleData().catch(error => {
-  console.error('❌ 에러:', error);
+  logError('❌ 에러:', error, 'seedSampleData');
   process.exit(1);
 });
 
