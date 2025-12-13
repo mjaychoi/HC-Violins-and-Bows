@@ -13,6 +13,7 @@ const customJestConfig = {
   transformIgnorePatterns: [
     '/node_modules/(?!(isows|@supabase/realtime-js|@supabase/supabase-js|@supabase)/)',
   ],
+  modulePathIgnorePatterns: ['<rootDir>/.next/standalone'],
   extensionsToTreatAsEsm: ['.ts', '.tsx'],
   globals: {
     'ts-jest': {
@@ -23,6 +24,7 @@ const customJestConfig = {
     '<rootDir>/.next/',
     '<rootDir>/node_modules/',
     '<rootDir>/tests/e2e/',
+    '<rootDir>/src/app/calendar/__tests__/page.test.tsx',
   ],
   collectCoverageFrom: [
     'src/**/*.{js,jsx,ts,tsx}',

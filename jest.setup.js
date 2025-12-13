@@ -1,4 +1,43 @@
 import '@testing-library/jest-dom';
+// Polyfill Request for Next.js server modules in tests
+try {
+  // Use Next.js bundled fetch primitives to align with NextRequest/NextResponse requirements
+  const { Response, Headers, ReadableStream } = require('next/dist/compiled/@edge-runtime/primitives');
+  // Provide a minimal Request wrapper to ensure headers exist for NextRequest tests
+  if (typeof global.Request === 'undefined') {
+    class SimpleRequest {
+      constructor(input, init = {}) {
+        this.url = typeof input === 'string' ? input : input?.toString?.() || '';
+        this.method = init.method || 'GET';
+        this.headers = new Headers(init.headers || {});
+        this.body = init.body;
+      }
+      clone() {
+        return new SimpleRequest(this.url, {
+          method: this.method,
+          headers: this.headers,
+          body: this.body,
+        });
+      }
+    }
+    global.Request = SimpleRequest;
+  }
+  if (typeof global.Response === 'undefined') {
+    global.Response = Response;
+  }
+  if (typeof global.Headers === 'undefined') {
+    global.Headers = Headers;
+  }
+  if (typeof global.ReadableStream === 'undefined') {
+    global.ReadableStream = ReadableStream;
+  }
+} catch {
+  // Fallback no-op classes to avoid crashes in environments without the primitives
+  // @ts-ignore
+  global.Request = global.Request || class {};
+  // @ts-ignore
+  global.Response = global.Response || class {};
+}
 
 // jsdom에서 WebSocket/polyfill
 if (typeof global.WebSocket === 'undefined') {
@@ -41,6 +80,45 @@ jest.mock('next/link', () => ({
   __esModule: true,
   default: ({ children, href }) => <a href={href}>{children}</a>,
 }));
+
+// Mock next/navigation hooks used across components
+jest.mock('next/navigation', () => ({
+  __esModule: true,
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    back: jest.fn(),
+    prefetch: jest.fn(),
+  }),
+  usePathname: () => '/',
+}));
+
+// Mock NextRequest to avoid full Next.js runtime dependencies in API route tests
+jest.mock('next/server', () => {
+  class MockNextRequest {
+    constructor(url, init = {}) {
+      this.url = url;
+      this.method = init.method || 'GET';
+      this.headers = new Headers(init.headers || {});
+      this.body = init.body;
+      this.nextUrl = new URL(url);
+    }
+    async json() {
+      if (!this.body) return {};
+      if (typeof this.body === 'string') return JSON.parse(this.body);
+      return this.body;
+    }
+  }
+  return {
+    NextResponse: {
+      json: (body, init = {}) => ({
+        status: init.status ?? 200,
+        json: async () => body,
+      }),
+    },
+    NextRequest: MockNextRequest,
+  };
+});
 
 // Mock next/dynamic to return the wrapped component directly
 jest.mock('next/dynamic', () => {
@@ -198,3 +276,41 @@ jest.mock('@/lib/supabase', () => ({
 }));
 
 // Note: Supabase helpers are mocked per-test where needed
+
+// Suppress React act() warnings for known async state updates in tests
+const originalError = console.error;
+beforeAll(() => {
+  console.error = (...args) => {
+    const first = args[0];
+    const hasDebounceWarning = args.some(
+      arg =>
+        (typeof arg === 'string' && arg.includes('debounceMs')) ||
+        (arg && typeof arg === 'object' && 'message' in arg && String(arg.message).includes('debounceMs'))
+    );
+    if (typeof first === 'string') {
+      if (
+        first.includes('Warning: An update to') ||
+        first.includes('was not wrapped in act') ||
+        first.includes('Not implemented: navigation') ||
+        hasDebounceWarning
+      ) {
+        return;
+      }
+    }
+    if (
+      (first instanceof Error && first.message.includes('Not implemented: navigation')) ||
+      (first &&
+        typeof first === 'object' &&
+        'message' in first &&
+        (String(first.message ?? '').includes('Not implemented: navigation') ||
+          hasDebounceWarning))
+    ) {
+      return;
+    }
+    originalError.call(console, ...args);
+  };
+});
+
+afterAll(() => {
+  console.error = originalError;
+});
