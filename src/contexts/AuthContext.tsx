@@ -9,8 +9,12 @@ import React, {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, Session, AuthError } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { logError, logInfo, logApiRequest } from '@/utils/logger';
+
+// Lazy load supabase client to reduce initial bundle size
+// Only load when auth operations are actually needed
+const getSupabaseClient = () => getSupabase();
 
 interface AuthContextType {
   user: User | null;
@@ -38,39 +42,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initialize auth state
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        // Invalid refresh token 오류 처리
-        if (
-          error.message?.includes('Invalid Refresh Token') ||
-          error.message?.includes('Refresh Token Not Found')
-        ) {
-          logInfo(
-            'Invalid refresh token detected, clearing session',
-            'AuthContext'
-          );
-          // 세션 클리어
-          supabase.auth.signOut().catch(() => {
-            // 무시 - 이미 로그아웃 상태일 수 있음
+    let isCancelled = false;
+
+    const loadInitialSession = async () => {
+      try {
+        const supabase = getSupabaseClient();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (isCancelled) return;
+
+        if (error) {
+          if (
+            error.message?.includes('Invalid Refresh Token') ||
+            error.message?.includes('Refresh Token Not Found')
+          ) {
+            logInfo('Invalid refresh token detected, clearing session', 'AuthContext');
+            const supabase = getSupabaseClient();
+            await supabase.auth.signOut().catch(() => {
+              // Ignore - already logged out or token missing
+            });
+            setSession(null);
+            setUser(null);
+          } else {
+            logError('Failed to get initial session', error, 'AuthContext');
+          }
+        } else {
+          logInfo('Initial session loaded', 'AuthContext', {
+            hasSession: !!session,
+            userId: session?.user?.id,
           });
+        }
+
+        setSession(session);
+        setUser(session?.user ?? null);
+      } catch (error) {
+        if (isCancelled) return;
+        logError('Failed to get initial session', error, 'AuthContext');
+
+        const message =
+          error instanceof Error ? error.message : String(error);
+        if (
+          message.includes('Invalid Refresh Token') ||
+          message.includes('Refresh Token Not Found')
+        ) {
+          logInfo('Invalid refresh token detected during initial load', 'AuthContext');
+          await supabase.auth.signOut().catch(() => undefined);
           setSession(null);
           setUser(null);
-        } else {
-          logError('Failed to get initial session', error, 'AuthContext');
+          router.push('/');
         }
-      } else {
-        logInfo('Initial session loaded', 'AuthContext', {
-          hasSession: !!session,
-          userId: session?.user?.id,
-        });
+      } finally {
+        if (!isCancelled) {
+          setLoading(false);
+        }
       }
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    };
+
+    loadInitialSession();
 
     // Listen for auth changes
+    const supabase = getSupabaseClient();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -99,13 +129,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isCancelled = true;
+      subscription.unsubscribe();
+    };
   }, [router]);
 
   const signUp = async (email: string, password: string) => {
     const startTime = performance.now();
 
     try {
+      const supabase = getSupabaseClient();
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -154,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const startTime = performance.now();
 
     try {
+      const supabase = getSupabaseClient();
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -204,6 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userId = user?.id;
 
     try {
+      const supabase = getSupabaseClient();
       const { error } = await supabase.auth.signOut();
       const duration = Math.round(performance.now() - startTime);
 
@@ -247,6 +283,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const startTime = performance.now();
 
     try {
+      const supabase = getSupabaseClient();
       const { data, error } = await supabase.auth.refreshSession();
       const duration = Math.round(performance.now() - startTime);
 
