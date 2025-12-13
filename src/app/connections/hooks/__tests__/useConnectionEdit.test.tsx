@@ -109,4 +109,3 @@ describe('useConnectionEdit', () => {
     expect(result.current.editingConnection).toEqual(anotherConnection);
   });
 });
-

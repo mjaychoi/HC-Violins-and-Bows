@@ -73,7 +73,9 @@ export default function NotificationBadge({
             <div className="px-4 py-2 text-sm flex items-center gap-2 hover:bg-yellow-50 transition-colors">
               <span className="text-yellow-600">⏰</span>
               <span className="text-gray-700">곧 마감 (3일 이내):</span>
-              <span className="font-semibold text-yellow-600">{upcoming}개</span>
+              <span className="font-semibold text-yellow-600">
+                {upcoming}개
+              </span>
             </div>
           )}
           {onClick && (

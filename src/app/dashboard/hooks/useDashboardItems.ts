@@ -1,6 +1,6 @@
 /**
  * @deprecated This hook is deprecated. Use `useDashboardData` instead, which uses `useUnifiedDashboard` for consistent data fetching.
- * 
+ *
  * This hook is kept for backward compatibility with tests only.
  * All production code should use `useDashboardData` → `useUnifiedDashboard`.
  */
@@ -39,7 +39,10 @@ export function useDashboardItems() {
     setItems: setClientRelationships,
     addItem: addClientRelationship,
     removeItem: removeClientRelationship,
-  } = useDataState<ClientInstrumentJoined | ClientInstrument>(item => item.id, []);
+  } = useDataState<ClientInstrumentJoined | ClientInstrument>(
+    item => item.id,
+    []
+  );
 
   const fetchItemsWithClients = useCallback(async () => {
     try {
@@ -104,7 +107,7 @@ export function useDashboardItems() {
       // FIXED: Run fetches in parallel instead of sequentially for better performance
       await Promise.all([
         Promise.resolve(), // fetchItemsCore is already done (above)
-        fetchItemsWithClients()
+        fetchItemsWithClients(),
       ]);
     } catch (error) {
       logError('Error fetching items', error, 'useDashboardItems', {

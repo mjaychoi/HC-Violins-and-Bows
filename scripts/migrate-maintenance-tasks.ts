@@ -19,7 +19,10 @@ dotenv.config({ path: '.env.local' });
 
 async function migrateMaintenanceTasks() {
   try {
-    logInfo('🔄 maintenance_tasks 테이블 생성 마이그레이션 실행...\n', 'migrateMaintenanceTasks');
+    logInfo(
+      '🔄 maintenance_tasks 테이블 생성 마이그레이션 실행...\n',
+      'migrateMaintenanceTasks'
+    );
 
     // 환경 변수 확인
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -32,16 +35,27 @@ async function migrateMaintenanceTasks() {
     }
 
     if (!dbPassword) {
-      logInfo('⚠️  DATABASE_PASSWORD 환경 변수가 없습니다.', 'migrateMaintenanceTasks');
-      logInfo('📝 Supabase 대시보드에서 수동 실행하세요:', 'migrateMaintenanceTasks');
-      logInfo('   1. https://supabase.com/dashboard 접속', 'migrateMaintenanceTasks');
+      logInfo(
+        '⚠️  DATABASE_PASSWORD 환경 변수가 없습니다.',
+        'migrateMaintenanceTasks'
+      );
+      logInfo(
+        '📝 Supabase 대시보드에서 수동 실행하세요:',
+        'migrateMaintenanceTasks'
+      );
+      logInfo(
+        '   1. https://supabase.com/dashboard 접속',
+        'migrateMaintenanceTasks'
+      );
       logInfo('   2. SQL Editor 열기', 'migrateMaintenanceTasks');
       logInfo('   3. 다음 마이그레이션 파일 실행:', 'migrateMaintenanceTasks');
       logInfo(
-        '      - supabase/migrations/20251109150920_maintenance_tasks.sql', 'migrateMaintenanceTasks'
+        '      - supabase/migrations/20251109150920_maintenance_tasks.sql',
+        'migrateMaintenanceTasks'
       );
       logInfo(
-        '      - supabase/migrations/20250101000000_add_client_id_to_maintenance_tasks.sql', 'migrateMaintenanceTasks'
+        '      - supabase/migrations/20250101000000_add_client_id_to_maintenance_tasks.sql',
+        'migrateMaintenanceTasks'
       );
       logInfo('', 'migrateMaintenanceTasks');
       return;
@@ -90,7 +104,10 @@ async function migrateMaintenanceTasks() {
 
     for (const region of regions) {
       try {
-        logInfo(`🔌 ${region} 지역 pooler 연결 시도...`, 'migrateMaintenanceTasks');
+        logInfo(
+          `🔌 ${region} 지역 pooler 연결 시도...`,
+          'migrateMaintenanceTasks'
+        );
 
         client = new Client({
           host: `aws-0-${region}.pooler.supabase.com`,
@@ -111,7 +128,10 @@ async function migrateMaintenanceTasks() {
         for (let i = 0; i < migrations.length; i++) {
           try {
             await client.query(migrations[i]);
-            logInfo(`✅ 마이그레이션 ${i + 1}/${migrations.length} 완료`, 'migrateMaintenanceTasks');
+            logInfo(
+              `✅ 마이그레이션 ${i + 1}/${migrations.length} 완료`,
+              'migrateMaintenanceTasks'
+            );
           } catch (error: unknown) {
             const errorMessage =
               error instanceof Error ? error.message : String(error);
@@ -131,9 +151,13 @@ async function migrateMaintenanceTasks() {
         }
 
         logInfo('\n✅ 마이그레이션 완료!', 'migrateMaintenanceTasks');
-        logInfo('🎉 maintenance_tasks 테이블이 생성되었습니다.', 'migrateMaintenanceTasks');
         logInfo(
-          '📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n', 'migrateMaintenanceTasks'
+          '🎉 maintenance_tasks 테이블이 생성되었습니다.',
+          'migrateMaintenanceTasks'
+        );
+        logInfo(
+          '📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n',
+          'migrateMaintenanceTasks'
         );
 
         await client.end();
@@ -154,7 +178,10 @@ async function migrateMaintenanceTasks() {
           'code' in error &&
           (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED')
         ) {
-          logInfo(`⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`, 'migrateMaintenanceTasks');
+          logInfo(
+            `⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`,
+            'migrateMaintenanceTasks'
+          );
           continue;
         } else if (
           error &&
@@ -187,8 +214,14 @@ async function migrateMaintenanceTasks() {
           (error.message.includes('already exists') ||
             error.message.includes('duplicate'))
         ) {
-          logInfo('⚠️  maintenance_tasks 테이블이 이미 존재합니다.', 'migrateMaintenanceTasks');
-          logInfo('✅ 마이그레이션이 이미 완료된 것으로 보입니다.\n', 'migrateMaintenanceTasks');
+          logInfo(
+            '⚠️  maintenance_tasks 테이블이 이미 존재합니다.',
+            'migrateMaintenanceTasks'
+          );
+          logInfo(
+            '✅ 마이그레이션이 이미 완료된 것으로 보입니다.\n',
+            'migrateMaintenanceTasks'
+          );
           return;
         } else {
           throw error;
@@ -208,9 +241,15 @@ async function migrateMaintenanceTasks() {
     )?.[1];
 
     if (projectRef) {
-      logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'migrateMaintenanceTasks');
+      logInfo(
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        'migrateMaintenanceTasks'
+      );
       logInfo('📝 수동 실행 안내', 'migrateMaintenanceTasks');
-      logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'migrateMaintenanceTasks');
+      logInfo(
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        'migrateMaintenanceTasks'
+      );
       logInfo('', 'migrateMaintenanceTasks');
       logInfo(
         '1. https://supabase.com/dashboard/project/' +
@@ -218,7 +257,10 @@ async function migrateMaintenanceTasks() {
           '/sql/new 접속',
         'migrateMaintenanceTasks'
       );
-      logInfo('2. 다음 마이그레이션 파일들을 순서대로 실행:', 'migrateMaintenanceTasks');
+      logInfo(
+        '2. 다음 마이그레이션 파일들을 순서대로 실행:',
+        'migrateMaintenanceTasks'
+      );
       logInfo('', 'migrateMaintenanceTasks');
       logInfo(
         '   파일 1: supabase/migrations/20251109150920_maintenance_tasks.sql',
@@ -229,7 +271,10 @@ async function migrateMaintenanceTasks() {
         'migrateMaintenanceTasks'
       );
       logInfo('', 'migrateMaintenanceTasks');
-      logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'migrateMaintenanceTasks');
+      logInfo(
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        'migrateMaintenanceTasks'
+      );
     }
 
     process.exit(1);

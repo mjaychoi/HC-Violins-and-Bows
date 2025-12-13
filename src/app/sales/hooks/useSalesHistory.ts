@@ -94,7 +94,9 @@ export function useSalesHistory() {
         } else {
           // Fallback for backward compatibility
           setTotalCount(result.data?.length || 0);
-          setTotalPages(Math.max(1, Math.ceil((result.data?.length || 0) / PAGE_SIZE)));
+          setTotalPages(
+            Math.max(1, Math.ceil((result.data?.length || 0) / PAGE_SIZE))
+          );
           setPageState(currentPage);
         }
         // Set totals if provided by API (for filtered dataset totals)
@@ -139,10 +141,10 @@ export function useSalesHistory() {
 
         // Refresh the first page so the new sale shows up at the top
         await fetchSales({ page: 1 });
-        
+
         // Note: 성공 메시지는 호출하는 컴포넌트에서 표시합니다
         // (Sales 페이지나 다른 페이지에서 showSuccess 호출)
-        
+
         return result.data as SalesHistory;
       } catch (err) {
         const appError = handleError(err, 'Create sale');

@@ -18,17 +18,30 @@ export function salesHistoryToPurchase(
   instrument?: Instrument | null
 ): Purchase {
   const itemName = instrument
-    ? `${instrument.maker || ''} ${instrument.type || ''}`.trim() || sale.notes || 'Unknown Item'
+    ? `${instrument.maker || ''} ${instrument.type || ''}`.trim() ||
+      sale.notes ||
+      'Unknown Item'
     : sale.notes || 'Unknown Item';
 
   // Determine status based on sale_price
   // Positive = Completed, Negative = Refunded, 0 = Unknown (shouldn't happen in normal flow)
   const status: 'Completed' | 'Pending' | 'Refunded' =
-    sale.sale_price > 0 ? 'Completed' : sale.sale_price < 0 ? 'Refunded' : 'Pending';
-  
+    sale.sale_price > 0
+      ? 'Completed'
+      : sale.sale_price < 0
+        ? 'Refunded'
+        : 'Pending';
+
   // FIXED: Log unexpected sale_price === 0 for monitoring
-  if (sale.sale_price === 0 && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-    console.warn('[salesHistoryToPurchase] Unexpected sale_price === 0 for sale:', sale.id);
+  if (
+    sale.sale_price === 0 &&
+    typeof window !== 'undefined' &&
+    process.env.NODE_ENV === 'development'
+  ) {
+    console.warn(
+      '[salesHistoryToPurchase] Unexpected sale_price === 0 for sale:',
+      sale.id
+    );
   }
 
   return {

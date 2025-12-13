@@ -75,19 +75,26 @@ const makeConnection = (
 describe('connectionUtils formatting helpers', () => {
   it('formats client and instrument names with fallbacks', () => {
     expect(formatClientName(clientA)).toBe('Jane Doe');
-    expect(formatClientName({ ...clientA, first_name: null, last_name: null })).toBe(
-      'Unknown Client'
-    );
+    expect(
+      formatClientName({ ...clientA, first_name: null, last_name: null })
+    ).toBe('Unknown Client');
 
     expect(formatInstrumentName(instrumentA)).toBe('Stradivari - Violin');
-    expect(formatInstrumentName({ ...instrumentA, maker: null, type: null })).toBe(
-      'Unknown - Unknown'
-    );
+    expect(
+      formatInstrumentName({ ...instrumentA, maker: null, type: null })
+    ).toBe('Unknown - Unknown');
   });
 
   it('builds a connection display name', () => {
-    const connection = makeConnection('rel1', 'Interested', clientA, instrumentA);
-    expect(formatConnectionName(connection)).toBe('Jane Doe ↔ Stradivari - Violin');
+    const connection = makeConnection(
+      'rel1',
+      'Interested',
+      clientA,
+      instrumentA
+    );
+    expect(formatConnectionName(connection)).toBe(
+      'Jane Doe ↔ Stradivari - Violin'
+    );
   });
 });
 
@@ -122,7 +129,9 @@ describe('connectionUtils filtering helpers', () => {
 
 describe('connectionUtils relationship presentation helpers', () => {
   it('returns relationship colors and icons with defaults', () => {
-    expect(getRelationshipColor('Interested')).toBe('bg-yellow-100 text-yellow-800');
+    expect(getRelationshipColor('Interested')).toBe(
+      'bg-yellow-100 text-yellow-800'
+    );
     expect(getRelationshipColor('Sold')).toBe('bg-green-100 text-green-800');
     expect(getRelationshipColor('Owned')).toBe('bg-purple-100 text-purple-800');
     expect(getRelationshipColor('Booked')).toBe('bg-blue-100 text-blue-800');

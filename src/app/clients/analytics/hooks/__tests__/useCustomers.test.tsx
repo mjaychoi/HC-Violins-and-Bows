@@ -153,7 +153,9 @@ describe('useCustomers', () => {
     });
 
     expect(result.current.customers.length).toBeGreaterThan(0);
-    expect(result.current.customers.every(c => c.tags.includes('VIP'))).toBe(true);
+    expect(result.current.customers.every(c => c.tags.includes('VIP'))).toBe(
+      true
+    );
   });
 
   it('should filter customers by tagFilter', () => {
@@ -220,28 +222,28 @@ describe('useCustomers', () => {
     await waitFor(() => {
       const customers = result.current.customers;
       expect(customers.length).toBe(3);
-      
+
       // Based on test data:
       // - Minho (c2): purchase date 2024-06-01 (most recent)
       // - Jane (c1): purchase dates 2024-05-12, 2024-04-10 → most recent: 2024-05-12
       // - Ara (c3): no purchases → uses created_at: 2024-03-01
       // Expected order: Minho (2024-06-01) > Jane (2024-05-12) > Ara (2024-03-01)
-      
+
       // Verify Minho has purchase data
       const minho = customers.find(c => c.first_name === 'Minho');
       expect(minho).toBeDefined();
       expect(minho?.purchases.length).toBeGreaterThan(0);
-      
+
       // Verify Jane has purchase data
       const jane = customers.find(c => c.first_name === 'Jane');
       expect(jane).toBeDefined();
       expect(jane?.purchases.length).toBeGreaterThan(0);
-      
+
       // Verify Ara has no purchases
       const ara = customers.find(c => c.first_name === 'Ara');
       expect(ara).toBeDefined();
       expect(ara?.purchases.length).toBe(0);
-      
+
       // Minho should be first (most recent purchase: 2024-06-01)
       expect(customers[0].first_name).toBe('Minho');
       // Jane should be second (most recent purchase: 2024-05-12)
@@ -268,7 +270,9 @@ describe('useCustomers', () => {
     const { result } = renderHook(() => useCustomers());
 
     expect(result.current.selectedCustomer).not.toBeNull();
-    expect(result.current.selectedCustomerId).toBe(result.current.customers[0].id);
+    expect(result.current.selectedCustomerId).toBe(
+      result.current.customers[0].id
+    );
   });
 
   it('should update selectedCustomerId', () => {

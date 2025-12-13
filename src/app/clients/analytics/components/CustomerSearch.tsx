@@ -44,9 +44,7 @@ export function CustomerSearch({
           {availableTags.map(tag => (
             <button
               key={tag}
-              onClick={() =>
-                onTagFilterChange(tagFilter === tag ? null : tag)
-              }
+              onClick={() => onTagFilterChange(tagFilter === tag ? null : tag)}
               className={`px-3 py-1 rounded-full text-sm ${
                 tagFilter === tag
                   ? 'bg-blue-100 text-blue-700'

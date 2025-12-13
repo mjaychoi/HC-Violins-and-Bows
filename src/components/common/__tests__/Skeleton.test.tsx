@@ -108,7 +108,9 @@ describe('Skeleton Components', () => {
     });
 
     it('should not render header when header is false', () => {
-      const { container } = render(<TableSkeleton rows={3} columns={4} header={false} />);
+      const { container } = render(
+        <TableSkeleton rows={3} columns={4} header={false} />
+      );
       const header = container.querySelector('thead');
       expect(header).not.toBeInTheDocument();
     });

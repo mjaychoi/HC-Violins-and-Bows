@@ -50,7 +50,10 @@ export class ApiClient {
 
       // SECURITY: Validate order column against whitelist to prevent injection
       if (options?.order) {
-        const safeColumn = validateSortColumn(table, options.order.column ?? null);
+        const safeColumn = validateSortColumn(
+          table,
+          options.order.column ?? null
+        );
         query = query.order(safeColumn, {
           ascending: options.order.ascending ?? true,
         });

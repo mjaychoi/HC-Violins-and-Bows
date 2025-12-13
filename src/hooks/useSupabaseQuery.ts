@@ -28,7 +28,12 @@ export function useSupabaseQuery<T>(table: string) {
         // Type assertion: table may not be in ALLOWED_SORT_COLUMNS for custom queries
         // This is intentional to allow broader table usage beyond strict typing
         const { data: result, error: queryError } = await apiClient.query<T>(
-          table as 'instruments' | 'clients' | 'sales_history' | 'maintenance_tasks' | 'connections',
+          table as
+            | 'instruments'
+            | 'clients'
+            | 'sales_history'
+            | 'maintenance_tasks'
+            | 'connections',
           options
         );
 

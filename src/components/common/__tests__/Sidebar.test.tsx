@@ -137,4 +137,3 @@ describe('Sidebar', () => {
     expect(sidebar.className).toContain('duration-300');
   });
 });
-

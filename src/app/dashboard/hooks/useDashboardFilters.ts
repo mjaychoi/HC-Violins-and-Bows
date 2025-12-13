@@ -9,19 +9,24 @@ import {
 } from '../types';
 import { buildDashboardFilterOptions } from '../constants';
 import { usePageFilters, DateRange } from '@/hooks/usePageFilters';
-import { filterDashboardItems, EMPTY_DASHBOARD_FILTERS } from '../utils/filterUtils';
+import {
+  filterDashboardItems,
+  EMPTY_DASHBOARD_FILTERS,
+} from '../utils/filterUtils';
 
 // FIXED: Accept enriched items (Instrument with clients array) for HAS_CLIENTS filter
 type EnrichedInstrument = Instrument & {
   clients?: ClientInstrument[];
 };
 
-export function useDashboardFilters(items: EnrichedInstrument[] | Instrument[]) {
+export function useDashboardFilters(
+  items: EnrichedInstrument[] | Instrument[]
+) {
   const [dateRange, setDateRange] = useState<DateRange | null>(null);
   // TODO: filterOperator is currently unused - implement AND/OR logic for multiple filter combinations
   // When implementing, update filterDashboardItems to accept FilterOperator parameter
   const [filterOperator, setFilterOperator] = useState<FilterOperator>('AND');
-  
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20; // Items per page
@@ -88,7 +93,7 @@ export function useDashboardFilters(items: EnrichedInstrument[] | Instrument[]) 
   // Pagination calculations
   const totalCount = filteredItems.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  
+
   // Reset to page 1 when filters change
   React.useEffect(() => {
     setCurrentPage(1);
@@ -102,9 +107,12 @@ export function useDashboardFilters(items: EnrichedInstrument[] | Instrument[]) 
   }, [filteredItems, currentPage, pageSize]);
 
   // Handle page change
-  const handlePageChange = useCallback((page: number) => {
-    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
-  }, [totalPages]);
+  const handlePageChange = useCallback(
+    (page: number) => {
+      setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+    },
+    [totalPages]
+  );
 
   // 필터 옵션 변환 (buildDashboardFilterOptions only needs Instrument fields, not clients)
   const filterOptions: DashboardFilterOptions = useMemo(
@@ -124,8 +132,13 @@ export function useDashboardFilters(items: EnrichedInstrument[] | Instrument[]) 
       return {
         ...dashboardFilters,
         [filterType]: includes
-          ? (currentFilter as Array<unknown>).filter(v => v !== value) as DashboardFilters[K]
-          : ([...(currentFilter as Array<unknown>), value] as DashboardFilters[K]),
+          ? ((currentFilter as Array<unknown>).filter(
+              v => v !== value
+            ) as DashboardFilters[K])
+          : ([
+              ...(currentFilter as Array<unknown>),
+              value,
+            ] as DashboardFilters[K]),
       } as unknown as Record<string, unknown>;
     });
   };
@@ -157,7 +170,10 @@ export function useDashboardFilters(items: EnrichedInstrument[] | Instrument[]) 
   // clearAllFilters - reset all filters and close filter panel
   const clearAllFilters = useCallback(() => {
     // DEBUG: Log before clearing
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+    if (
+      typeof window !== 'undefined' &&
+      process.env.NODE_ENV === 'development'
+    ) {
       const dashboardFilters = baseFilters.filters as DashboardFilters;
       const beforeCount = getActiveFiltersCount();
       console.log('[useDashboardFilters] clearAllFilters called', {
@@ -178,19 +194,22 @@ export function useDashboardFilters(items: EnrichedInstrument[] | Instrument[]) 
         },
       });
     }
-    
+
     // Reset all base filters (including searchTerm)
     // This will reset to EMPTY_DASHBOARD_FILTERS which has all arrays empty
     baseFilters.clearAllFilters();
-    
+
     // Reset dateRange (managed separately)
     setDateRange(null);
-    
+
     // UX: Close filter panel when clearing filters
     baseFilters.setShowFilters(false);
-    
+
     // DEBUG: Log after clearing - use setTimeout to see updated state
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+    if (
+      typeof window !== 'undefined' &&
+      process.env.NODE_ENV === 'development'
+    ) {
       setTimeout(() => {
         const afterFilters = baseFilters.filters as DashboardFilters;
         const afterCount = getActiveFiltersCount();
@@ -222,7 +241,6 @@ export function useDashboardFilters(items: EnrichedInstrument[] | Instrument[]) 
 
   const getSortArrowProxy = (field: DashboardSortField | string) =>
     baseFilters.getSortArrow(field);
-
 
   return {
     searchTerm: baseFilters.searchTerm,

@@ -2,7 +2,10 @@
  * Common filter utilities for building filter options from data
  */
 
-import { getUniqueValues as getUniqueValuesGeneric, getUniqueArrayValues } from './uniqueValues';
+import {
+  getUniqueValues as getUniqueValuesGeneric,
+  getUniqueArrayValues,
+} from './uniqueValues';
 
 /**
  * Build filter options from an array of items
@@ -76,10 +79,9 @@ export function buildFilterOptionsFromField<T extends Record<string, unknown>>(
 /**
  * Build filter options from an array field using getUniqueArrayValues
  */
-export function buildFilterOptionsFromArrayField<T extends Record<string, unknown>>(
-  items: T[],
-  field: keyof T
-): string[] {
+export function buildFilterOptionsFromArrayField<
+  T extends Record<string, unknown>,
+>(items: T[], field: keyof T): string[] {
   // Type assertion: ensure field is an array field
   // Caller must ensure field points to an array type
   return getUniqueArrayValues(
@@ -100,7 +102,10 @@ export function buildMultiFieldFilterOptions<T extends Record<string, unknown>>(
 
   fields.forEach(field => {
     // Type assertion needed because getUniqueValuesGeneric expects items that satisfy its constraint
-    result[String(field)] = getUniqueValuesGeneric(items as unknown as Array<Record<string, unknown>>, String(field));
+    result[String(field)] = getUniqueValuesGeneric(
+      items as unknown as Array<Record<string, unknown>>,
+      String(field)
+    );
   });
 
   return result;

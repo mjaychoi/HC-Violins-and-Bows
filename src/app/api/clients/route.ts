@@ -4,7 +4,10 @@ import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest, Logger } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
-import { createSafeErrorResponse, createLogErrorInfo } from '@/utils/errorSanitization';
+import {
+  createSafeErrorResponse,
+  createLogErrorInfo,
+} from '@/utils/errorSanitization';
 import type { Client } from '@/types';
 import {
   validateClient,
@@ -12,10 +15,7 @@ import {
   validatePartialClient,
   safeValidate,
 } from '@/utils/typeGuards';
-import {
-  validateSortColumn,
-  validateUUID,
-} from '@/utils/inputValidation';
+import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 
 export async function GET(request: NextRequest) {
   const startTime = performance.now();
@@ -23,18 +23,20 @@ export async function GET(request: NextRequest) {
   const orderBy = validateSortColumn('clients', searchParams.get('orderBy'));
   const ascending = searchParams.get('ascending') !== 'false';
   const search = searchParams.get('search') || undefined;
-  const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : undefined;
+  const limit = searchParams.get('limit')
+    ? parseInt(searchParams.get('limit')!, 10)
+    : undefined;
 
   try {
     const supabase = getServerSupabase();
-    let query = supabase
-      .from('clients')
-      .select('*', { count: 'exact' });
+    let query = supabase.from('clients').select('*', { count: 'exact' });
 
     // Add search filter if provided
     if (search && search.length >= 2) {
       const sanitizedSearch = search.trim();
-      query = query.or(`last_name.ilike.%${sanitizedSearch}%,first_name.ilike.%${sanitizedSearch}%,email.ilike.%${sanitizedSearch}%`);
+      query = query.or(
+        `last_name.ilike.%${sanitizedSearch}%,first_name.ilike.%${sanitizedSearch}%,email.ilike.%${sanitizedSearch}%`
+      );
     }
 
     // Add limit if provided (for search queries)
@@ -99,20 +101,27 @@ export async function GET(request: NextRequest) {
     if (!data || data.length === 0) {
       Logger.warn('No clients found in database', 'ClientsAPI', { count });
       if (count && count > 0) {
-        Logger.warn('Count is positive but data array is empty - possible RLS issue', 'ClientsAPI', { count });
+        Logger.warn(
+          'Count is positive but data array is empty - possible RLS issue',
+          'ClientsAPI',
+          { count }
+        );
       }
     }
 
     // Preprocess data: normalize tags from null to empty array
-    const normalizedData = (data || []).map((client: Client & { tags?: string[] | null; email?: string | null }) => ({
-      ...client,
-      tags: client.tags === null || client.tags === undefined ? [] : client.tags,
-      email: client.email === null ? null : (client.email || null),
-    }));
+    const normalizedData = (data || []).map(
+      (client: Client & { tags?: string[] | null; email?: string | null }) => ({
+        ...client,
+        tags:
+          client.tags === null || client.tags === undefined ? [] : client.tags,
+        email: client.email === null ? null : client.email || null,
+      })
+    );
 
     const recordCount = normalizedData?.length || 0;
     const totalCount = count || 0;
-    
+
     // 상세 로깅: 실제 반환된 데이터 수 확인 (개발 환경에서만)
     if (process.env.NODE_ENV === 'development') {
       Logger.debug(
@@ -134,14 +143,17 @@ export async function GET(request: NextRequest) {
         );
       }
     }
-    
+
     logApiRequest('GET', '/api/clients', 200, duration, 'ClientsAPI', {
       recordCount,
       totalCount,
     });
 
     // Validate response data
-    const validationResult = safeValidate(normalizedData || [], validateClientArray);
+    const validationResult = safeValidate(
+      normalizedData || [],
+      validateClientArray
+    );
     if (!validationResult.success) {
       captureException(
         new Error(`Invalid client data: ${validationResult.error}`),
@@ -180,7 +192,7 @@ export async function POST(request: NextRequest) {
   const startTime = performance.now();
   try {
     const body = await request.json();
-    
+
     // Validate request body
     const validationResult = safeValidate(body, validateClient);
     if (!validationResult.success) {
@@ -283,12 +295,19 @@ export async function PATCH(request: NextRequest) {
     if (error) {
       const appError = errorHandler.handleSupabaseError(error, 'Update client');
       const logInfo = createLogErrorInfo(appError);
-      logApiRequest('PATCH', '/api/clients', undefined, duration, 'ClientsAPI', {
-        clientId: id,
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
+      logApiRequest(
+        'PATCH',
+        '/api/clients',
+        undefined,
+        duration,
+        'ClientsAPI',
+        {
+          clientId: id,
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
       captureException(
         appError,
         'ClientsAPI.PATCH',
@@ -351,12 +370,19 @@ export async function DELETE(request: NextRequest) {
     if (error) {
       const appError = errorHandler.handleSupabaseError(error, 'Delete client');
       const logInfo = createLogErrorInfo(appError);
-      logApiRequest('DELETE', '/api/clients', undefined, duration, 'ClientsAPI', {
-        clientId: id,
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
+      logApiRequest(
+        'DELETE',
+        '/api/clients',
+        undefined,
+        duration,
+        'ClientsAPI',
+        {
+          clientId: id,
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
       captureException(
         appError,
         'ClientsAPI.DELETE',

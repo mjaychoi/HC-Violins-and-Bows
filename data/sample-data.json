@@ -14,10 +14,7 @@
       "last_name": "Chung",
       "email": "julie.chung@example.com",
       "contact_number": "010-6342-1747",
-      "tags": [
-        "Owner",
-        "Musician"
-      ],
+      "tags": ["Owner", "Musician"],
       "interest": "Active",
       "client_number": "CL001"
     },
@@ -28,9 +25,7 @@
       "last_name": "Kim",
       "email": "michael.kim@example.com",
       "contact_number": "010-7338-2980",
-      "tags": [
-        "Dealer"
-      ],
+      "tags": ["Dealer"],
       "interest": "Active",
       "client_number": "CL002"
     },
@@ -41,9 +36,7 @@
       "last_name": "Park",
       "email": "sarah.park@example.com",
       "contact_number": "010-2210-3446",
-      "tags": [
-        "Collector"
-      ],
+      "tags": ["Collector"],
       "interest": "Passive",
       "client_number": "CL003"
     },
@@ -54,9 +47,7 @@
       "last_name": "Lee",
       "email": "david.lee@example.com",
       "contact_number": "010-8666-9269",
-      "tags": [
-        "Owner"
-      ],
+      "tags": ["Owner"],
       "interest": null,
       "client_number": "CL004"
     },
@@ -67,9 +58,7 @@
       "last_name": "Yoon",
       "email": "emily.yoon@example.com",
       "contact_number": "010-1062-7033",
-      "tags": [
-        "Musician"
-      ],
+      "tags": ["Musician"],
       "interest": "Active",
       "client_number": "CL005"
     },
@@ -80,10 +69,7 @@
       "last_name": "Jung",
       "email": "james.jung@example.com",
       "contact_number": "010-8964-4313",
-      "tags": [
-        "Dealer",
-        "Collector"
-      ],
+      "tags": ["Dealer", "Collector"],
       "interest": "Active",
       "client_number": "CL006"
     },
@@ -94,9 +80,7 @@
       "last_name": "Han",
       "email": "lisa.han@example.com",
       "contact_number": "010-0197-3862",
-      "tags": [
-        "Owner"
-      ],
+      "tags": ["Owner"],
       "interest": null,
       "client_number": "CL007"
     },
@@ -107,9 +91,7 @@
       "last_name": "Choi",
       "email": "robert.choi@example.com",
       "contact_number": "010-6731-2419",
-      "tags": [
-        "Musician"
-      ],
+      "tags": ["Musician"],
       "interest": "Active",
       "client_number": "CL008"
     },
@@ -120,9 +102,7 @@
       "last_name": "Kang",
       "email": "anna.kang@example.com",
       "contact_number": "010-8106-5202",
-      "tags": [
-        "Collector"
-      ],
+      "tags": ["Collector"],
       "interest": "Passive",
       "client_number": "CL009"
     },
@@ -133,9 +113,7 @@
       "last_name": "Shin",
       "email": "tom.shin@example.com",
       "contact_number": "010-1871-8026",
-      "tags": [
-        "Dealer"
-      ],
+      "tags": ["Dealer"],
       "interest": "Active",
       "client_number": "CL010"
     },
@@ -146,9 +124,7 @@
       "last_name": "Choi",
       "email": "edward.choi10@example.com",
       "contact_number": "010-6724-6248",
-      "tags": [
-        "Musician"
-      ],
+      "tags": ["Musician"],
       "interest": "Passive",
       "client_number": "CL011"
     },
@@ -159,9 +135,7 @@
       "last_name": "Hwang",
       "email": "eunji.hwang11@example.com",
       "contact_number": "010-1541-3715",
-      "tags": [
-        "Owner"
-      ],
+      "tags": ["Owner"],
       "interest": "Passive",
       "client_number": "CL012"
     },
@@ -172,9 +146,7 @@
       "last_name": "Choi",
       "email": "soohyun.choi12@example.com",
       "contact_number": "010-4038-0615",
-      "tags": [
-        "Owner"
-      ],
+      "tags": ["Owner"],
       "interest": null,
       "client_number": "CL013"
     },
@@ -185,9 +157,7 @@
       "last_name": "Seo",
       "email": "owen.seo13@example.com",
       "contact_number": "010-8263-1593",
-      "tags": [
-        "Musician"
-      ],
+      "tags": ["Musician"],
       "interest": null,
       "client_number": "CL014"
     },
@@ -198,9 +168,7 @@
       "last_name": "Lim",
       "email": "isaac.lim14@example.com",
       "contact_number": "010-2191-5003",
-      "tags": [
-        "Owner"
-      ],
+      "tags": ["Owner"],
       "interest": "Passive",
       "client_number": "CL015"
     },
@@ -211,9 +179,7 @@
       "last_name": "Oh",
       "email": "jisoo.oh15@example.com",
       "contact_number": "010-8793-3227",
-      "tags": [
-        "Collector"
-      ],
+      "tags": ["Collector"],
       "interest": "Passive",
       "client_number": "CL016"
     },
@@ -224,9 +190,7 @@
       "last_name": "Ahn",
       "email": "minho.ahn16@example.com",
       "contact_number": "010-5678-3164",
-      "tags": [
-        "Musician"
-      ],
+      "tags": ["Musician"],
       "interest": "Active",
       "client_number": "CL017"
     },
@@ -237,9 +201,7 @@
       "last_name": "Park",
       "email": "nora.park17@example.com",
       "contact_number": "010-1411-6147",
-      "tags": [
-        "Collector"
-      ],
+      "tags": ["Collector"],
       "interest": "Active",
       "client_number": "CL018"
     },
@@ -250,9 +212,7 @@
       "last_name": "Seo",
       "email": "oliver.seo18@example.com",
       "contact_number": "010-9371-7599",
-      "tags": [
-        "Musician"
-      ],
+      "tags": ["Musician"],
       "interest": null,
       "client_number": "CL019"
     },
@@ -263,9 +223,7 @@
       "last_name": "Kim",
       "email": "rachel.kim19@example.com",
       "contact_number": "010-7586-3411",
-      "tags": [
-        "Dealer"
-      ],
+      "tags": ["Dealer"],
       "interest": "Active",
       "client_number": "CL020"
     }

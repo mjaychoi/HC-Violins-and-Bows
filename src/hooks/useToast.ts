@@ -28,7 +28,11 @@ export function useToast() {
   // Memoize SuccessToasts component to prevent re-creation on every render
   // This ensures stable component identity for React DevTools and prevents unnecessary re-renders
   const SuccessToasts = useMemo(
-    () => React.createElement(SuccessToastsComponent, { toasts, onRemove: removeToast }),
+    () =>
+      React.createElement(SuccessToastsComponent, {
+        toasts,
+        onRemove: removeToast,
+      }),
     [toasts, removeToast]
   );
 

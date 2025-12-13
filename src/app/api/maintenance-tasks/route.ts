@@ -4,7 +4,10 @@ import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
-import { createSafeErrorResponse, createLogErrorInfo } from '@/utils/errorSanitization';
+import {
+  createSafeErrorResponse,
+  createLogErrorInfo,
+} from '@/utils/errorSanitization';
 import {
   validateMaintenanceTask,
   validateMaintenanceTaskArray,
@@ -49,14 +52,24 @@ export async function GET(request: NextRequest) {
       const duration = Math.round(performance.now() - startTime);
 
       if (error) {
-        const appError = errorHandler.handleSupabaseError(error, 'Fetch maintenance task by ID');
+        const appError = errorHandler.handleSupabaseError(
+          error,
+          'Fetch maintenance task by ID'
+        );
         const logInfo = createLogErrorInfo(appError);
-        logApiRequest('GET', '/api/maintenance-tasks', undefined, duration, 'MaintenanceTasksAPI', {
-          id,
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-          logMessage: logInfo.message,
-        });
+        logApiRequest(
+          'GET',
+          '/api/maintenance-tasks',
+          undefined,
+          duration,
+          'MaintenanceTasksAPI',
+          {
+            id,
+            error: true,
+            errorCode: (appError as { code?: string })?.code,
+            logMessage: logInfo.message,
+          }
+        );
         captureException(
           appError,
           'MaintenanceTasksAPI.GET',
@@ -70,26 +83,42 @@ export async function GET(request: NextRequest) {
       // Validate response data
       const validatedData = validateMaintenanceTask(data);
 
-      logApiRequest('GET', '/api/maintenance-tasks', 200, duration, 'MaintenanceTasksAPI', {
-        id,
-      });
+      logApiRequest(
+        'GET',
+        '/api/maintenance-tasks',
+        200,
+        duration,
+        'MaintenanceTasksAPI',
+        {
+          id,
+        }
+      );
 
       return NextResponse.json({ data: validatedData });
     }
 
     // 필터 적용
     const supabase = getServerSupabase();
-    let query = supabase.from('maintenance_tasks').select('*', { count: 'exact' });
-    
+    let query = supabase
+      .from('maintenance_tasks')
+      .select('*', { count: 'exact' });
+
     // Validate UUID format for instrumentId (consistent with other APIs)
     if (instrumentId) {
       if (!validateUUID(instrumentId)) {
         const duration = Math.round(performance.now() - startTime);
-        logApiRequest('GET', '/api/maintenance-tasks', 400, duration, 'MaintenanceTasksAPI', {
-          instrumentId,
-          error: true,
-          errorCode: 'INVALID_UUID',
-        });
+        logApiRequest(
+          'GET',
+          '/api/maintenance-tasks',
+          400,
+          duration,
+          'MaintenanceTasksAPI',
+          {
+            instrumentId,
+            error: true,
+            errorCode: 'INVALID_UUID',
+          }
+        );
         return NextResponse.json(
           { error: 'Invalid instrument_id format' },
           { status: 400 }
@@ -107,11 +136,18 @@ export async function GET(request: NextRequest) {
     if (scheduledDate) {
       if (!validateDateString(scheduledDate)) {
         const duration = Math.round(performance.now() - startTime);
-        logApiRequest('GET', '/api/maintenance-tasks', 400, duration, 'MaintenanceTasksAPI', {
-          scheduledDate,
-          error: true,
-          errorCode: 'INVALID_DATE',
-        });
+        logApiRequest(
+          'GET',
+          '/api/maintenance-tasks',
+          400,
+          duration,
+          'MaintenanceTasksAPI',
+          {
+            scheduledDate,
+            error: true,
+            errorCode: 'INVALID_DATE',
+          }
+        );
         return NextResponse.json(
           { error: 'Invalid scheduled_date format. Use YYYY-MM-DD' },
           { status: 400 }
@@ -133,8 +169,8 @@ export async function GET(request: NextRequest) {
       // 의미: (received_date가 범위 내) OR (scheduled_date가 범위 내) OR (due_date가 범위 내)
       query = query.or(
         `and(received_date.gte.${startDate},received_date.lte.${endDate}),` +
-        `and(scheduled_date.gte.${startDate},scheduled_date.lte.${endDate}),` +
-        `and(due_date.gte.${startDate},due_date.lte.${endDate})`
+          `and(scheduled_date.gte.${startDate},scheduled_date.lte.${endDate}),` +
+          `and(due_date.gte.${startDate},due_date.lte.${endDate})`
       );
     }
     if (overdue) {
@@ -143,18 +179,20 @@ export async function GET(request: NextRequest) {
         .in('status', ['pending', 'in_progress'])
         .or(`due_date.lt.${today},personal_due_date.lt.${today}`);
     }
-    
+
     // 추가 필터 (priority, search 등은 클라이언트에서 처리하거나 별도 파라미터로 추가 가능)
     const priority = searchParams.get('priority') || undefined;
     const search = searchParams.get('search') || undefined;
-    
+
     if (priority) {
       query = query.eq('priority', priority);
     }
     if (search) {
       const sanitizedSearch = sanitizeSearchTerm(search);
       if (sanitizedSearch) {
-        query = query.or(`title.ilike.%${sanitizedSearch}%,description.ilike.%${sanitizedSearch}%`);
+        query = query.or(
+          `title.ilike.%${sanitizedSearch}%,description.ilike.%${sanitizedSearch}%`
+        );
       }
     }
 
@@ -174,24 +212,43 @@ export async function GET(request: NextRequest) {
     const duration = Math.round(performance.now() - startTime);
 
     if (error) {
-      const appError = errorHandler.handleSupabaseError(error, 'Fetch maintenance tasks');
+      const appError = errorHandler.handleSupabaseError(
+        error,
+        'Fetch maintenance tasks'
+      );
       const logInfo = createLogErrorInfo(appError);
-      logApiRequest('GET', '/api/maintenance-tasks', undefined, duration, 'MaintenanceTasksAPI', {
-        instrumentId,
-        status,
-        taskType,
-        scheduledDate,
-        startDate,
-        endDate,
-        overdue,
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
+      logApiRequest(
+        'GET',
+        '/api/maintenance-tasks',
+        undefined,
+        duration,
+        'MaintenanceTasksAPI',
+        {
+          instrumentId,
+          status,
+          taskType,
+          scheduledDate,
+          startDate,
+          endDate,
+          overdue,
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
       captureException(
         appError,
         'MaintenanceTasksAPI.GET',
-        { instrumentId, status, taskType, scheduledDate, startDate, endDate, overdue, duration },
+        {
+          instrumentId,
+          status,
+          taskType,
+          scheduledDate,
+          startDate,
+          endDate,
+          overdue,
+          duration,
+        },
         ErrorSeverity.MEDIUM
       );
       const safeError = createSafeErrorResponse(appError, 500);
@@ -199,7 +256,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Validate response data
-    const validationResult = safeValidate(data || [], validateMaintenanceTaskArray);
+    const validationResult = safeValidate(
+      data || [],
+      validateMaintenanceTaskArray
+    );
     if (!validationResult.success) {
       captureException(
         new Error(`Invalid maintenance task data: ${validationResult.error}`),
@@ -207,17 +267,31 @@ export async function GET(request: NextRequest) {
         { duration, recordCount: data?.length || 0 },
         ErrorSeverity.HIGH
       );
-      logApiRequest('GET', '/api/maintenance-tasks', 200, duration, 'MaintenanceTasksAPI', {
-        recordCount: data?.length || 0,
-        totalCount: count || 0,
-        validationWarning: true,
-      });
+      logApiRequest(
+        'GET',
+        '/api/maintenance-tasks',
+        200,
+        duration,
+        'MaintenanceTasksAPI',
+        {
+          recordCount: data?.length || 0,
+          totalCount: count || 0,
+          validationWarning: true,
+        }
+      );
     }
 
-    logApiRequest('GET', '/api/maintenance-tasks', 200, duration, 'MaintenanceTasksAPI', {
-      recordCount: data?.length || 0,
-      totalCount: count || 0,
-    });
+    logApiRequest(
+      'GET',
+      '/api/maintenance-tasks',
+      200,
+      duration,
+      'MaintenanceTasksAPI',
+      {
+        recordCount: data?.length || 0,
+        totalCount: count || 0,
+      }
+    );
 
     return NextResponse.json({
       data: data || [],
@@ -225,7 +299,10 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(error, 'Fetch maintenance tasks');
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      'Fetch maintenance tasks'
+    );
     const logInfo = createLogErrorInfo(appError);
     captureException(
       appError,
@@ -242,7 +319,7 @@ export async function POST(request: NextRequest) {
   const startTime = performance.now();
   try {
     const body = await request.json();
-    
+
     // Validate request body
     const validationResult = safeValidate(body, validateMaintenanceTask);
     if (!validationResult.success) {
@@ -262,13 +339,23 @@ export async function POST(request: NextRequest) {
     const duration = Math.round(performance.now() - startTime);
 
     if (error) {
-      const appError = errorHandler.handleSupabaseError(error, 'Create maintenance task');
+      const appError = errorHandler.handleSupabaseError(
+        error,
+        'Create maintenance task'
+      );
       const logInfo = createLogErrorInfo(appError);
-      logApiRequest('POST', '/api/maintenance-tasks', undefined, duration, 'MaintenanceTasksAPI', {
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
+      logApiRequest(
+        'POST',
+        '/api/maintenance-tasks',
+        undefined,
+        duration,
+        'MaintenanceTasksAPI',
+        {
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
       captureException(
         appError,
         'MaintenanceTasksAPI.POST',
@@ -282,14 +369,24 @@ export async function POST(request: NextRequest) {
     // Validate response data
     const validatedData = validateMaintenanceTask(data);
 
-    logApiRequest('POST', '/api/maintenance-tasks', 201, duration, 'MaintenanceTasksAPI', {
-      taskId: validatedData.id,
-    });
+    logApiRequest(
+      'POST',
+      '/api/maintenance-tasks',
+      201,
+      duration,
+      'MaintenanceTasksAPI',
+      {
+        taskId: validatedData.id,
+      }
+    );
 
     return NextResponse.json({ data: validatedData }, { status: 201 });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(error, 'Create maintenance task');
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      'Create maintenance task'
+    );
     const logInfo = createLogErrorInfo(appError);
     captureException(
       appError,
@@ -324,7 +421,10 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Validate update data using partial schema
-    const validationResult = safeValidate(updates, validatePartialMaintenanceTask);
+    const validationResult = safeValidate(
+      updates,
+      validatePartialMaintenanceTask
+    );
     if (!validationResult.success) {
       return NextResponse.json(
         { error: `Invalid update data: ${validationResult.error}` },
@@ -343,14 +443,24 @@ export async function PATCH(request: NextRequest) {
     const duration = Math.round(performance.now() - startTime);
 
     if (error) {
-      const appError = errorHandler.handleSupabaseError(error, 'Update maintenance task');
+      const appError = errorHandler.handleSupabaseError(
+        error,
+        'Update maintenance task'
+      );
       const logInfo = createLogErrorInfo(appError);
-      logApiRequest('PATCH', '/api/maintenance-tasks', undefined, duration, 'MaintenanceTasksAPI', {
-        taskId: id,
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
+      logApiRequest(
+        'PATCH',
+        '/api/maintenance-tasks',
+        undefined,
+        duration,
+        'MaintenanceTasksAPI',
+        {
+          taskId: id,
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
       captureException(
         appError,
         'MaintenanceTasksAPI.PATCH',
@@ -364,14 +474,24 @@ export async function PATCH(request: NextRequest) {
     // Validate response data
     const validatedData = validateMaintenanceTask(data);
 
-    logApiRequest('PATCH', '/api/maintenance-tasks', 200, duration, 'MaintenanceTasksAPI', {
-      taskId: id,
-    });
+    logApiRequest(
+      'PATCH',
+      '/api/maintenance-tasks',
+      200,
+      duration,
+      'MaintenanceTasksAPI',
+      {
+        taskId: id,
+      }
+    );
 
     return NextResponse.json({ data: validatedData });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(error, 'Update maintenance task');
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      'Update maintenance task'
+    );
     const logInfo = createLogErrorInfo(appError);
     captureException(
       appError,
@@ -390,10 +510,7 @@ export async function DELETE(request: NextRequest) {
   const id = searchParams.get('id');
 
   if (!id) {
-    return NextResponse.json(
-      { error: 'Task ID is required' },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: 'Task ID is required' }, { status: 400 });
   }
 
   // Validate UUID format
@@ -406,19 +523,32 @@ export async function DELETE(request: NextRequest) {
 
   try {
     const supabase = getServerSupabase();
-    const { error } = await supabase.from('maintenance_tasks').delete().eq('id', id);
+    const { error } = await supabase
+      .from('maintenance_tasks')
+      .delete()
+      .eq('id', id);
 
     const duration = Math.round(performance.now() - startTime);
 
     if (error) {
-      const appError = errorHandler.handleSupabaseError(error, 'Delete maintenance task');
+      const appError = errorHandler.handleSupabaseError(
+        error,
+        'Delete maintenance task'
+      );
       const logInfo = createLogErrorInfo(appError);
-      logApiRequest('DELETE', '/api/maintenance-tasks', undefined, duration, 'MaintenanceTasksAPI', {
-        taskId: id,
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
+      logApiRequest(
+        'DELETE',
+        '/api/maintenance-tasks',
+        undefined,
+        duration,
+        'MaintenanceTasksAPI',
+        {
+          taskId: id,
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
       captureException(
         appError,
         'MaintenanceTasksAPI.DELETE',
@@ -429,14 +559,24 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(safeError, { status: 500 });
     }
 
-    logApiRequest('DELETE', '/api/maintenance-tasks', 200, duration, 'MaintenanceTasksAPI', {
-      taskId: id,
-    });
+    logApiRequest(
+      'DELETE',
+      '/api/maintenance-tasks',
+      200,
+      duration,
+      'MaintenanceTasksAPI',
+      {
+        taskId: id,
+      }
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(error, 'Delete maintenance task');
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      'Delete maintenance task'
+    );
     const logInfo = createLogErrorInfo(appError);
     captureException(
       appError,

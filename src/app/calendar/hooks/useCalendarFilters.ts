@@ -49,8 +49,12 @@ export const useCalendarFilters = ({
     initialSortBy: 'date',
     initialSortOrder: 'asc',
     debounceMs: 300,
-    initialFilters: EMPTY_CALENDAR_FILTERS as unknown as Record<string, unknown>,
-    resetFilters: () => EMPTY_CALENDAR_FILTERS as unknown as Record<string, unknown>,
+    initialFilters: EMPTY_CALENDAR_FILTERS as unknown as Record<
+      string,
+      unknown
+    >,
+    resetFilters: () =>
+      EMPTY_CALENDAR_FILTERS as unknown as Record<string, unknown>,
     enableDateRange: false, // Manage separately
     enableFilterOperator: false, // Manage separately
     syncWithURL: true, // URL 쿼리 파라미터와 상태 동기화
@@ -150,7 +154,7 @@ export const useCalendarFilters = ({
   // Calculate pagination
   const totalCount = filteredTasks.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  
+
   // FIXED: Reset to page 1 when filters change using stable filter key (avoids expensive JSON.stringify)
   const filterKey = useMemo(() => {
     const f = baseFilters.filters as unknown as CalendarFilters;
@@ -201,9 +205,12 @@ export const useCalendarFilters = ({
   }, [baseFilters]);
 
   // Handle page change
-  const handlePageChange = useCallback((page: number) => {
-    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
-  }, [totalPages]);
+  const handlePageChange = useCallback(
+    (page: number) => {
+      setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+    },
+    [totalPages]
+  );
 
   // Map sortBy to calendar sort format
   const sortBy =

@@ -85,6 +85,7 @@ NEXT_PUBLIC_ERROR_SEVERITY_THRESHOLD=HIGH
    - 웹훅 URL 복사
 
 2. 환경 변수 설정:
+
 ```bash
 NEXT_PUBLIC_ERROR_WEBHOOK_ENABLED=true
 NEXT_PUBLIC_ERROR_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
@@ -99,6 +100,7 @@ NEXT_PUBLIC_ERROR_SEVERITY_THRESHOLD=HIGH
    - 웹후크 URL 복사
 
 2. 환경 변수 설정:
+
 ```bash
 NEXT_PUBLIC_ERROR_WEBHOOK_ENABLED=true
 NEXT_PUBLIC_ERROR_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR/WEBHOOK/URL
@@ -194,4 +196,3 @@ NEXT_PUBLIC_ERROR_SEVERITY_THRESHOLD=CRITICAL
 - `src/utils/apiClient.ts` - API 클라이언트 에러 캡처
 - `src/hooks/useErrorHandler.ts` - 에러 핸들링 훅
 - `src/components/common/ErrorBoundary.tsx` - React 에러 바운더리
-

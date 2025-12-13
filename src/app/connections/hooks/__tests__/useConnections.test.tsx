@@ -66,4 +66,3 @@ describe('useConnections', () => {
     expect(typeof result.current.submitting).toBe('boolean');
   });
 });
-

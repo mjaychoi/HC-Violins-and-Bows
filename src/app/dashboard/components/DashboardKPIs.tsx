@@ -15,7 +15,7 @@ interface DashboardKPIsProps {
  */
 function formatPriceCompact(amount: number | null | undefined): string {
   if (amount === null || amount === undefined) return '$0';
-  
+
   const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
   if (isNaN(numAmount)) return '$0';
 
@@ -39,7 +39,8 @@ export default function DashboardKPIs({
   const stats = React.useMemo(() => {
     // Total value: sum of all prices
     const totalValue = instruments.reduce((sum, item) => {
-      const price = typeof item.price === 'string' ? parseFloat(item.price) : item.price;
+      const price =
+        typeof item.price === 'string' ? parseFloat(item.price) : item.price;
       return sum + (price || 0);
     }, 0);
 
@@ -47,7 +48,8 @@ export default function DashboardKPIs({
     const availableValue = instruments
       .filter(item => item.status === 'Available')
       .reduce((sum, item) => {
-        const price = typeof item.price === 'string' ? parseFloat(item.price) : item.price;
+        const price =
+          typeof item.price === 'string' ? parseFloat(item.price) : item.price;
         return sum + (price || 0);
       }, 0);
 
@@ -60,11 +62,11 @@ export default function DashboardKPIs({
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-    
+
     const soldThisMonth = clientRelationships.filter(rel => {
       if (rel.relationship_type !== 'Sold') return false;
       if (!rel.created_at) return false;
-      
+
       const createdDate = new Date(rel.created_at);
       return (
         createdDate.getMonth() === currentMonth &&
@@ -176,9 +178,7 @@ export default function DashboardKPIs({
             <span className="text-2xl font-bold text-blue-700">
               {stats.itemsInMaintenance}
             </span>
-            <span className="text-xs text-blue-600">
-              items
-            </span>
+            <span className="text-xs text-blue-600">items</span>
           </div>
         </div>
 
@@ -207,9 +207,7 @@ export default function DashboardKPIs({
             <span className="text-2xl font-bold text-purple-700">
               {stats.soldThisMonth}
             </span>
-            <span className="text-xs text-purple-600">
-              items
-            </span>
+            <span className="text-xs text-purple-600">items</span>
           </div>
         </div>
       </div>

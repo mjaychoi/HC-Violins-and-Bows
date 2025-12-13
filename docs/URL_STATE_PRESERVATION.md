@@ -5,6 +5,7 @@
 ### 1. URL 쿼리 파라미터 동기화
 
 **구현된 기능**:
+
 - `useURLState` 훅 생성: URL 쿼리 파라미터와 상태를 동기화
 - `usePageFilters` 훅 확장: `syncWithURL` 옵션 추가
 - 페이지 전환 시 검색어와 필터 상태가 URL에 저장되어 보존됨
@@ -12,18 +13,22 @@
 ### 2. 적용된 페이지
 
 #### ✅ Dashboard (Items)
+
 - **URL 파라미터**: `?search=검색어`
 - **상태 보존**: 검색어가 URL에 저장되어 페이지 전환 후에도 유지
 
 #### ✅ Clients
+
 - **URL 파라미터**: `?search=검색어`
 - **상태 보존**: 검색어가 URL에 저장되어 페이지 전환 후에도 유지
 
 #### ✅ Instruments
+
 - **URL 파라미터**: `?search=검색어`
 - **상태 보존**: 검색어가 URL에 저장되어 페이지 전환 후에도 유지
 
 #### ✅ Calendar
+
 - **URL 파라미터**: `?search=검색어`
 - **상태 보존**: 검색어가 URL에 저장되어 페이지 전환 후에도 유지
 
@@ -68,12 +73,16 @@ const {
 ## 향후 개선 가능 사항
 
 ### 1. 필터 상태도 URL에 저장
+
 현재는 검색어만 URL에 저장됩니다. 필터 상태도 URL에 저장하려면:
+
 - `filters` 객체를 직렬화하여 URL에 저장
 - 복잡한 필터는 JSON 인코딩 또는 구분자 사용
 
 ### 2. 페이지네이션 상태 저장
+
 현재 페이지 번호도 URL에 저장 가능:
+
 ```typescript
 syncWithURL: true,
 urlParamMapping: {
@@ -83,7 +92,9 @@ urlParamMapping: {
 ```
 
 ### 3. 정렬 상태 저장
+
 정렬 컬럼과 방향도 URL에 저장 가능:
+
 ```typescript
 urlParamMapping: {
   searchTerm: 'search',

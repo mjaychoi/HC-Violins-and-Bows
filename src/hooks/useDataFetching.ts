@@ -30,18 +30,15 @@ export function useDataFetching<T, P = void>(
   const fetchData = useCallback(
     async (param?: P) => {
       const myId = ++reqIdRef.current;
-      const res = await run(
-        signal => fetchFunctionRef.current(param, signal),
-        {
-          context,
-          onSuccess: (data) => {
-            // Only update if this is still the latest request
-            if (myId === reqIdRef.current) {
-              setItemsSafe(data || []);
-            }
-          },
-        }
-      );
+      const res = await run(signal => fetchFunctionRef.current(param, signal), {
+        context,
+        onSuccess: data => {
+          // Only update if this is still the latest request
+          if (myId === reqIdRef.current) {
+            setItemsSafe(data || []);
+          }
+        },
+      });
       return res;
     },
     [run, context, setItemsSafe]

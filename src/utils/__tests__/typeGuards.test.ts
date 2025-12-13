@@ -22,12 +22,7 @@ import {
   validateSalesHistoryArray,
   safeValidate,
 } from '../typeGuards';
-import {
-  Instrument,
-  Client,
-  MaintenanceTask,
-  SalesHistory,
-} from '@/types';
+import { Instrument, Client, MaintenanceTask, SalesHistory } from '@/types';
 
 describe('Type Guards', () => {
   describe('isInstrument', () => {
@@ -293,8 +288,12 @@ describe('Validation Functions', () => {
     });
 
     it('should throw error for invalid data', () => {
-      expect(() => validateMaintenanceTask(null)).toThrow('Invalid MaintenanceTask');
-      expect(() => validateMaintenanceTask({})).toThrow('Invalid MaintenanceTask');
+      expect(() => validateMaintenanceTask(null)).toThrow(
+        'Invalid MaintenanceTask'
+      );
+      expect(() => validateMaintenanceTask({})).toThrow(
+        'Invalid MaintenanceTask'
+      );
     });
   });
 
@@ -348,7 +347,9 @@ describe('Validation Functions', () => {
     });
 
     it('should throw error for invalid item in array', () => {
-      expect(() => validateInstrumentArray([{}])).toThrow('Invalid Instrument at index 0');
+      expect(() => validateInstrumentArray([{}])).toThrow(
+        'Invalid Instrument at index 0'
+      );
     });
   });
 
@@ -407,7 +408,9 @@ describe('Validation Functions', () => {
     });
 
     it('should throw error for non-array', () => {
-      expect(() => validateMaintenanceTaskArray(null)).toThrow('Expected an array');
+      expect(() => validateMaintenanceTaskArray(null)).toThrow(
+        'Expected an array'
+      );
     });
   });
 
@@ -429,7 +432,9 @@ describe('Validation Functions', () => {
     });
 
     it('should throw error for non-array', () => {
-      expect(() => validateSalesHistoryArray(null)).toThrow('Expected an array');
+      expect(() => validateSalesHistoryArray(null)).toThrow(
+        'Expected an array'
+      );
     });
   });
 

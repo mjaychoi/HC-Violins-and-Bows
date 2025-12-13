@@ -1,4 +1,8 @@
-export const INTEREST_RELATED_TAGS = ['Musician', 'Dealer', 'Collector'] as const;
+export const INTEREST_RELATED_TAGS = [
+  'Musician',
+  'Dealer',
+  'Collector',
+] as const;
 
 export type InterestRelatedTag = (typeof INTEREST_RELATED_TAGS)[number];
 

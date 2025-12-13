@@ -56,7 +56,9 @@ describe('InstrumentSearch', () => {
 
   it('should call onSearchChange and onSearch when input changes', () => {
     render(<InstrumentSearch {...mockProps} />);
-    const input = screen.getByPlaceholderText('Search instruments by maker or name...');
+    const input = screen.getByPlaceholderText(
+      'Search instruments by maker or name...'
+    );
     fireEvent.change(input, { target: { value: 'Stradivari' } });
     expect(mockProps.onSearchChange).toHaveBeenCalledWith('Stradivari');
     expect(mockProps.onSearch).toHaveBeenCalledWith('Stradivari');
@@ -68,27 +70,38 @@ describe('InstrumentSearch', () => {
   });
 
   it('should display no results message when search term exists but no results', () => {
-    render(<InstrumentSearch {...mockProps} searchTerm="test" searchResults={[]} />);
+    render(
+      <InstrumentSearch {...mockProps} searchTerm="test" searchResults={[]} />
+    );
     expect(screen.getByText('No instruments found')).toBeInTheDocument();
   });
 
   it('should display start typing message when no search term', () => {
     render(<InstrumentSearch {...mockProps} searchTerm="" />);
-    expect(screen.getByText('Start typing to search for instruments')).toBeInTheDocument();
+    expect(
+      screen.getByText('Start typing to search for instruments')
+    ).toBeInTheDocument();
   });
 
   it('should display search results', () => {
-    render(<InstrumentSearch {...mockProps} searchResults={[mockInstrument]} />);
+    render(
+      <InstrumentSearch {...mockProps} searchResults={[mockInstrument]} />
+    );
     expect(screen.getByText('Stradivari')).toBeInTheDocument();
     expect(screen.getByText('Violin')).toBeInTheDocument();
     expect(screen.getByText('Year: 1700')).toBeInTheDocument();
   });
 
   it('should call onAddInstrument when relationship is selected', () => {
-    render(<InstrumentSearch {...mockProps} searchResults={[mockInstrument]} />);
+    render(
+      <InstrumentSearch {...mockProps} searchResults={[mockInstrument]} />
+    );
     const select = screen.getByDisplayValue('Select relationship');
     fireEvent.change(select, { target: { value: 'Owned' } });
-    expect(mockProps.onAddInstrument).toHaveBeenCalledWith(mockInstrument, 'Owned');
+    expect(mockProps.onAddInstrument).toHaveBeenCalledWith(
+      mockInstrument,
+      'Owned'
+    );
   });
 
   it('should display selected instruments', () => {
@@ -98,7 +111,12 @@ describe('InstrumentSearch', () => {
         relationshipType: 'Owned',
       },
     ];
-    render(<InstrumentSearch {...mockProps} selectedInstruments={selectedInstruments} />);
+    render(
+      <InstrumentSearch
+        {...mockProps}
+        selectedInstruments={selectedInstruments}
+      />
+    );
     expect(screen.getByText('Selected Instruments')).toBeInTheDocument();
     expect(screen.getByText('Stradivari - Violin')).toBeInTheDocument();
     expect(screen.getByText('Owned')).toBeInTheDocument();
@@ -111,7 +129,12 @@ describe('InstrumentSearch', () => {
         relationshipType: 'Owned',
       },
     ];
-    render(<InstrumentSearch {...mockProps} selectedInstruments={selectedInstruments} />);
+    render(
+      <InstrumentSearch
+        {...mockProps}
+        selectedInstruments={selectedInstruments}
+      />
+    );
     const removeButton = screen.getByText('Remove');
     fireEvent.click(removeButton);
     expect(mockProps.onRemoveInstrument).toHaveBeenCalledWith('inst1');

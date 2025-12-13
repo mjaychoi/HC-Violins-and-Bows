@@ -128,7 +128,9 @@ describe('EditConnectionModal', () => {
     const relationshipSelect = screen.getByRole('combobox');
     expect(relationshipSelect).toHaveValue('Interested');
 
-    const notesTextarea = screen.getByPlaceholderText(/Add any additional notes/i);
+    const notesTextarea = screen.getByPlaceholderText(
+      /Add any additional notes/i
+    );
     expect(notesTextarea).toHaveValue('Test notes');
   });
 
@@ -164,7 +166,9 @@ describe('EditConnectionModal', () => {
       />
     );
 
-    const notesTextarea = screen.getByPlaceholderText(/Add any additional notes/i);
+    const notesTextarea = screen.getByPlaceholderText(
+      /Add any additional notes/i
+    );
     await user.clear(notesTextarea);
     await user.type(notesTextarea, 'Updated notes');
 
@@ -187,7 +191,9 @@ describe('EditConnectionModal', () => {
     const relationshipSelect = screen.getByRole('combobox');
     await user.selectOptions(relationshipSelect, 'Sold');
 
-    const notesTextarea = screen.getByPlaceholderText(/Add any additional notes/i);
+    const notesTextarea = screen.getByPlaceholderText(
+      /Add any additional notes/i
+    );
     await user.clear(notesTextarea);
     await user.type(notesTextarea, 'Sold to client');
 
@@ -290,9 +296,9 @@ describe('EditConnectionModal', () => {
       />
     );
 
-    const closeButton = screen.getAllByRole('button').find(
-      button => button.querySelector('svg')
-    );
+    const closeButton = screen
+      .getAllByRole('button')
+      .find(button => button.querySelector('svg'));
     if (closeButton) {
       await user.click(closeButton);
     }
@@ -391,7 +397,9 @@ describe('EditConnectionModal', () => {
     const relationshipSelect = screen.getByRole('combobox');
     expect(relationshipSelect).toHaveValue('Owned');
 
-    const notesTextarea = screen.getByPlaceholderText(/Add any additional notes/i);
+    const notesTextarea = screen.getByPlaceholderText(
+      /Add any additional notes/i
+    );
     expect(notesTextarea).toHaveValue('New notes');
   });
 
@@ -412,8 +420,9 @@ describe('EditConnectionModal', () => {
       />
     );
 
-    const notesTextarea = screen.getByPlaceholderText(/Add any additional notes/i);
+    const notesTextarea = screen.getByPlaceholderText(
+      /Add any additional notes/i
+    );
     expect(notesTextarea).toHaveValue('');
   });
 });
-

@@ -5,7 +5,7 @@ import { useUnifiedData } from '@/hooks/useUnifiedData';
 
 /**
  * DataInitializer - Initializes data fetching at the root level
- * 
+ *
  * This component ensures that useUnifiedData() is called only once at the root level,
  * preventing duplicate fetches when multiple pages mount/unmount.
  * React 18 Strict Mode causes components to mount/unmount/remount for testing,

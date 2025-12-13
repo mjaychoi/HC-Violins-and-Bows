@@ -61,11 +61,7 @@ export function useNotifications({
     });
 
     // 우선순위 정렬: overdue > today > upcoming
-    const allNotifications = [
-      ...overdueTasks,
-      ...todayTasks,
-      ...upcomingTasks,
-    ];
+    const allNotifications = [...overdueTasks, ...todayTasks, ...upcomingTasks];
 
     return {
       notifications: allNotifications,
@@ -90,7 +86,7 @@ export function useNotifications({
  * @deprecated Use useNotifications instead - this function has incorrect date priority
  * This function incorrectly prioritizes scheduled_date over due_date, causing bugs
  * where badge counts don't match notification lists
- * 
+ *
  * REMOVED: Use useNotifications().counts instead for consistent date priority
  * Priority should be: due_date > personal_due_date > scheduled_date
  */

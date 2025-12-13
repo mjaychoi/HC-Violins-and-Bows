@@ -7,7 +7,10 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useFilterSort } from './useFilterSort';
-import { countActiveFilters, buildFilterOptionsFromFields } from '@/utils/filterHelpers';
+import {
+  countActiveFilters,
+  buildFilterOptionsFromFields,
+} from '@/utils/filterHelpers';
 import { useURLState } from './useURLState';
 import { useDebounce } from './useDebounce';
 import type { FilterOperator } from '@/types/search';
@@ -42,10 +45,7 @@ export interface PageFiltersConfig<T extends object> {
    * 필드 기반 필터링 함수 (searchTerm 제외한 필터만 적용)
    * 필터링 로직이 복잡한 경우 사용
    */
-  customFieldFilter?: (
-    items: T[],
-    filters: Record<string, unknown>
-  ) => T[];
+  customFieldFilter?: (items: T[], filters: Record<string, unknown>) => T[];
 
   /**
    * 초기 정렬 필드
@@ -132,7 +132,7 @@ export interface UsePageFiltersReturn<T> {
 
 /**
  * 범용 페이지 필터 훅
- * 
+ *
  * @example
  * ```tsx
  * const {
@@ -187,7 +187,11 @@ export function usePageFilters<T extends object = Record<string, unknown>>(
 
   // useURLState는 항상 호출 (React Hooks 규칙 준수)
   // enabled가 false일 때는 내부에서 아무것도 하지 않음
-  const { urlState, updateURLState, clearURLState: clearURL } = useURLState({
+  const {
+    urlState,
+    updateURLState,
+    clearURLState: clearURL,
+  } = useURLState({
     enabled: syncWithURL,
     keys: urlKeys,
     paramMapping: {
@@ -198,21 +202,25 @@ export function usePageFilters<T extends object = Record<string, unknown>>(
   });
 
   // URL에서 초기값 읽기 (syncWithURL이 true일 때)
-  const initialSearchTerm = syncWithURL && urlState.searchTerm 
-    ? String(urlState.searchTerm) 
-    : '';
-  const initialDateRange = syncWithURL && enableDateRange && urlState.dateRange
-    ? (Array.isArray(urlState.dateRange) && urlState.dateRange.length === 2
-        ? { from: urlState.dateRange[0] || null, to: urlState.dateRange[1] || null }
-        : null)
-    : null;
+  const initialSearchTerm =
+    syncWithURL && urlState.searchTerm ? String(urlState.searchTerm) : '';
+  const initialDateRange =
+    syncWithURL && enableDateRange && urlState.dateRange
+      ? Array.isArray(urlState.dateRange) && urlState.dateRange.length === 2
+        ? {
+            from: urlState.dateRange[0] || null,
+            to: urlState.dateRange[1] || null,
+          }
+        : null
+      : null;
 
   // 기본 상태 (URL에서 초기값 사용)
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState<Record<string, unknown>>(initialFilters);
+  const [filters, setFilters] =
+    useState<Record<string, unknown>>(initialFilters);
   const [dateRange, setDateRange] = useState<DateRange | null>(
-    enableDateRange ? (initialDateRange || null) : null
+    enableDateRange ? initialDateRange || null : null
   );
   const [filterOperator, setFilterOperator] = useState<FilterOperator>(
     enableFilterOperator ? 'AND' : 'AND'
@@ -221,7 +229,7 @@ export function usePageFilters<T extends object = Record<string, unknown>>(
   // URL 동기화: searchTerm 변경 시 URL 업데이트 (debounce 적용)
   // 검색어 입력 중에는 URL 업데이트를 지연시켜 불필요한 URL 변경 방지
   const debouncedSearchTerm = useDebounce(searchTerm, debounceMs);
-  
+
   useEffect(() => {
     if (syncWithURL) {
       updateURLState({ searchTerm: debouncedSearchTerm || null });
@@ -233,9 +241,10 @@ export function usePageFilters<T extends object = Record<string, unknown>>(
     if (syncWithURL && enableDateRange) {
       if (dateRange?.from || dateRange?.to) {
         updateURLState({
-          dateRange: dateRange.from && dateRange.to
-            ? [dateRange.from, dateRange.to]
-            : null,
+          dateRange:
+            dateRange.from && dateRange.to
+              ? [dateRange.from, dateRange.to]
+              : null,
         });
       } else {
         updateURLState({ dateRange: null });
@@ -274,7 +283,7 @@ export function usePageFilters<T extends object = Record<string, unknown>>(
       // Use dateField from config (default: 'created_at')
       const itemRecord = item as Record<string, unknown>;
       const itemDate = itemRecord[dateField as string];
-      
+
       if (!itemDate || typeof itemDate !== 'string') {
         return false;
       }
@@ -292,9 +301,10 @@ export function usePageFilters<T extends object = Record<string, unknown>>(
   const filterSortResult = useFilterSort<Record<string, unknown>>(
     dateFiltered as Array<Record<string, unknown>>,
     {
-      searchFields: (searchFields as string[]) as (
-        keyof Record<string, unknown>
-      )[],
+      searchFields: searchFields as string[] as (keyof Record<
+        string,
+        unknown
+      >)[],
       externalSearchTerm: searchTerm,
       initialSortBy: initialSortBy as string,
       initialSortOrder,
@@ -313,29 +323,26 @@ export function usePageFilters<T extends object = Record<string, unknown>>(
   const sortOrder = filterSortResult.sortOrder;
 
   // 필터 변경 핸들러
-  const handleFilterChange = useCallback(
-    (category: string, value: string) => {
-      setFilters(prev => {
-        const currentFilter = prev[category];
-        if (Array.isArray(currentFilter)) {
-          // 배열 타입 필터: toggleValue 로직
-          const includes = currentFilter.includes(value);
-          return {
-            ...prev,
-            [category]: includes
-              ? currentFilter.filter((v: unknown) => v !== value)
-              : [...currentFilter, value],
-          };
-        }
-        // 단일 값 필터: 교체
+  const handleFilterChange = useCallback((category: string, value: string) => {
+    setFilters(prev => {
+      const currentFilter = prev[category];
+      if (Array.isArray(currentFilter)) {
+        // 배열 타입 필터: toggleValue 로직
+        const includes = currentFilter.includes(value);
         return {
           ...prev,
-          [category]: value,
+          [category]: includes
+            ? currentFilter.filter((v: unknown) => v !== value)
+            : [...currentFilter, value],
         };
-      });
-    },
-    []
-  );
+      }
+      // 단일 값 필터: 교체
+      return {
+        ...prev,
+        [category]: value,
+      };
+    });
+  }, []);
 
   // 모든 필터 초기화
   const clearAllFilters = useCallback(() => {

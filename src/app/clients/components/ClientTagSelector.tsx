@@ -51,9 +51,7 @@ export default function ClientTagSelector({
             checked={selectedTags.includes(tag)}
             onChange={e => handleToggle(tag, e.target.checked, e)}
             className={checkboxClassName}
-            onClick={
-              stopPropagation ? e => e.stopPropagation() : undefined
-            }
+            onClick={stopPropagation ? e => e.stopPropagation() : undefined}
           />
           <span
             className={[

@@ -116,7 +116,7 @@ export default function ItemForm({
       const serialValidation = validateInstrumentSerial(
         normalizedSerial,
         existingSerialNumbers,
-        isEditing ? selectedItem?.serial_number ?? null : undefined
+        isEditing ? (selectedItem?.serial_number ?? null) : undefined
       );
       if (!serialValidation.valid) {
         setErrors([serialValidation.error || 'Invalid serial number']);
@@ -156,7 +156,7 @@ export default function ItemForm({
 
       await onSubmit(instrumentData);
       setErrors([]);
-      
+
       // UX: Show success state instead of immediately closing
       if (isEditing) {
         // For editing, just close and let parent show success toast
@@ -209,15 +209,15 @@ export default function ItemForm({
   if (!isOpen) return null;
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center"
-      onClick={(e) => {
+      onClick={e => {
         if (e.target === e.currentTarget) {
           onClose();
         }
       }}
     >
-      <div 
+      <div
         ref={modalRef}
         className="relative mx-auto p-5 border w-96 shadow-lg rounded-md bg-white"
       >
@@ -318,7 +318,11 @@ export default function ItemForm({
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4" style={{ display: success && !isEditing ? 'none' : 'block' }}>
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-4"
+            style={{ display: success && !isEditing ? 'none' : 'block' }}
+          >
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Maker"
@@ -511,7 +515,8 @@ export default function ItemForm({
                 placeholder="Enter any additional notes"
               />
               <p className="mt-1 text-xs text-gray-500">
-                Any additional information about condition, history, or special features
+                Any additional information about condition, history, or special
+                features
               </p>
             </div>
 

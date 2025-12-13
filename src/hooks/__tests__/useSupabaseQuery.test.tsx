@@ -19,7 +19,7 @@ const mockUpdate = apiClient.update;
 const mockDelete = apiClient.delete;
 
 // Mock useErrorHandler
-const mockHandleError = jest.fn((error) => error);
+const mockHandleError = jest.fn(error => error);
 
 jest.mock('../useErrorHandler', () => ({
   useErrorHandler: () => ({
@@ -392,4 +392,3 @@ describe('useSupabaseQuery', () => {
     });
   });
 });
-

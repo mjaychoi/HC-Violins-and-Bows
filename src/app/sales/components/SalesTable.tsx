@@ -33,7 +33,9 @@ function StatusBadge({ status }: { status: SaleStatus }) {
   };
 
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status]}`}>
+    <span
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status]}`}
+    >
       {status}
     </span>
   );
@@ -60,7 +62,11 @@ export default function SalesTable({
   if (sales.length === 0) {
     return (
       <EmptyState
-        title={hasActiveFilters ? 'No sales found matching your filters' : 'No sales yet'}
+        title={
+          hasActiveFilters
+            ? 'No sales found matching your filters'
+            : 'No sales yet'
+        }
         description={
           hasActiveFilters
             ? 'Try adjusting your filters or clearing them to see all sales.'
@@ -78,20 +84,29 @@ export default function SalesTable({
         <table className={classNames.table}>
           <thead className={classNames.tableHeader}>
             <tr>
-              <th className={classNames.tableHeaderCellSortable} onClick={() => onSort('sale_date')}>
+              <th
+                className={classNames.tableHeaderCellSortable}
+                onClick={() => onSort('sale_date')}
+              >
                 <span className="inline-flex items-center gap-1">
                   Date
                   {getSortArrow('sale_date')}
                 </span>
               </th>
-              <th className={classNames.tableHeaderCellSortable} onClick={() => onSort('client_name')}>
+              <th
+                className={classNames.tableHeaderCellSortable}
+                onClick={() => onSort('client_name')}
+              >
                 <span className="inline-flex items-center gap-1">
                   Client
                   {getSortArrow('client_name')}
                 </span>
               </th>
               <th className={classNames.tableHeaderCell}>Instrument</th>
-              <th className={classNames.tableHeaderCellSortable} onClick={() => onSort('sale_price')}>
+              <th
+                className={classNames.tableHeaderCellSortable}
+                onClick={() => onSort('sale_price')}
+              >
                 <span className="inline-flex items-center gap-1">
                   Amount
                   {getSortArrow('sale_price')}
@@ -132,9 +147,12 @@ export default function SalesTable({
                           className="font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                           title="View client details"
                         >
-                          {`${sale.client.first_name || ''} ${sale.client.last_name || ''}`.trim() || sale.client.email}
+                          {`${sale.client.first_name || ''} ${sale.client.last_name || ''}`.trim() ||
+                            sale.client.email}
                         </Link>
-                        <div className="text-xs text-gray-500">{sale.client?.email || sale.client_id || ''}</div>
+                        <div className="text-xs text-gray-500">
+                          {sale.client?.email || sale.client_id || ''}
+                        </div>
                       </div>
                     ) : (
                       <span className="text-gray-400">—</span>
@@ -148,7 +166,9 @@ export default function SalesTable({
                           className="font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                           title="View instrument details"
                         >
-                          {sale.instrument.maker || sale.instrument.type || 'Instrument'}
+                          {sale.instrument.maker ||
+                            sale.instrument.type ||
+                            'Instrument'}
                         </Link>
                         <div className="text-xs text-gray-500">
                           {sale.instrument.type} {sale.instrument.subtype}
@@ -158,7 +178,9 @@ export default function SalesTable({
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className={classNames.tableCell}>{currency.format(Math.abs(sale.sale_price))}</td>
+                  <td className={classNames.tableCell}>
+                    {currency.format(Math.abs(sale.sale_price))}
+                  </td>
                   <td className={classNames.tableCell}>
                     <StatusBadge status={status} />
                   </td>
@@ -170,10 +192,24 @@ export default function SalesTable({
                         disabled={!sale.client?.email}
                         size="sm"
                         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:text-gray-400 disabled:bg-gray-50"
-                        title={sale.client?.email ? 'Send receipt via email' : 'No email available'}
+                        title={
+                          sale.client?.email
+                            ? 'Send receipt via email'
+                            : 'No email available'
+                        }
                       >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        <svg
+                          className="w-3.5 h-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                          />
                         </svg>
                         Receipt
                       </Button>
@@ -187,8 +223,18 @@ export default function SalesTable({
                           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100"
                           title="Issue refund"
                         >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          <svg
+                            className="w-3.5 h-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
                           </svg>
                           Refund
                         </Button>
@@ -202,15 +248,27 @@ export default function SalesTable({
                           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100"
                           title="Undo refund"
                         >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                          <svg
+                            className="w-3.5 h-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"
+                            />
                           </svg>
                           Undo Refund
                         </Button>
                       )}
                     </div>
                   </td>
-                  <td className={`${classNames.tableCell} font-mono`}>{sale.id}</td>
+                  <td className={`${classNames.tableCell} font-mono`}>
+                    {sale.id}
+                  </td>
                 </tr>
               );
             })}

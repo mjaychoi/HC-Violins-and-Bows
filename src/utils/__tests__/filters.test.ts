@@ -1,4 +1,10 @@
-import { buildFilterOptions, buildFilterOptionsFromField, buildFilterOptionsFromArrayField, buildMultiFieldFilterOptions, sortByPriority } from '../filters';
+import {
+  buildFilterOptions,
+  buildFilterOptionsFromField,
+  buildFilterOptionsFromArrayField,
+  buildMultiFieldFilterOptions,
+  sortByPriority,
+} from '../filters';
 
 type Item = {
   id: string;

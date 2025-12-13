@@ -1,6 +1,6 @@
 /**
  * Input Validation and Sanitization Utilities
- * 
+ *
  * Provides utilities for validating and sanitizing user inputs
  * to prevent security vulnerabilities and ensure data integrity.
  */
@@ -16,10 +16,31 @@ import { parse, isValid, format } from 'date-fns';
  * Allowed column names for sorting (whitelist)
  */
 export const ALLOWED_SORT_COLUMNS = {
-  clients: ['created_at', 'first_name', 'last_name', 'email', 'contact_number', 'client_number'] as const,
-  instruments: ['created_at', 'type', 'maker', 'serial_number', 'status', 'price'] as const,
+  clients: [
+    'created_at',
+    'first_name',
+    'last_name',
+    'email',
+    'contact_number',
+    'client_number',
+  ] as const,
+  instruments: [
+    'created_at',
+    'type',
+    'maker',
+    'serial_number',
+    'status',
+    'price',
+  ] as const,
   connections: ['created_at', 'relationship_type'] as const,
-  maintenance_tasks: ['created_at', 'received_date', 'due_date', 'scheduled_date', 'priority', 'status'] as const,
+  maintenance_tasks: [
+    'created_at',
+    'received_date',
+    'due_date',
+    'scheduled_date',
+    'priority',
+    'status',
+  ] as const,
   sales_history: ['created_at', 'sale_date', 'sale_price'] as const,
 } as const;
 
@@ -47,7 +68,8 @@ export function validateSortColumn(
  */
 export function validateUUID(id: string | null | undefined): boolean {
   if (!id) return false;
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(id);
 }
 
@@ -57,15 +79,15 @@ export function validateUUID(id: string | null | undefined): boolean {
  */
 export function validateDateString(date: string | null | undefined): boolean {
   if (!date) return false;
-  
+
   // First check format
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   if (!dateRegex.test(date)) return false;
-  
+
   try {
     // Parse using date-fns (more reliable than new Date)
     const parsed = parse(date, 'yyyy-MM-dd', new Date());
-    
+
     // Check if valid date and round-trip matches (prevents auto-correction like 2025-02-31)
     return isValid(parsed) && format(parsed, 'yyyy-MM-dd') === date;
   } catch {
@@ -81,18 +103,21 @@ export function validateDateString(date: string | null | undefined): boolean {
  * Sanitize string input to prevent XSS
  * Removes potentially dangerous characters and trims whitespace
  */
-export function sanitizeString(input: string | null | undefined, maxLength?: number): string {
+export function sanitizeString(
+  input: string | null | undefined,
+  maxLength?: number
+): string {
   if (!input) return '';
-  
+
   let sanitized = input
     .trim()
     .replace(/[<>]/g, '') // Remove < and > to prevent HTML injection
     .replace(/[\x00-\x1F\x7F]/g, ''); // Remove control characters
-  
+
   if (maxLength && sanitized.length > maxLength) {
     sanitized = sanitized.substring(0, maxLength);
   }
-  
+
   return sanitized;
 }
 
@@ -100,28 +125,28 @@ export function sanitizeString(input: string | null | undefined, maxLength?: num
  * Sanitize number input
  * NOTE: This function CLAMPS values (silently modifies out-of-range values).
  * For API validation, consider returning null instead of clamping for better error detection.
- * 
+ *
  * @param clamp - If true, clamp values to min/max. If false, return null for out-of-range (API validation mode).
  */
 export function sanitizeNumber(
-  input: unknown, 
-  min?: number, 
+  input: unknown,
+  min?: number,
   max?: number,
   clamp: boolean = true
 ): number | null {
   if (input === null || input === undefined) return null;
-  
+
   const num = typeof input === 'number' ? input : Number(input);
-  
+
   if (isNaN(num)) return null;
-  
+
   if (min !== undefined && num < min) {
     return clamp ? min : null;
   }
   if (max !== undefined && num > max) {
     return clamp ? max : null;
   }
-  
+
   return num;
 }
 
@@ -130,10 +155,10 @@ export function sanitizeNumber(
  */
 export function sanitizeEmail(email: string | null | undefined): string | null {
   if (!email) return null;
-  
+
   const sanitized = email.trim().toLowerCase();
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  
+
   return emailRegex.test(sanitized) ? sanitized : null;
 }
 
@@ -143,9 +168,12 @@ export function sanitizeEmail(email: string | null | undefined): string | null {
  * Instead, handle SQL escaping at the query level (Supabase ilike handles this).
  * This function now only removes control characters and limits length.
  */
-export function sanitizeSearchTerm(term: string | null | undefined, maxLength = 100): string {
+export function sanitizeSearchTerm(
+  term: string | null | undefined,
+  maxLength = 100
+): string {
   if (!term) return '';
-  
+
   return term
     .trim()
     .substring(0, maxLength)
@@ -184,7 +212,7 @@ export function validatePartialUpdate<T>(
   if (!parseResult.success) {
     const { error } = parseResult;
     const message = error.issues?.length
-      ? error.issues.map((issue) => issue.message).join(', ')
+      ? error.issues.map(issue => issue.message).join(', ')
       : error.message || 'Validation failed';
 
     return { success: false, error: message };
@@ -231,9 +259,12 @@ export function validateQueryParams(
 
   // Validate orderBy
   const orderBy = params.orderBy || defaultColumn;
-  const validOrderBy = allowedColumns.length > 0
-    ? (allowedColumns.includes(orderBy) ? orderBy : defaultColumn)
-    : orderBy;
+  const validOrderBy =
+    allowedColumns.length > 0
+      ? allowedColumns.includes(orderBy)
+        ? orderBy
+        : defaultColumn
+      : orderBy;
 
   // Validate ascending
   const ascending = params.ascending !== 'false';

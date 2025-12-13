@@ -41,7 +41,6 @@ jest.mock('date-fns', () => ({
   }),
 }));
 
-
 describe('GroupedTaskList', () => {
   const today = new Date();
   const tomorrow = new Date(today);
@@ -265,7 +264,7 @@ describe('GroupedTaskList', () => {
     // Should call onTaskDelete with the full task object, not just ID
     expect(mockOnTaskDelete).toHaveBeenCalledWith(mockTasks[0]);
     expect(mockOnTaskDelete).toHaveBeenCalledTimes(1);
-    
+
     // Should NOT use window.confirm
     expect(confirmSpy).not.toHaveBeenCalled();
   });

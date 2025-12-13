@@ -8,7 +8,7 @@ export const useClientInstruments = () => {
   // FIXED: Use connections from DataContext instead of separate state
   // This prevents duplicate API calls - connections are already fetched by useUnifiedData
   const { connections: connectionsFromContext } = useUnifiedConnections();
-  
+
   const [instrumentRelationships, setInstrumentRelationships] = useState<
     ClientInstrument[]
   >([]);
@@ -29,14 +29,14 @@ export const useClientInstruments = () => {
   const hasSyncedRef = useRef(false);
   const lastConnectionsLengthRef = useRef(0);
   const lastConnectionsIdsRef = useRef<string>('');
-  
+
   useEffect(() => {
     // Create a stable ID string from connections to detect actual changes
     const connectionsIds = JSON.stringify(
       connectionsFromContext.map(c => c.id).sort()
     );
     const connectionsLength = connectionsFromContext.length;
-    
+
     // Only sync if:
     // 1. We haven't synced yet, OR
     // 2. The connections have actually changed (different IDs or length)
@@ -44,16 +44,16 @@ export const useClientInstruments = () => {
       !hasSyncedRef.current ||
       lastConnectionsLengthRef.current !== connectionsLength ||
       lastConnectionsIdsRef.current !== connectionsIds;
-    
+
     if (hasChanged && connectionsLength > 0) {
       setInstrumentRelationships(connectionsFromContext);
-      
+
       // Sync clientsWithInstruments set
       const clientIds = new Set<string>(
         connectionsFromContext.map(rel => rel.client_id).filter(Boolean)
       );
       setClientsWithInstruments(clientIds);
-      
+
       // Update refs
       hasSyncedRef.current = true;
       lastConnectionsLengthRef.current = connectionsLength;
@@ -70,7 +70,9 @@ export const useClientInstruments = () => {
       }
       const result = await response.json();
       const clientIds = new Set<string>(
-        (result.data || []).map((item: ClientInstrument) => item.client_id).filter(Boolean)
+        (result.data || [])
+          .map((item: ClientInstrument) => item.client_id)
+          .filter(Boolean)
       );
       setClientsWithInstruments(clientIds);
     } catch (error) {
@@ -100,7 +102,9 @@ export const useClientInstruments = () => {
 
       // clientsWithInstruments 집합을 동기화
       const clientIds = new Set<string>(
-        relationships.map((rel: ClientInstrument) => rel.client_id).filter(Boolean)
+        relationships
+          .map((rel: ClientInstrument) => rel.client_id)
+          .filter(Boolean)
       );
       setClientsWithInstruments(clientIds);
     } catch (error) {
@@ -163,130 +167,139 @@ export const useClientInstruments = () => {
     }
   }, []);
 
-  const addInstrumentRelationship = useCallback(async (
-    clientId: string,
-    instrumentId: string,
-    relationshipType: ClientInstrument['relationship_type'] = 'Interested'
-  ) => {
-    try {
-      const response = await fetch('/api/connections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: clientId,
-          instrument_id: instrumentId,
-          relationship_type: relationshipType,
-        }),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData.error || new Error('Failed to create connection');
-      }
-      const result = await response.json();
-      if (result.data) {
-        setInstrumentRelationships(prev => [...prev, result.data]);
-        setClientsWithInstruments(prev => new Set([...prev, clientId]));
-        return result.data;
-      }
-      return null;
-    } catch (error) {
-      logError(
-        'Error adding instrument relationship',
-        error,
-        'useClientInstruments',
-        {
-          operation: 'addInstrumentRelationship',
-          clientId,
-          instrumentId,
+  const addInstrumentRelationship = useCallback(
+    async (
+      clientId: string,
+      instrumentId: string,
+      relationshipType: ClientInstrument['relationship_type'] = 'Interested'
+    ) => {
+      try {
+        const response = await fetch('/api/connections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_id: clientId,
+            instrument_id: instrumentId,
+            relationship_type: relationshipType,
+          }),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to create connection');
         }
-      );
-      return null;
-    }
-  }, []);
-
-  const removeInstrumentRelationship = useCallback(async (relationshipId: string) => {
-    try {
-      // O(1) lookup instead of O(n) find
-      const rel = relationshipsMap.get(relationshipId);
-      const clientId = rel?.client_id;
-
-      const response = await fetch(`/api/connections?id=${relationshipId}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData.error || new Error('Failed to delete connection');
-      }
-
-      setInstrumentRelationships(prev => {
-        const next = prev.filter(rel => rel.id !== relationshipId);
-        if (clientId) {
-          const stillHas = next.some(r => r.client_id === clientId);
-          if (!stillHas) {
-            setClientsWithInstruments(prevSet => {
-              const nextSet = new Set(prevSet);
-              nextSet.delete(clientId);
-              return nextSet;
-            });
+        const result = await response.json();
+        if (result.data) {
+          setInstrumentRelationships(prev => [...prev, result.data]);
+          setClientsWithInstruments(prev => new Set([...prev, clientId]));
+          return result.data;
+        }
+        return null;
+      } catch (error) {
+        logError(
+          'Error adding instrument relationship',
+          error,
+          'useClientInstruments',
+          {
+            operation: 'addInstrumentRelationship',
+            clientId,
+            instrumentId,
           }
-        }
-        return next;
-      });
-
-      return true;
-    } catch (error) {
-      logError(
-        'Error removing instrument relationship',
-        error,
-        'useClientInstruments',
-        {
-          operation: 'removeInstrumentRelationship',
-          relationshipId,
-        }
-      );
-      return false;
-    }
-  }, [relationshipsMap]);
-
-  const updateInstrumentRelationship = useCallback(async (
-    relationshipId: string,
-    relationshipType: ClientInstrument['relationship_type']
-  ) => {
-    try {
-      const response = await fetch('/api/connections', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: relationshipId,
-          relationship_type: relationshipType,
-        }),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData.error || new Error('Failed to update connection');
-      }
-      const result = await response.json();
-      if (result.data) {
-        setInstrumentRelationships(prev =>
-          prev.map(rel => (rel.id === relationshipId ? result.data : rel))
         );
-        return result.data;
+        return null;
       }
-      return null;
-    } catch (error) {
-      logError(
-        'Error updating instrument relationship',
-        error,
-        'useClientInstruments',
-        {
-          operation: 'updateInstrumentRelationship',
-          relationshipId,
-          relationshipType,
+    },
+    []
+  );
+
+  const removeInstrumentRelationship = useCallback(
+    async (relationshipId: string) => {
+      try {
+        // O(1) lookup instead of O(n) find
+        const rel = relationshipsMap.get(relationshipId);
+        const clientId = rel?.client_id;
+
+        const response = await fetch(`/api/connections?id=${relationshipId}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to delete connection');
         }
-      );
-      return null;
-    }
-  }, []);
+
+        setInstrumentRelationships(prev => {
+          const next = prev.filter(rel => rel.id !== relationshipId);
+          if (clientId) {
+            const stillHas = next.some(r => r.client_id === clientId);
+            if (!stillHas) {
+              setClientsWithInstruments(prevSet => {
+                const nextSet = new Set(prevSet);
+                nextSet.delete(clientId);
+                return nextSet;
+              });
+            }
+          }
+          return next;
+        });
+
+        return true;
+      } catch (error) {
+        logError(
+          'Error removing instrument relationship',
+          error,
+          'useClientInstruments',
+          {
+            operation: 'removeInstrumentRelationship',
+            relationshipId,
+          }
+        );
+        return false;
+      }
+    },
+    [relationshipsMap]
+  );
+
+  const updateInstrumentRelationship = useCallback(
+    async (
+      relationshipId: string,
+      relationshipType: ClientInstrument['relationship_type']
+    ) => {
+      try {
+        const response = await fetch('/api/connections', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: relationshipId,
+            relationship_type: relationshipType,
+          }),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to update connection');
+        }
+        const result = await response.json();
+        if (result.data) {
+          setInstrumentRelationships(prev =>
+            prev.map(rel => (rel.id === relationshipId ? result.data : rel))
+          );
+          return result.data;
+        }
+        return null;
+      } catch (error) {
+        logError(
+          'Error updating instrument relationship',
+          error,
+          'useClientInstruments',
+          {
+            operation: 'updateInstrumentRelationship',
+            relationshipId,
+            relationshipType,
+          }
+        );
+        return null;
+      }
+    },
+    []
+  );
 
   const getClientInstruments = (clientId: string): ClientInstrument[] => {
     return instrumentRelationships.filter(rel => rel.client_id === clientId);

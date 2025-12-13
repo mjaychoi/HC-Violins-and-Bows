@@ -7,7 +7,14 @@ import {
   sortTags,
   /* formatClientContact, getClientInitials */ getInterestColor,
 } from '../utils';
-import React, { useState, memo, useCallback, Fragment, useMemo, forwardRef } from 'react';
+import React, {
+  useState,
+  memo,
+  useCallback,
+  Fragment,
+  useMemo,
+  forwardRef,
+} from 'react';
 import dynamic from 'next/dynamic';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
@@ -33,7 +40,10 @@ type FixedSizeListProps = {
   className?: string;
   outerElementType?: React.ElementType;
   innerElementType?: React.ElementType;
-  children: (props: { index: number; style: React.CSSProperties }) => React.ReactNode;
+  children: (props: {
+    index: number;
+    style: React.CSSProperties;
+  }) => React.ReactNode;
 };
 
 // react-window를 dynamic import로 로드 (SSR 문제 방지)
@@ -47,39 +57,40 @@ type FixedSizeListComponent = React.ComponentType<{
   className?: string;
   outerElementType?: React.ElementType;
   innerElementType?: React.ElementType;
-  children: (props: { index: number; style: React.CSSProperties }) => React.ReactNode;
+  children: (props: {
+    index: number;
+    style: React.CSSProperties;
+  }) => React.ReactNode;
 }>;
 
 const FixedSizeList = dynamic(
   () =>
-    import('react-window').then(
-      (mod: typeof import('react-window')) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const FixedSizeListComponent = (mod as any).FixedSizeList;
-        if (!FixedSizeListComponent) {
-          // Fallback if FixedSizeList is not available (v2)
-          console.warn('FixedSizeList not found in react-window, using fallback');
-          return ((props: FixedSizeListProps) => {
-            return (
-              <div style={{ height: props.height }}>
-                {Array.from({ length: props.itemCount }, (_, index) => {
-                  const style: React.CSSProperties = {
-                    height: props.itemSize,
-                    position: 'relative',
-                  };
-                  return (
-                    <div key={index} style={style}>
-                      {props.children({ index, style })}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          }) as FixedSizeListComponent;
-        }
-        return FixedSizeListComponent as FixedSizeListComponent;
+    import('react-window').then((mod: typeof import('react-window')) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const FixedSizeListComponent = (mod as any).FixedSizeList;
+      if (!FixedSizeListComponent) {
+        // Fallback if FixedSizeList is not available (v2)
+        console.warn('FixedSizeList not found in react-window, using fallback');
+        return ((props: FixedSizeListProps) => {
+          return (
+            <div style={{ height: props.height }}>
+              {Array.from({ length: props.itemCount }, (_, index) => {
+                const style: React.CSSProperties = {
+                  height: props.itemSize,
+                  position: 'relative',
+                };
+                return (
+                  <div key={index} style={style}>
+                    {props.children({ index, style })}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }) as FixedSizeListComponent;
       }
-    ),
+      return FixedSizeListComponent as FixedSizeListComponent;
+    }),
   { ssr: false }
 ) as FixedSizeListComponent;
 
@@ -144,12 +155,14 @@ const ClientList = memo(function ClientList({
   // UX: Calculate last activity date (using created_at as fallback since updated_at may not exist)
   const clientLastActivity = useMemo(() => {
     const activityMap = new Map<string, Date>();
-    
+
     // Use client's created_at as baseline (updated_at might not exist in type)
     // Type-safe access to optional updated_at property
     type ClientWithOptionalUpdatedAt = Client & { updated_at?: string };
-    type RelationshipWithOptionalUpdatedAt = ClientInstrument & { updated_at?: string };
-    
+    type RelationshipWithOptionalUpdatedAt = ClientInstrument & {
+      updated_at?: string;
+    };
+
     clients.forEach(client => {
       const clientWithUpdated = client as ClientWithOptionalUpdatedAt;
       if (clientWithUpdated.updated_at) {
@@ -158,14 +171,14 @@ const ClientList = memo(function ClientList({
         activityMap.set(client.id, new Date(client.created_at));
       }
     });
-    
+
     // Update with most recent instrument relationship update
     clientInstruments.forEach(rel => {
       if (rel.client_id) {
         const relWithUpdated = rel as RelationshipWithOptionalUpdatedAt;
-        const relDate = relWithUpdated.updated_at 
+        const relDate = relWithUpdated.updated_at
           ? new Date(relWithUpdated.updated_at)
-          : rel.created_at 
+          : rel.created_at
             ? new Date(rel.created_at)
             : null;
         if (relDate) {
@@ -176,7 +189,7 @@ const ClientList = memo(function ClientList({
         }
       }
     });
-    
+
     return activityMap;
   }, [clients, clientInstruments]);
 
@@ -185,7 +198,7 @@ const ClientList = memo(function ClientList({
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays === 0) return 'Today';
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 7) return `${diffDays} days ago`;
@@ -276,14 +289,18 @@ const ClientList = memo(function ClientList({
   }, [shouldVirtualize, clients.length, itemHeight]);
 
   // 테이블 구조를 유지하기 위한 커스텀 엘리먼트 타입
-  const TableOuterElement = forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-    (props, ref) => <table ref={ref} {...props} className="w-full" />
-  );
+  const TableOuterElement = forwardRef<
+    HTMLTableElement,
+    React.HTMLAttributes<HTMLTableElement>
+  >((props, ref) => <table ref={ref} {...props} className="w-full" />);
   TableOuterElement.displayName = 'TableOuterElement';
 
-  const TbodyInnerElement = forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
-    (props, ref) => <tbody ref={ref} {...props} className={classNames.tableBody} />
-  );
+  const TbodyInnerElement = forwardRef<
+    HTMLTableSectionElement,
+    React.HTMLAttributes<HTMLTableSectionElement>
+  >((props, ref) => (
+    <tbody ref={ref} {...props} className={classNames.tableBody} />
+  ));
   TbodyInnerElement.displayName = 'TbodyInnerElement';
 
   if (clients.length === 0) {
@@ -301,393 +318,119 @@ const ClientList = memo(function ClientList({
         <div className="inline-block min-w-full align-middle">
           <div className="overflow-hidden">
             <table className={classNames.table}>
-          <thead className={classNames.tableHeader}>
-            <tr>
-              <th className={`${classNames.tableHeaderCell} text-right`}>Actions</th>
-              <th
-                className={classNames.tableHeaderCellSortable}
-                onClick={() => onColumnSort('first_name')}
-              >
-                <span className="inline-flex items-center gap-1">
-                  Name
-                  <span
-                    className={`opacity-0 group-hover:opacity-100 ${getSortArrow('first_name') !== '' ? 'opacity-100 text-gray-900' : ''}`}
+              <thead className={classNames.tableHeader}>
+                <tr>
+                  <th className={`${classNames.tableHeaderCell} text-right`}>
+                    Actions
+                  </th>
+                  <th
+                    className={classNames.tableHeaderCellSortable}
+                    onClick={() => onColumnSort('first_name')}
                   >
-                    <SortIcon arrow={getSortArrow('first_name')} />
-                  </span>
-                </span>
-              </th>
-              <th
-                className={classNames.tableHeaderCellSortable}
-                onClick={() => onColumnSort('contact_number')}
-              >
-                <span className="inline-flex items-center gap-1">
-                  Contact
-                  <span
-                    className={`opacity-0 group-hover:opacity-100 ${getSortArrow('contact_number') !== '' ? 'opacity-100 text-gray-900' : ''}`}
-                  >
-                    <SortIcon arrow={getSortArrow('contact_number')} />
-                  </span>
-                </span>
-              </th>
-              <th
-                className={classNames.tableHeaderCellSortable}
-                onClick={() => onColumnSort('tags')}
-              >
-                <span className="inline-flex items-center gap-1">
-                  Tags
-                  <span
-                    className={`opacity-0 group-hover:opacity-100 ${getSortArrow('tags') !== '' ? 'opacity-100 text-gray-900' : ''}`}
-                  >
-                    <SortIcon arrow={getSortArrow('tags')} />
-                  </span>
-                </span>
-              </th>
-              <th
-                className={classNames.tableHeaderCellSortable}
-                onClick={() => onColumnSort('interest')}
-              >
-                <span className="inline-flex items-center gap-1">
-                  Interest
-                  <span
-                    className={`opacity-0 group-hover:opacity-100 ${getSortArrow('interest') !== '' ? 'opacity-100 text-gray-900' : ''}`}
-                  >
-                    <SortIcon arrow={getSortArrow('interest')} />
-                  </span>
-                </span>
-              </th>
-              <th
-                className={classNames.tableHeaderCellSortable}
-                onClick={() => onColumnSort('client_number')}
-              >
-                <span className="inline-flex items-center gap-1">
-                  Client #
-                  <span
-                    className={`opacity-0 group-hover:opacity-100 ${getSortArrow('client_number') !== '' ? 'opacity-100 text-gray-900' : ''}`}
-                  >
-                    <SortIcon arrow={getSortArrow('client_number')} />
-                  </span>
-                </span>
-              </th>
-            </tr>
-          </thead>
-          {shouldVirtualize && listHeight && FixedSizeList ? (
-            <FixedSizeList
-              height={listHeight}
-              itemCount={clients.length}
-              itemSize={itemHeight}
-              overscanCount={5}
-              outerElementType={TableOuterElement}
-              innerElementType={TbodyInnerElement}
-              className="virtualized-client-list"
-            >
-              {({ index, style }: { index: number; style: React.CSSProperties }) => {
-                const client = clients[index];
-                const fullName = `${client.first_name || ''} ${client.last_name || ''}`.trim() || 'N/A';
-                const normalizedEmail = client.email?.trim();
-                const hasEmail = Boolean(normalizedEmail);
-                const emailSubject = encodeURIComponent(
-                  `Message to ${fullName !== 'N/A' ? fullName : 'client'}`
-                );
-                const emailGreeting =
-                  fullName !== 'N/A'
-                    ? `안녕하세요 ${fullName},`
-                    : '안녕하세요,';
-                const emailBody = encodeURIComponent(`${emailGreeting}\n\n`);
-                const mailtoHref = hasEmail
-                  ? `mailto:${normalizedEmail}?subject=${emailSubject}&body=${emailBody}`
-                  : '';
-
-                return (
-                  <tr
-                    key={client.id}
-                    style={style}
-                    onClick={() => {
-                      if (editingClient === client.id) return;
-                      setExpandedClientId(prev =>
-                        prev === client.id ? null : client.id
-                      );
-                      onClientClick(client);
-                    }}
-                    className={cn(
-                      classNames.tableRow,
-                      'cursor-pointer',
-                      editingClient === client.id ? 'bg-blue-50' : ''
-                    )}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        if (editingClient !== client.id) {
-                          onClientClick(client);
-                        }
-                      }
-                    }}
-                    aria-label={`View details for ${fullName}`}
-                  >
-                    <td className={cn(classNames.tableCell, 'text-left relative')}>
-                    {editingClient === client.id ? (
-                      <div className="flex items-center justify-end gap-0.5 relative z-10">
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            saveEditing();
-                          }}
-                          disabled={isSaving}
-                          className="text-green-600 hover:text-green-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-green-50"
-                          title="Save changes"
-                        >
-                          {isSaving ? (
-                            <svg
-                              className="w-4 h-4 animate-spin"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                              />
-                            </svg>
-                          ) : (
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M5 13l4 4L19 7"
-                              />
-                            </svg>
-                          )}
-                        </button>
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            cancelEditing();
-                          }}
-                          disabled={isSaving}
-                          className="text-red-600 hover:text-red-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-red-50"
-                          title="Cancel editing"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M6 18L18 6M6 6l12 12"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                    ) : (
-                      <RowActions
-                        onView={() => onClientClick(client)}
-                        onEdit={() => startEditing(client)}
-                        onEmail={hasEmail && mailtoHref ? () => { window.location.href = mailtoHref; } : undefined}
-                        onDelete={onDeleteClient ? () => onDeleteClient(client) : undefined}
-                      />
-                    )}
-                  </td>
-                  <td className={classNames.tableCell}>
-                    {editingClient === client.id ? (
-                      <div className="min-w-[200px] space-y-2">
-                        <input
-                          type="text"
-                          value={`${editData.first_name || ''} ${editData.last_name || ''}`.trim()}
-                          onChange={e => handleFullNameChange(e.target.value)}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                          placeholder="Full name"
-                        />
-                        <input
-                          type="email"
-                          value={editData.email || ''}
-                          onChange={e =>
-                            handleEditFieldChange('email', e.target.value)
-                          }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                          placeholder="Email"
-                        />
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={e => {
-                          e.stopPropagation();
-                          setExpandedClientId(prev =>
-                            prev === client.id ? null : client.id
-                          );
-                        }}
-                        className="w-full text-left min-w-[150px] focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm"
-                        aria-expanded={expandedClientId === client.id}
-                        aria-controls={`client-details-${client.id}`}
+                    <span className="inline-flex items-center gap-1">
+                      Name
+                      <span
+                        className={`opacity-0 group-hover:opacity-100 ${getSortArrow('first_name') !== '' ? 'opacity-100 text-gray-900' : ''}`}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm font-medium text-gray-900">
-                            {fullName}
-                          </div>
-                          <span
-                            className="text-gray-400 text-xs"
-                            aria-hidden
-                          >
-                            {expandedClientId === client.id ? '▲' : '▼'}
-                          </span>
-                        </div>
-                        {client.email && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            {client.email}
-                          </div>
-                        )}
-                        {client.note && (
-                          <div className="text-xs text-gray-500 mt-1 line-clamp-2">
-                            {client.note}
-                          </div>
-                        )}
-                      </button>
-                    )}
-                  </td>
-                <td className={classNames.tableCell}>
-                  {editingClient === client.id ? (
-                    <div className="min-w-[150px]">
-                      <input
-                        type="tel"
-                        value={editData.contact_number || ''}
-                        onChange={e =>
-                          handleEditFieldChange(
-                            'contact_number',
-                            e.target.value
-                          )
-                        }
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        onClick={e => e.stopPropagation()}
-                        placeholder="Phone number"
-                      />
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-900 min-w-[120px]">
-                      {client.contact_number ? (
-                        <span>{client.contact_number}</span>
-                      ) : (
-                        <span className="text-gray-400">No contact</span>
-                      )}
-                    </div>
-                  )}
-                </td>
-                <td className={classNames.tableCell}>
-                  {editingClient === client.id ? (
-                    <div className="min-w-[150px]">
-                      <ClientTagSelector
-                        selectedTags={editData.tags || []}
-                        onChange={next =>
-                          handleEditFieldChange('tags', next as string[])
-                        }
-                        className="space-y-1.5"
-                        optionClassName="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
-                        checkboxClassName="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                        labelClassName="ml-2 text-xs font-medium"
-                        getLabelClassName={tag => getTagTextColor(tag)}
-                        stopPropagation
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-1 min-w-[120px]">
-                      {sortTags([...(client.tags ?? [])]).map(tag => (
-                        <span
-                          key={tag}
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td className={classNames.tableCell}>
-                  {editingClient === client.id ? (
-                    <div className="min-w-[120px]">
-                      <InterestSelector
-                        value={editData.interest || ''}
-                        onChange={value =>
-                          handleEditFieldChange('interest', value)
-                        }
-                        selectClassName="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Select interest"
-                        stopPropagation
-                      />
-                    </div>
-                  ) : (
-                    <div className="text-sm min-w-[100px]">
-                      {client.interest ? (
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getInterestColor(client.interest)}`}
-                        >
-                          {client.interest}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">No interest</span>
-                      )}
-                    </div>
-                  )}
-                </td>
-                <td className={classNames.tableCell}>
-                  {editingClient === client.id ? (
-                    <input
-                      type="text"
-                      value={editData.client_number || ''}
-                      onChange={e =>
-                        handleEditFieldChange('client_number', e.target.value)
-                      }
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      onClick={e => e.stopPropagation()}
-                      placeholder="Client #"
-                    />
-                  ) : (
-                    <div className="text-sm text-gray-900 font-mono">
-                      {client.client_number || '—'}
-                    </div>
-                  )}
-                </td>
-              </tr>
-              );
-            }}
-            </FixedSizeList>
-          ) : (
-              <tbody className={classNames.tableBody}>
-                {clients.map(client => {
-                  const fullName = `${client.first_name || ''} ${client.last_name || ''}`.trim() || 'N/A';
-                  const normalizedEmail = client.email?.trim();
-                  const hasEmail = Boolean(normalizedEmail);
-                  const emailSubject = encodeURIComponent(
-                    `Message to ${fullName !== 'N/A' ? fullName : 'client'}`
-                  );
-                  const emailGreeting =
-                    fullName !== 'N/A'
-                      ? `안녕하세요 ${fullName},`
-                      : '안녕하세요,';
-                  const emailBody = encodeURIComponent(`${emailGreeting}\n\n`);
-                  const mailtoHref = hasEmail
-                    ? `mailto:${normalizedEmail}?subject=${emailSubject}&body=${emailBody}`
-                    : '';
+                        <SortIcon arrow={getSortArrow('first_name')} />
+                      </span>
+                    </span>
+                  </th>
+                  <th
+                    className={classNames.tableHeaderCellSortable}
+                    onClick={() => onColumnSort('contact_number')}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Contact
+                      <span
+                        className={`opacity-0 group-hover:opacity-100 ${getSortArrow('contact_number') !== '' ? 'opacity-100 text-gray-900' : ''}`}
+                      >
+                        <SortIcon arrow={getSortArrow('contact_number')} />
+                      </span>
+                    </span>
+                  </th>
+                  <th
+                    className={classNames.tableHeaderCellSortable}
+                    onClick={() => onColumnSort('tags')}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Tags
+                      <span
+                        className={`opacity-0 group-hover:opacity-100 ${getSortArrow('tags') !== '' ? 'opacity-100 text-gray-900' : ''}`}
+                      >
+                        <SortIcon arrow={getSortArrow('tags')} />
+                      </span>
+                    </span>
+                  </th>
+                  <th
+                    className={classNames.tableHeaderCellSortable}
+                    onClick={() => onColumnSort('interest')}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Interest
+                      <span
+                        className={`opacity-0 group-hover:opacity-100 ${getSortArrow('interest') !== '' ? 'opacity-100 text-gray-900' : ''}`}
+                      >
+                        <SortIcon arrow={getSortArrow('interest')} />
+                      </span>
+                    </span>
+                  </th>
+                  <th
+                    className={classNames.tableHeaderCellSortable}
+                    onClick={() => onColumnSort('client_number')}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Client #
+                      <span
+                        className={`opacity-0 group-hover:opacity-100 ${getSortArrow('client_number') !== '' ? 'opacity-100 text-gray-900' : ''}`}
+                      >
+                        <SortIcon arrow={getSortArrow('client_number')} />
+                      </span>
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              {shouldVirtualize && listHeight && FixedSizeList ? (
+                <FixedSizeList
+                  height={listHeight}
+                  itemCount={clients.length}
+                  itemSize={itemHeight}
+                  overscanCount={5}
+                  outerElementType={TableOuterElement}
+                  innerElementType={TbodyInnerElement}
+                  className="virtualized-client-list"
+                >
+                  {({
+                    index,
+                    style,
+                  }: {
+                    index: number;
+                    style: React.CSSProperties;
+                  }) => {
+                    const client = clients[index];
+                    const fullName =
+                      `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+                      'N/A';
+                    const normalizedEmail = client.email?.trim();
+                    const hasEmail = Boolean(normalizedEmail);
+                    const emailSubject = encodeURIComponent(
+                      `Message to ${fullName !== 'N/A' ? fullName : 'client'}`
+                    );
+                    const emailGreeting =
+                      fullName !== 'N/A'
+                        ? `안녕하세요 ${fullName},`
+                        : '안녕하세요,';
+                    const emailBody = encodeURIComponent(
+                      `${emailGreeting}\n\n`
+                    );
+                    const mailtoHref = hasEmail
+                      ? `mailto:${normalizedEmail}?subject=${emailSubject}&body=${emailBody}`
+                      : '';
 
-                  const isExpanded = expandedClientId === client.id;
-
-                  return (
-                    <Fragment key={client.id}>
+                    return (
                       <tr
+                        key={client.id}
+                        style={style}
                         onClick={() => {
                           if (editingClient === client.id) return;
                           setExpandedClientId(prev =>
@@ -702,7 +445,7 @@ const ClientList = memo(function ClientList({
                         )}
                         role="button"
                         tabIndex={0}
-                        onKeyDown={(e) => {
+                        onKeyDown={e => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
                             if (editingClient !== client.id) {
@@ -712,7 +455,12 @@ const ClientList = memo(function ClientList({
                         }}
                         aria-label={`View details for ${fullName}`}
                       >
-                        <td className={cn(classNames.tableCell, 'text-left relative')}>
+                        <td
+                          className={cn(
+                            classNames.tableCell,
+                            'text-left relative'
+                          )}
+                        >
                           {editingClient === client.id ? (
                             <div className="flex items-center justify-end gap-0.5 relative z-10">
                               <button
@@ -782,8 +530,18 @@ const ClientList = memo(function ClientList({
                             <RowActions
                               onView={() => onClientClick(client)}
                               onEdit={() => startEditing(client)}
-                              onEmail={hasEmail && mailtoHref ? () => { window.location.href = mailtoHref; } : undefined}
-                              onDelete={onDeleteClient ? () => onDeleteClient(client) : undefined}
+                              onEmail={
+                                hasEmail && mailtoHref
+                                  ? () => {
+                                      window.location.href = mailtoHref;
+                                    }
+                                  : undefined
+                              }
+                              onDelete={
+                                onDeleteClient
+                                  ? () => onDeleteClient(client)
+                                  : undefined
+                              }
                             />
                           )}
                         </td>
@@ -793,7 +551,9 @@ const ClientList = memo(function ClientList({
                               <input
                                 type="text"
                                 value={`${editData.first_name || ''} ${editData.last_name || ''}`.trim()}
-                                onChange={e => handleFullNameChange(e.target.value)}
+                                onChange={e =>
+                                  handleFullNameChange(e.target.value)
+                                }
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 onClick={e => e.stopPropagation()}
                                 placeholder="Full name"
@@ -819,7 +579,7 @@ const ClientList = memo(function ClientList({
                                 );
                               }}
                               className="w-full text-left min-w-[150px] focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm"
-                              aria-expanded={isExpanded}
+                              aria-expanded={expandedClientId === client.id}
                               aria-controls={`client-details-${client.id}`}
                             >
                               <div className="flex items-center justify-between">
@@ -830,38 +590,14 @@ const ClientList = memo(function ClientList({
                                   className="text-gray-400 text-xs"
                                   aria-hidden
                                 >
-                                  {isExpanded ? '▲' : '▼'}
+                                  {expandedClientId === client.id ? '▲' : '▼'}
                                 </span>
                               </div>
                               {client.email && (
-                                <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                                  <span aria-hidden="true">📧</span>
+                                <div className="text-xs text-gray-500 mt-1">
                                   {client.email}
                                 </div>
                               )}
-                              {/* UX: Display instrument count and recent activity */}
-                              <div className="flex items-center gap-3 mt-2 text-xs text-gray-600">
-                                {(() => {
-                                  const instrumentCount = clientInstrumentCounts.get(client.id) || 0;
-                                  const lastActivity = clientLastActivity.get(client.id);
-                                  return (
-                                    <>
-                                      {instrumentCount > 0 && (
-                                        <div className="flex items-center gap-1">
-                                          <span aria-hidden="true">🎻</span>
-                                          <span>Instruments: {instrumentCount}</span>
-                                        </div>
-                                      )}
-                                      {lastActivity && (
-                                        <div className="flex items-center gap-1">
-                                          <span aria-hidden="true">🕒</span>
-                                          <span>Last activity: {formatRelativeTime(lastActivity)}</span>
-                                        </div>
-                                      )}
-                                    </>
-                                  );
-                                })()}
-                              </div>
                               {client.note && (
                                 <div className="text-xs text-gray-500 mt-1 line-clamp-2">
                                   {client.note}
@@ -892,7 +628,9 @@ const ClientList = memo(function ClientList({
                               {client.contact_number ? (
                                 <span>{client.contact_number}</span>
                               ) : (
-                                <span className="text-gray-400">No contact</span>
+                                <span className="text-gray-400">
+                                  No contact
+                                </span>
                               )}
                             </div>
                           )}
@@ -903,7 +641,10 @@ const ClientList = memo(function ClientList({
                               <ClientTagSelector
                                 selectedTags={editData.tags || []}
                                 onChange={next =>
-                                  handleEditFieldChange('tags', next as string[])
+                                  handleEditFieldChange(
+                                    'tags',
+                                    next as string[]
+                                  )
                                 }
                                 className="space-y-1.5"
                                 optionClassName="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
@@ -948,7 +689,9 @@ const ClientList = memo(function ClientList({
                                   {client.interest}
                                 </span>
                               ) : (
-                                <span className="text-gray-400">No interest</span>
+                                <span className="text-gray-400">
+                                  No interest
+                                </span>
                               )}
                             </div>
                           )}
@@ -959,7 +702,10 @@ const ClientList = memo(function ClientList({
                               type="text"
                               value={editData.client_number || ''}
                               onChange={e =>
-                                handleEditFieldChange('client_number', e.target.value)
+                                handleEditFieldChange(
+                                  'client_number',
+                                  e.target.value
+                                )
                               }
                               className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                               onClick={e => e.stopPropagation()}
@@ -972,64 +718,441 @@ const ClientList = memo(function ClientList({
                           )}
                         </td>
                       </tr>
-                      {isExpanded && (
-                        <tr className="bg-gray-50">
-                          <td colSpan={6} className={cn(classNames.tableCell, 'text-sm text-gray-700')}>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              <div>
-                                <div className="text-xs text-gray-500">Email</div>
-                                <div className="font-medium">
-                                  {client.email || '—'}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-xs text-gray-500">Contact</div>
-                                <div className="font-medium">
-                                  {client.contact_number || '—'}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-xs text-gray-500">Interest</div>
-                                <div className="font-medium">
-                                  {client.interest || '—'}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-xs text-gray-500">Client #</div>
-                                <div className="font-mono">{client.client_number || '—'}</div>
-                              </div>
-                              <div className="md:col-span-2">
-                                <div className="text-xs text-gray-500">Tags</div>
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  {client.tags?.length ? (
-                                    sortTags([...client.tags]).map(tag => (
-                                      <span
-                                        key={tag}
-                                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
-                                      >
-                                        {tag}
-                                      </span>
-                                    ))
+                    );
+                  }}
+                </FixedSizeList>
+              ) : (
+                <tbody className={classNames.tableBody}>
+                  {clients.map(client => {
+                    const fullName =
+                      `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+                      'N/A';
+                    const normalizedEmail = client.email?.trim();
+                    const hasEmail = Boolean(normalizedEmail);
+                    const emailSubject = encodeURIComponent(
+                      `Message to ${fullName !== 'N/A' ? fullName : 'client'}`
+                    );
+                    const emailGreeting =
+                      fullName !== 'N/A'
+                        ? `안녕하세요 ${fullName},`
+                        : '안녕하세요,';
+                    const emailBody = encodeURIComponent(
+                      `${emailGreeting}\n\n`
+                    );
+                    const mailtoHref = hasEmail
+                      ? `mailto:${normalizedEmail}?subject=${emailSubject}&body=${emailBody}`
+                      : '';
+
+                    const isExpanded = expandedClientId === client.id;
+
+                    return (
+                      <Fragment key={client.id}>
+                        <tr
+                          onClick={() => {
+                            if (editingClient === client.id) return;
+                            setExpandedClientId(prev =>
+                              prev === client.id ? null : client.id
+                            );
+                            onClientClick(client);
+                          }}
+                          className={cn(
+                            classNames.tableRow,
+                            'cursor-pointer',
+                            editingClient === client.id ? 'bg-blue-50' : ''
+                          )}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              if (editingClient !== client.id) {
+                                onClientClick(client);
+                              }
+                            }
+                          }}
+                          aria-label={`View details for ${fullName}`}
+                        >
+                          <td
+                            className={cn(
+                              classNames.tableCell,
+                              'text-left relative'
+                            )}
+                          >
+                            {editingClient === client.id ? (
+                              <div className="flex items-center justify-end gap-0.5 relative z-10">
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    saveEditing();
+                                  }}
+                                  disabled={isSaving}
+                                  className="text-green-600 hover:text-green-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-green-50"
+                                  title="Save changes"
+                                >
+                                  {isSaving ? (
+                                    <svg
+                                      className="w-4 h-4 animate-spin"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                      />
+                                    </svg>
                                   ) : (
-                                    <span className="text-gray-400">No tags</span>
+                                    <svg
+                                      className="w-4 h-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth="2"
+                                        d="M5 13l4 4L19 7"
+                                      />
+                                    </svg>
                                   )}
-                                </div>
+                                </button>
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    cancelEditing();
+                                  }}
+                                  disabled={isSaving}
+                                  className="text-red-600 hover:text-red-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-red-50"
+                                  title="Cancel editing"
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth="2"
+                                      d="M6 18L18 6M6 6l12 12"
+                                    />
+                                  </svg>
+                                </button>
                               </div>
-                              <div className="md:col-span-2">
-                                <div className="text-xs text-gray-500">Note</div>
-                                <div className="mt-1 whitespace-pre-wrap">
-                                  {client.note || '—'}
-                                </div>
+                            ) : (
+                              <RowActions
+                                onView={() => onClientClick(client)}
+                                onEdit={() => startEditing(client)}
+                                onEmail={
+                                  hasEmail && mailtoHref
+                                    ? () => {
+                                        window.location.href = mailtoHref;
+                                      }
+                                    : undefined
+                                }
+                                onDelete={
+                                  onDeleteClient
+                                    ? () => onDeleteClient(client)
+                                    : undefined
+                                }
+                              />
+                            )}
+                          </td>
+                          <td className={classNames.tableCell}>
+                            {editingClient === client.id ? (
+                              <div className="min-w-[200px] space-y-2">
+                                <input
+                                  type="text"
+                                  value={`${editData.first_name || ''} ${editData.last_name || ''}`.trim()}
+                                  onChange={e =>
+                                    handleFullNameChange(e.target.value)
+                                  }
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  onClick={e => e.stopPropagation()}
+                                  placeholder="Full name"
+                                />
+                                <input
+                                  type="email"
+                                  value={editData.email || ''}
+                                  onChange={e =>
+                                    handleEditFieldChange(
+                                      'email',
+                                      e.target.value
+                                    )
+                                  }
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  onClick={e => e.stopPropagation()}
+                                  placeholder="Email"
+                                />
                               </div>
-                            </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setExpandedClientId(prev =>
+                                    prev === client.id ? null : client.id
+                                  );
+                                }}
+                                className="w-full text-left min-w-[150px] focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm"
+                                aria-expanded={isExpanded}
+                                aria-controls={`client-details-${client.id}`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {fullName}
+                                  </div>
+                                  <span
+                                    className="text-gray-400 text-xs"
+                                    aria-hidden
+                                  >
+                                    {isExpanded ? '▲' : '▼'}
+                                  </span>
+                                </div>
+                                {client.email && (
+                                  <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                                    <span aria-hidden="true">📧</span>
+                                    {client.email}
+                                  </div>
+                                )}
+                                {/* UX: Display instrument count and recent activity */}
+                                <div className="flex items-center gap-3 mt-2 text-xs text-gray-600">
+                                  {(() => {
+                                    const instrumentCount =
+                                      clientInstrumentCounts.get(client.id) ||
+                                      0;
+                                    const lastActivity = clientLastActivity.get(
+                                      client.id
+                                    );
+                                    return (
+                                      <>
+                                        {instrumentCount > 0 && (
+                                          <div className="flex items-center gap-1">
+                                            <span aria-hidden="true">🎻</span>
+                                            <span>
+                                              Instruments: {instrumentCount}
+                                            </span>
+                                          </div>
+                                        )}
+                                        {lastActivity && (
+                                          <div className="flex items-center gap-1">
+                                            <span aria-hidden="true">🕒</span>
+                                            <span>
+                                              Last activity:{' '}
+                                              {formatRelativeTime(lastActivity)}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                                {client.note && (
+                                  <div className="text-xs text-gray-500 mt-1 line-clamp-2">
+                                    {client.note}
+                                  </div>
+                                )}
+                              </button>
+                            )}
+                          </td>
+                          <td className={classNames.tableCell}>
+                            {editingClient === client.id ? (
+                              <div className="min-w-[150px]">
+                                <input
+                                  type="tel"
+                                  value={editData.contact_number || ''}
+                                  onChange={e =>
+                                    handleEditFieldChange(
+                                      'contact_number',
+                                      e.target.value
+                                    )
+                                  }
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  onClick={e => e.stopPropagation()}
+                                  placeholder="Phone number"
+                                />
+                              </div>
+                            ) : (
+                              <div className="text-sm text-gray-900 min-w-[120px]">
+                                {client.contact_number ? (
+                                  <span>{client.contact_number}</span>
+                                ) : (
+                                  <span className="text-gray-400">
+                                    No contact
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className={classNames.tableCell}>
+                            {editingClient === client.id ? (
+                              <div className="min-w-[150px]">
+                                <ClientTagSelector
+                                  selectedTags={editData.tags || []}
+                                  onChange={next =>
+                                    handleEditFieldChange(
+                                      'tags',
+                                      next as string[]
+                                    )
+                                  }
+                                  className="space-y-1.5"
+                                  optionClassName="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
+                                  checkboxClassName="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                                  labelClassName="ml-2 text-xs font-medium"
+                                  getLabelClassName={tag =>
+                                    getTagTextColor(tag)
+                                  }
+                                  stopPropagation
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-1 min-w-[120px]">
+                                {sortTags([...(client.tags ?? [])]).map(tag => (
+                                  <span
+                                    key={tag}
+                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          <td className={classNames.tableCell}>
+                            {editingClient === client.id ? (
+                              <div className="min-w-[120px]">
+                                <InterestSelector
+                                  value={editData.interest || ''}
+                                  onChange={value =>
+                                    handleEditFieldChange('interest', value)
+                                  }
+                                  selectClassName="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  placeholder="Select interest"
+                                  stopPropagation
+                                />
+                              </div>
+                            ) : (
+                              <div className="text-sm min-w-[100px]">
+                                {client.interest ? (
+                                  <span
+                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getInterestColor(client.interest)}`}
+                                  >
+                                    {client.interest}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">
+                                    No interest
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className={classNames.tableCell}>
+                            {editingClient === client.id ? (
+                              <input
+                                type="text"
+                                value={editData.client_number || ''}
+                                onChange={e =>
+                                  handleEditFieldChange(
+                                    'client_number',
+                                    e.target.value
+                                  )
+                                }
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onClick={e => e.stopPropagation()}
+                                placeholder="Client #"
+                              />
+                            ) : (
+                              <div className="text-sm text-gray-900 font-mono">
+                                {client.client_number || '—'}
+                              </div>
+                            )}
                           </td>
                         </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            )}
+                        {isExpanded && (
+                          <tr className="bg-gray-50">
+                            <td
+                              colSpan={6}
+                              className={cn(
+                                classNames.tableCell,
+                                'text-sm text-gray-700'
+                              )}
+                            >
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <div className="text-xs text-gray-500">
+                                    Email
+                                  </div>
+                                  <div className="font-medium">
+                                    {client.email || '—'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-gray-500">
+                                    Contact
+                                  </div>
+                                  <div className="font-medium">
+                                    {client.contact_number || '—'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-gray-500">
+                                    Interest
+                                  </div>
+                                  <div className="font-medium">
+                                    {client.interest || '—'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-gray-500">
+                                    Client #
+                                  </div>
+                                  <div className="font-mono">
+                                    {client.client_number || '—'}
+                                  </div>
+                                </div>
+                                <div className="md:col-span-2">
+                                  <div className="text-xs text-gray-500">
+                                    Tags
+                                  </div>
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {client.tags?.length ? (
+                                      sortTags([...client.tags]).map(tag => (
+                                        <span
+                                          key={tag}
+                                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
+                                        >
+                                          {tag}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-gray-400">
+                                        No tags
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="md:col-span-2">
+                                  <div className="text-xs text-gray-500">
+                                    Note
+                                  </div>
+                                  <div className="mt-1 whitespace-pre-wrap">
+                                    {client.note || '—'}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              )}
             </table>
           </div>
         </div>
@@ -1082,7 +1205,7 @@ const RowActions = ({
         </button>
       )}
       <button
-        onClick={(e) => {
+        onClick={e => {
           e.stopPropagation();
           setIsOpen(!isOpen);
         }}
@@ -1113,7 +1236,7 @@ const RowActions = ({
           />
           <div className="absolute left-0 z-20 mt-2 w-32 rounded-md border border-gray-200 bg-white shadow-lg">
             <button
-              onClick={(e) => {
+              onClick={e => {
                 e.stopPropagation();
                 onView();
                 setIsOpen(false);
@@ -1142,7 +1265,7 @@ const RowActions = ({
               View
             </button>
             <button
-              onClick={(e) => {
+              onClick={e => {
                 e.stopPropagation();
                 onEdit();
                 setIsOpen(false);
@@ -1166,7 +1289,7 @@ const RowActions = ({
             </button>
             {onEmail && (
               <button
-                onClick={(e) => {
+                onClick={e => {
                   e.stopPropagation();
                   onEmail();
                   setIsOpen(false);
@@ -1191,7 +1314,7 @@ const RowActions = ({
             )}
             {onDelete && (
               <button
-                onClick={(e) => {
+                onClick={e => {
                   e.stopPropagation();
                   onDelete();
                   setIsOpen(false);

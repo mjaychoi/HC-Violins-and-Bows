@@ -43,8 +43,8 @@ describe('formatNotificationMessage', () => {
   });
 
   it('falls back to default title when missing', () => {
-    expect(
-      formatNotificationMessage({ ...task, title: '' }, 'today', 0)
-    ).toBe('다음 작업 · Today');
+    expect(formatNotificationMessage({ ...task, title: '' }, 'today', 0)).toBe(
+      '다음 작업 · Today'
+    );
   });
 });

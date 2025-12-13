@@ -69,7 +69,9 @@ describe('ApiClient', () => {
         select: jest.fn().mockResolvedValue({ data: mockData, error: null }),
       });
 
-      const result = await apiClient.query('instruments' as keyof typeof ALLOWED_SORT_COLUMNS);
+      const result = await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS
+      );
 
       expect(result.data).toEqual(mockData);
       expect(result.error).toBeNull();
@@ -86,9 +88,12 @@ describe('ApiClient', () => {
         eq: mockEq,
       });
 
-      await apiClient.query('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, {
-        eq: { column: 'status', value: 'active' },
-      });
+      await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        {
+          eq: { column: 'status', value: 'active' },
+        }
+      );
 
       expect(mockEq).toHaveBeenCalledWith('status', 'active');
     });
@@ -104,9 +109,12 @@ describe('ApiClient', () => {
         order: mockOrder,
       });
 
-      await apiClient.query('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, {
-        order: { column: 'created_at', ascending: false },
-      });
+      await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        {
+          order: { column: 'created_at', ascending: false },
+        }
+      );
 
       expect(mockOrder).toHaveBeenCalledWith('created_at', {
         ascending: false,
@@ -124,7 +132,10 @@ describe('ApiClient', () => {
         limit: mockLimit,
       });
 
-      await apiClient.query('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, { limit: 10 });
+      await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        { limit: 10 }
+      );
 
       expect(mockLimit).toHaveBeenCalledWith(10);
     });
@@ -135,7 +146,9 @@ describe('ApiClient', () => {
         select: jest.fn().mockResolvedValue({ data: null, error: mockError }),
       });
 
-      const result = await apiClient.query('instruments' as keyof typeof ALLOWED_SORT_COLUMNS);
+      const result = await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS
+      );
 
       expect(result.data).toBeNull();
       expect(result.error).toBeDefined();
@@ -148,7 +161,9 @@ describe('ApiClient', () => {
         select: jest.fn().mockRejectedValue(mockError),
       });
 
-      const result = await apiClient.query('instruments' as keyof typeof ALLOWED_SORT_COLUMNS);
+      const result = await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS
+      );
 
       expect(result.data).toBeNull();
       expect(result.error).toBeDefined();
@@ -170,7 +185,10 @@ describe('ApiClient', () => {
         single: mockSingle,
       });
 
-      const result = await apiClient.create('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, newItem);
+      const result = await apiClient.create(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        newItem
+      );
 
       expect(mockInsert).toHaveBeenCalledWith([newItem]);
       expect(result.data).toEqual(createdItem);
@@ -190,7 +208,10 @@ describe('ApiClient', () => {
         single: mockSingle,
       });
 
-      const result = await apiClient.create('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, { name: 'Test' });
+      const result = await apiClient.create(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        { name: 'Test' }
+      );
 
       expect(result.data).toBeNull();
       expect(result.error).toBeDefined();
@@ -207,7 +228,10 @@ describe('ApiClient', () => {
         single: mockSingle,
       });
 
-      const result = await apiClient.create('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, { name: 'Test' });
+      const result = await apiClient.create(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        { name: 'Test' }
+      );
 
       expect(result.data).toBeNull();
       expect(result.error).toBeDefined();
@@ -231,7 +255,11 @@ describe('ApiClient', () => {
         single: mockSingle,
       });
 
-      const result = await apiClient.update('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, '1', updates);
+      const result = await apiClient.update(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        '1',
+        updates
+      );
 
       expect(mockUpdate).toHaveBeenCalledWith(updates);
       expect(result.data).toEqual(updatedItem);
@@ -253,9 +281,13 @@ describe('ApiClient', () => {
         single: mockSingle,
       });
 
-      const result = await apiClient.update('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, '1', {
-        name: 'Updated',
-      });
+      const result = await apiClient.update(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        '1',
+        {
+          name: 'Updated',
+        }
+      );
 
       expect(result.data).toBeNull();
       expect(result.error).toBeDefined();
@@ -272,7 +304,10 @@ describe('ApiClient', () => {
         eq: mockEq,
       });
 
-      const result = await apiClient.delete('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, '1');
+      const result = await apiClient.delete(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        '1'
+      );
 
       expect(mockEq).toHaveBeenCalledWith('id', '1');
       expect(result.success).toBe(true);
@@ -289,7 +324,10 @@ describe('ApiClient', () => {
         eq: mockEq,
       });
 
-      const result = await apiClient.delete('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, '1');
+      const result = await apiClient.delete(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        '1'
+      );
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
@@ -305,7 +343,10 @@ describe('ApiClient', () => {
         eq: mockEq,
       });
 
-      const result = await apiClient.delete('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, '1');
+      const result = await apiClient.delete(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        '1'
+      );
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();

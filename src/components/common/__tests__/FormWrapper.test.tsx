@@ -7,7 +7,9 @@ import { logError } from '@/utils/logger';
 jest.mock('@/hooks/useFormState');
 jest.mock('@/utils/logger');
 
-const mockUseFormState = useFormState as jest.MockedFunction<typeof useFormState>;
+const mockUseFormState = useFormState as jest.MockedFunction<
+  typeof useFormState
+>;
 const mockLogError = logError as jest.MockedFunction<typeof logError>;
 
 describe('FormWrapper', () => {
@@ -29,7 +31,9 @@ describe('FormWrapper', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseFormState.mockReturnValue(mockFormState as unknown as ReturnType<typeof useFormState>);
+    mockUseFormState.mockReturnValue(
+      mockFormState as unknown as ReturnType<typeof useFormState>
+    );
   });
 
   it('should render form with children', () => {
@@ -95,14 +99,19 @@ describe('FormWrapper', () => {
 
     await waitFor(() => {
       expect(validate).toHaveBeenCalled();
-      expect(mockSetFieldError).toHaveBeenCalledWith('name', 'Name is required');
+      expect(mockSetFieldError).toHaveBeenCalledWith(
+        'name',
+        'Name is required'
+      );
       expect(mockOnSubmit).not.toHaveBeenCalled();
     });
   });
 
   it('should handle submit errors', async () => {
     const user = userEvent.setup();
-    const mockOnSubmit = jest.fn().mockRejectedValue(new Error('Submit failed'));
+    const mockOnSubmit = jest
+      .fn()
+      .mockRejectedValue(new Error('Submit failed'));
 
     render(
       <FormWrapper
@@ -186,10 +195,7 @@ describe('SimpleFormWrapper', () => {
 
   it('should render children directly', () => {
     render(
-      <SimpleFormWrapper
-        initialData={{ name: '' }}
-        onSubmit={jest.fn()}
-      >
+      <SimpleFormWrapper initialData={{ name: '' }} onSubmit={jest.fn()}>
         <div>Simple Form Content</div>
       </SimpleFormWrapper>
     );
@@ -202,10 +208,7 @@ describe('SimpleFormWrapper', () => {
     const mockOnSubmit = jest.fn().mockResolvedValue(undefined);
 
     render(
-      <SimpleFormWrapper
-        initialData={{ name: 'Test' }}
-        onSubmit={mockOnSubmit}
-      >
+      <SimpleFormWrapper initialData={{ name: 'Test' }} onSubmit={mockOnSubmit}>
         <button type="submit">Submit</button>
       </SimpleFormWrapper>
     );

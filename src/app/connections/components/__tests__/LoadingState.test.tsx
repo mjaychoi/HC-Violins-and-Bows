@@ -25,4 +25,3 @@ describe('LoadingState', () => {
     expect(loadingText.className).toContain('text-gray-500');
   });
 });
-

@@ -68,7 +68,11 @@ describe('Client Utils', () => {
     });
 
     it('should trim whitespace from full name', () => {
-      const client = { ...mockClient, first_name: '  John  ', last_name: '  Doe  ' };
+      const client = {
+        ...mockClient,
+        first_name: '  John  ',
+        last_name: '  Doe  ',
+      };
       const result = formatClientName(client);
       // trim()은 전체 문자열에만 적용되므로 '  John     Doe  '.trim() = 'John     Doe'
       expect(result).toBe('John     Doe');
@@ -130,7 +134,11 @@ describe('Client Utils', () => {
     });
 
     it('should handle null contact_number with email', () => {
-      const client = { ...mockClient, contact_number: null, email: 'test@test.com' };
+      const client = {
+        ...mockClient,
+        contact_number: null,
+        email: 'test@test.com',
+      };
       const result = formatClientContact(client);
       expect(result).toBe('No contact info');
     });
@@ -243,7 +251,7 @@ describe('Client Utils', () => {
   describe('getClientDisplayInfo', () => {
     it('should return all display information for complete client', () => {
       const result = getClientDisplayInfo(mockClient);
-      
+
       expect(result).toEqual({
         name: 'John Doe',
         contact: '123-456-7890',
@@ -255,7 +263,7 @@ describe('Client Utils', () => {
     it('should return display info for client with missing name', () => {
       const client = { ...mockClient, first_name: '', last_name: '' };
       const result = getClientDisplayInfo(client);
-      
+
       expect(result).toEqual({
         name: 'Unknown Client',
         contact: '123-456-7890',
@@ -267,7 +275,7 @@ describe('Client Utils', () => {
     it('should return display info for client with missing contact', () => {
       const client = { ...mockClient, contact_number: '', email: '' };
       const result = getClientDisplayInfo(client);
-      
+
       expect(result).toEqual({
         name: 'John Doe',
         contact: 'No contact info',
@@ -279,7 +287,7 @@ describe('Client Utils', () => {
     it('should return display info for client with only first name', () => {
       const client = { ...mockClient, last_name: '' };
       const result = getClientDisplayInfo(client);
-      
+
       expect(result).toEqual({
         name: 'John',
         contact: '123-456-7890',
@@ -291,7 +299,7 @@ describe('Client Utils', () => {
     it('should return display info for client with only last name', () => {
       const client = { ...mockClient, first_name: '' };
       const result = getClientDisplayInfo(client);
-      
+
       expect(result).toEqual({
         name: 'Doe',
         contact: '123-456-7890',
@@ -309,7 +317,7 @@ describe('Client Utils', () => {
         email: null,
       };
       const result = getClientDisplayInfo(client);
-      
+
       expect(result).toEqual({
         name: 'Unknown Client',
         contact: 'No contact info',
@@ -332,7 +340,7 @@ describe('Client Utils', () => {
         created_at: '2023-01-01',
       };
       const result = getClientDisplayInfo(minimalClient);
-      
+
       expect(result.name).toBe('A B');
       expect(result.contact).toBe('1');
       expect(result.initials).toBe('AB');
@@ -740,7 +748,9 @@ describe('Client Utils', () => {
       };
       const result = filterClients(clientsForTest, '', filters);
       expect(result.length).toBeGreaterThanOrEqual(2);
-      expect(result.every(c => ['Active', 'Passive'].includes(c.interest || ''))).toBe(true);
+      expect(
+        result.every(c => ['Active', 'Passive'].includes(c.interest || ''))
+      ).toBe(true);
     });
 
     it('should combine hasInstruments filter with other filters', () => {
@@ -987,29 +997,29 @@ describe('Client Utils', () => {
 
     it('should combine search with multiple filters correctly', () => {
       const clientsForTest: Client[] = [
-        { 
-          ...mockClient, 
-          id: '1', 
-          first_name: 'John', 
+        {
+          ...mockClient,
+          id: '1',
+          first_name: 'John',
           email: 'john1@test.com', // 고유한 이메일로 검색 범위 제한
-          tags: ['Owner'], 
-          interest: 'Active' 
+          tags: ['Owner'],
+          interest: 'Active',
         },
-        { 
-          ...mockClient, 
-          id: '2', 
-          first_name: 'John', 
+        {
+          ...mockClient,
+          id: '2',
+          first_name: 'John',
           email: 'john2@test.com',
-          tags: ['Musician'], 
-          interest: 'Passive' 
+          tags: ['Musician'],
+          interest: 'Passive',
         },
-        { 
-          ...mockClient, 
-          id: '3', 
-          first_name: 'Jane', 
+        {
+          ...mockClient,
+          id: '3',
+          first_name: 'Jane',
           email: 'jane@test.com',
-          tags: ['Owner'], 
-          interest: 'Active' 
+          tags: ['Owner'],
+          interest: 'Active',
         },
       ];
       const filters: FilterState = {
@@ -1028,7 +1038,7 @@ describe('Client Utils', () => {
       expect(result.length).toBeGreaterThanOrEqual(1);
       // 모든 조건을 만족하는 클라이언트만 포함
       const matching = result.filter(
-        c => 
+        c =>
           c.first_name?.toLowerCase().includes('john') &&
           c.tags?.includes('Owner') &&
           c.interest === 'Active'
@@ -1104,7 +1114,9 @@ describe('Client Utils', () => {
       const result = filterClients(clients, '', filters);
       expect(result.length).toBeGreaterThanOrEqual(0);
       result.forEach(client => {
-        expect(['123-456-7890', '098-765-4321']).toContain(client.contact_number);
+        expect(['123-456-7890', '098-765-4321']).toContain(
+          client.contact_number
+        );
       });
     });
 
@@ -1121,7 +1133,9 @@ describe('Client Utils', () => {
       const result = filterClients(clients, '', filters);
       expect(result.length).toBeGreaterThanOrEqual(0);
       result.forEach(client => {
-        expect(['john@example.com', 'jane@example.com']).toContain(client.email);
+        expect(['john@example.com', 'jane@example.com']).toContain(
+          client.email
+        );
       });
     });
 
@@ -1344,7 +1358,7 @@ describe('Client Utils', () => {
     it('should not mutate original array', () => {
       const original = [...clients];
       const sorted = sortClients(clients, 'first_name', 'asc');
-      
+
       expect(sorted).not.toBe(clients);
       expect(clients).toEqual(original);
     });
@@ -1374,7 +1388,12 @@ describe('Client Utils', () => {
         { ...mockClient, id: '1', first_name: 'Charlie', last_name: 'Brown' },
         { ...mockClient, id: '2', first_name: null, last_name: 'Smith' },
         { ...mockClient, id: '3', first_name: 'Alice', last_name: 'Johnson' },
-        { ...mockClient, id: '4', first_name: undefined as any, last_name: 'Wilson' },
+        {
+          ...mockClient,
+          id: '4',
+          first_name: undefined as any,
+          last_name: 'Wilson',
+        },
       ];
 
       const result = sortClients(clientsWithNulls, 'first_name', 'asc');
@@ -1404,12 +1423,20 @@ describe('Client Utils', () => {
         { ...mockClient, id: '3', first_name: 'John', last_name: 'Brown' },
       ];
 
-      const resultAsc = sortClients(clientsWithSameFirstName, 'first_name', 'asc');
+      const resultAsc = sortClients(
+        clientsWithSameFirstName,
+        'first_name',
+        'asc'
+      );
       expect(resultAsc[0].last_name).toBe('Apple');
       expect(resultAsc[1].last_name).toBe('Brown');
       expect(resultAsc[2].last_name).toBe('Zebra');
 
-      const resultDesc = sortClients(clientsWithSameFirstName, 'first_name', 'desc');
+      const resultDesc = sortClients(
+        clientsWithSameFirstName,
+        'first_name',
+        'desc'
+      );
       expect(resultDesc[0].last_name).toBe('Zebra');
       expect(resultDesc[1].last_name).toBe('Brown');
       expect(resultDesc[2].last_name).toBe('Apple');
@@ -1501,7 +1528,9 @@ describe('Client Utils', () => {
       ];
 
       const result = sortClients(equalClients, 'first_name', 'asc');
-      expect(result.every(c => c.first_name === 'John' && c.last_name === 'Doe')).toBe(true);
+      expect(
+        result.every(c => c.first_name === 'John' && c.last_name === 'Doe')
+      ).toBe(true);
       expect(result.length).toBe(3);
     });
 
@@ -1512,7 +1541,11 @@ describe('Client Utils', () => {
         { ...mockClient, id: '3', first_name: 'John', last_name: 'Doe' },
       ];
 
-      const result = sortClients(clientsWithNullSecondary, 'first_name', 'desc');
+      const result = sortClients(
+        clientsWithNullSecondary,
+        'first_name',
+        'desc'
+      );
       // 모든 first_name이 'John'이므로 동일한 순서 유지
       expect(result.every(c => c.first_name === 'John')).toBe(true);
     });
@@ -1542,7 +1575,9 @@ describe('Client Utils', () => {
       const result = sortClients(clients, 'first_name', 'asc');
       // 모든 값이 같으므로 원래 순서 유지 (안정 정렬)
       expect(result.length).toBe(3);
-      expect(result.every(c => c.first_name === 'John' && c.last_name === 'Doe')).toBe(true);
+      expect(
+        result.every(c => c.first_name === 'John' && c.last_name === 'Doe')
+      ).toBe(true);
     });
 
     it('should handle sorting with null primary key and null secondary key', () => {

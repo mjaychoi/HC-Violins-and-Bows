@@ -43,7 +43,7 @@ export default function RowActions({
   return (
     <div className="relative flex justify-end">
       <button
-        onClick={(e) => {
+        onClick={e => {
           e.stopPropagation();
           setIsOpen(!isOpen);
         }}
@@ -76,7 +76,7 @@ export default function RowActions({
             {/* Context Actions */}
             {currentStatus !== 'Booked' && onBook && (
               <button
-                onClick={(e) => {
+                onClick={e => {
                   e.stopPropagation();
                   onBook();
                   setIsOpen(false);
@@ -101,7 +101,7 @@ export default function RowActions({
             )}
             {currentStatus !== 'Maintenance' && onSendToMaintenance && (
               <button
-                onClick={(e) => {
+                onClick={e => {
                   e.stopPropagation();
                   onSendToMaintenance();
                   setIsOpen(false);
@@ -132,7 +132,7 @@ export default function RowActions({
             )}
             {hasCertificateField && !hasCertificate && onAttachCertificate && (
               <button
-                onClick={(e) => {
+                onClick={e => {
                   e.stopPropagation();
                   onAttachCertificate();
                   setIsOpen(false);
@@ -155,12 +155,12 @@ export default function RowActions({
                 Attach certificate
               </button>
             )}
-            
+
             {/* Divider */}
             {(onBook || onSendToMaintenance || onAttachCertificate) && (
               <div className="border-t border-gray-200 my-1" />
             )}
-            
+
             <button
               onClick={() => {
                 onEdit();
@@ -185,7 +185,7 @@ export default function RowActions({
             </button>
             {hasCertificate && onDownloadCertificate && (
               <button
-                onClick={(e) => {
+                onClick={e => {
                   e.stopPropagation();
                   onDownloadCertificate();
                   setIsOpen(false);
@@ -209,7 +209,7 @@ export default function RowActions({
               </button>
             )}
             <button
-              onClick={(e) => {
+              onClick={e => {
                 e.stopPropagation();
                 onDelete();
                 setIsOpen(false);

@@ -14,8 +14,20 @@ const mockCustomer1: CustomerWithPurchases = {
   client_number: 'CL001',
   created_at: '2024-01-01',
   purchases: [
-    { id: 'p1', item: 'Violin', amount: 100000, date: '2024-04-01', status: 'Completed' },
-    { id: 'p2', item: 'Bow', amount: 5000, date: '2024-05-12', status: 'Completed' },
+    {
+      id: 'p1',
+      item: 'Violin',
+      amount: 100000,
+      date: '2024-04-01',
+      status: 'Completed',
+    },
+    {
+      id: 'p2',
+      item: 'Bow',
+      amount: 5000,
+      date: '2024-05-12',
+      status: 'Completed',
+    },
   ],
 };
 
@@ -31,7 +43,13 @@ const mockCustomer2: CustomerWithPurchases = {
   client_number: 'CL002',
   created_at: '2024-02-01',
   purchases: [
-    { id: 'p3', item: 'Cello', amount: 50000, date: '2024-06-01', status: 'Pending' },
+    {
+      id: 'p3',
+      item: 'Cello',
+      amount: 50000,
+      date: '2024-06-01',
+      status: 'Pending',
+    },
   ],
 };
 
@@ -86,7 +104,9 @@ describe('CustomerStats', () => {
       ...mockCustomer1,
       purchases: [],
     };
-    const { container } = render(<CustomerStats customers={[customerWithoutPurchases]} />);
+    const { container } = render(
+      <CustomerStats customers={[customerWithoutPurchases]} />
+    );
     expect(container.textContent).toContain('$0');
     expect(container.textContent).toContain('0');
     expect(container.textContent).toContain('—');

@@ -30,7 +30,12 @@ interface ItemListProps {
   getSortArrow: (field: string) => string;
   onSort: (field: string) => void;
   onAddClick?: () => void;
-  allClients?: Array<{ id: string; first_name?: string | null; last_name?: string | null; email?: string | null }>;
+  allClients?: Array<{
+    id: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+  }>;
   clientsLoading?: boolean; // UX: Track if clients are still loading
   // UX: Empty state customization
   emptyState?: {
@@ -99,8 +104,13 @@ const ItemList = memo(function ItemList({
     }));
 
     // Debug logging in development
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-      const itemsWithConnections = result.filter(item => item.clients.length > 0);
+    if (
+      typeof window !== 'undefined' &&
+      process.env.NODE_ENV === 'development'
+    ) {
+      const itemsWithConnections = result.filter(
+        item => item.clients.length > 0
+      );
       if (itemsWithConnections.length > 0) {
         console.log('[ItemList] Items with connected clients:', {
           totalItems: items.length,
@@ -127,7 +137,7 @@ const ItemList = memo(function ItemList({
 
   // FIXED: Extract ownership cell rendering logic into useCallback to avoid re-running expensive operations on every render
   const renderOwnership = useCallback(
-    (item: typeof itemsWithClients[number]) => {
+    (item: (typeof itemsWithClients)[number]) => {
       // If ownership exists, display it
       if (item.ownership) {
         // Check if ownership is a UUID - if so, try to find the client
@@ -136,12 +146,12 @@ const ItemList = memo(function ItemList({
           const matchingRelationship = item.clients.find(
             rel => rel.client_id === item.ownership
           );
-          
+
           if (matchingRelationship?.client) {
             return (
               <Link
                 href={`/clients?clientId=${matchingRelationship.client_id}`}
-                onClick={(e) => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
                 className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                 title="View client details"
               >
@@ -149,17 +159,20 @@ const ItemList = memo(function ItemList({
               </Link>
             );
           }
-          
+
           // If not found in relationships, check all clients (for ownership that's not a connection)
           const client = clientsMap.get(item.ownership);
-          
+
           if (client) {
             // Format client name from minimal client object
-            const clientName = `${client.first_name || ''} ${client.last_name || ''}`.trim() || client.email || 'Unknown Client';
+            const clientName =
+              `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+              client.email ||
+              'Unknown Client';
             return (
               <Link
                 href={`/clients?clientId=${item.ownership}`}
-                onClick={(e) => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
                 className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                 title="View client details"
               >
@@ -167,12 +180,12 @@ const ItemList = memo(function ItemList({
               </Link>
             );
           }
-          
+
           // UUID but no matching client found
           // UX: Show loading state if clients are still loading
           if (clientsLoading) {
             return (
-              <span 
+              <span
                 className="text-gray-400 text-sm italic"
                 title="클라이언트 정보 로딩 중..."
               >
@@ -180,9 +193,12 @@ const ItemList = memo(function ItemList({
               </span>
             );
           }
-          
+
           // FIXED: Never print all IDs - only a small sample to avoid console explosion
-          if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          if (
+            typeof window !== 'undefined' &&
+            process.env.NODE_ENV === 'development'
+          ) {
             const warningKey = `client-not-found-${item.ownership}`;
             if (!sessionStorage.getItem(warningKey)) {
               sessionStorage.setItem(warningKey, 'true');
@@ -197,33 +213,37 @@ const ItemList = memo(function ItemList({
                 // FIXED: Only log sample, not all IDs
                 sampleClientIds: Array.from(clientsMap.keys()).slice(0, 10),
               });
-              console.info('💡 이 UUID가 실제로 클라이언트 테이블에 있는지 확인하세요:');
-              console.info(`fetch('/api/clients').then(r => r.json()).then(d => console.log('Client:', d.data.find(c => c.id === '${item.ownership}')));`);
+              console.info(
+                '💡 이 UUID가 실제로 클라이언트 테이블에 있는지 확인하세요:'
+              );
+              console.info(
+                `fetch('/api/clients').then(r => r.json()).then(d => console.log('Client:', d.data.find(c => c.id === '${item.ownership}')));`
+              );
             }
           }
-          
+
           // This can happen if:
           // 1. Client data hasn't loaded yet
           // 2. Client doesn't exist in database
           // 3. Ownership UUID doesn't match any client ID
           return (
-            <span 
-              className="text-gray-400 text-xs font-mono" 
+            <span
+              className="text-gray-400 text-xs font-mono"
               title={`클라이언트를 찾을 수 없습니다 (총 ${allClients.length}개 클라이언트 로드됨) | UUID: ${item.ownership}`}
             >
               {item.ownership}
             </span>
           );
         }
-        
+
         // Not a UUID - display as is (might be a name or other text)
         return <span>{item.ownership}</span>;
       }
-      
+
       // UX: No ownership - show connected clients count with hover detail
       if (item.clients && item.clients.length > 0) {
         const clientCount = item.clients.length;
-        
+
         return (
           <div className="group relative">
             <div className="inline-flex items-center gap-1.5 text-sm text-gray-700">
@@ -236,25 +256,31 @@ const ItemList = memo(function ItemList({
             </div>
             {/* UX: Hover tooltip showing client details */}
             <div className="absolute left-0 top-full mt-1 z-10 hidden group-hover:block w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
-              <div className="text-xs font-semibold text-gray-900 mb-2">Connected Clients ({clientCount})</div>
+              <div className="text-xs font-semibold text-gray-900 mb-2">
+                Connected Clients ({clientCount})
+              </div>
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {item.clients.map((rel) => {
+                {item.clients.map(rel => {
                   if (!rel.client_id) return null;
-                  const clientName = rel.client 
+                  const clientName = rel.client
                     ? formatClientName(rel.client)
-                    : (clientsMap.get(rel.client_id)
-                      ? `${clientsMap.get(rel.client_id)!.first_name || ''} ${clientsMap.get(rel.client_id)!.last_name || ''}`.trim() || clientsMap.get(rel.client_id)!.email || 'Client'
-                      : 'Client');
+                    : clientsMap.get(rel.client_id)
+                      ? `${clientsMap.get(rel.client_id)!.first_name || ''} ${clientsMap.get(rel.client_id)!.last_name || ''}`.trim() ||
+                        clientsMap.get(rel.client_id)!.email ||
+                        'Client'
+                      : 'Client';
                   return (
                     <Link
                       key={rel.id}
                       href={`/clients?clientId=${rel.client_id}`}
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={e => e.stopPropagation()}
                       className="block text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors py-0.5"
                       title={`View client details (${rel.relationship_type})`}
                     >
                       <span className="font-medium">{clientName}</span>
-                      <span className="text-gray-500 ml-1">({rel.relationship_type})</span>
+                      <span className="text-gray-500 ml-1">
+                        ({rel.relationship_type})
+                      </span>
                     </Link>
                   );
                 })}
@@ -263,7 +289,7 @@ const ItemList = memo(function ItemList({
           </div>
         );
       }
-      
+
       return <span className="text-gray-400">—</span>;
     },
     [clientsMap, allClients.length, clientsLoading]
@@ -320,7 +346,7 @@ const ItemList = memo(function ItemList({
       await onUpdateItem(editingItem, updates);
       setEditingItem(null);
       setEditData({});
-      
+
       // UX: Show success feedback - highlight saved row
       setSavedItemId(editingItem);
       setTimeout(() => setSavedItemId(null), 2000); // Remove highlight after 2s
@@ -358,9 +384,9 @@ const ItemList = memo(function ItemList({
   // UX: Improved empty state - distinguish between "no items" and "no results after filtering"
   if (items.length === 0) {
     const hasFilters = emptyState?.hasActiveFilters ?? false;
-    const message = emptyState?.message || (hasFilters 
-      ? 'No items found matching your filters' 
-      : 'No items yet');
+    const message =
+      emptyState?.message ||
+      (hasFilters ? 'No items found matching your filters' : 'No items yet');
     const subMessage = hasFilters
       ? 'Try adjusting your filters or clearing them to see all items.'
       : 'Add your first instrument to get started.';
@@ -368,7 +394,11 @@ const ItemList = memo(function ItemList({
 
     return (
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
-        <div className="text-center py-16 px-4" role="status" aria-live="polite">
+        <div
+          className="text-center py-16 px-4"
+          role="status"
+          aria-live="polite"
+        >
           <svg
             className="mx-auto h-16 w-16 text-gray-300"
             fill="none"
@@ -383,7 +413,9 @@ const ItemList = memo(function ItemList({
               d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
             />
           </svg>
-          <h3 className="mt-4 text-base font-semibold text-gray-900">{message}</h3>
+          <h3 className="mt-4 text-base font-semibold text-gray-900">
+            {message}
+          </h3>
           <p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">
             {subMessage}
           </p>
@@ -433,7 +465,7 @@ const ItemList = memo(function ItemList({
                   Status
                   <span
                     className={`opacity-0 group-hover:opacity-100 transition-opacity ${
-                      arrowToClass(getSortArrow('status')) !== 'sort-neutral' 
+                      arrowToClass(getSortArrow('status')) !== 'sort-neutral'
                         ? `opacity-100 text-blue-600`
                         : 'text-gray-400'
                     }`}
@@ -454,7 +486,8 @@ const ItemList = memo(function ItemList({
                   Serial #
                   <span
                     className={`opacity-0 group-hover:opacity-100 transition-opacity ${
-                      arrowToClass(getSortArrow('serial_number')) !== 'sort-neutral' 
+                      arrowToClass(getSortArrow('serial_number')) !==
+                      'sort-neutral'
                         ? 'opacity-100 text-blue-600'
                         : 'text-gray-400'
                     }`}
@@ -493,7 +526,7 @@ const ItemList = memo(function ItemList({
                   Type
                   <span
                     className={`opacity-0 group-hover:opacity-100 transition-opacity ${
-                      arrowToClass(getSortArrow('type')) !== 'sort-neutral' 
+                      arrowToClass(getSortArrow('type')) !== 'sort-neutral'
                         ? 'opacity-100 text-blue-600'
                         : 'text-gray-400'
                     }`}
@@ -531,7 +564,7 @@ const ItemList = memo(function ItemList({
                   Year
                   <span
                     className={`opacity-0 group-hover:opacity-100 transition-opacity ${
-                      arrowToClass(getSortArrow('year')) !== 'sort-neutral' 
+                      arrowToClass(getSortArrow('year')) !== 'sort-neutral'
                         ? 'opacity-100 text-blue-600'
                         : 'text-gray-400'
                     }`}
@@ -561,12 +594,8 @@ const ItemList = memo(function ItemList({
                   </span>
                 </span>
               </th>
-              <th className={classNames.tableHeaderCell}>
-                Certificate
-              </th>
-              <th className={classNames.tableHeaderCell}>
-                Ownership
-              </th>
+              <th className={classNames.tableHeaderCell}>Certificate</th>
+              <th className={classNames.tableHeaderCell}>Ownership</th>
             </tr>
           </thead>
           <tbody className={classNames.tableBody}>
@@ -574,14 +603,14 @@ const ItemList = memo(function ItemList({
               const isEditing = editingItem === item.id;
 
               const isSaved = savedItemId === item.id;
-              
+
               return (
                 <tr
                   key={item.id}
                   className={cn(
                     classNames.tableRow,
-                    isEditing 
-                      ? 'bg-blue-50 ring-2 ring-blue-200' 
+                    isEditing
+                      ? 'bg-blue-50 ring-2 ring-blue-200'
                       : isSaved
                         ? 'bg-green-50 ring-2 ring-green-200'
                         : ''
@@ -686,18 +715,24 @@ const ItemList = memo(function ItemList({
                           }}
                           onSendToMaintenance={async () => {
                             if (onUpdateItem) {
-                              await onUpdateItem(item.id, { status: 'Maintenance' });
+                              await onUpdateItem(item.id, {
+                                status: 'Maintenance',
+                              });
                             }
                           }}
                           onAttachCertificate={async () => {
                             if (onUpdateItem) {
-                              await onUpdateItem(item.id, { certificate: true });
+                              await onUpdateItem(item.id, {
+                                certificate: true,
+                              });
                             }
                           }}
                           hasCertificate={Boolean(item.certificate)}
                           onDownloadCertificate={async () => {
                             try {
-                              const res = await fetch(`/api/certificates/${item.id}`);
+                              const res = await fetch(
+                                `/api/certificates/${item.id}`
+                              );
                               if (!res.ok) return;
                               const blob = await res.blob();
                               const url = URL.createObjectURL(blob);
@@ -711,7 +746,10 @@ const ItemList = memo(function ItemList({
                             } catch (error) {
                               // Error is handled silently - user can retry if needed
                               if (process.env.NODE_ENV === 'development') {
-                                console.error('Failed to download certificate:', error);
+                                console.error(
+                                  'Failed to download certificate:',
+                                  error
+                                );
                               }
                             }
                           }}
@@ -849,9 +887,13 @@ const ItemList = memo(function ItemList({
                         placeholder="Price"
                       />
                     ) : (
-                      <div 
+                      <div
                         className="text-sm text-gray-900"
-                        title={item.price ? formatInstrumentPrice(item.price) : undefined}
+                        title={
+                          item.price
+                            ? formatInstrumentPrice(item.price)
+                            : undefined
+                        }
                       >
                         {formatInstrumentPriceCompact(item.price)}
                       </div>

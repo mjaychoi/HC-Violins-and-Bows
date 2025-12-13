@@ -8,25 +8,37 @@ jest.mock('date-fns', () => {
   const actual = jest.requireActual('date-fns');
   return {
     ...actual,
-    format: jest.fn((date: Date, formatStr: string, options?: { locale?: unknown }) => {
-      if (formatStr === 'yyyy') {
-        return date.getFullYear().toString();
-      }
-      if (formatStr === 'MMMM') {
-        const monthNames = [
-          'January', 'February', 'March', 'April', 'May', 'June',
-          'July', 'August', 'September', 'October', 'November', 'December'
-        ];
-        return monthNames[date.getMonth()];
-      }
-      if (formatStr === 'd') {
-        return date.getDate().toString();
-      }
-      if (formatStr === 'MMMM yyyy' || formatStr === 'MMMM d, yyyy') {
+    format: jest.fn(
+      (date: Date, formatStr: string, options?: { locale?: unknown }) => {
+        if (formatStr === 'yyyy') {
+          return date.getFullYear().toString();
+        }
+        if (formatStr === 'MMMM') {
+          const monthNames = [
+            'January',
+            'February',
+            'March',
+            'April',
+            'May',
+            'June',
+            'July',
+            'August',
+            'September',
+            'October',
+            'November',
+            'December',
+          ];
+          return monthNames[date.getMonth()];
+        }
+        if (formatStr === 'd') {
+          return date.getDate().toString();
+        }
+        if (formatStr === 'MMMM yyyy' || formatStr === 'MMMM d, yyyy') {
+          return actual.format(date, formatStr, options);
+        }
         return actual.format(date, formatStr, options);
       }
-      return actual.format(date, formatStr, options);
-    }),
+    ),
   };
 });
 
@@ -112,74 +124,74 @@ describe('YearView', () => {
     expect(screen.getByText(/2024/i)).toBeInTheDocument();
   });
 
-    it('should render all 12 months', () => {
-      const currentDate = new Date(2024, 0, 1);
-      render(
-        <YearView
-          currentDate={currentDate}
-          tasks={mockTasks}
-          instruments={mockInstruments}
-        />
-      );
+  it('should render all 12 months', () => {
+    const currentDate = new Date(2024, 0, 1);
+    render(
+      <YearView
+        currentDate={currentDate}
+        tasks={mockTasks}
+        instruments={mockInstruments}
+      />
+    );
 
-      // Check for month headers (1월, 2월, etc.) - should have 12 months
+    // Check for month headers (1월, 2월, etc.) - should have 12 months
     const monthHeaders = screen.getAllByRole('heading', { level: 3 });
     expect(monthHeaders.length).toBeGreaterThanOrEqual(12);
-    });
+  });
 
-    it('should display task count for each month', () => {
-      const currentDate = new Date(2024, 0, 1);
-      render(
-        <YearView
-          currentDate={currentDate}
-          tasks={mockTasks}
-          instruments={mockInstruments}
-        />
-      );
+  it('should display task count for each month', () => {
+    const currentDate = new Date(2024, 0, 1);
+    render(
+      <YearView
+        currentDate={currentDate}
+        tasks={mockTasks}
+        instruments={mockInstruments}
+      />
+    );
 
-      // Should show task counts (at least one month with tasks)
+    // Should show task counts (at least one month with tasks)
     const taskCounts = screen.getAllByText(/\d+\s+tasks/i);
     expect(taskCounts.length).toBeGreaterThan(0);
-    });
+  });
 
-    it('should render day labels', () => {
-      const currentDate = new Date(2024, 0, 1);
-      render(
-        <YearView
-          currentDate={currentDate}
-          tasks={mockTasks}
-          instruments={mockInstruments}
-        />
-      );
+  it('should render day labels', () => {
+    const currentDate = new Date(2024, 0, 1);
+    render(
+      <YearView
+        currentDate={currentDate}
+        tasks={mockTasks}
+        instruments={mockInstruments}
+      />
+    );
 
-      // Day labels should appear multiple times (once per month)
-      const sundayLabels = screen.getAllByText('Sun');
-      expect(sundayLabels.length).toBeGreaterThan(0);
-      const mondayLabels = screen.getAllByText('Mon');
-      expect(mondayLabels.length).toBeGreaterThan(0);
-    });
+    // Day labels should appear multiple times (once per month)
+    const sundayLabels = screen.getAllByText('Sun');
+    expect(sundayLabels.length).toBeGreaterThan(0);
+    const mondayLabels = screen.getAllByText('Mon');
+    expect(mondayLabels.length).toBeGreaterThan(0);
+  });
 
-    it('should call onNavigate when month is clicked', async () => {
-      const user = userEvent.setup();
-      const mockOnNavigate = jest.fn();
-      const currentDate = new Date(2024, 0, 1);
+  it('should call onNavigate when month is clicked', async () => {
+    const user = userEvent.setup();
+    const mockOnNavigate = jest.fn();
+    const currentDate = new Date(2024, 0, 1);
 
-      render(
-        <YearView
-          currentDate={currentDate}
-          tasks={mockTasks}
-          instruments={mockInstruments}
-          onNavigate={mockOnNavigate}
-        />
-      );
+    render(
+      <YearView
+        currentDate={currentDate}
+        tasks={mockTasks}
+        instruments={mockInstruments}
+        onNavigate={mockOnNavigate}
+      />
+    );
 
-      // Find first month element and click it
-      const monthElements = screen.getAllByRole('heading', { level: 3 });
-      if (monthElements.length > 0) {
-        await user.click(monthElements[0]);
-        expect(mockOnNavigate).toHaveBeenCalled();
-      }
-    });
+    // Find first month element and click it
+    const monthElements = screen.getAllByRole('heading', { level: 3 });
+    if (monthElements.length > 0) {
+      await user.click(monthElements[0]);
+      expect(mockOnNavigate).toHaveBeenCalled();
+    }
+  });
 
   it('should call onNavigate when day is clicked', async () => {
     const user = userEvent.setup();
@@ -230,15 +242,15 @@ describe('YearView', () => {
     }
   });
 
-    it('should filter tasks by month', () => {
-      const currentDate = new Date(2024, 0, 1);
-      render(
-        <YearView
-          currentDate={currentDate}
-          tasks={mockTasks}
-          instruments={mockInstruments}
-        />
-      );
+  it('should filter tasks by month', () => {
+    const currentDate = new Date(2024, 0, 1);
+    render(
+      <YearView
+        currentDate={currentDate}
+        tasks={mockTasks}
+        instruments={mockInstruments}
+      />
+    );
 
     // Should show task counts for months with tasks
     const taskCounts = screen.getAllByText(/\d+\s+task/i);
@@ -246,7 +258,7 @@ describe('YearView', () => {
     // At least one month should show 1 task (January)
     const oneTaskTexts = screen.getAllByText(/1\s+task/i);
     expect(oneTaskTexts.length).toBeGreaterThan(0);
-    });
+  });
 
   it('should handle tasks with due_date instead of scheduled_date', () => {
     const tasksWithDueDate: MaintenanceTask[] = [
@@ -323,7 +335,9 @@ describe('YearView', () => {
     );
 
     // Check for task color dots (they have bg-* classes)
-    const dots = container.querySelectorAll('.bg-green-500, .bg-gray-400, .bg-red-500, .bg-orange-500, .bg-yellow-500, .bg-blue-500, .bg-gray-500');
+    const dots = container.querySelectorAll(
+      '.bg-green-500, .bg-gray-400, .bg-red-500, .bg-orange-500, .bg-yellow-500, .bg-blue-500, .bg-gray-500'
+    );
     expect(dots.length).toBeGreaterThan(0);
   });
 
@@ -364,22 +378,22 @@ describe('YearView', () => {
     expect(todayElement).toBeInTheDocument();
   });
 
-    it('should handle empty tasks array', () => {
-      const currentDate = new Date(2024, 0, 1);
-      render(
-        <YearView
-          currentDate={currentDate}
-          tasks={[]}
-          instruments={mockInstruments}
-        />
-      );
+  it('should handle empty tasks array', () => {
+    const currentDate = new Date(2024, 0, 1);
+    render(
+      <YearView
+        currentDate={currentDate}
+        tasks={[]}
+        instruments={mockInstruments}
+      />
+    );
 
-      // Should render year view without crashing
-      expect(screen.getByText(/2024/i)).toBeInTheDocument();
-      // All months should show 0 tasks
-      const zeroTaskTexts = screen.getAllByText(/0\s+task/i);
-      expect(zeroTaskTexts.length).toBeGreaterThan(0);
-    });
+    // Should render year view without crashing
+    expect(screen.getByText(/2024/i)).toBeInTheDocument();
+    // All months should show 0 tasks
+    const zeroTaskTexts = screen.getAllByText(/0\s+task/i);
+    expect(zeroTaskTexts.length).toBeGreaterThan(0);
+  });
 
   it('should handle tasks without any date', () => {
     const tasksWithoutDate: MaintenanceTask[] = [

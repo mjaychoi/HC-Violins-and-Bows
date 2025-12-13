@@ -6,17 +6,21 @@ import { useDashboardData } from './hooks/useDashboardData';
 import { ItemForm, ItemList, ItemFilters } from './components';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { AppLayout } from '@/components/layout';
-import { ErrorBoundary, ConfirmDialog, NotificationBadge } from '@/components/common';
+import {
+  ErrorBoundary,
+  ConfirmDialog,
+  NotificationBadge,
+} from '@/components/common';
 import { usePageNotifications } from '@/hooks/usePageNotifications';
 import React, { useCallback, useMemo, useEffect } from 'react';
 import { Instrument } from '@/types';
 
 export default function DashboardPage() {
   const { ErrorToasts, SuccessToasts, showSuccess } = useAppFeedback();
-  
+
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched
-  
+
   // Page notifications (badge with click handler)
   // NOTE: Dashboard doesn't use maintenance tasks, so we pass empty array
   // Consider removing usePageNotifications from dashboard if notifications are not needed
@@ -39,7 +43,7 @@ export default function DashboardPage() {
     handleUpdateItemInline,
     handleDeleteItem,
   } = useDashboardData();
-  
+
   // Track clients loading state separately
   const clientsLoading = useMemo(() => {
     // Check if clients array is empty but we're still loading
@@ -53,7 +57,7 @@ export default function DashboardPage() {
   };
   const enrichedItems = useMemo<EnrichedInstrument[]>(() => {
     // Group relationships by instrument_id for O(1) lookup
-    type RelationshipType = typeof clientRelationships[number];
+    type RelationshipType = (typeof clientRelationships)[number];
     const relationshipsByInstrument = new Map<string, RelationshipType[]>();
     clientRelationships.forEach((rel: RelationshipType) => {
       if (rel.instrument_id) {
@@ -72,25 +76,39 @@ export default function DashboardPage() {
 
   // Debug: Log clients loading state
   useEffect(() => {
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+    if (
+      typeof window !== 'undefined' &&
+      process.env.NODE_ENV === 'development'
+    ) {
       console.log('[Dashboard] Clients state:', {
         clientsCount: clients?.length ?? 0,
         loading: loading.any,
-        sampleClientIds: clients?.slice(0, 3).map((c: { id: string }) => c.id) ?? [],
+        sampleClientIds:
+          clients?.slice(0, 3).map((c: { id: string }) => c.id) ?? [],
         clientRelationshipsCount: clientRelationships?.length ?? 0,
-        sampleRelationships: clientRelationships?.slice(0, 3).map((rel: typeof clientRelationships[number]) => ({
-          instrument_id: rel.instrument_id,
-          client_id: rel.client_id,
-          relationship_type: rel.relationship_type,
-          hasClient: !!rel.client,
-          hasInstrument: !!rel.instrument,
-        })) ?? [],
+        sampleRelationships:
+          clientRelationships
+            ?.slice(0, 3)
+            .map((rel: (typeof clientRelationships)[number]) => ({
+              instrument_id: rel.instrument_id,
+              client_id: rel.client_id,
+              relationship_type: rel.relationship_type,
+              hasClient: !!rel.client,
+              hasInstrument: !!rel.instrument,
+            })) ?? [],
         enrichedItemsCount: enrichedItems.length,
-        itemsWithClients: enrichedItems.filter((i: EnrichedInstrument) => i.clients.length > 0).length,
+        itemsWithClients: enrichedItems.filter(
+          (i: EnrichedInstrument) => i.clients.length > 0
+        ).length,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients?.length, loading.any, clientRelationships?.length, enrichedItems.length]);
+  }, [
+    clients?.length,
+    loading.any,
+    clientRelationships?.length,
+    enrichedItems.length,
+  ]);
 
   // Dashboard filters - use enrichedItems instead of instruments
   const {
@@ -137,7 +155,10 @@ export default function DashboardPage() {
     () =>
       instruments
         .map((i: Instrument) => i.serial_number)
-        .filter((num: string | null | undefined): num is string => num !== null && num !== undefined),
+        .filter(
+          (num: string | null | undefined): num is string =>
+            num !== null && num !== undefined
+        ),
     [instruments]
   );
 
@@ -177,12 +198,12 @@ export default function DashboardPage() {
                 type="text"
                 placeholder="Search items by maker, type, serial..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={e => setSearchTerm(e.target.value)}
                 className="w-full h-10 px-4 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 aria-label="Search items"
               />
             </div>
-            
+
             {/* UX: Quick Filter Pills - Common use cases */}
             <div className="flex items-center gap-2 flex-wrap">
               {/* UX: Quick filter for "Has Clients" - toggle boolean filter */}
@@ -217,7 +238,7 @@ export default function DashboardPage() {
               >
                 No Clients
               </button>
-              
+
               {/* More Filters Button - Secondary action */}
               <button
                 onClick={() => setShowFilters(!showFilters)}
@@ -286,10 +307,18 @@ export default function DashboardPage() {
             onSort={handleSort}
             onAddClick={handleAddItem}
             emptyState={{
-              hasActiveFilters: getActiveFiltersCount() > 0 || Boolean(searchTerm) || Boolean(dateRange?.from) || Boolean(dateRange?.to),
-              message: getActiveFiltersCount() > 0 || Boolean(searchTerm) || Boolean(dateRange?.from) || Boolean(dateRange?.to)
-                ? 'No items found matching your filters'
-                : undefined,
+              hasActiveFilters:
+                getActiveFiltersCount() > 0 ||
+                Boolean(searchTerm) ||
+                Boolean(dateRange?.from) ||
+                Boolean(dateRange?.to),
+              message:
+                getActiveFiltersCount() > 0 ||
+                Boolean(searchTerm) ||
+                Boolean(dateRange?.from) ||
+                Boolean(dateRange?.to)
+                  ? 'No items found matching your filters'
+                  : undefined,
             }}
             // Pagination props
             currentPage={currentPage}
@@ -308,7 +337,7 @@ export default function DashboardPage() {
           onClose={closeModal}
           onSubmit={
             isEditing && selectedItem
-              ? async (formData) => {
+              ? async formData => {
                   await handleUpdateItem(selectedItem.id, formData);
                 }
               : handleCreateItem

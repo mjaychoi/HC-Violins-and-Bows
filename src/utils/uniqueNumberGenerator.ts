@@ -99,7 +99,8 @@ export function validateInstrumentSerial(
   if (!INSTRUMENT_SERIAL_REGEX.test(normalized)) {
     return {
       valid: false,
-      error: 'Serial number must match pattern AA0000000 (2 letters + 7 digits).',
+      error:
+        'Serial number must match pattern AA0000000 (2 letters + 7 digits).',
     };
   }
 

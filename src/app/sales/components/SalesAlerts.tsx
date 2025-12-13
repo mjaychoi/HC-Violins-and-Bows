@@ -44,21 +44,25 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     // 최근 7일 데이터
     const today = startOfDay(new Date());
     const sevenDaysAgo = startOfDay(subDays(today, 7));
-    
+
     // FIXED: Use parseSaleDay to handle timezone issues
-    const recentSales = sales.filter(s => {
-      const saleDay = parseSaleDay(s.sale_date);
-      if (!saleDay) return false;
-      // sevenDaysAgo 이후 또는 같은 날 (경계값 포함)
-      return !isBefore(saleDay, sevenDaysAgo);
-    }).filter(s => s.sale_price > 0);
-    
-    const recentRefunds = sales.filter(s => {
-      const saleDay = parseSaleDay(s.sale_date);
-      if (!saleDay) return false;
-      // sevenDaysAgo 이후 또는 같은 날 (경계값 포함)
-      return !isBefore(saleDay, sevenDaysAgo);
-    }).filter(s => s.sale_price < 0);
+    const recentSales = sales
+      .filter(s => {
+        const saleDay = parseSaleDay(s.sale_date);
+        if (!saleDay) return false;
+        // sevenDaysAgo 이후 또는 같은 날 (경계값 포함)
+        return !isBefore(saleDay, sevenDaysAgo);
+      })
+      .filter(s => s.sale_price > 0);
+
+    const recentRefunds = sales
+      .filter(s => {
+        const saleDay = parseSaleDay(s.sale_date);
+        if (!saleDay) return false;
+        // sevenDaysAgo 이후 또는 같은 날 (경계값 포함)
+        return !isBefore(saleDay, sevenDaysAgo);
+      })
+      .filter(s => s.sale_price < 0);
 
     // 이전 7일 데이터 (비교용)
     // FIXED: interval boundary bug - make previous end = day before sevenDaysAgo to avoid double-counting
@@ -67,13 +71,13 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
       start: fourteenDaysAgo,
       end: startOfDay(subDays(sevenDaysAgo, 1)), // Exclusive of sevenDaysAgo to prevent double-counting
     };
-    
+
     const previousSales = sales.filter(s => {
       const saleDay = parseSaleDay(s.sale_date);
       if (!saleDay) return false;
       return isWithinInterval(saleDay, previousInterval) && s.sale_price > 0;
     });
-    
+
     const previousRefunds = sales.filter(s => {
       const saleDay = parseSaleDay(s.sale_date);
       if (!saleDay) return false;
@@ -82,9 +86,13 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
 
     // 1. 매출 급감 알림
     const recentRevenue = recentSales.reduce((sum, s) => sum + s.sale_price, 0);
-    const previousRevenue = previousSales.reduce((sum, s) => sum + s.sale_price, 0);
+    const previousRevenue = previousSales.reduce(
+      (sum, s) => sum + s.sale_price,
+      0
+    );
     if (previousRevenue > 0) {
-      const revenueDrop = ((previousRevenue - recentRevenue) / previousRevenue) * 100;
+      const revenueDrop =
+        ((previousRevenue - recentRevenue) / previousRevenue) * 100;
       if (revenueDrop > 30) {
         result.push({
           type: 'error',
@@ -103,10 +111,18 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     }
 
     // 2. 환불 급증 알림
-    const recentRefundAmount = recentRefunds.reduce((sum, s) => sum + Math.abs(s.sale_price), 0);
-    const previousRefundAmount = previousRefunds.reduce((sum, s) => sum + Math.abs(s.sale_price), 0);
+    const recentRefundAmount = recentRefunds.reduce(
+      (sum, s) => sum + Math.abs(s.sale_price),
+      0
+    );
+    const previousRefundAmount = previousRefunds.reduce(
+      (sum, s) => sum + Math.abs(s.sale_price),
+      0
+    );
     if (previousRefundAmount > 0) {
-      const refundIncrease = ((recentRefundAmount - previousRefundAmount) / previousRefundAmount) * 100;
+      const refundIncrease =
+        ((recentRefundAmount - previousRefundAmount) / previousRefundAmount) *
+        100;
       if (refundIncrease > 50) {
         result.push({
           type: 'error',
@@ -125,7 +141,10 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     }
 
     // 3. 특정 Maker 환불 급증
-    const makerRefundMap = new Map<string, { recent: number; previous: number }>();
+    const makerRefundMap = new Map<
+      string,
+      { recent: number; previous: number }
+    >();
     recentRefunds.forEach(sale => {
       if (sale.instrument?.maker) {
         const maker = sale.instrument.maker;
@@ -150,7 +169,11 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
       if (data.previous > 0) {
         const increase = ((data.recent - data.previous) / data.previous) * 100;
         // Require minimum baseline ($200) and absolute delta ($200) to reduce false positives from tiny baseline swings
-        if (data.previous >= 200 && increase > 100 && (data.recent - data.previous) >= 200) {
+        if (
+          data.previous >= 200 &&
+          increase > 100 &&
+          data.recent - data.previous >= 200
+        ) {
           result.push({
             type: 'error',
             title: `${maker} 환불 급증`,
@@ -191,7 +214,15 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
       weekdayMap.get(dayOfWeek)!.previous += 1;
     });
 
-    const dayNames = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+    const dayNames = [
+      '일요일',
+      '월요일',
+      '화요일',
+      '수요일',
+      '목요일',
+      '금요일',
+      '토요일',
+    ];
     weekdayMap.forEach((data, dayOfWeek) => {
       if (data.previous > 0) {
         const drop = ((data.previous - data.recent) / data.previous) * 100;
@@ -223,39 +254,87 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
             alert.type === 'error'
               ? 'bg-red-50 border-red-200'
               : alert.type === 'warning'
-              ? 'bg-yellow-50 border-yellow-200'
-              : 'bg-blue-50 border-blue-200'
+                ? 'bg-yellow-50 border-yellow-200'
+                : 'bg-blue-50 border-blue-200'
           }`}
         >
           <div className="flex items-start gap-3">
-            <div className={`shrink-0 ${
-              alert.type === 'error' ? 'text-red-600' : alert.type === 'warning' ? 'text-yellow-600' : 'text-blue-600'
-            }`}>
+            <div
+              className={`shrink-0 ${
+                alert.type === 'error'
+                  ? 'text-red-600'
+                  : alert.type === 'warning'
+                    ? 'text-yellow-600'
+                    : 'text-blue-600'
+              }`}
+            >
               {alert.type === 'error' && (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  />
                 </svg>
               )}
               {alert.type === 'warning' && (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  />
                 </svg>
               )}
               {alert.type === 'info' && (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
                 </svg>
               )}
             </div>
             <div className="flex-1">
-              <h4 className={`font-semibold text-sm mb-1 ${
-                alert.type === 'error' ? 'text-red-900' : alert.type === 'warning' ? 'text-yellow-900' : 'text-blue-900'
-              }`}>
+              <h4
+                className={`font-semibold text-sm mb-1 ${
+                  alert.type === 'error'
+                    ? 'text-red-900'
+                    : alert.type === 'warning'
+                      ? 'text-yellow-900'
+                      : 'text-blue-900'
+                }`}
+              >
                 {alert.title}
               </h4>
-              <p className={`text-sm ${
-                alert.type === 'error' ? 'text-red-700' : alert.type === 'warning' ? 'text-yellow-700' : 'text-blue-700'
-              }`}>
+              <p
+                className={`text-sm ${
+                  alert.type === 'error'
+                    ? 'text-red-700'
+                    : alert.type === 'warning'
+                      ? 'text-yellow-700'
+                      : 'text-blue-700'
+                }`}
+              >
                 {alert.message}
               </p>
             </div>

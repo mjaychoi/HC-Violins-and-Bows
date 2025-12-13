@@ -42,8 +42,8 @@ export function filterCalendarTasks(
     filters.filterStatus !== 'all'
       ? filters.filterStatus
       : filters.status !== 'all'
-      ? filters.status
-      : 'all';
+        ? filters.status
+        : 'all';
 
   if (effectiveStatusFilter !== 'all') {
     filtered = filterByStatus(filtered, effectiveStatusFilter);
@@ -54,8 +54,8 @@ export function filterCalendarTasks(
     filters.filterOwnership !== 'all'
       ? filters.filterOwnership
       : filters.owner !== 'all'
-      ? filters.owner
-      : 'all';
+        ? filters.owner
+        : 'all';
 
   if (effectiveOwnershipFilter !== 'all') {
     // Convert InstrumentInfo map to the expected format
@@ -71,7 +71,11 @@ export function filterCalendarTasks(
         ownership: value.ownership,
       });
     });
-    filtered = filterByOwnership(filtered, effectiveOwnershipFilter, ownershipMap);
+    filtered = filterByOwnership(
+      filtered,
+      effectiveOwnershipFilter,
+      ownershipMap
+    );
   }
 
   // Quick filters (type, priority) - only if not 'all'
@@ -126,8 +130,13 @@ export function countActiveCalendarFilters(
   if (filters.owner !== 'all') count++;
 
   // Main filters (only count if different from quick filters)
-  if (filters.filterStatus !== 'all' && filters.filterStatus !== filters.status) count++;
-  if (filters.filterOwnership !== 'all' && filters.filterOwnership !== filters.owner) count++;
+  if (filters.filterStatus !== 'all' && filters.filterStatus !== filters.status)
+    count++;
+  if (
+    filters.filterOwnership !== 'all' &&
+    filters.filterOwnership !== filters.owner
+  )
+    count++;
 
   // Date range
   if (dateRange?.from || dateRange?.to) count++;

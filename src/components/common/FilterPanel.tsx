@@ -58,12 +58,7 @@ export default function FilterPanel({
       <h3 id={ariaLabelledBy} className="sr-only">
         {title}
       </h3>
-      <div
-        className={cn(
-          'p-4 max-h-[70vh] overflow-y-auto',
-          contentClassName
-        )}
-      >
+      <div className={cn('p-4 max-h-[70vh] overflow-y-auto', contentClassName)}>
         {children}
       </div>
       {footer}

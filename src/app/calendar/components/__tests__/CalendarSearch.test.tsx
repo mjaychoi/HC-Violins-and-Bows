@@ -70,7 +70,9 @@ describe('CalendarSearch', () => {
     const user = userEvent.setup();
     const onSearchChange = jest.fn();
 
-    render(<CalendarSearch {...defaultProps} onSearchChange={onSearchChange} />);
+    render(
+      <CalendarSearch {...defaultProps} onSearchChange={onSearchChange} />
+    );
 
     const searchInput = screen.getByTestId('search-input');
 
@@ -100,7 +102,11 @@ describe('CalendarSearch', () => {
     const onSearchChange = jest.fn();
 
     render(
-      <CalendarSearch {...defaultProps} searchTerm="test" onSearchChange={onSearchChange} />
+      <CalendarSearch
+        {...defaultProps}
+        searchTerm="test"
+        onSearchChange={onSearchChange}
+      />
     );
 
     const clearButton = screen.getByTestId('clear-button');

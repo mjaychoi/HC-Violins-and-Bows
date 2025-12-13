@@ -36,8 +36,14 @@ export default function SalesFilters({
   // 현재 선택된 프리셋 확인
   const getActivePreset = (): DatePreset | 'all' | null => {
     if (!from && !to) return 'all';
-    
-    const presets: DatePreset[] = ['last7', 'thisMonth', 'lastMonth', 'last3Months', 'last12Months'];
+
+    const presets: DatePreset[] = [
+      'last7',
+      'thisMonth',
+      'lastMonth',
+      'last3Months',
+      'last12Months',
+    ];
     for (const preset of presets) {
       const { from: presetFrom, to: presetTo } = getDateRangeFromPreset(preset);
       if (from === presetFrom && to === presetTo) {
@@ -91,10 +97,15 @@ export default function SalesFilters({
       </div>
 
       {showFilters && (
-        <div id={filtersPanelId} className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 space-y-4">
+        <div
+          id={filtersPanelId}
+          className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 space-y-4"
+        >
           {/* Date Presets */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Quick Filters:</span>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Quick Filters:
+            </span>
             <button
               type="button"
               onClick={() => {

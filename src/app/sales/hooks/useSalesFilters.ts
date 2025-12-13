@@ -7,13 +7,15 @@ export function useSalesFilters(initialFilters?: Partial<SalesFilters>) {
   const [from, setFrom] = useState(initialFilters?.from || '');
   const [to, setTo] = useState(initialFilters?.to || '');
   const [search, setSearch] = useState(initialFilters?.search || '');
-  const [hasClient, setHasClient] = useState<boolean | null>(initialFilters?.hasClient ?? null);
+  const [hasClient, setHasClient] = useState<boolean | null>(
+    initialFilters?.hasClient ?? null
+  );
   const [sortColumn, setSortColumn] = useState<SalesFilters['sortColumn']>(
     initialFilters?.sortColumn || 'sale_date'
   );
-  const [sortDirection, setSortDirection] = useState<SalesFilters['sortDirection']>(
-    initialFilters?.sortDirection || 'desc'
-  );
+  const [sortDirection, setSortDirection] = useState<
+    SalesFilters['sortDirection']
+  >(initialFilters?.sortDirection || 'desc');
 
   const handleDatePreset = useCallback((preset: DatePreset) => {
     // 현재 스크롤 위치 저장 (필터 변경 후 복원하기 위해)
@@ -21,7 +23,7 @@ export function useSalesFilters(initialFilters?: Partial<SalesFilters>) {
     if (typeof window !== 'undefined' && window.scrollY > 0) {
       sessionStorage.setItem('salesScrollPosition', window.scrollY.toString());
     }
-    
+
     const { from: presetFrom, to: presetTo } = getDateRangeFromPreset(preset);
     setFrom(presetFrom);
     setTo(presetTo);

@@ -84,9 +84,7 @@ describe('ItemList', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     fireEvent.click(screen.getByText('Delete'));
-    expect(onDelete).toHaveBeenCalledWith(
-      expect.objectContaining({ id: '1' })
-    );
+    expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     fireEvent.click(screen.getByText('Edit'));

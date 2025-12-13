@@ -1,4 +1,10 @@
-import { Client, Instrument, ClientInstrument, MaintenanceTask, TaskFilters } from '@/types';
+import {
+  Client,
+  Instrument,
+  ClientInstrument,
+  MaintenanceTask,
+  TaskFilters,
+} from '@/types';
 import { apiClient } from '@/utils/apiClient';
 import { getSupabase } from '@/lib/supabase';
 
@@ -59,7 +65,7 @@ function matchesSearch<T extends object>(
 /**
  * Apply sorting to items
  * Supports string and number types only (mixed types may produce unexpected results)
- * 
+ *
  * @param items - Array to sort
  * @param sortBy - Field to sort by
  * @param sortDirection - Sort direction
@@ -72,9 +78,9 @@ function applySorting<T>(
   compare?: (a: unknown, b: unknown) => number
 ) {
   if (!sortBy) return items;
-  
+
   const dir = sortDirection === 'asc' ? 1 : -1;
-  
+
   // Use custom compare function if provided
   if (compare) {
     return [...items].sort((a, b) => {
@@ -83,33 +89,33 @@ function applySorting<T>(
       return compare(av, bv) * dir;
     });
   }
-  
+
   // Default comparison (handles string/number/null/undefined)
   return [...items].sort((a, b) => {
     const av = a[sortBy];
     const bv = b[sortBy];
-    
+
     // Equal values
     if (av === bv) return 0;
-    
+
     // Null/undefined handling: always push to end
     if (av === undefined || av === null) return dir; // End for asc, start for desc
     if (bv === undefined || bv === null) return -dir;
-    
+
     // Type-specific comparison
     const avType = typeof av;
     const bvType = typeof bv;
-    
+
     // Numbers: direct comparison
     if (avType === 'number' && bvType === 'number') {
       return ((av as number) - (bv as number)) * dir;
     }
-    
+
     // Strings: localeCompare for proper sorting
     if (avType === 'string' && bvType === 'string') {
       return (av as string).localeCompare(bv as string) * dir;
     }
-    
+
     // Mixed types: convert to string and compare
     return String(av).localeCompare(String(bv)) * dir;
   });
@@ -121,7 +127,11 @@ export function applyQuery<T extends object>(
   searchFields: Array<keyof T>
 ) {
   const { searchTerm, sortBy, sortDirection, filter } = options;
-  const filtered = items.filter(item => matchesFilter(item, filter) && matchesSearch(item, searchTerm, searchFields));
+  const filtered = items.filter(
+    item =>
+      matchesFilter(item, filter) &&
+      matchesSearch(item, searchTerm, searchFields)
+  );
   return applySorting(filtered, sortBy, sortDirection);
 }
 
@@ -147,7 +157,12 @@ export async function fetchClients(
 export async function fetchInstruments(
   fetcher: () => Promise<Instrument[]>,
   options: QueryOptions<Instrument> = {},
-  searchFields: Array<keyof Instrument> = ['maker', 'type', 'subtype', 'serial_number']
+  searchFields: Array<keyof Instrument> = [
+    'maker',
+    'type',
+    'subtype',
+    'serial_number',
+  ]
 ): Promise<Instrument[]> {
   const instruments = await fetcher();
   const result = applyQuery(instruments, options, searchFields);
@@ -171,7 +186,9 @@ class DataService {
   // Clients
   // ============================================================================
 
-  async fetchClients(options?: FetchOptions): Promise<{ data: Client[] | null; error: unknown }> {
+  async fetchClients(
+    options?: FetchOptions
+  ): Promise<{ data: Client[] | null; error: unknown }> {
     const { data, error } = await apiClient.query<Client>('clients', {
       select: options?.select,
       eq: options?.eq,
@@ -184,7 +201,9 @@ class DataService {
     return { data, error };
   }
 
-  async fetchClientById(id: string): Promise<{ data: Client | null; error: unknown }> {
+  async fetchClientById(
+    id: string
+  ): Promise<{ data: Client | null; error: unknown }> {
     const { data, error } = await apiClient.query<Client>('clients', {
       eq: { column: 'id', value: id },
       limit: 1,
@@ -192,23 +211,37 @@ class DataService {
     return { data: data?.[0] || null, error };
   }
 
-  async createClient(clientData: Omit<Client, 'id' | 'created_at'>): Promise<{ data: Client | null; error: unknown }> {
-    const { data, error } = await apiClient.create<Client>('clients', clientData);
+  async createClient(
+    clientData: Omit<Client, 'id' | 'created_at'>
+  ): Promise<{ data: Client | null; error: unknown }> {
+    const { data, error } = await apiClient.create<Client>(
+      'clients',
+      clientData
+    );
     if (!error && data) {
       invalidateCache('clients');
     }
     return { data, error };
   }
 
-  async updateClient(id: string, clientData: Partial<Client>): Promise<{ data: Client | null; error: unknown }> {
-    const { data, error } = await apiClient.update<Client>('clients', id, clientData);
+  async updateClient(
+    id: string,
+    clientData: Partial<Client>
+  ): Promise<{ data: Client | null; error: unknown }> {
+    const { data, error } = await apiClient.update<Client>(
+      'clients',
+      id,
+      clientData
+    );
     if (!error && data) {
       invalidateCache('clients');
     }
     return { data, error };
   }
 
-  async deleteClient(id: string): Promise<{ success: boolean; error: unknown }> {
+  async deleteClient(
+    id: string
+  ): Promise<{ success: boolean; error: unknown }> {
     const { success, error } = await apiClient.delete('clients', id);
     if (success) {
       invalidateCache('clients');
@@ -220,7 +253,9 @@ class DataService {
   // Instruments
   // ============================================================================
 
-  async fetchInstruments(options?: FetchOptions): Promise<{ data: Instrument[] | null; error: unknown }> {
+  async fetchInstruments(
+    options?: FetchOptions
+  ): Promise<{ data: Instrument[] | null; error: unknown }> {
     const { data, error } = await apiClient.query<Instrument>('instruments', {
       select: options?.select,
       eq: options?.eq,
@@ -233,7 +268,9 @@ class DataService {
     return { data, error };
   }
 
-  async fetchInstrumentById(id: string): Promise<{ data: Instrument | null; error: unknown }> {
+  async fetchInstrumentById(
+    id: string
+  ): Promise<{ data: Instrument | null; error: unknown }> {
     const { data, error } = await apiClient.query<Instrument>('instruments', {
       eq: { column: 'id', value: id },
       limit: 1,
@@ -241,23 +278,37 @@ class DataService {
     return { data: data?.[0] || null, error };
   }
 
-  async createInstrument(instrumentData: Omit<Instrument, 'id' | 'created_at'>): Promise<{ data: Instrument | null; error: unknown }> {
-    const { data, error } = await apiClient.create<Instrument>('instruments', instrumentData);
+  async createInstrument(
+    instrumentData: Omit<Instrument, 'id' | 'created_at'>
+  ): Promise<{ data: Instrument | null; error: unknown }> {
+    const { data, error } = await apiClient.create<Instrument>(
+      'instruments',
+      instrumentData
+    );
     if (!error && data) {
       invalidateCache('instruments');
     }
     return { data, error };
   }
 
-  async updateInstrument(id: string, instrumentData: Partial<Instrument>): Promise<{ data: Instrument | null; error: unknown }> {
-    const { data, error } = await apiClient.update<Instrument>('instruments', id, instrumentData);
+  async updateInstrument(
+    id: string,
+    instrumentData: Partial<Instrument>
+  ): Promise<{ data: Instrument | null; error: unknown }> {
+    const { data, error } = await apiClient.update<Instrument>(
+      'instruments',
+      id,
+      instrumentData
+    );
     if (!error && data) {
       invalidateCache('instruments');
     }
     return { data, error };
   }
 
-  async deleteInstrument(id: string): Promise<{ success: boolean; error: unknown }> {
+  async deleteInstrument(
+    id: string
+  ): Promise<{ success: boolean; error: unknown }> {
     const { success, error } = await apiClient.delete('instruments', id);
     if (success) {
       invalidateCache('instruments');
@@ -269,39 +320,67 @@ class DataService {
   // Client-Instrument Connections
   // ============================================================================
 
-  async fetchConnections(options?: FetchOptions): Promise<{ data: ClientInstrument[] | null; error: unknown }> {
+  async fetchConnections(
+    options?: FetchOptions
+  ): Promise<{ data: ClientInstrument[] | null; error: unknown }> {
     // Note: 'client_instruments' is not in ALLOWED_SORT_COLUMNS, using connections table name instead
     // This is a workaround - ideally apiClient.query should accept table names directly
     // Type assertion is necessary here as 'connections' is a valid table but not in strict ALLOWED_SORT_COLUMNS
-    const { data, error } = await apiClient.query<ClientInstrument>('connections' as 'instruments' | 'clients' | 'sales_history' | 'maintenance_tasks' | 'connections', {
-      select: options?.select || '*, client:clients(*), instrument:instruments(*)',
-      eq: options?.eq,
-      order: options?.orderBy,
-      limit: options?.limit,
-    });
+    const { data, error } = await apiClient.query<ClientInstrument>(
+      'connections' as
+        | 'instruments'
+        | 'clients'
+        | 'sales_history'
+        | 'maintenance_tasks'
+        | 'connections',
+      {
+        select:
+          options?.select || '*, client:clients(*), instrument:instruments(*)',
+        eq: options?.eq,
+        order: options?.orderBy,
+        limit: options?.limit,
+      }
+    );
     if (!error && data) {
       updateCacheTimestamp('connections');
     }
     return { data, error };
   }
 
-  async createConnection(connectionData: Omit<ClientInstrument, 'id' | 'created_at' | 'client' | 'instrument'>): Promise<{ data: ClientInstrument | null; error: unknown }> {
-    const { data, error } = await apiClient.create<ClientInstrument>('client_instruments', connectionData);
+  async createConnection(
+    connectionData: Omit<
+      ClientInstrument,
+      'id' | 'created_at' | 'client' | 'instrument'
+    >
+  ): Promise<{ data: ClientInstrument | null; error: unknown }> {
+    const { data, error } = await apiClient.create<ClientInstrument>(
+      'client_instruments',
+      connectionData
+    );
     if (!error && data) {
       invalidateCache('connections');
     }
     return { data, error };
   }
 
-  async updateConnection(id: string, connectionData: Partial<ClientInstrument>): Promise<{ data: ClientInstrument | null; error: unknown }> {
-    const { data, error } = await apiClient.update<ClientInstrument>('client_instruments', id, connectionData);
+  async updateConnection(
+    id: string,
+    connectionData: Partial<ClientInstrument>
+  ): Promise<{ data: ClientInstrument | null; error: unknown }> {
+    const { data, error } = await apiClient.update<ClientInstrument>(
+      'client_instruments',
+      id,
+      connectionData
+    );
     if (!error && data) {
       invalidateCache('connections');
     }
     return { data, error };
   }
 
-  async deleteConnection(id: string): Promise<{ success: boolean; error: unknown }> {
+  async deleteConnection(
+    id: string
+  ): Promise<{ success: boolean; error: unknown }> {
     const { success, error } = await apiClient.delete('client_instruments', id);
     if (success) {
       invalidateCache('connections');
@@ -317,11 +396,13 @@ class DataService {
    * Fetch maintenance tasks with filters using server-side querying
    * Uses Supabase directly for efficient filtering
    */
-  async fetchMaintenanceTasks(filters?: TaskFilters): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
+  async fetchMaintenanceTasks(
+    filters?: TaskFilters
+  ): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
     try {
       const supabase = getSupabase();
       let query = supabase.from('maintenance_tasks').select('*');
-      
+
       // Apply filters server-side
       if (filters) {
         if (filters.instrument_id) {
@@ -346,55 +427,84 @@ class DataService {
           // Server-side search using ilike
           const searchTerm = filters.search.trim();
           if (searchTerm) {
-            query = query.or(`title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`);
+            query = query.or(
+              `title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`
+            );
           }
         }
       }
-      
+
       // Default ordering
       query = query.order('received_date', { ascending: false });
-      
+
       const { data, error } = await query;
-      
+
       if (error) {
         return { data: null, error };
       }
-      
+
       if (!error && data) {
         updateCacheTimestamp('maintenance_tasks');
       }
-      
+
       return { data: data as MaintenanceTask[], error: null };
     } catch (err) {
       return { data: null, error: err };
     }
   }
 
-  async fetchMaintenanceTaskById(id: string): Promise<{ data: MaintenanceTask | null; error: unknown }> {
-    const { data, error } = await apiClient.query<MaintenanceTask>('maintenance_tasks', {
-      eq: { column: 'id', value: id },
-      limit: 1,
-    });
+  async fetchMaintenanceTaskById(
+    id: string
+  ): Promise<{ data: MaintenanceTask | null; error: unknown }> {
+    const { data, error } = await apiClient.query<MaintenanceTask>(
+      'maintenance_tasks',
+      {
+        eq: { column: 'id', value: id },
+        limit: 1,
+      }
+    );
     return { data: data?.[0] || null, error };
   }
 
-  async createMaintenanceTask(task: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'>): Promise<{ data: MaintenanceTask | null; error: unknown }> {
-    const { data, error } = await apiClient.create<MaintenanceTask>('maintenance_tasks', task);
+  async createMaintenanceTask(
+    task: Omit<
+      MaintenanceTask,
+      'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+    >
+  ): Promise<{ data: MaintenanceTask | null; error: unknown }> {
+    const { data, error } = await apiClient.create<MaintenanceTask>(
+      'maintenance_tasks',
+      task
+    );
     if (!error && data) {
       invalidateCache('maintenance_tasks');
     }
     return { data, error };
   }
 
-  async updateMaintenanceTask(id: string, updates: Partial<Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'>>): Promise<{ data: MaintenanceTask | null; error: unknown }> {
-    const { data, error } = await apiClient.update<MaintenanceTask>('maintenance_tasks', id, updates);
+  async updateMaintenanceTask(
+    id: string,
+    updates: Partial<
+      Omit<
+        MaintenanceTask,
+        'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+      >
+    >
+  ): Promise<{ data: MaintenanceTask | null; error: unknown }> {
+    const { data, error } = await apiClient.update<MaintenanceTask>(
+      'maintenance_tasks',
+      id,
+      updates
+    );
     if (!error && data) {
       invalidateCache('maintenance_tasks');
     }
     return { data, error };
   }
 
-  async deleteMaintenanceTask(id: string): Promise<{ success: boolean; error: unknown }> {
+  async deleteMaintenanceTask(
+    id: string
+  ): Promise<{ success: boolean; error: unknown }> {
     const { success, error } = await apiClient.delete('maintenance_tasks', id);
     if (success) {
       invalidateCache('maintenance_tasks');
@@ -406,10 +516,13 @@ class DataService {
    * Fetch tasks within date range using server-side filtering
    * Uses Supabase query directly for efficient server-side filtering
    */
-  async fetchTasksByDateRange(startDate: string, endDate: string): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
+  async fetchTasksByDateRange(
+    startDate: string,
+    endDate: string
+  ): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
     try {
       const supabase = getSupabase();
-      
+
       // Use OR condition to match any date field within range
       // Format: (received_date in range) OR (scheduled_date in range) OR (due_date in range)
       const { data, error } = await supabase
@@ -417,32 +530,37 @@ class DataService {
         .select('*')
         .or(
           `and(received_date.gte.${startDate},received_date.lte.${endDate}),` +
-          `and(scheduled_date.gte.${startDate},scheduled_date.lte.${endDate}),` +
-          `and(due_date.gte.${startDate},due_date.lte.${endDate}),` +
-          `and(personal_due_date.gte.${startDate},personal_due_date.lte.${endDate})`
+            `and(scheduled_date.gte.${startDate},scheduled_date.lte.${endDate}),` +
+            `and(due_date.gte.${startDate},due_date.lte.${endDate}),` +
+            `and(personal_due_date.gte.${startDate},personal_due_date.lte.${endDate})`
         )
         .order('scheduled_date', { ascending: true, nullsFirst: false })
         .order('due_date', { ascending: true, nullsFirst: false });
-      
+
       if (error) {
         return { data: null, error };
       }
-      
+
       if (!error && data) {
         updateCacheTimestamp('maintenance_tasks');
       }
-      
+
       return { data: data as MaintenanceTask[], error: null };
     } catch (err) {
       return { data: null, error: err };
     }
   }
 
-  async fetchTasksByScheduledDate(date: string): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
-    const { data, error } = await apiClient.query<MaintenanceTask>('maintenance_tasks', {
-      eq: { column: 'scheduled_date', value: date },
-      order: { column: 'priority', ascending: false },
-    });
+  async fetchTasksByScheduledDate(
+    date: string
+  ): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
+    const { data, error } = await apiClient.query<MaintenanceTask>(
+      'maintenance_tasks',
+      {
+        eq: { column: 'scheduled_date', value: date },
+        order: { column: 'priority', ascending: false },
+      }
+    );
     return { data, error };
   }
 
@@ -452,11 +570,14 @@ class DataService {
    * - status is 'pending' or 'in_progress'
    * - (due_date < today OR personal_due_date < today)
    */
-  async fetchOverdueTasks(): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
+  async fetchOverdueTasks(): Promise<{
+    data: MaintenanceTask[] | null;
+    error: unknown;
+  }> {
     try {
       const supabase = getSupabase();
       const today = new Date().toISOString().split('T')[0];
-      
+
       const { data, error } = await supabase
         .from('maintenance_tasks')
         .select('*')
@@ -464,15 +585,15 @@ class DataService {
         .or(`due_date.lt.${today},personal_due_date.lt.${today}`)
         .order('due_date', { ascending: true, nullsFirst: false })
         .order('personal_due_date', { ascending: true, nullsFirst: false });
-      
+
       if (error) {
         return { data: null, error };
       }
-      
+
       if (!error && data) {
         updateCacheTimestamp('maintenance_tasks');
       }
-      
+
       return { data: data as MaintenanceTask[], error: null };
     } catch (err) {
       return { data: null, error: err };

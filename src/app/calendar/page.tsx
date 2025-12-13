@@ -3,7 +3,10 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useMaintenanceTasks } from '@/hooks/useMaintenanceTasks';
-import { useUnifiedInstruments, useUnifiedClients } from '@/hooks/useUnifiedData';
+import {
+  useUnifiedInstruments,
+  useUnifiedClients,
+} from '@/hooks/useUnifiedData';
 import { useModalState } from '@/hooks/useModalState';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { usePageNotifications } from '@/hooks/usePageNotifications';
@@ -42,7 +45,8 @@ import {
 
 // Dynamic import for CalendarView to reduce initial bundle size
 const CalendarView = dynamic(
-  () => import('./components/CalendarView').then(mod => ({ default: mod.default })),
+  () =>
+    import('./components/CalendarView').then(mod => ({ default: mod.default })),
   {
     ssr: false,
     loading: () => (
@@ -53,17 +57,17 @@ const CalendarView = dynamic(
   }
 );
 
-
 export default function CalendarPage() {
   const { ErrorToasts, SuccessToasts, handleError, showSuccess } =
     useAppFeedback();
-  
+
   // FIXED: useUnifiedData is now called at root layout level
   // Use specific hooks to read data (they don't trigger fetches)
   const { instruments } = useUnifiedInstruments();
   const { clients } = useUnifiedClients();
   const [hasTableError, setHasTableError] = useState(false);
-  const [confirmDeleteTask, setConfirmDeleteTask] = useState<MaintenanceTask | null>(null);
+  const [confirmDeleteTask, setConfirmDeleteTask] =
+    useState<MaintenanceTask | null>(null);
   const [modalDefaultDate, setModalDefaultDate] = useState<string>('');
 
   // Calendar data hooks
@@ -121,7 +125,11 @@ export default function CalendarPage() {
   // Note: notificationBadge is a data object with { overdue, upcoming, today, onClick } structure
   // as defined by usePageNotifications hook (not a ReactNode)
   const handleNotificationBadgeClick = () => {
-    const hasNotifications = notificationBadge.overdue + notificationBadge.upcoming + notificationBadge.today > 0;
+    const hasNotifications =
+      notificationBadge.overdue +
+        notificationBadge.upcoming +
+        notificationBadge.today >
+      0;
     if (hasNotifications) {
       notificationBadge.onClick();
       navigation.handleGoToToday();
@@ -187,40 +195,43 @@ export default function CalendarPage() {
   }, [resetFilters, navigation]);
 
   // Handle summary card clicks to apply filters
-  const handleSummaryCardClick = useCallback((status: 'all' | 'overdue' | 'today' | 'upcoming') => {
-    const today = startOfDay(new Date());
-    
-    switch (status) {
-      case 'all':
-        // Reset all filters
-        resetFiltersAndUpdate();
-        break;
-      case 'overdue':
-        // Filter to overdue tasks (before today)
-        setDateRange({
-          from: null, // No start date
-          to: format(subDays(today, 1), 'yyyy-MM-dd'), // Yesterday
-        });
-        // Also set status filter to exclude completed/cancelled
-        setFilterStatus('pending');
-        break;
-      case 'today':
-        // Filter to tasks due today
-        const todayStr = format(today, 'yyyy-MM-dd');
-        setDateRange({
-          from: todayStr,
-          to: todayStr,
-        });
-        break;
-      case 'upcoming':
-        // Filter to upcoming tasks (next 7 days)
-        setDateRange({
-          from: format(addDays(today, 1), 'yyyy-MM-dd'), // Tomorrow
-          to: format(addDays(today, 7), 'yyyy-MM-dd'), // 7 days from now
-        });
-        break;
-    }
-  }, [resetFiltersAndUpdate, setDateRange, setFilterStatus]);
+  const handleSummaryCardClick = useCallback(
+    (status: 'all' | 'overdue' | 'today' | 'upcoming') => {
+      const today = startOfDay(new Date());
+
+      switch (status) {
+        case 'all':
+          // Reset all filters
+          resetFiltersAndUpdate();
+          break;
+        case 'overdue':
+          // Filter to overdue tasks (before today)
+          setDateRange({
+            from: null, // No start date
+            to: format(subDays(today, 1), 'yyyy-MM-dd'), // Yesterday
+          });
+          // Also set status filter to exclude completed/cancelled
+          setFilterStatus('pending');
+          break;
+        case 'today':
+          // Filter to tasks due today
+          const todayStr = format(today, 'yyyy-MM-dd');
+          setDateRange({
+            from: todayStr,
+            to: todayStr,
+          });
+          break;
+        case 'upcoming':
+          // Filter to upcoming tasks (next 7 days)
+          setDateRange({
+            from: format(addDays(today, 1), 'yyyy-MM-dd'), // Tomorrow
+            to: format(addDays(today, 7), 'yyyy-MM-dd'), // 7 days from now
+          });
+          break;
+      }
+    },
+    [resetFiltersAndUpdate, setDateRange, setFilterStatus]
+  );
 
   const handleOpenNewTask = useCallback(() => {
     setModalDefaultDate('');
@@ -247,7 +258,15 @@ export default function CalendarPage() {
         handleError(error, CALENDAR_ERROR_MESSAGES.CREATE_TASK);
       }
     },
-    [createTask, closeModal, navigation.calendarView, navigation.currentDate, fetchTasksByDateRange, showSuccess, handleError]
+    [
+      createTask,
+      closeModal,
+      navigation.calendarView,
+      navigation.currentDate,
+      fetchTasksByDateRange,
+      showSuccess,
+      handleError,
+    ]
   );
 
   const handleUpdateTask = useCallback(
@@ -271,7 +290,16 @@ export default function CalendarPage() {
         handleError(error, CALENDAR_ERROR_MESSAGES.UPDATE_TASK);
       }
     },
-    [selectedTask, updateTask, closeModal, navigation.calendarView, navigation.currentDate, fetchTasksByDateRange, showSuccess, handleError]
+    [
+      selectedTask,
+      updateTask,
+      closeModal,
+      navigation.calendarView,
+      navigation.currentDate,
+      fetchTasksByDateRange,
+      showSuccess,
+      handleError,
+    ]
   );
 
   const handleDeleteTaskRequest = useCallback((task: MaintenanceTask) => {
@@ -293,7 +321,15 @@ export default function CalendarPage() {
     } catch (error) {
       handleError(error, CALENDAR_ERROR_MESSAGES.DELETE_TASK);
     }
-  }, [confirmDeleteTask, deleteTask, navigation.calendarView, navigation.currentDate, fetchTasksByDateRange, showSuccess, handleError]);
+  }, [
+    confirmDeleteTask,
+    deleteTask,
+    navigation.calendarView,
+    navigation.currentDate,
+    fetchTasksByDateRange,
+    showSuccess,
+    handleError,
+  ]);
 
   const handleSelectEvent = (task: MaintenanceTask) => {
     openEditModal(task);
@@ -308,7 +344,6 @@ export default function CalendarPage() {
   const handleTaskClick = (task: MaintenanceTask) => {
     openEditModal(task);
   };
-
 
   const isEmptyState = !loading && filteredTasks.length === 0;
   const showPagination = totalPages > 1 && view === 'list';
@@ -373,7 +408,10 @@ export default function CalendarPage() {
       <AppLayout
         title="Calendar"
         headerActions={
-          notificationBadge.overdue + notificationBadge.upcoming + notificationBadge.today > 0 ? (
+          notificationBadge.overdue +
+            notificationBadge.upcoming +
+            notificationBadge.today >
+          0 ? (
             <NotificationBadge
               overdue={notificationBadge.overdue}
               upcoming={notificationBadge.upcoming}
@@ -525,36 +563,36 @@ export default function CalendarPage() {
             </div>
           )}
 
-            {/* Task Modal */}
-            <TaskModal
-              isOpen={showModal}
-              onClose={() => {
-                closeModal();
-                setModalDefaultDate('');
-              }}
-              onSubmit={isEditing ? handleUpdateTask : handleCreateTask}
-              submitting={loading.mutate}
-              selectedTask={selectedTask}
-              isEditing={isEditing}
-              instruments={instruments}
-              clients={clients}
-              defaultScheduledDate={modalDefaultDate}
-            />
+          {/* Task Modal */}
+          <TaskModal
+            isOpen={showModal}
+            onClose={() => {
+              closeModal();
+              setModalDefaultDate('');
+            }}
+            onSubmit={isEditing ? handleUpdateTask : handleCreateTask}
+            submitting={loading.mutate}
+            selectedTask={selectedTask}
+            isEditing={isEditing}
+            instruments={instruments}
+            clients={clients}
+            defaultScheduledDate={modalDefaultDate}
+          />
 
-            {/* Error Toasts */}
-            <ErrorToasts />
-            {/* Success Toasts */}
-            <SuccessToasts />
-            <ConfirmDialog
-              isOpen={Boolean(confirmDeleteTask)}
-              title={CALENDAR_CONFIRM_MESSAGES.DELETE_TASK_TITLE}
-              message={CALENDAR_CONFIRM_MESSAGES.DELETE_TASK_MESSAGE}
-              confirmLabel={CALENDAR_CONFIRM_MESSAGES.DELETE_CONFIRM_LABEL}
-              cancelLabel={CALENDAR_CONFIRM_MESSAGES.DELETE_CANCEL_LABEL}
-              onConfirm={handleConfirmDeleteTask}
-              onCancel={() => setConfirmDeleteTask(null)}
-            />
-          </div>
+          {/* Error Toasts */}
+          <ErrorToasts />
+          {/* Success Toasts */}
+          <SuccessToasts />
+          <ConfirmDialog
+            isOpen={Boolean(confirmDeleteTask)}
+            title={CALENDAR_CONFIRM_MESSAGES.DELETE_TASK_TITLE}
+            message={CALENDAR_CONFIRM_MESSAGES.DELETE_TASK_MESSAGE}
+            confirmLabel={CALENDAR_CONFIRM_MESSAGES.DELETE_CONFIRM_LABEL}
+            cancelLabel={CALENDAR_CONFIRM_MESSAGES.DELETE_CANCEL_LABEL}
+            onConfirm={handleConfirmDeleteTask}
+            onCancel={() => setConfirmDeleteTask(null)}
+          />
+        </div>
       </AppLayout>
     </ErrorBoundary>
   );

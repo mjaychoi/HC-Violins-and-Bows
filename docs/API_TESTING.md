@@ -21,9 +21,11 @@ curl http://localhost:3000/api/health
 ```
 
 또는 브라우저에서 직접 접속:
+
 - http://localhost:3000/api/health
 
 예상 응답:
+
 ```json
 {
   "status": "ok",
@@ -38,6 +40,7 @@ curl http://localhost:3000/api/health
 ## 📋 API 엔드포인트 목록
 
 ### 1. Health Check
+
 ```bash
 curl http://localhost:3000/api/health
 ```
@@ -45,16 +48,19 @@ curl http://localhost:3000/api/health
 ### 2. Clients API
 
 **GET - 모든 클라이언트 조회**
+
 ```bash
 curl http://localhost:3000/api/clients
 ```
 
 **GET - 정렬 옵션 포함**
+
 ```bash
 curl "http://localhost:3000/api/clients?orderBy=created_at&ascending=false"
 ```
 
 **POST - 새 클라이언트 생성**
+
 ```bash
 curl -X POST http://localhost:3000/api/clients \
   -H "Content-Type: application/json" \
@@ -67,6 +73,7 @@ curl -X POST http://localhost:3000/api/clients \
 ```
 
 **PATCH - 클라이언트 수정**
+
 ```bash
 curl -X PATCH http://localhost:3000/api/clients \
   -H "Content-Type: application/json" \
@@ -78,6 +85,7 @@ curl -X PATCH http://localhost:3000/api/clients \
 ```
 
 **DELETE - 클라이언트 삭제**
+
 ```bash
 curl -X DELETE "http://localhost:3000/api/clients?id=client-uuid-here"
 ```
@@ -85,16 +93,19 @@ curl -X DELETE "http://localhost:3000/api/clients?id=client-uuid-here"
 ### 3. Instruments API
 
 **GET - 모든 악기 조회**
+
 ```bash
 curl http://localhost:3000/api/instruments
 ```
 
 **GET - 정렬 옵션 포함**
+
 ```bash
 curl "http://localhost:3000/api/instruments?orderBy=created_at&ascending=false"
 ```
 
 **POST - 새 악기 생성**
+
 ```bash
 curl -X POST http://localhost:3000/api/instruments \
   -H "Content-Type: application/json" \
@@ -110,11 +121,13 @@ curl -X POST http://localhost:3000/api/instruments \
 ### 4. Connections API
 
 **GET - 모든 연결 조회**
+
 ```bash
 curl http://localhost:3000/api/connections
 ```
 
 **POST - 새 연결 생성**
+
 ```bash
 curl -X POST http://localhost:3000/api/connections \
   -H "Content-Type: application/json" \
@@ -129,16 +142,19 @@ curl -X POST http://localhost:3000/api/connections \
 ### 5. Sales API
 
 **GET - 판매 기록 조회 (페이지네이션)**
+
 ```bash
 curl "http://localhost:3000/api/sales?page=1&pageSize=10"
 ```
 
 **GET - 날짜 필터링**
+
 ```bash
 curl "http://localhost:3000/api/sales?fromDate=2024-01-01&toDate=2024-12-31"
 ```
 
 **POST - 새 판매 기록 생성**
+
 ```bash
 curl -X POST http://localhost:3000/api/sales \
   -H "Content-Type: application/json" \
@@ -151,6 +167,7 @@ curl -X POST http://localhost:3000/api/sales \
 ```
 
 **PATCH - 판매 기록 수정**
+
 ```bash
 curl -X PATCH http://localhost:3000/api/sales \
   -H "Content-Type: application/json" \
@@ -163,16 +180,19 @@ curl -X PATCH http://localhost:3000/api/sales \
 ### 6. Maintenance Tasks API
 
 **GET - 모든 유지보수 작업 조회**
+
 ```bash
 curl http://localhost:3000/api/maintenance-tasks
 ```
 
 **GET - 필터링**
+
 ```bash
 curl "http://localhost:3000/api/maintenance-tasks?status=pending&instrument_id=instrument-uuid"
 ```
 
 **POST - 새 유지보수 작업 생성**
+
 ```bash
 curl -X POST http://localhost:3000/api/maintenance-tasks \
   -H "Content-Type: application/json" \
@@ -201,6 +221,7 @@ curl -X POST http://localhost:3000/api/maintenance-tasks \
 ## 🌐 브라우저에서 테스트
 
 ### 1. GET 요청
+
 브라우저 주소창에 직접 입력하거나 개발자 도구 Console에서:
 
 ```javascript
@@ -210,6 +231,7 @@ fetch('http://localhost:3000/api/clients')
 ```
 
 ### 2. POST/PATCH/DELETE 요청
+
 브라우저 개발자 도구 Console에서:
 
 ```javascript
@@ -220,8 +242,8 @@ fetch('http://localhost:3000/api/clients', {
   body: JSON.stringify({
     first_name: 'John',
     last_name: 'Doe',
-    email: 'john@example.com'
-  })
+    email: 'john@example.com',
+  }),
 })
   .then(res => res.json())
   .then(data => console.log(data));
@@ -243,6 +265,7 @@ npm test -- src/app/api/sales/__tests__/route.test.ts
 ## 📊 응답 확인
 
 ### 성공 응답 (200)
+
 ```json
 {
   "data": [...],
@@ -251,6 +274,7 @@ npm test -- src/app/api/sales/__tests__/route.test.ts
 ```
 
 ### 에러 응답 (400/500)
+
 ```json
 {
   "error": "Error message",

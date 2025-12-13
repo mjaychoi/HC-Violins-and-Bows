@@ -32,7 +32,8 @@ const InstrumentForm = dynamic(() => import('./components/InstrumentForm'), {
 
 export default function InstrumentsPage() {
   // Error/Success handling
-  const { ErrorToasts, SuccessToasts, handleError, showSuccess } = useAppFeedback();
+  const { ErrorToasts, SuccessToasts, handleError, showSuccess } =
+    useAppFeedback();
 
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched

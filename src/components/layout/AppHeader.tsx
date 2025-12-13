@@ -57,9 +57,11 @@ export default function AppHeader({
 
           <div className="flex items-center space-x-2 sm:space-x-4">
             {headerActions && (
-              <div className="flex items-center hidden sm:flex">{headerActions}</div>
+              <div className="flex items-center hidden sm:flex">
+                {headerActions}
+              </div>
             )}
-            
+
             {user && (
               <div className="flex items-center space-x-2 sm:space-x-3">
                 <span className="text-xs sm:text-sm text-gray-600 hidden md:inline truncate max-w-[120px] lg:max-w-none">

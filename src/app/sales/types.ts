@@ -1,6 +1,11 @@
 export type SortColumn = 'sale_date' | 'sale_price' | 'client_name';
 export type SortDirection = 'asc' | 'desc';
-export type DatePreset = 'last7' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last12Months';
+export type DatePreset =
+  | 'last7'
+  | 'thisMonth'
+  | 'lastMonth'
+  | 'last3Months'
+  | 'last12Months';
 export type SaleStatus = 'Paid' | 'Refunded';
 
 export interface SalesFilters {

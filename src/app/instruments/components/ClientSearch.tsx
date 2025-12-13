@@ -43,7 +43,9 @@ export default function ClientSearch({
       }
       const result = await response.json();
       const selectedIds = new Set(selectedClients.map(sc => sc.client.id));
-      const filtered = (result.data || []).filter((c: Client) => !selectedIds.has(c.id));
+      const filtered = (result.data || []).filter(
+        (c: Client) => !selectedIds.has(c.id)
+      );
       setSearchResults(filtered);
     } catch (error) {
       logError('Error searching clients', error, 'ClientSearch', {

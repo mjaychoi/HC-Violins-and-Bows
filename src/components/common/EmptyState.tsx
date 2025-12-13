@@ -54,13 +54,18 @@ export default function EmptyState({
   );
 
   return (
-    <div className={`rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}>
+    <div
+      className={`rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}
+    >
       <div className="text-center py-16 px-4" role="status" aria-live="polite">
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-xl bg-gray-100">
           {icon || defaultIcon}
         </div>
         <h3 className="mt-4 text-base font-semibold text-gray-900">
-          {title || (hasActiveFilters ? 'No items found matching your filters' : 'No items yet')}
+          {title ||
+            (hasActiveFilters
+              ? 'No items found matching your filters'
+              : 'No items yet')}
         </h3>
         <p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">
           {description ||
@@ -83,7 +88,9 @@ export default function EmptyState({
                 onClick={actionButton.onClick}
                 className="inline-flex items-center px-5 py-2.5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
               >
-                {actionButton.icon && <span className="mr-2">{actionButton.icon}</span>}
+                {actionButton.icon && (
+                  <span className="mr-2">{actionButton.icon}</span>
+                )}
                 {actionButton.label}
               </button>
             )}

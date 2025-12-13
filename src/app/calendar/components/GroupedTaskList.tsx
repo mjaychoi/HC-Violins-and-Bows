@@ -5,12 +5,7 @@ import Link from 'next/link';
 import type { MaintenanceTask } from '@/types';
 import { formatDate } from '@/utils/formatUtils';
 import { highlightText } from '../utils/searchUtils';
-import {
-  isToday,
-  isTomorrow,
-  isYesterday,
-  differenceInDays,
-} from 'date-fns';
+import { isToday, isTomorrow, isYesterday, differenceInDays } from 'date-fns';
 import { parseTaskDate } from '@/utils/tasks/dateUtils';
 import {
   getPriorityPillClasses,
@@ -126,7 +121,10 @@ export default function GroupedTaskList({
         };
       })
       // FIXED: Sort by Date.getTime() for reliability (dateKey is now normalized YYYY-MM-DD, but this is safer)
-      .sort((a, b) => parseTaskDate(a.date).getTime() - parseTaskDate(b.date).getTime());
+      .sort(
+        (a, b) =>
+          parseTaskDate(a.date).getTime() - parseTaskDate(b.date).getTime()
+      );
 
     return groupedArray;
   }, [tasks, now]);
@@ -254,7 +252,9 @@ export default function GroupedTaskList({
                 statusColor = 'text-blue-600';
                 statusBg = 'bg-blue-50';
               } else if (isTomorrowDate || (daysDiff > 0 && daysDiff <= 3)) {
-                headerText = isTomorrowDate ? `Due Tomorrow` : `Due in ${daysDiff} day${daysDiff > 1 ? 's' : ''}`;
+                headerText = isTomorrowDate
+                  ? `Due Tomorrow`
+                  : `Due in ${daysDiff} day${daysDiff > 1 ? 's' : ''}`;
                 statusColor = 'text-emerald-600';
                 statusBg = 'bg-emerald-50';
               } else if (daysDiff > 3 && daysDiff <= 7) {
@@ -335,14 +335,16 @@ export default function GroupedTaskList({
                             {task.instrument_id ? (
                               <Link
                                 href={`/dashboard?instrumentId=${task.instrument_id}`}
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={e => e.stopPropagation()}
                                 className="font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                                 title="View instrument details"
                               >
                                 {instrumentName}
                               </Link>
                             ) : (
-                              <span className="font-semibold text-gray-900">{instrumentName}</span>
+                              <span className="font-semibold text-gray-900">
+                                {instrumentName}
+                              </span>
                             )}
                             {idx < repairTasks.length - 1 && <span>, </span>}
                           </React.Fragment>
@@ -387,7 +389,7 @@ export default function GroupedTaskList({
                     data-testid={`task-${task.id}`}
                     className="group bg-white rounded-md p-4 transition-all duration-200 hover:bg-gray-50 cursor-pointer"
                     onClick={() => onTaskClick?.(task)}
-                    onKeyDown={(e) => {
+                    onKeyDown={e => {
                       // FIXED: Add keyboard activation (Enter/Space)
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
@@ -407,7 +409,10 @@ export default function GroupedTaskList({
                             <div className="flex items-center gap-2 flex-1">
                               {instrument && (
                                 <>
-                                  <span className="text-base shrink-0" aria-hidden="true">
+                                  <span
+                                    className="text-base shrink-0"
+                                    aria-hidden="true"
+                                  >
                                     {getInstrumentIcon(instrument.type)}
                                   </span>
                                   <span className="text-xs text-gray-500 font-medium shrink-0">
@@ -428,11 +433,14 @@ export default function GroupedTaskList({
                             </div>
                             <div className="flex items-center gap-2 text-sm shrink-0">
                               <span
-                                className={`px-2.5 py-1 rounded-md text-xs font-medium ${getStatusPillClasses(task.status, {
-                                  isOverdue,
-                                  isUpcoming,
-                                  task,
-                                })}`}
+                                className={`px-2.5 py-1 rounded-md text-xs font-medium ${getStatusPillClasses(
+                                  task.status,
+                                  {
+                                    isOverdue,
+                                    isUpcoming,
+                                    task,
+                                  }
+                                )}`}
                               >
                                 {task.status.replace('_', ' ')}
                               </span>
@@ -449,12 +457,17 @@ export default function GroupedTaskList({
                             <div className="text-sm text-gray-700 flex items-center gap-1.5">
                               {(() => {
                                 const icon = getInstrumentIcon(instrument.type);
-                                const initial = getInstrumentInitial(instrument.type);
-                                
+                                const initial = getInstrumentInitial(
+                                  instrument.type
+                                );
+
                                 // Build instrument label with highlighting if search term exists
                                 const instrumentLabel = (
                                   <>
-                                    <span className="text-base shrink-0" aria-hidden="true">
+                                    <span
+                                      className="text-base shrink-0"
+                                      aria-hidden="true"
+                                    >
                                       {icon}
                                     </span>
                                     {initial && (
@@ -464,13 +477,19 @@ export default function GroupedTaskList({
                                     )}
                                     <span>
                                       {searchTerm
-                                        ? highlightText(instrument.type || 'Unknown', searchTerm)
+                                        ? highlightText(
+                                            instrument.type || 'Unknown',
+                                            searchTerm
+                                          )
                                         : instrument.type || 'Unknown'}
                                       {instrument.maker && (
                                         <>
                                           {' – '}
                                           {searchTerm
-                                            ? highlightText(instrument.maker, searchTerm)
+                                            ? highlightText(
+                                                instrument.maker,
+                                                searchTerm
+                                              )
                                             : instrument.maker}
                                         </>
                                       )}
@@ -478,7 +497,10 @@ export default function GroupedTaskList({
                                         <>
                                           {' ('}
                                           {searchTerm
-                                            ? highlightText(instrument.ownership, searchTerm)
+                                            ? highlightText(
+                                                instrument.ownership,
+                                                searchTerm
+                                              )
                                             : instrument.ownership}
                                           {')'}
                                         </>
@@ -487,7 +509,10 @@ export default function GroupedTaskList({
                                         <>
                                           {' ['}
                                           {searchTerm
-                                            ? highlightText(instrument.serial_number, searchTerm)
+                                            ? highlightText(
+                                                instrument.serial_number,
+                                                searchTerm
+                                              )
                                             : instrument.serial_number}
                                           {']'}
                                         </>
@@ -500,14 +525,16 @@ export default function GroupedTaskList({
                                 return task.instrument_id ? (
                                   <Link
                                     href={`/dashboard?instrumentId=${task.instrument_id}`}
-                                    onClick={(e) => e.stopPropagation()}
+                                    onClick={e => e.stopPropagation()}
                                     className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                                     title="View instrument details"
                                   >
                                     {instrumentLabel}
                                   </Link>
                                 ) : (
-                                  <span className="text-gray-700">{instrumentLabel}</span>
+                                  <span className="text-gray-700">
+                                    {instrumentLabel}
+                                  </span>
                                 );
                               })()}
                             </div>
@@ -519,7 +546,7 @@ export default function GroupedTaskList({
                               {task.client_id ? (
                                 <Link
                                   href={`/clients?clientId=${task.client_id}`}
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={e => e.stopPropagation()}
                                   className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                                   title="View client details"
                                 >
@@ -739,7 +766,8 @@ export default function GroupedTaskList({
                                 <div>
                                   Cost:{' '}
                                   <span className="text-gray-900 font-medium">
-                                    ${task.cost.toLocaleString('en-US', {
+                                    $
+                                    {task.cost.toLocaleString('en-US', {
                                       minimumFractionDigits: 2,
                                       maximumFractionDigits: 2,
                                     })}

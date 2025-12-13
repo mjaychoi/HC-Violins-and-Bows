@@ -6,7 +6,10 @@ import { RelationshipTypeCount } from '../../utils/connectionGrouping';
 // Mock relationshipStyles
 jest.mock('../../utils/relationshipStyles', () => ({
   getRelationshipTypeStyle: jest.fn((type: string) => {
-    const styles: Record<string, { activeBorder: string; textColor: string; icon: string }> = {
+    const styles: Record<
+      string,
+      { activeBorder: string; textColor: string; icon: string }
+    > = {
       Interested: {
         activeBorder: 'border-yellow-600',
         textColor: 'text-yellow-600',
@@ -28,11 +31,13 @@ jest.mock('../../utils/relationshipStyles', () => ({
         icon: '🏠',
       },
     };
-    return styles[type] || {
-      activeBorder: 'border-gray-600',
-      textColor: 'text-gray-600',
-      icon: '📋',
-    };
+    return (
+      styles[type] || {
+        activeBorder: 'border-gray-600',
+        textColor: 'text-gray-600',
+        icon: '📋',
+      }
+    );
   }),
 }));
 
@@ -219,4 +224,3 @@ describe('FilterBar', () => {
     expect(bookedButton.className).toContain('hover:border-gray-300');
   });
 });
-

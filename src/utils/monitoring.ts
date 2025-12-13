@@ -25,8 +25,7 @@ function getAlertConfig(): AlertConfig {
   // SECURITY FIX: Use server-only env vars (not NEXT_PUBLIC_)
   // This prevents webhook URL from being exposed in client bundle
   const webhookUrl = process.env.ERROR_WEBHOOK_URL;
-  const webhookEnabled =
-    process.env.ERROR_WEBHOOK_ENABLED === 'true';
+  const webhookEnabled = process.env.ERROR_WEBHOOK_ENABLED === 'true';
   const severityThreshold =
     (process.env.ERROR_SEVERITY_THRESHOLD as ErrorSeverity) ||
     ErrorSeverity.HIGH;
@@ -74,9 +73,7 @@ async function sendToWebhook(
       environment: process.env.NODE_ENV || 'unknown',
       url: typeof window !== 'undefined' ? window.location.href : undefined,
       userAgent:
-        typeof window !== 'undefined'
-          ? window.navigator.userAgent
-          : undefined,
+        typeof window !== 'undefined' ? window.navigator.userAgent : undefined,
     };
 
     const response = await fetch(config.webhook.url, {

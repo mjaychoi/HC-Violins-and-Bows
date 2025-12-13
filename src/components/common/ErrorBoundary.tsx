@@ -3,7 +3,11 @@
 import React, { Component, ReactNode } from 'react';
 import { AppError, ErrorCodes } from '@/types/errors';
 import { logError } from '@/utils/logger';
-import { getUserFriendlyErrorMessage, sanitizeError, isProduction } from '@/utils/errorSanitization';
+import {
+  getUserFriendlyErrorMessage,
+  sanitizeError,
+  isProduction,
+} from '@/utils/errorSanitization';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -51,7 +55,7 @@ export default class ErrorBoundary extends Component<
     // 프로덕션 환경에서는 민감한 정보를 제거
     const sanitized = sanitizeError(error);
     const userMessage = getUserFriendlyErrorMessage(error);
-    
+
     const appError: AppError = {
       code: ErrorCodes.UNKNOWN_ERROR,
       message: userMessage,
@@ -156,12 +160,10 @@ export default class ErrorBoundary extends Component<
                   </div>
                   {error.details && (
                     <>
-                  <div>
-                    <strong>Stack:</strong>
-                  </div>
-                  <pre className="whitespace-pre-wrap">
-                        {error.details}
-                  </pre>
+                      <div>
+                        <strong>Stack:</strong>
+                      </div>
+                      <pre className="whitespace-pre-wrap">{error.details}</pre>
                     </>
                   )}
                   <div>

@@ -155,18 +155,26 @@ describe('useUnifiedData', () => {
         { id: '1', type: 'Violin', maker: 'Test' } as Instrument,
       ];
       mockState.connections = [
-        { id: '1', client_id: '1', instrument_id: '1', relationship_type: 'Owned' } as ClientInstrument,
+        {
+          id: '1',
+          client_id: '1',
+          instrument_id: '1',
+          relationship_type: 'Owned',
+        } as ClientInstrument,
       ];
 
       renderHook(() => useUnifiedData());
 
       // Wait for initial render and any useEffect to complete
-      await waitFor(() => {
-        // Should not be called because data exists
-        expect(mockActions.fetchClients).not.toHaveBeenCalled();
-        expect(mockActions.fetchInstruments).not.toHaveBeenCalled();
-        expect(mockActions.fetchConnections).not.toHaveBeenCalled();
-      }, { timeout: 1000 });
+      await waitFor(
+        () => {
+          // Should not be called because data exists
+          expect(mockActions.fetchClients).not.toHaveBeenCalled();
+          expect(mockActions.fetchInstruments).not.toHaveBeenCalled();
+          expect(mockActions.fetchConnections).not.toHaveBeenCalled();
+        },
+        { timeout: 1000 }
+      );
     });
 
     it('should return all actions', () => {

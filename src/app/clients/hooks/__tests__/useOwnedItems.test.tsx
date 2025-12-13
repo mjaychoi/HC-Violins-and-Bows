@@ -87,7 +87,9 @@ describe('useOwnedItems', () => {
     });
 
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringMatching(/\/api\/instruments\?ownership=John\+Doe|John%20Doe.*orderBy=created_at.*ascending=false/)
+      expect.stringMatching(
+        /\/api\/instruments\?ownership=John\+Doe|John%20Doe.*orderBy=created_at.*ascending=false/
+      )
     );
     expect(result.current.ownedItems).toEqual(mockOwnedItems);
     expect(result.current.loadingOwnedItems).toBe(false);
@@ -223,4 +225,3 @@ describe('useOwnedItems', () => {
     );
   });
 });
-

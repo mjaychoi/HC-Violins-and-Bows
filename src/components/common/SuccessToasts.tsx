@@ -18,7 +18,10 @@ interface SuccessToastsProps {
  * Success toasts container component
  * Extracted from useToast hook for better React DevTools visibility and render tracking
  */
-export default function SuccessToasts({ toasts, onRemove }: SuccessToastsProps): React.JSX.Element {
+export default function SuccessToasts({
+  toasts,
+  onRemove,
+}: SuccessToastsProps): React.JSX.Element {
   return React.createElement(
     'div',
     { className: 'fixed top-4 right-4 z-50 space-y-2' },

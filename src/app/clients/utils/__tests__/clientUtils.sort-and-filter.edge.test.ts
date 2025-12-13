@@ -55,10 +55,7 @@ describe('clientUtils edge sorting & filtering', () => {
   });
 
   it('filterClients returns all when search and filters are empty', () => {
-    const clients = [
-      makeClient({ id: '1' }),
-      makeClient({ id: '2' }),
-    ];
+    const clients = [makeClient({ id: '1' }), makeClient({ id: '2' })];
     const filters: FilterState = {
       last_name: [],
       first_name: [],
@@ -130,10 +127,7 @@ describe('clientUtils edge sorting & filtering', () => {
   });
 
   it('filterClients ignores hasInstruments when clientsWithInstruments is undefined', () => {
-    const clients = [
-      makeClient({ id: '1' }),
-      makeClient({ id: '2' }),
-    ];
+    const clients = [makeClient({ id: '1' }), makeClient({ id: '2' })];
     const filters: FilterState = {
       last_name: [],
       first_name: [],

@@ -19,7 +19,9 @@ const mockCustomer: CustomerWithPurchases = {
 describe('CustomerDetail', () => {
   it('should render message when customer is null', () => {
     render(<CustomerDetail customer={null} />);
-    expect(screen.getByText('Select a customer to view details')).toBeInTheDocument();
+    expect(
+      screen.getByText('Select a customer to view details')
+    ).toBeInTheDocument();
   });
 
   it('should render customer name', () => {
@@ -83,7 +85,11 @@ describe('CustomerDetail', () => {
   });
 
   it('should render "Unnamed" when both names are missing', () => {
-    const customerWithoutNames = { ...mockCustomer, first_name: null, last_name: null };
+    const customerWithoutNames = {
+      ...mockCustomer,
+      first_name: null,
+      last_name: null,
+    };
     render(<CustomerDetail customer={customerWithoutNames} />);
     expect(screen.getByText('Unnamed')).toBeInTheDocument();
   });
@@ -101,7 +107,10 @@ describe('CustomerDetail', () => {
   });
 
   it('should render "N/A" when client_number is null', () => {
-    const customerWithoutClientNumber = { ...mockCustomer, client_number: null };
+    const customerWithoutClientNumber = {
+      ...mockCustomer,
+      client_number: null,
+    };
     render(<CustomerDetail customer={customerWithoutClientNumber} />);
     expect(screen.getByText('N/A')).toBeInTheDocument();
   });

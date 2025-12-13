@@ -257,7 +257,7 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
     const { validateForm } = require('@/utils/validationUtils');
     expect(validateForm).toBeDefined();
     expect(typeof validateForm).toBe('function');
-    
+
     // validation이 빈 first_name을 감지할 수 있는지 확인
     const result = validateForm(
       { first_name: '', last_name: 'Doe' },

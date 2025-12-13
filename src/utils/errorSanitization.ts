@@ -79,17 +79,23 @@ function maskFilePath(path: string): string {
   if (parts.length > 3) {
     return `/${parts[1]}/.../${parts[parts.length - 1]}`;
   }
-  return path.replace(/[^/\\]+/g, (match, index) => (index === 0 ? match : '***'));
+  return path.replace(/[^/\\]+/g, (match, index) =>
+    index === 0 ? match : '***'
+  );
 }
 
 /**
  * 민감한 정보가 포함된 패턴들 (개선된 버전)
  */
-const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; masker: (match: string) => string }> = [
+const SENSITIVE_PATTERNS: Array<{
+  pattern: RegExp;
+  masker: (match: string) => string;
+}> = [
   // API 키, 토큰 (개선: JWT, Bearer, 긴 hex 문자열 포함)
   {
-    pattern: /(api[_-]?key|token|secret|password|auth[_-]?token|bearer)\s*[:=]\s*['"]?([^\s'"]{8,})['"]?/gi,
-    masker: (match) => {
+    pattern:
+      /(api[_-]?key|token|secret|password|auth[_-]?token|bearer)\s*[:=]\s*['"]?([^\s'"]{8,})['"]?/gi,
+    masker: match => {
       const keyValueMatch = match.match(/[:=]\s*['"]?([^\s'"]+)/);
       if (keyValueMatch && keyValueMatch[1]) {
         return match.replace(keyValueMatch[1], maskToken(keyValueMatch[1]));
@@ -115,7 +121,7 @@ const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; masker: (match: string) => st
   // 신용카드 번호
   {
     pattern: /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g,
-    masker: (match) => `****-****-****-${match.replace(/\D/g, '').slice(-4)}`,
+    masker: match => `****-****-****-${match.replace(/\D/g, '').slice(-4)}`,
   },
   // 데이터베이스 연결 문자열 (전체 마스킹)
   {
@@ -130,7 +136,8 @@ const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; masker: (match: string) => st
   // 환경 변수 (값만 마스킹)
   {
     pattern: /process\.env\.\w+/gi,
-    masker: (match) => match.replace(/(process\.env\.\w+)\s*=\s*['"]?[^'"]+/, '$1=***'),
+    masker: match =>
+      match.replace(/(process\.env\.\w+)\s*=\s*['"]?[^'"]+/, '$1=***'),
   },
 ];
 
@@ -141,7 +148,7 @@ export function maskSensitiveInfo(text: string): string {
   let sanitized = text;
 
   SENSITIVE_PATTERNS.forEach(({ pattern, masker }) => {
-    sanitized = sanitized.replace(pattern, (match) => {
+    sanitized = sanitized.replace(pattern, match => {
       // 짧은 문자열은 그대로 유지 (false positive 방지)
       if (match.length < 5) return match;
       return masker(match);
@@ -162,7 +169,9 @@ export function sanitizeError(error: unknown): {
 } {
   if (error instanceof Error) {
     const maskedMessage = maskSensitiveInfo(error.message);
-    const maskedStack = error.stack ? maskSensitiveInfo(error.stack) : undefined;
+    const maskedStack = error.stack
+      ? maskSensitiveInfo(error.stack)
+      : undefined;
 
     return {
       message: maskedMessage,
@@ -183,10 +192,14 @@ export function sanitizeError(error: unknown): {
     const message = errorObj.message
       ? maskSensitiveInfo(String(errorObj.message))
       : 'An error occurred';
-    
+
     // Production에서는 stack-derived fields를 포함하지 않음
-    const maskedDetails = errorObj.details ? maskSensitiveInfo(String(errorObj.details)) : undefined;
-    const maskedStack = errorObj.stack ? maskSensitiveInfo(String(errorObj.stack)) : undefined;
+    const maskedDetails = errorObj.details
+      ? maskSensitiveInfo(String(errorObj.details))
+      : undefined;
+    const maskedStack = errorObj.stack
+      ? maskSensitiveInfo(String(errorObj.stack))
+      : undefined;
 
     return {
       message,
@@ -224,23 +237,24 @@ export function getUserFriendlyErrorMessage(
     const errorCode = (error as { code: string }).code;
     const errorCodeMessages: Record<string, string> = {
       // ErrorCodes enum 값들에 매핑
-      'NETWORK_ERROR': 'Network connection error. Please check your internet connection.',
-      'TIMEOUT_ERROR': 'Request timeout. Please try again.',
-      'UNAUTHORIZED': 'Authentication required. Please log in.',
-      'FORBIDDEN': 'Access denied. You do not have permission.',
-      'RECORD_NOT_FOUND': 'The requested resource was not found.',
-      'VALIDATION_ERROR': 'Please check your input and try again.',
-      'DATABASE_ERROR': 'Database error occurred. Please try again later.',
-      'INTERNAL_ERROR': 'Server error occurred. Please try again later.',
-      'SESSION_EXPIRED': 'Session expired. Please log in again.',
-      'DUPLICATE_RECORD': 'This record already exists.',
+      NETWORK_ERROR:
+        'Network connection error. Please check your internet connection.',
+      TIMEOUT_ERROR: 'Request timeout. Please try again.',
+      UNAUTHORIZED: 'Authentication required. Please log in.',
+      FORBIDDEN: 'Access denied. You do not have permission.',
+      RECORD_NOT_FOUND: 'The requested resource was not found.',
+      VALIDATION_ERROR: 'Please check your input and try again.',
+      DATABASE_ERROR: 'Database error occurred. Please try again later.',
+      INTERNAL_ERROR: 'Server error occurred. Please try again later.',
+      SESSION_EXPIRED: 'Session expired. Please log in again.',
+      DUPLICATE_RECORD: 'This record already exists.',
       // PostgREST/Supabase 에러 코드
-      'PGRST116': 'Access denied.',
-      'PGRST301': 'Session expired. Please log in again.',
+      PGRST116: 'Access denied.',
+      PGRST301: 'Session expired. Please log in again.',
       '23505': 'This record already exists.',
       '23503': 'Invalid reference to related record.',
     };
-    
+
     if (errorCodeMessages[errorCode]) {
       return errorCodeMessages[errorCode];
     }
@@ -248,21 +262,21 @@ export function getUserFriendlyErrorMessage(
 
   // 프로덕션 환경에서는 일반적인 메시지만 반환
   const sanitized = sanitizeError(error);
-  
+
   // Fallback: 일반적인 에러 메시지 매핑 (substring 기반)
   const commonMessages: Record<string, string> = {
-    'network': 'Network connection error. Please check your internet connection.',
-    'timeout': 'Request timeout. Please try again.',
-    'unauthorized': 'Authentication required. Please log in.',
-    'forbidden': 'Access denied. You do not have permission.',
+    network: 'Network connection error. Please check your internet connection.',
+    timeout: 'Request timeout. Please try again.',
+    unauthorized: 'Authentication required. Please log in.',
+    forbidden: 'Access denied. You do not have permission.',
     'not found': 'The requested resource was not found.',
-    'validation': 'Please check your input and try again.',
-    'database': 'Database error occurred. Please try again later.',
-    'server': 'Server error occurred. Please try again later.',
+    validation: 'Please check your input and try again.',
+    database: 'Database error occurred. Please try again later.',
+    server: 'Server error occurred. Please try again later.',
   };
 
   const lowerMessage = sanitized.message.toLowerCase();
-  
+
   // 일반적인 에러 패턴 매칭 (fallback)
   for (const [key, message] of Object.entries(commonMessages)) {
     if (lowerMessage.includes(key)) {

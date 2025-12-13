@@ -123,7 +123,7 @@ export interface PageFiltersProps {
 
 /**
  * 범용 페이지 필터 컴포넌트
- * 
+ *
  * @example
  * ```tsx
  * <PageFilters
@@ -154,7 +154,7 @@ export default function PageFilters({
   searchConfig,
   activeBadges,
   advancedSearchConfig,
-  footerText = (count) => `검색/필터 ${count}개 적용 중`,
+  footerText = count => `검색/필터 ${count}개 적용 중`,
   applyButtonText = '적용',
   clearButtonText = '전체 초기화',
   gridCols = '3',
@@ -168,99 +168,111 @@ export default function PageFilters({
     '3': 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3',
   }[gridCols];
 
-  const hasActiveFilters = activeFiltersCount > 0 || Boolean(searchConfig?.searchTerm) || Boolean(activeBadges?.length) || Boolean(advancedSearchConfig?.dateRange?.from || advancedSearchConfig?.dateRange?.to);
+  const hasActiveFilters =
+    activeFiltersCount > 0 ||
+    Boolean(searchConfig?.searchTerm) ||
+    Boolean(activeBadges?.length) ||
+    Boolean(
+      advancedSearchConfig?.dateRange?.from ||
+        advancedSearchConfig?.dateRange?.to
+    );
 
   return (
     <>
       {/* Search Bar (선택적, showSearchBar가 true일 때 표시) */}
-      {showSearchBar && (searchConfig || activeBadges?.length || advancedSearchConfig) && (
-        <div className="mb-6">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Search Input */}
-            {searchConfig && (
-              <input
-                placeholder={searchConfig.placeholder || 'Search...'}
-                className="flex-1 min-w-[260px] h-10 rounded-lg border border-gray-200 bg-gray-50 px-3 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                value={searchConfig.searchTerm}
-                onChange={e => searchConfig.onSearchChange(e.target.value)}
-                aria-label="Search items"
-              />
-            )}
+      {showSearchBar &&
+        (searchConfig || activeBadges?.length || advancedSearchConfig) && (
+          <div className="mb-6">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Search Input */}
+              {searchConfig && (
+                <input
+                  placeholder={searchConfig.placeholder || 'Search...'}
+                  className="flex-1 min-w-[260px] h-10 rounded-lg border border-gray-200 bg-gray-50 px-3 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  value={searchConfig.searchTerm}
+                  onChange={e => searchConfig.onSearchChange(e.target.value)}
+                  aria-label="Search items"
+                />
+              )}
 
-            {/* Advanced Search */}
-            {advancedSearchConfig && (
-              <AdvancedSearch
-                dateRange={advancedSearchConfig.dateRange || null}
-                onDateRangeChange={advancedSearchConfig.onDateRangeChange}
-                operator={advancedSearchConfig.operator || 'AND'}
-                onOperatorChange={advancedSearchConfig.onOperatorChange || (() => {})}
-                dateFields={advancedSearchConfig.dateFields || []}
-                onReset={advancedSearchConfig.onReset}
-              />
-            )}
+              {/* Advanced Search */}
+              {advancedSearchConfig && (
+                <AdvancedSearch
+                  dateRange={advancedSearchConfig.dateRange || null}
+                  onDateRangeChange={advancedSearchConfig.onDateRangeChange}
+                  operator={advancedSearchConfig.operator || 'AND'}
+                  onOperatorChange={
+                    advancedSearchConfig.onOperatorChange || (() => {})
+                  }
+                  dateFields={advancedSearchConfig.dateFields || []}
+                  onReset={advancedSearchConfig.onReset}
+                />
+              )}
 
-            {/* Filter Toggle Button */}
-            {onToggleFilters && (
-              <button
-                data-filter-button
-                onClick={onToggleFilters}
-                className="h-10 px-3 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
-                aria-label={`${isOpen ? 'Close' : 'Open'} filter panel (${activeFiltersCount} active filters)`}
-                aria-expanded={isOpen}
-                aria-controls={dataTestId}
-              >
-                Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
-              </button>
-            )}
+              {/* Filter Toggle Button */}
+              {onToggleFilters && (
+                <button
+                  data-filter-button
+                  onClick={onToggleFilters}
+                  className="h-10 px-3 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
+                  aria-label={`${isOpen ? 'Close' : 'Open'} filter panel (${activeFiltersCount} active filters)`}
+                  aria-expanded={isOpen}
+                  aria-controls={dataTestId}
+                >
+                  Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
+                </button>
+              )}
 
-            {/* Reset Button */}
-            {onClearAllFilters && hasActiveFilters && (
-              <button
-                onClick={onClearAllFilters}
-                className="h-10 px-3 rounded-lg border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors text-sm font-medium"
-                aria-label="Clear all filters"
-                type="button"
-              >
-                Clear filters
-              </button>
+              {/* Reset Button */}
+              {onClearAllFilters && hasActiveFilters && (
+                <button
+                  onClick={onClearAllFilters}
+                  className="h-10 px-3 rounded-lg border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors text-sm font-medium"
+                  aria-label="Clear all filters"
+                  type="button"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            {/* Active Badges */}
+            {hasActiveFilters && activeBadges && activeBadges.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {activeBadges.map(badge => (
+                  <span
+                    key={badge.key}
+                    className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 border border-blue-100"
+                  >
+                    {badge.label}
+                    <button
+                      aria-label={`Remove filter: ${badge.label}`}
+                      onClick={badge.remove}
+                      className="text-blue-500 hover:text-blue-700"
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
             )}
           </div>
-
-          {/* Active Badges */}
-          {hasActiveFilters && activeBadges && activeBadges.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {activeBadges.map(badge => (
-                <span
-                  key={badge.key}
-                  className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 border border-blue-100"
-                >
-                  {badge.label}
-                  <button
-                    aria-label={`Remove filter: ${badge.label}`}
-                    onClick={badge.remove}
-                    className="text-blue-500 hover:text-blue-700"
-                    type="button"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+        )}
 
       {/* Filter Panel */}
       <FilterPanel
-      isOpen={isOpen}
-      onClose={onClose}
-      dataTestId={dataTestId}
-      title={title}
-      contentClassName={filterPanelClasses.content}
-      footer={
+        isOpen={isOpen}
+        onClose={onClose}
+        dataTestId={dataTestId}
+        title={title}
+        contentClassName={filterPanelClasses.content}
+        footer={
           <div className={filterPanelClasses.footer}>
             <div className="text-sm text-gray-600">
-              {activeFiltersCount > 0 && <span>{footerText(activeFiltersCount)}</span>}
+              {activeFiltersCount > 0 && (
+                <span>{footerText(activeFiltersCount)}</span>
+              )}
             </div>
             <div className="flex gap-2">
               {onClearAllFilters && activeFiltersCount > 0 && (
@@ -287,7 +299,11 @@ export default function PageFilters({
           {filterGroups.map(group => {
             // 커스텀 렌더링이 있으면 그것을 사용
             if (group.customRender) {
-              return <React.Fragment key={group.key}>{group.customRender()}</React.Fragment>;
+              return (
+                <React.Fragment key={group.key}>
+                  {group.customRender()}
+                </React.Fragment>
+              );
             }
 
             // 기본 FilterGroup 렌더링

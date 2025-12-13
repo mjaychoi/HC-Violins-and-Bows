@@ -22,7 +22,7 @@ export function useEnrichedSales(
     let enriched = enrichSales(sales, clientMap, instrumentMap);
 
     // FIXED: Remove client-side search filtering - server already handles from/to/search filtering
-    // Double filtering was causing confusion: server returns 10 items (page size), 
+    // Double filtering was causing confusion: server returns 10 items (page size),
     // client re-filters them, could become < 10, making pagination text misleading
     // Now: server handles from/to/search filtering, client only does enrichment + client_name sort
 

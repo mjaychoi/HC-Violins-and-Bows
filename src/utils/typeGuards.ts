@@ -114,14 +114,11 @@ export const clientSchema: z.ZodType<Client> = z.object({
   contact_number: z.string().nullable(),
   email: z.union([z.string().email(), z.string().length(0), z.null()]),
   // SECURITY: Handle null from DB - normalize to empty array
-  tags: z.preprocess(
-    (val) => {
-      if (val === null || val === undefined) return [];
-      if (Array.isArray(val)) return val;
-      return [];
-    },
-    z.array(z.string())
-  ),
+  tags: z.preprocess(val => {
+    if (val === null || val === undefined) return [];
+    if (Array.isArray(val)) return val;
+    return [];
+  }, z.array(z.string())),
   interest: z.string().nullable(),
   note: z.string().nullable(),
   client_number: z.string().nullable(),
@@ -221,9 +218,7 @@ export function isClient(value: unknown): value is Client {
 /**
  * Type guard for ClientInstrument
  */
-export function isClientInstrument(
-  value: unknown
-): value is ClientInstrument {
+export function isClientInstrument(value: unknown): value is ClientInstrument {
   return clientInstrumentSchema.safeParse(value).success;
 }
 
@@ -289,7 +284,7 @@ export function validateInstrument(data: unknown): Instrument {
   const result = instrumentSchema.safeParse(data);
   if (!result.success) {
     const errorMessages = result.error.issues
-      ? result.error.issues.map((e) => e.message).join(', ')
+      ? result.error.issues.map(e => e.message).join(', ')
       : result.error.message || 'Validation failed';
     throw new Error(`Invalid Instrument: ${errorMessages}`);
   }
@@ -303,7 +298,7 @@ export function validateClient(data: unknown): Client {
   const result = clientSchema.safeParse(data);
   if (!result.success) {
     const errorMessages = result.error.issues
-      ? result.error.issues.map((e) => e.message).join(', ')
+      ? result.error.issues.map(e => e.message).join(', ')
       : result.error.message || 'Validation failed';
     throw new Error(`Invalid Client: ${errorMessages}`);
   }
@@ -317,7 +312,7 @@ export function validateClientInstrument(data: unknown): ClientInstrument {
   const result = clientInstrumentSchema.safeParse(data);
   if (!result.success) {
     const errorMessages = result.error.issues
-      ? result.error.issues.map((e) => e.message).join(', ')
+      ? result.error.issues.map(e => e.message).join(', ')
       : result.error.message || 'Validation failed';
     throw new Error(`Invalid ClientInstrument: ${errorMessages}`);
   }
@@ -331,7 +326,7 @@ export function validateMaintenanceTask(data: unknown): MaintenanceTask {
   const result = maintenanceTaskSchema.safeParse(data);
   if (!result.success) {
     const errorMessages = result.error.issues
-      ? result.error.issues.map((e) => e.message).join(', ')
+      ? result.error.issues.map(e => e.message).join(', ')
       : result.error.message || 'Validation failed';
     throw new Error(`Invalid MaintenanceTask: ${errorMessages}`);
   }
@@ -345,7 +340,7 @@ export function validateSalesHistory(data: unknown): SalesHistory {
   const result = salesHistorySchema.safeParse(data);
   if (!result.success) {
     const errorMessages = result.error.issues
-      ? result.error.issues.map((e) => e.message).join(', ')
+      ? result.error.issues.map(e => e.message).join(', ')
       : result.error.message || 'Validation failed';
     throw new Error(`Invalid SalesHistory: ${errorMessages}`);
   }
@@ -391,9 +386,7 @@ export function validateClientArray(data: unknown): Client[] {
 /**
  * Validate an array of MaintenanceTasks
  */
-export function validateMaintenanceTaskArray(
-  data: unknown
-): MaintenanceTask[] {
+export function validateMaintenanceTaskArray(data: unknown): MaintenanceTask[] {
   if (!Array.isArray(data)) {
     throw new Error('Expected an array of MaintenanceTasks');
   }
@@ -443,11 +436,13 @@ export function validateApiResponse<T>(
 
   // Check if it's an ApiResponse structure
   if ('data' in data && 'success' in data) {
-    const response = data as { data: unknown; success: boolean; error?: string };
+    const response = data as {
+      data: unknown;
+      success: boolean;
+      error?: string;
+    };
     if (!response.success) {
-      throw new Error(
-        response.error || 'API request failed'
-      );
+      throw new Error(response.error || 'API request failed');
     }
     return validator(response.data);
   }
@@ -514,7 +509,9 @@ export const partialClientSchema = z.object({
   note: z.string().nullable().optional(),
   client_number: z.string().nullable().optional(),
   type: z.enum(['Musician', 'Dealer', 'Collector', 'Regular']).optional(),
-  status: z.enum(['Active', 'Browsing', 'In Negotiation', 'Inactive']).optional(),
+  status: z
+    .enum(['Active', 'Browsing', 'In Negotiation', 'Inactive'])
+    .optional(),
   created_at: z.string().optional(),
 });
 
@@ -616,7 +613,9 @@ export function validatePartialClient(data: unknown): Partial<Client> {
 /**
  * Validate partial MaintenanceTask update
  */
-export function validatePartialMaintenanceTask(data: unknown): Partial<MaintenanceTask> {
+export function validatePartialMaintenanceTask(
+  data: unknown
+): Partial<MaintenanceTask> {
   const result = partialMaintenanceTaskSchema.safeParse(data);
   if (!result.success) {
     const errorMessages = result.error.issues
@@ -630,7 +629,9 @@ export function validatePartialMaintenanceTask(data: unknown): Partial<Maintenan
 /**
  * Validate SalesHistory creation data (for POST requests)
  */
-export function validateCreateSalesHistory(data: unknown): Omit<SalesHistory, 'id' | 'created_at'> {
+export function validateCreateSalesHistory(
+  data: unknown
+): Omit<SalesHistory, 'id' | 'created_at'> {
   const result = createSalesHistorySchema.safeParse(data);
   if (!result.success) {
     const errorMessages = result.error.issues
@@ -644,7 +645,9 @@ export function validateCreateSalesHistory(data: unknown): Omit<SalesHistory, 'i
 /**
  * Validate partial SalesHistory update
  */
-export function validatePartialSalesHistory(data: unknown): Partial<SalesHistory> {
+export function validatePartialSalesHistory(
+  data: unknown
+): Partial<SalesHistory> {
   const result = partialSalesHistorySchema.safeParse(data);
   if (!result.success) {
     const errorMessages = result.error.issues

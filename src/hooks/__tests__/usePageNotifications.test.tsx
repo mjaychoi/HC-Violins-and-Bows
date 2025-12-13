@@ -44,12 +44,20 @@ describe('usePageNotifications', () => {
   });
 
   it('returns badge counts and notifications', () => {
-    const { result } = renderHook(() => usePageNotifications({ tasks: mockTasks, showToastOnClick: false }));
-    expect(result.current.notificationCounts.today + result.current.notificationCounts.overdue + result.current.notificationCounts.upcoming)
-      .toBeGreaterThanOrEqual(1);
+    const { result } = renderHook(() =>
+      usePageNotifications({ tasks: mockTasks, showToastOnClick: false })
+    );
+    expect(
+      result.current.notificationCounts.today +
+        result.current.notificationCounts.overdue +
+        result.current.notificationCounts.upcoming
+    ).toBeGreaterThanOrEqual(1);
     expect(result.current.notifications.length).toBeGreaterThanOrEqual(1);
-    expect(result.current.notificationBadge.today + result.current.notificationBadge.overdue + result.current.notificationBadge.upcoming)
-      .toBeGreaterThanOrEqual(1);
+    expect(
+      result.current.notificationBadge.today +
+        result.current.notificationBadge.overdue +
+        result.current.notificationBadge.upcoming
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it('invokes toast formatter and navigation on click', () => {

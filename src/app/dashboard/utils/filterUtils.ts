@@ -21,8 +21,12 @@ export function filterDashboardItems(
     filtered = filtered.filter(item => {
       try {
         const itemDate = new Date(item.created_at);
-        const fromDate = dateRange.from ? new Date(dateRange.from) : new Date('1900-01-01');
-        const toDate = dateRange.to ? new Date(dateRange.to) : new Date('9999-12-31');
+        const fromDate = dateRange.from
+          ? new Date(dateRange.from)
+          : new Date('1900-01-01');
+        const toDate = dateRange.to
+          ? new Date(dateRange.to)
+          : new Date('9999-12-31');
         // Normalize to start/end of day for date-only semantics
         fromDate.setHours(0, 0, 0, 0);
         toDate.setHours(23, 59, 59, 999);
@@ -36,34 +40,42 @@ export function filterDashboardItems(
 
   // Status filter
   if (filters[DASHBOARD_FILTER_KEYS.STATUS].length > 0) {
-    filtered = filtered.filter(item => filters[DASHBOARD_FILTER_KEYS.STATUS].includes(item.status));
+    filtered = filtered.filter(item =>
+      filters[DASHBOARD_FILTER_KEYS.STATUS].includes(item.status)
+    );
   }
 
   // Maker filter
   if (filters[DASHBOARD_FILTER_KEYS.MAKER].length > 0) {
     filtered = filtered.filter(
-      item => item.maker && filters[DASHBOARD_FILTER_KEYS.MAKER].includes(item.maker)
+      item =>
+        item.maker && filters[DASHBOARD_FILTER_KEYS.MAKER].includes(item.maker)
     );
   }
 
   // Type filter
   if (filters[DASHBOARD_FILTER_KEYS.TYPE].length > 0) {
     filtered = filtered.filter(
-      item => item.type && filters[DASHBOARD_FILTER_KEYS.TYPE].includes(item.type)
+      item =>
+        item.type && filters[DASHBOARD_FILTER_KEYS.TYPE].includes(item.type)
     );
   }
 
   // Subtype filter
   if (filters[DASHBOARD_FILTER_KEYS.SUBTYPE].length > 0) {
     filtered = filtered.filter(
-      item => item.subtype && filters[DASHBOARD_FILTER_KEYS.SUBTYPE].includes(item.subtype)
+      item =>
+        item.subtype &&
+        filters[DASHBOARD_FILTER_KEYS.SUBTYPE].includes(item.subtype)
     );
   }
 
   // Ownership filter
   if (filters[DASHBOARD_FILTER_KEYS.OWNERSHIP].length > 0) {
     filtered = filtered.filter(
-      item => item.ownership && filters[DASHBOARD_FILTER_KEYS.OWNERSHIP].includes(item.ownership)
+      item =>
+        item.ownership &&
+        filters[DASHBOARD_FILTER_KEYS.OWNERSHIP].includes(item.ownership)
     );
   }
 
@@ -72,12 +84,17 @@ export function filterDashboardItems(
     filtered = filtered.filter(item => {
       // Normalize certificate to boolean for consistent filtering
       const cert = Boolean(item.certificate);
-      return (filters[DASHBOARD_FILTER_KEYS.CERTIFICATE] as boolean[]).includes(cert);
+      return (filters[DASHBOARD_FILTER_KEYS.CERTIFICATE] as boolean[]).includes(
+        cert
+      );
     });
   }
 
   // Price range filter
-  if (filters[DASHBOARD_FILTER_KEYS.PRICE_RANGE].min || filters[DASHBOARD_FILTER_KEYS.PRICE_RANGE].max) {
+  if (
+    filters[DASHBOARD_FILTER_KEYS.PRICE_RANGE].min ||
+    filters[DASHBOARD_FILTER_KEYS.PRICE_RANGE].max
+  ) {
     filtered = filtered.filter(item => {
       if (item.price === null || item.price === undefined) return false;
       const priceNum =
@@ -100,11 +117,14 @@ export function filterDashboardItems(
   // DashboardPage.enrichedItems ensures items have clients property
   if (filters[DASHBOARD_FILTER_KEYS.HAS_CLIENTS].length > 0) {
     // FIXED: hasClients is now boolean[] (not string[])
-    const wantHasClients = filters[DASHBOARD_FILTER_KEYS.HAS_CLIENTS][0] === true;
+    const wantHasClients =
+      filters[DASHBOARD_FILTER_KEYS.HAS_CLIENTS][0] === true;
     filtered = filtered.filter(item => {
       // Items should be enriched with clients array from DashboardPage
       const enrichedItem = item as { clients?: unknown[] };
-      const hasClients = enrichedItem.clients ? enrichedItem.clients.length > 0 : false;
+      const hasClients = enrichedItem.clients
+        ? enrichedItem.clients.length > 0
+        : false;
       return hasClients === wantHasClients;
     });
   }

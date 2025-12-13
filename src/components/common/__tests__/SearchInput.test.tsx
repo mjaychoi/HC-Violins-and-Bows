@@ -8,7 +8,7 @@ import SearchInput, {
 
 // Mock useDebounce
 jest.mock('@/hooks/useDebounce', () => ({
-  useDebounce: jest.fn((value) => value),
+  useDebounce: jest.fn(value => value),
 }));
 
 describe('SearchInput', () => {
@@ -47,7 +47,9 @@ describe('SearchInput', () => {
         />
       );
 
-      expect(screen.getByPlaceholderText('Custom placeholder')).toBeInTheDocument();
+      expect(
+        screen.getByPlaceholderText('Custom placeholder')
+      ).toBeInTheDocument();
     });
 
     it('should display value', () => {
@@ -137,11 +139,7 @@ describe('SearchInput', () => {
 
     it('should not show search icon when showSearchIcon is false', () => {
       const { container } = render(
-        <SearchInput
-          value=""
-          onChange={mockOnChange}
-          showSearchIcon={false}
-        />
+        <SearchInput value="" onChange={mockOnChange} showSearchIcon={false} />
       );
 
       const icon = container.querySelector('svg');
@@ -174,7 +172,9 @@ describe('SearchInput', () => {
 
   describe('variants', () => {
     it('should apply default variant classes', () => {
-      render(<SearchInput value="" onChange={mockOnChange} variant="default" />);
+      render(
+        <SearchInput value="" onChange={mockOnChange} variant="default" />
+      );
 
       const input = screen.getByPlaceholderText('Search...');
       expect(input.className).toContain('border border-gray-300 bg-white');
@@ -186,7 +186,9 @@ describe('SearchInput', () => {
       );
 
       const input = screen.getByPlaceholderText('Search...');
-      expect(input.className).toContain('border-2 border-gray-300 bg-transparent');
+      expect(input.className).toContain(
+        'border-2 border-gray-300 bg-transparent'
+      );
     });
 
     it('should apply filled variant classes', () => {
@@ -268,7 +270,7 @@ describe('SearchInput', () => {
 
       const input = screen.getByPlaceholderText('Search...');
       await user.click(input);
-      
+
       // Update value prop to trigger filtering
       rerender(
         <SearchInput

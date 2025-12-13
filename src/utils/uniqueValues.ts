@@ -43,12 +43,10 @@ export function getUniqueArrayValues<T, K extends ArrayFieldKeys<T>>(
     const value = item[field];
     return Array.isArray(value) ? value : [];
   });
-  
+
   return Array.from(
     new Set(
-      all
-        .filter(v => v != null && String(v).trim() !== '')
-        .map(v => String(v))
+      all.filter(v => v != null && String(v).trim() !== '').map(v => String(v))
     )
   );
 }

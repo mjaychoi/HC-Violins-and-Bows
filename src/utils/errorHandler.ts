@@ -240,15 +240,10 @@ export class ErrorHandler {
         ? String((error as { details?: unknown }).details)
         : undefined;
 
-    return this.createError(
-      code,
-      message,
-      details,
-      {
-        context,
-        originalError: error,
-      }
-    );
+    return this.createError(code, message, details, {
+      context,
+      originalError: error,
+    });
   }
 
   // Handle network errors

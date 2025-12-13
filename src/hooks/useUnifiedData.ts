@@ -7,7 +7,12 @@ import {
   useInstruments,
   useConnections,
 } from '@/contexts/DataContext';
-import { RelationshipType, Client, Instrument, ClientInstrument } from '@/types';
+import {
+  RelationshipType,
+  Client,
+  Instrument,
+  ClientInstrument,
+} from '@/types';
 
 // FIXED: Global refs shared across all component instances to prevent duplicate fetches
 // These are module-level refs that persist across all hook instances and survive Strict Mode remounts
@@ -17,8 +22,12 @@ const globalHasFetchedConnectionsRef = { current: false };
 
 // CRITICAL: Track ongoing fetch promises to prevent duplicate concurrent fetches
 const ongoingFetchClientsPromise = { current: null as Promise<void> | null };
-const ongoingFetchInstrumentsPromise = { current: null as Promise<void> | null };
-const ongoingFetchConnectionsPromise = { current: null as Promise<void> | null };
+const ongoingFetchInstrumentsPromise = {
+  current: null as Promise<void> | null,
+};
+const ongoingFetchConnectionsPromise = {
+  current: null as Promise<void> | null,
+};
 
 // unified data hook - manage all data in one place
 export function useUnifiedData() {
@@ -26,13 +35,13 @@ export function useUnifiedData() {
   if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
     console.log('[useUnifiedData] Hook called');
   }
-  
+
   const { state, actions } = useDataContext();
 
   // FIXED: Store actions and state in refs to avoid dependency issues
   const actionsRef = useRef(actions);
   const stateRef = useRef(state);
-  
+
   // Always keep refs up-to-date
   actionsRef.current = actions;
   stateRef.current = state;
@@ -50,16 +59,23 @@ export function useUnifiedData() {
     ) {
       // Already fetched globally, skip entirely
       if (process.env.NODE_ENV === 'development') {
-        console.log('[useUnifiedData] All data already fetched globally, skipping');
+        console.log(
+          '[useUnifiedData] All data already fetched globally, skipping'
+        );
       }
       return;
     }
 
     // Check current state using ref (not directly) to avoid dependency issues
     const currentState = stateRef.current;
-    const needClients = !globalHasFetchedClientsRef.current && currentState.clients.length === 0;
-    const needInstruments = !globalHasFetchedInstrumentsRef.current && currentState.instruments.length === 0;
-    const needConnections = !globalHasFetchedConnectionsRef.current && currentState.connections.length === 0;
+    const needClients =
+      !globalHasFetchedClientsRef.current && currentState.clients.length === 0;
+    const needInstruments =
+      !globalHasFetchedInstrumentsRef.current &&
+      currentState.instruments.length === 0;
+    const needConnections =
+      !globalHasFetchedConnectionsRef.current &&
+      currentState.connections.length === 0;
 
     if (!needClients && !needInstruments && !needConnections) {
       if (process.env.NODE_ENV === 'development') {
@@ -101,11 +117,13 @@ export function useUnifiedData() {
 
     const loadMissingData = async () => {
       const currentActions = actionsRef.current;
-      
+
       // CRITICAL: Check if fetch is already in progress and wait for it instead of starting a new one
       if (needClients) {
         if (ongoingFetchClientsPromise.current) {
-          console.log('[useUnifiedData] Clients fetch already in progress, waiting...');
+          console.log(
+            '[useUnifiedData] Clients fetch already in progress, waiting...'
+          );
           await ongoingFetchClientsPromise.current;
         } else {
           console.log('[useUnifiedData] Starting clients fetch...');
@@ -119,10 +137,12 @@ export function useUnifiedData() {
           await ongoingFetchClientsPromise.current;
         }
       }
-      
+
       if (needInstruments) {
         if (ongoingFetchInstrumentsPromise.current) {
-          console.log('[useUnifiedData] Instruments fetch already in progress, waiting...');
+          console.log(
+            '[useUnifiedData] Instruments fetch already in progress, waiting...'
+          );
           await ongoingFetchInstrumentsPromise.current;
         } else {
           console.log('[useUnifiedData] Starting instruments fetch...');
@@ -136,10 +156,12 @@ export function useUnifiedData() {
           await ongoingFetchInstrumentsPromise.current;
         }
       }
-      
+
       if (needConnections) {
         if (ongoingFetchConnectionsPromise.current) {
-          console.log('[useUnifiedData] Connections fetch already in progress, waiting...');
+          console.log(
+            '[useUnifiedData] Connections fetch already in progress, waiting...'
+          );
           await ongoingFetchConnectionsPromise.current;
         } else {
           console.log('[useUnifiedData] Starting connections fetch...');
@@ -256,8 +278,11 @@ export function useUnifiedDashboard() {
 
   // Optimized: Use Map for O(1) lookups instead of O(n) find operations
   // calculate instrument-client relationships with explicit type
-  type EnrichedConnection = ClientInstrument & { client: Client; instrument: Instrument };
-  
+  type EnrichedConnection = ClientInstrument & {
+    client: Client;
+    instrument: Instrument;
+  };
+
   const clientRelationships = useMemo<EnrichedConnection[]>(() => {
     const clientMap = new Map(state.clients.map(c => [c.id, c]));
     const instrumentMap = new Map(state.instruments.map(i => [i.id, i]));
@@ -268,8 +293,9 @@ export function useUnifiedDashboard() {
         client: clientMap.get(connection.client_id),
         instrument: instrumentMap.get(connection.instrument_id),
       }))
-      .filter((rel): rel is EnrichedConnection => 
-        rel.client !== undefined && rel.instrument !== undefined
+      .filter(
+        (rel): rel is EnrichedConnection =>
+          rel.client !== undefined && rel.instrument !== undefined
       );
   }, [state.connections, state.clients, state.instruments]);
 

@@ -17,6 +17,6 @@ export default function CustomerPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-gray-600">Redirecting to Client Analytics...</div>
-        </div>
+    </div>
   );
 }

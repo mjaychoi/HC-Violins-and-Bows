@@ -86,22 +86,22 @@ export default function YearView({
     const dateStatus = getDateStatus(task);
     const isOverdue = dateStatus.status === 'overdue';
     const status = (task.status ?? '').toLowerCase();
-    
+
     // Completed/Cancelled: Gray
     if (status === 'completed' || status === 'cancelled') {
       return 'bg-gray-400';
     }
-    
+
     // Overdue: Red
     if (isOverdue) {
       return 'bg-red-500';
     }
-    
+
     // In Progress: Blue
     if (status === 'in_progress') {
       return 'bg-blue-500';
     }
-    
+
     // Scheduled/Pending: Green
     return 'bg-emerald-500';
   }, []);

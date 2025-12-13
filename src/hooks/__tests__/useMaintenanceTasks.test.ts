@@ -71,7 +71,9 @@ describe('useMaintenanceTasks', () => {
 
   describe('Initialization', () => {
     it('should initialize with empty tasks and loading false', async () => {
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       // Wait for initial render to complete
       await waitFor(() => {
@@ -89,9 +91,7 @@ describe('useMaintenanceTasks', () => {
         task_type: 'repair' as TaskType,
       };
 
-      (
-        dataService.fetchMaintenanceTasks as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
         data: [mockTask],
         error: null,
       });
@@ -114,14 +114,14 @@ describe('useMaintenanceTasks', () => {
   describe('fetchTasks', () => {
     it('should fetch tasks successfully', async () => {
       const mockTasks = [mockTask];
-      (
-        dataService.fetchMaintenanceTasks as jest.Mock
-      ).mockResolvedValue({
+      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValue({
         data: mockTasks,
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       await act(async () => {
         await result.current.fetchTasks();
@@ -141,14 +141,14 @@ describe('useMaintenanceTasks', () => {
 
     it('should handle fetch tasks error', async () => {
       const fetchError = new Error('Fetch failed');
-      (
-        dataService.fetchMaintenanceTasks as jest.Mock
-      ).mockResolvedValue({
+      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValue({
         data: null,
         error: fetchError,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       await act(async () => {
         await result.current.fetchTasks();
@@ -172,17 +172,17 @@ describe('useMaintenanceTasks', () => {
         task_type: 'repair' as TaskType,
       };
       const mockTasks = [mockTask];
-      
+
       // Clear and reset mock
       (dataService.fetchMaintenanceTasks as jest.Mock).mockClear();
-      (
-        dataService.fetchMaintenanceTasks as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
         data: mockTasks,
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       await act(async () => {
         await result.current.fetchTasks(filters);
@@ -195,22 +195,22 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      expect(dataService.fetchMaintenanceTasks).toHaveBeenCalledWith(
-        filters
-      );
+      expect(dataService.fetchMaintenanceTasks).toHaveBeenCalledWith(filters);
     });
   });
 
   describe('fetchTaskById', () => {
     it('should fetch task by id successfully', async () => {
-      (
-        dataService.fetchMaintenanceTaskById as jest.Mock
-      ).mockResolvedValueOnce({
-        data: mockTask,
-        error: null,
-      });
+      (dataService.fetchMaintenanceTaskById as jest.Mock).mockResolvedValueOnce(
+        {
+          data: mockTask,
+          error: null,
+        }
+      );
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let fetchedTask: MaintenanceTask | null = null;
       await act(async () => {
@@ -226,21 +226,21 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(fetchedTask).toEqual(mockTask);
-      expect(dataService.fetchMaintenanceTaskById).toHaveBeenCalledWith(
-        '1'
-      );
+      expect(dataService.fetchMaintenanceTaskById).toHaveBeenCalledWith('1');
     });
 
     it('should handle fetch task by id error', async () => {
       const fetchError = new Error('Fetch failed');
-      (
-        dataService.fetchMaintenanceTaskById as jest.Mock
-      ).mockResolvedValueOnce({
-        data: null,
-        error: fetchError,
-      });
+      (dataService.fetchMaintenanceTaskById as jest.Mock).mockResolvedValueOnce(
+        {
+          data: null,
+          error: fetchError,
+        }
+      );
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let fetchedTask: MaintenanceTask | null = null;
       await act(async () => {
@@ -290,14 +290,14 @@ describe('useMaintenanceTasks', () => {
         updated_at: '2024-01-01T00:00:00Z',
       };
 
-      (
-        dataService.createMaintenanceTask as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
         data: createdTask,
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let createdTaskResult: MaintenanceTask | null = null;
       await act(async () => {
@@ -349,14 +349,14 @@ describe('useMaintenanceTasks', () => {
       };
 
       const createError = new Error('Create failed');
-      (
-        dataService.createMaintenanceTask as jest.Mock
-      ).mockResolvedValue({
+      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValue({
         data: null,
         error: createError,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let createdTaskResult: MaintenanceTask | null = null;
       await act(async () => {
@@ -385,19 +385,17 @@ describe('useMaintenanceTasks', () => {
         status: 'in_progress' as TaskStatus,
       };
 
-      (
-        dataService.updateMaintenanceTask as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.updateMaintenanceTask as jest.Mock).mockResolvedValueOnce({
         data: updatedTask,
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       // First, manually set up tasks by creating one
-      (
-        dataService.createMaintenanceTask as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
         data: mockTask,
         error: null,
       });
@@ -472,19 +470,17 @@ describe('useMaintenanceTasks', () => {
 
     it('should handle update task error', async () => {
       const updateError = new Error('Update failed');
-      (
-        dataService.updateMaintenanceTask as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.updateMaintenanceTask as jest.Mock).mockResolvedValueOnce({
         data: null,
         error: updateError,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       // First, manually set up tasks by creating one
-      (
-        dataService.createMaintenanceTask as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
         data: mockTask,
         error: null,
       });
@@ -551,18 +547,16 @@ describe('useMaintenanceTasks', () => {
 
   describe('deleteTask', () => {
     it('should delete task successfully', async () => {
-      (
-        dataService.deleteMaintenanceTask as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.deleteMaintenanceTask as jest.Mock).mockResolvedValueOnce({
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       // First, manually set up tasks by creating one
-      (
-        dataService.createMaintenanceTask as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
         data: mockTask,
         error: null,
       });
@@ -626,18 +620,16 @@ describe('useMaintenanceTasks', () => {
 
     it('should handle delete task error', async () => {
       const deleteError = new Error('Delete failed');
-      (
-        dataService.deleteMaintenanceTask as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.deleteMaintenanceTask as jest.Mock).mockResolvedValueOnce({
         error: deleteError,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       // First, manually set up tasks by creating one
-      (
-        dataService.createMaintenanceTask as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
         data: mockTask,
         error: null,
       });
@@ -702,14 +694,14 @@ describe('useMaintenanceTasks', () => {
   describe('fetchTasksByDateRange', () => {
     it('should fetch tasks by date range successfully', async () => {
       const mockTasks = [mockTask];
-      (
-        dataService.fetchTasksByDateRange as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.fetchTasksByDateRange as jest.Mock).mockResolvedValueOnce({
         data: mockTasks,
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
@@ -748,14 +740,14 @@ describe('useMaintenanceTasks', () => {
 
     it('should handle fetch tasks by date range error', async () => {
       const fetchError = new Error('Fetch failed');
-      (
-        dataService.fetchTasksByDateRange as jest.Mock
-      ).mockResolvedValueOnce({
+      (dataService.fetchTasksByDateRange as jest.Mock).mockResolvedValueOnce({
         data: null,
         error: fetchError,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
@@ -788,7 +780,9 @@ describe('useMaintenanceTasks', () => {
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
@@ -819,7 +813,9 @@ describe('useMaintenanceTasks', () => {
         error: fetchError,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
@@ -848,7 +844,9 @@ describe('useMaintenanceTasks', () => {
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
@@ -874,7 +872,9 @@ describe('useMaintenanceTasks', () => {
         error: fetchError,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
@@ -910,7 +910,9 @@ describe('useMaintenanceTasks', () => {
         () => fetchPromise
       );
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       // Start fetch
       act(() => {
@@ -967,7 +969,9 @@ describe('useMaintenanceTasks', () => {
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       await act(async () => {
         await result.current.fetchTasks();
@@ -1020,7 +1024,9 @@ describe('useMaintenanceTasks', () => {
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {
@@ -1063,7 +1069,9 @@ describe('useMaintenanceTasks', () => {
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       await act(async () => {
         await result.current.fetchTasks();
@@ -1078,7 +1086,9 @@ describe('useMaintenanceTasks', () => {
       );
 
       // Now fetch by scheduled date with new task
-      (dataService.fetchTasksByScheduledDate as jest.Mock).mockResolvedValueOnce({
+      (
+        dataService.fetchTasksByScheduledDate as jest.Mock
+      ).mockResolvedValueOnce({
         data: [newTask],
         error: null,
       });
@@ -1123,7 +1133,9 @@ describe('useMaintenanceTasks', () => {
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       // Start both operations
       await act(async () => {
@@ -1174,7 +1186,9 @@ describe('useMaintenanceTasks', () => {
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       // Create task
       await act(async () => {
@@ -1257,7 +1271,7 @@ describe('useMaintenanceTasks', () => {
         data: [],
         error: null,
       });
-      
+
       renderHook(() => useMaintenanceTasks({ autoFetch: false }));
 
       // Wait for initial render and useEffect to complete
@@ -1273,15 +1287,19 @@ describe('useMaintenanceTasks', () => {
     it('should reset error state on successful operation after error', async () => {
       const error = new Error('Initial error');
       let callCount = 0;
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) {
-          return Promise.resolve({ data: null, error });
+      (dataService.fetchMaintenanceTasks as jest.Mock).mockImplementation(
+        () => {
+          callCount++;
+          if (callCount === 1) {
+            return Promise.resolve({ data: null, error });
+          }
+          return Promise.resolve({ data: [mockTask], error: null });
         }
-        return Promise.resolve({ data: [mockTask], error: null });
-      });
+      );
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       await act(async () => {
         await result.current.fetchTasks();
@@ -1329,7 +1347,9 @@ describe('useMaintenanceTasks', () => {
         error: null,
       });
 
-      const { result } = renderHook(() => useMaintenanceTasks({ autoFetch: false }));
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
 
       await act(async () => {
         await result.current.fetchTasks();

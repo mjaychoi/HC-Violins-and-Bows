@@ -66,4 +66,3 @@ describe('useInstruments', () => {
     expect(typeof result.current.submitting).toBe('boolean');
   });
 });
-

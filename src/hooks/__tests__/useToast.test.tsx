@@ -4,23 +4,41 @@ import { useToast } from '../useToast';
 
 // Mock SuccessToast component
 jest.mock('@/components/common/SuccessToast', () => {
-  return function SuccessToast({ message }: { message: string; onClose: () => void }) {
-    return React.createElement('div', { 'data-testid': 'success-toast' }, message);
+  return function SuccessToast({
+    message,
+  }: {
+    message: string;
+    onClose: () => void;
+  }) {
+    return React.createElement(
+      'div',
+      { 'data-testid': 'success-toast' },
+      message
+    );
   };
 });
 
 // Mock SuccessToasts component to return a predictable structure with toast IDs
 jest.mock('@/components/common/SuccessToasts', () => {
-  return function SuccessToasts({ toasts }: { toasts: Array<{ id: string; message: string }>; onRemove: (id: string) => void }) {
+  return function SuccessToasts({
+    toasts,
+  }: {
+    toasts: Array<{ id: string; message: string }>;
+    onRemove: (id: string) => void;
+  }) {
     return React.createElement(
       'div',
       { className: 'fixed top-4 right-4 z-50 space-y-2' },
       toasts.map(toast =>
-        React.createElement('div', {
-          key: toast.id,
-          'data-testid': 'success-toast',
-          'data-toast-id': toast.id,
-        }, toast.message)
+        React.createElement(
+          'div',
+          {
+            key: toast.id,
+            'data-testid': 'success-toast',
+            'data-toast-id': toast.id,
+          },
+          toast.message
+        )
       )
     );
   };
@@ -105,7 +123,7 @@ describe('useToast', () => {
     const ids = Array.from(toasts)
       .map(toast => toast.getAttribute('data-toast-id'))
       .filter((id): id is string => id !== null);
-    
+
     expect(ids.length).toBe(2);
     expect(new Set(ids).size).toBe(2); // All IDs should be unique
   });

@@ -19,7 +19,12 @@ describe('NotificationBadge', () => {
 
   it('renders notification badge when there are notifications', () => {
     render(
-      <NotificationBadge overdue={2} upcoming={1} today={1} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={2}
+        upcoming={1}
+        today={1}
+        onClick={mockOnClick}
+      />
     );
 
     const button = screen.getByRole('button', { name: /알림 4개/i });
@@ -28,7 +33,12 @@ describe('NotificationBadge', () => {
 
   it('displays correct total count', () => {
     render(
-      <NotificationBadge overdue={5} upcoming={3} today={2} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={5}
+        upcoming={3}
+        today={2}
+        onClick={mockOnClick}
+      />
     );
 
     expect(screen.getByText('10')).toBeInTheDocument();
@@ -37,9 +47,14 @@ describe('NotificationBadge', () => {
   it('displays 99+ when total exceeds 99', () => {
     // Component shows 99+ when total > 99
     const { container } = render(
-      <NotificationBadge overdue={50} upcoming={30} today={20} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={50}
+        upcoming={30}
+        today={20}
+        onClick={mockOnClick}
+      />
     );
-    
+
     // Total is 100, which should show "99+" (since 100 > 99)
     const badge = container.querySelector('.rounded-full');
     expect(badge).toBeInTheDocument();
@@ -48,7 +63,12 @@ describe('NotificationBadge', () => {
 
   it('shows tooltip on hover', () => {
     render(
-      <NotificationBadge overdue={2} upcoming={1} today={1} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={2}
+        upcoming={1}
+        today={1}
+        onClick={mockOnClick}
+      />
     );
 
     const button = screen.getByRole('button', { name: /알림 4개/i });
@@ -63,7 +83,12 @@ describe('NotificationBadge', () => {
 
   it('hides tooltip on mouse leave', () => {
     render(
-      <NotificationBadge overdue={2} upcoming={1} today={1} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={2}
+        upcoming={1}
+        today={1}
+        onClick={mockOnClick}
+      />
     );
 
     const button = screen.getByRole('button', { name: /알림 4개/i });
@@ -76,7 +101,12 @@ describe('NotificationBadge', () => {
 
   it('calls onClick when button is clicked', () => {
     render(
-      <NotificationBadge overdue={1} upcoming={0} today={0} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={1}
+        upcoming={0}
+        today={0}
+        onClick={mockOnClick}
+      />
     );
 
     const button = screen.getByRole('button', { name: /알림 1개/i });
@@ -87,7 +117,12 @@ describe('NotificationBadge', () => {
 
   it('does not show overdue section when overdue is 0', () => {
     render(
-      <NotificationBadge overdue={0} upcoming={2} today={1} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={0}
+        upcoming={2}
+        today={1}
+        onClick={mockOnClick}
+      />
     );
 
     const button = screen.getByRole('button', { name: /알림 3개/i });
@@ -100,7 +135,12 @@ describe('NotificationBadge', () => {
 
   it('does not show today section when today is 0', () => {
     render(
-      <NotificationBadge overdue={2} upcoming={1} today={0} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={2}
+        upcoming={1}
+        today={0}
+        onClick={mockOnClick}
+      />
     );
 
     const button = screen.getByRole('button', { name: /알림 3개/i });
@@ -113,7 +153,12 @@ describe('NotificationBadge', () => {
 
   it('does not show upcoming section when upcoming is 0', () => {
     render(
-      <NotificationBadge overdue={2} upcoming={0} today={1} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={2}
+        upcoming={0}
+        today={1}
+        onClick={mockOnClick}
+      />
     );
 
     const button = screen.getByRole('button', { name: /알림 3개/i });
@@ -126,7 +171,12 @@ describe('NotificationBadge', () => {
 
   it('shows "캘린더에서 확인하기" button in tooltip when onClick is provided', () => {
     render(
-      <NotificationBadge overdue={1} upcoming={0} today={0} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={1}
+        upcoming={0}
+        today={0}
+        onClick={mockOnClick}
+      />
     );
 
     const button = screen.getByRole('button', { name: /알림 1개/i });
@@ -150,7 +200,12 @@ describe('NotificationBadge', () => {
 
   it('has correct aria-label', () => {
     render(
-      <NotificationBadge overdue={5} upcoming={3} today={2} onClick={mockOnClick} />
+      <NotificationBadge
+        overdue={5}
+        upcoming={3}
+        today={2}
+        onClick={mockOnClick}
+      />
     );
 
     const button = screen.getByRole('button', { name: /알림 10개/i });

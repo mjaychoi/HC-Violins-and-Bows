@@ -39,7 +39,9 @@ describe('ClientSearch', () => {
 
   it('opens search, performs query, and adds client', async () => {
     const onClientsChange = jest.fn();
-    render(<ClientSearch selectedClients={[]} onClientsChange={onClientsChange} />);
+    render(
+      <ClientSearch selectedClients={[]} onClientsChange={onClientsChange} />
+    );
 
     fireEvent.click(screen.getByText('Add Client'));
     fireEvent.change(
@@ -65,7 +67,10 @@ describe('ClientSearch', () => {
     ];
     const onClientsChange = jest.fn();
     render(
-      <ClientSearch selectedClients={selected} onClientsChange={onClientsChange} />
+      <ClientSearch
+        selectedClients={selected}
+        onClientsChange={onClientsChange}
+      />
     );
 
     fireEvent.change(screen.getByDisplayValue('Interested'), {

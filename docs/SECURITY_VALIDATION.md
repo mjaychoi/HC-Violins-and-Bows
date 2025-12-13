@@ -11,12 +11,10 @@
 Supabase는 자동으로 파라미터화된 쿼리를 사용하므로 SQL Injection 공격으로부터 보호됩니다.
 
 **예시:**
+
 ```typescript
 // ✅ 안전함 - Supabase가 자동으로 파라미터화
-const { data } = await supabase
-  .from('clients')
-  .select('*')
-  .eq('id', userId); // userId는 자동으로 이스케이프됨
+const { data } = await supabase.from('clients').select('*').eq('id', userId); // userId는 자동으로 이스케이프됨
 
 // ❌ 위험함 - 하지만 Supabase는 이를 허용하지 않음
 // Supabase는 raw SQL 쿼리를 직접 실행하지 않으므로 안전함
@@ -47,6 +45,7 @@ const { data } = await supabase
 - **주의:** 클라이언트 측 검증만으로는 충분하지 않음
 
 **예시:**
+
 ```typescript
 import { clientValidation, validateForm } from '@/utils/validationUtils';
 
@@ -65,6 +64,7 @@ const validation = validateForm(formData, {
 - **필수:** 모든 입력은 서버에서 검증되어야 함
 
 **예시:**
+
 ```typescript
 import { validateClient, safeValidate } from '@/utils/typeGuards';
 
@@ -101,7 +101,11 @@ if (!validationResult.success) {
 **위치:** `src/utils/inputValidation.ts`
 
 ```typescript
-import { sanitizeString, sanitizeEmail, sanitizeSearchTerm } from '@/utils/inputValidation';
+import {
+  sanitizeString,
+  sanitizeEmail,
+  sanitizeSearchTerm,
+} from '@/utils/inputValidation';
 
 // HTML 태그 제거 및 길이 제한
 const sanitized = sanitizeString(userInput, 100);
@@ -179,10 +183,7 @@ if (!result.success) {
 import { validateUUID } from '@/utils/inputValidation';
 
 if (!validateUUID(id)) {
-  return NextResponse.json(
-    { error: 'Invalid ID format' },
-    { status: 400 }
-  );
+  return NextResponse.json({ error: 'Invalid ID format' }, { status: 400 });
 }
 ```
 
@@ -194,10 +195,7 @@ if (!validateUUID(id)) {
 import { validateDateString } from '@/utils/inputValidation';
 
 if (!validateDateString(date)) {
-  return NextResponse.json(
-    { error: 'Invalid date format' },
-    { status: 400 }
-  );
+  return NextResponse.json({ error: 'Invalid date format' }, { status: 400 });
 }
 ```
 

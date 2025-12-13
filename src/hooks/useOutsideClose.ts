@@ -21,7 +21,12 @@ interface UseOutsideCloseOptions {
  */
 export function useOutsideClose(
   ref: React.RefObject<HTMLElement | null>,
-  { isOpen, onClose, ignoreSelector = '[data-filter-button]', closeOnEsc = true }: UseOutsideCloseOptions
+  {
+    isOpen,
+    onClose,
+    ignoreSelector = '[data-filter-button]',
+    closeOnEsc = true,
+  }: UseOutsideCloseOptions
 ) {
   useEscapeKey(() => {
     if (closeOnEsc && isOpen) onClose();
@@ -45,6 +50,7 @@ export function useOutsideClose(
     };
 
     document.addEventListener('mousedown', onMouseDown, { capture: true });
-    return () => document.removeEventListener('mousedown', onMouseDown, { capture: true });
+    return () =>
+      document.removeEventListener('mousedown', onMouseDown, { capture: true });
   }, [ignoreSelector, isOpen, onClose, ref]);
 }

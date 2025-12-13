@@ -151,7 +151,11 @@ describe('filterUtils', () => {
     expect(withLastName.first_name).toEqual([]);
 
     // Test contact_number
-    const withContact = handleFilterChange(base, 'contact_number', '010-1234-5678');
+    const withContact = handleFilterChange(
+      base,
+      'contact_number',
+      '010-1234-5678'
+    );
     expect(withContact.contact_number).toEqual(['010-1234-5678']);
 
     // Test email
@@ -163,7 +167,11 @@ describe('filterUtils', () => {
     expect(withInterest.interest).toEqual(['Active']);
 
     // Test hasInstruments
-    const withHasInst = handleFilterChange(base, 'hasInstruments', 'Has Instruments');
+    const withHasInst = handleFilterChange(
+      base,
+      'hasInstruments',
+      'Has Instruments'
+    );
     expect(withHasInst.hasInstruments).toEqual(['Has Instruments']);
   });
 
@@ -347,7 +355,12 @@ describe('filterUtils', () => {
       { ...baseClient, id: '1', last_name: 'Kim', first_name: 'John' },
       { ...baseClient, id: '2', last_name: null, first_name: 'Jane' },
       { ...baseClient, id: '3', last_name: 'Lee', first_name: null },
-      { ...baseClient, id: '4', last_name: undefined as any, first_name: 'Bob' },
+      {
+        ...baseClient,
+        id: '4',
+        last_name: undefined as any,
+        first_name: 'Bob',
+      },
     ];
 
     const lastNames = getUniqueLastNames(clientsWithNulls);
@@ -419,22 +432,36 @@ describe('filterUtils', () => {
     };
 
     // 첫 토글
-    sortState = handleColumnSort(sortState.sortBy, sortState.sortOrder, 'last_name');
+    sortState = handleColumnSort(
+      sortState.sortBy,
+      sortState.sortOrder,
+      'last_name'
+    );
     expect(sortState.sortOrder).toBe('desc');
 
     // 두 번째 토글
-    sortState = handleColumnSort(sortState.sortBy, sortState.sortOrder, 'last_name');
+    sortState = handleColumnSort(
+      sortState.sortBy,
+      sortState.sortOrder,
+      'last_name'
+    );
     expect(sortState.sortOrder).toBe('asc');
 
     // 세 번째 토글
-    sortState = handleColumnSort(sortState.sortBy, sortState.sortOrder, 'last_name');
+    sortState = handleColumnSort(
+      sortState.sortBy,
+      sortState.sortOrder,
+      'last_name'
+    );
     expect(sortState.sortOrder).toBe('desc');
   });
 
   it('getSortArrow handles all column combinations', () => {
     // 현재 정렬되지 않은 컬럼
     expect(getSortArrow('first_name', 'asc', 'last_name')).toBe('sort-neutral');
-    expect(getSortArrow('first_name', 'desc', 'last_name')).toBe('sort-neutral');
+    expect(getSortArrow('first_name', 'desc', 'last_name')).toBe(
+      'sort-neutral'
+    );
 
     // 현재 정렬된 컬럼
     expect(getSortArrow('first_name', 'asc', 'first_name')).toBe('sort-asc');
@@ -452,10 +479,18 @@ describe('filterUtils', () => {
       hasInstruments: [],
     };
 
-    const withHas = handleFilterChange(state, 'hasInstruments', 'Has Instruments');
+    const withHas = handleFilterChange(
+      state,
+      'hasInstruments',
+      'Has Instruments'
+    );
     expect(withHas.hasInstruments).toEqual(['Has Instruments']);
 
-    const removed = handleFilterChange(withHas, 'hasInstruments', 'Has Instruments');
+    const removed = handleFilterChange(
+      withHas,
+      'hasInstruments',
+      'Has Instruments'
+    );
     expect(removed.hasInstruments).toEqual([]);
   });
 

@@ -2,10 +2,10 @@
 
 /**
  * ItemRow Component
- * 
+ *
  * Note: Currently this component is exported but not actively used in ItemList.
  * ItemList renders table rows directly (<tr>) instead of using this component.
- * 
+ *
  * This component is kept for potential future refactoring or alternative use cases.
  * If ItemList is refactored to use ItemRow, ensure the parent provides the key prop.
  */
@@ -90,9 +90,7 @@ export const ItemRow = memo(function ItemRow({
   // Note: key prop is provided by parent component when ItemRow is used
   return (
     <tr
-      className={`transition ${
-        isEditing ? 'bg-blue-50' : 'hover:bg-gray-50'
-      }`}
+      className={`transition ${isEditing ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
     >
       <td className="px-6 py-4 text-left relative">
         {isEditing ? (
@@ -173,9 +171,7 @@ export const ItemRow = memo(function ItemRow({
         {isEditing ? (
           <select
             value={editData.status || 'Available'}
-            onChange={e =>
-              onEditFieldChange('status', e.target.value)
-            }
+            onChange={e => onEditFieldChange('status', e.target.value)}
             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             onClick={e => e.stopPropagation()}
           >
@@ -195,9 +191,7 @@ export const ItemRow = memo(function ItemRow({
           <input
             type="text"
             value={editData.serial_number || ''}
-            onChange={e =>
-              onEditFieldChange('serial_number', e.target.value)
-            }
+            onChange={e => onEditFieldChange('serial_number', e.target.value)}
             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             onClick={e => e.stopPropagation()}
             placeholder="Serial #"
@@ -214,9 +208,7 @@ export const ItemRow = memo(function ItemRow({
           <input
             type="text"
             value={editData.maker || ''}
-            onChange={e =>
-              onEditFieldChange('maker', e.target.value)
-            }
+            onChange={e => onEditFieldChange('maker', e.target.value)}
             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             onClick={e => e.stopPropagation()}
             placeholder="Maker"
@@ -233,17 +225,13 @@ export const ItemRow = memo(function ItemRow({
           <input
             type="text"
             value={editData.type || ''}
-            onChange={e =>
-              onEditFieldChange('type', e.target.value)
-            }
+            onChange={e => onEditFieldChange('type', e.target.value)}
             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             onClick={e => e.stopPropagation()}
             placeholder="Type"
           />
         ) : (
-          <div className="text-sm text-gray-900">
-            {item.type || '—'}
-          </div>
+          <div className="text-sm text-gray-900">{item.type || '—'}</div>
         )}
       </td>
 
@@ -252,17 +240,13 @@ export const ItemRow = memo(function ItemRow({
           <input
             type="text"
             value={editData.subtype || ''}
-            onChange={e =>
-              onEditFieldChange('subtype', e.target.value)
-            }
+            onChange={e => onEditFieldChange('subtype', e.target.value)}
             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             onClick={e => e.stopPropagation()}
             placeholder="Subtype"
           />
         ) : (
-          <div className="text-sm text-gray-900">
-            {item.subtype || '—'}
-          </div>
+          <div className="text-sm text-gray-900">{item.subtype || '—'}</div>
         )}
       </td>
 
@@ -271,9 +255,7 @@ export const ItemRow = memo(function ItemRow({
           <input
             type="number"
             value={editData.year || ''}
-            onChange={e =>
-              onEditFieldChange('year', e.target.value)
-            }
+            onChange={e => onEditFieldChange('year', e.target.value)}
             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             onClick={e => e.stopPropagation()}
             placeholder="Year"
@@ -291,9 +273,7 @@ export const ItemRow = memo(function ItemRow({
             type="number"
             step="0.01"
             value={editData.price || ''}
-            onChange={e =>
-              onEditFieldChange('price', e.target.value)
-            }
+            onChange={e => onEditFieldChange('price', e.target.value)}
             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             onClick={e => e.stopPropagation()}
             placeholder="Price"
@@ -311,10 +291,7 @@ export const ItemRow = memo(function ItemRow({
           <select
             value={String(!!editData.certificate)}
             onChange={e =>
-              onEditFieldChange(
-                'certificate',
-                e.target.value === 'true'
-              )
+              onEditFieldChange('certificate', e.target.value === 'true')
             }
             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             onClick={e => e.stopPropagation()}
@@ -332,9 +309,7 @@ export const ItemRow = memo(function ItemRow({
           <input
             type="text"
             value={editData.ownership || ''}
-            onChange={e =>
-              onEditFieldChange('ownership', e.target.value)
-            }
+            onChange={e => onEditFieldChange('ownership', e.target.value)}
             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             onClick={e => e.stopPropagation()}
             placeholder="Ownership"
@@ -344,29 +319,28 @@ export const ItemRow = memo(function ItemRow({
             {item.ownership ? (
               // FIXED: Improve ownership matching heuristic - guard empty strings
               (() => {
-                const matchingClient = item.clients.find(
-                  rel => {
-                    // Guard against empty string matches (includes('') is always true)
-                    const fn = rel.client?.first_name?.trim();
-                    const ln = rel.client?.last_name?.trim();
-                    if (!fn && !ln) return false;
-                    
-                    // Try to match ownership with client name
-                    // Note: This is a heuristic - substring matching can give false positives
-                    // If ownership is meant to link to a client, store client_id UUID instead
-                    return item.ownership && (
-                      (fn && item.ownership.includes(fn)) ||
+                const matchingClient = item.clients.find(rel => {
+                  // Guard against empty string matches (includes('') is always true)
+                  const fn = rel.client?.first_name?.trim();
+                  const ln = rel.client?.last_name?.trim();
+                  if (!fn && !ln) return false;
+
+                  // Try to match ownership with client name
+                  // Note: This is a heuristic - substring matching can give false positives
+                  // If ownership is meant to link to a client, store client_id UUID instead
+                  return (
+                    item.ownership &&
+                    ((fn && item.ownership.includes(fn)) ||
                       (ln && item.ownership.includes(ln)) ||
-                      item.ownership === `${fn || ''} ${ln || ''}`.trim()
-                    );
-                  }
-                );
-                
+                      item.ownership === `${fn || ''} ${ln || ''}`.trim())
+                  );
+                });
+
                 if (matchingClient?.client_id) {
                   return (
                     <Link
                       href={`/clients?clientId=${matchingClient.client_id}`}
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={e => e.stopPropagation()}
                       className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                       title="View client details"
                     >
@@ -374,38 +348,40 @@ export const ItemRow = memo(function ItemRow({
                     </Link>
                   );
                 }
-                
+
                 // If no match, just show as text
                 return <span>{item.ownership}</span>;
               })()
+            ) : // Show connected clients if no ownership
+            item.clients.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {item.clients.slice(0, 2).map(rel => {
+                  if (!rel.client_id) return null;
+                  const clientName = rel.client
+                    ? `${rel.client.first_name || ''} ${rel.client.last_name || ''}`.trim() ||
+                      rel.client.email ||
+                      'Client'
+                    : 'Client';
+                  return (
+                    <Link
+                      key={rel.id}
+                      href={`/clients?clientId=${rel.client_id}`}
+                      onClick={e => e.stopPropagation()}
+                      className="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                      title="View client details"
+                    >
+                      {clientName}
+                    </Link>
+                  );
+                })}
+                {item.clients.length > 2 && (
+                  <span className="text-xs text-gray-500">
+                    +{item.clients.length - 2}
+                  </span>
+                )}
+              </div>
             ) : (
-              // Show connected clients if no ownership
-              item.clients.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {item.clients.slice(0, 2).map((rel) => {
-                    if (!rel.client_id) return null;
-                    const clientName = rel.client 
-                      ? `${rel.client.first_name || ''} ${rel.client.last_name || ''}`.trim() || rel.client.email || 'Client'
-                      : 'Client';
-                    return (
-                      <Link
-                        key={rel.id}
-                        href={`/clients?clientId=${rel.client_id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                        title="View client details"
-                      >
-                        {clientName}
-                      </Link>
-                    );
-                  })}
-                  {item.clients.length > 2 && (
-                    <span className="text-xs text-gray-500">+{item.clients.length - 2}</span>
-                  )}
-                </div>
-              ) : (
-                <span className="text-gray-400">—</span>
-              )
+              <span className="text-gray-400">—</span>
             )}
           </div>
         )}

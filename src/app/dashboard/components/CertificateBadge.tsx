@@ -3,7 +3,9 @@ interface CertificateBadgeProps {
   certificate?: boolean | null;
 }
 
-export default function CertificateBadge({ certificate }: CertificateBadgeProps) {
+export default function CertificateBadge({
+  certificate,
+}: CertificateBadgeProps) {
   // FIXED: Handle null/undefined with explicit nullish coalescing
   const value = certificate ?? null;
 

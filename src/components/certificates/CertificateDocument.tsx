@@ -143,9 +143,9 @@ const styles = StyleSheet.create({
   brandTagline: { fontSize: 8, color: COLORS.muted, marginTop: 2 },
 
   certTitleWrap: { alignItems: 'flex-end' },
-  certTitle: { 
-    fontSize: 24, 
-    fontWeight: 'bold', 
+  certTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
     color: COLORS.ink,
     letterSpacing: 1.2,
   },
@@ -188,15 +188,15 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 14,
   },
-  sectionTitle: { 
-    fontSize: 12, 
-    fontWeight: 'bold', 
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
     color: COLORS.ink,
     letterSpacing: 0.5,
   },
-  sectionRule: { 
-    flexGrow: 1, 
-    height: 1, 
+  sectionRule: {
+    flexGrow: 1,
+    height: 1,
     backgroundColor: COLORS.line,
   },
 
@@ -211,14 +211,14 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', gap: 16 },
   col: { width: '50%' },
   field: { marginBottom: 10, flexDirection: 'row' },
-  fieldLabel: { 
-    fontSize: 11, 
+  fieldLabel: {
+    fontSize: 11,
     width: 120,
-    color: '#555555', 
+    color: '#555555',
     marginRight: 12,
   },
-  fieldValue: { 
-    fontSize: 12, 
+  fieldValue: {
+    fontSize: 12,
     flex: 1,
     fontWeight: 'bold',
     color: COLORS.ink,
@@ -229,9 +229,9 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     marginTop: 12,
   },
-  noteText: { 
-    fontSize: 10, 
-    color: COLORS.ink, 
+  noteText: {
+    fontSize: 10,
+    color: COLORS.ink,
     lineHeight: 1.5,
   },
 
@@ -241,9 +241,9 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     borderTop: `1 solid ${COLORS.line}`,
   },
-  attestText: { 
-    fontSize: 10, 
-    color: COLORS.ink, 
+  attestText: {
+    fontSize: 10,
+    color: COLORS.ink,
     lineHeight: 1.6,
     marginBottom: 8,
   },
@@ -252,16 +252,16 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
   },
 
-  signRow: { 
-    marginTop: 50, 
-    flexDirection: 'row', 
+  signRow: {
+    marginTop: 50,
+    flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 20,
   },
   signCol: { width: '45%' },
-  signLabel: { 
-    fontSize: 9, 
-    color: COLORS.muted, 
+  signLabel: {
+    fontSize: 9,
+    color: COLORS.muted,
     marginBottom: 8,
     fontWeight: 'bold',
   },
@@ -277,9 +277,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     paddingTop: 8,
   },
-  signHint: { 
-    marginTop: 4, 
-    fontSize: 8, 
+  signHint: {
+    marginTop: 4,
+    fontSize: 8,
     color: COLORS.muted,
     fontStyle: 'italic',
   },
@@ -307,7 +307,9 @@ const styles = StyleSheet.create({
 
 function field(label: string, value?: React.ReactNode) {
   return (
-    <View style={[styles.field, { flexDirection: 'row', alignItems: 'flex-start' }]}>
+    <View
+      style={[styles.field, { flexDirection: 'row', alignItems: 'flex-start' }]}
+    >
       <Text style={styles.fieldLabel}>{label}:</Text>
       <Text style={styles.fieldValue}>{value ?? 'N/A'}</Text>
     </View>
@@ -342,7 +344,8 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
   const finalLogoSrc = logoSrc || '/logo.png';
 
   // Use provided verifyUrl or generate default
-  const finalVerifyUrl = verifyUrl || `https://www.hcviolins.com/verify/${certificateNumber}`;
+  const finalVerifyUrl =
+    verifyUrl || `https://www.hcviolins.com/verify/${certificateNumber}`;
 
   return (
     <Document>
@@ -360,7 +363,9 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
         <View style={styles.header}>
           <View style={styles.headerRow}>
             <View style={styles.brandLeft}>
-              {finalLogoSrc ? <Image src={finalLogoSrc} style={styles.logo} /> : null}
+              {finalLogoSrc ? (
+                <Image src={finalLogoSrc} style={styles.logo} />
+              ) : null}
               <View>
                 <Text style={styles.brandName}>{STORE_INFO.name}</Text>
                 <Text style={styles.brandTagline}>{STORE_INFO.tagline}</Text>
@@ -379,7 +384,9 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
           </Text>
 
           <View style={styles.certBadge}>
-            <Text style={styles.certBadgeLabel}>Certificate Number / 인증서 번호</Text>
+            <Text style={styles.certBadgeLabel}>
+              Certificate Number / 인증서 번호
+            </Text>
             <Text style={styles.certBadgeValue}>{certificateNumber}</Text>
           </View>
         </View>
@@ -387,7 +394,9 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
         {/* Instrument Info */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Instrument Information / 악기 정보</Text>
+            <Text style={styles.sectionTitle}>
+              Instrument Information / 악기 정보
+            </Text>
             <View style={styles.sectionRule} />
           </View>
 
@@ -397,7 +406,10 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
                 {field('Maker / 제작자', instrument.maker)}
                 {field('Type / 종류', instrument.type)}
                 {field('Subtype / 세부 종류', instrument.subtype)}
-                {field('Year / 연도', instrument.year ? String(instrument.year) : undefined)}
+                {field(
+                  'Year / 연도',
+                  instrument.year ? String(instrument.year) : undefined
+                )}
               </View>
 
               <View style={styles.col}>
@@ -408,7 +420,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
               </View>
             </View>
 
-            {(priceKRW || instrument.note) ? (
+            {priceKRW || instrument.note ? (
               <View style={{ marginTop: 8 }}>
                 {priceKRW ? field('Price / 가격', priceKRW) : null}
                 {instrument.note ? (
@@ -431,16 +443,21 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
 
           <View style={styles.attest}>
             <Text style={styles.attestText}>
-              This certificate confirms the authenticity of the above-described instrument
-              and is issued by <Text style={styles.attestStoreName}>{STORE_INFO.name}</Text>.
+              This certificate confirms the authenticity of the above-described
+              instrument and is issued by{' '}
+              <Text style={styles.attestStoreName}>{STORE_INFO.name}</Text>.
             </Text>
             <Text style={styles.attestText}>
-              본 인증서는 위에 명시된 악기의 진품(정품) 여부를 확인하며 <Text style={styles.attestStoreName}>{STORE_INFO.name}</Text>에서 발급합니다.
+              본 인증서는 위에 명시된 악기의 진품(정품) 여부를 확인하며{' '}
+              <Text style={styles.attestStoreName}>{STORE_INFO.name}</Text>에서
+              발급합니다.
             </Text>
 
             <View style={styles.signRow}>
               <View style={styles.signCol}>
-                <Text style={styles.signLabel}>Authorized Signature / 권한 서명</Text>
+                <Text style={styles.signLabel}>
+                  Authorized Signature / 권한 서명
+                </Text>
                 <View style={styles.signLine} />
                 <Text style={styles.signHint}>Name / Title</Text>
               </View>
@@ -458,7 +475,9 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
         <View style={styles.footer}>
           <View style={styles.footerLeft}>
             <Text>Issued Date / 발급일: {issueDate}</Text>
-            {finalVerifyUrl ? <Text>Verification / 검증: {finalVerifyUrl}</Text> : null}
+            {finalVerifyUrl ? (
+              <Text>Verification / 검증: {finalVerifyUrl}</Text>
+            ) : null}
           </View>
           <Text style={styles.footerRight}>
             {STORE_INFO.name} · {STORE_INFO.web}

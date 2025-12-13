@@ -13,18 +13,19 @@ type FixedSizeListComponent = React.ComponentType<{
   itemSize: number;
   overscanCount?: number;
   className?: string;
-  children: (props: { index: number; style: React.CSSProperties }) => React.ReactNode;
+  children: (props: {
+    index: number;
+    style: React.CSSProperties;
+  }) => React.ReactNode;
 }>;
 
 const FixedSizeList = dynamic(
   () =>
-    import('react-window').then(
-      (mod: typeof import('react-window')) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const FixedSizeListComponent = (mod as any).FixedSizeList;
-        return FixedSizeListComponent as FixedSizeListComponent;
-      }
-    ),
+    import('react-window').then((mod: typeof import('react-window')) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const FixedSizeListComponent = (mod as any).FixedSizeList;
+      return FixedSizeListComponent as FixedSizeListComponent;
+    }),
   { ssr: false }
 ) as FixedSizeListComponent;
 
@@ -81,13 +82,19 @@ export default function InstrumentList({
     );
   }
 
-  const Row = ({ index, style }: { index: number; style: React.CSSProperties }): React.ReactElement => {
+  const Row = ({
+    index,
+    style,
+  }: {
+    index: number;
+    style: React.CSSProperties;
+  }): React.ReactElement => {
     const item = items[index];
     return (
       <div style={style} className="border-b border-gray-200">
         <div className="px-4 py-4 transition-colors duration-150 hover:bg-gray-50">
           <div className="flex items-center justify-between">
-              <div className="flex items-center">
+            <div className="flex items-center">
               <div className="shrink-0">
                 <div className="w-8 h-8 rounded-md flex items-center justify-center bg-blue-50">
                   <svg
@@ -153,7 +160,7 @@ export default function InstrumentList({
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center">
-              <div className="shrink-0">
+                <div className="shrink-0">
                   <div className="w-8 h-8 rounded-md flex items-center justify-center bg-blue-50">
                     <svg
                       className="w-5 h-5 text-blue-600"

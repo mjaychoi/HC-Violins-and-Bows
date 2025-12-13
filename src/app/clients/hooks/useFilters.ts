@@ -48,14 +48,9 @@ export const useFilters = (
     },
     customFieldFilter: (items, filters) => {
       const clients = items as unknown as Client[];
-      const result = filterClients(
-        clients,
-        '',
-        filters as FilterState,
-        {
-          clientsWithInstruments,
-        }
-      );
+      const result = filterClients(clients, '', filters as FilterState, {
+        clientsWithInstruments,
+      });
       return result as unknown as Record<string, unknown>[];
     },
     customFilter: (item, term) => {
@@ -122,7 +117,7 @@ export const useFilters = (
   // Pagination calculations
   const totalCount = baseFilters.filteredItems.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  
+
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
@@ -132,13 +127,19 @@ export const useFilters = (
   const paginatedClients = useMemo(() => {
     const startIndex = (currentPage - 1) * pageSize;
     const endIndex = startIndex + pageSize;
-    return baseFilters.filteredItems.slice(startIndex, endIndex) as unknown as Client[];
+    return baseFilters.filteredItems.slice(
+      startIndex,
+      endIndex
+    ) as unknown as Client[];
   }, [baseFilters.filteredItems, currentPage, pageSize]);
 
   // Handle page change
-  const handlePageChange = useCallback((page: number) => {
-    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
-  }, [totalPages]);
+  const handlePageChange = useCallback(
+    (page: number) => {
+      setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+    },
+    [totalPages]
+  );
 
   return {
     // State
@@ -163,7 +164,7 @@ export const useFilters = (
     handleColumnSort: baseFilters.handleColumnSort,
     getSortArrow: baseFilters.getSortArrow,
     getActiveFiltersCount: baseFilters.getActiveFiltersCount,
-    
+
     // Pagination
     currentPage,
     totalPages,

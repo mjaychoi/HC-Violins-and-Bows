@@ -41,14 +41,19 @@ describe('AppLayout', () => {
   });
 
   it('renders layout when authenticated', async () => {
-    useAuth.mockReturnValue({ user: { email: 'test@example.com' }, loading: false });
+    useAuth.mockReturnValue({
+      user: { email: 'test@example.com' },
+      loading: false,
+    });
     render(
       <AppLayout title="Dashboard">
         <div>content</div>
       </AppLayout>
     );
 
-    await waitFor(() => expect(screen.getByText('Header: Dashboard')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Header: Dashboard')).toBeInTheDocument()
+    );
     expect(screen.getByText('Sidebar path: /dashboard')).toBeInTheDocument();
     expect(screen.getByText('content')).toBeInTheDocument();
   });

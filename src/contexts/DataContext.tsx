@@ -10,7 +10,10 @@ import React, {
   ReactNode,
 } from 'react';
 import { Client, Instrument, ClientInstrument } from '@/types';
-import { fetchClients as serviceFetchClients, fetchInstruments as serviceFetchInstruments } from '@/services/dataService';
+import {
+  fetchClients as serviceFetchClients,
+  fetchInstruments as serviceFetchInstruments,
+} from '@/services/dataService';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 
 // 데이터 상태 타입
@@ -378,11 +381,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
       try {
         const fetcher = async () => {
-          const response = await fetch('/api/clients?orderBy=created_at&ascending=false');
+          const response = await fetch(
+            '/api/clients?orderBy=created_at&ascending=false'
+          );
           if (!response.ok) {
             const errorData = await response.json();
-            const error = errorData.error || new Error('Failed to fetch clients');
-            
+            const error =
+              errorData.error || new Error('Failed to fetch clients');
+
             // 인증 에러 감지 (무한 루프 방지)
             if (
               error?.message?.includes('Invalid Refresh Token') ||
@@ -391,10 +397,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
               error?.code === 'UNAUTHORIZED'
             ) {
               // 인증 에러는 빈 배열 반환하여 무한 루프 방지
-              console.warn('Authentication error detected, skipping fetch:', error);
+              console.warn(
+                'Authentication error detected, skipping fetch:',
+                error
+              );
               return [];
             }
-            
+
             throw error;
           }
           const result = await response.json();
@@ -402,9 +411,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         };
 
         const clients = await serviceFetchClients(fetcher);
-        console.log(`[DataContext] fetchClients: Received ${clients.length} clients`);
+        console.log(
+          `[DataContext] fetchClients: Received ${clients.length} clients`
+        );
         if (clients.length === 0) {
-          console.warn('[DataContext] fetchClients: Received empty array - check API response');
+          console.warn(
+            '[DataContext] fetchClients: Received empty array - check API response'
+          );
         }
         dispatch({ type: 'SET_CLIENTS', payload: clients });
       } catch (error) {
@@ -412,20 +425,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (
           error &&
           typeof error === 'object' &&
-        ('message' in error || 'code' in error)
-      ) {
-        const err = error as { message?: string; code?: string };
-        if (
-          err.message?.includes('Invalid Refresh Token') ||
-          err.message?.includes('Refresh Token Not Found') ||
-          err.code === 'SESSION_EXPIRED' ||
-          err.code === 'UNAUTHORIZED'
+          ('message' in error || 'code' in error)
         ) {
-          console.warn('Authentication error in fetchClients, setting empty array:', err);
-          dispatch({ type: 'SET_CLIENTS', payload: [] });
-          return; // 에러 핸들러 호출하지 않고 종료
+          const err = error as { message?: string; code?: string };
+          if (
+            err.message?.includes('Invalid Refresh Token') ||
+            err.message?.includes('Refresh Token Not Found') ||
+            err.code === 'SESSION_EXPIRED' ||
+            err.code === 'UNAUTHORIZED'
+          ) {
+            console.warn(
+              'Authentication error in fetchClients, setting empty array:',
+              err
+            );
+            dispatch({ type: 'SET_CLIENTS', payload: [] });
+            return; // 에러 핸들러 호출하지 않고 종료
+          }
         }
-      }
         handleError(error, 'Fetch clients');
       } finally {
         dispatch({
@@ -490,7 +506,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         const result = await response.json();
         if (result.data) {
-          dispatch({ type: 'UPDATE_CLIENT', payload: { id, client: result.data } });
+          dispatch({
+            type: 'UPDATE_CLIENT',
+            payload: { id, client: result.data },
+          });
           // 연결된 데이터 캐시 무효화
           invalidateCache('connections');
         }
@@ -548,7 +567,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
       try {
         const fetcher = async () => {
-          const response = await fetch('/api/instruments?orderBy=created_at&ascending=false');
+          const response = await fetch(
+            '/api/instruments?orderBy=created_at&ascending=false'
+          );
           if (!response.ok) {
             const errorData = await response.json();
             throw errorData.error || new Error('Failed to fetch instruments');
@@ -582,28 +603,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(instrument),
         });
-        
+
         // Response body를 한 번만 파싱
         const result = await response.json();
 
         if (!response.ok) {
-          console.error('[createInstrument] API error:', { 
-            status: response.status, 
+          console.error('[createInstrument] API error:', {
+            status: response.status,
             statusText: response.statusText,
-            errorData: result, 
-            instrument 
+            errorData: result,
+            instrument,
           });
           // 에러 객체가 있는 경우
           if (result?.error) {
             const error = result.error;
             // 에러가 객체인 경우
             if (typeof error === 'object' && error !== null) {
-              throw new Error(error.message || error.details || 'Failed to create instrument');
+              throw new Error(
+                error.message || error.details || 'Failed to create instrument'
+              );
             }
             // 에러가 문자열인 경우
-            throw new Error(typeof error === 'string' ? error : 'Failed to create instrument');
+            throw new Error(
+              typeof error === 'string' ? error : 'Failed to create instrument'
+            );
           }
-          throw new Error(`Failed to create instrument: ${response.status} ${response.statusText}`);
+          throw new Error(
+            `Failed to create instrument: ${response.status} ${response.statusText}`
+          );
         }
         if (result.data) {
           // Parse type field if it contains "/"
@@ -616,9 +643,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return result.data;
       } catch (error) {
         // 에러가 이미 Error 객체인 경우 그대로 전달, 아니면 새로 생성
-        const errorToHandle = error instanceof Error 
-          ? error 
-          : new Error(`Failed to create instrument: ${String(error)}`);
+        const errorToHandle =
+          error instanceof Error
+            ? error
+            : new Error(`Failed to create instrument: ${String(error)}`);
         handleError(errorToHandle, 'Create instrument');
         return null;
       } finally {
@@ -712,7 +740,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         payload: { dataType: 'connections', loading: true },
       });
       try {
-        const response = await fetch('/api/connections?orderBy=created_at&ascending=false');
+        const response = await fetch(
+          '/api/connections?orderBy=created_at&ascending=false'
+        );
         if (!response.ok) {
           const errorData = await response.json();
           throw errorData.error || new Error('Failed to fetch connections');

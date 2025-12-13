@@ -59,20 +59,22 @@ export function useMaintenanceTasks(
   // Backward compatibility: if options is TaskFilters, treat as initialFilters
   // Check if options is a UseMaintenanceTasksOptions object (has initialFilters or autoFetch property)
   const opts: UseMaintenanceTasksOptions =
-    options && typeof options === 'object' && ('initialFilters' in options || 'autoFetch' in options)
+    options &&
+    typeof options === 'object' &&
+    ('initialFilters' in options || 'autoFetch' in options)
       ? (options as UseMaintenanceTasksOptions)
       : { initialFilters: options as TaskFilters };
-  
+
   const { initialFilters, autoFetch = true } = opts;
 
   const [tasks, setTasks] = useState<MaintenanceTask[]>([]);
   const [loading, setLoading] = useState({ fetch: false, mutate: false });
   const [error, setError] = useState<unknown>(null);
   const { handleError } = useErrorHandler();
-  
+
   // Stale guard for fetchTasks to prevent race conditions
   const fetchReqIdRef = useRef(0);
-  
+
   // FIXED: Counter pattern for fetch loading to handle overlapping fetch operations
   // Multiple fetch functions (fetchTasks, fetchTaskById, fetchTasksByDateRange, etc.)
   // all share the same loading.fetch state, so we need a counter to prevent race conditions
@@ -87,7 +89,7 @@ export function useMaintenanceTasks(
       setLoading(prev => ({ ...prev, fetch: false }));
     }
   }, []);
-  
+
   // FIXED: Prevent StrictMode double-run in development
   const didFetchRef = useRef(false);
 
@@ -100,7 +102,8 @@ export function useMaintenanceTasks(
 
       try {
         const effectiveFilters = filters || initialFilters;
-        const { data, error } = await dataService.fetchMaintenanceTasks(effectiveFilters);
+        const { data, error } =
+          await dataService.fetchMaintenanceTasks(effectiveFilters);
 
         // Stale guard: ignore if a newer request has started
         if (myId !== fetchReqIdRef.current) {
@@ -208,7 +211,10 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error } = await dataService.updateMaintenanceTask(id, updates);
+        const { data, error } = await dataService.updateMaintenanceTask(
+          id,
+          updates
+        );
 
         if (error) {
           setError(error);
@@ -262,7 +268,10 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error } = await dataService.fetchTasksByDateRange(startDate, endDate);
+        const { data, error } = await dataService.fetchTasksByDateRange(
+          startDate,
+          endDate
+        );
 
         if (error) {
           setError(error);
@@ -294,7 +303,8 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error } = await dataService.fetchTasksByScheduledDate(date);
+        const { data, error } =
+          await dataService.fetchTasksByScheduledDate(date);
 
         if (error) {
           setError(error);

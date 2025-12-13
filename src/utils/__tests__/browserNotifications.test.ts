@@ -23,15 +23,18 @@ describe('browserNotifications', () => {
 
   describe('isNotificationSupported', () => {
     it('should return false when Notification is undefined', () => {
-      const originalNotification = (global as { Notification?: unknown }).Notification;
+      const originalNotification = (global as { Notification?: unknown })
+        .Notification;
       delete (global as { Notification?: unknown }).Notification;
       expect(isNotificationSupported()).toBe(false);
-      (global as { Notification?: unknown }).Notification = originalNotification;
+      (global as { Notification?: unknown }).Notification =
+        originalNotification;
     });
 
     it('should return true when Notification and window are available', () => {
       // In jsdom, window is always available, so we just check Notification
-      (global as { Notification?: unknown }).Notification = {} as typeof Notification;
+      (global as { Notification?: unknown }).Notification =
+        {} as typeof Notification;
       expect(isNotificationSupported()).toBe(true);
     });
   });
@@ -143,11 +146,17 @@ describe('browserNotifications', () => {
 
     it('should show notification when permission is granted', () => {
       (global as { window?: unknown }).window = {};
-      const mockNotificationConstructor = jest.fn().mockReturnValue(mockNotification);
-      (global as { Notification?: unknown }).Notification = mockNotificationConstructor as unknown as typeof Notification;
-      (Notification as unknown as { permission: string }).permission = 'granted';
+      const mockNotificationConstructor = jest
+        .fn()
+        .mockReturnValue(mockNotification);
+      (global as { Notification?: unknown }).Notification =
+        mockNotificationConstructor as unknown as typeof Notification;
+      (Notification as unknown as { permission: string }).permission =
+        'granted';
 
-      const result = showBrowserNotification('Test Title', { body: 'Test body' });
+      const result = showBrowserNotification('Test Title', {
+        body: 'Test body',
+      });
 
       expect(result).toBe(mockNotification);
       expect(mockNotificationConstructor).toHaveBeenCalledWith('Test Title', {
@@ -160,9 +169,13 @@ describe('browserNotifications', () => {
 
     it('should auto-close notification after 5 seconds', () => {
       (global as { window?: unknown }).window = {};
-      const mockNotificationConstructor = jest.fn().mockReturnValue(mockNotification);
-      (global as { Notification?: unknown }).Notification = mockNotificationConstructor as unknown as typeof Notification;
-      (Notification as unknown as { permission: string }).permission = 'granted';
+      const mockNotificationConstructor = jest
+        .fn()
+        .mockReturnValue(mockNotification);
+      (global as { Notification?: unknown }).Notification =
+        mockNotificationConstructor as unknown as typeof Notification;
+      (Notification as unknown as { permission: string }).permission =
+        'granted';
 
       showBrowserNotification('Test');
 
@@ -176,8 +189,10 @@ describe('browserNotifications', () => {
       const mockNotificationConstructor = jest.fn().mockImplementation(() => {
         throw new Error('Notification error');
       });
-      (global as { Notification?: unknown }).Notification = mockNotificationConstructor as unknown as typeof Notification;
-      (Notification as unknown as { permission: string }).permission = 'granted';
+      (global as { Notification?: unknown }).Notification =
+        mockNotificationConstructor as unknown as typeof Notification;
+      (Notification as unknown as { permission: string }).permission =
+        'granted';
 
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const result = showBrowserNotification('Test');

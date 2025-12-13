@@ -180,9 +180,8 @@ describe('useConnectionForm', () => {
   it('should handle all relationship types', () => {
     const { result } = renderHook(() => useConnectionForm());
 
-    const relationshipTypes: Array<
-      'Interested' | 'Booked' | 'Sold' | 'Owned'
-    > = ['Interested', 'Booked', 'Sold', 'Owned'];
+    const relationshipTypes: Array<'Interested' | 'Booked' | 'Sold' | 'Owned'> =
+      ['Interested', 'Booked', 'Sold', 'Owned'];
 
     relationshipTypes.forEach(type => {
       act(() => {
@@ -193,4 +192,3 @@ describe('useConnectionForm', () => {
     });
   });
 });
-

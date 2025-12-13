@@ -72,11 +72,13 @@
 - Calendar 페이지에도 알림 표시
 
 **장점**:
+
 - ✅ 즉시 구현 가능
 - ✅ 추가 인프라 불필요
 - ✅ 사용자가 페이지 열면 바로 확인 가능
 
 **단점**:
+
 - ❌ 페이지를 열지 않으면 알림 안 받음
 - ❌ 브라우저 밖에서는 알림 없음
 
@@ -90,7 +92,7 @@
 
 ```typescript
 // 브라우저 Notification API 사용
-Notification.requestPermission()
+Notification.requestPermission();
 ```
 
 #### 2.2 주기적 체크 (페이지 열려있을 때)
@@ -108,11 +110,13 @@ Notification.requestPermission()
 ```
 
 **장점**:
+
 - ✅ 브라우저 열려있으면 자동 알림
 - ✅ 사용자가 다른 탭/앱에 있어도 알림 가능
 - ✅ 추가 서버 인프라 불필요
 
 **단점**:
+
 - ❌ 브라우저를 닫으면 알림 없음
 - ❌ 모바일에서는 제한적
 
@@ -153,11 +157,13 @@ CREATE TABLE notification_settings (
 ```
 
 **장점**:
+
 - ✅ 브라우저 닫아도 알림 가능
 - ✅ 이메일로 알림 받음
 - ✅ 체계적인 알림 관리
 
 **단점**:
+
 - ❌ 구현 복잡도 높음
 - ❌ 이메일 서비스 연동 필요
 - ❌ 추가 비용 가능 (이메일 서비스)
@@ -272,15 +278,18 @@ const { notificationBadge } = usePageNotifications({
 ## 🎯 구현 상태
 
 ### ✅ Phase 1 완료
+
 - 알림 배지 시스템이 완전히 구현되어 사용 중입니다.
 - Dashboard와 Calendar 페이지에서 작동 중입니다.
 
 ### ✅ Phase 2 완료
+
 - 브라우저 알림 시스템이 완전히 구현되었습니다.
 - `usePageNotifications` 훅에 자동으로 통합되어 있습니다.
 - 권한 요청 버튼 컴포넌트 제공 (`NotificationPermissionButton`)
 
 **구현된 기능**:
+
 - ✅ 브라우저 알림 권한 관리
 - ✅ 주기적 알림 체크 (5분마다, 설정 가능)
 - ✅ 중복 알림 방지 (localStorage)
@@ -288,6 +297,7 @@ const { notificationBadge } = usePageNotifications({
 - ✅ 자동 알림 표시 (새로운 overdue/today/upcoming 작업 발견 시)
 
 **사용 방법**:
+
 ```typescript
 // usePageNotifications는 자동으로 브라우저 알림을 활성화합니다
 const { notificationBadge } = usePageNotifications({
@@ -301,10 +311,10 @@ import { NotificationPermissionButton } from '@/components/common';
 <NotificationPermissionButton variant="icon" />
 ```
 
-
 ### 🔴 Phase 3: 이메일 알림 (장기)
 
 **구현 필요 사항**:
+
 1. Supabase Edge Functions 설정
 2. Cron job 설정 (매일 오전 9시 등)
 3. 이메일 서비스 연동 (Resend, SendGrid 등)
@@ -313,6 +323,7 @@ import { NotificationPermissionButton } from '@/components/common';
 **예상 소요 시간**: 1-2일
 
 **구현 시 고려사항**:
+
 - 이메일 서비스 비용
 - 사용자별 알림 설정
 - 이메일 템플릿 디자인
@@ -328,11 +339,13 @@ import { NotificationPermissionButton } from '@/components/common';
 ### 구현된 파일
 
 **Phase 1**:
+
 - `src/components/common/NotificationBadge.tsx` - 알림 배지 컴포넌트
 - `src/hooks/useNotifications.ts` - 알림 계산 훅
 - `src/hooks/usePageNotifications.ts` - 페이지 통합 훅
 
 **Phase 2**:
+
 - `src/utils/browserNotifications.ts` - 브라우저 알림 유틸리티
 - `src/hooks/useBrowserNotifications.ts` - 브라우저 알림 훅
 - `src/components/common/NotificationPermissionButton.tsx` - 권한 요청 버튼

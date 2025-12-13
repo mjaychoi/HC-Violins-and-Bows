@@ -103,7 +103,11 @@ async function getSupabaseConnection(): Promise<Client> {
         'code' in error &&
         (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED')
       ) {
-        logError(`⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`, undefined, 'checkSchema');
+        logError(
+          `⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`,
+          undefined,
+          'checkSchema'
+        );
         continue;
       } else if (
         error &&
@@ -114,7 +118,11 @@ async function getSupabaseConnection(): Promise<Client> {
           error.message.includes('certificate') ||
           error.message.includes('SSL'))
       ) {
-        logError(`⚠️  ${region} 지역 SSL 인증서 오류, 다음 지역 시도...\n`, undefined, 'checkSchema');
+        logError(
+          `⚠️  ${region} 지역 SSL 인증서 오류, 다음 지역 시도...\n`,
+          undefined,
+          'checkSchema'
+        );
         continue;
       } else if (
         error &&
@@ -339,9 +347,15 @@ async function checkSchema() {
     saveSchemaToFile(tables, outputPath);
 
     // Check specific tables
-    logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'checkSchema');
+    logInfo(
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      'checkSchema'
+    );
     logInfo('🔍 주요 테이블 상세 정보', 'checkSchema');
-    logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n', 'checkSchema');
+    logInfo(
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n',
+      'checkSchema'
+    );
 
     const importantTables = [
       'instruments',
@@ -371,9 +385,7 @@ async function checkSchema() {
               c.constraint_definition.includes('CHECK')
           );
 
-          logInfo(
-            `  • subtype 컬럼: ${hasSubtype ? '✅ 있음' : '❌ 없음'}`
-          );
+          logInfo(`  • subtype 컬럼: ${hasSubtype ? '✅ 있음' : '❌ 없음'}`);
           logInfo(
             `  • updated_at 컬럼: ${hasUpdatedAt ? '✅ 있음' : '❌ 없음'}`
           );
@@ -386,9 +398,13 @@ async function checkSchema() {
               statusConstraint.constraint_definition.includes('Reserved');
             const hasMaintenance =
               statusConstraint.constraint_definition.includes('Maintenance');
-            logInfo(`    - Reserved 허용: ${hasReserved ? '✅' : '❌'}`, 'checkSchema');
             logInfo(
-              `    - Maintenance 허용: ${hasMaintenance ? '✅' : '❌'}`, 'checkSchema'
+              `    - Reserved 허용: ${hasReserved ? '✅' : '❌'}`,
+              'checkSchema'
+            );
+            logInfo(
+              `    - Maintenance 허용: ${hasMaintenance ? '✅' : '❌'}`,
+              'checkSchema'
             );
           }
         }
@@ -399,9 +415,15 @@ async function checkSchema() {
       }
     }
 
-    logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'checkSchema');
+    logInfo(
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      'checkSchema'
+    );
     logInfo('✅ 스키마 확인 완료!', 'checkSchema');
-    logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n', 'checkSchema');
+    logInfo(
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n',
+      'checkSchema'
+    );
   } catch (error: unknown) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';

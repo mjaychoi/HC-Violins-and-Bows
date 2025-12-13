@@ -181,9 +181,7 @@ async function migrateWithPostgreSQL(
             errorMessage.includes('duplicate')
           ) {
             if (verbose) {
-              info(
-                `⚠️  ${i + 1}/${statements.length} 건너뜀 (이미 존재)`
-              );
+              info(`⚠️  ${i + 1}/${statements.length} 건너뜀 (이미 존재)`);
             }
           } else {
             throw error;
@@ -193,9 +191,7 @@ async function migrateWithPostgreSQL(
 
       info('\n✅ 마이그레이션 완료!');
       info('🎉 maintenance_tasks 테이블이 생성되었습니다.');
-      info(
-        '📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n'
-      );
+      info('📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n');
 
       await client.end();
       return;
@@ -306,9 +302,7 @@ async function migrateWithCLI(
 
     info('\n✅ 마이그레이션 완료!');
     info('🎉 maintenance_tasks 테이블이 생성되었습니다.');
-    info(
-      '📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n'
-    );
+    info('📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n');
   } catch (error: unknown) {
     if (error instanceof Error && error.message.includes('로그인')) {
       throw error;
@@ -356,15 +350,11 @@ function showManualInstructions(
   info('📝 수동 실행 안내');
   info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   info('');
-  info(
-    '자동 마이그레이션이 불가능합니다. 다음 방법 중 하나를 사용하세요:'
-  );
+  info('자동 마이그레이션이 불가능합니다. 다음 방법 중 하나를 사용하세요:');
   info('');
   info('방법 1: Supabase 대시보드 (가장 빠름, 추천)');
   info('──────────────────────────────────────────────────────');
-  info(
-    `1. https://supabase.com/dashboard/project/${projectRef}/sql/new 접속`
-  );
+  info(`1. https://supabase.com/dashboard/project/${projectRef}/sql/new 접속`);
   info('2. migration-maintenance-tasks.sql 파일 내용 복사');
   info('3. SQL Editor에 붙여넣기');
   info('4. "Run" 버튼 클릭 (Ctrl+Enter / Cmd+Enter)');
@@ -379,9 +369,7 @@ function showManualInstructions(
   info('');
   info('방법 3: Supabase CLI 사용');
   info('──────────────────────────────────────────────────────');
-  info(
-    '1. brew install supabase/tap/supabase (또는 npm install -g supabase)'
-  );
+  info('1. brew install supabase/tap/supabase (또는 npm install -g supabase)');
   info('2. supabase login');
   info('3. npm run migrate:cli 실행');
   info('');
@@ -391,9 +379,7 @@ function showManualInstructions(
   if (migrationSQL) {
     info(migrationSQL.substring(0, 300) + '...');
     info('');
-    info(
-      '(전체 내용은 migration-maintenance-tasks.sql 파일을 참고하세요)'
-    );
+    info('(전체 내용은 migration-maintenance-tasks.sql 파일을 참고하세요)');
   }
   info('');
 }

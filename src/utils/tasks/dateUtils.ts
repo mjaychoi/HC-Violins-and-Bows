@@ -3,7 +3,13 @@
  * Single source of truth for date priority and notification classification
  */
 
-import { parseISO, startOfDay, differenceInCalendarDays, isSameDay, format } from 'date-fns';
+import {
+  parseISO,
+  startOfDay,
+  differenceInCalendarDays,
+  isSameDay,
+  format,
+} from 'date-fns';
 import type { MaintenanceTask } from '@/types';
 
 /**
@@ -36,11 +42,12 @@ export function toDayKey(dateStr: string): string {
 /**
  * Get the primary due date for a task based on priority
  * Priority: due_date > personal_due_date > scheduled_date
- * 
+ *
  * @returns Date object (normalized to start of day) or null
  */
 export function getTaskDueDate(task: MaintenanceTask): Date | null {
-  const dateStr = task.due_date || task.personal_due_date || task.scheduled_date;
+  const dateStr =
+    task.due_date || task.personal_due_date || task.scheduled_date;
   if (!dateStr) return null;
 
   try {

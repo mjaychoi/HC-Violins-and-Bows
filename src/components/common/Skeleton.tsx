@@ -146,10 +146,7 @@ export const TableSkeleton = memo(function TableSkeleton({
             <thead className={classNames.tableHeader}>
               <tr>
                 {[...Array(columns)].map((_, i) => (
-                  <th
-                    key={i}
-                    className={classNames.tableHeaderCell}
-                  >
+                  <th key={i} className={classNames.tableHeaderCell}>
                     <SkeletonElement className="h-3 w-20" />
                   </th>
                 ))}

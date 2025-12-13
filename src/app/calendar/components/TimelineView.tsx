@@ -91,22 +91,22 @@ export default function TimelineView({
     const dateStatus = getDateStatus(task);
     const isOverdue = dateStatus.status === 'overdue';
     const status = (task.status ?? '').toLowerCase();
-    
+
     // Completed/Cancelled: Gray
     if (status === 'completed' || status === 'cancelled') {
       return 'bg-gray-400';
     }
-    
+
     // Overdue: Red
     if (isOverdue) {
       return 'bg-red-500';
     }
-    
+
     // In Progress: Blue
     if (status === 'in_progress') {
       return 'bg-blue-500';
     }
-    
+
     // Scheduled/Pending: Green
     return 'bg-emerald-500';
   };
@@ -119,14 +119,14 @@ export default function TimelineView({
     const taskDate =
       task.scheduled_date || task.due_date || task.personal_due_date;
     if (!taskDate) return { hour: 9, minute: 0 };
-    
+
     // Check if date string includes time component
     const hasTime = taskDate.includes('T');
     if (!hasTime) {
       // Date-only: use default time
       return { hour: 9, minute: 0 };
     }
-    
+
     try {
       // Has time: extract from parsed date
       const date = parseTaskDateLocal(taskDate);

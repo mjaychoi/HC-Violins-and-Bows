@@ -17,15 +17,13 @@ export function highlightText(
     const isMatch = regex.test(part);
     // Reset regex lastIndex for next test
     regex.lastIndex = 0;
-    return isMatch ? (
-      React.createElement(
-        'mark',
-        { key: index, className: 'bg-yellow-200 px-1 rounded' },
-        part
-      )
-    ) : (
-      part
-    );
+    return isMatch
+      ? React.createElement(
+          'mark',
+          { key: index, className: 'bg-yellow-200 px-1 rounded' },
+          part
+        )
+      : part;
   });
 }
 
@@ -122,9 +120,17 @@ export function sortTasks(
       case 'date':
         // Date priority: scheduled_date > due_date > personal_due_date > received_date
         const aDate =
-          a.scheduled_date || a.due_date || a.personal_due_date || a.received_date || '';
+          a.scheduled_date ||
+          a.due_date ||
+          a.personal_due_date ||
+          a.received_date ||
+          '';
         const bDate =
-          b.scheduled_date || b.due_date || b.personal_due_date || b.received_date || '';
+          b.scheduled_date ||
+          b.due_date ||
+          b.personal_due_date ||
+          b.received_date ||
+          '';
         comparison = aDate.localeCompare(bDate);
         break;
 
@@ -160,4 +166,3 @@ export function sortTasks(
 
   return sorted;
 }
-

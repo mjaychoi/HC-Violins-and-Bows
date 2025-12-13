@@ -67,7 +67,11 @@ describe('ConnectionModal', () => {
   });
 
   it('submits when form is valid', async () => {
-    const props = { ...baseProps, onClose: jest.fn(), onSubmit: jest.fn().mockResolvedValue(undefined) };
+    const props = {
+      ...baseProps,
+      onClose: jest.fn(),
+      onSubmit: jest.fn().mockResolvedValue(undefined),
+    };
     render(<ConnectionModal {...props} />);
 
     fireEvent.click(screen.getByText('Create Connection'));

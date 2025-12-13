@@ -32,7 +32,11 @@ export interface UsePageNotificationsOptions {
   /**
    * Custom toast message formatter
    */
-  formatToastMessage?: (task: MaintenanceTask, type: 'overdue' | 'today' | 'upcoming', daysUntil: number) => string;
+  formatToastMessage?: (
+    task: MaintenanceTask,
+    type: 'overdue' | 'today' | 'upcoming',
+    daysUntil: number
+  ) => string;
 
   /**
    * Number of days to consider for "upcoming" notifications
@@ -91,7 +95,7 @@ export interface UsePageNotificationsReturn {
 /**
  * Combines useNotifications with badge click handling
  * Provides a complete notification setup for pages
- * 
+ *
  * FIXED: Now accepts tasks as parameter instead of calling useMaintenanceTasks() internally
  * This prevents duplicate fetches when multiple pages use this hook
  */
@@ -133,7 +137,11 @@ export function usePageNotifications(
       const nextTask = notifications[0];
       const message = formatToastMessage
         ? formatToastMessage(nextTask.task, nextTask.type, nextTask.daysUntil)
-        : formatNotificationMessage(nextTask.task, nextTask.type, nextTask.daysUntil);
+        : formatNotificationMessage(
+            nextTask.task,
+            nextTask.type,
+            nextTask.daysUntil
+          );
       showSuccess(message);
     }
 
@@ -154,4 +162,3 @@ export function usePageNotifications(
     notifications,
   };
 }
-

@@ -108,10 +108,16 @@ function ModalWithState(props: Partial<typeof mockProps> = {}) {
       showInterestDropdown={shouldShowInterestDropdown(viewFormData.tags)}
       onViewInputChange={e => {
         const { name, value } = e.target as HTMLInputElement;
-        setViewFormData((prev: ClientViewFormData) => ({ ...prev, [name]: value }));
+        setViewFormData((prev: ClientViewFormData) => ({
+          ...prev,
+          [name]: value,
+        }));
       }}
       onUpdateViewFormData={(updates: Partial<ClientViewFormData>) => {
-        setViewFormData((prev: ClientViewFormData) => ({ ...prev, ...updates }));
+        setViewFormData((prev: ClientViewFormData) => ({
+          ...prev,
+          ...updates,
+        }));
       }}
     />
   );
@@ -315,7 +321,7 @@ describe('ClientModal', () => {
     expect(tagsCheckbox).not.toBeChecked();
 
     fireEvent.click(tagsCheckbox);
-    
+
     // 체크박스 상태 변경이 안전하게 처리되어야 함
     // (타입 안전성 테스트 - handleViewInputChange에서 'type' in target 체크로 안전하게 처리)
     // 실제 상태 변경은 클라이언트의 tags 배열 업데이트에 따라 다르므로, 클릭만 테스트
@@ -356,10 +362,12 @@ describe('ClientModal', () => {
     );
 
     // name="interest"인 select 요소를 찾음 (name 속성 사용)
-    const interestSelect = container.querySelector('select[name="interest"]') as HTMLSelectElement;
+    const interestSelect = container.querySelector(
+      'select[name="interest"]'
+    ) as HTMLSelectElement;
     expect(interestSelect).toBeInTheDocument();
     expect(interestSelect).toHaveValue('Active');
-    
+
     fireEvent.change(interestSelect, { target: { value: 'Passive' } });
 
     // Select 입력이 안전하게 처리되어야 함

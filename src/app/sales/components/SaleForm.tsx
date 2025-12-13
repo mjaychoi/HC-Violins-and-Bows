@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { SalesHistory } from '@/types';
-import { useUnifiedClients, useUnifiedInstruments } from '@/hooks/useUnifiedData';
+import {
+  useUnifiedClients,
+  useUnifiedInstruments,
+} from '@/hooks/useUnifiedData';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import { logInfo } from '@/utils/logger';
 
@@ -15,7 +18,12 @@ interface SaleFormProps {
 
 const getToday = () => new Date().toISOString().slice(0, 10);
 
-export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: SaleFormProps) {
+export default function SaleForm({
+  isOpen,
+  onClose,
+  onSubmit,
+  submitting,
+}: SaleFormProps) {
   const { clients } = useUnifiedClients();
   const { instruments } = useUnifiedInstruments();
   const modalRef = useRef<HTMLDivElement>(null);
@@ -89,7 +97,9 @@ export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: Sale
     // FIXED: Allow negative values for refunds (Option A: simple approach)
     const parsedPrice = Number(formData.sale_price);
     if (!Number.isFinite(parsedPrice) || parsedPrice === 0) {
-      setErrors(['Sale price must be a non-zero number. Use negative for refunds.']);
+      setErrors([
+        'Sale price must be a non-zero number. Use negative for refunds.',
+      ]);
       return;
     }
 
@@ -127,15 +137,30 @@ export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: Sale
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h3 id="sale-form-title" className="text-lg font-semibold text-gray-900">New Sale</h3>
+          <h3
+            id="sale-form-title"
+            className="text-lg font-semibold text-gray-900"
+          >
+            New Sale
+          </h3>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
             type="button"
             aria-label="Close"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -173,7 +198,14 @@ export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: Sale
                       resetForm();
                       setSuccess(false);
                       // Reset to today's date
-                      setFormData(prev => ({ ...prev, sale_date: getToday(), sale_price: '', client_id: '', instrument_id: '', notes: '' }));
+                      setFormData(prev => ({
+                        ...prev,
+                        sale_date: getToday(),
+                        sale_price: '',
+                        client_id: '',
+                        instrument_id: '',
+                        notes: '',
+                      }));
                     }}
                     className="px-3 py-1.5 text-sm font-medium text-green-700 bg-white border border-green-300 rounded-md hover:bg-green-50 transition-colors"
                   >
@@ -196,9 +228,17 @@ export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: Sale
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4" style={{ display: success ? 'none' : 'block' }}>
+        <form
+          onSubmit={handleSubmit}
+          className="p-6 space-y-4"
+          style={{ display: success ? 'none' : 'block' }}
+        >
           {errors.length > 0 && (
-            <div className="rounded-md bg-red-50 p-3" role="alert" aria-live="assertive">
+            <div
+              className="rounded-md bg-red-50 p-3"
+              role="alert"
+              aria-live="assertive"
+            >
               <div className="text-sm text-red-800">
                 {errors.map((error, index) => (
                   <div key={index}>{error}</div>
@@ -209,8 +249,12 @@ export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: Sale
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="sale-price-input">
-                Amount (negative for refund) <span className="text-red-500">*</span>
+              <label
+                className="block text-sm font-medium text-gray-700 mb-1"
+                htmlFor="sale-price-input"
+              >
+                Amount (negative for refund){' '}
+                <span className="text-red-500">*</span>
               </label>
               <input
                 ref={firstInputRef}
@@ -219,19 +263,26 @@ export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: Sale
                 value={formData.sale_price}
                 onChange={e => {
                   setErrors([]);
-                  setFormData(prev => ({ ...prev, sale_price: e.target.value }));
+                  setFormData(prev => ({
+                    ...prev,
+                    sale_price: e.target.value,
+                  }));
                 }}
                 placeholder="e.g. 2500 or -2500"
                 step="0.01"
                 className="w-full h-10 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
               />
               <p className="mt-1 text-xs text-gray-500">
-                Use positive numbers for sales, negative numbers for refunds (e.g., -2500)
+                Use positive numbers for sales, negative numbers for refunds
+                (e.g., -2500)
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="sale-date-input">
+              <label
+                className="block text-sm font-medium text-gray-700 mb-1"
+                htmlFor="sale-date-input"
+              >
                 Date <span className="text-red-500">*</span>
               </label>
               <input
@@ -247,7 +298,12 @@ export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: Sale
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="sale-client-select">Client (optional)</label>
+              <label
+                className="block text-sm font-medium text-gray-700 mb-1"
+                htmlFor="sale-client-select"
+              >
+                Client (optional)
+              </label>
               <select
                 id="sale-client-select"
                 value={formData.client_id}
@@ -260,27 +316,42 @@ export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: Sale
                 <option value="">Select a client</option>
                 {clients.map(client => (
                   <option key={client.id} value={client.id}>
-                    {`${client.first_name || ''} ${client.last_name || ''}`.trim() || client.email || client.id}
+                    {`${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+                      client.email ||
+                      client.id}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="sale-instrument-select">Instrument (optional)</label>
+              <label
+                className="block text-sm font-medium text-gray-700 mb-1"
+                htmlFor="sale-instrument-select"
+              >
+                Instrument (optional)
+              </label>
               <select
                 id="sale-instrument-select"
                 value={formData.instrument_id}
                 onChange={e => {
                   setErrors([]);
-                  setFormData(prev => ({ ...prev, instrument_id: e.target.value }));
+                  setFormData(prev => ({
+                    ...prev,
+                    instrument_id: e.target.value,
+                  }));
                 }}
                 className="w-full h-10 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">Select an instrument</option>
                 {instruments.map(instrument => (
                   <option key={instrument.id} value={instrument.id}>
-                    {[instrument.maker, instrument.type, instrument.subtype, instrument.serial_number]
+                    {[
+                      instrument.maker,
+                      instrument.type,
+                      instrument.subtype,
+                      instrument.serial_number,
+                    ]
                       .filter(Boolean)
                       .join(' - ') || instrument.id}
                   </option>
@@ -289,7 +360,12 @@ export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: Sale
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="sale-notes-textarea">Notes</label>
+              <label
+                className="block text-sm font-medium text-gray-700 mb-1"
+                htmlFor="sale-notes-textarea"
+              >
+                Notes
+              </label>
               <textarea
                 id="sale-notes-textarea"
                 value={formData.notes}
@@ -302,7 +378,8 @@ export default function SaleForm({ isOpen, onClose, onSubmit, submitting }: Sale
                 rows={3}
               />
               <p className="mt-1 text-xs text-gray-500">
-                Additional context about this sale (e.g., payment method, special terms)
+                Additional context about this sale (e.g., payment method,
+                special terms)
               </p>
             </div>
           </div>

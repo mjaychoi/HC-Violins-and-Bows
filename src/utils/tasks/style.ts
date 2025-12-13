@@ -1,5 +1,10 @@
 import type { TaskPriority, TaskStatus, MaintenanceTask } from '@/types';
-import { parseISO, differenceInCalendarDays, isBefore, endOfDay } from 'date-fns';
+import {
+  parseISO,
+  differenceInCalendarDays,
+  isBefore,
+  endOfDay,
+} from 'date-fns';
 
 export interface StatusColorOptions {
   isOverdue?: boolean;
@@ -90,18 +95,23 @@ export function getDateStatus(task: MaintenanceTask): {
     let dueDateObj: Date;
     if (typeof dueDate === 'string') {
       dueDateObj = parseISO(dueDate);
-    } else if (dueDate && typeof dueDate === 'object' && 'getTime' in dueDate && typeof (dueDate as { getTime?: () => number }).getTime === 'function') {
+    } else if (
+      dueDate &&
+      typeof dueDate === 'object' &&
+      'getTime' in dueDate &&
+      typeof (dueDate as { getTime?: () => number }).getTime === 'function'
+    ) {
       dueDateObj = dueDate as Date;
     } else {
       dueDateObj = parseISO(String(dueDate));
     }
-    
+
     const now = new Date();
-    
+
     // Use endOfDay for overdue check to treat tasks due today as not overdue until end of day
     const dueDateEndOfDay = endOfDay(dueDateObj);
     const isOverdue = isBefore(dueDateEndOfDay, now);
-    
+
     // Use calendar days for "within 3 days" calculation
     const days = differenceInCalendarDays(dueDateObj, now);
 
@@ -139,7 +149,7 @@ export function getDateColorClasses(
 /**
  * Get calendar event style (backgroundColor, borderColor, opacity, etc.)
  * for react-big-calendar Event components
- * 
+ *
  * FIXED: Color based on status only
  * - Overdue/Urgent: Red
  * - In Progress: Blue
@@ -156,7 +166,7 @@ export function getCalendarEventStyle(task: MaintenanceTask): {
 } {
   // Normalize status to handle case-sensitivity
   const status = (task.status ?? '').toLowerCase() as TaskStatus;
-  
+
   const dateStatus = getDateStatus(task);
   const isOverdue = dateStatus.status === 'overdue';
 

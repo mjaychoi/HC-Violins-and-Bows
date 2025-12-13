@@ -9,7 +9,15 @@ export interface DateRange {
 
 export interface AdvancedFilter {
   field: string;
-  operator: 'equals' | 'contains' | 'startsWith' | 'endsWith' | 'greaterThan' | 'lessThan' | 'between' | 'in';
+  operator:
+    | 'equals'
+    | 'contains'
+    | 'startsWith'
+    | 'endsWith'
+    | 'greaterThan'
+    | 'lessThan'
+    | 'between'
+    | 'in';
   value: string | number | string[] | DateRange | null;
   operatorType?: FilterOperator; // AND or OR
 }

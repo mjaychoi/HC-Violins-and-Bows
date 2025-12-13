@@ -64,10 +64,15 @@ export function useDashboardClients() {
       const result = await response.json();
       return result.data || [];
     } catch (error) {
-      logError('Error searching ownership clients', error, 'useDashboardClients', {
-        searchTerm: term,
-        action: 'searchOwnershipClientsFunction',
-      });
+      logError(
+        'Error searching ownership clients',
+        error,
+        'useDashboardClients',
+        {
+          searchTerm: term,
+          action: 'searchOwnershipClientsFunction',
+        }
+      );
       return [];
     }
   }, []);

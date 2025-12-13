@@ -157,4 +157,3 @@ describe('useConnectionFilters', () => {
     expect(result.current.relationshipTypeCounts).toHaveLength(3);
   });
 });
-

@@ -200,7 +200,11 @@ describe('searchUtils', () => {
     });
 
     it('should support multiple search terms (AND logic)', () => {
-      const result = searchTasks(mockTasks, 'Violin Stradivari', mockInstrumentsMap);
+      const result = searchTasks(
+        mockTasks,
+        'Violin Stradivari',
+        mockInstrumentsMap
+      );
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('1');
     });
@@ -464,4 +468,3 @@ describe('searchUtils', () => {
     });
   });
 });
-

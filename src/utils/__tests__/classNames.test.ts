@@ -72,7 +72,12 @@ describe('classNames', () => {
     });
 
     it('should handle mixed inputs', () => {
-      const result = cn('class1', undefined, { class2: true, class3: false }, 'class4');
+      const result = cn(
+        'class1',
+        undefined,
+        { class2: true, class3: false },
+        'class4'
+      );
       expect(result).toContain('class1');
       expect(result).toContain('class2');
       expect(result).toContain('class4');

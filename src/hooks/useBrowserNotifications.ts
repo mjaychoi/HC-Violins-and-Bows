@@ -1,6 +1,6 @@
 /**
  * Browser Notifications Hook
- * 
+ *
  * 브라우저 알림 권한 관리 및 주기적 알림 체크
  */
 
@@ -80,11 +80,11 @@ const NOTIFICATION_ENABLED_KEY = 'browser_notifications_enabled';
  */
 function getNotifiedTaskIds(): Set<string> {
   if (typeof window === 'undefined') return new Set();
-  
+
   try {
     const stored = localStorage.getItem(NOTIFIED_TASKS_KEY);
     if (!stored) return new Set();
-    
+
     const ids = JSON.parse(stored) as string[];
     return new Set(ids);
   } catch {
@@ -97,17 +97,17 @@ function getNotifiedTaskIds(): Set<string> {
  */
 function saveNotifiedTaskId(taskId: string): void {
   if (typeof window === 'undefined') return;
-  
+
   try {
     const notified = getNotifiedTaskIds();
     notified.add(taskId);
-    
+
     // 최대 100개까지만 저장 (메모리 관리)
     const ids = Array.from(notified);
     if (ids.length > 100) {
       ids.splice(0, ids.length - 100);
     }
-    
+
     localStorage.setItem(NOTIFIED_TASKS_KEY, JSON.stringify(ids));
   } catch (error) {
     console.error('Error saving notified task ID:', error);
@@ -119,7 +119,7 @@ function saveNotifiedTaskId(taskId: string): void {
  */
 function getNotificationEnabled(): boolean {
   if (typeof window === 'undefined') return true;
-  
+
   try {
     const stored = localStorage.getItem(NOTIFICATION_ENABLED_KEY);
     if (stored === null) return true; // 기본값: 활성화
@@ -134,7 +134,7 @@ function getNotificationEnabled(): boolean {
  */
 function saveNotificationEnabled(enabled: boolean): void {
   if (typeof window === 'undefined') return;
-  
+
   try {
     localStorage.setItem(NOTIFICATION_ENABLED_KEY, JSON.stringify(enabled));
   } catch (error) {
@@ -196,7 +196,7 @@ export function useBrowserNotifications(
 
     // 새로 추가된 알림만 필터링 (중복 방지)
     const newNotifications = notifications.filter(
-      (notification) => !notifiedTasksRef.current.has(notification.task.id)
+      notification => !notifiedTasksRef.current.has(notification.task.id)
     );
 
     if (newNotifications.length === 0) {
@@ -264,7 +264,13 @@ export function useBrowserNotifications(
         intervalRef.current = null;
       }
     };
-  }, [enabled, permission, isSupported, checkInterval, checkAndShowNotifications]);
+  }, [
+    enabled,
+    permission,
+    isSupported,
+    checkInterval,
+    checkAndShowNotifications,
+  ]);
 
   /**
    * 알림 목록이 변경될 때마다 체크
@@ -274,7 +280,13 @@ export function useBrowserNotifications(
       // 알림 목록이 변경되면 즉시 체크
       checkAndShowNotifications();
     }
-  }, [notifications, enabled, permission, isSupported, checkAndShowNotifications]);
+  }, [
+    notifications,
+    enabled,
+    permission,
+    isSupported,
+    checkAndShowNotifications,
+  ]);
 
   /**
    * 권한 상태 동기화

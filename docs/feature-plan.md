@@ -1,12 +1,14 @@
 # 기능/요구사항 정리 및 작업 계획
 
 ## 진행률 요약
+
 - **전체 진행률**: 약 98% 완료
 - **핵심 기능**: 모두 구현 완료 ✅
 - **아키텍처 개선**: API 라우트 통일, 성능 최적화, 타입 가드 추가 완료 ✅
 - **선택사항**: 페이지네이션/무한 스크롤, DB 인덱스 최적화 (수동 적용 필요)
 
 ## 질문/요구사항 (모두 해결됨 ✅)
+
 - ✅ Serial # 접두사(BO/VI/CE): 카테고리 기반으로 구현 완료 (VI/VO/CE/BO 등)
 - ✅ Serial # 길이 확장: `VI1234567` 형식으로 구현 완료 (2자리 접두사 + 7자리 숫자)
 - ✅ 이메일 아이콘 동작: mailto 템플릿으로 구현 완료
@@ -19,35 +21,36 @@
 
 ## 작업 계획 및 진행 상황
 
-1) ✅ 요구사항 확정 (완료)
+1. ✅ 요구사항 확정 (완료)
    - ✅ Serial # 규칙(접두/길이/검증) 정의 및 구현
    - ✅ 이메일 아이콘 기대 동작 확정 및 구현
    - ✅ Connected Clients 섹션 단순화 결정 및 구현
    - ✅ View/Edit 아이콘 구분 방식 구현
 
-2) ✅ 데이터/로직 점검 (완료)
+2. ✅ 데이터/로직 점검 (완료)
    - ✅ 시리얼 생성·검증·검색·정렬 영향 범위 파악 및 구현
    - ✅ 클라이언트–아이템 관계 쿼리/필터 수정으로 잘못된 매핑 해결
 
-3) ✅ UI/UX 수정 (완료)
+3. ✅ UI/UX 수정 (완료)
    - ✅ 클라이언트 카드 전체 클릭을 View로 매핑
    - ✅ 아이콘 툴팁/라벨 추가로 View vs Edit 구분
    - ✅ View 섹션을 Accordion 형태로 전환
    - ✅ Connected Clients 섹션 간결 표시
 
-4) ✅ 검색 기능 확장(캘린더) (완료)
+4. ✅ 검색 기능 확장(캘린더) (완료)
    - ✅ 백엔드/프론트 검색 필터에 시리얼/이름/타입/소유자 등 필드 추가
    - ✅ 결과 정렬 및 하이라이트 구현
    - ⏳ 페이지네이션/무한 스크롤 (선택사항, 미구현)
 
-5) ✅ QA/문서 (대부분 완료)
+5. ✅ QA/문서 (대부분 완료)
    - ✅ 타입 가드 추가 완료 (Zod 기반 런타임 타입 검증)
    - ✅ API 라우트 타입 검증 적용 완료
    - ✅ 테스트 수정 및 통과 (useConnections, useInstruments, useClients)
    - ⏳ 주요 시나리오에 대한 E2E/통합 테스트 보강 (선택사항)
-   - ⏳ README/UX 가이드 업데이트 (선택사항)  
+   - ⏳ README/UX 가이드 업데이트 (선택사항)
 
 ## 결정 필요 사항 (대부분 해결됨)
+
 - ✅ Serial # 규칙(접두/길이/검증 로직) 확정 → 2자리 접두사 + 7자리 숫자로 구현
 - ✅ 이메일 아이콘 클릭 시 정확한 동작 → mailto 템플릿으로 구현
 - ✅ Connected Clients 섹션 삭제 여부 → 간단한 배지 표시로 단순화
@@ -145,30 +148,37 @@
 ## 구현된 파일 목록
 
 ### Serial # 규칙/확장
+
 - `src/utils/uniqueNumberGenerator.ts` - 시리얼 생성/검증/정규화 함수
 - `src/utils/__tests__/uniqueNumberGenerator.test.ts` - 테스트 업데이트
 - `src/app/dashboard/components/ItemForm.tsx` - 시리얼 입력 및 검증
 - `src/app/dashboard/components/ItemList.tsx` - 시리얼 편집 및 검증
 
 ### 이메일 아이콘
+
 - `src/app/clients/components/ClientList.tsx` - mailto 템플릿 및 툴팁
 
 ### View vs Edit / Accordion
+
 - `src/app/clients/components/ClientList.tsx` - View/Edit 구분, Accordion 구현
 
 ### Instrument 연결 정확도
+
 - `src/app/clients/components/ClientModal.tsx` - 필터링 로직 개선
 
 ### Connected Clients 섹션
+
 - `src/app/dashboard/components/ItemList.tsx` - 배지 리스트 표시
 
 ### 캘린더 검색 확장
+
 - `src/app/calendar/components/CalendarSearch.tsx` - 검색 컴포넌트
 - `src/app/calendar/utils/searchUtils.ts` - 검색/정렬/하이라이트 유틸리티
 - `src/app/calendar/page.tsx` - 검색 통합
 - `src/app/calendar/components/GroupedTaskList.tsx` - 하이라이트 적용
 
 ## 구현 아이디어(참고)
+
 - Serial # 규칙/확장
   - 데이터: `serial_prefix`(BO/VI/CE 등) + `serial_numeric`(zero-pad) 칼럼 분리 저장을 고려 → 정렬/검색 정확도 확보.
   - 생성: 타입 선택 시 prefix 자동 세팅, 번호는 digits 길이 체크(예: 7자리) 및 zero-pad. 프론트 입력 시 마스킹(`VI______`) 또는 접두 고정 후 숫자 입력.
@@ -203,4 +213,3 @@
   - API: `search` 파라미터로 다중 필드 LIKE/ILIKE OR 검색, 필요 시 trigram/tsvector로 확장.
   - UI: 단일 검색창 + 태그형 필터(타입/우선순위/상태/소유자). 디바운스(250~400ms) 적용.
   - 결과: 매칭 하이라이트, 정렬(일자 기본), 페이지네이션 또는 무한 스크롤.
-

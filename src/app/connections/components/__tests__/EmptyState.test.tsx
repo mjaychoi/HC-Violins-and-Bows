@@ -14,14 +14,18 @@ describe('EmptyState', () => {
 
     expect(screen.getByText('No connections')).toBeInTheDocument();
     expect(
-      screen.getByText('Get started by creating your first client-item connection.')
+      screen.getByText(
+        'Get started by creating your first client-item connection.'
+      )
     ).toBeInTheDocument();
   });
 
   it('should render create connection button', () => {
     render(<EmptyState onCreateConnection={mockOnCreateConnection} />);
 
-    const createButton = screen.getByRole('button', { name: /Create Connection/i });
+    const createButton = screen.getByRole('button', {
+      name: /Create Connection/i,
+    });
     expect(createButton).toBeInTheDocument();
   });
 
@@ -29,7 +33,9 @@ describe('EmptyState', () => {
     const user = userEvent.setup();
     render(<EmptyState onCreateConnection={mockOnCreateConnection} />);
 
-    const createButton = screen.getByRole('button', { name: /Create Connection/i });
+    const createButton = screen.getByRole('button', {
+      name: /Create Connection/i,
+    });
     await user.click(createButton);
 
     expect(mockOnCreateConnection).toHaveBeenCalledTimes(1);
@@ -47,9 +53,10 @@ describe('EmptyState', () => {
   it('should have correct button styling', () => {
     render(<EmptyState onCreateConnection={mockOnCreateConnection} />);
 
-    const createButton = screen.getByRole('button', { name: /Create Connection/i });
+    const createButton = screen.getByRole('button', {
+      name: /Create Connection/i,
+    });
     expect(createButton.className).toContain('bg-blue-600');
     expect(createButton.className).toContain('hover:bg-blue-700');
   });
 });
-

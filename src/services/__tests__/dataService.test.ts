@@ -1,4 +1,10 @@
-import { applyQuery, invalidateCache, getCacheTimestamp, fetchClients, fetchInstruments } from '../dataService';
+import {
+  applyQuery,
+  invalidateCache,
+  getCacheTimestamp,
+  fetchClients,
+  fetchInstruments,
+} from '../dataService';
 import { Client, Instrument } from '@/types';
 
 describe('dataService', () => {
@@ -72,7 +78,12 @@ describe('dataService', () => {
   it('applies search/filter/sort via applyQuery', () => {
     const result = applyQuery(
       sampleClients,
-      { searchTerm: 'alice', sortBy: 'created_at', sortDirection: 'desc', filter: { client_number: '1' } },
+      {
+        searchTerm: 'alice',
+        sortBy: 'created_at',
+        sortDirection: 'desc',
+        filter: { client_number: '1' },
+      },
       ['first_name', 'last_name', 'email']
     );
     expect(result).toHaveLength(1);
@@ -88,7 +99,9 @@ describe('dataService', () => {
 
   it('updates cache timestamp on fetchInstruments', async () => {
     const fetcher = jest.fn().mockResolvedValue(sampleInstruments);
-    const instruments = await fetchInstruments(fetcher, { searchTerm: 'strad' });
+    const instruments = await fetchInstruments(fetcher, {
+      searchTerm: 'strad',
+    });
     expect(instruments).toHaveLength(1);
     expect(getCacheTimestamp('instruments')).toBeDefined();
   });

@@ -11,7 +11,9 @@ jest.mock('next/navigation', () => ({
   }),
 }));
 
-const mockUseErrorHandler = useErrorHandler as jest.MockedFunction<typeof useErrorHandler>;
+const mockUseErrorHandler = useErrorHandler as jest.MockedFunction<
+  typeof useErrorHandler
+>;
 const mockHandleError = jest.fn();
 
 describe('useSalesHistory', () => {
@@ -128,7 +130,9 @@ describe('useSalesHistory', () => {
     });
 
     it('should handle network errors', async () => {
-      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
+      (global.fetch as jest.Mock).mockRejectedValueOnce(
+        new Error('Network error')
+      );
 
       const { result } = renderHook(() => useSalesHistory());
 
@@ -165,7 +169,10 @@ describe('useSalesHistory', () => {
         })
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ data: [mockSale], pagination: { page: 1, pageSize: 10, totalCount: 1, totalPages: 1 } }),
+          json: async () => ({
+            data: [mockSale],
+            pagination: { page: 1, pageSize: 10, totalCount: 1, totalPages: 1 },
+          }),
         });
 
       const { result } = renderHook(() => useSalesHistory());
@@ -254,7 +261,10 @@ describe('useSalesHistory', () => {
         })
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ data: [refundedSale], pagination: { page: 1, pageSize: 10, totalCount: 1, totalPages: 1 } }),
+          json: async () => ({
+            data: [refundedSale],
+            pagination: { page: 1, pageSize: 10, totalCount: 1, totalPages: 1 },
+          }),
         });
 
       const { result } = renderHook(() => useSalesHistory());
@@ -440,7 +450,7 @@ describe('useSalesHistory', () => {
       // SalesPage에서 필터 상태와 함께 관리됨
       expect(global.fetch).not.toHaveBeenCalled();
       expect(result.current.sales).toEqual([]);
-      
+
       // 수동으로 fetch를 호출해야 함
       await act(async () => {
         await result.current.fetchSales({ page: 1 });

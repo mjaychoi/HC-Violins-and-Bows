@@ -1,11 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getDateRangeForView, navigatePrevious, navigateNext } from '../utils/dateUtils';
+import {
+  getDateRangeForView,
+  navigatePrevious,
+  navigateNext,
+} from '../utils/dateUtils';
 import type { ExtendedView } from '../components/CalendarView';
 
 interface UseCalendarNavigationOptions {
   initialView?: ExtendedView;
   initialDate?: Date;
-  fetchTasksByDateRange: (startDate: string, endDate: string) => Promise<unknown>;
+  fetchTasksByDateRange: (
+    startDate: string,
+    endDate: string
+  ) => Promise<unknown>;
   onError?: (error: unknown) => void;
 }
 
@@ -33,7 +40,10 @@ export const useCalendarNavigation = ({
 
   // Fetch tasks when date or view changes
   useEffect(() => {
-    const { startDate, endDate } = getDateRangeForView(calendarView, currentDate);
+    const { startDate, endDate } = getDateRangeForView(
+      calendarView,
+      currentDate
+    );
 
     fetchRef.current(startDate, endDate).catch(error => {
       if (onErrorRef.current) {

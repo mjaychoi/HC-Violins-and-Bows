@@ -79,7 +79,9 @@ export default function InstrumentForm({
       }
       const result = await response.json();
       const selectedIds = new Set(selectedClients.map(sc => sc.client.id));
-      const filtered = (result.data || []).filter((c: Client) => !selectedIds.has(c.id));
+      const filtered = (result.data || []).filter(
+        (c: Client) => !selectedIds.has(c.id)
+      );
       setSearchResults(filtered);
     } catch {
       // Error is handled silently - search results will be empty
@@ -111,15 +113,15 @@ export default function InstrumentForm({
   if (!isOpen) return null;
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center"
-      onClick={(e) => {
+      onClick={e => {
         if (e.target === e.currentTarget) {
           onClose();
         }
       }}
     >
-      <div 
+      <div
         ref={modalRef}
         className="relative mx-auto p-5 border w-96 shadow-lg rounded-md bg-white"
       >
@@ -395,11 +397,7 @@ export default function InstrumentForm({
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <Button
-                type="button"
-                onClick={onClose}
-                variant="secondary"
-              >
+              <Button type="button" onClick={onClose} variant="secondary">
                 Cancel
               </Button>
               <Button

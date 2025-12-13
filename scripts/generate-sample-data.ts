@@ -73,27 +73,123 @@ type BaseClientTemplate = {
 };
 
 const baseClients: BaseClientTemplate[] = [
-  { first_name: 'Julie', last_name: 'Chung', tags: ['Owner', 'Musician'], interest: 'Active' },
-  { first_name: 'Michael', last_name: 'Kim', tags: ['Dealer'], interest: 'Active' },
-  { first_name: 'Sarah', last_name: 'Park', tags: ['Collector'], interest: 'Passive' },
+  {
+    first_name: 'Julie',
+    last_name: 'Chung',
+    tags: ['Owner', 'Musician'],
+    interest: 'Active',
+  },
+  {
+    first_name: 'Michael',
+    last_name: 'Kim',
+    tags: ['Dealer'],
+    interest: 'Active',
+  },
+  {
+    first_name: 'Sarah',
+    last_name: 'Park',
+    tags: ['Collector'],
+    interest: 'Passive',
+  },
   { first_name: 'David', last_name: 'Lee', tags: ['Owner'], interest: null },
-  { first_name: 'Emily', last_name: 'Yoon', tags: ['Musician'], interest: 'Active' },
-  { first_name: 'James', last_name: 'Jung', tags: ['Dealer', 'Collector'], interest: 'Active' },
+  {
+    first_name: 'Emily',
+    last_name: 'Yoon',
+    tags: ['Musician'],
+    interest: 'Active',
+  },
+  {
+    first_name: 'James',
+    last_name: 'Jung',
+    tags: ['Dealer', 'Collector'],
+    interest: 'Active',
+  },
   { first_name: 'Lisa', last_name: 'Han', tags: ['Owner'], interest: null },
-  { first_name: 'Robert', last_name: 'Choi', tags: ['Musician'], interest: 'Active' },
-  { first_name: 'Anna', last_name: 'Kang', tags: ['Collector'], interest: 'Passive' },
-  { first_name: 'Tom', last_name: 'Shin', tags: ['Dealer'], interest: 'Active' },
+  {
+    first_name: 'Robert',
+    last_name: 'Choi',
+    tags: ['Musician'],
+    interest: 'Active',
+  },
+  {
+    first_name: 'Anna',
+    last_name: 'Kang',
+    tags: ['Collector'],
+    interest: 'Passive',
+  },
+  {
+    first_name: 'Tom',
+    last_name: 'Shin',
+    tags: ['Dealer'],
+    interest: 'Active',
+  },
 ];
 
 const baseInstruments = [
-  { type: 'Violin', maker: 'Stradivarius', year: 1720, status: 'Available', price: 5000000, certificate: true },
-  { type: 'Violin', maker: 'Guarneri', year: 1740, status: 'Booked', price: 3000000, certificate: true },
-  { type: 'Viola', maker: 'Amati', year: 1680, status: 'Available', price: 2000000, certificate: true },
-  { type: 'Cello', maker: 'Montagnana', year: 1750, status: 'Sold', price: 8000000, certificate: true },
-  { type: 'Bow', maker: 'Tourte', year: 1800, status: 'Available', price: 500000, certificate: false },
-  { type: 'Violin', maker: 'Gagliano', year: 1760, status: 'Maintenance', price: 1500000, certificate: true },
-  { type: 'Viola', maker: 'Guadagnini', year: 1780, status: 'Available', price: 2500000, certificate: true },
-  { type: 'Cello', maker: 'Ruggeri', year: 1700, status: 'Booked', price: 6000000, certificate: true },
+  {
+    type: 'Violin',
+    maker: 'Stradivarius',
+    year: 1720,
+    status: 'Available',
+    price: 5000000,
+    certificate: true,
+  },
+  {
+    type: 'Violin',
+    maker: 'Guarneri',
+    year: 1740,
+    status: 'Booked',
+    price: 3000000,
+    certificate: true,
+  },
+  {
+    type: 'Viola',
+    maker: 'Amati',
+    year: 1680,
+    status: 'Available',
+    price: 2000000,
+    certificate: true,
+  },
+  {
+    type: 'Cello',
+    maker: 'Montagnana',
+    year: 1750,
+    status: 'Sold',
+    price: 8000000,
+    certificate: true,
+  },
+  {
+    type: 'Bow',
+    maker: 'Tourte',
+    year: 1800,
+    status: 'Available',
+    price: 500000,
+    certificate: false,
+  },
+  {
+    type: 'Violin',
+    maker: 'Gagliano',
+    year: 1760,
+    status: 'Maintenance',
+    price: 1500000,
+    certificate: true,
+  },
+  {
+    type: 'Viola',
+    maker: 'Guadagnini',
+    year: 1780,
+    status: 'Available',
+    price: 2500000,
+    certificate: true,
+  },
+  {
+    type: 'Cello',
+    maker: 'Ruggeri',
+    year: 1700,
+    status: 'Booked',
+    price: 6000000,
+    certificate: true,
+  },
 ];
 
 const firstNames = [
@@ -158,8 +254,20 @@ const instrumentMakers = [
 ];
 
 const relationshipTypes = ['Interested', 'Booked', 'Sold', 'Owned'] as const;
-const taskTypes = ['repair', 'rehair', 'adjustment', 'maintenance', 'inspection', 'setup'];
-const taskStatuses = ['pending', 'in_progress', 'completed', 'cancelled'] as const;
+const taskTypes = [
+  'repair',
+  'rehair',
+  'adjustment',
+  'maintenance',
+  'inspection',
+  'setup',
+];
+const taskStatuses = [
+  'pending',
+  'in_progress',
+  'completed',
+  'cancelled',
+] as const;
 const taskPriorities = ['low', 'medium', 'high', 'urgent'] as const;
 
 function getRandomElement<T>(items: T[]): T {
@@ -250,14 +358,19 @@ function buildInstruments(clients: Client[]): Instrument[] {
   for (let i = instruments.length; i < 30; i++) {
     const type = getRandomElement(instrumentTypes);
     const maker = getRandomElement(instrumentMakers);
-    const ownership =
-      Math.random() > 0.4 ? getRandomElement(clients).id : null;
+    const ownership = Math.random() > 0.4 ? getRandomElement(clients).id : null;
     instruments.push({
       id: createInstrumentId(),
       type,
       maker,
       year: getRandomInt(1650, 1950),
-      status: getRandomElement(['Available', 'Booked', 'Sold', 'Reserved', 'Maintenance']),
+      status: getRandomElement([
+        'Available',
+        'Booked',
+        'Sold',
+        'Reserved',
+        'Maintenance',
+      ]),
       price: getRandomInt(500000, 10000000),
       certificate: Math.random() > 0.3,
       ownership,
@@ -268,7 +381,10 @@ function buildInstruments(clients: Client[]): Instrument[] {
   return instruments;
 }
 
-function buildRelationships(clients: Client[], instruments: Instrument[]): ClientInstrument[] {
+function buildRelationships(
+  clients: Client[],
+  instruments: Instrument[]
+): ClientInstrument[] {
   const relationships: ClientInstrument[] = [];
   const seen = new Set<string>();
 
@@ -288,15 +404,21 @@ function buildRelationships(clients: Client[], instruments: Instrument[]): Clien
   return relationships;
 }
 
-function buildTasks(clients: Client[], instruments: Instrument[]): MaintenanceTask[] {
+function buildTasks(
+  clients: Client[],
+  instruments: Instrument[]
+): MaintenanceTask[] {
   const tasks: MaintenanceTask[] = [];
 
   for (let i = 0; i < 40; i++) {
     const status = getRandomElement([...taskStatuses]);
     const received_date = randomDateWithinDays(90, 0);
-    const due_date = status === 'completed' ? null : randomDateWithinDays(0, 60);
-    const scheduled_date = status === 'completed' ? null : randomDateWithinDays(0, 60);
-    const completed_date = status === 'completed' ? randomDateWithinDays(10, 0) : null;
+    const due_date =
+      status === 'completed' ? null : randomDateWithinDays(0, 60);
+    const scheduled_date =
+      status === 'completed' ? null : randomDateWithinDays(0, 60);
+    const completed_date =
+      status === 'completed' ? randomDateWithinDays(10, 0) : null;
 
     tasks.push({
       id: createTaskId(),
@@ -320,7 +442,10 @@ function buildTasks(clients: Client[], instruments: Instrument[]): MaintenanceTa
   return tasks;
 }
 
-function buildSales(clients: Client[], instruments: Instrument[]): TradeRecord[] {
+function buildSales(
+  clients: Client[],
+  instruments: Instrument[]
+): TradeRecord[] {
   const sales: TradeRecord[] = [];
 
   for (let i = 0; i < 15; i++) {

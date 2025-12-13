@@ -2,7 +2,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 
 // Generic form state management hook
-export function useFormState<T extends Record<string, unknown>>(initialState: T) {
+export function useFormState<T extends Record<string, unknown>>(
+  initialState: T
+) {
   const initialRef = useRef(initialState);
 
   useEffect(() => {
@@ -11,7 +13,9 @@ export function useFormState<T extends Record<string, unknown>>(initialState: T)
 
   const [formData, setFormData] = useState<T>(initialRef.current);
   // FIXED: Type now allows undefined (which we set when clearing errors)
-  const [errors, setErrors] = useState<Partial<Record<keyof T, string | undefined>>>({});
+  const [errors, setErrors] = useState<
+    Partial<Record<keyof T, string | undefined>>
+  >({});
   const [touched, setTouched] = useState<Partial<Record<keyof T, boolean>>>({});
 
   // FIXED: Removed errors from deps and use functional update to avoid stale closure
@@ -49,7 +53,9 @@ export function useFormState<T extends Record<string, unknown>>(initialState: T)
     setTouched({});
   }, []);
 
-  const hasErrors = Object.values(errors).some((error): error is string => error !== undefined);
+  const hasErrors = Object.values(errors).some(
+    (error): error is string => error !== undefined
+  );
   const isTouched = Object.values(touched).some(t => t === true);
 
   return {

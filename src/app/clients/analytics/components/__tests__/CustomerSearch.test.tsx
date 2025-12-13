@@ -41,7 +41,9 @@ describe('CustomerSearch', () => {
   it('should render search input', () => {
     render(<CustomerSearch {...mockProps} />);
     expect(screen.getByTestId('search-input')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Search customers by name, email, or tag...')).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText('Search customers by name, email, or tag...')
+    ).toBeInTheDocument();
   });
 
   it('should display "All" tag button', () => {
@@ -105,9 +107,15 @@ describe('CustomerSearch', () => {
   it('should display all sort options', () => {
     render(<CustomerSearch {...mockProps} />);
     const sortSelect = screen.getByDisplayValue('Name');
-    expect(sortSelect.querySelector('option[value="name"]')).toBeInTheDocument();
-    expect(sortSelect.querySelector('option[value="spend"]')).toBeInTheDocument();
-    expect(sortSelect.querySelector('option[value="recent"]')).toBeInTheDocument();
+    expect(
+      sortSelect.querySelector('option[value="name"]')
+    ).toBeInTheDocument();
+    expect(
+      sortSelect.querySelector('option[value="spend"]')
+    ).toBeInTheDocument();
+    expect(
+      sortSelect.querySelector('option[value="recent"]')
+    ).toBeInTheDocument();
   });
 
   it('should handle empty availableTags array', () => {
@@ -123,4 +131,3 @@ describe('CustomerSearch', () => {
     expect(mockProps.onSearchChange).toHaveBeenCalledWith('John');
   });
 });
-

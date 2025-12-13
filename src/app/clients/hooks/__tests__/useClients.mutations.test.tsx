@@ -28,7 +28,10 @@ jest.mock('@/hooks/useUnifiedData', () => {
       const createClient = React.useCallback(
         async (client: Partial<Client>) => {
           setLoading(true);
-          const { data, error } = await SupabaseHelpers.create('clients', client);
+          const { data, error } = await SupabaseHelpers.create(
+            'clients',
+            client
+          );
           setLoading(false);
           if (error) {
             throw error;
@@ -44,7 +47,11 @@ jest.mock('@/hooks/useUnifiedData', () => {
       const updateClient = React.useCallback(
         async (id: string, updates: Partial<Client>) => {
           setSubmitting(true);
-          const { data, error } = await SupabaseHelpers.update('clients', id, updates);
+          const { data, error } = await SupabaseHelpers.update(
+            'clients',
+            id,
+            updates
+          );
           setSubmitting(false);
           if (error) {
             throw error;

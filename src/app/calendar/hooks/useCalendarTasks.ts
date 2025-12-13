@@ -1,5 +1,12 @@
 import { useMemo } from 'react';
-import type { MaintenanceTask, Client, Instrument, TaskType, TaskPriority, TaskStatus } from '@/types';
+import type {
+  MaintenanceTask,
+  Client,
+  Instrument,
+  TaskType,
+  TaskPriority,
+  TaskStatus,
+} from '@/types';
 import { calculateSummaryStats } from '../utils/filterUtils';
 import { sortByPriority } from '@/utils/filters';
 
@@ -121,7 +128,12 @@ export const useCalendarTasks = ({
       }
     });
 
-    const priorityOrder: Record<TaskPriority, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
+    const priorityOrder: Record<TaskPriority, number> = {
+      urgent: 4,
+      high: 3,
+      medium: 2,
+      low: 1,
+    };
 
     return {
       types: Array.from(types).sort(),

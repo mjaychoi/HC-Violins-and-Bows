@@ -15,12 +15,14 @@ jest.mock('@/contexts/AuthContext', () => ({
 jest.mock('@/hooks/useLoadingState', () => ({
   useLoadingState: jest.fn(() => ({
     loading: false,
-    withLoading: jest.fn((fn) => Promise.resolve(fn())),
+    withLoading: jest.fn(fn => Promise.resolve(fn())),
   })),
 }));
 
 jest.mock('@/components/common', () => ({
-  ErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  ErrorBoundary: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
 }));
 
 const mockUseRouter = useRouter as jest.MockedFunction<typeof useRouter>;
@@ -82,7 +84,9 @@ describe('SignUpPage', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Password must be at least 6 characters')).toBeInTheDocument();
+      expect(
+        screen.getByText('Password must be at least 6 characters')
+      ).toBeInTheDocument();
     });
   });
 
@@ -103,7 +107,10 @@ describe('SignUpPage', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(mockSignUp).toHaveBeenCalledWith('test@example.com', 'password123');
+      expect(mockSignUp).toHaveBeenCalledWith(
+        'test@example.com',
+        'password123'
+      );
     });
   });
 
@@ -146,19 +153,29 @@ describe('SignUpPage', () => {
     await user.type(confirmPasswordInput, 'password123');
     await user.click(submitButton);
 
-    await waitFor(() => {
-      expect(screen.getByText(/Account created successfully/i)).toBeInTheDocument();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText(/Account created successfully/i)
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
 
     // Wait for redirect (setTimeout in component)
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/dashboard');
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(mockPush).toHaveBeenCalledWith('/dashboard');
+      },
+      { timeout: 3000 }
+    );
   }, 10000);
 
   it('should have link to sign in page', () => {
     render(<SignUpPage />);
-    const signInLink = screen.getByRole('link', { name: /sign in to your existing account/i });
+    const signInLink = screen.getByRole('link', {
+      name: /sign in to your existing account/i,
+    });
     expect(signInLink).toHaveAttribute('href', '/');
   });
 });

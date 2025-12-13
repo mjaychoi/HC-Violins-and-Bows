@@ -33,13 +33,12 @@ export default function FilterGroup({
   const filteredOptions = useMemo(() => {
     if (!debouncedSearch.trim()) return options;
     const searchLower = debouncedSearch.toLowerCase();
-    return options.filter(option =>
-      option.toLowerCase().includes(searchLower)
-    );
+    return options.filter(option => option.toLowerCase().includes(searchLower));
   }, [options, debouncedSearch]);
 
   const activeCount = selectedValues.length;
-  const allSelected = options.length > 0 && selectedValues.length === options.length;
+  const allSelected =
+    options.length > 0 && selectedValues.length === options.length;
   const containerClass =
     variant === 'card'
       ? 'rounded-lg border border-gray-100 bg-gray-50/80 p-3 shadow-sm'

@@ -54,7 +54,7 @@ describe('ItemFilters', () => {
 
   it('handles filter toggles', () => {
     render(<ItemFilters {...baseProps} />);
-    
+
     // UX: Search is now handled at page level, not in ItemFilters
     // fireEvent.change(screen.getByPlaceholderText('Search items...'), {
     //   target: { value: 'violin' },
@@ -66,10 +66,13 @@ describe('ItemFilters', () => {
     const statusHeader = screen.getByText(/상태|Status/i);
     const statusGroup = statusHeader.closest('[class*="border"]');
     const expandButton = statusGroup?.querySelector('button[aria-label]');
-    if (expandButton && expandButton.getAttribute('aria-expanded') === 'false') {
+    if (
+      expandButton &&
+      expandButton.getAttribute('aria-expanded') === 'false'
+    ) {
       fireEvent.click(expandButton);
     }
-    
+
     // Find and click the Available checkbox
     // Wait for it to be visible (filter panel is open)
     const availableText = screen.queryByText('Available');
@@ -80,16 +83,20 @@ describe('ItemFilters', () => {
       } else {
         fireEvent.click(availableText);
       }
-      
+
       expect(baseProps.onFilterChange).toHaveBeenCalledWith(
         'status',
         'Available'
       );
     } else {
       // If Available is not visible, try to expand the status group first
-      const statusExpandBtn = screen.getAllByRole('button').find(
-        btn => btn.getAttribute('aria-label')?.includes('상태') || btn.getAttribute('aria-label')?.includes('Status')
-      );
+      const statusExpandBtn = screen
+        .getAllByRole('button')
+        .find(
+          btn =>
+            btn.getAttribute('aria-label')?.includes('상태') ||
+            btn.getAttribute('aria-label')?.includes('Status')
+        );
       if (statusExpandBtn) {
         fireEvent.click(statusExpandBtn);
         const availableTextAfterExpand = screen.queryByText('Available');

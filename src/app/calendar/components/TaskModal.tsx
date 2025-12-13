@@ -150,8 +150,8 @@ export default function TaskModal({
       isNowCompleted && !wasCompleted
         ? todayLocalYMD()
         : isNowCompleted
-        ? selectedTask?.completed_date || todayLocalYMD()
-        : null;
+          ? selectedTask?.completed_date || todayLocalYMD()
+          : null;
 
     const taskData: Omit<
       MaintenanceTask,

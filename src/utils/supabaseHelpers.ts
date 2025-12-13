@@ -52,7 +52,10 @@ export class SupabaseHelpers {
 
       // SECURITY: Validate orderBy column against whitelist to prevent injection
       if (options?.orderBy) {
-        const safeColumn = validateSortColumn(table, options.orderBy.column ?? null);
+        const safeColumn = validateSortColumn(
+          table,
+          options.orderBy.column ?? null
+        );
         query = query.order(safeColumn, {
           ascending: options.orderBy.ascending ?? true,
         });
@@ -495,7 +498,9 @@ export class SupabaseHelpers {
             })
             .filter((date): date is string => Boolean(date));
 
-          return dates.some(date => date >= normalizedStartDate && date <= normalizedEndDate);
+          return dates.some(
+            date => date >= normalizedStartDate && date <= normalizedEndDate
+          );
         });
         return { data: filteredData as MaintenanceTask[], error };
       }

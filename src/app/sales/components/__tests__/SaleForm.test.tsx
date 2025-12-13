@@ -2,15 +2,22 @@ import '@testing-library/jest-dom';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SaleForm from '../SaleForm';
-import { useUnifiedClients, useUnifiedInstruments } from '@/hooks/useUnifiedData';
+import {
+  useUnifiedClients,
+  useUnifiedInstruments,
+} from '@/hooks/useUnifiedData';
 
 jest.mock('@/hooks/useUnifiedData');
 jest.mock('@/hooks/useOutsideClose', () => ({
   useOutsideClose: jest.fn(),
 }));
 
-const mockUseUnifiedClients = useUnifiedClients as jest.MockedFunction<typeof useUnifiedClients>;
-const mockUseUnifiedInstruments = useUnifiedInstruments as jest.MockedFunction<typeof useUnifiedInstruments>;
+const mockUseUnifiedClients = useUnifiedClients as jest.MockedFunction<
+  typeof useUnifiedClients
+>;
+const mockUseUnifiedInstruments = useUnifiedInstruments as jest.MockedFunction<
+  typeof useUnifiedInstruments
+>;
 
 const mockClient = {
   id: 'client-1',
@@ -205,13 +212,16 @@ describe('SaleForm', () => {
     await user.click(submitButton);
 
     // FIXED: Now negative values are allowed, but zero is not
-    await waitFor(() => {
-      expect(mockOnSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sale_price: -100,
-        })
-      );
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(mockOnSubmit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sale_price: -100,
+          })
+        );
+      },
+      { timeout: 3000 }
+    );
   });
 
   it('should reject zero sale price', async () => {
@@ -236,9 +246,14 @@ describe('SaleForm', () => {
     const submitButton = screen.getByText('Save Sale');
     await user.click(submitButton);
 
-    await waitFor(() => {
-      expect(screen.getByText(/Sale price must be a non-zero number/i)).toBeInTheDocument();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText(/Sale price must be a non-zero number/i)
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
 
     expect(mockOnSubmit).not.toHaveBeenCalled();
   });
@@ -266,21 +281,29 @@ describe('SaleForm', () => {
     const submitButton = screen.getByText('Save Sale');
     await user.click(submitButton);
 
-    await waitFor(() => {
-      expect(mockOnSubmit).toHaveBeenCalledWith({
-        sale_price: 2500,
-        sale_date: '2024-01-15',
-        client_id: null,
-        instrument_id: null,
-        notes: null,
-      });
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(mockOnSubmit).toHaveBeenCalledWith({
+          sale_price: 2500,
+          sale_date: '2024-01-15',
+          client_id: null,
+          instrument_id: null,
+          notes: null,
+        });
+      },
+      { timeout: 3000 }
+    );
 
     // UX: Success message is shown instead of immediately closing
     // onClose won't be called immediately - it will be called when user clicks "Done"
-    await waitFor(() => {
-      expect(screen.getByText(/Sale recorded successfully/i)).toBeInTheDocument();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText(/Sale recorded successfully/i)
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
     // onClose is not called immediately - user sees success message with "Add Another" / "Done" options
   });
 
@@ -320,7 +343,9 @@ describe('SaleForm', () => {
     const submitButton = screen.getByText('Save Sale');
     await user.click(submitButton);
 
-    await waitFor(() => expect(mockOnSubmit).toHaveBeenCalled(), { timeout: 3000 });
+    await waitFor(() => expect(mockOnSubmit).toHaveBeenCalled(), {
+      timeout: 3000,
+    });
 
     const payload = mockOnSubmit.mock.calls[0][0];
     expect(payload).toMatchObject({
@@ -416,7 +441,9 @@ describe('SaleForm', () => {
 
     // 모달이 다시 열릴 때까지 대기
     await waitFor(() => {
-      const newPriceInput = screen.getByLabelText(/Amount/i) as HTMLInputElement;
+      const newPriceInput = screen.getByLabelText(
+        /Amount/i
+      ) as HTMLInputElement;
       expect(newPriceInput).toBeInTheDocument();
       expect(newPriceInput.value).toBe('');
     });
@@ -445,12 +472,15 @@ describe('SaleForm', () => {
     const submitButton = screen.getByText('Save Sale');
     await user.click(submitButton);
 
-    await waitFor(() => {
-      expect(mockOnSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sale_price: 1999.5,
-        })
-      );
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(mockOnSubmit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sale_price: 1999.5,
+          })
+        );
+      },
+      { timeout: 3000 }
+    );
   });
 });

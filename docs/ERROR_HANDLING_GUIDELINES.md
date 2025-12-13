@@ -13,6 +13,7 @@
 **표시 위치**: 필드 바로 아래 또는 폼 상단
 
 **구현 방법**:
+
 ```typescript
 // Input 컴포넌트 사용
 <Input
@@ -30,6 +31,7 @@
 ```
 
 **예시**:
+
 - 이메일 형식 오류
 - 필수 필드 누락
 - 비밀번호 길이 부족
@@ -42,6 +44,7 @@
 **표시 위치**: 화면 상단 또는 하단 Toast 영역
 
 **구현 방법**:
+
 ```typescript
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 
@@ -64,12 +67,14 @@ return (
 ```
 
 **예시**:
+
 - 데이터 저장 실패
 - 서버 연결 오류
 - 권한 부족
 - 레코드 찾을 수 없음
 
 **주의사항**:
+
 - 폼 제출 실패 시에도 Toast를 사용하되, 가능하면 폼 내부에도 인라인 에러를 표시하는 것을 고려
 
 ### 3. 치명적 에러 (Critical Errors) - 모달 또는 ErrorBoundary
@@ -79,6 +84,7 @@ return (
 **표시 위치**: 전체 화면 또는 모달
 
 **구현 방법**:
+
 ```typescript
 // ErrorBoundary로 감싸기
 <ErrorBoundary>
@@ -94,6 +100,7 @@ return (
 ```
 
 **예시**:
+
 - React 컴포넌트 렌더링 오류
 - 메모리 부족
 - 치명적인 데이터 손상
@@ -103,7 +110,7 @@ return (
 ### 폼 제출 에러 처리
 
 ```typescript
-const handleSubmit = async (formData) => {
+const handleSubmit = async formData => {
   try {
     await submitForm(formData);
     showSuccess('Form submitted successfully');
@@ -146,7 +153,7 @@ useEffect(() => {
       handleError(error, 'Data Loading');
     }
   };
-  
+
   loadData();
 }, []);
 ```
@@ -154,11 +161,13 @@ useEffect(() => {
 ## 에러 메시지 작성 가이드
 
 ### 좋은 에러 메시지
+
 - ✅ "이메일 형식이 올바르지 않습니다."
 - ✅ "서버 연결에 실패했습니다. 인터넷 연결을 확인해주세요."
 - ✅ "권한이 없습니다. 관리자에게 문의하세요."
 
 ### 나쁜 에러 메시지
+
 - ❌ "Error 500"
 - ❌ "Failed"
 - ❌ "Something went wrong"
@@ -166,21 +175,25 @@ useEffect(() => {
 ## 에러 심각도별 처리
 
 ### LOW (낮음)
+
 - 사용자 입력 경고
 - 선택적 기능 실패
 - **표시**: 인라인 또는 작은 Toast
 
 ### MEDIUM (중간)
+
 - 일반적인 API 오류
 - 데이터 로드 실패
 - **표시**: Toast 알림
 
 ### HIGH (높음)
+
 - 중요한 작업 실패
 - 데이터 저장 실패
 - **표시**: Toast 알림 (더 눈에 띄게)
 
 ### CRITICAL (치명적)
+
 - 애플리케이션 크래시
 - 복구 불가능한 오류
 - **표시**: ErrorBoundary 또는 모달

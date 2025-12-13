@@ -190,7 +190,7 @@ export const connectionValidation = {
  * Hook for form validation
  * @param data - Current form data (should be updated on each change)
  * @param validationSchema - Validation rules for each field
- * 
+ *
  * NOTE: data should be the current form state, not just initial data.
  * Pass the updated form data on each render to ensure validation uses current values.
  */

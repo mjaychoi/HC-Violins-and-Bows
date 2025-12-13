@@ -10,16 +10,23 @@ jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<typeof getServerSupabase>;
+const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
+  typeof getServerSupabase
+>;
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
-const mockLogApiRequest = logApiRequest as jest.MockedFunction<typeof logApiRequest>;
-const mockCaptureException = captureException as jest.MockedFunction<typeof captureException>;
+const mockLogApiRequest = logApiRequest as jest.MockedFunction<
+  typeof logApiRequest
+>;
+const mockCaptureException = captureException as jest.MockedFunction<
+  typeof captureException
+>;
 
 describe('/api/sales', () => {
   // Helper function to create a mock Supabase client
-  const createMockSupabaseClient = (fromMock: any) => ({
-    from: jest.fn().mockReturnValue(fromMock),
-  } as any);
+  const createMockSupabaseClient = (fromMock: any) =>
+    ({
+      from: jest.fn().mockReturnValue(fromMock),
+    }) as any;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -86,9 +93,9 @@ describe('/api/sales', () => {
           return mockTotalsQuery as any;
         }),
       } as any;
-      
+
       mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
-      
+
       // range가 마지막에 호출되고 그 결과가 resolve되어야 함
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: mockData,
@@ -133,7 +140,9 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockQuery));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockQuery)
+      );
       // range가 마지막에 호출되고 그 결과가 resolve되어야 함
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
@@ -160,7 +169,9 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockQuery));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockQuery)
+      );
       // range가 마지막에 호출되고 그 결과가 resolve되어야 함
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
@@ -168,7 +179,9 @@ describe('/api/sales', () => {
         count: 0,
       });
 
-      const request = new NextRequest('http://localhost:3000/api/sales?page=1&search=violin');
+      const request = new NextRequest(
+        'http://localhost:3000/api/sales?page=1&search=violin'
+      );
       await GET(request);
 
       expect(mockQuery.ilike).toHaveBeenCalledWith('notes', '%violin%');
@@ -188,7 +201,9 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockQuery));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockQuery)
+      );
       // range가 마지막에 호출되고 그 결과가 resolve되어야 함
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: null,
@@ -196,7 +211,9 @@ describe('/api/sales', () => {
         count: null,
       });
 
-      mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue(mockAppError);
+      mockErrorHandler.handleSupabaseError = jest
+        .fn()
+        .mockReturnValue(mockAppError);
 
       const request = new NextRequest('http://localhost:3000/api/sales?page=1');
       const response = await GET(request);
@@ -229,7 +246,9 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockQuery));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockQuery)
+      );
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -298,14 +317,16 @@ describe('/api/sales', () => {
         }),
       } as any;
       mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
-      
+
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: mockData,
         error: null,
         count: mockCount,
       });
 
-      const request = new NextRequest('http://localhost:3000/api/sales?page=2&pageSize=5');
+      const request = new NextRequest(
+        'http://localhost:3000/api/sales?page=2&pageSize=5'
+      );
       const response = await GET(request);
       const body = await response.json();
 
@@ -330,7 +351,9 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockQuery));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockQuery)
+      );
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -342,7 +365,9 @@ describe('/api/sales', () => {
       );
       await GET(request);
 
-      expect(mockQuery.order).toHaveBeenCalledWith('sale_price', { ascending: true });
+      expect(mockQuery.order).toHaveBeenCalledWith('sale_price', {
+        ascending: true,
+      });
     });
 
     it('should handle empty search term', async () => {
@@ -356,14 +381,18 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockQuery));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockQuery)
+      );
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
         count: 0,
       });
 
-      const request = new NextRequest('http://localhost:3000/api/sales?page=1&search=');
+      const request = new NextRequest(
+        'http://localhost:3000/api/sales?page=1&search='
+      );
       await GET(request);
 
       expect(mockQuery.ilike).not.toHaveBeenCalled();
@@ -381,7 +410,9 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockQuery));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockQuery)
+      );
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -407,7 +438,9 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockQuery));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockQuery)
+      );
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -420,7 +453,9 @@ describe('/api/sales', () => {
       );
       await GET(request);
 
-      expect(mockQuery.order).toHaveBeenCalledWith('sale_date', { ascending: false });
+      expect(mockQuery.order).toHaveBeenCalledWith('sale_date', {
+        ascending: false,
+      });
     });
 
     it('should handle validation failure in GET response', async () => {
@@ -464,7 +499,7 @@ describe('/api/sales', () => {
         }),
       } as any;
       mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
-      
+
       // Return invalid data that will fail validation
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [{ invalid: 'data' }],
@@ -492,7 +527,9 @@ describe('/api/sales', () => {
 
     it('should handle exception in GET', async () => {
       const mockAppError = new Error('App error');
-      mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue(mockAppError);
+      mockErrorHandler.handleSupabaseError = jest
+        .fn()
+        .mockReturnValue(mockAppError);
 
       // Mock supabase.from to throw an error
       const mockSupabaseClient = {
@@ -522,7 +559,9 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockQuery));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockQuery)
+      );
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -550,7 +589,9 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockQuery));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockQuery)
+      );
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -566,7 +607,6 @@ describe('/api/sales', () => {
       expect(response.status).toBe(200);
       expect(mockQuery.lte).not.toHaveBeenCalled();
     });
-
   });
 
   describe('POST', () => {
@@ -590,7 +630,9 @@ describe('/api/sales', () => {
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockInsert));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockInsert)
+      );
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
@@ -668,7 +710,9 @@ describe('/api/sales', () => {
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockInsert));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockInsert)
+      );
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
@@ -705,8 +749,12 @@ describe('/api/sales', () => {
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockInsert));
-      mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue(mockAppError);
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockInsert)
+      );
+      mockErrorHandler.handleSupabaseError = jest
+        .fn()
+        .mockReturnValue(mockAppError);
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
@@ -754,7 +802,9 @@ describe('/api/sales', () => {
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockInsert));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockInsert)
+      );
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
@@ -812,7 +862,9 @@ describe('/api/sales', () => {
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockUpdate));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockUpdate)
+      );
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'PATCH',
@@ -888,7 +940,9 @@ describe('/api/sales', () => {
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockUpdate));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockUpdate)
+      );
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'PATCH',
@@ -921,8 +975,12 @@ describe('/api/sales', () => {
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockUpdate));
-      mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue(mockAppError);
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockUpdate)
+      );
+      mockErrorHandler.handleSupabaseError = jest
+        .fn()
+        .mockReturnValue(mockAppError);
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'PATCH',
@@ -972,7 +1030,9 @@ describe('/api/sales', () => {
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(createMockSupabaseClient(mockUpdate));
+      mockGetServerSupabase.mockReturnValue(
+        createMockSupabaseClient(mockUpdate)
+      );
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'PATCH',

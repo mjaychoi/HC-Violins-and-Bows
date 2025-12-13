@@ -1,7 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
-import PageFilters, { FilterGroupConfig } from '@/components/common/PageFilters';
+import PageFilters, {
+  FilterGroupConfig,
+} from '@/components/common/PageFilters';
 
 interface InstrumentFiltersProps {
   isOpen: boolean;

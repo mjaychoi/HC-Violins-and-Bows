@@ -24,7 +24,7 @@ export function todayLocalYMD(): string {
  * Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
  * parseISO('2025-12-12') interprets as UTC midnight, which can render as previous day in US timezones
  * This function parses date-only strings as local dates instead
- * 
+ *
  * For timestamps (with time/timezone), use parseISO to preserve the actual moment
  */
 export function parseTaskDateLocal(dateStr: string): Date {
@@ -40,7 +40,7 @@ export function parseTaskDateLocal(dateStr: string): Date {
 /**
  * Normalize any date string to local YYYY-MM-DD format
  * Handles both date-only strings and timestamps
- * 
+ *
  * @param dateStr - Date string in various formats (YYYY-MM-DD, ISO timestamp, etc.)
  * @returns Normalized YYYY-MM-DD string in local timezone
  */
@@ -61,7 +61,7 @@ export function toLocalYMD(dateStr: string): string {
  * Normalize date string to a stable day key (YYYY-MM-DD)
  * Handles different date formats (YYYY-MM-DD, YYYY-MM-DDTHH:mm:ss, etc.)
  * and ensures same-day dates group together
- * 
+ *
  * Alias for toLocalYMD for semantic clarity when used for grouping
  */
 export function taskDayKey(dateStr: string): string {
@@ -72,7 +72,7 @@ export function taskDayKey(dateStr: string): string {
  * Parse date string loosely (handles various formats) and return timestamp
  * FIXED: String sorting can break with non-ISO dates (e.g., "12/1/2025" or "2025-12-1")
  * Use this for reliable date comparisons
- * 
+ *
  * @param dateStr - Date string in various formats
  * @returns Timestamp (number) or -Infinity if invalid
  */
@@ -95,7 +95,7 @@ function parseDateLoose(dateStr: string): number {
 /**
  * Get the most recent date from an array of date strings
  * FIXED: Replaces fragile string sorting with proper date parsing
- * 
+ *
  * @param dates - Array of date strings
  * @returns Most recent date string, or '—' if empty/invalid
  */
@@ -115,7 +115,7 @@ export function getMostRecentDate(dates: string[]): string {
 /**
  * Compare two date strings for sorting (most recent first)
  * Returns negative if dateA < dateB, positive if dateA > dateB, 0 if equal
- * 
+ *
  * @param dateA - First date string
  * @param dateB - Second date string
  * @returns Comparison result for sorting (descending: most recent first)

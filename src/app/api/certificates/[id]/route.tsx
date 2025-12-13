@@ -5,7 +5,10 @@ import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity, ErrorCodes } from '@/types/errors';
-import { createSafeErrorResponse, createLogErrorInfo } from '@/utils/errorSanitization';
+import {
+  createSafeErrorResponse,
+  createLogErrorInfo,
+} from '@/utils/errorSanitization';
 import { validateUUID } from '@/utils/inputValidation';
 import { validateInstrument } from '@/utils/typeGuards';
 import CertificateDocument from '@/components/certificates/CertificateDocument';
@@ -67,14 +70,20 @@ function pdfStreamToWebStream(
             uint8Array = new Uint8Array(chunk);
           } else if (chunk && typeof chunk === 'object') {
             // Check if it's Uint8Array-like or ArrayBuffer
-            if ('byteLength' in chunk && (chunk as { byteLength: number }).byteLength !== undefined) {
+            if (
+              'byteLength' in chunk &&
+              (chunk as { byteLength: number }).byteLength !== undefined
+            ) {
               try {
                 uint8Array = new Uint8Array(chunk as ArrayBuffer);
               } catch {
                 // Fallback if conversion fails
                 uint8Array = new Uint8Array(Buffer.from(String(chunk)));
               }
-            } else if ('length' in chunk && typeof (chunk as { length: number }).length === 'number') {
+            } else if (
+              'length' in chunk &&
+              typeof (chunk as { length: number }).length === 'number'
+            ) {
               // Array-like object
               try {
                 uint8Array = new Uint8Array(chunk as ArrayLike<number>);
@@ -103,14 +112,14 @@ function pdfStreamToWebStream(
 /**
  * GET /api/certificates/[id]
  * Generate and download PDF certificate for an instrument
- * 
+ *
  * Security improvements:
  * - UUID validation
  * - Instrument existence check (with RLS if enabled)
  * - Filename sanitization to prevent header injection
  * - Memory-safe streaming (with fallback to buffer for compatibility)
  * - Consistent error handling and logging with other APIs
- * 
+ *
  * Note: Next.js 15+ route handlers receive params as Promise<{ id: string }>.
  * This matches the TypeScript type definition, though runtime behavior may vary.
  */
@@ -128,11 +137,18 @@ export async function GET(
     // 1. Validate UUID format (consistent with other APIs)
     if (!validateUUID(id)) {
       const duration = Math.round(performance.now() - startTime);
-      logApiRequest('GET', `/api/certificates/${id}`, 400, duration, 'CertificatesAPI', {
-        instrumentId: id,
-        error: true,
-        errorCode: 'INVALID_UUID',
-      });
+      logApiRequest(
+        'GET',
+        `/api/certificates/${id}`,
+        400,
+        duration,
+        'CertificatesAPI',
+        {
+          instrumentId: id,
+          error: true,
+          errorCode: 'INVALID_UUID',
+        }
+      );
       return NextResponse.json(
         { error: 'Invalid instrument ID format' },
         { status: 400 }
@@ -155,14 +171,21 @@ export async function GET(
         'Fetch instrument for certificate'
       );
       const logInfo = createLogErrorInfo(appError);
-      
-      logApiRequest('GET', `/api/certificates/${id}`, undefined, duration, 'CertificatesAPI', {
-        instrumentId: id,
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
-      
+
+      logApiRequest(
+        'GET',
+        `/api/certificates/${id}`,
+        undefined,
+        duration,
+        'CertificatesAPI',
+        {
+          instrumentId: id,
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
+
       captureException(
         appError,
         'CertificatesAPI.GET',
@@ -181,7 +204,7 @@ export async function GET(
 
     // 4. Generate PDF stream
     const pdfStream = await renderToStream(
-      <CertificateDocument 
+      <CertificateDocument
         instrument={validatedInstrument}
         logoSrc="/logo.png"
         verifyUrl={`https://www.hcviolins.com/verify/CERT-${validatedInstrument.serial_number?.trim() || validatedInstrument.id.slice(0, 8).toUpperCase()}-${new Date().getFullYear()}`}
@@ -196,14 +219,22 @@ export async function GET(
       const webStream = pdfStreamToWebStream(pdfStream);
 
       // Create safe filename
-      const rawFilename = validatedInstrument.serial_number || validatedInstrument.id;
+      const rawFilename =
+        validatedInstrument.serial_number || validatedInstrument.id;
       const filename = sanitizeFilename(String(rawFilename));
 
-      logApiRequest('GET', `/api/certificates/${id}`, 200, duration, 'CertificatesAPI', {
-        instrumentId: id,
-        serialNumber: validatedInstrument.serial_number,
-        streaming: true,
-      });
+      logApiRequest(
+        'GET',
+        `/api/certificates/${id}`,
+        200,
+        duration,
+        'CertificatesAPI',
+        {
+          instrumentId: id,
+          serialNumber: validatedInstrument.serial_number,
+          streaming: true,
+        }
+      );
 
       return new NextResponse(webStream, {
         headers: {
@@ -239,14 +270,21 @@ export async function GET(
             `Generated PDF exceeds maximum size of ${MAX_PDF_SIZE / 1024 / 1024}MB`
           );
           const logInfo = createLogErrorInfo(appError);
-          
-          logApiRequest('GET', `/api/certificates/${id}`, 413, duration, 'CertificatesAPI', {
-            instrumentId: id,
-            error: true,
-            logMessage: logInfo.message,
-            pdfSize: totalSize,
-          });
-          
+
+          logApiRequest(
+            'GET',
+            `/api/certificates/${id}`,
+            413,
+            duration,
+            'CertificatesAPI',
+            {
+              instrumentId: id,
+              error: true,
+              logMessage: logInfo.message,
+              pdfSize: totalSize,
+            }
+          );
+
           captureException(
             appError,
             'CertificatesAPI.GET',
@@ -264,15 +302,23 @@ export async function GET(
       const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)));
 
       // Create safe filename
-      const rawFilename = validatedInstrument.serial_number || validatedInstrument.id;
+      const rawFilename =
+        validatedInstrument.serial_number || validatedInstrument.id;
       const filename = sanitizeFilename(String(rawFilename));
 
-      logApiRequest('GET', `/api/certificates/${id}`, 200, duration, 'CertificatesAPI', {
-        instrumentId: id,
-        serialNumber: validatedInstrument.serial_number,
-        pdfSize: buffer.length,
-        streaming: false,
-      });
+      logApiRequest(
+        'GET',
+        `/api/certificates/${id}`,
+        200,
+        duration,
+        'CertificatesAPI',
+        {
+          instrumentId: id,
+          serialNumber: validatedInstrument.serial_number,
+          pdfSize: buffer.length,
+          streaming: false,
+        }
+      );
 
       return new NextResponse(buffer, {
         headers: {
@@ -290,12 +336,19 @@ export async function GET(
     );
     const logInfo = createLogErrorInfo(appError);
 
-    logApiRequest('GET', `/api/certificates/${id}`, undefined, duration, 'CertificatesAPI', {
-      instrumentId: id,
-      error: true,
-      errorCode: (appError as { code?: string })?.code,
-      logMessage: logInfo.message,
-    });
+    logApiRequest(
+      'GET',
+      `/api/certificates/${id}`,
+      undefined,
+      duration,
+      'CertificatesAPI',
+      {
+        instrumentId: id,
+        error: true,
+        errorCode: (appError as { code?: string })?.code,
+        logMessage: logInfo.message,
+      }
+    );
 
     captureException(
       appError,

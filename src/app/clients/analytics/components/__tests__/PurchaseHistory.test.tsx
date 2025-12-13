@@ -143,9 +143,13 @@ describe('PurchaseHistory', () => {
     );
     const select = screen.getByDisplayValue('All');
     expect(select.querySelector('option[value="All"]')).toBeInTheDocument();
-    expect(select.querySelector('option[value="Completed"]')).toBeInTheDocument();
+    expect(
+      select.querySelector('option[value="Completed"]')
+    ).toBeInTheDocument();
     expect(select.querySelector('option[value="Pending"]')).toBeInTheDocument();
-    expect(select.querySelector('option[value="Refunded"]')).toBeInTheDocument();
+    expect(
+      select.querySelector('option[value="Refunded"]')
+    ).toBeInTheDocument();
   });
 
   it('should format currency correctly', () => {
@@ -175,4 +179,3 @@ describe('PurchaseHistory', () => {
     expect(pendingBadges.length).toBeGreaterThan(0);
   });
 });
-

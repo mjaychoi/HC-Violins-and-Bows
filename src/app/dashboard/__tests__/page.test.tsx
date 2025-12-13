@@ -27,10 +27,14 @@ jest.mock('@/hooks/useErrorHandler', () => ({
   useErrorHandler: jest.fn(),
 }));
 jest.mock('@/components/layout', () => ({
-  AppLayout: ({ children }: any) => <div data-testid="app-layout">{children}</div>,
+  AppLayout: ({ children }: any) => (
+    <div data-testid="app-layout">{children}</div>
+  ),
 }));
 jest.mock('@/components/common', () => ({
-  ErrorBoundary: ({ children }: any) => <div data-testid="error-boundary">{children}</div>,
+  ErrorBoundary: ({ children }: any) => (
+    <div data-testid="error-boundary">{children}</div>
+  ),
   ConfirmDialog: ({ onConfirm }: any) => {
     // Auto-confirm in tests
     onConfirm?.();
@@ -114,7 +118,16 @@ describe('DashboardPage', () => {
       setSearchTerm: jest.fn(),
       showFilters: false,
       setShowFilters: jest.fn(),
-      filters: { status: [], maker: [], type: [], subtype: [], ownership: [], certificate: [], priceRange: { min: '', max: '' }, hasClients: [] as boolean[] },
+      filters: {
+        status: [],
+        maker: [],
+        type: [],
+        subtype: [],
+        ownership: [],
+        certificate: [],
+        priceRange: { min: '', max: '' },
+        hasClients: [] as boolean[],
+      },
       filteredItems: [mockInstrument],
       handleFilterChange: jest.fn(),
       handlePriceRangeChange: jest.fn(),

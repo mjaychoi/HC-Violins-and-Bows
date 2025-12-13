@@ -176,9 +176,15 @@ describe('errorSanitization', () => {
         writable: true,
         configurable: true,
       });
-      expect(getUserFriendlyErrorMessage(new Error('timeout'))).toContain('timeout');
-      expect(getUserFriendlyErrorMessage(new Error('unauthorized'))).toContain('Authentication');
-      expect(getUserFriendlyErrorMessage(new Error('not found'))).toContain('not found');
+      expect(getUserFriendlyErrorMessage(new Error('timeout'))).toContain(
+        'timeout'
+      );
+      expect(getUserFriendlyErrorMessage(new Error('unauthorized'))).toContain(
+        'Authentication'
+      );
+      expect(getUserFriendlyErrorMessage(new Error('not found'))).toContain(
+        'not found'
+      );
     });
 
     it('should return default message for unknown errors', () => {

@@ -40,7 +40,7 @@ export interface URLStateConfig {
 
 /**
  * URL 쿼리 파라미터와 상태를 동기화하는 훅
- * 
+ *
  * @example
  * ```tsx
  * const { urlState, updateURLState, clearURLState } = useURLState({
@@ -52,24 +52,32 @@ export interface URLStateConfig {
  *     page: 'p',
  *   },
  * });
- * 
+ *
  * // URL에서 초기값 읽기
  * const initialSearch = urlState.search || '';
- * 
+ *
  * // 상태 변경 시 URL 업데이트
  * updateURLState({ search: 'test' });
- * 
+ *
  * // URL 초기화
  * clearURLState();
  * ```
  */
 export function useURLState(config: URLStateConfig) {
-  const { enabled = true, keys, paramMapping = {}, arraySeparator = ',', scroll = true } = config;
+  const {
+    enabled = true,
+    keys,
+    paramMapping = {},
+    arraySeparator = ',',
+    scroll = true,
+  } = config;
   const router = useRouter();
   const pathname = usePathname();
 
   // 클라이언트에서만 URL 파라미터 읽기 (SSR 안전)
-  const [urlState, setUrlState] = useState<Record<string, string | string[] | null>>({});
+  const [urlState, setUrlState] = useState<
+    Record<string, string | string[] | null>
+  >({});
 
   // URL에서 상태 읽기 (클라이언트에서만)
   useEffect(() => {
@@ -77,14 +85,14 @@ export function useURLState(config: URLStateConfig) {
       setUrlState({});
       return;
     }
-    
+
     const params = new URLSearchParams(window.location.search);
     const state: Record<string, string | string[] | null> = {};
-    
+
     keys.forEach(key => {
       const paramName = paramMapping[key] || key;
       const value = params.get(paramName);
-      
+
       if (value === null) {
         state[key] = null;
       } else if (value.includes(arraySeparator)) {
@@ -95,7 +103,7 @@ export function useURLState(config: URLStateConfig) {
         state[key] = value;
       }
     });
-    
+
     setUrlState(state);
   }, [enabled, keys, paramMapping, arraySeparator]);
 
@@ -108,7 +116,7 @@ export function useURLState(config: URLStateConfig) {
 
       Object.entries(updates).forEach(([key, value]) => {
         const paramName = paramMapping[key] || key;
-        
+
         if (value === null || value === undefined || value === '') {
           // 빈 값이면 파라미터 제거
           params.delete(paramName);

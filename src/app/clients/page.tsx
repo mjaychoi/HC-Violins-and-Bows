@@ -28,36 +28,51 @@ const ClientModal = dynamic(() => import('./components/ClientModal'), {
 });
 // Analytics components - use named imports
 const CustomerList = dynamic(
-  () => import('./analytics/components/CustomerList').then(mod => ({ default: mod.CustomerList })),
-  { 
+  () =>
+    import('./analytics/components/CustomerList').then(mod => ({
+      default: mod.CustomerList,
+    })),
+  {
     ssr: false,
     loading: () => <TableSkeleton rows={8} columns={4} />,
   }
 );
 const CustomerDetail = dynamic(
-  () => import('./analytics/components/CustomerDetail').then(mod => ({ default: mod.CustomerDetail })),
-  { 
+  () =>
+    import('./analytics/components/CustomerDetail').then(mod => ({
+      default: mod.CustomerDetail,
+    })),
+  {
     ssr: false,
     loading: () => <CardSkeleton count={1} />,
   }
 );
 const PurchaseHistory = dynamic(
-  () => import('./analytics/components/PurchaseHistory').then(mod => ({ default: mod.PurchaseHistory })),
-  { 
+  () =>
+    import('./analytics/components/PurchaseHistory').then(mod => ({
+      default: mod.PurchaseHistory,
+    })),
+  {
     ssr: false,
     loading: () => <TableSkeleton rows={5} columns={5} />,
   }
 );
 const CustomerStats = dynamic(
-  () => import('./analytics/components/CustomerStats').then(mod => ({ default: mod.CustomerStats })),
-  { 
+  () =>
+    import('./analytics/components/CustomerStats').then(mod => ({
+      default: mod.CustomerStats,
+    })),
+  {
     ssr: false,
     loading: () => <CardSkeleton count={2} />,
   }
 );
 const CustomerSearch = dynamic(
-  () => import('./analytics/components/CustomerSearch').then(mod => ({ default: mod.CustomerSearch })),
-  { 
+  () =>
+    import('./analytics/components/CustomerSearch').then(mod => ({
+      default: mod.CustomerSearch,
+    })),
+  {
     ssr: false,
     loading: () => <CardSkeleton count={1} />,
   }
@@ -74,10 +89,10 @@ type ViewMode = 'list' | 'analytics';
 
 export default function ClientsPage() {
   const router = useRouter();
-  
+
   // View mode state - check URL params for initial tab (client-side only)
   const [viewMode, setViewMode] = useState<ViewMode>('list');
-  
+
   // Update view mode from URL on client side
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -86,17 +101,21 @@ export default function ClientsPage() {
       setViewMode(tab === 'analytics' ? 'analytics' : 'list');
     }
   }, []);
-  
+
   // Update URL when view mode changes
   const handleViewModeChange = (mode: ViewMode) => {
     setViewMode(mode);
     const url = mode === 'analytics' ? '/clients?tab=analytics' : '/clients';
     router.replace(url, { scroll: false });
   };
-  
+
   // Error/Success handling
-  const { ErrorToasts, SuccessToasts: SuccessToastContainer, handleError, showSuccess } =
-    useAppFeedback();
+  const {
+    ErrorToasts,
+    SuccessToasts: SuccessToastContainer,
+    handleError,
+    showSuccess,
+  } = useAppFeedback();
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
 
   // FIXED: useUnifiedData is now called at root layout level
@@ -338,29 +357,50 @@ export default function ClientsPage() {
   >('All');
   const [analyticsCurrentPage, setAnalyticsCurrentPage] = useState(1);
   const analyticsPageSize = 20;
-  
+
   const paginatedAnalyticsCustomers = useMemo(() => {
     if (viewMode !== 'analytics') return [];
     const start = (analyticsCurrentPage - 1) * analyticsPageSize;
     const end = start + analyticsPageSize;
     return analyticsData.customers.slice(start, end);
-  }, [analyticsData.customers, analyticsCurrentPage, analyticsPageSize, viewMode]);
-  
-  const analyticsTotalPages = Math.max(1, Math.ceil(analyticsData.customers.length / analyticsPageSize));
-  
+  }, [
+    analyticsData.customers,
+    analyticsCurrentPage,
+    analyticsPageSize,
+    viewMode,
+  ]);
+
+  const analyticsTotalPages = Math.max(
+    1,
+    Math.ceil(analyticsData.customers.length / analyticsPageSize)
+  );
+
   useEffect(() => {
     if (viewMode === 'analytics') {
-      if (analyticsCurrentPage > analyticsTotalPages && analyticsTotalPages > 0) {
+      if (
+        analyticsCurrentPage > analyticsTotalPages &&
+        analyticsTotalPages > 0
+      ) {
         setAnalyticsCurrentPage(1);
       }
     }
-  }, [analyticsData.customers.length, analyticsTotalPages, analyticsCurrentPage, viewMode]);
-  
+  }, [
+    analyticsData.customers.length,
+    analyticsTotalPages,
+    analyticsCurrentPage,
+    viewMode,
+  ]);
+
   useEffect(() => {
     if (viewMode === 'analytics') {
       setAnalyticsCurrentPage(1);
     }
-  }, [analyticsData.searchTerm, analyticsData.tagFilter, analyticsData.sortBy, viewMode]);
+  }, [
+    analyticsData.searchTerm,
+    analyticsData.tagFilter,
+    analyticsData.sortBy,
+    viewMode,
+  ]);
 
   return (
     <ErrorBoundary>
@@ -431,83 +471,83 @@ export default function ClientsPage() {
             </div>
           ) : (
             <div className="p-6">
-            {/* Search and Filters */}
-            <div className="mb-6">
-              <div className="flex flex-wrap items-center gap-3">
-                {/* Search Input */}
-                <input
-                  placeholder="Search clients..."
-                  className="flex-1 min-w-[260px] h-10 px-4 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  aria-label="Search clients"
-                />
+              {/* Search and Filters */}
+              <div className="mb-6">
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Search Input */}
+                  <input
+                    placeholder="Search clients..."
+                    className="flex-1 min-w-[260px] h-10 px-4 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    aria-label="Search clients"
+                  />
 
-                {/* Filters Button */}
-                <button
-                  data-filter-button
-                  onClick={() => setShowFilters(!showFilters)}
-                  aria-expanded={showFilters}
-                  aria-controls="filters-panel"
-                  className={`h-10 px-3 text-sm font-medium rounded-lg border transition-colors flex items-center gap-2 ${
-                    showFilters || getActiveFiltersCount() > 0
-                      ? 'border-blue-500 text-blue-600 bg-blue-50'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-                    />
-                  </svg>
-                  Filters
-                  {getActiveFiltersCount() > 0 && (
-                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium text-white bg-blue-600 rounded-full">
-                      {getActiveFiltersCount()}
-                    </span>
-                  )}
-                </button>
-
-                {/* Reset Filters Button */}
-                {/* Note: clearAllFilters also resets searchTerm (usePageFilters implementation) */}
-                {getActiveFiltersCount() > 0 || searchTerm ? (
+                  {/* Filters Button */}
                   <button
-                    onClick={clearAllFilters}
-                    className="h-10 px-3 text-sm font-medium rounded-lg border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
-                    aria-label="Clear all filters and search"
-                    type="button"
+                    data-filter-button
+                    onClick={() => setShowFilters(!showFilters)}
+                    aria-expanded={showFilters}
+                    aria-controls="filters-panel"
+                    className={`h-10 px-3 text-sm font-medium rounded-lg border transition-colors flex items-center gap-2 ${
+                      showFilters || getActiveFiltersCount() > 0
+                        ? 'border-blue-500 text-blue-600 bg-blue-50'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}
                   >
-                    Clear filters
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                      />
+                    </svg>
+                    Filters
+                    {getActiveFiltersCount() > 0 && (
+                      <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium text-white bg-blue-600 rounded-full">
+                        {getActiveFiltersCount()}
+                      </span>
+                    )}
                   </button>
-                ) : null}
+
+                  {/* Reset Filters Button */}
+                  {/* Note: clearAllFilters also resets searchTerm (usePageFilters implementation) */}
+                  {getActiveFiltersCount() > 0 || searchTerm ? (
+                    <button
+                      onClick={clearAllFilters}
+                      className="h-10 px-3 text-sm font-medium rounded-lg border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+                      aria-label="Clear all filters and search"
+                      type="button"
+                    >
+                      Clear filters
+                    </button>
+                  ) : null}
+                </div>
+
+                {/* Filter Panel */}
+                {showFilters && (
+                  <ClientFilters
+                    isOpen={showFilters}
+                    onClose={() => setShowFilters(false)}
+                    filters={filters}
+                    filterOptions={filterOptions}
+                    onFilterChange={handleFilterChange}
+                    onHasInstrumentsChange={handleHasInstrumentsChange}
+                    onClearAllFilters={clearAllFilters}
+                    activeFiltersCount={getActiveFiltersCount()}
+                  />
+                )}
               </div>
 
-              {/* Filter Panel */}
-              {showFilters && (
-                <ClientFilters
-                  isOpen={showFilters}
-                  onClose={() => setShowFilters(false)}
-                  filters={filters}
-                  filterOptions={filterOptions}
-                  onFilterChange={handleFilterChange}
-                  onHasInstrumentsChange={handleHasInstrumentsChange}
-                  onClearAllFilters={clearAllFilters}
-                  activeFiltersCount={getActiveFiltersCount()}
-                />
-              )}
-            </div>
-
-            {/* Clients Table */}
-            <ClientList
+              {/* Clients Table */}
+              <ClientList
                 clients={paginatedClients}
                 clientInstruments={instrumentRelationships}
                 clientsWithInstruments={clientsWithInstruments}

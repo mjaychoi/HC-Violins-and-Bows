@@ -1,6 +1,6 @@
 /**
  * Browser Notification Utilities
- * 
+ *
  * 브라우저 Notification API를 사용한 데스크톱 알림 기능
  */
 

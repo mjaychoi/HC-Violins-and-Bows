@@ -3,8 +3,16 @@
 import { useEffect, useMemo, useCallback, useState } from 'react';
 import { AppLayout } from '@/components/layout';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
-import { useUnifiedClients, useUnifiedInstruments } from '@/hooks/useUnifiedData';
-import { ErrorBoundary, TableSkeleton, CardSkeleton, ConfirmDialog } from '@/components/common';
+import {
+  useUnifiedClients,
+  useUnifiedInstruments,
+} from '@/hooks/useUnifiedData';
+import {
+  ErrorBoundary,
+  TableSkeleton,
+  CardSkeleton,
+  ConfirmDialog,
+} from '@/components/common';
 import { SalesHistory, EnrichedSale } from '@/types';
 import {
   useSalesHistory,
@@ -44,17 +52,30 @@ import { currency, dateFormat } from './utils/salesFormatters';
 import { SaleStatus } from './types';
 
 export default function SalesPage() {
-  const { sales, page, totalCount, totalPages, totals: apiTotals, loading, fetchSales, setPage, refundSale, undoRefund } =
-    useSalesHistory();
-  const { ErrorToasts, SuccessToasts, showSuccess, handleError } = useAppFeedback();
-  
+  const {
+    sales,
+    page,
+    totalCount,
+    totalPages,
+    totals: apiTotals,
+    loading,
+    fetchSales,
+    setPage,
+    refundSale,
+    undoRefund,
+  } = useSalesHistory();
+  const { ErrorToasts, SuccessToasts, showSuccess, handleError } =
+    useAppFeedback();
+
   // Confirmation dialog state
-  const [confirmRefundSale, setConfirmRefundSale] = useState<SalesHistory | null>(null);
-  const [confirmUndoRefundSale, setConfirmUndoRefundSale] = useState<SalesHistory | null>(null);
-  
+  const [confirmRefundSale, setConfirmRefundSale] =
+    useState<SalesHistory | null>(null);
+  const [confirmUndoRefundSale, setConfirmUndoRefundSale] =
+    useState<SalesHistory | null>(null);
+
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched
-  
+
   const { clients } = useUnifiedClients();
   const { instruments } = useUnifiedInstruments();
 
@@ -109,7 +130,16 @@ export default function SalesPage() {
       sortColumn: sortColumn === 'client_name' ? undefined : sortColumn, // client_name은 클라이언트에서만 처리
       sortDirection,
     });
-  }, [from, to, page, search, hasClient, sortColumn, sortDirection, fetchSales]);
+  }, [
+    from,
+    to,
+    page,
+    search,
+    hasClient,
+    sortColumn,
+    sortDirection,
+    fetchSales,
+  ]);
 
   // 데이터 로드 후 스크롤 위치 복원 (필터 변경 시)
   // SSR 안전성: useEffect는 클라이언트에서만 실행되지만, 명시적 가드 추가
@@ -140,11 +170,18 @@ export default function SalesPage() {
     (sale: EnrichedSale) => {
       const email = sale.client?.email;
       if (!email) {
-        handleError(new Error('No customer email available for this sale.'), 'Send receipt');
+        handleError(
+          new Error('No customer email available for this sale.'),
+          'Send receipt'
+        );
         return;
       }
 
-      const { subject, body } = generateReceiptEmail(sale, dateFormat, currency);
+      const { subject, body } = generateReceiptEmail(
+        sale,
+        dateFormat,
+        currency
+      );
       window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
       showSuccess('Receipt email opened in your email client.');
     },
@@ -153,71 +190,84 @@ export default function SalesPage() {
   );
 
   // Request refund (shows confirmation dialog)
-  const handleRequestRefund = useCallback(
-    (sale: SalesHistory) => {
-      setConfirmRefundSale(sale);
-    },
-    []
-  );
+  const handleRequestRefund = useCallback((sale: SalesHistory) => {
+    setConfirmRefundSale(sale);
+  }, []);
 
   // Confirm refund
-  const handleConfirmRefund = useCallback(
-    async () => {
-      if (!confirmRefundSale) return;
-      const note = `Refund issued on ${new Date().toISOString()}`;
-      const updated = await refundSale(confirmRefundSale, note);
-      if (updated) {
-        showSuccess('Sale marked as refunded.');
-        setConfirmRefundSale(null);
-        // FIXED: Refresh with current filters to update KPI totals
-        await fetchSales({
-          fromDate: from || undefined,
-          toDate: to || undefined,
-          page,
-          search: search || undefined,
-          hasClient: hasClient !== null ? hasClient : undefined,
-          sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
-          sortDirection,
-        });
-      }
-    },
-    [confirmRefundSale, refundSale, showSuccess, fetchSales, from, to, page, search, hasClient, sortColumn, sortDirection]
-  );
+  const handleConfirmRefund = useCallback(async () => {
+    if (!confirmRefundSale) return;
+    const note = `Refund issued on ${new Date().toISOString()}`;
+    const updated = await refundSale(confirmRefundSale, note);
+    if (updated) {
+      showSuccess('Sale marked as refunded.');
+      setConfirmRefundSale(null);
+      // FIXED: Refresh with current filters to update KPI totals
+      await fetchSales({
+        fromDate: from || undefined,
+        toDate: to || undefined,
+        page,
+        search: search || undefined,
+        hasClient: hasClient !== null ? hasClient : undefined,
+        sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
+        sortDirection,
+      });
+    }
+  }, [
+    confirmRefundSale,
+    refundSale,
+    showSuccess,
+    fetchSales,
+    from,
+    to,
+    page,
+    search,
+    hasClient,
+    sortColumn,
+    sortDirection,
+  ]);
 
   // Request undo refund (shows confirmation dialog)
-  const handleRequestUndoRefund = useCallback(
-    (sale: SalesHistory) => {
-      setConfirmUndoRefundSale(sale);
-    },
-    []
-  );
+  const handleRequestUndoRefund = useCallback((sale: SalesHistory) => {
+    setConfirmUndoRefundSale(sale);
+  }, []);
 
   // Confirm undo refund
-  const handleConfirmUndoRefund = useCallback(
-    async () => {
-      if (!confirmUndoRefundSale) return;
-      const note = `Refund undone on ${new Date().toISOString()}`;
-      const updated = await undoRefund(confirmUndoRefundSale, note);
-      if (updated) {
-        showSuccess('Refund has been undone.');
-        setConfirmUndoRefundSale(null);
-        // FIXED: Refresh with current filters to update KPI totals
-        await fetchSales({
-          fromDate: from || undefined,
-          toDate: to || undefined,
-          page,
-          search: search || undefined,
-          hasClient: hasClient !== null ? hasClient : undefined,
-          sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
-          sortDirection,
-        });
-      }
-    },
-    [confirmUndoRefundSale, undoRefund, showSuccess, fetchSales, from, to, page, search, hasClient, sortColumn, sortDirection]
-  );
+  const handleConfirmUndoRefund = useCallback(async () => {
+    if (!confirmUndoRefundSale) return;
+    const note = `Refund undone on ${new Date().toISOString()}`;
+    const updated = await undoRefund(confirmUndoRefundSale, note);
+    if (updated) {
+      showSuccess('Refund has been undone.');
+      setConfirmUndoRefundSale(null);
+      // FIXED: Refresh with current filters to update KPI totals
+      await fetchSales({
+        fromDate: from || undefined,
+        toDate: to || undefined,
+        page,
+        search: search || undefined,
+        hasClient: hasClient !== null ? hasClient : undefined,
+        sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
+        sortDirection,
+      });
+    }
+  }, [
+    confirmUndoRefundSale,
+    undoRefund,
+    showSuccess,
+    fetchSales,
+    from,
+    to,
+    page,
+    search,
+    hasClient,
+    sortColumn,
+    sortDirection,
+  ]);
 
   const statusForSale = useCallback(
-    (sale: EnrichedSale): SaleStatus => (sale.sale_price < 0 ? 'Refunded' : 'Paid'),
+    (sale: EnrichedSale): SaleStatus =>
+      sale.sale_price < 0 ? 'Refunded' : 'Paid',
     []
   );
 
@@ -256,7 +306,10 @@ export default function SalesPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        handleError(new Error(result.error || 'Failed to export CSV'), 'Export CSV');
+        handleError(
+          new Error(result.error || 'Failed to export CSV'),
+          'Export CSV'
+        );
         return;
       }
 
@@ -277,7 +330,10 @@ export default function SalesPage() {
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
-      link.setAttribute('download', `sales-history-${new Date().toISOString().split('T')[0]}.csv`);
+      link.setAttribute(
+        'download',
+        `sales-history-${new Date().toISOString().split('T')[0]}.csv`
+      );
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -288,7 +344,18 @@ export default function SalesPage() {
     } catch (error) {
       handleError(error, 'Export CSV');
     }
-  }, [from, to, search, hasClient, sortColumn, sortDirection, clients, instruments, showSuccess, handleError]);
+  }, [
+    from,
+    to,
+    search,
+    hasClient,
+    sortColumn,
+    sortDirection,
+    clients,
+    instruments,
+    showSuccess,
+    handleError,
+  ]);
 
   return (
     <ErrorBoundary>
@@ -321,13 +388,15 @@ export default function SalesPage() {
             />
 
             {/* Sales Alerts */}
-            {!loading && (
-              <SalesAlerts sales={enrichedSales} />
-            )}
+            {!loading && <SalesAlerts sales={enrichedSales} />}
 
             {/* Sales Insights */}
             {!loading && (
-              <SalesInsights sales={enrichedSales} fromDate={from || undefined} toDate={to || undefined} />
+              <SalesInsights
+                sales={enrichedSales}
+                fromDate={from || undefined}
+                toDate={to || undefined}
+              />
             )}
 
             {/* Sales Charts */}
@@ -347,17 +416,23 @@ export default function SalesPage() {
                   setFrom(fromDate);
                   setTo(toDate);
                 }}
-                onClientFilter={(clientId) => {
+                onClientFilter={clientId => {
                   const client = clients.find(c => c.id === clientId);
                   if (client) {
-                    const clientName = `${client.first_name || ''} ${client.last_name || ''}`.trim() || client.email || '';
+                    const clientName =
+                      `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+                      client.email ||
+                      '';
                     setSearch(clientName);
                   }
                 }}
-                onInstrumentFilter={(instrumentId) => {
-                  const instrument = instruments.find(i => i.id === instrumentId);
+                onInstrumentFilter={instrumentId => {
+                  const instrument = instruments.find(
+                    i => i.id === instrumentId
+                  );
                   if (instrument) {
-                    const instrumentInfo = `${instrument.maker || ''} ${instrument.type || ''} ${instrument.subtype || ''}`.trim();
+                    const instrumentInfo =
+                      `${instrument.maker || ''} ${instrument.type || ''} ${instrument.subtype || ''}`.trim();
                     setSearch(instrumentInfo);
                   }
                 }}
@@ -375,7 +450,9 @@ export default function SalesPage() {
                 onRefund={handleRequestRefund}
                 onUndoRefund={handleRequestUndoRefund}
                 statusForSale={statusForSale}
-                hasActiveFilters={!!(search || from || to || hasClient !== null)}
+                hasActiveFilters={
+                  !!(search || from || to || hasClient !== null)
+                }
                 onResetFilters={clearFilters}
               />
               {/* FIXED: filteredCount is now same as totalCount since server handles all filtering */}
@@ -398,7 +475,7 @@ export default function SalesPage() {
         <ErrorToasts />
         {/* Success Toasts */}
         <SuccessToasts />
-        
+
         {/* Refund Confirmation Dialog */}
         <ConfirmDialog
           isOpen={Boolean(confirmRefundSale)}
@@ -409,7 +486,7 @@ export default function SalesPage() {
           onConfirm={handleConfirmRefund}
           onCancel={() => setConfirmRefundSale(null)}
         />
-        
+
         {/* Undo Refund Confirmation Dialog */}
         <ConfirmDialog
           isOpen={Boolean(confirmUndoRefundSale)}

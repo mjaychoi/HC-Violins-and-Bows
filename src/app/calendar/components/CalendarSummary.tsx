@@ -17,7 +17,9 @@ export default function CalendarSummary({
   upcoming,
   onFilterByStatus,
 }: CalendarSummaryProps) {
-  const handleCardClick = (status: 'all' | 'overdue' | 'today' | 'upcoming') => {
+  const handleCardClick = (
+    status: 'all' | 'overdue' | 'today' | 'upcoming'
+  ) => {
     if (onFilterByStatus) {
       onFilterByStatus(status);
     }
@@ -33,7 +35,7 @@ export default function CalendarSummary({
           role="button"
           tabIndex={0}
           aria-label="View all tasks"
-          onKeyDown={(e) => {
+          onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               handleCardClick('all');
@@ -54,7 +56,7 @@ export default function CalendarSummary({
           tabIndex={0}
           aria-label={`View ${overdue} overdue tasks`}
           title="View overdue tasks"
-          onKeyDown={(e) => {
+          onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               handleCardClick('overdue');
@@ -77,7 +79,7 @@ export default function CalendarSummary({
           tabIndex={0}
           aria-label={`View ${today} tasks due today`}
           title="View tasks due today"
-          onKeyDown={(e) => {
+          onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               handleCardClick('today');
@@ -98,7 +100,7 @@ export default function CalendarSummary({
           tabIndex={0}
           aria-label={`View ${upcoming} upcoming tasks`}
           title="View upcoming tasks"
-          onKeyDown={(e) => {
+          onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               handleCardClick('upcoming');

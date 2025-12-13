@@ -18,7 +18,14 @@ describe('EmptyState', () => {
   it('should have correct styling classes', () => {
     const { container } = render(<EmptyState message="Test message" />);
     const element = container.firstChild;
-    expect(element).toHaveClass('border', 'rounded-lg', 'p-6', 'text-center', 'text-gray-500', 'bg-white', 'shadow-sm');
+    expect(element).toHaveClass(
+      'border',
+      'rounded-lg',
+      'p-6',
+      'text-center',
+      'text-gray-500',
+      'bg-white',
+      'shadow-sm'
+    );
   });
 });
-

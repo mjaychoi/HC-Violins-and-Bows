@@ -119,4 +119,3 @@ describe('Modal', () => {
     expect(screen.getByText('Paragraph 2')).toBeInTheDocument();
   });
 });
-

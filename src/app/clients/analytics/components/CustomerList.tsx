@@ -15,7 +15,11 @@ const formatAmount = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-export function CustomerList({ customers, selectedId, onSelect }: CustomerListProps) {
+export function CustomerList({
+  customers,
+  selectedId,
+  onSelect,
+}: CustomerListProps) {
   if (!customers.length) {
     return (
       <EmptyState
@@ -28,12 +32,20 @@ export function CustomerList({ customers, selectedId, onSelect }: CustomerListPr
   return (
     <div className="bg-white rounded-lg shadow border border-gray-200 divide-y divide-gray-200">
       {customers.map(customer => {
-        const fullName = `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Unnamed';
-        const totalSpend = customer.purchases.reduce((sum: number, p: { amount: number }) => sum + p.amount, 0);
+        const fullName =
+          `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
+          'Unnamed';
+        const totalSpend = customer.purchases.reduce(
+          (sum: number, p: { amount: number }) => sum + p.amount,
+          0
+        );
         // FIXED: Use getMostRecentDate instead of string sorting
-        const recentDate = customer.purchases.length > 0
-          ? getMostRecentDate(customer.purchases.map((p: { date: string }) => p.date))
-          : '—';
+        const recentDate =
+          customer.purchases.length > 0
+            ? getMostRecentDate(
+                customer.purchases.map((p: { date: string }) => p.date)
+              )
+            : '—';
         // FIXED: Normalize tags to prevent runtime crash
         const tags = Array.isArray(customer.tags) ? customer.tags : [];
         return (
@@ -41,13 +53,19 @@ export function CustomerList({ customers, selectedId, onSelect }: CustomerListPr
             key={customer.id}
             onClick={() => onSelect(customer.id)}
             className={`w-full text-left px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors ${
-              selectedId === customer.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''
+              selectedId === customer.id
+                ? 'bg-blue-50 border-l-4 border-l-blue-600'
+                : ''
             }`}
             aria-pressed={selectedId === customer.id}
           >
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-gray-900 truncate">{fullName}</div>
-              <div className="text-sm text-gray-500 mt-0.5 truncate">{customer.email || 'No email'}</div>
+              <div className="font-semibold text-gray-900 truncate">
+                {fullName}
+              </div>
+              <div className="text-sm text-gray-500 mt-0.5 truncate">
+                {customer.email || 'No email'}
+              </div>
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 {tags.length > 0 && (
                   <div className="flex items-center gap-1 flex-wrap">
@@ -61,7 +79,9 @@ export function CustomerList({ customers, selectedId, onSelect }: CustomerListPr
                       </span>
                     ))}
                     {tags.length > 2 && (
-                      <span className="text-xs text-gray-400">+{tags.length - 2}</span>
+                      <span className="text-xs text-gray-400">
+                        +{tags.length - 2}
+                      </span>
                     )}
                   </div>
                 )}
@@ -73,9 +93,15 @@ export function CustomerList({ customers, selectedId, onSelect }: CustomerListPr
               </div>
             </div>
             <div className="text-right ml-4 flex-shrink-0">
-              <div className="text-xs text-gray-500 uppercase tracking-wide mb-0.5">Total</div>
-              <div className="font-semibold text-gray-900">{formatAmount(totalSpend)}</div>
-              <div className="text-xs text-gray-400 mt-0.5">Last: {recentDate}</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-0.5">
+                Total
+              </div>
+              <div className="font-semibold text-gray-900">
+                {formatAmount(totalSpend)}
+              </div>
+              <div className="text-xs text-gray-400 mt-0.5">
+                Last: {recentDate}
+              </div>
             </div>
           </button>
         );

@@ -15,41 +15,54 @@ export function useErrorHandler() {
   // If needed in future, expose errorHandler.getErrorStats() directly
 
   const addError = useCallback(
-    (error: AppError, severity: ErrorSeverity = ErrorSeverity.MEDIUM, context?: string) => {
+    (
+      error: AppError,
+      severity: ErrorSeverity = ErrorSeverity.MEDIUM,
+      context?: string
+    ) => {
       // FIXED: Normalize timestamp to Date if it's a string
-      const normalizedTimestamp = error.timestamp instanceof Date
-        ? error.timestamp
-        : typeof error.timestamp === 'string'
-          ? new Date(error.timestamp)
-          : new Date();
+      const normalizedTimestamp =
+        error.timestamp instanceof Date
+          ? error.timestamp
+          : typeof error.timestamp === 'string'
+            ? new Date(error.timestamp)
+            : new Date();
 
       // FIXED: Create stable toast ID to prevent key collisions and remounting
-      const toastId = typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const toastId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
       // FIXED: Improved duplicate detection with time window and stable key
       // Includes context in key for better deduplication
       const errorKey = `${error.code}:${error.message}:${context ?? ''}`;
-      
+
       setErrors(prev => {
         // Check for duplicate within last 5 seconds (configurable)
         const DEDUP_WINDOW_MS = 5000;
         const now = Date.now();
         const isDuplicate = prev.some(existingError => {
           const existingKey = `${existingError.code}:${existingError.message}:${existingError.context?.toString() ?? ''}`;
-          const timeDiff = existingError.timestamp instanceof Date
-            ? now - existingError.timestamp.getTime()
-            : 0;
+          const timeDiff =
+            existingError.timestamp instanceof Date
+              ? now - existingError.timestamp.getTime()
+              : 0;
           return existingKey === errorKey && timeDiff < DEDUP_WINDOW_MS;
         });
 
         if (isDuplicate) return prev;
 
-        return [...prev, { ...error, timestamp: normalizedTimestamp, _toastId: toastId }];
+        return [
+          ...prev,
+          { ...error, timestamp: normalizedTimestamp, _toastId: toastId },
+        ];
       });
 
-      errorHandler.logError({ ...error, timestamp: normalizedTimestamp }, severity);
+      errorHandler.logError(
+        { ...error, timestamp: normalizedTimestamp },
+        severity
+      );
     },
     []
   );
@@ -84,11 +97,12 @@ export function useErrorHandler() {
         const normalized = error as AppError;
         appError = {
           ...normalized,
-          timestamp: normalized.timestamp instanceof Date
-            ? normalized.timestamp
-            : typeof normalized.timestamp === 'string'
-              ? new Date(normalized.timestamp)
-              : new Date(),
+          timestamp:
+            normalized.timestamp instanceof Date
+              ? normalized.timestamp
+              : typeof normalized.timestamp === 'string'
+                ? new Date(normalized.timestamp)
+                : new Date(),
         };
       } else if (error && typeof error === 'object' && 'response' in error) {
         // API Error
@@ -116,11 +130,16 @@ export function useErrorHandler() {
 
       // Always log and capture for monitoring (even if not showing toast)
       errorHandler.logError(appError, severity);
-      captureException(appError, context, {
-        code: appError.code,
-        context: appError.context,
-        details: appError.details,
-      }, severity);
+      captureException(
+        appError,
+        context,
+        {
+          code: appError.code,
+          context: appError.context,
+          details: appError.details,
+        },
+        severity
+      );
 
       return appError;
     },
@@ -197,7 +216,7 @@ export function useErrorHandler() {
     return React.createElement(
       'div',
       { className: 'fixed top-4 right-4 z-50 space-y-2' },
-      errors.map((error) =>
+      errors.map(error =>
         React.createElement(ErrorToast, {
           key: error._toastId, // FIXED: Use stable toast ID instead of timestamp/index
           error: error,

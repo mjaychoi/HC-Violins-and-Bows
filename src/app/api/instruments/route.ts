@@ -4,32 +4,35 @@ import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
-import { createSafeErrorResponse, createLogErrorInfo } from '@/utils/errorSanitization';
+import {
+  createSafeErrorResponse,
+  createLogErrorInfo,
+} from '@/utils/errorSanitization';
 import {
   validateInstrument,
   validateInstrumentArray,
   validatePartialInstrument,
   safeValidate,
 } from '@/utils/typeGuards';
-import {
-  validateSortColumn,
-  validateUUID,
-} from '@/utils/inputValidation';
+import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 
 export async function GET(request: NextRequest) {
   const startTime = performance.now();
   const searchParams = request.nextUrl.searchParams;
-  const orderBy = validateSortColumn('instruments', searchParams.get('orderBy'));
+  const orderBy = validateSortColumn(
+    'instruments',
+    searchParams.get('orderBy')
+  );
   const ascending = searchParams.get('ascending') !== 'false';
   const ownership = searchParams.get('ownership') || undefined;
   const search = searchParams.get('search') || undefined;
-  const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : undefined;
+  const limit = searchParams.get('limit')
+    ? parseInt(searchParams.get('limit')!, 10)
+    : undefined;
 
   try {
     const supabase = getServerSupabase();
-    let query = supabase
-      .from('instruments')
-      .select('*', { count: 'exact' });
+    let query = supabase.from('instruments').select('*', { count: 'exact' });
 
     // Add ownership filter if provided
     if (ownership) {
@@ -39,7 +42,9 @@ export async function GET(request: NextRequest) {
     // Add search filter if provided
     if (search && search.length >= 2) {
       const sanitizedSearch = search.trim();
-      query = query.or(`maker.ilike.%${sanitizedSearch}%,type.ilike.%${sanitizedSearch}%,subtype.ilike.%${sanitizedSearch}%,serial_number.ilike.%${sanitizedSearch}%`);
+      query = query.or(
+        `maker.ilike.%${sanitizedSearch}%,type.ilike.%${sanitizedSearch}%,subtype.ilike.%${sanitizedSearch}%,serial_number.ilike.%${sanitizedSearch}%`
+      );
     }
 
     // Add limit if provided (for search queries)
@@ -54,15 +59,25 @@ export async function GET(request: NextRequest) {
     const duration = Math.round(performance.now() - startTime);
 
     if (error) {
-      const appError = errorHandler.handleSupabaseError(error, 'Fetch instruments');
+      const appError = errorHandler.handleSupabaseError(
+        error,
+        'Fetch instruments'
+      );
       const logInfo = createLogErrorInfo(appError);
-      logApiRequest('GET', '/api/instruments', undefined, duration, 'InstrumentsAPI', {
-        orderBy,
-        ascending,
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
+      logApiRequest(
+        'GET',
+        '/api/instruments',
+        undefined,
+        duration,
+        'InstrumentsAPI',
+        {
+          orderBy,
+          ascending,
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
       captureException(
         appError,
         'InstrumentsAPI.GET',
@@ -82,11 +97,18 @@ export async function GET(request: NextRequest) {
         { duration, recordCount: data?.length || 0 },
         ErrorSeverity.HIGH
       );
-      logApiRequest('GET', '/api/instruments', 200, duration, 'InstrumentsAPI', {
-        recordCount: data?.length || 0,
-        totalCount: count || 0,
-        validationWarning: true,
-      });
+      logApiRequest(
+        'GET',
+        '/api/instruments',
+        200,
+        duration,
+        'InstrumentsAPI',
+        {
+          recordCount: data?.length || 0,
+          totalCount: count || 0,
+          validationWarning: true,
+        }
+      );
     }
 
     logApiRequest('GET', '/api/instruments', 200, duration, 'InstrumentsAPI', {
@@ -100,7 +122,10 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(error, 'Fetch instruments');
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      'Fetch instruments'
+    );
     const logInfo = createLogErrorInfo(appError);
     captureException(
       appError,
@@ -117,7 +142,7 @@ export async function POST(request: NextRequest) {
   const startTime = performance.now();
   try {
     const body = await request.json();
-    
+
     // Validate request body
     const validationResult = safeValidate(body, validateInstrument);
     if (!validationResult.success) {
@@ -137,13 +162,23 @@ export async function POST(request: NextRequest) {
     const duration = Math.round(performance.now() - startTime);
 
     if (error) {
-      const appError = errorHandler.handleSupabaseError(error, 'Create instrument');
+      const appError = errorHandler.handleSupabaseError(
+        error,
+        'Create instrument'
+      );
       const logInfo = createLogErrorInfo(appError);
-      logApiRequest('POST', '/api/instruments', undefined, duration, 'InstrumentsAPI', {
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
+      logApiRequest(
+        'POST',
+        '/api/instruments',
+        undefined,
+        duration,
+        'InstrumentsAPI',
+        {
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
       captureException(
         appError,
         'InstrumentsAPI.POST',
@@ -164,7 +199,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data: validatedData }, { status: 201 });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(error, 'Create instrument');
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      'Create instrument'
+    );
     const logInfo = createLogErrorInfo(appError);
     captureException(
       appError,
@@ -218,14 +256,24 @@ export async function PATCH(request: NextRequest) {
     const duration = Math.round(performance.now() - startTime);
 
     if (error) {
-      const appError = errorHandler.handleSupabaseError(error, 'Update instrument');
+      const appError = errorHandler.handleSupabaseError(
+        error,
+        'Update instrument'
+      );
       const logInfo = createLogErrorInfo(appError);
-      logApiRequest('PATCH', '/api/instruments', undefined, duration, 'InstrumentsAPI', {
-        instrumentId: id,
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
+      logApiRequest(
+        'PATCH',
+        '/api/instruments',
+        undefined,
+        duration,
+        'InstrumentsAPI',
+        {
+          instrumentId: id,
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
       captureException(
         appError,
         'InstrumentsAPI.PATCH',
@@ -239,14 +287,24 @@ export async function PATCH(request: NextRequest) {
     // Validate response data
     const validatedData = validateInstrument(data);
 
-    logApiRequest('PATCH', '/api/instruments', 200, duration, 'InstrumentsAPI', {
-      instrumentId: id,
-    });
+    logApiRequest(
+      'PATCH',
+      '/api/instruments',
+      200,
+      duration,
+      'InstrumentsAPI',
+      {
+        instrumentId: id,
+      }
+    );
 
     return NextResponse.json({ data: validatedData });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(error, 'Update instrument');
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      'Update instrument'
+    );
     const logInfo = createLogErrorInfo(appError);
     captureException(
       appError,
@@ -286,14 +344,24 @@ export async function DELETE(request: NextRequest) {
     const duration = Math.round(performance.now() - startTime);
 
     if (error) {
-      const appError = errorHandler.handleSupabaseError(error, 'Delete instrument');
+      const appError = errorHandler.handleSupabaseError(
+        error,
+        'Delete instrument'
+      );
       const logInfo = createLogErrorInfo(appError);
-      logApiRequest('DELETE', '/api/instruments', undefined, duration, 'InstrumentsAPI', {
-        instrumentId: id,
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      });
+      logApiRequest(
+        'DELETE',
+        '/api/instruments',
+        undefined,
+        duration,
+        'InstrumentsAPI',
+        {
+          instrumentId: id,
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
       captureException(
         appError,
         'InstrumentsAPI.DELETE',
@@ -304,14 +372,24 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(safeError, { status: 500 });
     }
 
-    logApiRequest('DELETE', '/api/instruments', 200, duration, 'InstrumentsAPI', {
-      instrumentId: id,
-    });
+    logApiRequest(
+      'DELETE',
+      '/api/instruments',
+      200,
+      duration,
+      'InstrumentsAPI',
+      {
+        instrumentId: id,
+      }
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(error, 'Delete instrument');
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      'Delete instrument'
+    );
     const logInfo = createLogErrorInfo(appError);
     captureException(
       appError,

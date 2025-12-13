@@ -101,7 +101,6 @@ jest.mock('@/components/layout', () => ({
   ),
 }));
 
-
 // Mock useMaintenanceTasks
 const mockTasks: MaintenanceTask[] = [
   {
@@ -344,10 +343,7 @@ jest.mock('../components/TaskModal', () => {
 });
 
 jest.mock('../components/CalendarSearch', () => {
-  return function CalendarSearch({
-    searchTerm,
-    onSearchChange,
-  }: any) {
+  return function CalendarSearch({ searchTerm, onSearchChange }: any) {
     return (
       <div data-testid="calendar-search">
         <input
@@ -858,10 +854,12 @@ describe('CalendarPage', () => {
           expect(screen.getByText('Calendar')).toBeInTheDocument();
           expect(screen.getByText('List')).toBeInTheDocument();
           // Verify it's not in the filter bar container
-          const filterBar = screen.getByTestId('calendar-search').closest('section');
+          const filterBar = screen
+            .getByTestId('calendar-search')
+            .closest('section');
           const calendarButton = screen.getByText('Calendar');
           const listButton = screen.getByText('List');
-          
+
           // View toggle buttons should not be descendants of filter bar
           expect(filterBar).not.toContainElement(calendarButton);
           expect(filterBar).not.toContainElement(listButton);
@@ -974,7 +972,7 @@ describe('CalendarPage', () => {
     });
   });
 
-describe.skip('Empty State', () => {
+  describe.skip('Empty State', () => {
     beforeEach(() => {
       // Mock empty tasks for empty state tests
       mockFetchTasksByDateRange.mockResolvedValue([]);
@@ -987,8 +985,9 @@ describe.skip('Empty State', () => {
       await waitFor(
         () => {
           // Empty state should show either message
-          const emptyState = screen.queryByText('아직 등록된 작업이 없어요') || 
-                           screen.queryByText('표시할 작업이 없습니다');
+          const emptyState =
+            screen.queryByText('아직 등록된 작업이 없어요') ||
+            screen.queryByText('표시할 작업이 없습니다');
           expect(emptyState).toBeInTheDocument();
         },
         { timeout: 3000 }
@@ -1017,8 +1016,9 @@ describe.skip('Empty State', () => {
       await waitFor(
         () => {
           // Button text might be slightly different, check for partial match
-          const ctaButton = screen.queryByText(/첫 작업 추가/) || 
-                          screen.queryByText(/작업 추가/);
+          const ctaButton =
+            screen.queryByText(/첫 작업 추가/) ||
+            screen.queryByText(/작업 추가/);
           expect(ctaButton).toBeInTheDocument();
         },
         { timeout: 3000 }
@@ -1035,15 +1035,16 @@ describe.skip('Empty State', () => {
       await waitFor(
         () => {
           // Find CTA button by partial text match
-          const ctaButton = screen.queryByText(/첫 작업 추가/) || 
-                          screen.queryByText(/작업 추가/);
+          const ctaButton =
+            screen.queryByText(/첫 작업 추가/) ||
+            screen.queryByText(/작업 추가/);
           expect(ctaButton).toBeInTheDocument();
         },
         { timeout: 3000 }
       );
 
-      const ctaButton = screen.queryByText(/첫 작업 추가/) || 
-                        screen.queryByText(/작업 추가/);
+      const ctaButton =
+        screen.queryByText(/첫 작업 추가/) || screen.queryByText(/작업 추가/);
       if (ctaButton) {
         await user.click(ctaButton);
 
@@ -1069,7 +1070,7 @@ describe.skip('Empty State', () => {
       );
     });
 
-  it('should display different message when filters are active in empty state', async () => {
+    it('should display different message when filters are active in empty state', async () => {
       // Override the mock to return empty tasks
       const { useMaintenanceTasks } = require('@/hooks/useMaintenanceTasks');
       jest.mocked(useMaintenanceTasks).mockReturnValueOnce({
@@ -1101,7 +1102,7 @@ describe.skip('Empty State', () => {
   });
 
   describe('Typography System', () => {
-  it.skip('should use correct heading sizes', async () => {
+    it.skip('should use correct heading sizes', async () => {
       render(<CalendarPage />);
 
       await waitFor(
@@ -1266,7 +1267,7 @@ describe.skip('Empty State', () => {
           const nextButton = screen.getByLabelText('Next');
           expect(prevButton).toBeInTheDocument();
           expect(nextButton).toBeInTheDocument();
-          
+
           // Check that buttons are in a bordered container
           const prevParent = prevButton.closest('.rounded-lg.border');
           expect(prevParent).toBeInTheDocument();
@@ -1280,7 +1281,9 @@ describe.skip('Empty State', () => {
 
       await waitFor(
         () => {
-          expect(screen.getByText('캘린더를 한눈에 정리해 보세요')).toBeInTheDocument();
+          expect(
+            screen.getByText('캘린더를 한눈에 정리해 보세요')
+          ).toBeInTheDocument();
         },
         { timeout: 3000 }
       );
@@ -1306,7 +1309,9 @@ describe.skip('Empty State', () => {
       await waitFor(
         () => {
           expect(
-            screen.getByText('필터와 검색을 사용해 필요한 작업만 빠르게 확인할 수 있어요.')
+            screen.getByText(
+              '필터와 검색을 사용해 필요한 작업만 빠르게 확인할 수 있어요.'
+            )
           ).toBeInTheDocument();
         },
         { timeout: 3000 }
@@ -1349,11 +1354,11 @@ describe.skip('Empty State', () => {
         () => {
           const 오늘Buttons = screen.getAllByText('오늘');
           // First one should be the header button
-          const todayButton = 오늘Buttons.find(btn => 
-            btn.closest('.justify-end') !== null
-          ) || 오늘Buttons[0];
+          const todayButton =
+            오늘Buttons.find(btn => btn.closest('.justify-end') !== null) ||
+            오늘Buttons[0];
           const newTaskButton = screen.getByText('새 작업 추가');
-          
+
           expect(todayButton).toHaveClass('h-9');
           expect(newTaskButton).toHaveClass('h-9');
         },
@@ -1400,7 +1405,10 @@ describe.skip('Empty State', () => {
           // Should use grid with responsive columns: sm:grid-cols-2 lg:grid-cols-4
           const statsContainer = container.querySelector('.grid');
           expect(statsContainer).toBeInTheDocument();
-          expect(statsContainer).toHaveClass('sm:grid-cols-2', 'lg:grid-cols-4');
+          expect(statsContainer).toHaveClass(
+            'sm:grid-cols-2',
+            'lg:grid-cols-4'
+          );
         },
         { timeout: 3000 }
       );
@@ -1466,16 +1474,22 @@ describe.skip('Empty State', () => {
 
       await waitFor(
         () => {
-          const filterBar = screen.getByTestId('calendar-search').closest('section');
+          const filterBar = screen
+            .getByTestId('calendar-search')
+            .closest('section');
           const summarySection = screen.getByText('전체').closest('section');
-          
+
           // Summary section should be after filter bar in DOM
           expect(filterBar).toBeInTheDocument();
           expect(summarySection).toBeInTheDocument();
-          
+
           // Check DOM order (summary should come after filter bar)
-          const filterBarIndex = Array.from(container.children[0].children).indexOf(filterBar as Element);
-          const summaryIndex = Array.from(container.children[0].children).indexOf(summarySection as Element);
+          const filterBarIndex = Array.from(
+            container.children[0].children
+          ).indexOf(filterBar as Element);
+          const summaryIndex = Array.from(
+            container.children[0].children
+          ).indexOf(summarySection as Element);
           expect(summaryIndex).toBeGreaterThan(filterBarIndex);
         },
         { timeout: 3000 }
@@ -1500,10 +1514,12 @@ describe.skip('Empty State', () => {
 
       await waitFor(
         () => {
-          const filterBar = screen.getByTestId('calendar-search').closest('section');
+          const filterBar = screen
+            .getByTestId('calendar-search')
+            .closest('section');
           const calendarButton = screen.getByText('Calendar');
           const listButton = screen.getByText('List');
-          
+
           // View toggle should not be in filter bar section
           expect(filterBar).not.toContainElement(calendarButton);
           expect(filterBar).not.toContainElement(listButton);
@@ -1564,7 +1580,9 @@ describe.skip('Empty State', () => {
 
       await waitFor(
         () => {
-          const filterBar = screen.getByTestId('calendar-search').closest('div.flex.flex-wrap');
+          const filterBar = screen
+            .getByTestId('calendar-search')
+            .closest('div.flex.flex-wrap');
           expect(filterBar).toBeInTheDocument();
         },
         { timeout: 3000 }
@@ -1739,7 +1757,9 @@ describe.skip('Empty State', () => {
       await waitFor(
         () => {
           // Ensure list view renders; spacing can vary
-          expect(container.querySelector('[data-testid="task-list"]')).toBeInTheDocument();
+          expect(
+            container.querySelector('[data-testid="task-list"]')
+          ).toBeInTheDocument();
         },
         { timeout: 3000 }
       );
@@ -1754,11 +1774,11 @@ describe.skip('Empty State', () => {
         () => {
           const prevButton = screen.getByLabelText('Previous');
           const nextButton = screen.getByLabelText('Next');
-          
+
           // Both buttons should be in the same container
           const prevParent = prevButton.closest('.rounded-lg.border');
           const nextParent = nextButton.closest('.rounded-lg.border');
-          
+
           expect(prevParent).toBeInTheDocument();
           expect(nextParent).toBe(prevParent);
         },
@@ -1808,17 +1828,21 @@ describe.skip('Empty State', () => {
   });
 
   describe('Secondary Button Styling', () => {
-  it.skip('should render secondary buttons with border and white background', async () => {
-    render(<CalendarPage />);
+    it.skip('should render secondary buttons with border and white background', async () => {
+      render(<CalendarPage />);
 
-    await waitFor(
-      () => {
-        const todayButton = screen.getAllByText('오늘')[0];
-        expect(todayButton).toHaveClass('border', 'border-gray-300', 'bg-white');
-      },
-      { timeout: 3000 }
-    );
-  });
+      await waitFor(
+        () => {
+          const todayButton = screen.getAllByText('오늘')[0];
+          expect(todayButton).toHaveClass(
+            'border',
+            'border-gray-300',
+            'bg-white'
+          );
+        },
+        { timeout: 3000 }
+      );
+    });
 
     it('should render primary button with blue background', async () => {
       render(<CalendarPage />);
@@ -1875,7 +1899,7 @@ describe.skip('Empty State', () => {
 
       // Verify window.confirm was never called (we use ConfirmDialog instead)
       expect(mockConfirm).not.toHaveBeenCalled();
-      
+
       mockConfirm.mockRestore();
     });
   });

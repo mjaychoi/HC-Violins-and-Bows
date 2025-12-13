@@ -6,7 +6,9 @@ import { useToast } from '../useToast';
 jest.mock('../useErrorHandler');
 jest.mock('../useToast');
 
-const mockUseErrorHandler = useErrorHandler as jest.MockedFunction<typeof useErrorHandler>;
+const mockUseErrorHandler = useErrorHandler as jest.MockedFunction<
+  typeof useErrorHandler
+>;
 const mockUseToast = useToast as jest.MockedFunction<typeof useToast>;
 
 describe('useAppFeedback', () => {

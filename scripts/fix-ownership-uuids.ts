@@ -1,9 +1,9 @@
 /**
  * Ownership UUID 수정 스크립트
- * 
+ *
  * 기존에 문자열로 저장된 ownership을 UUID로 변환하거나,
  * UUID가 있지만 클라이언트를 찾을 수 없는 경우를 처리합니다.
- * 
+ *
  * 실행: npx tsx scripts/fix-ownership-uuids.ts
  */
 
@@ -28,7 +28,9 @@ async function fixOwnershipUUIDs() {
     const dbPassword = process.env.DATABASE_PASSWORD;
 
     if (!supabaseUrl) {
-      throw new Error('NEXT_PUBLIC_SUPABASE_URL 환경 변수가 설정되지 않았습니다.');
+      throw new Error(
+        'NEXT_PUBLIC_SUPABASE_URL 환경 변수가 설정되지 않았습니다.'
+      );
     }
 
     if (!dbPassword) {
@@ -78,7 +80,11 @@ async function fixOwnershipUUIDs() {
           }
           client = null;
         }
-        logError(`⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`, undefined, 'fixOwnershipUUIDs');
+        logError(
+          `⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`,
+          undefined,
+          'fixOwnershipUUIDs'
+        );
         continue;
       }
     }
@@ -89,7 +95,7 @@ async function fixOwnershipUUIDs() {
 
     // 1. 현재 상태 확인
     logInfo('📊 현재 상태 확인...\n');
-    
+
     const statsResult = await client.query(`
       SELECT 
         COUNT(*) FILTER (WHERE i.ownership IS NULL) as null_count,
@@ -98,7 +104,7 @@ async function fixOwnershipUUIDs() {
         COUNT(*) as total
       FROM instruments i
     `);
-    
+
     const stats = statsResult.rows[0];
     logInfo(`  • NULL ownership: ${stats.null_count}개`);
     logInfo(`  • UUID ownership: ${stats.uuid_count}개`);
@@ -107,7 +113,7 @@ async function fixOwnershipUUIDs() {
 
     // 2. UUID로 저장되었지만 클라이언트가 없는 경우 찾기
     logInfo('🔍 UUID로 저장되었지만 클라이언트를 찾을 수 없는 경우 확인...\n');
-    
+
     const orphanedResult = await client.query(`
       SELECT 
         i.id,
@@ -122,16 +128,18 @@ async function fixOwnershipUUIDs() {
         )
       LIMIT 20
     `);
-    
-    logInfo(`  • 클라이언트를 찾을 수 없는 UUID ownership: ${orphanedResult.rows.length}개\n`);
-    
+
+    logInfo(
+      `  • 클라이언트를 찾을 수 없는 UUID ownership: ${orphanedResult.rows.length}개\n`
+    );
+
     if (orphanedResult.rows.length > 0) {
       logInfo('  발견된 악기들:');
       orphanedResult.rows.forEach(row => {
         logInfo(`    - ${row.serial_number} (${row.type}): ${row.ownership}`);
       });
       logInfo('');
-      
+
       logInfo('⚠️  이 UUID들은 클라이언트 테이블에 존재하지 않습니다.');
       logInfo('   다음 옵션 중 선택하세요:');
       logInfo('   1. NULL로 설정 (ownership 제거)');
@@ -142,23 +150,24 @@ async function fixOwnershipUUIDs() {
 
     // 3. 문자열로 저장된 ownership을 UUID로 변환 (클라이언트 이름 → UUID)
     logInfo('🔄 문자열 ownership을 UUID로 변환 시도...\n');
-    
+
     // 모든 클라이언트를 가져와서 이름 → ID 매핑 생성
     const clientsResult = await client.query(`
       SELECT id, first_name, last_name, email
       FROM clients
     `);
-    
+
     const nameToIdMap = new Map<string, string>();
     clientsResult.rows.forEach(client => {
-      const fullName = `${client.first_name || ''} ${client.last_name || ''}`.trim();
+      const fullName =
+        `${client.first_name || ''} ${client.last_name || ''}`.trim();
       if (fullName) {
         nameToIdMap.set(fullName, client.id);
       }
     });
-    
+
     logInfo(`  • 클라이언트 이름 → ID 매핑: ${nameToIdMap.size}개 생성됨\n`);
-    
+
     // 문자열 ownership을 가진 악기들 찾기
     const stringOwnershipResult = await client.query(`
       SELECT id, serial_number, type, ownership
@@ -167,15 +176,17 @@ async function fixOwnershipUUIDs() {
         AND ownership !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
       LIMIT 100
     `);
-    
-    logInfo(`  • 문자열 ownership을 가진 악기: ${stringOwnershipResult.rows.length}개\n`);
-    
+
+    logInfo(
+      `  • 문자열 ownership을 가진 악기: ${stringOwnershipResult.rows.length}개\n`
+    );
+
     let convertedCount = 0;
     let failedCount = 0;
-    
+
     for (const row of stringOwnershipResult.rows) {
       const clientId = nameToIdMap.get(row.ownership);
-      
+
       if (clientId) {
         await client.query(
           'UPDATE instruments SET ownership = $1 WHERE id = $2',
@@ -185,14 +196,16 @@ async function fixOwnershipUUIDs() {
         logInfo(`  ✓ ${row.serial_number}: "${row.ownership}" → ${clientId}`);
       } else {
         failedCount++;
-        logInfo(`  ✗ ${row.serial_number}: "${row.ownership}" (클라이언트를 찾을 수 없음)`);
+        logInfo(
+          `  ✗ ${row.serial_number}: "${row.ownership}" (클라이언트를 찾을 수 없음)`
+        );
       }
     }
-    
+
     logInfo(`\n✅ 변환 완료:`);
     logInfo(`  • 성공: ${convertedCount}개`);
     logInfo(`  • 실패: ${failedCount}개\n`);
-    
+
     logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     logInfo('✅ Ownership UUID 수정 완료!');
     logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');

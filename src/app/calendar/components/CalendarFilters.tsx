@@ -5,7 +5,11 @@ import CalendarSearch from './CalendarSearch';
 import AdvancedSearch from '@/components/common/AdvancedSearch';
 import type { TaskType, TaskStatus, TaskPriority } from '@/types';
 import type { DateRange, FilterOperator } from '@/types/search';
-import { filterToolbarClasses, filterButtonClasses, pillSelectClasses } from '@/utils/filterUI';
+import {
+  filterToolbarClasses,
+  filterButtonClasses,
+  pillSelectClasses,
+} from '@/utils/filterUI';
 import { PillSelect } from '@/components/common';
 import { formatStatus } from '@/utils/formatUtils';
 
@@ -18,7 +22,10 @@ interface CalendarFiltersProps {
     status?: TaskStatus | 'all'; // Quick filter pill area (combined with search/advanced filters)
     owner?: string | 'all';
   };
-  onFilterChange: (filter: 'type' | 'priority' | 'status' | 'owner', value: string) => void;
+  onFilterChange: (
+    filter: 'type' | 'priority' | 'status' | 'owner',
+    value: string
+  ) => void;
   filterOptions: {
     types: TaskType[];
     priorities: TaskPriority[];
@@ -146,7 +153,11 @@ export default function CalendarFilters({
             <>
               <span className={pillSelectClasses.label}>Status</span>
               <PillSelect
-                value={filterStatus !== 'all' ? filterStatus : (searchFilters.status || 'all')}
+                value={
+                  filterStatus !== 'all'
+                    ? filterStatus
+                    : searchFilters.status || 'all'
+                }
                 onChange={value => {
                   // Use onStatusChange for global status filter
                   onStatusChange(value);
@@ -162,7 +173,15 @@ export default function CalendarFilters({
                   { value: 'completed', label: 'Completed' },
                   { value: 'cancelled', label: 'Cancelled' },
                   ...filterOptions.statuses
-                    .filter(status => !['pending', 'in_progress', 'completed', 'cancelled'].includes(status))
+                    .filter(
+                      status =>
+                        ![
+                          'pending',
+                          'in_progress',
+                          'completed',
+                          'cancelled',
+                        ].includes(status)
+                    )
                     .map(status => ({
                       value: status,
                       label: formatStatus(status),
@@ -178,7 +197,11 @@ export default function CalendarFilters({
             <>
               <span className={pillSelectClasses.label}>Owner</span>
               <PillSelect
-                value={filterOwnership !== 'all' ? filterOwnership : (searchFilters.owner || 'all')}
+                value={
+                  filterOwnership !== 'all'
+                    ? filterOwnership
+                    : searchFilters.owner || 'all'
+                }
                 onChange={value => {
                   // Use onOwnershipChange for global ownership filter
                   onOwnershipChange(value);
@@ -215,9 +238,7 @@ export default function CalendarFilters({
             <PillSelect
               value={sortBy}
               onChange={value =>
-                onSortByChange(
-                  value as 'date' | 'priority' | 'status' | 'type'
-                )
+                onSortByChange(value as 'date' | 'priority' | 'status' | 'type')
               }
               options={[
                 { value: 'date', label: 'Date' },
@@ -236,9 +257,7 @@ export default function CalendarFilters({
             </button>
           </div>
 
-          <span className={filterButtonClasses.badge}>
-            {taskCount} tasks
-          </span>
+          <span className={filterButtonClasses.badge}>{taskCount} tasks</span>
 
           {hasActiveFilters && (
             <button

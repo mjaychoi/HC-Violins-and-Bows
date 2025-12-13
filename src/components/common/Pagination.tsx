@@ -56,7 +56,7 @@ export interface PaginationProps {
 
 /**
  * 재사용 가능한 페이지네이션 컴포넌트
- * 
+ *
  * @example
  * ```tsx
  * <Pagination
@@ -153,21 +153,25 @@ export default function Pagination({
   const pageNumbers = getPageNumbers();
 
   // 항목 범위 계산
-  const startItem = totalCount && pageSize 
-    ? (currentPage - 1) * pageSize + 1 
-    : undefined;
-  const endItem = totalCount && pageSize
-    ? Math.min(currentPage * pageSize, totalCount)
-    : undefined;
+  const startItem =
+    totalCount && pageSize ? (currentPage - 1) * pageSize + 1 : undefined;
+  const endItem =
+    totalCount && pageSize
+      ? Math.min(currentPage * pageSize, totalCount)
+      : undefined;
 
   // 필터링 모드일 때의 표시 로직
-  const displayCount = filteredCount !== undefined && hasFilters ? filteredCount : totalCount;
-  const showFilteredInfo = hasFilters && filteredCount !== undefined && totalCount !== undefined;
+  const displayCount =
+    filteredCount !== undefined && hasFilters ? filteredCount : totalCount;
+  const showFilteredInfo =
+    hasFilters && filteredCount !== undefined && totalCount !== undefined;
 
   return (
-    <div 
+    <div
       className={`flex flex-col sm:flex-row items-center justify-between gap-4 ${
-        showFilteredInfo ? 'px-4 py-3 bg-gray-50 border-t border-gray-200' : 'py-4'
+        showFilteredInfo
+          ? 'px-4 py-3 bg-gray-50 border-t border-gray-200'
+          : 'py-4'
       }`}
       data-testid={testId}
     >
@@ -178,7 +182,8 @@ export default function Pagination({
             // 필터링 모드: "Showing X of Y records (filtered)"
             <>
               Showing <span className="font-medium">{filteredCount}</span> of{' '}
-              <span className="font-medium">{totalCount}</span> {totalCount === 1 ? 'record' : 'records'}
+              <span className="font-medium">{totalCount}</span>{' '}
+              {totalCount === 1 ? 'record' : 'records'}
               {filteredCount !== totalCount && (
                 <span className="text-gray-500 ml-1">(filtered)</span>
               )}
@@ -193,7 +198,8 @@ export default function Pagination({
           ) : totalCount !== undefined ? (
             // 컴팩트 모드 또는 페이지 정보 포함: "Page X of Y · Z records"
             <>
-              Page {currentPage} of {totalPages} · {totalCount} {totalCount === 1 ? 'record' : 'records'}
+              Page {currentPage} of {totalPages} · {totalCount}{' '}
+              {totalCount === 1 ? 'record' : 'records'}
             </>
           ) : (
             // 최소 정보만

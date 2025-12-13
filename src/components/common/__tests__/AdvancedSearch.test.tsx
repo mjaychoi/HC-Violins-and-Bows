@@ -78,7 +78,10 @@ describe('AdvancedSearch', () => {
       <AdvancedSearch
         {...baseProps}
         dateRange={{ from: '2024-01-01', to: '2024-01-02' }}
-        dateFields={[{ field: 'created_at', label: 'Created' }, { field: 'updated_at', label: 'Updated' }]}
+        dateFields={[
+          { field: 'created_at', label: 'Created' },
+          { field: 'updated_at', label: 'Updated' },
+        ]}
       />
     );
 

@@ -152,7 +152,7 @@ describe('ClientFilters', () => {
       /악기 보유|Has Instruments/i
     );
     expect(hasInstrumentsCheckbox).toBeChecked();
-    
+
     fireEvent.click(hasInstrumentsCheckbox);
 
     // 선택 해제 시: 필터 제거
@@ -178,9 +178,9 @@ describe('ClientFilters', () => {
     const noInstrumentsCheckbox = screen.getByLabelText(
       /악기 미보유|No Instruments/i
     );
-    
+
     expect(noInstrumentsCheckbox).toBeChecked();
-    
+
     // Has Instruments 선택 시 No Instruments가 먼저 제거됨
     fireEvent.click(hasInstrumentsCheckbox);
 
@@ -202,7 +202,10 @@ describe('ClientFilters', () => {
     const filterPanel = screen.getByTestId('filters-panel');
     expect(filterPanel).toHaveAttribute('role', 'dialog');
     expect(filterPanel).toHaveAttribute('aria-modal', 'false');
-    expect(filterPanel).toHaveAttribute('aria-labelledby', 'filters-panel-title');
+    expect(filterPanel).toHaveAttribute(
+      'aria-labelledby',
+      'filters-panel-title'
+    );
   });
 
   it('handles interest filter', () => {

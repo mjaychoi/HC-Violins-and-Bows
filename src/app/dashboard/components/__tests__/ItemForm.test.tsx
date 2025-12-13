@@ -10,8 +10,7 @@ jest.mock('@/utils/uniqueNumberGenerator', () => ({
   generateInstrumentSerialNumber: jest.fn(() => 'VI0000001'),
   normalizeInstrumentSerial: jest.requireActual('@/utils/uniqueNumberGenerator')
     .normalizeInstrumentSerial,
-  validateInstrumentSerial: jest
-    .requireActual('@/utils/uniqueNumberGenerator')
+  validateInstrumentSerial: jest.requireActual('@/utils/uniqueNumberGenerator')
     .validateInstrumentSerial,
 }));
 
@@ -38,7 +37,6 @@ const baseFormState = {
   handleFileChange: jest.fn(),
   removeFile: jest.fn(),
 };
-
 
 describe('ItemForm', () => {
   const onSubmit = jest.fn().mockResolvedValue(undefined);
@@ -104,13 +102,18 @@ describe('ItemForm', () => {
         })
       )
     );
-    
+
     // UX: In create mode, success message is shown instead of immediately closing
     // So onClose won't be called immediately - it will be called when user clicks "Done"
     // For editing mode, onClose would be called immediately
-    await waitFor(() => {
-      expect(screen.getByText(/Item created successfully/i)).toBeInTheDocument();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText(/Item created successfully/i)
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
     // onClose is not called immediately in create mode - user sees success message
   });
 });

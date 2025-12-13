@@ -5,10 +5,18 @@ import { EnrichedSale } from '@/types';
 
 // Mock recharts to avoid rendering issues in tests
 jest.mock('recharts', () => ({
-  ResponsiveContainer: ({ children }: any) => <div data-testid="responsive-container">{children}</div>,
-  LineChart: ({ children }: any) => <div data-testid="line-chart">{children}</div>,
-  BarChart: ({ children }: any) => <div data-testid="bar-chart">{children}</div>,
-  ComposedChart: ({ children }: any) => <div data-testid="composed-chart">{children}</div>,
+  ResponsiveContainer: ({ children }: any) => (
+    <div data-testid="responsive-container">{children}</div>
+  ),
+  LineChart: ({ children }: any) => (
+    <div data-testid="line-chart">{children}</div>
+  ),
+  BarChart: ({ children }: any) => (
+    <div data-testid="bar-chart">{children}</div>
+  ),
+  ComposedChart: ({ children }: any) => (
+    <div data-testid="composed-chart">{children}</div>
+  ),
   Line: () => <div data-testid="line" />,
   Bar: () => <div data-testid="bar" />,
   XAxis: () => <div data-testid="x-axis" />,
@@ -48,7 +56,9 @@ const mockInstrument = {
   created_at: '2024-01-01T00:00:00Z',
 };
 
-const createMockSale = (overrides: Partial<EnrichedSale> = {}): EnrichedSale => ({
+const createMockSale = (
+  overrides: Partial<EnrichedSale> = {}
+): EnrichedSale => ({
   id: 'sale-1',
   instrument_id: 'inst-1',
   client_id: 'client-1',
@@ -122,7 +132,11 @@ describe('SalesCharts', () => {
   it('should render top instruments chart', () => {
     const sales: EnrichedSale[] = createBaselineSales().map((sale, idx) => ({
       ...sale,
-      instrument: { ...mockInstrument, type: idx % 2 === 0 ? 'Violin' : 'Viola', id: `inst-${idx + 1}` },
+      instrument: {
+        ...mockInstrument,
+        type: idx % 2 === 0 ? 'Violin' : 'Viola',
+        id: `inst-${idx + 1}`,
+      },
       instrument_id: `inst-${idx + 1}`,
     }));
 
@@ -135,7 +149,11 @@ describe('SalesCharts', () => {
     const makers = ['Stradivarius', 'Guarneri', 'Amati'];
     const sales: EnrichedSale[] = createBaselineSales().map((sale, idx) => ({
       ...sale,
-      instrument: { ...mockInstrument, maker: makers[idx % makers.length], id: `inst-${idx + 1}` },
+      instrument: {
+        ...mockInstrument,
+        maker: makers[idx % makers.length],
+        id: `inst-${idx + 1}`,
+      },
       instrument_id: `inst-${idx + 1}`,
     }));
 
@@ -179,7 +197,11 @@ describe('SalesCharts', () => {
   it('should handle multiple sales on same day', () => {
     const sales: EnrichedSale[] = createBaselineSales().map((sale, idx) =>
       idx < 2
-        ? { ...sale, sale_date: '2024-01-01', sale_price: sale.sale_price + idx * 100 }
+        ? {
+            ...sale,
+            sale_date: '2024-01-01',
+            sale_price: sale.sale_price + idx * 100,
+          }
         : sale
     );
 
@@ -236,8 +258,8 @@ describe('SalesCharts', () => {
     const sales: EnrichedSale[] = Array.from({ length: 10 }, (_, i) =>
       createMockSale({
         id: `sale-${i}`,
-        instrument: { 
-          ...mockInstrument, 
+        instrument: {
+          ...mockInstrument,
           type: i < 5 ? 'Viola' : 'Violin',
           id: `inst-${i}`,
         },

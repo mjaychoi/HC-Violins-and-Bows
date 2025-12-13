@@ -34,7 +34,11 @@ describe('useNotifications', () => {
       baseTask({ id: 'today', due_date: today.toISOString() }),
       baseTask({ id: 'soon', due_date: addDays(today, 2).toISOString() }),
       baseTask({ id: 'later', due_date: addDays(today, 10).toISOString() }), // outside window
-      baseTask({ id: 'done', due_date: today.toISOString(), status: 'completed' }),
+      baseTask({
+        id: 'done',
+        due_date: today.toISOString(),
+        status: 'completed',
+      }),
     ];
 
     const { result } = renderHook(() =>
@@ -62,14 +66,22 @@ describe('useNotifications', () => {
     const tasks: MaintenanceTask[] = [
       baseTask({ id: 'over', scheduled_date: subDays(today, 1).toISOString() }),
       baseTask({ id: 'today', scheduled_date: today.toISOString() }),
-      baseTask({ id: 'upcoming', scheduled_date: addDays(today, 2).toISOString() }),
-      baseTask({ id: 'skip', scheduled_date: addDays(today, 10).toISOString() }),
-      baseTask({ id: 'done', scheduled_date: today.toISOString(), status: 'completed' }),
+      baseTask({
+        id: 'upcoming',
+        scheduled_date: addDays(today, 2).toISOString(),
+      }),
+      baseTask({
+        id: 'skip',
+        scheduled_date: addDays(today, 10).toISOString(),
+      }),
+      baseTask({
+        id: 'done',
+        scheduled_date: today.toISOString(),
+        status: 'completed',
+      }),
     ];
 
-    const { result } = renderHook(() =>
-      useNotificationCounts(tasks, 3)
-    );
+    const { result } = renderHook(() => useNotificationCounts(tasks, 3));
 
     expect(result.current).toEqual({
       overdue: 1,

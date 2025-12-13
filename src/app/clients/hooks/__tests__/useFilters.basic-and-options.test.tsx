@@ -402,9 +402,7 @@ describe('useFilters - 기본 필터 & 옵션', () => {
     act(() => {
       result.current.setSearchTerm('no-match-term');
     });
-    await waitFor(() =>
-      expect(result.current.filteredClients).toHaveLength(0)
-    );
+    await waitFor(() => expect(result.current.filteredClients).toHaveLength(0));
 
     // 실제 이름으로 변경하면 바로 결과가 복원
     act(() => {
@@ -675,8 +673,8 @@ describe('useFilters - 기본 필터 & 옵션', () => {
       result.current.setSearchTerm('123');
     });
     expect(
-      result.current.filteredClients.some(
-        c => c.contact_number?.includes('123')
+      result.current.filteredClients.some(c =>
+        c.contact_number?.includes('123')
       )
     ).toBe(true);
   });
@@ -863,9 +861,7 @@ describe('useFilters - 기본 필터 & 옵션', () => {
       result.current.setSearchTerm('Collector');
     });
     expect(
-      result.current.filteredClients.some(c =>
-        c.tags?.includes('Collector')
-      )
+      result.current.filteredClients.some(c => c.tags?.includes('Collector'))
     ).toBe(true);
   });
 
@@ -931,7 +927,9 @@ describe('useFilters - 기본 필터 & 옵션', () => {
     rerender({ clients: updatedClients });
 
     // 태그 옵션이 업데이트됨
-    expect(result.current.filterOptions.tags.length).toBeGreaterThan(initialTags.length);
+    expect(result.current.filterOptions.tags.length).toBeGreaterThan(
+      initialTags.length
+    );
     expect(result.current.filterOptions.tags).toContain('Owner');
     expect(result.current.filterOptions.tags).toContain('Collector');
   });
@@ -1199,9 +1197,7 @@ describe('useFilters - 기본 필터 & 옵션', () => {
     expect(result.current.filteredClients.length).toBeGreaterThanOrEqual(0);
     if (result.current.filteredClients.length > 0) {
       expect(
-        result.current.filteredClients.some(c =>
-          c.tags?.includes('Collector')
-        )
+        result.current.filteredClients.some(c => c.tags?.includes('Collector'))
       ).toBe(true);
     }
   });
@@ -1509,9 +1505,7 @@ describe('useFilters - 기본 필터 & 옵션', () => {
     });
     if (result.current.filteredClients.length > 0) {
       expect(
-        result.current.filteredClients.some(c =>
-          c.tags?.includes('Violin')
-        )
+        result.current.filteredClients.some(c => c.tags?.includes('Violin'))
       ).toBe(true);
     }
   });
@@ -1759,9 +1753,7 @@ describe('useFilters - 기본 필터 & 옵션', () => {
   });
 
   it('clientsWithInstruments가 undefined일 때 hasInstruments 필터 동작', () => {
-    const { result } = renderHook(() =>
-      useFilters(mockClients, undefined)
-    );
+    const { result } = renderHook(() => useFilters(mockClients, undefined));
 
     act(() => {
       result.current.handleHasInstrumentsChange('Has Instruments');
@@ -1773,9 +1765,7 @@ describe('useFilters - 기본 필터 & 옵션', () => {
   });
 
   it('clientsWithInstruments가 빈 Set일 때 동작', () => {
-    const { result } = renderHook(() =>
-      useFilters(mockClients, new Set())
-    );
+    const { result } = renderHook(() => useFilters(mockClients, new Set()));
 
     act(() => {
       result.current.handleHasInstrumentsChange('Has Instruments');

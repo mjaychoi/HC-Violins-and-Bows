@@ -25,14 +25,16 @@ export default function SalesPagination({
         {hasFilters ? (
           <>
             Showing <span className="font-medium">{filteredCount}</span> of{' '}
-            <span className="font-medium">{totalCount}</span> {totalCount === 1 ? 'record' : 'records'}
+            <span className="font-medium">{totalCount}</span>{' '}
+            {totalCount === 1 ? 'record' : 'records'}
             {filteredCount !== totalCount && (
               <span className="text-gray-500 ml-1">(filtered)</span>
             )}
           </>
         ) : (
           <>
-            Page {page} of {safeTotalPages} · {totalCount} {totalCount === 1 ? 'record' : 'records'}
+            Page {page} of {safeTotalPages} · {totalCount}{' '}
+            {totalCount === 1 ? 'record' : 'records'}
           </>
         )}
       </div>

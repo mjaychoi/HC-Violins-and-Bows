@@ -69,13 +69,15 @@ describe('ConnectionList', () => {
       />
     );
 
-    expect(screen.getByText('Jane Doe ↔ Guarneri - Violin')).toBeInTheDocument();
+    expect(
+      screen.getByText('Jane Doe ↔ Guarneri - Violin')
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button'));
     // Should call onDeleteConnection with the full connection object, not just ID
     expect(onDelete).toHaveBeenCalledWith(connections[0]);
     expect(onDelete).toHaveBeenCalledTimes(1);
-    
+
     // Should NOT use window.confirm
     expect(confirmSpy).not.toHaveBeenCalled();
   });

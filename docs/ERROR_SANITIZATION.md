@@ -52,6 +52,7 @@ try {
 ```
 
 **프로덕션 환경 응답 예시:**
+
 ```json
 {
   "error": "An error occurred",
@@ -61,6 +62,7 @@ try {
 ```
 
 **개발 환경 응답 예시:**
+
 ```json
 {
   "error": "An error occurred",
@@ -135,16 +137,16 @@ const logInfo = createLogErrorInfo(error);
 
 일반적인 에러 패턴이 사용자 친화적인 메시지로 자동 변환됩니다:
 
-| 원본 패턴 | 사용자 메시지 |
-|---------|------------|
-| network | Network connection error. Please check your internet connection. |
-| timeout | Request timeout. Please try again. |
-| unauthorized | Authentication required. Please log in. |
-| forbidden | Access denied. You do not have permission. |
-| not found | The requested resource was not found. |
-| validation | Please check your input and try again. |
-| database | Database error occurred. Please try again later. |
-| server | Server error occurred. Please try again later. |
+| 원본 패턴    | 사용자 메시지                                                    |
+| ------------ | ---------------------------------------------------------------- |
+| network      | Network connection error. Please check your internet connection. |
+| timeout      | Request timeout. Please try again.                               |
+| unauthorized | Authentication required. Please log in.                          |
+| forbidden    | Access denied. You do not have permission.                       |
+| not found    | The requested resource was not found.                            |
+| validation   | Please check your input and try again.                           |
+| database     | Database error occurred. Please try again later.                 |
+| server       | Server error occurred. Please try again later.                   |
 
 ## 보안 고려사항
 
@@ -158,7 +160,10 @@ const logInfo = createLogErrorInfo(error);
 ### API 라우트에서
 
 ```typescript
-import { createSafeErrorResponse, createLogErrorInfo } from '@/utils/errorSanitization';
+import {
+  createSafeErrorResponse,
+  createLogErrorInfo,
+} from '@/utils/errorSanitization';
 
 export async function GET(request: NextRequest) {
   try {
@@ -167,7 +172,7 @@ export async function GET(request: NextRequest) {
     // 로깅용 상세 정보 (서버 로그에만 기록)
     const logInfo = createLogErrorInfo(error);
     console.error('Detailed error:', logInfo);
-    
+
     // 클라이언트용 안전한 응답
     const safeError = createSafeErrorResponse(error, 500);
     return NextResponse.json(safeError, { status: 500 });

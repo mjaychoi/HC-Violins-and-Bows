@@ -4,7 +4,13 @@ import '@testing-library/jest-dom';
 import FilterGroup from '../FilterGroup';
 
 describe('FilterGroup', () => {
-  const mockOptions = ['Option 1', 'Option 2', 'Option 3', 'Option 4', 'Option 5'];
+  const mockOptions = [
+    'Option 1',
+    'Option 2',
+    'Option 3',
+    'Option 4',
+    'Option 5',
+  ];
   const mockOnToggle = jest.fn();
 
   beforeEach(() => {
@@ -153,7 +159,9 @@ describe('FilterGroup', () => {
       />
     );
 
-    expect(screen.getByPlaceholderText(/Test Filter 검색/i)).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText(/Test Filter 검색/i)
+    ).toBeInTheDocument();
   });
 
   it('filters options based on search term', async () => {
@@ -253,8 +261,14 @@ describe('FilterGroup', () => {
       />
     );
 
-    const option1Checkbox = screen.getByText('Option 1').closest('label')?.querySelector('input[type="checkbox"]');
-    const option2Checkbox = screen.getByText('Option 2').closest('label')?.querySelector('input[type="checkbox"]');
+    const option1Checkbox = screen
+      .getByText('Option 1')
+      .closest('label')
+      ?.querySelector('input[type="checkbox"]');
+    const option2Checkbox = screen
+      .getByText('Option 2')
+      .closest('label')
+      ?.querySelector('input[type="checkbox"]');
 
     expect(option1Checkbox).toBeChecked();
     expect(option2Checkbox).not.toBeChecked();
@@ -289,7 +303,6 @@ describe('FilterGroup', () => {
     const filterGroup = container.firstChild as HTMLElement;
     expect(filterGroup).toHaveClass('border-b', 'pb-3');
   });
-
 
   it('shows "검색 결과가 없습니다" when search yields no results', async () => {
     const manyOptions = Array.from({ length: 10 }, (_, i) => `Option ${i + 1}`);

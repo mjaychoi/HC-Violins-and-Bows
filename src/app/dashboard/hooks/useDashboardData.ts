@@ -24,23 +24,25 @@ export const useDashboardData = () => {
 
   // Optimized: Create Maps for O(1) lookups instead of O(n) find operations
   const instrumentMap = useMemo(
-    () => new Map(instruments.map((instrument: Instrument) => [instrument.id, instrument])),
+    () =>
+      new Map(
+        instruments.map((instrument: Instrument) => [instrument.id, instrument])
+      ),
     [instruments]
   );
-  
+
   // FIXED: Use explicit ClientInstrument type instead of typeof clientRelationships[0]
-  const soldConnectionsMap = useMemo(
-    () => {
-      const map = new Map<string, ClientInstrument>();
-      clientRelationships.forEach((conn: ClientInstrument & { client?: unknown; instrument?: unknown }) => {
+  const soldConnectionsMap = useMemo(() => {
+    const map = new Map<string, ClientInstrument>();
+    clientRelationships.forEach(
+      (conn: ClientInstrument & { client?: unknown; instrument?: unknown }) => {
         if (conn.relationship_type === 'Sold' && conn.instrument_id) {
           map.set(conn.instrument_id, conn);
         }
-      });
-      return map;
-    },
-    [clientRelationships]
-  );
+      }
+    );
+    return map;
+  }, [clientRelationships]);
 
   // Handle item creation
   const handleCreateItem = useCallback(
@@ -66,13 +68,15 @@ export const useDashboardData = () => {
     ) => {
       try {
         // 이전 상태 확인 (O(1) lookup)
-        const previousInstrument = instrumentMap.get(itemId) as Instrument | undefined;
+        const previousInstrument = instrumentMap.get(itemId) as
+          | Instrument
+          | undefined;
         const wasSold = previousInstrument?.status === 'Sold';
         const isNowSold = formData.status === 'Sold';
 
         // FIXED: Early return side effects when status is not changing
         const statusIsChanging = typeof formData.status !== 'undefined';
-        
+
         // 악기 업데이트
         const result = await updateInstrument(itemId, formData);
         if (!result) {
@@ -91,11 +95,11 @@ export const useDashboardData = () => {
         if (isNowSold && !wasSold && previousInstrument) {
           try {
             // 판매 가격: formData.price 또는 previousInstrument.price 사용
-            const salePrice = formData.price 
-              ? parseFloat(formData.price.toString()) 
-              : previousInstrument.price 
-              ? parseFloat(previousInstrument.price.toString())
-              : null;
+            const salePrice = formData.price
+              ? parseFloat(formData.price.toString())
+              : previousInstrument.price
+                ? parseFloat(previousInstrument.price.toString())
+                : null;
 
             // 판매 날짜: 오늘 날짜
             const saleDate = format(new Date(), 'yyyy-MM-dd');
@@ -163,7 +167,10 @@ export const useDashboardData = () => {
 
                 if (!refundResponse.ok) {
                   const errorData = await refundResponse.json();
-                  console.warn('Failed to auto-refund sales history:', errorData);
+                  console.warn(
+                    'Failed to auto-refund sales history:',
+                    errorData
+                  );
                 } else {
                   showSuccess('판매 기록이 자동으로 환불 처리되었습니다.');
                 }
@@ -182,7 +189,13 @@ export const useDashboardData = () => {
         throw error; // Re-throw to allow form to handle error
       }
     },
-    [updateInstrument, showSuccess, handleError, instrumentMap, soldConnectionsMap]
+    [
+      updateInstrument,
+      showSuccess,
+      handleError,
+      instrumentMap,
+      soldConnectionsMap,
+    ]
   );
 
   // Handle item update for inline editing (returns void)
@@ -215,11 +228,11 @@ export const useDashboardData = () => {
     instruments,
     clients,
     clientRelationships,
-    
+
     // Loading states
     loading,
     submitting,
-    
+
     // CRUD operations
     handleCreateItem,
     handleUpdateItem,

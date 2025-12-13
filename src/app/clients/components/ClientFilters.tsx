@@ -3,8 +3,13 @@
 
 import { useCallback, useMemo } from 'react';
 import { ClientFilterOptions, FilterState } from '../types';
-import { HAS_INSTRUMENTS_FILTER_OPTIONS, CLIENT_FILTER_LABELS } from '../constants';
-import PageFilters, { FilterGroupConfig } from '@/components/common/PageFilters';
+import {
+  HAS_INSTRUMENTS_FILTER_OPTIONS,
+  CLIENT_FILTER_LABELS,
+} from '../constants';
+import PageFilters, {
+  FilterGroupConfig,
+} from '@/components/common/PageFilters';
 
 interface ClientFiltersProps {
   isOpen: boolean;
@@ -55,53 +60,50 @@ export default function ClientFilters({
   );
 
   // Has Instruments 커스텀 렌더링
-  const renderHasInstruments = useCallback(
-    () => {
-      return (
-        <div className="border-b border-gray-100 pb-3 last:border-b-0">
-          <h4 className="text-sm font-semibold text-gray-900 mb-3">
-            {CLIENT_FILTER_LABELS.HAS_INSTRUMENTS}
-            {filters.hasInstruments.length > 0 && (
-              <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium text-white bg-blue-600 rounded-full">
-                {filters.hasInstruments.length}
-              </span>
-            )}
-          </h4>
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-gray-50 cursor-pointer transition-colors">
-              <input
-                type="checkbox"
-                checked={filters.hasInstruments.includes(
-                  HAS_INSTRUMENTS_FILTER_OPTIONS.HAS
-                )}
-                onChange={() =>
-                  handleHasInstrumentsChange(HAS_INSTRUMENTS_FILTER_OPTIONS.HAS)
-                }
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                aria-label="Filter clients with instruments"
-              />
-              <span className="text-sm text-gray-700">악기 보유</span>
-            </label>
-            <label className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-gray-50 cursor-pointer transition-colors">
-              <input
-                type="checkbox"
-                checked={filters.hasInstruments.includes(
-                  HAS_INSTRUMENTS_FILTER_OPTIONS.NO
-                )}
-                onChange={() =>
-                  handleHasInstrumentsChange(HAS_INSTRUMENTS_FILTER_OPTIONS.NO)
-                }
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                aria-label="Filter clients without instruments"
-              />
-              <span className="text-sm text-gray-700">악기 미보유</span>
-            </label>
-          </div>
+  const renderHasInstruments = useCallback(() => {
+    return (
+      <div className="border-b border-gray-100 pb-3 last:border-b-0">
+        <h4 className="text-sm font-semibold text-gray-900 mb-3">
+          {CLIENT_FILTER_LABELS.HAS_INSTRUMENTS}
+          {filters.hasInstruments.length > 0 && (
+            <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium text-white bg-blue-600 rounded-full">
+              {filters.hasInstruments.length}
+            </span>
+          )}
+        </h4>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-gray-50 cursor-pointer transition-colors">
+            <input
+              type="checkbox"
+              checked={filters.hasInstruments.includes(
+                HAS_INSTRUMENTS_FILTER_OPTIONS.HAS
+              )}
+              onChange={() =>
+                handleHasInstrumentsChange(HAS_INSTRUMENTS_FILTER_OPTIONS.HAS)
+              }
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              aria-label="Filter clients with instruments"
+            />
+            <span className="text-sm text-gray-700">악기 보유</span>
+          </label>
+          <label className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-gray-50 cursor-pointer transition-colors">
+            <input
+              type="checkbox"
+              checked={filters.hasInstruments.includes(
+                HAS_INSTRUMENTS_FILTER_OPTIONS.NO
+              )}
+              onChange={() =>
+                handleHasInstrumentsChange(HAS_INSTRUMENTS_FILTER_OPTIONS.NO)
+              }
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              aria-label="Filter clients without instruments"
+            />
+            <span className="text-sm text-gray-700">악기 미보유</span>
+          </label>
         </div>
-      );
-    },
-    [filters.hasInstruments, handleHasInstrumentsChange]
-  );
+      </div>
+    );
+  }, [filters.hasInstruments, handleHasInstrumentsChange]);
 
   // 필터 그룹 설정
   const filterGroups: FilterGroupConfig[] = useMemo(
@@ -175,12 +177,7 @@ export default function ClientFilters({
         customRender: renderHasInstruments,
       },
     ],
-    [
-      filterOptions,
-      filters,
-      onFilterChange,
-      renderHasInstruments,
-    ]
+    [filterOptions, filters, onFilterChange, renderHasInstruments]
   );
 
   return (

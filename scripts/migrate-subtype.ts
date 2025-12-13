@@ -37,7 +37,10 @@ async function migrateSubtype() {
       logInfo('   1. https://supabase.com/dashboard 접속', 'migrateSubtype');
       logInfo('   2. SQL Editor 열기', 'migrateSubtype');
       logInfo('   3. 다음 SQL 실행:', 'migrateSubtype');
-      logInfo('   ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;', 'migrateSubtype');
+      logInfo(
+        '   ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;',
+        'migrateSubtype'
+      );
       logInfo('', 'migrateSubtype');
       return;
     }
@@ -100,9 +103,13 @@ async function migrateSubtype() {
         await client.query(migrationSQL);
 
         logInfo('✅ 마이그레이션 완료!', 'migrateSubtype');
-        logInfo('🎉 subtype 컬럼이 instruments 테이블에 추가되었습니다.', 'migrateSubtype');
         logInfo(
-          '📝 이제 Dashboard 페이지에서 subtype 필드를 사용할 수 있습니다.\n', 'migrateSubtype'
+          '🎉 subtype 컬럼이 instruments 테이블에 추가되었습니다.',
+          'migrateSubtype'
+        );
+        logInfo(
+          '📝 이제 Dashboard 페이지에서 subtype 필드를 사용할 수 있습니다.\n',
+          'migrateSubtype'
         );
 
         await client.end();
@@ -123,7 +130,10 @@ async function migrateSubtype() {
           'code' in error &&
           (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED')
         ) {
-          logInfo(`⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`, 'migrateSubtype');
+          logInfo(
+            `⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`,
+            'migrateSubtype'
+          );
           continue;
         } else if (
           error &&
@@ -157,7 +167,10 @@ async function migrateSubtype() {
             error.message.includes('duplicate'))
         ) {
           logInfo('⚠️  subtype 컬럼이 이미 존재합니다.', 'migrateSubtype');
-          logInfo('✅ 마이그레이션이 이미 완료된 것으로 보입니다.\n', 'migrateSubtype');
+          logInfo(
+            '✅ 마이그레이션이 이미 완료된 것으로 보입니다.\n',
+            'migrateSubtype'
+          );
           return;
         } else {
           throw error;
@@ -177,9 +190,15 @@ async function migrateSubtype() {
     )?.[1];
 
     if (projectRef) {
-      logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'migrateSubtype');
+      logInfo(
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        'migrateSubtype'
+      );
       logInfo('📝 수동 실행 안내', 'migrateSubtype');
-      logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'migrateSubtype');
+      logInfo(
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        'migrateSubtype'
+      );
       logInfo('', 'migrateSubtype');
       logInfo(
         '1. https://supabase.com/dashboard/project/' +
@@ -190,10 +209,14 @@ async function migrateSubtype() {
       logInfo('2. 다음 SQL 실행:', 'migrateSubtype');
       logInfo('', 'migrateSubtype');
       logInfo(
-        '   ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;', 'migrateSubtype'
+        '   ALTER TABLE instruments ADD COLUMN IF NOT EXISTS subtype TEXT;',
+        'migrateSubtype'
       );
       logInfo('', 'migrateSubtype');
-      logInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'migrateSubtype');
+      logInfo(
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        'migrateSubtype'
+      );
     }
 
     process.exit(1);

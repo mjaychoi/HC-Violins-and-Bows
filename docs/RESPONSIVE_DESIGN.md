@@ -9,6 +9,7 @@
 ### 1. 모바일 레이아웃
 
 #### 사이드바 오버레이
+
 - 모바일 화면(< 768px)에서 사이드바가 오버레이로 표시됩니다
 - 배경 어두운 오버레이로 포커스 제공
 - 사이드바 외부 클릭 시 자동 닫기
@@ -25,6 +26,7 @@
 ```
 
 #### 테이블 스크롤
+
 - 모바일에서 테이블이 가로 스크롤 가능하도록 최적화
 - 모바일에서는 음수 마진으로 전체 너비 활용
 - 데스크톱에서는 정상적인 패딩 유지
@@ -56,6 +58,7 @@ const { setElementRef } = useTouchGestures({
 ```
 
 #### 모달 스와이프 닫기
+
 - 모달을 아래로 스와이프하여 닫기 가능
 - `swipeToClose` prop으로 활성화/비활성화 가능
 
@@ -73,18 +76,18 @@ const { setElementRef } = useTouchGestures({
 ### 3. 모바일 네비게이션
 
 #### 헤더 최적화
+
 - 모바일에서 제목 크기 축소
 - 이메일 주소 숨김 (태블릿 이상에서만 표시)
 - 버튼 텍스트 축약 ("Sign out" → "Out")
 - 액션 버튼 텍스트 축약 ("Add Item" → "Add")
 
 ```tsx
-<h1 className="ml-2 sm:ml-4 text-xl sm:text-2xl font-semibold">
-  {title}
-</h1>
+<h1 className="ml-2 sm:ml-4 text-xl sm:text-2xl font-semibold">{title}</h1>
 ```
 
 #### 사이드바 자동 닫기
+
 - 모바일에서 라우트 변경 시 자동으로 사이드바 닫기
 - 사용자가 메뉴를 선택하면 자동으로 닫혀서 콘텐츠 확인 가능
 
@@ -95,7 +98,12 @@ const { setElementRef } = useTouchGestures({
 `src/utils/responsive.ts`에서 제공하는 유틸리티:
 
 ```typescript
-import { isMobile, isTablet, isDesktop, isTouchDevice } from '@/utils/responsive';
+import {
+  isMobile,
+  isTablet,
+  isDesktop,
+  isTouchDevice,
+} from '@/utils/responsive';
 
 if (isMobile()) {
   // 모바일 전용 로직

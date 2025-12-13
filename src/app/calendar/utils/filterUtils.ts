@@ -18,7 +18,7 @@ const checkDateInRange = (dateStr: string, dateRange: DateRange): boolean => {
 
 /**
  * Filter tasks by date range
- * 
+ *
  * Filter operator behavior:
  * - OR: Task is included if ANY date field (received_date, due_date, personal_due_date, scheduled_date, completed_date) falls within the range.
  *       This is the more common UX pattern: "show all tasks that have any activity in this period".
@@ -122,7 +122,9 @@ export const filterBySearchFilters = (
   }
 
   if (searchFilters.priority && searchFilters.priority !== 'all') {
-    filtered = filtered.filter(task => task.priority === searchFilters.priority);
+    filtered = filtered.filter(
+      task => task.priority === searchFilters.priority
+    );
   }
 
   if (searchFilters.owner && searchFilters.owner !== 'all') {

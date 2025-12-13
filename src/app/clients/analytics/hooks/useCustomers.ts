@@ -9,12 +9,18 @@ export function useCustomers() {
   const { clients, loading: clientsLoading } = useUnifiedClients();
   const { handleError } = useErrorHandler();
   const [loading, setLoading] = useState(false);
-  const [salesByClient, setSalesByClient] = useState<Map<string, SalesHistory[]>>(new Map());
-  const [instrumentsMap, setInstrumentsMap] = useState<Map<string, Instrument>>(new Map());
+  const [salesByClient, setSalesByClient] = useState<
+    Map<string, SalesHistory[]>
+  >(new Map());
+  const [instrumentsMap, setInstrumentsMap] = useState<Map<string, Instrument>>(
+    new Map()
+  );
   const [searchTerm, setSearchTerm] = useState('');
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'name' | 'spend' | 'recent'>('name');
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(
+    null
+  );
 
   // Track if we've already fetched to prevent duplicate fetches
   const hasFetchedRef = useRef(false);
@@ -24,7 +30,10 @@ export function useCustomers() {
   const fetchSalesHistory = useCallback(async () => {
     // Prevent duplicate fetches
     if (hasFetchedRef.current) {
-      if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      if (
+        typeof window !== 'undefined' &&
+        process.env.NODE_ENV === 'development'
+      ) {
         console.log('[useCustomers] Skipping duplicate fetch');
       }
       return;
@@ -32,7 +41,7 @@ export function useCustomers() {
     try {
       setLoading(true);
       console.log('[useCustomers] Fetching sales history...');
-      
+
       // FIXED: Performance note - fetching all sales (10k limit) for analytics
       // TODO: Consider server-side aggregation endpoint /api/sales/summary-by-client
       // that returns {client_id, total_spend, last_purchase_date, purchase_count}
@@ -41,13 +50,16 @@ export function useCustomers() {
       const result = await response.json();
 
       if (!response.ok) {
-        console.error('[useCustomers] Sales API error:', { status: response.status, error: result.error });
+        console.error('[useCustomers] Sales API error:', {
+          status: response.status,
+          error: result.error,
+        });
         throw result.error || new Error('Failed to fetch sales history');
       }
 
       const sales = (result.data || []) as SalesHistory[];
       console.log('[useCustomers] Sales fetched:', { count: sales.length });
-      
+
       // Group sales by client_id
       const grouped = new Map<string, SalesHistory[]>();
       sales.forEach(sale => {
@@ -58,9 +70,9 @@ export function useCustomers() {
         }
       });
 
-      console.log('[useCustomers] Sales grouped by client:', { 
+      console.log('[useCustomers] Sales grouped by client:', {
         uniqueClients: grouped.size,
-        totalSales: sales.length 
+        totalSales: sales.length,
       });
       setSalesByClient(grouped);
 
@@ -73,13 +85,15 @@ export function useCustomers() {
       });
 
       if (instrumentIds.size > 0) {
-        console.log('[useCustomers] Fetching instruments...', { count: instrumentIds.size });
+        console.log('[useCustomers] Fetching instruments...', {
+          count: instrumentIds.size,
+        });
         // FIXED: Performance note - fetching all instruments when only specific IDs are needed
         // TODO: Add endpoint /api/instruments?ids=... (or POST body) to fetch only required IDs
         // This reduces network transfer and memory usage
         const instrumentsResponse = await fetch('/api/instruments');
         const instrumentsResult = await instrumentsResponse.json();
-        
+
         if (instrumentsResponse.ok && instrumentsResult.data) {
           const instruments = instrumentsResult.data as Instrument[];
           const map = new Map<string, Instrument>();
@@ -89,10 +103,15 @@ export function useCustomers() {
               map.set(inst.id, inst);
             }
           });
-          console.log('[useCustomers] Instruments loaded:', { count: map.size });
+          console.log('[useCustomers] Instruments loaded:', {
+            count: map.size,
+          });
           setInstrumentsMap(map);
         } else {
-          console.warn('[useCustomers] Failed to fetch instruments:', instrumentsResult);
+          console.warn(
+            '[useCustomers] Failed to fetch instruments:',
+            instrumentsResult
+          );
         }
       } else {
         console.log('[useCustomers] No instruments to fetch');
@@ -112,21 +131,38 @@ export function useCustomers() {
 
   // Fetch sales history when clients are loaded (only once)
   useEffect(() => {
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+    if (
+      typeof window !== 'undefined' &&
+      process.env.NODE_ENV === 'development'
+    ) {
       console.log('[useCustomers] Clients state:', {
         clientsLoading,
         clientsCount: clients.length,
-        shouldFetch: !clientsLoading && clients.length > 0 && !hasFetchedRef.current,
+        shouldFetch:
+          !clientsLoading && clients.length > 0 && !hasFetchedRef.current,
         hasFetched: hasFetchedRef.current,
       });
     }
-    
-    if (!clientsLoading && clients.length > 0 && !hasFetchedRef.current && fetchSalesHistoryRef.current) {
+
+    if (
+      !clientsLoading &&
+      clients.length > 0 &&
+      !hasFetchedRef.current &&
+      fetchSalesHistoryRef.current
+    ) {
       fetchSalesHistoryRef.current();
     } else if (!clientsLoading && clients.length === 0) {
       // Debug: 클라이언트가 로드되지 않았을 때
-      if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-        console.warn('[useCustomers] 클라이언트 데이터가 없습니다. clientsLoading:', clientsLoading, 'clients.length:', clients.length);
+      if (
+        typeof window !== 'undefined' &&
+        process.env.NODE_ENV === 'development'
+      ) {
+        console.warn(
+          '[useCustomers] 클라이언트 데이터가 없습니다. clientsLoading:',
+          clientsLoading,
+          'clients.length:',
+          clients.length
+        );
       }
     }
   }, [clientsLoading, clients.length]);
@@ -139,7 +175,9 @@ export function useCustomers() {
     const result = clients.map(client => {
       const sales = salesByClient.get(client.id) || [];
       const purchases = sales.map(sale => {
-        const instrument = sale.instrument_id ? instrumentsMap.get(sale.instrument_id) : null;
+        const instrument = sale.instrument_id
+          ? instrumentsMap.get(sale.instrument_id)
+          : null;
         return salesHistoryToPurchase(sale, instrument);
       });
 
@@ -150,25 +188,30 @@ export function useCustomers() {
         purchases,
       };
     });
-    
+
     // Debug logging
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+    if (
+      typeof window !== 'undefined' &&
+      process.env.NODE_ENV === 'development'
+    ) {
       console.log('[useCustomers] Customers calculated:', {
         clientsCount: clients.length,
         customersCount: result.length,
         salesByClientSize: salesByClient.size,
         instrumentsMapSize: instrumentsMap.size,
-        customersWithPurchases: result.filter(c => c.purchases.length > 0).length,
+        customersWithPurchases: result.filter(c => c.purchases.length > 0)
+          .length,
       });
     }
-    
+
     return result;
   }, [clients, salesByClient, instrumentsMap]);
 
   const filteredCustomers = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
     const filtered = customers.filter(c => {
-      const fullName = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
+      const fullName =
+        `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
       const matchesSearch =
         !term ||
         fullName.includes(term) ||
@@ -180,8 +223,10 @@ export function useCustomers() {
 
     const sorted = [...filtered].sort((a, b) => {
       if (sortBy === 'name') {
-        const nameA = `${a.first_name || ''} ${a.last_name || ''}`.toLowerCase();
-        const nameB = `${b.first_name || ''} ${b.last_name || ''}`.toLowerCase();
+        const nameA =
+          `${a.first_name || ''} ${a.last_name || ''}`.toLowerCase();
+        const nameB =
+          `${b.first_name || ''} ${b.last_name || ''}`.toLowerCase();
         return nameA.localeCompare(nameB);
       }
       if (sortBy === 'spend') {
@@ -192,10 +237,18 @@ export function useCustomers() {
       // recent
       // FIXED: Use getMostRecentDate and compareDatesDesc for reliable date sorting
       // FIXED: Handle empty purchases array - use created_at as fallback when getMostRecentDate returns '—'
-      const aRecentDate = a.purchases.length > 0 ? getMostRecentDate(a.purchases.map(p => p.date)) : null;
-      const bRecentDate = b.purchases.length > 0 ? getMostRecentDate(b.purchases.map(p => p.date)) : null;
-      const recentA = (aRecentDate && aRecentDate !== '—') ? aRecentDate : (a.created_at || '');
-      const recentB = (bRecentDate && bRecentDate !== '—') ? bRecentDate : (b.created_at || '');
+      const aRecentDate =
+        a.purchases.length > 0
+          ? getMostRecentDate(a.purchases.map(p => p.date))
+          : null;
+      const bRecentDate =
+        b.purchases.length > 0
+          ? getMostRecentDate(b.purchases.map(p => p.date))
+          : null;
+      const recentA =
+        aRecentDate && aRecentDate !== '—' ? aRecentDate : a.created_at || '';
+      const recentB =
+        bRecentDate && bRecentDate !== '—' ? bRecentDate : b.created_at || '';
       return compareDatesDesc(recentA, recentB);
     });
 
@@ -237,6 +290,9 @@ export function useCustomers() {
     setSelectedCustomerId,
     selectedCustomer,
     availableTags,
-    loading: (typeof clientsLoading === 'object' && 'any' in clientsLoading ? clientsLoading.any : Boolean(clientsLoading)) || loading,
+    loading:
+      (typeof clientsLoading === 'object' && 'any' in clientsLoading
+        ? clientsLoading.any
+        : Boolean(clientsLoading)) || loading,
   };
 }

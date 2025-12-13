@@ -32,7 +32,9 @@ export function useLoadingState(
 
   // Use counters instead of boolean to handle nested calls
   const [loadingCount, setLoadingCount] = useState(initialLoading ? 1 : 0);
-  const [submittingCount, setSubmittingCount] = useState(initialSubmitting ? 1 : 0);
+  const [submittingCount, setSubmittingCount] = useState(
+    initialSubmitting ? 1 : 0
+  );
 
   const loading = loadingCount > 0;
   const submitting = submittingCount > 0;

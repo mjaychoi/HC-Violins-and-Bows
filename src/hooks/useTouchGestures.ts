@@ -92,7 +92,15 @@ export function useTouchGestures({
     }
 
     setTouchState(null);
-  }, [touchState, threshold, onSwipeLeft, onSwipeRight, onSwipeUp, onSwipeDown, enabled]);
+  }, [
+    touchState,
+    threshold,
+    onSwipeLeft,
+    onSwipeRight,
+    onSwipeUp,
+    onSwipeDown,
+    enabled,
+  ]);
 
   const setElementRef = useCallback((element: HTMLElement | null) => {
     elementRef.current = element;

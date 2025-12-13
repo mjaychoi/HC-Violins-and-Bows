@@ -120,7 +120,9 @@ export default function ClientForm({
         });
         const response = await fetch(`/api/instruments?${params.toString()}`);
         if (!response.ok) {
-          throw new Error(`Failed to search instruments: ${response.statusText}`);
+          throw new Error(
+            `Failed to search instruments: ${response.statusText}`
+          );
         }
         const result = await response.json();
         // Filter out instruments already selected to prevent duplicates
@@ -196,7 +198,9 @@ export default function ClientForm({
     // 선택된 instruments와 함께 전달
     await onSubmit(
       formData,
-      selectedInstrumentsForNew.length > 0 ? selectedInstrumentsForNew : undefined
+      selectedInstrumentsForNew.length > 0
+        ? selectedInstrumentsForNew
+        : undefined
     );
 
     // UX: Show success state instead of immediately closing
@@ -212,7 +216,7 @@ export default function ClientForm({
     setShowInstrumentSearchForNew(false);
     setInstrumentSearchTermForNew('');
     clearSearchResults();
-    
+
     // Auto-generate new client number
     const existingNumbers = clients
       .map(c => c.client_number)
@@ -336,7 +340,11 @@ export default function ClientForm({
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-4 text-gray-900" style={{ display: success ? 'none' : 'block' }}>
+          <form
+            onSubmit={handleSubmit}
+            className="p-6 space-y-4 text-gray-900"
+            style={{ display: success ? 'none' : 'block' }}
+          >
             <div className="space-y-4">
               <Input
                 label="Last Name"
@@ -424,7 +432,8 @@ export default function ClientForm({
                     id="interest"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Appears when certain tags are selected. Shows client&apos;s primary interest area
+                    Appears when certain tags are selected. Shows client&apos;s
+                    primary interest area
                   </p>
                 </div>
               )}
@@ -472,7 +481,8 @@ export default function ClientForm({
                   Connect Instruments (Optional)
                 </label>
                 <p className="mb-2 text-xs text-gray-500">
-                  Link instruments to this client (e.g., owned, interested, or booked items)
+                  Link instruments to this client (e.g., owned, interested, or
+                  booked items)
                 </p>
                 <div className="space-y-2">
                   <button

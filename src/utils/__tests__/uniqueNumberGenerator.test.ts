@@ -188,7 +188,7 @@ describe('uniqueNumberGenerator', () => {
 
     it('should validate instrument serials with null/undefined', () => {
       const existing = ['VI0000001'];
-      
+
       const nullResult = validateInstrumentSerial(null, existing);
       expect(nullResult.valid).toBe(false);
       expect(nullResult.error).toBe('Serial number is required.');
@@ -200,20 +200,28 @@ describe('uniqueNumberGenerator', () => {
 
     it('should validate instrument serials with current number exclusion', () => {
       const existing = ['VI0000001', 'BO0000001'];
-      
+
       // Same as current number should be valid
-      const sameNumber = validateInstrumentSerial('VI0000001', existing, 'VI0000001');
+      const sameNumber = validateInstrumentSerial(
+        'VI0000001',
+        existing,
+        'VI0000001'
+      );
       expect(sameNumber.valid).toBe(true);
 
       // Different number that exists should be invalid
-      const duplicate = validateInstrumentSerial('BO0000001', existing, 'VI0000001');
+      const duplicate = validateInstrumentSerial(
+        'BO0000001',
+        existing,
+        'VI0000001'
+      );
       expect(duplicate.valid).toBe(false);
       expect(duplicate.error).toContain('already in use');
     });
 
     it('should validate instrument serials with normalized existing numbers', () => {
       const existing = ['vi0000001', '  BO0000001  ', 'ce0000002'];
-      
+
       const result = validateInstrumentSerial('VI0000002', existing);
       expect(result.valid).toBe(true);
       expect(result.normalizedSerial).toBe('VI0000002');
@@ -417,13 +425,19 @@ describe('uniqueNumberGenerator', () => {
 
   describe('Edge cases and additional coverage', () => {
     it('should handle generateClientNumber with very large numbers', () => {
-      const existing = Array.from({ length: 1000 }, (_, i) => `CL${String(i + 1).padStart(3, '0')}`);
+      const existing = Array.from(
+        { length: 1000 },
+        (_, i) => `CL${String(i + 1).padStart(3, '0')}`
+      );
       const result = generateClientNumber(existing);
       expect(result).toBe('CL1001');
     });
 
     it('should handle generateInstrumentSerialNumber with very large numbers', () => {
-      const existing = Array.from({ length: 1000 }, (_, i) => `VI${String(i + 1).padStart(7, '0')}`);
+      const existing = Array.from(
+        { length: 1000 },
+        (_, i) => `VI${String(i + 1).padStart(7, '0')}`
+      );
       const result = generateInstrumentSerialNumber('violin', existing);
       expect(result).toBe('VI0001001');
     });
@@ -461,10 +475,10 @@ describe('uniqueNumberGenerator', () => {
     it('should handle normalizeInstrumentSerial with edge cases', () => {
       // Single digit
       expect(normalizeInstrumentSerial('VI1')).toBe('VI0000001');
-      
+
       // Maximum digits (7)
       expect(normalizeInstrumentSerial('VI1234567')).toBe('VI1234567');
-      
+
       // More than 7 digits (should not pad)
       expect(normalizeInstrumentSerial('VI12345678')).toBe('VI12345678');
     });
@@ -472,17 +486,20 @@ describe('uniqueNumberGenerator', () => {
     it('should handle formatUniqueNumber edge cases', () => {
       // Only spaces
       expect(formatUniqueNumber('   ')).toBe('');
-      
+
       // Numbers only
       expect(formatUniqueNumber('123')).toBe('123');
-      
+
       // Special characters preserved
       expect(formatUniqueNumber('ABC-123')).toBe('ABC-123');
     });
 
     it('should handle generateInstrumentSerialNumber with null and undefined in existing numbers', () => {
       const existing = ['VI0000001', null, undefined, '', 'VI0000002'];
-      const result = generateInstrumentSerialNumber('violin', existing as string[]);
+      const result = generateInstrumentSerialNumber(
+        'violin',
+        existing as string[]
+      );
       expect(result).toBe('VI0000003');
     });
 
@@ -696,7 +713,9 @@ describe('uniqueNumberGenerator', () => {
       const longNumber = 'A'.repeat(21);
       const result = validateUniqueNumber(longNumber, []);
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('고유 번호는 영문자와 숫자만 사용할 수 있으며, 최대 20자까지 가능합니다.');
+      expect(result.error).toBe(
+        '고유 번호는 영문자와 숫자만 사용할 수 있으며, 최대 20자까지 가능합니다.'
+      );
     });
 
     it('should handle validateUniqueNumber with numbers only', () => {
@@ -719,7 +738,9 @@ describe('uniqueNumberGenerator', () => {
       expect(result1.error).toBe('Serial number is required.');
 
       const result2 = validateInstrumentSerial('INVALID', []);
-      expect(result2.error).toBe('Serial number must match pattern AA0000000 (2 letters + 7 digits).');
+      expect(result2.error).toBe(
+        'Serial number must match pattern AA0000000 (2 letters + 7 digits).'
+      );
 
       const existing = ['VI0000001'];
       const result3 = validateInstrumentSerial('VI0000001', existing);

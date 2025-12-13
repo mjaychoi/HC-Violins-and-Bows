@@ -34,7 +34,9 @@ describe('SupabaseHelpers', () => {
         select: jest.fn(() => ({ data: mockData, error: null })),
       });
 
-      const result = await SupabaseHelpers.fetchAll('instruments' as keyof typeof ALLOWED_SORT_COLUMNS);
+      const result = await SupabaseHelpers.fetchAll(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS
+      );
 
       expect(result.data).toEqual(mockData);
       expect(result.error).toBeNull();
@@ -51,9 +53,12 @@ describe('SupabaseHelpers', () => {
         order: mockOrder,
       });
 
-      await SupabaseHelpers.fetchAll('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, {
-        orderBy: { column: 'created_at', ascending: false },
-      });
+      await SupabaseHelpers.fetchAll(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        {
+          orderBy: { column: 'created_at', ascending: false },
+        }
+      );
 
       expect(mockOrder).toHaveBeenCalledWith('created_at', {
         ascending: false,
@@ -71,7 +76,10 @@ describe('SupabaseHelpers', () => {
         limit: mockLimit,
       });
 
-      await SupabaseHelpers.fetchAll('instruments' as keyof typeof ALLOWED_SORT_COLUMNS, { limit: 10 });
+      await SupabaseHelpers.fetchAll(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        { limit: 10 }
+      );
 
       expect(mockLimit).toHaveBeenCalledWith(10);
     });

@@ -13,7 +13,9 @@ describe('SuccessToast', () => {
   });
 
   it('renders message and close button', () => {
-    render(<SuccessToast message="Saved!" onClose={onClose} autoClose={false} />);
+    render(
+      <SuccessToast message="Saved!" onClose={onClose} autoClose={false} />
+    );
     expect(screen.getByText('Saved!')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
   });
@@ -32,7 +34,9 @@ describe('SuccessToast', () => {
   });
 
   it('manual close hides immediately and triggers onClose', () => {
-    render(<SuccessToast message="Manual" onClose={onClose} autoClose={false} />);
+    render(
+      <SuccessToast message="Manual" onClose={onClose} autoClose={false} />
+    );
     fireEvent.click(screen.getByRole('button', { name: /close/i }));
 
     // component unmounts after click

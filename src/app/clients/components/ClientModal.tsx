@@ -208,9 +208,7 @@ export default function ClientModal({
                     </label>
                     <ClientTagSelector
                       selectedTags={viewFormData.tags}
-                      onChange={next =>
-                        onUpdateViewFormData({ tags: next })
-                      }
+                      onChange={next => onUpdateViewFormData({ tags: next })}
                     />
                   </div>
 
@@ -486,7 +484,7 @@ export default function ClientModal({
                           {relationship.instrument_id ? (
                             <Link
                               href={`/dashboard?instrumentId=${relationship.instrument_id}`}
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={e => e.stopPropagation()}
                               className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left block"
                               title="View instrument details"
                             >

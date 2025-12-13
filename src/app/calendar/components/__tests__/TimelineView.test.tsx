@@ -25,7 +25,20 @@ jest.mock('date-fns', () => {
         return `${date.getMonth() + 1}/${date.getDate()}`;
       }
       if (formatStr === 'MMMM d, yyyy') {
-        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const monthNames = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
         return `${monthNames[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
       }
       return actual.format(date, formatStr);

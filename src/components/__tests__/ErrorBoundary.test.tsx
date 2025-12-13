@@ -49,9 +49,7 @@ describe('ErrorBoundary', () => {
     const customFallback = (_error: AppError, _errorInfo: ErrorInfo) => {
       void _error;
       void _errorInfo;
-      return (
-      <div>Custom error message</div>
-      );
+      return <div>Custom error message</div>;
     };
 
     render(

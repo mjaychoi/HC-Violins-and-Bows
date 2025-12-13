@@ -1,6 +1,6 @@
 /**
  * Notification Permission Button
- * 
+ *
  * 브라우저 알림 권한을 요청하는 버튼 컴포넌트
  */
 

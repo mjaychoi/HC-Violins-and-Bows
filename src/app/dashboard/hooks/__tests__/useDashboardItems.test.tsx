@@ -231,7 +231,9 @@ describe('useDashboardItems', () => {
     });
 
     await act(async () => {
-      const updated = await result.current.updateItem('inst1', { price: 150000 });
+      const updated = await result.current.updateItem('inst1', {
+        price: 150000,
+      });
       expect(updated).toEqual(updatedInstrument);
     });
 
@@ -357,4 +359,3 @@ describe('useDashboardItems', () => {
     expect(result.current.imagesToDelete).toEqual(['img1', 'img2']);
   });
 });
-

@@ -40,14 +40,18 @@ export function useDataState<T>(
   const warnedRef = useRef({ loading: false, error: false });
   const setLoading = useCallback(() => {
     if (process.env.NODE_ENV === 'development' && !warnedRef.current.loading) {
-      console.warn('useDataState.setLoading is deprecated and no-op. Remove this call.');
+      console.warn(
+        'useDataState.setLoading is deprecated and no-op. Remove this call.'
+      );
       warnedRef.current.loading = true;
     }
   }, []);
-  
+
   const setError = useCallback(() => {
     if (process.env.NODE_ENV === 'development' && !warnedRef.current.error) {
-      console.warn('useDataState.setError is deprecated and no-op. Remove this call.');
+      console.warn(
+        'useDataState.setError is deprecated and no-op. Remove this call.'
+      );
       warnedRef.current.error = true;
     }
   }, []);

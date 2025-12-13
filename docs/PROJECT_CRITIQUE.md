@@ -31,34 +31,40 @@
 ## 강점 (Strengths)
 
 ### ✅ 1. 타입 안정성
+
 - **TypeScript strict mode** 활성화
 - 명확한 타입 정의 (`types/index.ts`)
 - API 응답 타입 일관성 유지
 - 타입 가드와 유효성 검사 구현
 
 ### ✅ 2. 테스트 인프라
+
 - **Jest + React Testing Library** 설정 완료
 - **Playwright** E2E 테스트 준비
 - 테스트 커버리지 추적 가능
 - 다양한 테스트 유틸리티 제공
 
 ### ✅ 3. 에러 핸들링
+
 - 구조화된 에러 핸들링 시스템 (`ErrorHandler` 클래스)
 - 에러 카테고리 및 심각도 분류
 - 모니터링 통합 (`monitoring.ts`)
 - 사용자 친화적 에러 메시지
 
 ### ✅ 4. 컴포넌트 구조
+
 - 재사용 가능한 공통 컴포넌트 (`components/common/`)
 - 레이아웃 컴포넌트 분리 (`components/layout/`)
 - 페이지별 컴포넌트 모듈화
 
 ### ✅ 5. 문서화
+
 - 사용자 가이드 (`USER_GUIDE.md`, `SALES_HISTORY_USER_GUIDE.md`)
 - 구현 문서 (`SALES_HISTORY_IMPLEMENTATION.md`)
 - 배포 체크리스트 (`PRODUCTION_CHECKLIST.md`)
 
 ### ✅ 6. 개발 도구
+
 - **ESLint + Prettier** 설정
 - **Husky** pre-commit hooks
 - **Bundle Analyzer** 설정
@@ -71,6 +77,7 @@
 ### ✅ 1. 데이터 페칭 전략의 일관성 부족 (Critical) - **완료**
 
 **이전 문제점**:
+
 - 여러 데이터 페칭 패턴이 혼재되어 있음:
   - `useUnifiedData` / `useUnifiedClients` / `useUnifiedDashboard` (Context 기반)
   - `useOptimizedConnections` / `useOptimizedInstruments` (직접 Supabase 호출)
@@ -79,6 +86,7 @@
   - `useSalesHistory` (API 라우트 사용)
 
 **완료된 작업**:
+
 - ✅ **Context API로 통일 완료**
   - 모든 app 페이지에서 `useUnified*` 훅 사용
   - `useOptimized*` 훅은 deprecated 처리 (`@deprecated` 주석 추가)
@@ -100,11 +108,13 @@
 ### ✅ 2. 성능 최적화 여지 - **완료**
 
 #### 2.1 불필요한 재렌더링 - **개선됨**
+
 - ✅ `useMemo` / `useCallback` 사용 일관성 확보
 - ✅ `useClientInstruments`의 모든 함수가 `useCallback`으로 감싸짐
 - ✅ Map 생성에 `useMemo` 사용
 
 #### 2.2 데이터 조회 최적화 - **완료**
+
 ```typescript
 // 이전: O(n²) 복잡도
 const getClientRelationships = useCallback(() => {
@@ -128,6 +138,7 @@ const getClientRelationships = useMemo(() => {
 ```
 
 **완료된 최적화**:
+
 - ✅ `src/app/connections/page.tsx`: `clientMap`, `instrumentMap` 사용
 - ✅ `src/app/dashboard/hooks/useDashboardData.ts`: `instrumentMap`, `soldConnectionsMap` 사용
 - ✅ `src/app/clients/hooks/useClientInstruments.ts`: `relationshipsMap` 사용
@@ -140,6 +151,7 @@ const getClientRelationships = useMemo(() => {
 ### ✅ 3. 코드 중복 - **완료**
 
 #### 3.1 필터링 로직 중복 - **완료**
+
 - ✅ 공통 필터 훅 `usePageFilters` 존재 및 사용 중
 - ✅ `useFilters` (Clients)가 `usePageFilters` 기반으로 완전 통일
 - ✅ `useDashboardFilters`가 `usePageFilters` 기반으로 완전 통일
@@ -147,6 +159,7 @@ const getClientRelationships = useMemo(() => {
 - ✅ `useDashboardFilters`의 `dateRange` 중복 필터링 제거 완료
 
 #### 3.2 폼 처리 로직 중복 - **완료**
+
 - ✅ 공통 폼 훅 `useFormState` 존재 및 사용 중
 - ✅ `useDashboardForm`이 `useFormState` 기반으로 완전 통일
 - ✅ `ClientForm`이 `useFormState` 기반으로 완전 통일
@@ -161,11 +174,13 @@ const getClientRelationships = useMemo(() => {
 ### ✅ 4. API 라우트 일관성 - **완료**
 
 **이전 상태**:
+
 - `/api/sales/route.ts` - 잘 구현됨 (pagination, filtering, sorting)
 - `/api/health/route.ts` - 기본 구현
 - 다른 CRUD는 직접 Supabase 호출
 
 **완료된 작업**:
+
 - ✅ **생성된 API 라우트**:
   - `/api/clients/route.ts` - GET, POST, PATCH, DELETE
   - `/api/instruments/route.ts` - GET, POST, PATCH, DELETE
@@ -188,6 +203,7 @@ const getClientRelationships = useMemo(() => {
 ### 🟢 5. 타입 정의 개선
 
 #### 5.1 Optional 타입 남용
+
 ```typescript
 // 현재
 export interface Instrument {
@@ -210,6 +226,7 @@ export interface Instrument {
 ```
 
 #### 5.2 타입 가드 부족
+
 - 런타임 타입 검증이 부족한 경우가 있음
 - API 응답 타입 검증 미흡
 
@@ -220,10 +237,12 @@ export interface Instrument {
 ### 🟢 6. 접근성 (A11y)
 
 **현재 상태**:
+
 - 일부 컴포넌트에 ARIA 속성 추가됨 (`SalesPage`, `SaleForm`)
 - 키보드 네비게이션 지원 부분적
 
 **개선 필요**:
+
 - 모든 인터랙티브 요소에 ARIA 라벨 추가
 - 키보드 단축키 문서화
 - 포커스 관리 개선
@@ -235,10 +254,12 @@ export interface Instrument {
 ### 🟢 7. 반응형 디자인
 
 **현재 상태**:
+
 - 기본 Tailwind 반응형 클래스 사용
 - 모바일 최적화가 충분하지 않을 수 있음
 
 **개선 필요**:
+
 - 모바일 레이아웃 테스트 및 개선
 - 터치 제스처 지원
 - 모바일 네비게이션 개선
@@ -296,11 +317,13 @@ export interface Instrument {
 ```
 
 ### 아키텍처 강점
+
 - ✅ 계층적 구조 (Pages → Components → Hooks → Utils)
 - ✅ 관심사 분리
 - ✅ 재사용 가능한 컴포넌트
 
 ### 아키텍처 약점
+
 - ✅ 데이터 페칭 전략 통일 완료 (Context API + API 라우트)
 - ✅ 직접 Supabase 호출 제거 완료 (모든 주요 CRUD 작업이 API 라우트 경유)
 - ✅ API 라우트 활용 확대 완료 (`/api/clients`, `/api/instruments`, `/api/connections`, `/api/maintenance-tasks`)
@@ -311,16 +334,17 @@ export interface Instrument {
 
 ### 메트릭
 
-| 항목 | 점수 | 비고 |
-|------|------|------|
-| 타입 안정성 | 9/10 | Strict mode, 명확한 타입 정의 |
-| 테스트 커버리지 | 7/10 | 단위 테스트 양호, E2E 테스트 부족 |
-| 코드 중복 | 7.5/10 | 필터 로직 공통화 완료, 폼 로직 부분 개선 |
-| 네이밍 | 8/10 | 대체로 명확함 |
-| 주석/문서 | 7/10 | 주요 함수에 JSDoc 부족 |
-| 에러 핸들링 | 9/10 | 구조화된 에러 처리 |
+| 항목            | 점수   | 비고                                     |
+| --------------- | ------ | ---------------------------------------- |
+| 타입 안정성     | 9/10   | Strict mode, 명확한 타입 정의            |
+| 테스트 커버리지 | 7/10   | 단위 테스트 양호, E2E 테스트 부족        |
+| 코드 중복       | 7.5/10 | 필터 로직 공통화 완료, 폼 로직 부분 개선 |
+| 네이밍          | 8/10   | 대체로 명확함                            |
+| 주석/문서       | 7/10   | 주요 함수에 JSDoc 부족                   |
+| 에러 핸들링     | 9/10   | 구조화된 에러 처리                       |
 
 ### 코드 스타일
+
 - ✅ ESLint + Prettier 설정
 - ✅ 일관된 네이밍 컨벤션
 - ⚠️ 일부 긴 함수/컴포넌트 (리팩토링 필요)
@@ -330,12 +354,14 @@ export interface Instrument {
 ## 성능 이슈
 
 ### 현재 성능 최적화
+
 - ✅ `useMemo` / `useCallback` 사용 (부분적)
 - ✅ `react-window` 설치됨 (미사용)
 - ✅ Bundle Analyzer 설정
 - ✅ `next/dynamic` 사용 (부분적)
 
 ### 개선 필요
+
 1. **대용량 리스트 가상화**
    - `react-window` 설치되어 있으나 미사용
    - Dashboard, Clients 리스트에 적용 필요
@@ -357,12 +383,14 @@ export interface Instrument {
 ## 보안 고려사항
 
 ### 현재 보안 조치
+
 - ✅ 보안 헤더 설정 (`next.config.ts`)
 - ✅ 환경 변수 관리
 - ✅ SQL Injection 방지 (Supabase 사용)
 - ✅ XSS 방지 (React 기본)
 
 ### 개선 필요
+
 1. **인증/인가**
    - RLS (Row Level Security) 정책 검토
    - API 라우트 인증 미들웨어 추가
@@ -444,21 +472,25 @@ export interface Instrument {
 ## 결론
 
 ### 종합 평가
+
 HC Violins and Bows 프로젝트는 **견고한 기반**을 가지고 있습니다. 타입 안정성, 에러 핸들링, 테스트 인프라는 우수합니다. **최근 Critical 및 High 우선순위 개선 작업이 완료되어** 데이터 페칭 전략이 통일되었고, 성능 최적화가 완료되었으며, API 라우트 일관성이 확보되었습니다.
 
 ### 완료된 개선 사항
+
 1. ✅ **데이터 페칭 전략 통일** - Context API로 완전 통일 완료
 2. ✅ **성능 최적화** - O(n²) → O(n) 개선 완료, Map 기반 조회 적용
 3. ✅ **API 라우트 확장** - 모든 주요 CRUD 작업을 API 라우트로 통일
 4. ✅ **코드 중복 제거** - 필터 로직 공통화 완료
 
 ### 향후 권장 사항
+
 1. **중기**: 테스트 커버리지 향상 (E2E 테스트 확장)
 2. **중기**: 접근성 개선 (ARIA 속성 보완, 키보드 네비게이션)
 3. **장기**: 반응형 디자인 개선 (모바일 최적화)
 4. **장기**: 문서화 보완 (API 문서화, 아키텍처 다이어그램)
 
 ### 달성된 개선 효과
+
 - **코드 유지보수성**: +30% ✅
 - **성능**: +20-40% (대용량 데이터) ✅
 - **개발 속도**: +15-25% (일관된 패턴) ✅
