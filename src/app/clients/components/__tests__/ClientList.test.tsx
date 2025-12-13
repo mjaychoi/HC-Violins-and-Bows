@@ -4,6 +4,30 @@ import '@testing-library/jest-dom';
 import ClientList from '../ClientList';
 import { Client } from '@/types';
 
+jest.mock('@/components/common', () => ({
+  EmptyState: ({ title, description }: any) => (
+    <div data-testid="empty-state">
+      <h3>{title}</h3>
+      <p>{description}</p>
+    </div>
+  ),
+  Pagination: () => null,
+}));
+
+jest.mock('next/dynamic', () => {
+  return () => {
+    // Mock FixedSizeList component
+    const MockedFixedSizeList = ({ children, itemCount }: any) => (
+      <div data-testid="fixed-size-list">
+        {Array.from({ length: itemCount }, (_, i) =>
+          children({ index: i, style: {} })
+        )}
+      </div>
+    );
+    return MockedFixedSizeList;
+  };
+});
+
 const mockClients: Client[] = [
   {
     id: '1',
@@ -215,12 +239,7 @@ describe('ClientList', () => {
 
   it('calls onDeleteClient with client object (not window.confirm)', () => {
     const onDeleteClient = jest.fn();
-    render(
-      <ClientList
-        {...mockProps}
-        onDeleteClient={onDeleteClient}
-      />
-    );
+    render(<ClientList {...mockProps} onDeleteClient={onDeleteClient} />);
 
     // Find delete button (should be in actions column)
     const deleteButtons = screen.getAllByLabelText('Delete client');
@@ -231,7 +250,7 @@ describe('ClientList', () => {
     // Should call onDeleteClient with the full client object, not just ID
     expect(onDeleteClient).toHaveBeenCalledWith(mockClients[0]);
     expect(onDeleteClient).toHaveBeenCalledTimes(1);
-    
+
     // Should NOT use window.confirm
     expect(confirmSpy).not.toHaveBeenCalled();
   });

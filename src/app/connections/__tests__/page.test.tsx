@@ -41,13 +41,13 @@ jest.mock('@/hooks/useLoadingState', () => ({
   useLoadingState: jest.fn(() => ({
     loading: false,
     submitting: false,
-    withSubmitting: jest.fn((fn) => fn()),
+    withSubmitting: jest.fn(fn => fn()),
   })),
 }));
 
 jest.mock('@/hooks/useFilterSort', () => ({
   __esModule: true,
-  useFilterSort: jest.fn((items) => ({
+  useFilterSort: jest.fn(items => ({
     items,
   })),
 }));
@@ -74,15 +74,22 @@ jest.mock('../components', () => ({
     isOpen ? <div data-testid="connection-modal">Connection Modal</div> : null
   ),
   FilterBar: jest.fn(() => <div data-testid="filter-bar">Filter Bar</div>),
-  ConnectionsList: jest.fn(() => <div data-testid="connections-list">Connections List</div>),
+  ConnectionsList: jest.fn(() => (
+    <div data-testid="connections-list">Connections List</div>
+  )),
   EmptyState: jest.fn(({ onCreateConnection }) => (
     <div data-testid="empty-state">
-      <button onClick={onCreateConnection} data-testid="create-connection-button">
+      <button
+        onClick={onCreateConnection}
+        data-testid="create-connection-button"
+      >
         Create Connection
       </button>
     </div>
   )),
-  LoadingState: jest.fn(() => <div data-testid="loading-state">Loading...</div>),
+  LoadingState: jest.fn(() => (
+    <div data-testid="loading-state">Loading...</div>
+  )),
   EditConnectionModal: jest.fn(() => null),
 }));
 
@@ -162,24 +169,11 @@ describe('ConnectedClientsPage', () => {
   });
 
   it('should render LoadingState when loading', () => {
-    const { useUnifiedConnectionForm } = require('@/hooks/useUnifiedData');
-    useUnifiedConnectionForm.mockReturnValue({
-      clients: [],
-      instruments: [],
-      connections: [],
-      loading: {
-        clients: false,
-        instruments: false,
-        connections: true,
-        any: true,
-      },
-      submitting: {
-        connections: false,
-        any: false,
-      },
-      createConnection: jest.fn(),
-      updateConnection: jest.fn(),
-      deleteConnection: jest.fn(),
+    const { useLoadingState } = require('@/hooks/useLoadingState');
+    useLoadingState.mockReturnValue({
+      loading: true,
+      submitting: false,
+      withSubmitting: jest.fn(fn => fn()),
     });
 
     render(<ConnectedClientsPage />);
@@ -230,7 +224,7 @@ describe('ConnectedClientsPage', () => {
 
       // Verify window.confirm was never called (we use ConfirmDialog instead)
       expect(mockConfirm).not.toHaveBeenCalled();
-      
+
       mockConfirm.mockRestore();
     });
 

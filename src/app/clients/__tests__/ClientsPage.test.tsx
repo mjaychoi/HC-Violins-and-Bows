@@ -7,8 +7,46 @@ jest.mock('next/dynamic', () => ({
   default: (importer: any) => {
     const src = String(importer);
     if (src.includes('ClientList')) {
-      // Use the mocked ClientList from '../components'
-      return require('../components').ClientList;
+      // Return the mocked ClientList component directly
+      const MockClientList = ({
+        clients,
+        onClientClick,
+        onColumnSort,
+      }: any) => (
+        <div>
+          <table role="table">
+            <thead>
+              <tr>
+                <th>
+                  <button
+                    onClick={() => onColumnSort && onColumnSort('first_name')}
+                  >
+                    Name
+                  </button>
+                </th>
+                <th>Email</th>
+                <th>Contact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients?.map((c: any) => (
+                <tr
+                  key={c.id}
+                  onClick={() => onClientClick && onClientClick(c)}
+                >
+                  <td>{`${c.first_name} ${c.last_name}`}</td>
+                  <td>{c.email}</td>
+                  <td>{c.contact_number}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {/* Simplified instrument indicator */}
+          <div>Stradivarius Violin</div>
+        </div>
+      );
+      MockClientList.displayName = 'MockClientList';
+      return MockClientList;
     }
     if (src.includes('ClientModal')) {
       return () => null;
@@ -43,9 +81,17 @@ jest.mock('@/components/common', () => ({
     ) : null,
 }));
 
-// Mock next/navigation to avoid invalid hook call for usePathname
+// Mock next/navigation to avoid invalid hook call for usePathname and useRouter
 jest.mock('next/navigation', () => ({
   usePathname: jest.fn(() => '/clients'),
+  useRouter: jest.fn(() => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    refresh: jest.fn(),
+    back: jest.fn(),
+    forward: jest.fn(),
+    prefetch: jest.fn(),
+  })),
 }));
 
 // Mock next/link to render native anchor for tests
@@ -63,36 +109,7 @@ jest.mock('../components', () => ({
   ClientForm: () => null,
   ClientModal: () => null,
   ClientFilters: () => <div>Filters</div>,
-  ClientList: ({ clients, onClientClick, onColumnSort }: any) => (
-    <div>
-      <table role="table">
-        <thead>
-          <tr>
-            <th>
-              <button
-                onClick={() => onColumnSort && onColumnSort('first_name')}
-              >
-                Name
-              </button>
-            </th>
-            <th>Email</th>
-            <th>Contact</th>
-          </tr>
-        </thead>
-        <tbody>
-          {clients?.map((c: any) => (
-            <tr key={c.id} onClick={() => onClientClick && onClientClick(c)}>
-              <td>{`${c.first_name} ${c.last_name}`}</td>
-              <td>{c.email}</td>
-              <td>{c.contact_number}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {/* Simplified instrument indicator */}
-      <div>Stradivarius Violin</div>
-    </div>
-  ),
+  // ClientList is now handled by next/dynamic mock above
 }));
 
 // Mock the hooks BEFORE importing the component
@@ -186,6 +203,19 @@ jest.mock('../hooks', () => ({
     setShowFilters: mockSetShowFilters,
     filters: {},
     filteredClients: [
+      {
+        id: '1',
+        first_name: 'John',
+        last_name: 'Doe',
+        contact_number: '123-456-7890',
+        email: 'john@example.com',
+        tags: ['Owner'],
+        interest: 'Active',
+        note: 'Test note',
+        created_at: new Date().toISOString(),
+      },
+    ],
+    paginatedClients: [
       {
         id: '1',
         first_name: 'John',
@@ -875,7 +905,7 @@ describe('ClientsPage', () => {
 
       // Verify window.confirm was never called (we use ConfirmDialog instead)
       expect(mockConfirm).not.toHaveBeenCalled();
-      
+
       mockConfirm.mockRestore();
     });
 

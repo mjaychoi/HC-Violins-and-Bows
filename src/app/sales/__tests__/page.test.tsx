@@ -3,7 +3,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SalesPage from '../page';
 import { useSalesHistory } from '../hooks/useSalesHistory';
-import { useUnifiedClients, useUnifiedInstruments } from '@/hooks/useUnifiedData';
+import {
+  useUnifiedClients,
+  useUnifiedInstruments,
+} from '@/hooks/useUnifiedData';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { useModalState } from '@/hooks/useModalState';
 import { SalesHistory, Client, Instrument } from '@/types';
@@ -25,11 +28,16 @@ jest.mock('@/components/layout', () => ({
 }));
 
 jest.mock('@/components/common', () => ({
-  ErrorBoundary: ({ children }: any) => <div data-testid="error-boundary">{children}</div>,
+  ErrorBoundary: ({ children }: any) => (
+    <div data-testid="error-boundary">{children}</div>
+  ),
   TableSkeleton: ({ rows, columns }: { rows?: number; columns?: number }) => (
     <div data-testid="table-skeleton">
       {rows}x{columns} skeleton
     </div>
+  ),
+  CardSkeleton: ({ count }: { count?: number }) => (
+    <div data-testid="card-skeleton">Card skeleton {count || 1}</div>
   ),
   ErrorToasts: () => <div data-testid="error-toasts" />,
   SuccessToasts: () => <div data-testid="success-toasts" />,
@@ -39,6 +47,23 @@ jest.mock('@/components/common', () => ({
       <button onClick={() => onPageChange(currentPage + 1)}>Next</button>
     </div>
   ),
+  ConfirmDialog: ({
+    isOpen,
+    title,
+    message,
+    onConfirm,
+    onCancel,
+    confirmLabel,
+    cancelLabel,
+  }: any) =>
+    isOpen ? (
+      <div data-testid="confirm-dialog">
+        <h3>{title}</h3>
+        <p>{message}</p>
+        <button onClick={onConfirm}>{confirmLabel}</button>
+        <button onClick={onCancel}>{cancelLabel}</button>
+      </div>
+    ) : null,
 }));
 
 jest.mock('../components/SaleForm', () => ({
@@ -46,9 +71,13 @@ jest.mock('../components/SaleForm', () => ({
   default: ({ isOpen, onClose, onSubmit, submitting }: any) =>
     isOpen ? (
       <div data-testid="sale-form-modal">
-        <button onClick={onClose} data-testid="close-modal">Close</button>
+        <button onClick={onClose} data-testid="close-modal">
+          Close
+        </button>
         <button
-          onClick={() => onSubmit({ sale_price: 2500, sale_date: '2024-01-15' })}
+          onClick={() =>
+            onSubmit({ sale_price: 2500, sale_date: '2024-01-15' })
+          }
           disabled={submitting}
           data-testid="submit-sale"
         >
@@ -60,16 +89,14 @@ jest.mock('../components/SaleForm', () => ({
 
 // Mock dynamic import for SalesCharts
 jest.mock('next/dynamic', () => {
-  return (loader: () => Promise<any>) => {
+  return () => {
     // For tests, immediately resolve the dynamic import
-    const MockedComponent = ({ sales }: { sales: any[] }) => (
+    const MockedComponent = (props: any) => (
       <div data-testid="sales-charts">
-        Charts for {sales.length} sales
+        Charts for {props.sales?.length || 0} sales
       </div>
     );
     MockedComponent.displayName = 'MockedSalesCharts';
-    // Pre-load the component by calling loader synchronously in test
-    loader().then(() => {}).catch(() => {});
     return MockedComponent;
   };
 });
@@ -83,22 +110,30 @@ jest.mock('../components/SalesSummary', () => ({
       <div>Net Sales</div>
       <div>Orders</div>
       <div>Avg. Ticket</div>
-      {totals?.refundRate && totals.refundRate > 0 && (
-        <div>Refund Rate</div>
-      )}
+      {totals?.refundRate && totals.refundRate > 0 && <div>Refund Rate</div>}
     </div>
   ),
 }));
 
 jest.mock('../components/SalesFilters', () => ({
   __esModule: true,
-  default: ({ search, onSearchChange, from, onFromChange, to, onToChange, onClearFilters, onDatePreset, onExportCSV }: any) => (
+  default: ({
+    search,
+    onSearchChange,
+    from,
+    onFromChange,
+    to,
+    onToChange,
+    onClearFilters,
+    onDatePreset,
+    onExportCSV,
+  }: any) => (
     <div data-testid="sales-filters">
       <input
         data-testid="search-input"
         placeholder="Search sales (client, instrument, notes)..."
         value={search}
-        onChange={(e) => onSearchChange(e.target.value)}
+        onChange={e => onSearchChange(e.target.value)}
       />
       <label>
         From date
@@ -106,7 +141,7 @@ jest.mock('../components/SalesFilters', () => ({
           data-testid="from-date"
           type="date"
           value={from}
-          onChange={(e) => onFromChange(e.target.value)}
+          onChange={e => onFromChange(e.target.value)}
         />
       </label>
       <label>
@@ -115,7 +150,7 @@ jest.mock('../components/SalesFilters', () => ({
           data-testid="to-date"
           type="date"
           value={to}
-          onChange={(e) => onToChange(e.target.value)}
+          onChange={e => onToChange(e.target.value)}
         />
       </label>
       <button onClick={() => onDatePreset('last7')}>Last 7 days</button>
@@ -180,32 +215,48 @@ jest.mock('../utils/salesUtils', () => {
     getDateRangeFromPreset: jest.fn((preset: string) => {
       const today = new Date();
       const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`;
-      
+
       switch (preset) {
         case 'last7': {
-          const last7Date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 6));
+          const last7Date = new Date(
+            Date.UTC(
+              today.getUTCFullYear(),
+              today.getUTCMonth(),
+              today.getUTCDate() - 6
+            )
+          );
           const from = `${last7Date.getUTCFullYear()}-${String(last7Date.getUTCMonth() + 1).padStart(2, '0')}-${String(last7Date.getUTCDate()).padStart(2, '0')}`;
           return { from, to: todayStr };
         }
         case 'thisMonth': {
-          const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+          const monthStart = new Date(
+            Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)
+          );
           const from = `${monthStart.getUTCFullYear()}-${String(monthStart.getUTCMonth() + 1).padStart(2, '0')}-${String(monthStart.getUTCDate()).padStart(2, '0')}`;
           return { from, to: todayStr };
         }
         case 'lastMonth': {
-          const lastMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
-          const lastMonthEnd = new Date(Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth() + 1, 0));
+          const lastMonth = new Date(
+            Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1)
+          );
+          const lastMonthEnd = new Date(
+            Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth() + 1, 0)
+          );
           const from = `${lastMonth.getUTCFullYear()}-${String(lastMonth.getUTCMonth() + 1).padStart(2, '0')}-${String(lastMonth.getUTCDate()).padStart(2, '0')}`;
           const to = `${lastMonthEnd.getUTCFullYear()}-${String(lastMonthEnd.getUTCMonth() + 1).padStart(2, '0')}-${String(lastMonthEnd.getUTCDate()).padStart(2, '0')}`;
           return { from, to };
         }
         case 'last3Months': {
-          const threeMonthsAgo = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 2, 1));
+          const threeMonthsAgo = new Date(
+            Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 2, 1)
+          );
           const from = `${threeMonthsAgo.getUTCFullYear()}-${String(threeMonthsAgo.getUTCMonth() + 1).padStart(2, '0')}-${String(threeMonthsAgo.getUTCDate()).padStart(2, '0')}`;
           return { from, to: todayStr };
         }
         case 'last12Months': {
-          const twelveMonthsAgo = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 11, 1));
+          const twelveMonthsAgo = new Date(
+            Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 11, 1)
+          );
           const from = `${twelveMonthsAgo.getUTCFullYear()}-${String(twelveMonthsAgo.getUTCMonth() + 1).padStart(2, '0')}-${String(twelveMonthsAgo.getUTCDate()).padStart(2, '0')}`;
           return { from, to: todayStr };
         }
@@ -229,8 +280,12 @@ jest.mock('date-fns', () => ({
     }
     return `${year}-${month}-${day}`;
   }),
-  startOfMonth: jest.fn((date: Date) => new Date(date.getFullYear(), date.getMonth(), 1)),
-  endOfMonth: jest.fn((date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0)),
+  startOfMonth: jest.fn(
+    (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1)
+  ),
+  endOfMonth: jest.fn(
+    (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0)
+  ),
   subDays: jest.fn((date: Date, days: number) => {
     const result = new Date(date);
     result.setDate(result.getDate() - days);
@@ -252,26 +307,42 @@ jest.mock('date-fns', () => ({
     result.setHours(23, 59, 59, 999);
     return result;
   }),
-  isBefore: jest.fn((date1: Date, date2: Date) => date1.getTime() < date2.getTime()),
-  isWithinInterval: jest.fn((date: Date, interval: { start: Date; end: Date }) => {
-    const time = date.getTime();
-    return time >= interval.start.getTime() && time <= interval.end.getTime();
-  }),
+  isBefore: jest.fn(
+    (date1: Date, date2: Date) => date1.getTime() < date2.getTime()
+  ),
+  isWithinInterval: jest.fn(
+    (date: Date, interval: { start: Date; end: Date }) => {
+      const time = date.getTime();
+      return time >= interval.start.getTime() && time <= interval.end.getTime();
+    }
+  ),
   differenceInDays: jest.fn((date1: Date, date2: Date) => {
     const diffTime = date1.getTime() - date2.getTime();
     return Math.floor(diffTime / (1000 * 60 * 60 * 24));
   }),
   differenceInMonths: jest.fn((date1: Date, date2: Date) => {
-    const months = (date1.getFullYear() - date2.getFullYear()) * 12 + (date1.getMonth() - date2.getMonth());
+    const months =
+      (date1.getFullYear() - date2.getFullYear()) * 12 +
+      (date1.getMonth() - date2.getMonth());
     return months;
   }),
 }));
 
-const mockUseSalesHistory = useSalesHistory as jest.MockedFunction<typeof useSalesHistory>;
-const mockUseUnifiedClients = useUnifiedClients as jest.MockedFunction<typeof useUnifiedClients>;
-const mockUseUnifiedInstruments = useUnifiedInstruments as jest.MockedFunction<typeof useUnifiedInstruments>;
-const mockUseAppFeedback = useAppFeedback as jest.MockedFunction<typeof useAppFeedback>;
-const mockUseModalState = useModalState as jest.MockedFunction<typeof useModalState>;
+const mockUseSalesHistory = useSalesHistory as jest.MockedFunction<
+  typeof useSalesHistory
+>;
+const mockUseUnifiedClients = useUnifiedClients as jest.MockedFunction<
+  typeof useUnifiedClients
+>;
+const mockUseUnifiedInstruments = useUnifiedInstruments as jest.MockedFunction<
+  typeof useUnifiedInstruments
+>;
+const mockUseAppFeedback = useAppFeedback as jest.MockedFunction<
+  typeof useAppFeedback
+>;
+const mockUseModalState = useModalState as jest.MockedFunction<
+  typeof useModalState
+>;
 
 const mockClient: Client = {
   id: 'client-1',
@@ -390,7 +461,7 @@ describe('SalesPage', () => {
   it('should render sales page with title', () => {
     render(<SalesPage />);
 
-    expect(screen.getByText('Sales History')).toBeInTheDocument();
+    expect(screen.getByText('Sales')).toBeInTheDocument();
   });
 
   it('should display summary cards', () => {
@@ -484,9 +555,12 @@ describe('SalesPage', () => {
     const last7DaysButton = screen.getByText('Last 7 days');
     await user.click(last7DaysButton);
 
-    await waitFor(() => {
-      expect(mockFetchSales).toHaveBeenCalled();
-    }, { timeout: 2000 });
+    await waitFor(
+      () => {
+        expect(mockFetchSales).toHaveBeenCalled();
+      },
+      { timeout: 2000 }
+    );
   });
 
   it('should sort table columns', async () => {

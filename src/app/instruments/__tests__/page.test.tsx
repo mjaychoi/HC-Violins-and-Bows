@@ -1,9 +1,14 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import InstrumentsPage from '../page';
-import { useUnifiedDashboard, useUnifiedInstruments } from '@/hooks/useUnifiedData';
+import {
+  useUnifiedDashboard,
+  useUnifiedInstruments,
+} from '@/hooks/useUnifiedData';
 import { useModalState } from '@/hooks/useModalState';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { useAppFeedback } from '@/hooks/useAppFeedback';
+import { usePageFilters } from '@/hooks/usePageFilters';
 import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
 
 jest.mock('@/utils/uniqueNumberGenerator', () => ({
@@ -31,6 +36,14 @@ jest.mock('@/hooks/useErrorHandler', () => ({
   useErrorHandler: jest.fn(),
 }));
 
+jest.mock('@/hooks/useAppFeedback', () => ({
+  useAppFeedback: jest.fn(),
+}));
+
+jest.mock('@/hooks/usePageFilters', () => ({
+  usePageFilters: jest.fn(),
+}));
+
 jest.mock('@/components/layout', () => ({
   AppLayout: ({ children, actionButton }: any) => (
     <div>
@@ -42,6 +55,17 @@ jest.mock('@/components/layout', () => ({
 
 jest.mock('@/components/common', () => ({
   ErrorBoundary: ({ children }: any) => <div>{children}</div>,
+  CardSkeleton: ({ count }: { count?: number }) => (
+    <div data-testid="card-skeleton">Skeleton {count || 1}</div>
+  ),
+  SearchInput: ({ value, onChange, placeholder }: any) => (
+    <input
+      data-testid="search-input"
+      value={value || ''}
+      onChange={onChange}
+      placeholder={placeholder}
+    />
+  ),
 }));
 
 // Mock next/dynamic to return component synchronously for testing
@@ -61,7 +85,9 @@ jest.mock('next/dynamic', () => ({
       isOpen ? (
         <div>
           <button onClick={onClose}>close-form</button>
-          <button onClick={() => onSubmit({ maker: 'M', name: 'N', year: '2020' })}>
+          <button
+            onClick={() => onSubmit({ maker: 'M', name: 'N', year: '2020' })}
+          >
             submit-form
           </button>
         </div>
@@ -84,7 +110,9 @@ jest.mock('../components/InstrumentForm', () => ({
     isOpen ? (
       <div>
         <button onClick={onClose}>close-form</button>
-        <button onClick={() => onSubmit({ maker: 'M', name: 'N', year: '2020' })}>
+        <button
+          onClick={() => onSubmit({ maker: 'M', name: 'N', year: '2020' })}
+        >
           submit-form
         </button>
       </div>
@@ -98,8 +126,28 @@ jest.mock('../components/InstrumentList', () => ({
   ),
 }));
 
+jest.mock('../components/InstrumentFilters', () => ({
+  __esModule: true,
+  default: () => <div data-testid="instrument-filters">Filters</div>,
+}));
+
 const mockInstruments = [
-  { id: '1', maker: 'M', type: 'T', status: 'Available', year: 2020, certificate: false, subtype: null, size: null, weight: null, price: null, ownership: null, note: null, serial_number: 'SN', created_at: '2024' },
+  {
+    id: '1',
+    maker: 'M',
+    type: 'T',
+    status: 'Available',
+    year: 2020,
+    certificate: false,
+    subtype: null,
+    size: null,
+    weight: null,
+    price: null,
+    ownership: null,
+    note: null,
+    serial_number: 'SN',
+    created_at: '2024',
+  },
 ];
 
 describe('InstrumentsPage', () => {
@@ -108,7 +156,9 @@ describe('InstrumentsPage', () => {
   const withSubmitting = jest.fn(async (cb: any) => await cb());
   const createInstrument = jest.fn().mockResolvedValue(undefined);
   const handleError = jest.fn();
+  const showSuccess = jest.fn();
   const ErrorToasts = () => <div>errors</div>;
+  const SuccessToasts = () => <div>success</div>;
 
   beforeEach(() => {
     createInstrument.mockResolvedValue(undefined);
@@ -143,6 +193,29 @@ describe('InstrumentsPage', () => {
     (useErrorHandler as jest.Mock).mockReturnValue({
       ErrorToasts,
       handleError,
+    } as any);
+
+    (useAppFeedback as jest.Mock).mockReturnValue({
+      ErrorToasts,
+      SuccessToasts,
+      handleError,
+      showSuccess,
+    } as any);
+
+    (usePageFilters as jest.Mock).mockReturnValue({
+      searchTerm: '',
+      setSearchTerm: jest.fn(),
+      showFilters: false,
+      setShowFilters: jest.fn(),
+      filters: {},
+      filteredItems: mockInstruments,
+      filterOptions: {
+        maker: [],
+        status: [],
+      },
+      handleFilterChange: jest.fn(),
+      clearAllFilters: jest.fn(),
+      getActiveFiltersCount: jest.fn(() => 0),
     } as any);
   });
 

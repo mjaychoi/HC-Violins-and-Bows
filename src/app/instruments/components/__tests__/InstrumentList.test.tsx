@@ -3,7 +3,31 @@ import InstrumentList from '../InstrumentList';
 
 jest.mock('@/components/common', () => ({
   CardSkeleton: () => <div>Loading...</div>,
+  EmptyState: ({ title, description, actionButton }: any) => (
+    <div data-testid="empty-state">
+      <h3>{title}</h3>
+      <p>{description}</p>
+      {actionButton && (
+        <button onClick={actionButton.onClick}>{actionButton.label}</button>
+      )}
+    </div>
+  ),
 }));
+
+jest.mock('next/dynamic', () => {
+  return () => {
+    // Mock FixedSizeList component
+    const MockedFixedSizeList = ({ children, itemCount }: any) => (
+      <div data-testid="fixed-size-list">
+        {Array.from({ length: itemCount }, (_, i) =>
+          children({ index: i, style: {} })
+        )}
+      </div>
+    );
+    return MockedFixedSizeList;
+  };
+});
+
 import { Instrument } from '@/types';
 
 const items: Instrument[] = [
@@ -33,7 +57,9 @@ describe('InstrumentList', () => {
 
   it('renders empty state and triggers add', () => {
     const onAdd = jest.fn();
-    render(<InstrumentList items={[]} loading={false} onAddInstrument={onAdd} />);
+    render(
+      <InstrumentList items={[]} loading={false} onAddInstrument={onAdd} />
+    );
 
     fireEvent.click(screen.getByText(/Add Instrument|악기 추가하기/i));
     expect(onAdd).toHaveBeenCalled();
@@ -41,7 +67,11 @@ describe('InstrumentList', () => {
 
   it('renders instruments list', () => {
     render(
-      <InstrumentList items={items} loading={false} onAddInstrument={jest.fn()} />
+      <InstrumentList
+        items={items}
+        loading={false}
+        onAddInstrument={jest.fn()}
+      />
     );
 
     expect(screen.getByText('Stradivari - Violin')).toBeInTheDocument();

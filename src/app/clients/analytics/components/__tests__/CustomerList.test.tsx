@@ -2,6 +2,15 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { CustomerList } from '../CustomerList';
 import { CustomerWithPurchases } from '../../types';
 
+jest.mock('@/components/common', () => ({
+  EmptyState: ({ title, description }: any) => (
+    <div data-testid="empty-state">
+      <h3>{title}</h3>
+      <p>{description}</p>
+    </div>
+  ),
+}));
+
 const mockCustomer1: CustomerWithPurchases = {
   id: 'c1',
   first_name: 'John',
@@ -14,8 +23,20 @@ const mockCustomer1: CustomerWithPurchases = {
   client_number: 'CL001',
   created_at: '2024-01-01',
   purchases: [
-    { id: 'p1', item: 'Violin', amount: 100000, date: '2024-04-01', status: 'Completed' },
-    { id: 'p2', item: 'Bow', amount: 5000, date: '2024-05-12', status: 'Completed' },
+    {
+      id: 'p1',
+      item: 'Violin',
+      amount: 100000,
+      date: '2024-04-01',
+      status: 'Completed',
+    },
+    {
+      id: 'p2',
+      item: 'Bow',
+      amount: 5000,
+      date: '2024-05-12',
+      status: 'Completed',
+    },
   ],
 };
 
@@ -41,43 +62,87 @@ describe('CustomerList', () => {
   });
 
   it('should render "No customers found" when customers array is empty', () => {
-    render(<CustomerList customers={[]} selectedId={null} onSelect={mockOnSelect} />);
+    render(
+      <CustomerList customers={[]} selectedId={null} onSelect={mockOnSelect} />
+    );
     expect(screen.getByText('No customers found')).toBeInTheDocument();
   });
 
   it('should render customer list', () => {
-    render(<CustomerList customers={[mockCustomer1]} selectedId={null} onSelect={mockOnSelect} />);
+    render(
+      <CustomerList
+        customers={[mockCustomer1]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     expect(screen.getByText('John Doe')).toBeInTheDocument();
   });
 
   it('should render customer email', () => {
-    render(<CustomerList customers={[mockCustomer1]} selectedId={null} onSelect={mockOnSelect} />);
+    render(
+      <CustomerList
+        customers={[mockCustomer1]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     expect(screen.getByText('john@example.com')).toBeInTheDocument();
   });
 
   it('should render customer tags', () => {
-    render(<CustomerList customers={[mockCustomer1]} selectedId={null} onSelect={mockOnSelect} />);
+    render(
+      <CustomerList
+        customers={[mockCustomer1]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     expect(screen.getByText(/VIP/i)).toBeInTheDocument();
   });
 
   it('should render total spend', () => {
-    render(<CustomerList customers={[mockCustomer1]} selectedId={null} onSelect={mockOnSelect} />);
+    render(
+      <CustomerList
+        customers={[mockCustomer1]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     expect(screen.getByText('$105,000')).toBeInTheDocument();
     expect(screen.getByText('Total')).toBeInTheDocument();
   });
 
   it('should render recent purchase date', () => {
-    render(<CustomerList customers={[mockCustomer1]} selectedId={null} onSelect={mockOnSelect} />);
+    render(
+      <CustomerList
+        customers={[mockCustomer1]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     expect(screen.getByText(/Last: 2024-05-12/i)).toBeInTheDocument();
   });
 
   it('should render "—" when no purchases', () => {
-    render(<CustomerList customers={[mockCustomer2]} selectedId={null} onSelect={mockOnSelect} />);
+    render(
+      <CustomerList
+        customers={[mockCustomer2]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     expect(screen.getByText(/Last: —/i)).toBeInTheDocument();
   });
 
   it('should call onSelect when customer is clicked', () => {
-    render(<CustomerList customers={[mockCustomer1]} selectedId={null} onSelect={mockOnSelect} />);
+    render(
+      <CustomerList
+        customers={[mockCustomer1]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     const customerButton = screen.getByText('John Doe').closest('button');
     if (customerButton) {
       fireEvent.click(customerButton);
@@ -86,14 +151,26 @@ describe('CustomerList', () => {
   });
 
   it('should highlight selected customer', () => {
-    render(<CustomerList customers={[mockCustomer1]} selectedId="c1" onSelect={mockOnSelect} />);
+    render(
+      <CustomerList
+        customers={[mockCustomer1]}
+        selectedId="c1"
+        onSelect={mockOnSelect}
+      />
+    );
     const selectedButton = screen.getByText('John Doe').closest('button');
     expect(selectedButton).toHaveClass('bg-blue-50');
     expect(selectedButton).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('should not highlight unselected customer', () => {
-    render(<CustomerList customers={[mockCustomer1]} selectedId={null} onSelect={mockOnSelect} />);
+    render(
+      <CustomerList
+        customers={[mockCustomer1]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     const button = screen.getByText('John Doe').closest('button');
     expect(button).not.toHaveClass('bg-blue-50');
     expect(button).toHaveAttribute('aria-pressed', 'false');
@@ -101,24 +178,46 @@ describe('CustomerList', () => {
 
   it('should render multiple customers', () => {
     render(
-      <CustomerList customers={[mockCustomer1, mockCustomer2]} selectedId={null} onSelect={mockOnSelect} />
+      <CustomerList
+        customers={[mockCustomer1, mockCustomer2]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
     );
     expect(screen.getByText('John Doe')).toBeInTheDocument();
     expect(screen.getByText('Jane Smith')).toBeInTheDocument();
   });
 
   it('should render "No email" when email is null', () => {
-    const { container } = render(<CustomerList customers={[mockCustomer2]} selectedId={null} onSelect={mockOnSelect} />);
+    const { container } = render(
+      <CustomerList
+        customers={[mockCustomer2]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     expect(container.textContent).toMatch(/No email/i);
   });
 
   it('should render interest', () => {
-    render(<CustomerList customers={[mockCustomer1]} selectedId={null} onSelect={mockOnSelect} />);
+    render(
+      <CustomerList
+        customers={[mockCustomer1]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     expect(screen.getByText('High')).toBeInTheDocument();
   });
 
   it('should not render interest badge when interest is null', () => {
-    const { container } = render(<CustomerList customers={[mockCustomer2]} selectedId={null} onSelect={mockOnSelect} />);
+    const { container } = render(
+      <CustomerList
+        customers={[mockCustomer2]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+      />
+    );
     // Interest badge should not be present when interest is null
     const interestBadge = container.querySelector('.bg-blue-100');
     expect(interestBadge).not.toBeInTheDocument();

@@ -2,6 +2,28 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { useDashboardFilters } from '../useDashboardFilters';
 import { Instrument } from '@/types';
 
+// Mock useURLState to avoid browser API issues in tests
+jest.mock('@/hooks/useURLState', () => ({
+  useURLState: jest.fn(() => ({
+    urlState: {},
+    updateURLState: jest.fn(),
+    clearURLState: jest.fn(),
+  })),
+}));
+
+// Mock next/navigation for useURLState (fallback)
+jest.mock('next/navigation', () => ({
+  useRouter: jest.fn(() => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    refresh: jest.fn(),
+    back: jest.fn(),
+    forward: jest.fn(),
+    prefetch: jest.fn(),
+  })),
+  usePathname: jest.fn(() => '/dashboard'),
+}));
+
 describe('useDashboardFilters', () => {
   const mockItems: Instrument[] = [
     {
@@ -71,10 +93,13 @@ describe('useDashboardFilters', () => {
       result.current.setSearchTerm('Stradivari');
     });
 
-    await waitFor(() => {
-      expect(result.current.filteredItems).toHaveLength(1);
-      expect(result.current.filteredItems[0].maker).toBe('Stradivari');
-    });
+    await waitFor(
+      () => {
+        expect(result.current.filteredItems).toHaveLength(1);
+        expect(result.current.filteredItems[0].maker).toBe('Stradivari');
+      },
+      { timeout: 1000 }
+    );
   });
 
   it('should filter by status', () => {
@@ -161,11 +186,14 @@ describe('useDashboardFilters', () => {
       result.current.handleFilterChange('status', 'Available');
     });
 
-    await waitFor(() => {
-      expect(result.current.filteredItems).toHaveLength(1);
-      expect(result.current.filteredItems[0].status).toBe('Available');
-      expect(result.current.filteredItems[0].type).toBe('Violin');
-    });
+    await waitFor(
+      () => {
+        expect(result.current.filteredItems).toHaveLength(1);
+        expect(result.current.filteredItems[0].status).toBe('Available');
+        expect(result.current.filteredItems[0].type).toBe('Violin');
+      },
+      { timeout: 1000 }
+    );
   });
 
   it('should clear all filters', async () => {
@@ -178,18 +206,24 @@ describe('useDashboardFilters', () => {
       result.current.handleFilterChange('status', 'Available');
     });
 
-    await waitFor(() => {
-      expect(result.current.filteredItems).toHaveLength(0);
-    });
+    await waitFor(
+      () => {
+        expect(result.current.filteredItems).toHaveLength(0);
+      },
+      { timeout: 1000 }
+    );
 
     act(() => {
       result.current.clearAllFilters();
     });
 
-    await waitFor(() => {
-      expect(result.current.searchTerm).toBe('');
-      expect(result.current.filteredItems).toHaveLength(3);
-    });
+    await waitFor(
+      () => {
+        expect(result.current.searchTerm).toBe('');
+        expect(result.current.filteredItems).toHaveLength(3);
+      },
+      { timeout: 1000 }
+    );
   });
 
   it('should provide filter options', () => {
