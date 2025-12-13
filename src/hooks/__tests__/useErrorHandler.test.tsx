@@ -43,7 +43,7 @@ describe('useErrorHandler', () => {
     const { result } = renderHook(() => useErrorHandler());
 
     expect(result.current.errors).toEqual([]);
-    expect(result.current.errorStats).toEqual(new Map());
+    // FIXED: errorStats is no longer in state (removed, getters use global errorHandler)
   });
 
   it('should add error correctly', () => {
@@ -60,10 +60,13 @@ describe('useErrorHandler', () => {
     });
 
     expect(result.current.errors).toHaveLength(1);
-    expect(result.current.errors[0]).toEqual(mockError);
+    // FIXED: errors now include _toastId, so we check code/message instead
+    expect(result.current.errors[0].code).toBe(mockError.code);
+    expect(result.current.errors[0].message).toBe(mockError.message);
+    expect(result.current.errors[0]._toastId).toBeDefined();
   });
 
-  it('should remove error by index', () => {
+  it('should remove error by toast ID', () => {
     const { result } = renderHook(() => useErrorHandler());
     const mockError1 = {
       code: ErrorCodes.NETWORK_ERROR,
@@ -83,11 +86,14 @@ describe('useErrorHandler', () => {
 
     expect(result.current.errors).toHaveLength(2);
 
+    // FIXED: removeError now takes toast ID instead of index
+    const firstToastId = result.current.errors[0]._toastId;
     act(() => {
-      result.current.removeError(0);
+      result.current.removeError(firstToastId);
     });
 
     expect(result.current.errors).toHaveLength(1);
+    expect(result.current.errors[0].message).toBe('Network failed 2');
   });
 
   it('should clear all errors', () => {
