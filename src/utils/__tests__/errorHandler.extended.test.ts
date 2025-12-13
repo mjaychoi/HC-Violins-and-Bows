@@ -1,6 +1,16 @@
 import { errorHandler } from '../errorHandler';
 import { ErrorCodes, ErrorCategory } from '@/types/errors';
 
+const originalEnv = process.env;
+
+beforeAll(() => {
+  process.env = { ...process.env, NODE_ENV: 'development' };
+});
+
+afterAll(() => {
+  process.env = originalEnv;
+});
+
 describe('ErrorHandler - Extended Tests', () => {
   beforeEach(() => {
     errorHandler.clearErrorLogs();

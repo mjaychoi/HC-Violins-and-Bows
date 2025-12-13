@@ -1,5 +1,5 @@
 // src/hooks/useDataState.ts
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 // generic data state management hook
 export function useDataState<T>(
@@ -36,10 +36,26 @@ export function useDataState<T>(
     setData([]);
   }, []);
 
+  // FIXED: Deprecated functions now warn in development to help identify old code
+  const warnedRef = useRef({ loading: false, error: false });
+  const setLoading = useCallback(() => {
+    if (process.env.NODE_ENV === 'development' && !warnedRef.current.loading) {
+      console.warn('useDataState.setLoading is deprecated and no-op. Remove this call.');
+      warnedRef.current.loading = true;
+    }
+  }, []);
+  
+  const setError = useCallback(() => {
+    if (process.env.NODE_ENV === 'development' && !warnedRef.current.error) {
+      console.warn('useDataState.setError is deprecated and no-op. Remove this call.');
+      warnedRef.current.error = true;
+    }
+  }, []);
+
   return {
     data,
-    setLoading: () => {}, // deprecated: kept for backward compatibility
-    setError: () => {}, // deprecated: kept for backward compatibility
+    setLoading,
+    setError,
     addItem,
     updateItem,
     removeItem,

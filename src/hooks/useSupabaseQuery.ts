@@ -4,6 +4,8 @@ import { apiClient } from '@/utils/apiClient';
 import { useErrorHandler } from './useErrorHandler';
 
 export function useSupabaseQuery<T>(table: string) {
+  // NOTE: table parameter is intentionally string (not restricted to ALLOWED_SORT_COLUMNS)
+  // This hook may be used with tables not in the sort whitelist (e.g., custom queries)
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -22,8 +24,11 @@ export function useSupabaseQuery<T>(table: string) {
       const myId = ++reqIdRef.current;
 
       try {
+        // Type assertion: table may not be in ALLOWED_SORT_COLUMNS for custom queries
+        // Type assertion: table may not be in ALLOWED_SORT_COLUMNS for custom queries
+        // This is intentional to allow broader table usage beyond strict typing
         const { data: result, error: queryError } = await apiClient.query<T>(
-          table,
+          table as 'instruments' | 'clients' | 'sales_history' | 'maintenance_tasks' | 'connections',
           options
         );
 
@@ -52,12 +57,15 @@ export function useSupabaseQuery<T>(table: string) {
     async (newData: Record<string, unknown>) => {
       setLoading(true);
       setError(null);
+      const myId = ++reqIdRef.current;
 
       try {
         const { data: result, error: createError } = await apiClient.create<T>(
           table,
           newData
         );
+
+        if (myId !== reqIdRef.current) return null; // stale
 
         if (createError) {
           setError(createError);
@@ -71,10 +79,12 @@ export function useSupabaseQuery<T>(table: string) {
 
         return result;
       } catch (err) {
+        if (myId !== reqIdRef.current) return null;
         const appError = handleError(err, `Create ${table}`);
         setError(appError);
         return null;
       } finally {
+        if (myId !== reqIdRef.current) return;
         setLoading(false);
       }
     },
@@ -85,6 +95,7 @@ export function useSupabaseQuery<T>(table: string) {
     async (id: string, updateData: Record<string, unknown>) => {
       setLoading(true);
       setError(null);
+      const myId = ++reqIdRef.current;
 
       try {
         const { data: result, error: updateError } = await apiClient.update<T>(
@@ -92,6 +103,8 @@ export function useSupabaseQuery<T>(table: string) {
           id,
           updateData
         );
+
+        if (myId !== reqIdRef.current) return null; // stale
 
         if (updateError) {
           setError(updateError);
@@ -109,10 +122,12 @@ export function useSupabaseQuery<T>(table: string) {
 
         return result;
       } catch (err) {
+        if (myId !== reqIdRef.current) return null;
         const appError = handleError(err, `Update ${table}`);
         setError(appError);
         return null;
       } finally {
+        if (myId !== reqIdRef.current) return;
         setLoading(false);
       }
     },
@@ -123,12 +138,15 @@ export function useSupabaseQuery<T>(table: string) {
     async (id: string) => {
       setLoading(true);
       setError(null);
+      const myId = ++reqIdRef.current;
 
       try {
         const { success, error: deleteError } = await apiClient.delete(
           table,
           id
         );
+
+        if (myId !== reqIdRef.current) return false; // stale
 
         if (deleteError) {
           setError(deleteError);
@@ -144,10 +162,12 @@ export function useSupabaseQuery<T>(table: string) {
 
         return success;
       } catch (err) {
+        if (myId !== reqIdRef.current) return false;
         const appError = handleError(err, `Delete ${table}`);
         setError(appError);
         return false;
       } finally {
+        if (myId !== reqIdRef.current) return;
         setLoading(false);
       }
     },

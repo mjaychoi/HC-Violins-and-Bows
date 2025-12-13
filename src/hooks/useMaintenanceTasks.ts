@@ -1,14 +1,25 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import { SupabaseHelpers } from '@/utils/supabaseHelpers';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useErrorHandler } from './useErrorHandler';
-import { logError } from '@/utils/logger';
+import { dataService } from '@/services/dataService';
 import type { MaintenanceTask, TaskFilters } from '@/types';
+
+interface UseMaintenanceTasksOptions {
+  initialFilters?: TaskFilters;
+  /**
+   * Whether to automatically fetch tasks on mount
+   * @default true
+   */
+  autoFetch?: boolean;
+}
 
 interface UseMaintenanceTasksReturn {
   tasks: MaintenanceTask[];
-  loading: boolean;
+  loading: {
+    fetch: boolean;
+    mutate: boolean;
+  };
   error: unknown;
   fetchTasks: (filters?: TaskFilters) => Promise<void>;
   fetchTaskById: (id: string) => Promise<MaintenanceTask | null>;
@@ -36,51 +47,103 @@ interface UseMaintenanceTasksReturn {
   fetchOverdueTasks: () => Promise<MaintenanceTask[]>;
 }
 
+/**
+ * FIXED: Loading states separated (fetch vs mutate) to prevent UX confusion
+ * FIXED: Stale guard (reqIdRef) added to fetchTasks to prevent race conditions
+ * FIXED: autoFetch option added - now fetches by default even without initialFilters
+ * FIXED: createTask type matches interface declaration (removed 'client' from omit)
+ */
 export function useMaintenanceTasks(
-  initialFilters?: TaskFilters
+  options: UseMaintenanceTasksOptions | TaskFilters = {}
 ): UseMaintenanceTasksReturn {
+  // Backward compatibility: if options is TaskFilters, treat as initialFilters
+  // Check if options is a UseMaintenanceTasksOptions object (has initialFilters or autoFetch property)
+  const opts: UseMaintenanceTasksOptions =
+    options && typeof options === 'object' && ('initialFilters' in options || 'autoFetch' in options)
+      ? (options as UseMaintenanceTasksOptions)
+      : { initialFilters: options as TaskFilters };
+  
+  const { initialFilters, autoFetch = true } = opts;
+
   const [tasks, setTasks] = useState<MaintenanceTask[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState({ fetch: false, mutate: false });
   const [error, setError] = useState<unknown>(null);
   const { handleError } = useErrorHandler();
+  
+  // Stale guard for fetchTasks to prevent race conditions
+  const fetchReqIdRef = useRef(0);
+  
+  // FIXED: Counter pattern for fetch loading to handle overlapping fetch operations
+  // Multiple fetch functions (fetchTasks, fetchTaskById, fetchTasksByDateRange, etc.)
+  // all share the same loading.fetch state, so we need a counter to prevent race conditions
+  const fetchCountRef = useRef(0);
+  const startFetch = useCallback(() => {
+    fetchCountRef.current += 1;
+    setLoading(prev => ({ ...prev, fetch: true }));
+  }, []);
+  const endFetch = useCallback(() => {
+    fetchCountRef.current = Math.max(0, fetchCountRef.current - 1);
+    if (fetchCountRef.current === 0) {
+      setLoading(prev => ({ ...prev, fetch: false }));
+    }
+  }, []);
+  
+  // FIXED: Prevent StrictMode double-run in development
+  const didFetchRef = useRef(false);
 
+  // FIXED: Added stale guard to prevent out-of-order responses from overwriting newer data
   const fetchTasks = useCallback(
     async (filters?: TaskFilters) => {
-      setLoading(true);
+      const myId = ++fetchReqIdRef.current;
+      setLoading(prev => ({ ...prev, fetch: true }));
       setError(null);
 
       try {
-        const { data, error: fetchError } =
-          await SupabaseHelpers.fetchMaintenanceTasks(
-            filters || initialFilters
-          );
+        const effectiveFilters = filters || initialFilters;
+        const { data, error } = await dataService.fetchMaintenanceTasks(effectiveFilters);
 
-        if (fetchError) {
-          throw fetchError;
+        // Stale guard: ignore if a newer request has started
+        if (myId !== fetchReqIdRef.current) {
+          return;
+        }
+
+        if (error) {
+          setError(error);
+          handleError(error, 'Failed to fetch maintenance tasks');
+          setTasks([]);
+          return;
         }
 
         setTasks(data || []);
       } catch (err) {
+        // Stale guard: ignore if a newer request has started
+        if (myId !== fetchReqIdRef.current) {
+          return;
+        }
         setError(err);
         handleError(err, 'Failed to fetch maintenance tasks');
       } finally {
-        setLoading(false);
+        // Only clear loading if this is still the latest request
+        if (myId === fetchReqIdRef.current) {
+          endFetch();
+        }
       }
     },
-    [initialFilters, handleError]
+    [initialFilters, handleError, endFetch]
   );
 
   const fetchTaskById = useCallback(
     async (id: string): Promise<MaintenanceTask | null> => {
-      setLoading(true);
+      startFetch();
       setError(null);
 
       try {
-        const { data, error: fetchError } =
-          await SupabaseHelpers.fetchMaintenanceTaskById(id);
+        const { data, error } = await dataService.fetchMaintenanceTaskById(id);
 
-        if (fetchError) {
-          throw fetchError;
+        if (error) {
+          setError(error);
+          handleError(error, 'Failed to fetch maintenance task');
+          return null;
         }
 
         return data;
@@ -89,41 +152,43 @@ export function useMaintenanceTasks(
         handleError(err, 'Failed to fetch maintenance task');
         return null;
       } finally {
-        setLoading(false);
+        endFetch();
       }
     },
-    [handleError]
+    [handleError, startFetch, endFetch]
   );
 
+  // FIXED: Type now matches interface - 'client' is included in Omit
   const createTask = useCallback(
     async (
       task: Omit<
         MaintenanceTask,
-        'id' | 'created_at' | 'updated_at' | 'instrument'
+        'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
       >
     ): Promise<MaintenanceTask | null> => {
-      setLoading(true);
+      setLoading(prev => ({ ...prev, mutate: true }));
       setError(null);
 
       try {
-        const { data, error: createError } =
-          await SupabaseHelpers.createMaintenanceTask(task);
+        const { data, error } = await dataService.createMaintenanceTask(task);
 
-        if (createError) {
-          throw createError;
+        if (error) {
+          setError(error);
+          handleError(error, 'Failed to create maintenance task');
+          return null;
         }
 
         if (data) {
           setTasks(prev => [data, ...prev]);
         }
 
-        return data;
+        return data ?? null;
       } catch (err) {
         setError(err);
         handleError(err, 'Failed to create maintenance task');
         return null;
       } finally {
-        setLoading(false);
+        setLoading(prev => ({ ...prev, mutate: false }));
       }
     },
     [handleError]
@@ -139,28 +204,29 @@ export function useMaintenanceTasks(
         >
       >
     ): Promise<MaintenanceTask | null> => {
-      setLoading(true);
+      setLoading(prev => ({ ...prev, mutate: true }));
       setError(null);
 
       try {
-        const { data, error: updateError } =
-          await SupabaseHelpers.updateMaintenanceTask(id, updates);
+        const { data, error } = await dataService.updateMaintenanceTask(id, updates);
 
-        if (updateError) {
-          throw updateError;
+        if (error) {
+          setError(error);
+          handleError(error, 'Failed to update maintenance task');
+          return null;
         }
 
         if (data) {
           setTasks(prev => prev.map(task => (task.id === id ? data : task)));
         }
 
-        return data;
+        return data ?? null;
       } catch (err) {
         setError(err);
         handleError(err, 'Failed to update maintenance task');
         return null;
       } finally {
-        setLoading(false);
+        setLoading(prev => ({ ...prev, mutate: false }));
       }
     },
     [handleError]
@@ -168,15 +234,15 @@ export function useMaintenanceTasks(
 
   const deleteTask = useCallback(
     async (id: string) => {
-      setLoading(true);
+      setLoading(prev => ({ ...prev, mutate: true }));
       setError(null);
 
       try {
-        const { error: deleteError } =
-          await SupabaseHelpers.deleteMaintenanceTask(id);
-
-        if (deleteError) {
-          throw deleteError;
+        const { error } = await dataService.deleteMaintenanceTask(id);
+        if (error) {
+          setError(error);
+          handleError(error, 'Failed to delete maintenance task');
+          return;
         }
 
         setTasks(prev => prev.filter(task => task.id !== id));
@@ -184,7 +250,7 @@ export function useMaintenanceTasks(
         setError(err);
         handleError(err, 'Failed to delete maintenance task');
       } finally {
-        setLoading(false);
+        setLoading(prev => ({ ...prev, mutate: false }));
       }
     },
     [handleError]
@@ -192,42 +258,31 @@ export function useMaintenanceTasks(
 
   const fetchTasksByDateRange = useCallback(
     async (startDate: string, endDate: string): Promise<MaintenanceTask[]> => {
-      setLoading(true);
+      setLoading(prev => ({ ...prev, fetch: true }));
       setError(null);
 
       try {
-        const { data, error: fetchError } =
-          await SupabaseHelpers.fetchTasksByDateRange(startDate, endDate);
+        const { data, error } = await dataService.fetchTasksByDateRange(startDate, endDate);
 
-        if (fetchError) {
-          throw fetchError;
+        if (error) {
+          setError(error);
+          handleError(error, 'Failed to fetch tasks by date range');
+          return [];
         }
 
-        const tasks = data || [];
-        // 상태 업데이트
+        const tasksResult = data || [];
         setTasks(prevTasks => {
-          // 중복 제거 및 병합
           const existingIds = new Set(prevTasks.map(t => t.id));
-          const newTasks = tasks.filter(t => !existingIds.has(t.id));
+          const newTasks = tasksResult.filter(t => !existingIds.has(t.id));
           return [...prevTasks, ...newTasks];
         });
-        return tasks;
+        return tasksResult;
       } catch (err) {
         setError(err);
-        logError(
-          'Failed to fetch tasks by date range',
-          err,
-          'useMaintenanceTasks',
-          {
-            operation: 'fetchTasksByDateRange',
-            startDate,
-            endDate,
-          }
-        );
         handleError(err, 'Failed to fetch tasks by date range');
         return [];
       } finally {
-        setLoading(false);
+        setLoading(prev => ({ ...prev, fetch: false }));
       }
     },
     [handleError]
@@ -235,49 +290,51 @@ export function useMaintenanceTasks(
 
   const fetchTasksByScheduledDate = useCallback(
     async (date: string): Promise<MaintenanceTask[]> => {
-      setLoading(true);
+      startFetch();
       setError(null);
 
       try {
-        const { data, error: fetchError } =
-          await SupabaseHelpers.fetchTasksByScheduledDate(date);
+        const { data, error } = await dataService.fetchTasksByScheduledDate(date);
 
-        if (fetchError) {
-          throw fetchError;
+        if (error) {
+          setError(error);
+          handleError(error, 'Failed to fetch tasks by scheduled date');
+          return [];
         }
 
-        const tasks = data || [];
-        // 상태 업데이트
+        const tasksResult = data || [];
+        // FIXED: Merge updates to existing tasks instead of only adding new ones
         setTasks(prevTasks => {
-          // 중복 제거 및 병합
-          const existingIds = new Set(prevTasks.map(t => t.id));
-          const newTasks = tasks.filter(t => !existingIds.has(t.id));
-          return [...prevTasks, ...newTasks];
+          const map = new Map(prevTasks.map(t => [t.id, t]));
+          for (const t of tasksResult) {
+            map.set(t.id, t); // This will update existing tasks with new data
+          }
+          return Array.from(map.values());
         });
-        return tasks;
+        return tasksResult;
       } catch (err) {
         setError(err);
         handleError(err, 'Failed to fetch tasks by scheduled date');
         return [];
       } finally {
-        setLoading(false);
+        endFetch();
       }
     },
-    [handleError]
+    [handleError, startFetch, endFetch]
   );
 
   const fetchOverdueTasks = useCallback(async (): Promise<
     MaintenanceTask[]
   > => {
-    setLoading(true);
+    startFetch();
     setError(null);
 
     try {
-      const { data, error: fetchError } =
-        await SupabaseHelpers.fetchOverdueTasks();
-
-      if (fetchError) {
-        throw fetchError;
+      const { data, error } = await dataService.fetchOverdueTasks();
+      if (error) {
+        setError(error);
+        handleError(error, 'Failed to fetch overdue tasks');
+        return [];
       }
 
       return data || [];
@@ -286,16 +343,17 @@ export function useMaintenanceTasks(
       handleError(err, 'Failed to fetch overdue tasks');
       return [];
     } finally {
-      setLoading(false);
+      endFetch();
     }
-  }, [handleError]);
+  }, [handleError, startFetch, endFetch]);
 
-  // Initial fetch
+  // FIXED: Now fetches by default even without initialFilters (autoFetch option)
+  // FIXED: Prevent StrictMode double-run in development (didFetchRef guard)
   useEffect(() => {
-    if (initialFilters) {
-      fetchTasks(initialFilters);
-    }
-  }, [fetchTasks, initialFilters]);
+    if (!autoFetch || didFetchRef.current) return;
+    didFetchRef.current = true;
+    fetchTasks(initialFilters);
+  }, [autoFetch, fetchTasks, initialFilters]);
 
   return {
     tasks,

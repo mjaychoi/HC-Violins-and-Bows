@@ -610,7 +610,9 @@ describe('validationUtils', () => {
   });
 
   describe('useDebouncedValidation', () => {
-    jest.useFakeTimers();
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
 
     it('should debounce validation', async () => {
       const validator = (value: string) => {
@@ -676,6 +678,7 @@ describe('validationUtils', () => {
     });
 
     afterEach(() => {
+      jest.clearAllTimers();
       jest.runOnlyPendingTimers();
       jest.useRealTimers();
     });

@@ -20,18 +20,46 @@ interface UseLoadingStateReturn {
   isSubmitting: boolean;
 }
 
+/**
+ * FIXED: Uses counter pattern to handle nested/overlapping async operations safely
+ * This prevents race conditions where an earlier operation finishes after a later one,
+ * incorrectly clearing the loading state
+ */
 export function useLoadingState(
   options: UseLoadingStateOptions = {}
 ): UseLoadingStateReturn {
   const { initialLoading = false, initialSubmitting = false } = options;
 
-  const [loading, setLoading] = useState(initialLoading);
-  const [submitting, setSubmitting] = useState(initialSubmitting);
+  // Use counters instead of boolean to handle nested calls
+  const [loadingCount, setLoadingCount] = useState(initialLoading ? 1 : 0);
+  const [submittingCount, setSubmittingCount] = useState(initialSubmitting ? 1 : 0);
 
-  const startLoading = useCallback(() => setLoading(true), []);
-  const stopLoading = useCallback(() => setLoading(false), []);
-  const startSubmitting = useCallback(() => setSubmitting(true), []);
-  const stopSubmitting = useCallback(() => setSubmitting(false), []);
+  const loading = loadingCount > 0;
+  const submitting = submittingCount > 0;
+
+  const startLoading = useCallback(() => {
+    setLoadingCount(c => c + 1);
+  }, []);
+
+  const stopLoading = useCallback(() => {
+    setLoadingCount(c => Math.max(0, c - 1));
+  }, []);
+
+  const startSubmitting = useCallback(() => {
+    setSubmittingCount(c => c + 1);
+  }, []);
+
+  const stopSubmitting = useCallback(() => {
+    setSubmittingCount(c => Math.max(0, c - 1));
+  }, []);
+
+  const setLoading = useCallback((value: boolean) => {
+    setLoadingCount(value ? 1 : 0);
+  }, []);
+
+  const setSubmitting = useCallback((value: boolean) => {
+    setSubmittingCount(value ? 1 : 0);
+  }, []);
 
   const withLoading = useCallback(
     async <T>(operation: () => Promise<T>): Promise<T> => {

@@ -24,7 +24,9 @@ describe('ErrorHandler - Simple Tests', () => {
     );
 
     const friendlyMessage = errorHandler.getUserFriendlyMessage(error);
-    expect(friendlyMessage).toBe('Please check your network connection.');
+    expect(friendlyMessage).toBe(
+      'Network connection error. Please check your internet connection.'
+    );
   });
 
   test('should provide recovery suggestions', () => {

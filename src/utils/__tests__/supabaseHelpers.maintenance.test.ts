@@ -1,5 +1,4 @@
 import { SupabaseHelpers } from '../supabaseHelpers';
-import { supabase } from '@/lib/supabase';
 import type { MaintenanceTask, TaskFilters } from '@/types';
 
 // Mock logger
@@ -9,11 +8,14 @@ jest.mock('../logger', () => ({
   logApiRequest: jest.fn(),
 }));
 
-// Mock supabase
+// Mock supabase client
+const mockSupabaseClient = {
+  from: jest.fn(),
+};
+
+// Mock getSupabase function
 jest.mock('@/lib/supabase', () => ({
-  supabase: {
-    from: jest.fn(),
-  },
+  getSupabase: jest.fn(() => mockSupabaseClient),
 }));
 
 const mockMaintenanceTask: MaintenanceTask = {
@@ -80,7 +82,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
       const mockQuery = createChainableMockQuery(mockData);
       mockQuery.order = mockOrder;
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -88,7 +90,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
       expect(result.data).toEqual(mockData);
       expect(result.error).toBeNull();
-      expect(supabase.from).toHaveBeenCalledWith('maintenance_tasks');
+      expect(mockSupabaseClient.from).toHaveBeenCalledWith('maintenance_tasks');
       expect(mockOrder).toHaveBeenCalledWith('received_date', {
         ascending: false,
       });
@@ -105,7 +107,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
       const mockQuery = createChainableMockQuery(mockData);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -128,7 +130,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
       const mockQuery = createChainableMockQuery(mockData);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -148,7 +150,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
       const mockQuery = createChainableMockQuery(mockData);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -163,7 +165,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
       const mockError = { message: 'Database error', code: 'PGRST116' };
       const mockQuery = createChainableMockQuery(null as any, mockError);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -176,7 +178,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
   describe('fetchMaintenanceTaskById', () => {
     it('should fetch a task by id', async () => {
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnThis(),
           single: jest.fn().mockResolvedValue({
@@ -195,7 +197,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
     it('should handle errors when fetching by id', async () => {
       const mockError = { message: 'Not found', code: 'PGRST116' };
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnThis(),
           single: jest.fn().mockResolvedValue({
@@ -217,7 +219,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
       const mockData = [mockMaintenanceTask];
       const mockQuery = createChainableMockQuery(mockData);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -248,7 +250,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
       const mockQuery = createChainableMockQuery(mockData);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -271,7 +273,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
       const mockQuery = createChainableMockQuery(null as any, mockError);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -292,7 +294,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
       const mockQuery = createChainableMockQuery(null as any, mockError);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -308,7 +310,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
     it('should handle unexpected errors', async () => {
       const mockError = new Error('Unexpected error');
 
-      (supabase.from as jest.Mock).mockImplementation(() => {
+      (mockSupabaseClient.from as jest.Mock).mockImplementation(() => {
         throw mockError;
       });
 
@@ -346,7 +348,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
         notes: null,
       };
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         insert: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
@@ -386,7 +388,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
       const mockError = { message: 'Validation error', code: '23502' };
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         insert: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
@@ -414,7 +416,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
         ...updates,
       };
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         update: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -437,7 +439,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
       const mockError = { message: 'Not found', code: 'PGRST116' };
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         update: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -456,7 +458,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
 
   describe('deleteMaintenanceTask', () => {
     it('should delete a maintenance task', async () => {
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         delete: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({
           error: null,
@@ -471,7 +473,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
     it('should handle errors when deleting task', async () => {
       const mockError = { message: 'Not found', code: 'PGRST116' };
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         delete: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({
           error: mockError,
@@ -489,7 +491,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
       const mockData = [mockMaintenanceTask];
       const mockQuery = createChainableMockQuery(mockData);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -505,7 +507,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
       const mockError = { message: 'Database error', code: 'PGRST116' };
       const mockQuery = createChainableMockQuery(null as any, mockError);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -522,7 +524,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
       const mockData = [mockMaintenanceTask];
       const mockQuery = createChainableMockQuery(mockData);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 
@@ -541,7 +543,7 @@ describe('SupabaseHelpers - Maintenance Tasks', () => {
       const mockError = { message: 'Database error', code: 'PGRST116' };
       const mockQuery = createChainableMockQuery(null as any, mockError);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnValue(mockQuery),
       });
 

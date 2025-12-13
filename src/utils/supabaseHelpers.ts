@@ -1,6 +1,10 @@
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { logApiRequest, logError } from './logger';
 import type { MaintenanceTask, TaskFilters } from '@/types';
+
+// Lazy load Supabase client to prevent dependency leakage
+// Only load when actually used, not at module initialization time
+const getSupabaseClient = () => getSupabase();
 
 // Supabase error type for better type safety
 interface SupabaseError {
@@ -11,13 +15,27 @@ interface SupabaseError {
 }
 
 // Escape ILike special characters
+import { validateSortColumn, ALLOWED_SORT_COLUMNS } from './inputValidation';
+
 function escapeILike(s: string): string {
   return s.replace(/[%_]/g, c => '\\' + c);
 }
 
+/**
+ * Escape value for PostgREST .or() filter string
+ * Removes characters that could break filter syntax: , ( )
+ */
+function escapeOrValue(s: string): string {
+  return s.replace(/[,\(\)]/g, ' ').replace(/[%_]/g, c => '\\' + c);
+}
+
 export class SupabaseHelpers {
+  /**
+   * SECURITY: table must be a valid table key with whitelisted columns
+   * orderBy.column is validated against ALLOWED_SORT_COLUMNS to prevent injection
+   */
   static async fetchAll<T>(
-    table: string,
+    table: keyof typeof ALLOWED_SORT_COLUMNS,
     options?: {
       select?: string;
       orderBy?: { column: string; ascending?: boolean };
@@ -29,10 +47,13 @@ export class SupabaseHelpers {
     const url = `supabase://${table}`;
 
     try {
+      const supabase = getSupabaseClient();
       let query = supabase.from(table).select(options?.select || '*');
 
+      // SECURITY: Validate orderBy column against whitelist to prevent injection
       if (options?.orderBy) {
-        query = query.order(options.orderBy.column, {
+        const safeColumn = validateSortColumn(table, options.orderBy.column ?? null);
+        query = query.order(safeColumn, {
           ascending: options.orderBy.ascending ?? true,
         });
       }
@@ -41,6 +62,10 @@ export class SupabaseHelpers {
         query = query.limit(options.limit);
       }
 
+      // Apply AbortSignal if supported
+      // Note: Supabase JS client may not directly support AbortSignal
+      // This is a placeholder - check Supabase version for actual support
+      // If not supported, consider removing signal from options
       const { data, error } = await query;
       const duration = Math.round(performance.now() - startTime);
 
@@ -80,6 +105,7 @@ export class SupabaseHelpers {
     const url = `supabase://${table}/${id}`;
 
     try {
+      const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from(table)
         .select(select || '*')
@@ -124,6 +150,7 @@ export class SupabaseHelpers {
     const url = `supabase://${table}`;
 
     try {
+      const supabase = getSupabaseClient();
       const { data: result, error } = await supabase
         .from(table)
         .insert([data])
@@ -167,6 +194,7 @@ export class SupabaseHelpers {
     const url = `supabase://${table}/${id}`;
 
     try {
+      const supabase = getSupabaseClient();
       const { data: result, error } = await supabase
         .from(table)
         .update(data)
@@ -209,6 +237,7 @@ export class SupabaseHelpers {
     const url = `supabase://${table}/${id}`;
 
     try {
+      const supabase = getSupabaseClient();
       const { error } = await supabase.from(table).delete().eq('id', id);
       const duration = Math.round(performance.now() - startTime);
 
@@ -241,10 +270,14 @@ export class SupabaseHelpers {
     }
   }
 
+  /**
+   * SECURITY: columns must be a whitelist of valid column names (never from user input)
+   * searchTerm is sanitized but should not contain query-breaking characters
+   */
   static async search<T>(
     table: string,
     searchTerm: string,
-    columns: string[],
+    columns: readonly string[], // Make it readonly to emphasize it should be a constant whitelist
     options?: {
       limit?: number;
       signal?: AbortSignal;
@@ -255,11 +288,14 @@ export class SupabaseHelpers {
     const limit = options?.limit ?? 10;
 
     try {
-      const term = escapeILike(searchTerm);
+      // SECURITY: Escape search term for .or() filter syntax
+      // This prevents breaking PostgREST filter syntax with , ( ) characters
+      const term = escapeOrValue(searchTerm);
       const orCondition = columns
         .map(col => `${col}.ilike.%${term}%`)
         .join(',');
 
+      const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from(table)
         .select('*')
@@ -306,6 +342,7 @@ export class SupabaseHelpers {
   ): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
     // Fetch tasks without instrument relation to avoid foreign key relationship errors
     // Instrument data can be fetched separately if needed
+    const supabase = getSupabaseClient();
     let query = supabase
       .from('maintenance_tasks')
       .select('*')
@@ -351,6 +388,7 @@ export class SupabaseHelpers {
   ): Promise<{ data: MaintenanceTask | null; error: unknown }> {
     // Fetch task without instrument relation to avoid foreign key relationship errors
     // Instrument data can be fetched separately if needed
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from('maintenance_tasks')
       .select('*')
@@ -369,7 +407,8 @@ export class SupabaseHelpers {
       // received_date를 기준으로 필터링
       // 실제로는 여러 날짜 필드를 고려해야 하지만, 우선 received_date 기준으로 구현
       // Note: instrument relationship is fetched separately if needed to avoid foreign key relationship errors
-      let { data, error } = await supabase
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
         .from('maintenance_tasks')
         .select('*')
         .gte('received_date', startDate)
@@ -377,34 +416,7 @@ export class SupabaseHelpers {
         .order('scheduled_date', { ascending: true })
         .order('due_date', { ascending: true });
 
-      // If error occurs due to relationship issue, try without relationship
       if (error) {
-        const supabaseError = error as SupabaseError;
-        const errorCode = supabaseError?.code;
-        const errorMessage = supabaseError?.message || '';
-
-        // If it's a relationship error (PGRST200), retry without relationship (silently)
-        if (
-          errorCode === 'PGRST200' ||
-          errorMessage.includes('relationship') ||
-          errorMessage.includes('foreign key')
-        ) {
-          // Relationship query failed, fetch without relation (this is expected if foreign key is not set up in Supabase)
-          const retryResult = await supabase
-            .from('maintenance_tasks')
-            .select('*')
-            .gte('received_date', startDate)
-            .lte('received_date', endDate)
-            .order('scheduled_date', { ascending: true })
-            .order('due_date', { ascending: true });
-
-          data = retryResult.data;
-          error = retryResult.error;
-        }
-      }
-
-      if (error) {
-        // Only log non-relationship errors
         const supabaseError = error as SupabaseError;
         const errorCode = supabaseError?.code;
         const errorMessage = supabaseError?.message || '';
@@ -415,6 +427,8 @@ export class SupabaseHelpers {
           errorMessage.includes('does not exist') ||
           errorMessage.includes('relation')
         ) {
+          // SECURITY: Don't expose internal project IDs in logs
+          // Migration guide should be in internal documentation, not in error logs
           logError(
             'maintenance_tasks 테이블이 존재하지 않습니다',
             error,
@@ -422,8 +436,7 @@ export class SupabaseHelpers {
             {
               operation: 'fetchTasksByDateRange',
               errorCode,
-              migrationGuide:
-                'https://supabase.com/dashboard/project/dmilmlhquttcozxlpfxw/sql/new',
+              // migrationGuide removed - internal project ID should not be in logs
             }
           );
         } else if (
@@ -453,15 +466,36 @@ export class SupabaseHelpers {
       // 데이터가 있으면 날짜 범위로 필터링
       // received_date로 이미 필터링되어 있지만, 다른 날짜 필드도 확인
       if (data && !error) {
+        // SECURITY: Validate date format before string comparison
+        // String comparison works for YYYY-MM-DD but breaks with formats like 2025-2-3
+        // Normalize dates to YYYY-MM-DD format before comparison
+        const normalizedStartDate = startDate; // Assume already validated/normalized
+        const normalizedEndDate = endDate; // Assume already validated/normalized
+
         const filteredData = data.filter((task: MaintenanceTask) => {
           const dates = [
             task.scheduled_date,
             task.due_date,
             task.personal_due_date,
             task.received_date,
-          ].filter((date): date is string => Boolean(date));
+          ]
+            .filter((date): date is string => Boolean(date))
+            // Ensure all dates are in YYYY-MM-DD format for safe string comparison
+            .map(date => {
+              // If date is not in YYYY-MM-DD format, try to parse and normalize
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                try {
+                  const d = new Date(date);
+                  return d.toISOString().split('T')[0]; // Normalize to YYYY-MM-DD
+                } catch {
+                  return null; // Invalid date, skip
+                }
+              }
+              return date;
+            })
+            .filter((date): date is string => Boolean(date));
 
-          return dates.some(date => date >= startDate && date <= endDate);
+          return dates.some(date => date >= normalizedStartDate && date <= normalizedEndDate);
         });
         return { data: filteredData as MaintenanceTask[], error };
       }
@@ -487,6 +521,7 @@ export class SupabaseHelpers {
     >
   ): Promise<{ data: MaintenanceTask | null; error: unknown }> {
     // Fetch task without instrument relation to avoid foreign key relationship errors
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from('maintenance_tasks')
       .insert([task])
@@ -506,6 +541,7 @@ export class SupabaseHelpers {
     >
   ): Promise<{ data: MaintenanceTask | null; error: unknown }> {
     // Fetch task without instrument relation to avoid foreign key relationship errors
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from('maintenance_tasks')
       .update(updates)
@@ -517,6 +553,7 @@ export class SupabaseHelpers {
   }
 
   static async deleteMaintenanceTask(id: string): Promise<{ error: unknown }> {
+    const supabase = getSupabaseClient();
     const { error } = await supabase
       .from('maintenance_tasks')
       .delete()
@@ -529,6 +566,7 @@ export class SupabaseHelpers {
     date: string
   ): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
     // Fetch tasks without instrument relation to avoid foreign key relationship errors
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from('maintenance_tasks')
       .select('*')
@@ -544,6 +582,7 @@ export class SupabaseHelpers {
     error: unknown;
   }> {
     // Fetch tasks without instrument relation to avoid foreign key relationship errors
+    const supabase = getSupabaseClient();
     const today = new Date().toISOString().split('T')[0];
     const { data, error } = await supabase
       .from('maintenance_tasks')

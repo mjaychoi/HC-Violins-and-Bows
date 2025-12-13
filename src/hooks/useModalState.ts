@@ -53,15 +53,16 @@ export function useModalState<T = unknown>(
     setIsOpen(true);
   }, []);
 
+  // FIXED: toggleModal now properly resets state to prevent stale selectedItem/isEditing
+  // Safer pattern: avoid nested state updates (separate calls, not inside setIsOpen callback)
   const toggleModal = useCallback(() => {
     setIsOpen(prev => !prev);
-  }, []);
-
-  const resetModal = useCallback(() => {
-    setIsOpen(false);
     setIsEditing(false);
     setSelectedItem(null);
   }, []);
+
+  // resetModal is identical to closeModal - kept for API convenience
+  const resetModal = closeModal;
 
   return {
     isOpen,
