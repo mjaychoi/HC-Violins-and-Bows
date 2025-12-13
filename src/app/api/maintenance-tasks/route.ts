@@ -12,6 +12,7 @@ import {
   validateMaintenanceTask,
   validateMaintenanceTaskArray,
   validatePartialMaintenanceTask,
+  validateCreateMaintenanceTask,
   safeValidate,
 } from '@/utils/typeGuards';
 import {
@@ -320,8 +321,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    // Validate request body
-    const validationResult = safeValidate(body, validateMaintenanceTask);
+    // Validate request body using create schema (without id, created_at, updated_at)
+    const validationResult = safeValidate(body, validateCreateMaintenanceTask);
     if (!validationResult.success) {
       return NextResponse.json(
         { error: `Invalid maintenance task data: ${validationResult.error}` },
@@ -329,10 +330,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Use validated data instead of raw body
+    const validatedInput = validationResult.data;
+
     const supabase = getServerSupabase();
     const { data, error } = await supabase
       .from('maintenance_tasks')
-      .insert(body)
+      .insert(validatedInput)
       .select()
       .single();
 
@@ -359,7 +363,7 @@ export async function POST(request: NextRequest) {
       captureException(
         appError,
         'MaintenanceTasksAPI.POST',
-        { body: Object.keys(body), duration },
+        { body: Object.keys(validatedInput), duration },
         ErrorSeverity.MEDIUM
       );
       const safeError = createSafeErrorResponse(appError, 500);
@@ -367,7 +371,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate response data
-    const validatedData = validateMaintenanceTask(data);
+    const validatedResponse = validateMaintenanceTask(data);
 
     logApiRequest(
       'POST',
@@ -376,11 +380,11 @@ export async function POST(request: NextRequest) {
       duration,
       'MaintenanceTasksAPI',
       {
-        taskId: validatedData.id,
+        taskId: validatedResponse.id,
       }
     );
 
-    return NextResponse.json({ data: validatedData }, { status: 201 });
+    return NextResponse.json({ data: validatedResponse }, { status: 201 });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
     const appError = errorHandler.handleSupabaseError(

@@ -610,13 +610,14 @@ NEXT_PUBLIC_ERROR_SEVERITY_THRESHOLD=CRITICAL
 
 - **ErrorBoundary 사용**: 10개 이상 페이지
 - **useAppFeedback 사용**: 12개 페이지
-- **API 라우트 안전한 응답**: 6개 API 라우트
+- **API 라우트 안전한 응답**: 7개 API 라우트
   - `/api/clients/route.ts`
   - `/api/instruments/route.ts`
   - `/api/connections/route.ts`
   - `/api/maintenance-tasks/route.ts`
   - `/api/sales/route.ts`
   - `/api/certificates/[id]/route.tsx`
+  - `/api/health/route.ts` ⭐ NEW
 - **폼 인라인 에러**: 주요 폼 모두 적용
 - **자동 에러 캡처 위치**: 4곳
   - API 클라이언트 (`apiClient.ts`)

@@ -51,6 +51,8 @@ export default function ConnectedClientsPage() {
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
   const [connectionSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   // Search and filter hooks (unified)
   const { items: filteredConnections } = useFilterSort(connections, {
@@ -78,6 +80,12 @@ export default function ConnectedClientsPage() {
     groupedConnections,
     relationshipTypeCounts,
   } = useConnectionFilters(filteredConnections);
+
+  // 필터 변경 시 페이지를 1로 리셋
+  const handleFilterChange = (filter: string | null) => {
+    setSelectedFilter(filter);
+    setCurrentPage(1);
+  };
 
   // Use connection edit hook
   const { showEditModal, editingConnection, openEditModal, closeEditModal } =
@@ -154,7 +162,7 @@ export default function ConnectedClientsPage() {
           {/* Search and Filter Bar */}
           <FilterBar
             selectedFilter={selectedFilter}
-            onFilterChange={setSelectedFilter}
+            onFilterChange={handleFilterChange}
             relationshipTypeCounts={relationshipTypeCounts}
             totalConnections={connections.length}
           />
@@ -210,6 +218,10 @@ export default function ConnectedClientsPage() {
               selectedFilter={selectedFilter}
               onEditConnection={openEditModal}
               onDeleteConnection={handleDeleteConnection}
+              currentPage={currentPage}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              loading={loading}
             />
           )}
         </div>

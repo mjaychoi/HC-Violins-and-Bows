@@ -23,6 +23,11 @@ export interface FilterGroupConfig {
   variant?: 'list' | 'card';
   maxHeight?: string;
   /**
+   * 옵션 값을 표시할 레이블로 변환하는 함수
+   * 예: UUID를 클라이언트 이름으로 변환
+   */
+  getLabel?: (value: string) => string;
+  /**
    * 커스텀 렌더링 함수 (특수 필터의 경우)
    */
   customRender?: () => React.ReactNode;
@@ -318,6 +323,7 @@ export default function PageFilters({
                 defaultCollapsed={group.defaultCollapsed ?? false}
                 variant={group.variant ?? 'list'}
                 maxHeight={group.maxHeight ?? 'max-h-48'}
+                getLabel={group.getLabel}
               />
             );
           })}

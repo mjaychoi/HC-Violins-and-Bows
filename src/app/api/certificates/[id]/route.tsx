@@ -4,7 +4,7 @@ import { getSupabase } from '@/lib/supabase';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
-import { ErrorSeverity, ErrorCodes } from '@/types/errors';
+import { ErrorSeverity, ErrorCodes, AppError } from '@/types/errors';
 import {
   createSafeErrorResponse,
   createLogErrorInfo,
@@ -330,10 +330,41 @@ export async function GET(
     }
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(
-      error,
-      'Generate certificate PDF'
-    );
+
+    // Check if it's a Supabase error or PDF generation error
+    let appError: AppError;
+    const isSupabaseError =
+      error &&
+      typeof error === 'object' &&
+      ((error as { code?: string }).code?.startsWith('PGRST') ||
+        (error as { name?: string }).name === 'PostgrestError');
+
+    if (isSupabaseError) {
+      // Supabase/PostgreSQL error
+      appError = errorHandler.handleSupabaseError(
+        error,
+        'Generate certificate PDF'
+      );
+    } else {
+      // PDF generation or other error
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : 'Failed to generate PDF certificate';
+
+      appError = errorHandler.createError(
+        ErrorCodes.UNKNOWN_ERROR,
+        'PDF generation failed',
+        errorMessage,
+        {
+          instrumentId: id,
+          errorType: error instanceof Error ? error.name : typeof error,
+        }
+      );
+    }
+
     const logInfo = createLogErrorInfo(appError);
 
     logApiRequest(
@@ -345,15 +376,15 @@ export async function GET(
       {
         instrumentId: id,
         error: true,
-        errorCode: (appError as { code?: string })?.code,
+        errorCode: appError.code,
         logMessage: logInfo.message,
       }
     );
 
     captureException(
-      appError,
+      error instanceof Error ? error : new Error(String(error)),
       'CertificatesAPI.GET',
-      { instrumentId: id, duration, logMessage: logInfo.message },
+      { instrumentId: id, duration, logMessage: logInfo.message, appError },
       ErrorSeverity.HIGH
     );
 

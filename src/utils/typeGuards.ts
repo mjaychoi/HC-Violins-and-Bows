@@ -516,6 +516,52 @@ export const partialClientSchema = z.object({
 });
 
 /**
+ * ClientInstrument creation schema (for POST requests - without id and created_at)
+ */
+export const createClientInstrumentSchema = z.object({
+  client_id: uuidSchema,
+  instrument_id: uuidSchema,
+  relationship_type: relationshipTypeSchema,
+  notes: z.string().nullable().optional(),
+});
+
+/**
+ * Instrument creation schema (for POST requests - without id and created_at)
+ */
+export const createInstrumentSchema = z.object({
+  status: instrumentStatusSchema,
+  maker: z.string().nullable(),
+  type: z.string().nullable(),
+  subtype: z.string().nullable(),
+  year: z.number().nullable(),
+  certificate: z.boolean(),
+  size: z.string().nullable(),
+  weight: z.string().nullable(),
+  price: z.number().nullable(),
+  ownership: z.string().nullable(),
+  note: z.string().nullable(),
+  serial_number: z.string().nullable(),
+});
+
+/**
+ * Client creation schema (for POST requests - without id and created_at)
+ */
+export const createClientSchema = z.object({
+  last_name: z.string().nullable(),
+  first_name: z.string().nullable(),
+  contact_number: z.string().nullable(),
+  email: z.union([z.string().email(), z.string().length(0), z.null()]),
+  tags: z.array(z.string()).catch([]),
+  interest: z.string().nullable(),
+  note: z.string().nullable(),
+  client_number: z.string().nullable(),
+  type: z.enum(['Musician', 'Dealer', 'Collector', 'Regular']).optional(),
+  status: z
+    .enum(['Active', 'Browsing', 'In Negotiation', 'Inactive'])
+    .optional(),
+});
+
+/**
  * Partial ClientInstrument Schema for updates
  */
 export const partialClientInstrumentSchema = z.object({
@@ -554,6 +600,28 @@ export const partialMaintenanceTaskSchema = z.object({
   updated_at: z.string().optional(),
   instrument: instrumentSchema.optional(),
   client: clientSchema.optional(),
+});
+
+/**
+ * MaintenanceTask creation schema (for POST requests - without id, created_at, updated_at)
+ */
+export const createMaintenanceTaskSchema = z.object({
+  instrument_id: uuidSchema,
+  client_id: uuidSchema.nullable(),
+  task_type: taskTypeSchema,
+  title: z.string().min(1),
+  description: z.string().nullable(),
+  status: taskStatusSchema,
+  received_date: dateStringSchema,
+  due_date: dateStringSchema.nullable(),
+  personal_due_date: dateStringSchema.nullable(),
+  scheduled_date: dateStringSchema.nullable(),
+  completed_date: dateStringSchema.nullable(),
+  priority: taskPrioritySchema,
+  estimated_hours: z.number().nullable(),
+  actual_hours: z.number().nullable(),
+  cost: z.number().nullable(),
+  notes: z.string().nullable(),
 });
 
 /**
@@ -627,6 +695,25 @@ export function validatePartialMaintenanceTask(
 }
 
 /**
+ * Validate MaintenanceTask creation data (for POST requests)
+ */
+export function validateCreateMaintenanceTask(
+  data: unknown
+): Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at'> {
+  const result = createMaintenanceTaskSchema.safeParse(data);
+  if (!result.success) {
+    const errorMessages = result.error.issues
+      ? result.error.issues.map((e: z.ZodIssue) => e.message).join(', ')
+      : result.error.message || 'Validation failed';
+    throw new Error(`Invalid MaintenanceTask creation data: ${errorMessages}`);
+  }
+  return result.data as Omit<
+    MaintenanceTask,
+    'id' | 'created_at' | 'updated_at'
+  >;
+}
+
+/**
  * Validate SalesHistory creation data (for POST requests)
  */
 export function validateCreateSalesHistory(
@@ -656,4 +743,68 @@ export function validatePartialSalesHistory(
     throw new Error(`Invalid SalesHistory update: ${errorMessages}`);
   }
   return result.data as Partial<SalesHistory>;
+}
+
+/**
+ * Validate Instrument creation data (for POST requests)
+ */
+export function validateCreateInstrument(
+  data: unknown
+): Omit<Instrument, 'id' | 'created_at' | 'updated_at'> {
+  const result = createInstrumentSchema.safeParse(data);
+  if (!result.success) {
+    const errorMessages = result.error.issues
+      ? result.error.issues.map((e: z.ZodIssue) => e.message).join(', ')
+      : result.error.message || 'Validation failed';
+    throw new Error(`Invalid Instrument creation data: ${errorMessages}`);
+  }
+  return result.data as Omit<Instrument, 'id' | 'created_at' | 'updated_at'>;
+}
+
+/**
+ * Validate Client creation data (for POST requests)
+ */
+export function validateCreateClient(
+  data: unknown
+): Omit<Client, 'id' | 'created_at'> {
+  const result = createClientSchema.safeParse(data);
+  if (!result.success) {
+    const errorMessages = result.error.issues
+      ? result.error.issues.map((e: z.ZodIssue) => e.message).join(', ')
+      : result.error.message || 'Validation failed';
+    throw new Error(`Invalid Client creation data: ${errorMessages}`);
+  }
+  return result.data as Omit<Client, 'id' | 'created_at'>;
+}
+
+/**
+ * Validate ClientInstrument creation data (for POST requests)
+ */
+export function validateCreateClientInstrument(
+  data: unknown
+): Omit<ClientInstrument, 'id' | 'created_at'> {
+  const result = createClientInstrumentSchema.safeParse(data);
+  if (!result.success) {
+    const errorMessages = result.error.issues
+      ? result.error.issues.map((e: z.ZodIssue) => e.message).join(', ')
+      : result.error.message || 'Validation failed';
+    throw new Error(`Invalid ClientInstrument creation data: ${errorMessages}`);
+  }
+  return result.data as Omit<ClientInstrument, 'id' | 'created_at'>;
+}
+
+/**
+ * Validate partial ClientInstrument update
+ */
+export function validatePartialClientInstrument(
+  data: unknown
+): Partial<ClientInstrument> {
+  const result = partialClientInstrumentSchema.safeParse(data);
+  if (!result.success) {
+    const errorMessages = result.error.issues
+      ? result.error.issues.map((e: z.ZodIssue) => e.message).join(', ')
+      : result.error.message || 'Validation failed';
+    throw new Error(`Invalid ClientInstrument update: ${errorMessages}`);
+  }
+  return result.data as Partial<ClientInstrument>;
 }

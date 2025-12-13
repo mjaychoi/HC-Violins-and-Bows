@@ -13,6 +13,11 @@ interface FilterGroupProps {
   defaultCollapsed?: boolean;
   maxHeight?: string;
   variant?: 'list' | 'card';
+  /**
+   * 옵션 값을 표시할 레이블로 변환하는 함수
+   * 예: UUID를 클라이언트 이름으로 변환
+   */
+  getLabel?: (value: string) => string;
 }
 
 export default function FilterGroup({
@@ -25,6 +30,7 @@ export default function FilterGroup({
   defaultCollapsed = false,
   maxHeight = 'max-h-64',
   variant = 'list',
+  getLabel,
 }: FilterGroupProps) {
   const [isExpanded, setIsExpanded] = useState(!defaultCollapsed);
   const [searchTerm, setSearchTerm] = useState('');
@@ -33,8 +39,11 @@ export default function FilterGroup({
   const filteredOptions = useMemo(() => {
     if (!debouncedSearch.trim()) return options;
     const searchLower = debouncedSearch.toLowerCase();
-    return options.filter(option => option.toLowerCase().includes(searchLower));
-  }, [options, debouncedSearch]);
+    return options.filter(option => {
+      const label = getLabel ? getLabel(option) : option;
+      return label.toLowerCase().includes(searchLower);
+    });
+  }, [options, debouncedSearch, getLabel]);
 
   const activeCount = selectedValues.length;
   const allSelected =
@@ -164,35 +173,51 @@ export default function FilterGroup({
               검색 결과가 없습니다
             </div>
           ) : (
-            filteredOptions.map(option => (
-              <label
-                key={option}
-                className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-gray-50 cursor-pointer transition-colors group"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedValues.includes(option)}
-                  onChange={() => onToggle(option)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded shrink-0"
-                />
-                <span className="text-sm text-gray-700 truncate flex-1">
-                  {option}
-                </span>
-                {selectedValues.includes(option) && (
-                  <svg
-                    className="w-3 h-3 text-blue-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                )}
-              </label>
-            ))
+            filteredOptions.map(option => {
+              const displayLabel = getLabel ? getLabel(option) : option;
+              // 디버깅: getLabel이 호출되는지 확인
+              if (
+                typeof window !== 'undefined' &&
+                process.env.NODE_ENV === 'development' &&
+                getLabel &&
+                title === '소유자'
+              ) {
+                console.log('[FilterGroup] getLabel called:', {
+                  option,
+                  displayLabel,
+                  hasGetLabel: !!getLabel,
+                });
+              }
+              return (
+                <label
+                  key={option}
+                  className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-gray-50 cursor-pointer transition-colors group"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedValues.includes(option)}
+                    onChange={() => onToggle(option)}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded shrink-0"
+                  />
+                  <span className="text-sm text-gray-700 truncate flex-1">
+                    {displayLabel}
+                  </span>
+                  {selectedValues.includes(option) && (
+                    <svg
+                      className="w-3 h-3 text-blue-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  )}
+                </label>
+              );
+            })
           )}
         </div>
       )}

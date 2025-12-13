@@ -70,6 +70,15 @@ jest.mock('../components', () => ({
         <button onClick={() => onSubmit({ maker: 'M' })}>submit-form</button>
       </div>
     ) : null,
+  DashboardContent: ({ onDeleteClick, onUpdateItemInline, onSort }: any) => (
+    <div data-testid="dashboard-content">
+      <button onClick={() => onDeleteClick({ id: '1' })}>delete</button>
+      <button onClick={() => onUpdateItemInline('1', { maker: 'Updated' })}>
+        update
+      </button>
+      <button onClick={() => onSort('maker')}>sort</button>
+    </div>
+  ),
 }));
 
 const mockInstrument = {

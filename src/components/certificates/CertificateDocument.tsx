@@ -14,42 +14,36 @@ import { Instrument } from '@/types';
 
 // Register Korean font (Noto Sans KR)
 // React-PDF requires TTF/OTF font files for proper Korean character rendering
-// Option 1: Use local font files (recommended - place fonts in public/fonts/)
-// Option 2: Use CDN with direct font file URLs
+// Using CDN URLs since server-side rendering cannot access public folder directly
+// Note: Variable fonts support multiple weights, but react-pdf may need explicit weight mapping
 try {
   Font.register({
     family: 'NotoSansKR',
     fonts: [
       {
-        // Use local font file if available, otherwise fallback to CDN
-        src: '/fonts/NotoSansKR-Regular.otf',
+        // Variable font supports normal weight (400)
+        src: 'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/Variable/TTF/Subset/NotoSansKR-VF.ttf',
         fontWeight: 'normal',
+        fontStyle: 'normal',
       },
       {
-        src: '/fonts/NotoSansKR-Bold.otf',
+        // Variable font supports bold weight (700)
+        src: 'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/Variable/TTF/Subset/NotoSansKR-VF.ttf',
         fontWeight: 'bold',
+        fontStyle: 'normal',
       },
+      // Note: Italic variants are not registered - if italic is needed, add font files
+      // For now, italic will fallback to regular font
     ],
   });
-} catch {
-  // If local fonts fail, try CDN URLs
-  try {
-    Font.register({
-      family: 'NotoSansKR',
-      fonts: [
-        {
-          src: 'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/Variable/TTF/Subset/NotoSansKR-VF.ttf',
-          fontWeight: 'normal',
-        },
-        {
-          src: 'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/Variable/TTF/Subset/NotoSansKR-VF.ttf',
-          fontWeight: 'bold',
-        },
-      ],
-    });
-  } catch {
-    // Final fallback: Use Helvetica (may still render Korean on some systems)
-    console.warn('Korean font registration failed. Using fallback font.');
+} catch (error) {
+  // Log error but continue - react-pdf will use fallback font
+  if (typeof window === 'undefined') {
+    // Server-side only
+    console.warn(
+      'Korean font registration failed. Using fallback font.',
+      error instanceof Error ? error.message : String(error)
+    );
   }
 }
 
@@ -281,7 +275,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 8,
     color: COLORS.muted,
-    fontStyle: 'italic',
+    // Note: fontStyle: 'italic' removed - NotoSansKR italic variant not registered
+    // Using normal style instead
   },
 
   // Footer - 신뢰 요소 집합

@@ -8,7 +8,12 @@ import {
   createSafeErrorResponse,
   createLogErrorInfo,
 } from '@/utils/errorSanitization';
-import { validateClientInstrument } from '@/utils/typeGuards';
+import {
+  validateClientInstrument,
+  validateCreateClientInstrument,
+  validatePartialClientInstrument,
+  safeValidate,
+} from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 
 export async function GET(request: NextRequest) {
@@ -21,6 +26,14 @@ export async function GET(request: NextRequest) {
     searchParams.get('orderBy')
   );
   const ascending = searchParams.get('ascending') !== 'false';
+
+  // Pagination parameters
+  const page = searchParams.get('page')
+    ? Math.max(1, parseInt(searchParams.get('page')!, 10))
+    : undefined;
+  const pageSize = searchParams.get('pageSize')
+    ? Math.max(1, Math.min(100, parseInt(searchParams.get('pageSize')!, 10)))
+    : undefined;
 
   try {
     const supabase = getServerSupabase();
@@ -54,6 +67,13 @@ export async function GET(request: NextRequest) {
     }
 
     query = query.order(orderBy, { ascending });
+
+    // Apply pagination if provided
+    if (page && pageSize) {
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      query = query.range(from, to);
+    }
 
     const { data, error, count } = await query;
 
@@ -96,11 +116,17 @@ export async function GET(request: NextRequest) {
     logApiRequest('GET', '/api/connections', 200, duration, 'ConnectionsAPI', {
       recordCount: data?.length || 0,
       totalCount: count || 0,
+      page,
+      pageSize,
     });
 
     return NextResponse.json({
       data: data || [],
       count: count || 0,
+      page,
+      pageSize,
+      totalPages:
+        page && pageSize && count ? Math.ceil(count / pageSize) : undefined,
     });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
@@ -125,35 +151,22 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    // Validate request body (basic fields only, relations are added by Supabase)
-    const { client_id, instrument_id, relationship_type } = body;
-    if (!client_id || !instrument_id || !relationship_type) {
+    // Validate request body using Zod schema
+    const validationResult = safeValidate(body, validateCreateClientInstrument);
+    if (!validationResult.success) {
       return NextResponse.json(
-        {
-          error: 'client_id, instrument_id, and relationship_type are required',
-        },
+        { error: `Invalid connection data: ${validationResult.error}` },
         { status: 400 }
       );
     }
 
-    // Validate UUID formats
-    if (!validateUUID(client_id)) {
-      return NextResponse.json(
-        { error: 'Invalid client_id format' },
-        { status: 400 }
-      );
-    }
-    if (!validateUUID(instrument_id)) {
-      return NextResponse.json(
-        { error: 'Invalid instrument_id format' },
-        { status: 400 }
-      );
-    }
+    // Use validated data instead of raw body
+    const validatedInput = validationResult.data;
 
     const supabase = getServerSupabase();
     const { data, error } = await supabase
       .from('client_instruments')
-      .insert(body)
+      .insert(validatedInput)
       .select(
         `
           *,
@@ -186,7 +199,7 @@ export async function POST(request: NextRequest) {
       captureException(
         appError,
         'ConnectionsAPI.POST',
-        { body: Object.keys(body), duration },
+        { body: Object.keys(validatedInput), duration },
         ErrorSeverity.MEDIUM
       );
       const safeError = createSafeErrorResponse(appError, 500);
@@ -194,13 +207,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate response data (with relations)
-    const validatedData = validateClientInstrument(data);
+    const validatedResponse = validateClientInstrument(data);
 
     logApiRequest('POST', '/api/connections', 201, duration, 'ConnectionsAPI', {
-      connectionId: validatedData.id,
+      connectionId: validatedResponse.id,
     });
 
-    return NextResponse.json({ data: validatedData }, { status: 201 });
+    return NextResponse.json({ data: validatedResponse }, { status: 201 });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
     const appError = errorHandler.handleSupabaseError(
@@ -236,6 +249,18 @@ export async function PATCH(request: NextRequest) {
     if (!validateUUID(id)) {
       return NextResponse.json(
         { error: 'Invalid connection ID format' },
+        { status: 400 }
+      );
+    }
+
+    // Validate update data using partial schema
+    const validationResult = safeValidate(
+      updates,
+      validatePartialClientInstrument
+    );
+    if (!validationResult.success) {
+      return NextResponse.json(
+        { error: `Invalid update data: ${validationResult.error}` },
         { status: 400 }
       );
     }

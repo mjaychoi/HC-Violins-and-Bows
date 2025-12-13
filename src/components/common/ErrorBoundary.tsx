@@ -1,8 +1,9 @@
 'use client';
 
 import React, { Component, ReactNode } from 'react';
-import { AppError, ErrorCodes } from '@/types/errors';
+import { AppError, ErrorCodes, ErrorSeverity } from '@/types/errors';
 import { logError } from '@/utils/logger';
+import { captureException } from '@/utils/monitoring';
 import {
   getUserFriendlyErrorMessage,
   sanitizeError,
@@ -80,6 +81,18 @@ export default class ErrorBoundary extends Component<
       errorMessage: error.message,
       errorStack: error.stack,
     });
+
+    // Capture exception for monitoring (ErrorBoundary errors are always Critical)
+    captureException(
+      appError,
+      'ErrorBoundary',
+      {
+        componentStack: errorInfo.componentStack,
+        errorMessage: error.message,
+        errorStack: error.stack,
+      },
+      ErrorSeverity.CRITICAL
+    );
   }
 
   componentDidUpdate(prevProps: ErrorBoundaryProps) {

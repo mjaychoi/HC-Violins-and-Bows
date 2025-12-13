@@ -7,7 +7,7 @@ import React, { useMemo } from 'react';
 import dynamic from 'next/dynamic';
 
 // react-window를 dynamic import로 로드 (SSR 문제 방지)
-type FixedSizeListComponent = React.ComponentType<{
+type FixedSizeListProps = {
   height: number;
   itemCount: number;
   itemSize: number;
@@ -17,16 +17,44 @@ type FixedSizeListComponent = React.ComponentType<{
     index: number;
     style: React.CSSProperties;
   }) => React.ReactNode;
-}>;
+};
+
+type FixedSizeListComponent = React.ComponentType<FixedSizeListProps>;
 
 const FixedSizeList = dynamic(
   () =>
     import('react-window').then((mod: typeof import('react-window')) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const FixedSizeListComponent = (mod as any).FixedSizeList;
-      return FixedSizeListComponent as FixedSizeListComponent;
+      if (!FixedSizeListComponent) {
+        // Fallback if FixedSizeList is not available (v2)
+        console.warn('FixedSizeList not found in react-window, using fallback');
+        return ((props: FixedSizeListProps) => {
+          return (
+            <div style={{ height: props.height }}>
+              {Array.from({ length: props.itemCount }, (_, index) => {
+                const style: React.CSSProperties = {
+                  height: props.itemSize,
+                  position: 'relative',
+                };
+                return (
+                  <div key={index} style={style}>
+                    {props.children({ index, style })}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }) as FixedSizeListComponent;
+      }
+      return { default: FixedSizeListComponent };
     }),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-96 flex items-center justify-center">Loading...</div>
+    ),
+  }
 ) as FixedSizeListComponent;
 
 interface InstrumentListProps {

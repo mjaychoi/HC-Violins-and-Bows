@@ -7,6 +7,7 @@ import {
   sortTags,
   /* formatClientContact, getClientInitials */ getInterestColor,
 } from '../utils';
+import { useClientSalesData } from '../hooks/useClientKPIs';
 import React, {
   useState,
   memo,
@@ -28,6 +29,117 @@ const SortIcon = React.memo(({ arrow }: { arrow: string }) => (
   </span>
 ));
 SortIcon.displayName = 'SortIcon';
+
+// Client Expanded Row Component (with sales data)
+const ClientExpandedRow = memo(function ClientExpandedRow({
+  client,
+}: {
+  client: Client;
+}) {
+  const { totalSpend, purchaseCount, lastPurchaseDate, loading } =
+    useClientSalesData(client.id);
+
+  const formatAmount = (amount: number) =>
+    new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    }).format(amount);
+
+  return (
+    <tr className="bg-gray-50">
+      <td
+        colSpan={7}
+        className={cn(classNames.tableCell, 'text-sm text-gray-700 px-6 py-4')}
+      >
+        <div className="space-y-4">
+          {/* Sales Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-1">
+                Total Spend
+              </div>
+              <div className="text-lg font-semibold text-gray-900">
+                {loading ? (
+                  <span className="text-gray-400">Loading...</span>
+                ) : (
+                  formatAmount(totalSpend)
+                )}
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-1">
+                Purchase Count
+              </div>
+              <div className="text-lg font-semibold text-gray-900">
+                {loading ? (
+                  <span className="text-gray-400">Loading...</span>
+                ) : (
+                  purchaseCount
+                )}
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-1">
+                Last Purchase
+              </div>
+              <div className="text-lg font-semibold text-gray-900">
+                {loading ? (
+                  <span className="text-gray-400">Loading...</span>
+                ) : (
+                  lastPurchaseDate
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Client Details */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <div className="text-xs text-gray-500">Email</div>
+              <div className="font-medium">{client.email || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Contact</div>
+              <div className="font-medium">{client.contact_number || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Interest</div>
+              <div className="font-medium">{client.interest || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Client #</div>
+              <div className="font-mono">{client.client_number || '—'}</div>
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-xs text-gray-500">Tags</div>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {client.tags?.length ? (
+                  sortTags([...client.tags]).map(tag => (
+                    <span
+                      key={tag}
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
+                    >
+                      {tag}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-gray-400">No tags</span>
+                )}
+              </div>
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-xs text-gray-500">Note</div>
+              <div className="mt-1 whitespace-pre-wrap">
+                {client.note || '—'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+});
 
 // react-window를 dynamic import로 로드 (SSR 문제 방지)
 // react-window v2 uses List component (FixedSizeList is removed in v2)
@@ -1073,81 +1185,7 @@ const ClientList = memo(function ClientList({
                             )}
                           </td>
                         </tr>
-                        {isExpanded && (
-                          <tr className="bg-gray-50">
-                            <td
-                              colSpan={6}
-                              className={cn(
-                                classNames.tableCell,
-                                'text-sm text-gray-700'
-                              )}
-                            >
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div>
-                                  <div className="text-xs text-gray-500">
-                                    Email
-                                  </div>
-                                  <div className="font-medium">
-                                    {client.email || '—'}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className="text-xs text-gray-500">
-                                    Contact
-                                  </div>
-                                  <div className="font-medium">
-                                    {client.contact_number || '—'}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className="text-xs text-gray-500">
-                                    Interest
-                                  </div>
-                                  <div className="font-medium">
-                                    {client.interest || '—'}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className="text-xs text-gray-500">
-                                    Client #
-                                  </div>
-                                  <div className="font-mono">
-                                    {client.client_number || '—'}
-                                  </div>
-                                </div>
-                                <div className="md:col-span-2">
-                                  <div className="text-xs text-gray-500">
-                                    Tags
-                                  </div>
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {client.tags?.length ? (
-                                      sortTags([...client.tags]).map(tag => (
-                                        <span
-                                          key={tag}
-                                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
-                                        >
-                                          {tag}
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="text-gray-400">
-                                        No tags
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="md:col-span-2">
-                                  <div className="text-xs text-gray-500">
-                                    Note
-                                  </div>
-                                  <div className="mt-1 whitespace-pre-wrap">
-                                    {client.note || '—'}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
+                        {isExpanded && <ClientExpandedRow client={client} />}
                       </Fragment>
                     );
                   })}

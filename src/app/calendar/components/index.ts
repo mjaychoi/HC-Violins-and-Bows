@@ -6,3 +6,4 @@ export { default as CalendarHeader } from './CalendarHeader';
 export { default as CalendarFilters } from './CalendarFilters';
 export { default as CalendarSummary } from './CalendarSummary';
 export { default as CalendarEmptyState } from './CalendarEmptyState';
+export { default as CalendarContent } from './CalendarContent';

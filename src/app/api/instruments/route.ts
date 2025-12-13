@@ -12,6 +12,7 @@ import {
   validateInstrument,
   validateInstrumentArray,
   validatePartialInstrument,
+  validateCreateInstrument,
   safeValidate,
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
@@ -143,8 +144,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    // Validate request body
-    const validationResult = safeValidate(body, validateInstrument);
+    // Validate request body using create schema (without id and created_at)
+    const validationResult = safeValidate(body, validateCreateInstrument);
     if (!validationResult.success) {
       return NextResponse.json(
         { error: `Invalid instrument data: ${validationResult.error}` },
@@ -152,10 +153,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Use validated data instead of raw body
+    const validatedInput = validationResult.data;
+
     const supabase = getServerSupabase();
     const { data, error } = await supabase
       .from('instruments')
-      .insert(body)
+      .insert(validatedInput)
       .select()
       .single();
 
@@ -182,7 +186,7 @@ export async function POST(request: NextRequest) {
       captureException(
         appError,
         'InstrumentsAPI.POST',
-        { body: Object.keys(body), duration },
+        { body: Object.keys(validatedInput), duration },
         ErrorSeverity.MEDIUM
       );
       const safeError = createSafeErrorResponse(appError, 500);
@@ -190,13 +194,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate response data
-    const validatedData = validateInstrument(data);
+    const validatedResponse = validateInstrument(data);
 
     logApiRequest('POST', '/api/instruments', 201, duration, 'InstrumentsAPI', {
-      instrumentId: validatedData.id,
+      instrumentId: validatedResponse.id,
     });
 
-    return NextResponse.json({ data: validatedData }, { status: 201 });
+    return NextResponse.json({ data: validatedResponse }, { status: 201 });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
     const appError = errorHandler.handleSupabaseError(

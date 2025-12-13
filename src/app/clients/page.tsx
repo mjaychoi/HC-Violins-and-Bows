@@ -5,17 +5,13 @@ import { useUnifiedClients } from '@/hooks/useUnifiedData';
 import { generateClientNumber } from '@/utils/uniqueNumberGenerator';
 import {
   useClientInstruments,
-  useFilters,
   useClientView,
   useInstrumentSearch,
   useOwnedItems,
 } from './hooks';
-import { ClientForm, ClientFilters } from './components';
+import { ClientForm } from './components';
+import ClientsListContent from './components/ClientsListContent';
 import { TableSkeleton, CardSkeleton } from '@/components/common';
-const ClientList = dynamic(() => import('./components/ClientList'), {
-  ssr: false,
-  loading: () => <TableSkeleton rows={8} columns={7} />,
-});
 const ClientModal = dynamic(() => import('./components/ClientModal'), {
   ssr: false,
   loading: () => (
@@ -150,27 +146,8 @@ export default function ClientsPage() {
     // For now, we rely on the hook's internal state which may be updated via mutations
   }, []);
 
-  const {
-    searchTerm,
-    setSearchTerm,
-    showFilters,
-    setShowFilters,
-    filters,
-    paginatedClients,
-    filterOptions,
-    handleFilterChange,
-    handleHasInstrumentsChange,
-    clearAllFilters,
-    handleColumnSort,
-    getSortArrow,
-    getActiveFiltersCount,
-    // Pagination
-    currentPage,
-    totalPages,
-    totalCount,
-    pageSize,
-    setPage,
-  } = useFilters(clients, clientsWithInstruments);
+  // Note: Filters are now handled in ClientsListContent component
+  // to support Suspense boundary for useSearchParams()
 
   // 디버깅: 데이터 로딩 상태 확인 (개발 환경에서만) - 무한 루프 방지를 위해 최소화
   // useEffect(() => {
@@ -470,115 +447,29 @@ export default function ClientsPage() {
               <TableSkeleton rows={8} columns={7} />
             </div>
           ) : (
-            <div className="p-6">
-              {/* Search and Filters */}
-              <div className="mb-6">
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Search Input */}
-                  <input
-                    placeholder="Search clients..."
-                    className="flex-1 min-w-[260px] h-10 px-4 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    aria-label="Search clients"
-                  />
-
-                  {/* Filters Button */}
-                  <button
-                    data-filter-button
-                    onClick={() => setShowFilters(!showFilters)}
-                    aria-expanded={showFilters}
-                    aria-controls="filters-panel"
-                    className={`h-10 px-3 text-sm font-medium rounded-lg border transition-colors flex items-center gap-2 ${
-                      showFilters || getActiveFiltersCount() > 0
-                        ? 'border-blue-500 text-blue-600 bg-blue-50'
-                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-                      />
-                    </svg>
-                    Filters
-                    {getActiveFiltersCount() > 0 && (
-                      <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium text-white bg-blue-600 rounded-full">
-                        {getActiveFiltersCount()}
-                      </span>
-                    )}
-                  </button>
-
-                  {/* Reset Filters Button */}
-                  {/* Note: clearAllFilters also resets searchTerm (usePageFilters implementation) */}
-                  {getActiveFiltersCount() > 0 || searchTerm ? (
-                    <button
-                      onClick={clearAllFilters}
-                      className="h-10 px-3 text-sm font-medium rounded-lg border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
-                      aria-label="Clear all filters and search"
-                      type="button"
-                    >
-                      Clear filters
-                    </button>
-                  ) : null}
-                </div>
-
-                {/* Filter Panel */}
-                {showFilters && (
-                  <ClientFilters
-                    isOpen={showFilters}
-                    onClose={() => setShowFilters(false)}
-                    filters={filters}
-                    filterOptions={filterOptions}
-                    onFilterChange={handleFilterChange}
-                    onHasInstrumentsChange={handleHasInstrumentsChange}
-                    onClearAllFilters={clearAllFilters}
-                    activeFiltersCount={getActiveFiltersCount()}
-                  />
-                )}
-              </div>
-
-              {/* Clients Table */}
-              <ClientList
-                clients={paginatedClients}
-                clientInstruments={instrumentRelationships}
-                clientsWithInstruments={clientsWithInstruments}
-                onClientClick={handleRowClick}
-                onUpdateClient={async (clientId, updates) => {
-                  try {
-                    const result = await updateClient(clientId, updates);
-                    if (!result) {
-                      // updateClient returns null on error
-                      throw new Error('Failed to update client');
-                    }
-                    showSuccess('고객 정보가 성공적으로 수정되었습니다.');
-                  } catch (error) {
-                    handleError(error, 'Failed to update client');
-                    throw error; // Re-throw to prevent saveEditing from closing editing mode
+            <ClientsListContent
+              clients={clients}
+              clientsWithInstruments={clientsWithInstruments}
+              instrumentRelationships={instrumentRelationships}
+              loading={loading}
+              onClientClick={handleRowClick}
+              onUpdateClient={async (clientId, updates) => {
+                try {
+                  const result = await updateClient(clientId, updates);
+                  if (!result) {
+                    // updateClient returns null on error
+                    throw new Error('Failed to update client');
                   }
-                }}
-                onDeleteClient={(client: Client) => {
-                  setConfirmDelete(client);
-                }}
-                onColumnSort={handleColumnSort}
-                getSortArrow={getSortArrow}
-                // Pagination props
-                currentPage={currentPage}
-                totalPages={totalPages}
-                totalCount={totalCount}
-                pageSize={pageSize}
-                onPageChange={setPage}
-                loading={loading.any}
-              />
-            </div>
+                  showSuccess('고객 정보가 성공적으로 수정되었습니다.');
+                } catch (error) {
+                  handleError(error, 'Failed to update client');
+                  throw error; // Re-throw to prevent saveEditing from closing editing mode
+                }
+              }}
+              onDeleteClient={(client: Client) => {
+                setConfirmDelete(client);
+              }}
+            />
           )
         ) : (
           // Analytics View
