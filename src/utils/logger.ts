@@ -1,4 +1,7 @@
+
 // Structured logging utility
+import { maskSensitiveInfo, isProduction } from './errorSanitization';
+
 export enum LogLevel {
   DEBUG = 'DEBUG',
   INFO = 'INFO',
@@ -32,11 +35,13 @@ class Logger {
   private static instance: Logger;
   private logLevel: LogLevel;
   private isDevelopment: boolean;
+  private isTest: boolean;
   private logHistory: StructuredLog[] = [];
   private maxHistorySize = 100;
 
   private constructor() {
     this.isDevelopment = process.env.NODE_ENV === 'development';
+    this.isTest = process.env.NODE_ENV === 'test';
 
     // Set log level based on environment
     const envLogLevel = process.env.NEXT_PUBLIC_LOG_LEVEL?.toUpperCase();
@@ -73,11 +78,14 @@ class Logger {
   }
 
   private formatError(error: unknown): StructuredLog['error'] {
+    // 프로덕션 환경에서는 민감한 정보를 마스킹
+    const shouldMask = isProduction();
+
     if (error instanceof Error) {
       const errorWithCode = error as Error & { code?: string | number };
       const result: StructuredLog['error'] = {
-        message: error.message,
-        stack: error.stack,
+        message: shouldMask ? maskSensitiveInfo(error.message) : error.message,
+        stack: shouldMask ? undefined : error.stack, // 프로덕션에서는 stack 제거
         name: error.name,
       };
       if (errorWithCode.code !== undefined) {
@@ -88,10 +96,11 @@ class Logger {
 
     if (typeof error === 'object' && error !== null) {
       const errorObj = error as Record<string, unknown>;
+      const message = String(errorObj.message || 'Unknown error');
       const result: StructuredLog['error'] = {
-        message: String(errorObj.message || 'Unknown error'),
+        message: shouldMask ? maskSensitiveInfo(message) : message,
       };
-      if (errorObj.stack) {
+      if (errorObj.stack && !shouldMask) {
         result.stack = String(errorObj.stack);
       }
       if (errorObj.name) {
@@ -103,8 +112,9 @@ class Logger {
       return result;
     }
 
+    const errorMessage = String(error);
     return {
-      message: String(error),
+      message: shouldMask ? maskSensitiveInfo(errorMessage) : errorMessage,
     };
   }
 
@@ -159,6 +169,11 @@ class Logger {
 
     this.addToHistory(log);
 
+    // Keep history but suppress console noise during tests
+    if (this.isTest) {
+      return;
+    }
+
     // In development, use pretty-printed format
     if (this.isDevelopment) {
       const prefix = `[${log.timestamp}] [${log.level}]${log.context ? ` [${log.context}]` : ''}`;
@@ -178,7 +193,7 @@ class Logger {
           break;
       }
     } else {
-      // In production, use structured JSON format
+      // In production, print structured JSON directly to avoid recursive logging
       console.log(JSON.stringify(log));
     }
   }

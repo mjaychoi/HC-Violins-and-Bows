@@ -16,6 +16,10 @@ export const classNames = {
     'bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500',
   buttonDanger:
     'bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500',
+  buttonSuccess:
+    'bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500',
+  buttonWarning:
+    'bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500',
 
   // Card styles
   card: 'bg-white p-6 rounded-lg shadow border border-gray-200',
@@ -26,11 +30,17 @@ export const classNames = {
   formLabel: 'block text-sm font-medium text-gray-700 mb-1',
   formError: 'text-red-600 text-sm mt-1',
 
-  // Table styles
+  // Table styles (통일된 테이블 스타일)
+  tableWrapper: 'rounded-xl border border-gray-100 bg-white shadow-sm',
+  tableContainer: 'overflow-x-auto',
   table: 'min-w-full divide-y divide-gray-200',
-  tableHeader: 'bg-gray-50',
-  tableRow: 'hover:bg-gray-50',
-  tableCell: 'px-6 py-4 whitespace-nowrap text-sm text-gray-900',
+  tableHeader: 'sticky top-0 bg-white/80 backdrop-blur border-b border-gray-200',
+  tableHeaderRow: '',
+  tableHeaderCell: 'px-6 py-3 text-left text-xs font-semibold text-gray-500',
+  tableHeaderCellSortable: 'px-6 py-3 text-left text-xs font-semibold text-gray-500 cursor-pointer group select-none',
+  tableBody: 'bg-white divide-y divide-gray-200',
+  tableRow: 'hover:bg-gray-50 transition-colors',
+  tableCell: 'px-6 py-4 text-sm text-gray-900',
 
   // Modal styles
   modalOverlay:

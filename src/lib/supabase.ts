@@ -1,26 +1,52 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+/**
+ * Lazy singleton pattern for Supabase client
+ * This ensures the client is created only when env vars are available,
+ * preventing placeholder client from persisting to production runtime.
+ */
+let _supabase: SupabaseClient | null = null;
 
-// During build time, allow missing env vars (they'll be provided at runtime)
-// Only throw error in runtime (client-side or server-side rendering)
-const isBuildTime =
-  typeof window === 'undefined' &&
-  process.env.NODE_ENV === 'production' &&
-  !process.env.NEXT_PUBLIC_SUPABASE_URL;
+/**
+ * Get or create Supabase client instance
+ * Throws error if required environment variables are missing
+ */
+export function getSupabase(): SupabaseClient {
+  if (_supabase) {
+    return _supabase;
+  }
 
-if (!isBuildTime && (!supabaseUrl || !supabaseAnonKey)) {
-  // In dev, explode fast. In prod you could throw a custom AppError.
-  throw new Error(
-    'Missing Supabase env: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY'
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      'Missing Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY'
+    );
+  }
+
+  _supabase = createClient(url, key, {
+    auth: { persistSession: true, autoRefreshToken: true },
+  });
+
+  return _supabase;
 }
 
-// Create a dummy client during build time if env vars are missing
-const finalUrl = supabaseUrl || 'https://placeholder.supabase.co';
-const finalKey = supabaseAnonKey || 'placeholder-key';
-
-export const supabase = createClient(finalUrl, finalKey, {
-  auth: { persistSession: true, autoRefreshToken: true },
-});
+/**
+ * @deprecated Use getSupabase() instead for lazy initialization
+ * Kept for backward compatibility - using lazy getter to reduce initial bundle size
+ * This defers the Supabase SDK import until actually used
+ */
+let _supabaseInstance: SupabaseClient | null = null;
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(target, prop) {
+    if (!_supabaseInstance) {
+      _supabaseInstance = getSupabase();
+    }
+    const value = (_supabaseInstance as unknown as Record<string, unknown>)[prop as string];
+    if (typeof value === 'function') {
+      return value.bind(_supabaseInstance);
+    }
+    return value;
+  },
+}) as SupabaseClient;
