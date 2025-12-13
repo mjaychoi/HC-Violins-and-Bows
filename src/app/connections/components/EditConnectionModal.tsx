@@ -12,8 +12,8 @@ interface EditConnectionModalProps {
     }
   ) => Promise<void>;
   connection: ClientInstrument | null;
-  clients: Client[];
-  items: Instrument[];
+  clients?: Client[];
+  items?: Instrument[];
 }
 
 export const EditConnectionModal = ({
