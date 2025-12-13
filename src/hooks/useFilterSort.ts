@@ -31,7 +31,8 @@ const collator =
 // FIXED: Date.parse is now safer - only parses ISO-like date strings to avoid false positives
 // Date.parse("123") can be parsed as a date in some environments, causing incorrect comparisons
 // Now uses regex pattern to match ISO date strings (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss)
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?$/;
+const ISO_DATE_PATTERN =
+  /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?$/;
 
 function isLikelyDateString(value: string): boolean {
   return ISO_DATE_PATTERN.test(value);
@@ -63,7 +64,7 @@ function compareValues(a: unknown, b: unknown): number {
   // Avoids treating '' as 0, ' ' as 0, or '0012' as 12 which can produce surprising ordering
   const isNumericString = (v: unknown): boolean =>
     typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v.trim());
-  
+
   const an = typeof a === 'number' ? a : isNumericString(a) ? Number(a) : NaN;
   const bn = typeof b === 'number' ? b : isNumericString(b) ? Number(b) : NaN;
   if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
@@ -88,7 +89,7 @@ function sortReducer(state: SortState, action: SortAction): SortState {
   switch (action.type) {
     case 'SORT':
       if (state.sortBy === action.field) {
-        // Same field: toggle order (asc -> desc -> default)
+        // Same field: toggle order (asc -> desc -> asc)
         if (state.sortOrder === 'asc') {
           // First click: asc -> desc
           return {
@@ -97,11 +98,11 @@ function sortReducer(state: SortState, action: SortAction): SortState {
             sortOrder: 'desc',
           };
         } else {
-          // Second click: desc -> default (initial sort)
+          // Second click: desc -> asc (toggle back)
           return {
             ...state,
-            sortBy: state.initialSortBy,
-            sortOrder: state.initialSortOrder,
+            sortBy: action.field,
+            sortOrder: 'asc',
           };
         }
       } else {
@@ -183,12 +184,9 @@ export function useFilterSort<T>(
 
   // FIXED: Use reducer to ensure sortBy and sortOrder update atomically
   // This prevents issues where setSortOrder inside setSortBy callback doesn't update correctly
-  const handleSort = useCallback(
-    (field: keyof T | string) => {
-      dispatchSort({ type: 'SORT', field: field as string });
-    },
-    []
-  );
+  const handleSort = useCallback((field: keyof T | string) => {
+    dispatchSort({ type: 'SORT', field: field as string });
+  }, []);
 
   const getSortArrow = useCallback(
     (field: keyof T | string) =>
