@@ -68,9 +68,11 @@ jobs:
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: build-files
           path: .next/
+          retention-days: 1
 
   e2e-tests:
     name: E2E Tests
@@ -94,11 +96,16 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Download build artifacts (optional)
+        id: download-artifact
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
           name: build-files
           path: .next/
+
+      - name: Build application (if artifact not found)
+        if: steps.download-artifact.outcome == 'failure'
+        run: npm run build
 
       - name: Run E2E tests
         run: npm run test:e2e
