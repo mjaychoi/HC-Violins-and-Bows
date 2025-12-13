@@ -2,12 +2,17 @@ import '@testing-library/jest-dom';
 // Polyfill Request for Next.js server modules in tests
 try {
   // Use Next.js bundled fetch primitives to align with NextRequest/NextResponse requirements
-  const { Response, Headers, ReadableStream } = require('next/dist/compiled/@edge-runtime/primitives');
+  const {
+    Response,
+    Headers,
+    ReadableStream,
+  } = require('next/dist/compiled/@edge-runtime/primitives');
   // Provide a minimal Request wrapper to ensure headers exist for NextRequest tests
   if (typeof global.Request === 'undefined') {
     class SimpleRequest {
       constructor(input, init = {}) {
-        this.url = typeof input === 'string' ? input : input?.toString?.() || '';
+        this.url =
+          typeof input === 'string' ? input : input?.toString?.() || '';
         this.method = init.method || 'GET';
         this.headers = new Headers(init.headers || {});
         this.body = init.body;
@@ -91,6 +96,16 @@ jest.mock('next/navigation', () => ({
     prefetch: jest.fn(),
   }),
   usePathname: () => '/',
+}));
+
+// Mock useURLState to avoid browser API issues in tests
+jest.mock('@/hooks/useURLState', () => ({
+  __esModule: true,
+  useURLState: jest.fn(() => ({
+    urlState: {},
+    updateURLState: jest.fn(),
+    clearURLState: jest.fn(),
+  })),
 }));
 
 // Mock NextRequest to avoid full Next.js runtime dependencies in API route tests
@@ -285,7 +300,10 @@ beforeAll(() => {
     const hasDebounceWarning = args.some(
       arg =>
         (typeof arg === 'string' && arg.includes('debounceMs')) ||
-        (arg && typeof arg === 'object' && 'message' in arg && String(arg.message).includes('debounceMs'))
+        (arg &&
+          typeof arg === 'object' &&
+          'message' in arg &&
+          String(arg.message).includes('debounceMs'))
     );
     if (typeof first === 'string') {
       if (
@@ -298,7 +316,8 @@ beforeAll(() => {
       }
     }
     if (
-      (first instanceof Error && first.message.includes('Not implemented: navigation')) ||
+      (first instanceof Error &&
+        first.message.includes('Not implemented: navigation')) ||
       (first &&
         typeof first === 'object' &&
         'message' in first &&
