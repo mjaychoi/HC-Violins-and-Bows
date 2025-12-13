@@ -2,7 +2,7 @@ import React from 'react';
 import { classNames } from '@/utils/classNames';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger';
+  variant?: 'primary' | 'secondary' | 'danger' | 'success' | 'warning';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   children: React.ReactNode;
@@ -21,6 +21,8 @@ export default function Button({
     primary: classNames.buttonPrimary,
     secondary: classNames.buttonSecondary,
     danger: classNames.buttonDanger,
+    success: classNames.buttonSuccess,
+    warning: classNames.buttonWarning,
   };
 
   const sizeClasses = {

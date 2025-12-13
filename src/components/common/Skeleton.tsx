@@ -1,6 +1,7 @@
 'use client';
 
 import { memo } from 'react';
+import { classNames } from '@/utils/classNames';
 
 interface SkeletonProps {
   className?: string;
@@ -138,16 +139,16 @@ export const TableSkeleton = memo(function TableSkeleton({
   header = true,
 }: TableSkeletonProps) {
   return (
-    <div className="bg-white rounded-lg shadow border border-gray-200">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+    <div className={classNames.tableWrapper}>
+      <div className={classNames.tableContainer}>
+        <table className={classNames.table}>
           {header && (
-            <thead className="bg-gray-50">
+            <thead className={classNames.tableHeader}>
               <tr>
                 {[...Array(columns)].map((_, i) => (
                   <th
                     key={i}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    className={classNames.tableHeaderCell}
                   >
                     <SkeletonElement className="h-3 w-20" />
                   </th>
@@ -155,7 +156,7 @@ export const TableSkeleton = memo(function TableSkeleton({
               </tr>
             </thead>
           )}
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className={classNames.tableBody}>
             {[...Array(rows)].map((_, i) => (
               <TableRowSkeleton key={i} columns={columns} />
             ))}
