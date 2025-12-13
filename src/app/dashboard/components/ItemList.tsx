@@ -30,6 +30,7 @@ interface ItemListProps {
   getSortArrow: (field: string) => string;
   onSort: (field: string) => void;
   onAddClick?: () => void;
+  onSellClick?: (item: Instrument) => void; // 원클릭 판매
   allClients?: Array<{
     id: string;
     first_name?: string | null;
@@ -60,6 +61,7 @@ const ItemList = memo(function ItemList({
   getSortArrow,
   onSort,
   onAddClick,
+  onSellClick,
   allClients = [],
   clientsLoading = false,
   emptyState = {},
@@ -727,6 +729,9 @@ const ItemList = memo(function ItemList({
                               });
                             }
                           }}
+                          onSell={
+                            onSellClick ? () => onSellClick(item) : undefined
+                          }
                           hasCertificate={Boolean(item.certificate)}
                           onDownloadCertificate={async () => {
                             try {

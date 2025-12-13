@@ -12,11 +12,29 @@ import {
   NotificationBadge,
 } from '@/components/common';
 import { usePageNotifications } from '@/hooks/usePageNotifications';
-import React, { useCallback, useMemo, useEffect } from 'react';
-import { Instrument } from '@/types';
+import React, { useCallback, useMemo, useEffect, useState } from 'react';
+import { Instrument, SalesHistory, Client } from '@/types';
+import dynamic from 'next/dynamic';
+import { useSalesHistory } from '@/app/sales/hooks/useSalesHistory';
+
+// Dynamic import for SaleForm to reduce initial bundle size
+const SaleForm = dynamic(() => import('@/app/sales/components/SaleForm'), {
+  ssr: false,
+});
 
 export default function DashboardPage() {
-  const { ErrorToasts, SuccessToasts, showSuccess } = useAppFeedback();
+  const { ErrorToasts, SuccessToasts, showSuccess, handleError } =
+    useAppFeedback();
+
+  // 판매 모달 상태
+  const [showSaleModal, setShowSaleModal] = useState(false);
+  const [selectedInstrumentForSale, setSelectedInstrumentForSale] =
+    useState<Instrument | null>(null);
+  const [selectedClientForSale, setSelectedClientForSale] =
+    useState<Client | null>(null);
+
+  // 판매 기록 생성
+  const { createSale } = useSalesHistory();
 
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched
@@ -173,6 +191,39 @@ export default function DashboardPage() {
     }
   }, [confirmItem, handleDeleteItem, handleCancelDelete]);
 
+  // 원클릭 판매 핸들러
+  const handleSellClick = useCallback(
+    (item: Instrument) => {
+      // 연결된 클라이언트 중 'Sold' 관계가 있는 클라이언트 찾기
+      const soldClient = clientRelationships.find(
+        rel => rel.instrument_id === item.id && rel.relationship_type === 'Sold'
+      )?.client;
+
+      setSelectedInstrumentForSale(item);
+      setSelectedClientForSale(soldClient || null);
+      setShowSaleModal(true);
+    },
+    [clientRelationships]
+  );
+
+  // 판매 기록 저장 핸들러
+  const handleSaleSubmit = useCallback(
+    async (payload: Omit<SalesHistory, 'id' | 'created_at'>) => {
+      try {
+        const result = await createSale(payload);
+        if (result) {
+          showSuccess('판매 기록이 성공적으로 생성되었습니다.');
+          setShowSaleModal(false);
+          setSelectedInstrumentForSale(null);
+          setSelectedClientForSale(null);
+        }
+      } catch (error) {
+        handleError(error, '판매 기록 생성 실패');
+      }
+    },
+    [createSale, showSuccess, handleError]
+  );
+
   return (
     <ErrorBoundary>
       <AppLayout
@@ -306,6 +357,7 @@ export default function DashboardPage() {
             getSortArrow={getSortArrow}
             onSort={handleSort}
             onAddClick={handleAddItem}
+            onSellClick={handleSellClick}
             emptyState={{
               hasActiveFilters:
                 getActiveFiltersCount() > 0 ||
@@ -360,6 +412,21 @@ export default function DashboardPage() {
           cancelLabel="Cancel"
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
+        />
+
+        {/* Sale Form Modal - 원클릭 판매 */}
+        <SaleForm
+          isOpen={showSaleModal}
+          onClose={() => {
+            setShowSaleModal(false);
+            setSelectedInstrumentForSale(null);
+            setSelectedClientForSale(null);
+          }}
+          onSubmit={handleSaleSubmit}
+          submitting={submitting.any}
+          initialInstrument={selectedInstrumentForSale}
+          initialClient={selectedClientForSale}
+          autoUpdateInstrumentStatus={true}
         />
       </AppLayout>
     </ErrorBoundary>

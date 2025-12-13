@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { SalesHistory } from '@/types';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { SalesHistory, Instrument, Client } from '@/types';
 import {
   useUnifiedClients,
   useUnifiedInstruments,
@@ -14,6 +14,11 @@ interface SaleFormProps {
   onClose: () => void;
   onSubmit: (payload: Omit<SalesHistory, 'id' | 'created_at'>) => Promise<void>;
   submitting: boolean;
+  // 원클릭 판매를 위한 초기값
+  initialInstrument?: Instrument | null;
+  initialClient?: Client | null;
+  // 판매 후 악기 상태 자동 업데이트 여부
+  autoUpdateInstrumentStatus?: boolean;
 }
 
 const getToday = () => new Date().toISOString().slice(0, 10);
@@ -23,6 +28,9 @@ export default function SaleForm({
   onClose,
   onSubmit,
   submitting,
+  initialInstrument,
+  initialClient,
+  autoUpdateInstrumentStatus = false,
 }: SaleFormProps) {
   const { clients } = useUnifiedClients();
   const { instruments } = useUnifiedInstruments();
@@ -31,6 +39,39 @@ export default function SaleForm({
   // FIXED: Removed unused prevOpenRef
 
   useOutsideClose(modalRef, { isOpen, onClose });
+
+  // 최근 거래한 클라이언트 우선 표시 (판매 기록이 있는 클라이언트)
+  const sortedClients = useMemo(() => {
+    // TODO: 실제로는 판매 기록을 가져와서 최근 거래한 클라이언트를 우선 표시
+    // 현재는 단순히 이름 순으로 정렬
+    return [...clients].sort((a, b) => {
+      const nameA =
+        `${a.first_name || ''} ${a.last_name || ''}`.trim() || a.email || '';
+      const nameB =
+        `${b.first_name || ''} ${b.last_name || ''}`.trim() || b.email || '';
+      return nameA.localeCompare(nameB);
+    });
+  }, [clients]);
+
+  // 초기값 설정
+  const getInitialFormData = useCallback(() => {
+    return {
+      sale_price: initialInstrument?.price?.toString() || '',
+      sale_date: getToday(),
+      client_id: initialClient?.id || '',
+      instrument_id: initialInstrument?.id || '',
+      notes: '',
+    };
+  }, [initialInstrument, initialClient]);
+
+  const [formData, setFormData] = useState(getInitialFormData);
+
+  // 모달이 열릴 때 초기값 설정
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(getInitialFormData());
+    }
+  }, [isOpen, getInitialFormData]);
 
   // 모달 열릴 때 첫 필드에 자동 포커스
   useEffect(() => {
@@ -42,14 +83,6 @@ export default function SaleForm({
       return () => clearTimeout(timer);
     }
   }, [isOpen]);
-
-  const [formData, setFormData] = useState({
-    sale_price: '',
-    sale_date: getToday(),
-    client_id: '',
-    instrument_id: '',
-    notes: '',
-  });
 
   const [errors, setErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState(false);
@@ -66,15 +99,9 @@ export default function SaleForm({
   }, [formData]);
 
   const resetForm = useCallback(() => {
-    setFormData({
-      sale_price: '',
-      sale_date: getToday(),
-      client_id: '',
-      instrument_id: '',
-      notes: '',
-    });
+    setFormData(getInitialFormData());
     setErrors([]);
-  }, []);
+  }, [getInitialFormData]);
 
   // FIXED: Simplified reset logic - reset when closing (removed unused prevOpenRef)
   useEffect(() => {
@@ -116,6 +143,34 @@ export default function SaleForm({
 
     try {
       await onSubmit(payload);
+
+      // 판매 기록 저장 후 악기 상태 자동 업데이트
+      if (
+        autoUpdateInstrumentStatus &&
+        formData.instrument_id &&
+        parsedPrice > 0
+      ) {
+        try {
+          const response = await fetch('/api/instruments', {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              id: formData.instrument_id,
+              status: 'Sold',
+            }),
+          });
+
+          if (!response.ok) {
+            console.warn('Failed to update instrument status to Sold');
+          }
+        } catch (error) {
+          console.warn('Failed to update instrument status:', error);
+          // 에러가 발생해도 판매 기록은 성공했으므로 계속 진행
+        }
+      }
+
       // UX: Show success state instead of immediately closing
       setSuccess(true);
     } catch {
@@ -141,7 +196,10 @@ export default function SaleForm({
             id="sale-form-title"
             className="text-lg font-semibold text-gray-900"
           >
-            New Sale
+            {initialInstrument
+              ? `Sell: ${initialInstrument.maker || ''} ${initialInstrument.type || ''}`.trim() ||
+                'New Sale'
+              : 'New Sale'}
           </h3>
           <button
             onClick={onClose}
@@ -314,7 +372,7 @@ export default function SaleForm({
                 className="w-full h-10 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">Select a client</option>
-                {clients.map(client => (
+                {sortedClients.map(client => (
                   <option key={client.id} value={client.id}>
                     {`${client.first_name || ''} ${client.last_name || ''}`.trim() ||
                       client.email ||
