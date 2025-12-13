@@ -46,10 +46,13 @@ describe('ErrorBoundary', () => {
   });
 
   it('should render custom fallback when provided', () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const customFallback = (_error: AppError, _errorInfo: ErrorInfo) => (
+    const customFallback = (_error: AppError, _errorInfo: ErrorInfo) => {
+      void _error;
+      void _errorInfo;
+      return (
       <div>Custom error message</div>
-    );
+      );
+    };
 
     render(
       <ErrorBoundary fallback={customFallback}>
@@ -85,7 +88,9 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText('Error Details (Development)')).toBeInTheDocument();
+    expect(
+      screen.getByText('Error Details (Development Only)')
+    ).toBeInTheDocument();
 
     Object.defineProperty(process.env, 'NODE_ENV', {
       value: originalEnv,
@@ -109,7 +114,7 @@ describe('ErrorBoundary', () => {
     );
 
     expect(
-      screen.queryByText('Error Details (Development)')
+      screen.queryByText('Error Details (Development Only)')
     ).not.toBeInTheDocument();
 
     Object.defineProperty(process.env, 'NODE_ENV', {
