@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
-import { logApiRequest, logError } from '@/utils/logger';
+import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
-import { createSafeErrorResponse, createLogErrorInfo } from '@/utils/errorSanitization';
+import {
+  createSafeErrorResponse,
+  createLogErrorInfo,
+} from '@/utils/errorSanitization';
 import {
   validateSalesHistory,
   validateSalesHistoryArray,
@@ -23,17 +26,20 @@ const PAGE_SIZE = 10;
 export async function GET(request: NextRequest) {
   const startTime = performance.now();
   const searchParams = request.nextUrl.searchParams;
-  
+
   // Export 모드 확인 (CSV export 등에서 전체 데이터 필요)
   const isExport = searchParams.get('export') === 'true';
-  
+
   // 페이지네이션 인자 방어적 검증
   let page = parseInt(searchParams.get('page') || '1', 10);
-  let pageSize = parseInt(searchParams.get('pageSize') || PAGE_SIZE.toString(), 10);
-  
+  let pageSize = parseInt(
+    searchParams.get('pageSize') || PAGE_SIZE.toString(),
+    10
+  );
+
   if (!Number.isFinite(page) || page < 1) page = 1;
   if (!Number.isFinite(pageSize) || pageSize < 1) pageSize = PAGE_SIZE;
-  
+
   // Export 모드일 때는 페이지네이션 건너뛰기 (DoS 방지를 위해 최대 10000개로 제한)
   // 일반 모드에서는 기존 제한 유지
   if (isExport) {
@@ -43,12 +49,17 @@ export async function GET(request: NextRequest) {
     // 과도한 pageSize 제한 (DoS 방지)
     if (pageSize > 100) pageSize = 100;
   }
-  
+
   const fromDate = searchParams.get('fromDate') || undefined;
   const toDate = searchParams.get('toDate') || undefined;
   const search = searchParams.get('search') || undefined;
   const hasClientParam = searchParams.get('hasClient');
-  const hasClient = hasClientParam === 'true' ? true : hasClientParam === 'false' ? false : undefined;
+  const hasClient =
+    hasClientParam === 'true'
+      ? true
+      : hasClientParam === 'false'
+        ? false
+        : undefined;
   const instrumentId = searchParams.get('instrument_id') || undefined;
   const sortColumn = searchParams.get('sortColumn') || 'sale_date';
   const sortDirection = searchParams.get('sortDirection') || 'desc';
@@ -58,10 +69,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = getServerSupabase();
-    let query = supabase
-      .from('sales_history')
-      .select(
-        `
+    let query = supabase.from('sales_history').select(
+      `
           id,
           instrument_id,
           client_id,
@@ -70,14 +79,19 @@ export async function GET(request: NextRequest) {
           notes,
           created_at
         `,
-        { count: 'exact' }
-      );
+      { count: 'exact' }
+    );
 
     // 날짜 필터링: 검증 및 순서 처리
     let fromFilter = fromDate;
     let toFilter = toDate;
-    
-    if (fromFilter && toFilter && validateDateString(fromFilter) && validateDateString(toFilter)) {
+
+    if (
+      fromFilter &&
+      toFilter &&
+      validateDateString(fromFilter) &&
+      validateDateString(toFilter)
+    ) {
       // fromDate > toDate인 경우 swap하여 올바른 범위로 처리
       if (fromFilter > toFilter) {
         [fromFilter, toFilter] = [toFilter, fromFilter];
@@ -141,7 +155,10 @@ export async function GET(request: NextRequest) {
     const duration = Math.round(performance.now() - startTime);
 
     if (error) {
-      const appError = errorHandler.handleSupabaseError(error, 'Fetch sales history');
+      const appError = errorHandler.handleSupabaseError(
+        error,
+        'Fetch sales history'
+      );
       const logInfo = createLogErrorInfo(appError);
       logApiRequest('GET', '/api/sales', undefined, duration, 'SalesAPI', {
         page,
@@ -165,7 +182,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Validate response data
-    const validationResult = safeValidate(data || [], validateSalesHistoryArray);
+    const validationResult = safeValidate(
+      data || [],
+      validateSalesHistoryArray
+    );
     if (!validationResult.success) {
       captureException(
         new Error(`Invalid sales history data: ${validationResult.error}`),
@@ -190,12 +210,15 @@ export async function GET(request: NextRequest) {
     if (!isExport && count !== null && count > 0) {
       // 전체 필터링된 데이터를 가져와서 totals 계산
       // 효율성을 위해 sale_price만 선택
-      const totalsQuery = supabase
-        .from('sales_history')
-        .select('sale_price');
+      const totalsQuery = supabase.from('sales_history').select('sale_price');
 
       // 동일한 필터 적용
-      if (fromFilter && toFilter && validateDateString(fromFilter) && validateDateString(toFilter)) {
+      if (
+        fromFilter &&
+        toFilter &&
+        validateDateString(fromFilter) &&
+        validateDateString(toFilter)
+      ) {
         if (fromFilter > toFilter) {
           [fromFilter, toFilter] = [toFilter, fromFilter];
         }
@@ -230,17 +253,31 @@ export async function GET(request: NextRequest) {
       }
 
       // Limit을 크게 설정하되, 너무 많은 데이터는 가져오지 않도록 (totals 계산용)
-      const { data: allSalesForTotals, error: totalsError } = await totalsQuery.limit(10000);
-      
+      const { data: allSalesForTotals, error: totalsError } =
+        await totalsQuery.limit(10000);
+
       if (!totalsError && allSalesForTotals && allSalesForTotals.length > 0) {
-        const positiveSales = allSalesForTotals.filter((s: { sale_price: number }) => s.sale_price > 0);
-        const revenue = positiveSales.reduce((sum: number, s: { sale_price: number }) => sum + s.sale_price, 0);
+        const positiveSales = allSalesForTotals.filter(
+          (s: { sale_price: number }) => s.sale_price > 0
+        );
+        const revenue = positiveSales.reduce(
+          (sum: number, s: { sale_price: number }) => sum + s.sale_price,
+          0
+        );
         const refund = allSalesForTotals
           .filter((s: { sale_price: number }) => s.sale_price < 0)
-          .reduce((sum: number, s: { sale_price: number }) => sum + Math.abs(s.sale_price), 0);
-        const avgTicket = positiveSales.length > 0 ? revenue / positiveSales.length : 0;
+          .reduce(
+            (sum: number, s: { sale_price: number }) =>
+              sum + Math.abs(s.sale_price),
+            0
+          );
+        const avgTicket =
+          positiveSales.length > 0 ? revenue / positiveSales.length : 0;
         const totalSalesAmount = revenue + refund;
-        const refundRate = totalSalesAmount > 0 ? Math.round((refund / totalSalesAmount) * 100 * 10) / 10 : 0;
+        const refundRate =
+          totalSalesAmount > 0
+            ? Math.round((refund / totalSalesAmount) * 100 * 10) / 10
+            : 0;
 
         totals = {
           revenue,
@@ -282,16 +319,20 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(error, 'Fetch sales history');
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      'Fetch sales history'
+    );
     const logInfo = createLogErrorInfo(appError);
-    logError('Fetch sales failed', appError, 'SalesAPI', {
+    logApiRequest('GET', '/api/sales', undefined, duration, 'SalesAPI', {
       page,
       fromDate,
       toDate,
       search,
       sortColumn,
       sortDirection,
-      duration,
+      error: true,
+      errorCode: (appError as { code?: string })?.code,
       logMessage: logInfo.message,
     });
     captureException(
@@ -313,7 +354,12 @@ export async function POST(request: NextRequest) {
     const { sale_price, sale_date, client_id, instrument_id, notes } = body;
 
     // Basic validation: 명시적으로 undefined/null/빈 문자열 체크
-    if (sale_price === undefined || sale_price === null || sale_date == null || sale_date === '') {
+    if (
+      sale_price === undefined ||
+      sale_price === null ||
+      sale_date == null ||
+      sale_date === ''
+    ) {
       return NextResponse.json(
         { error: 'Sale price and date are required.' },
         { status: 400 }
@@ -410,8 +456,17 @@ export async function POST(request: NextRequest) {
     const duration = Math.round(performance.now() - startTime);
     const appError = errorHandler.handleSupabaseError(error, 'Create sale');
     const logInfo = createLogErrorInfo(appError);
-    logError('Create sale failed', appError, 'SalesAPI', { duration, logMessage: logInfo.message });
-    captureException(appError, 'SalesAPI.POST', { duration }, ErrorSeverity.HIGH);
+    logApiRequest('POST', '/api/sales', undefined, duration, 'SalesAPI', {
+      error: true,
+      errorCode: (appError as { code?: string })?.code,
+      logMessage: logInfo.message,
+    });
+    captureException(
+      appError,
+      'SalesAPI.POST',
+      { duration },
+      ErrorSeverity.HIGH
+    );
     const safeError = createSafeErrorResponse(appError, 500);
     return NextResponse.json(safeError, { status: 500 });
   }
@@ -426,7 +481,10 @@ export async function PATCH(request: NextRequest) {
     const { id, sale_price, notes } = body;
 
     if (!id) {
-      return NextResponse.json({ error: 'Sale ID is required.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Sale ID is required.' },
+        { status: 400 }
+      );
     }
 
     // Validate UUID format
@@ -525,7 +583,12 @@ export async function PATCH(request: NextRequest) {
     const duration = Math.round(performance.now() - startTime);
     const appError = errorHandler.handleSupabaseError(error, 'Update sale');
     const logInfo = createLogErrorInfo(appError);
-    logError('Update sale failed', appError, 'SalesAPI', { id: body?.id, duration, logMessage: logInfo.message });
+    logApiRequest('PATCH', '/api/sales', undefined, duration, 'SalesAPI', {
+      id: body?.id,
+      error: true,
+      errorCode: (appError as { code?: string })?.code,
+      logMessage: logInfo.message,
+    });
     captureException(
       appError,
       'SalesAPI.PATCH',
