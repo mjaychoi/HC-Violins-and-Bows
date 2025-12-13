@@ -12,7 +12,28 @@ jest.mock('../logger', () => ({
   logWarn: jest.fn(),
   logInfo: jest.fn(),
   logDebug: jest.fn(),
+  Logger: {
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn(),
+  },
 }));
+
+// Mock monitoring
+jest.mock('../monitoring', () => ({
+  captureException: jest.fn(),
+}));
+
+const originalEnv = process.env;
+
+beforeAll(() => {
+  process.env = { ...process.env, NODE_ENV: 'development' };
+});
+
+afterAll(() => {
+  process.env = originalEnv;
+});
 
 describe('ErrorHandler - Comprehensive Tests', () => {
   const { logError } = require('../logger');

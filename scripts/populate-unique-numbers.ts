@@ -7,6 +7,7 @@
 
 import { Client } from 'pg';
 import * as dotenv from 'dotenv';
+import { logInfo, logError } from '@/utils/logger';
 
 // 로컬 환경에서 SSL 인증서 검증 비활성화
 if (process.env.NODE_ENV !== 'production') {
@@ -14,6 +15,18 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 dotenv.config({ path: '.env.local' });
+
+const LOG_CONTEXT = 'populate-unique-numbers';
+const info = (...msg: unknown[]) =>
+  logInfo(
+    msg
+      .map(m => (typeof m === 'string' ? m : String(m)))
+      .join(' ')
+      .trim(),
+    LOG_CONTEXT
+  );
+const err = (message: string, error?: unknown) =>
+  logError(message, error, LOG_CONTEXT);
 
 // 고유 번호 생성 함수들
 function getInstrumentPrefix(type: string | null): string {
@@ -84,7 +97,7 @@ function generateClientNumber(existingNumbers: string[]): string {
 
 async function populateUniqueNumbers() {
   try {
-    console.log('🔄 기존 데이터에 고유 번호 추가 중...\n');
+    info('🔄 기존 데이터에 고유 번호 추가 중...\n');
 
     // 환경 변수 확인
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -107,9 +120,9 @@ async function populateUniqueNumbers() {
       throw new Error('프로젝트 참조를 찾을 수 없습니다.');
     }
 
-    console.log('📦 프로젝트:', projectRef);
-    console.log('📋 Supabase URL:', supabaseUrl);
-    console.log('');
+    info('📦 프로젝트:', projectRef);
+    info('📋 Supabase URL:', supabaseUrl);
+    info('');
 
     // PostgreSQL 연결
     const regions = [
@@ -123,7 +136,7 @@ async function populateUniqueNumbers() {
 
     for (const region of regions) {
       try {
-        console.log(`🔌 ${region} 지역 pooler 연결 시도...`);
+        info(`🔌 ${region} 지역 pooler 연결 시도...`);
 
         client = new Client({
           host: `aws-0-${region}.pooler.supabase.com`,
@@ -137,7 +150,7 @@ async function populateUniqueNumbers() {
         });
 
         await client.connect();
-        console.log(`✅ ${region} 지역 연결 성공!\n`);
+        info(`✅ ${region} 지역 연결 성공!\n`);
         break;
       } catch {
         if (client) {
@@ -157,49 +170,49 @@ async function populateUniqueNumbers() {
     }
 
     // 1. 먼저 마이그레이션 실행 (컬럼이 없으면 추가)
-    console.log('📝 마이그레이션 확인 중...');
+    info('📝 마이그레이션 확인 중...');
     try {
       await client.query(`
         ALTER TABLE instruments
         ADD COLUMN IF NOT EXISTS serial_number TEXT;
       `);
-      console.log('✅ instruments.serial_number 컬럼 확인 완료');
+      info('✅ instruments.serial_number 컬럼 확인 완료');
 
       await client.query(`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_instruments_serial_number 
         ON instruments(serial_number) 
         WHERE serial_number IS NOT NULL;
       `);
-      console.log('✅ instruments.serial_number 인덱스 확인 완료');
+      info('✅ instruments.serial_number 인덱스 확인 완료');
 
       await client.query(`
         ALTER TABLE clients
         ADD COLUMN IF NOT EXISTS client_number TEXT;
       `);
-      console.log('✅ clients.client_number 컬럼 확인 완료');
+      info('✅ clients.client_number 컬럼 확인 완료');
 
       await client.query(`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_client_number 
         ON clients(client_number) 
         WHERE client_number IS NOT NULL;
       `);
-      console.log('✅ clients.client_number 인덱스 확인 완료\n');
+      info('✅ clients.client_number 인덱스 확인 완료\n');
     } catch (error) {
-      console.log(
+      info(
         '⚠️  마이그레이션 실행 중 오류 (이미 존재할 수 있음):',
         error instanceof Error ? error.message : String(error)
       );
     }
 
     // 2. 기존 클라이언트 번호 가져오기
-    console.log('📊 기존 데이터 조회 중...');
+    info('📊 기존 데이터 조회 중...');
     const clientsResult = await client.query(`
       SELECT id, client_number 
       FROM clients 
       ORDER BY created_at ASC
     `);
     const clientsData = clientsResult.rows;
-    console.log(`✅ ${clientsData.length}개의 클라이언트 발견`);
+    info(`✅ ${clientsData.length}개의 클라이언트 발견`);
 
     const existingClientNumbers = clientsData
       .map(c => c.client_number)
@@ -212,14 +225,14 @@ async function populateUniqueNumbers() {
       ORDER BY created_at ASC
     `);
     const instrumentsData = instrumentsResult.rows;
-    console.log(`✅ ${instrumentsData.length}개의 악기 발견\n`);
+    info(`✅ ${instrumentsData.length}개의 악기 발견\n`);
 
     const existingSerialNumbers = instrumentsData
       .map(i => i.serial_number)
       .filter((num): num is string => num !== null && num !== undefined);
 
     // 4. 클라이언트 번호 생성 및 업데이트
-    console.log('🔢 클라이언트 번호 생성 중...');
+    info('🔢 클라이언트 번호 생성 중...');
     let clientUpdated = 0;
     for (const clientRecord of clientsData) {
       if (!clientRecord.client_number) {
@@ -231,13 +244,13 @@ async function populateUniqueNumbers() {
           [newNumber, clientRecord.id]
         );
         clientUpdated++;
-        console.log(`  ✓ ${clientRecord.id.substring(0, 8)}... → ${newNumber}`);
+        info(`  ✓ ${clientRecord.id.substring(0, 8)}... → ${newNumber}`);
       }
     }
-    console.log(`✅ ${clientUpdated}개의 클라이언트 번호 생성 완료\n`);
+    info(`✅ ${clientUpdated}개의 클라이언트 번호 생성 완료\n`);
 
     // 5. 악기 번호 생성 및 업데이트
-    console.log('🔢 악기 번호 생성 중...');
+    info('🔢 악기 번호 생성 중...');
     let instrumentUpdated = 0;
     for (const instrumentRecord of instrumentsData) {
       if (!instrumentRecord.serial_number) {
@@ -252,32 +265,32 @@ async function populateUniqueNumbers() {
           [newNumber, instrumentRecord.id]
         );
         instrumentUpdated++;
-        console.log(
+        info(
           `  ✓ ${instrumentRecord.id.substring(0, 8)}... (${instrumentRecord.type || 'N/A'}) → ${newNumber}`
         );
       }
     }
-    console.log(`✅ ${instrumentUpdated}개의 악기 번호 생성 완료\n`);
+    info(`✅ ${instrumentUpdated}개의 악기 번호 생성 완료\n`);
 
     // 6. 결과 요약
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('✅ 고유 번호 추가 완료!');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log(`📊 클라이언트: ${clientUpdated}개 번호 생성`);
-    console.log(`📊 악기: ${instrumentUpdated}개 번호 생성`);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    info('✅ 고유 번호 추가 완료!');
+    info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    info(`📊 클라이언트: ${clientUpdated}개 번호 생성`);
+    info(`📊 악기: ${instrumentUpdated}개 번호 생성`);
+    info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     await client.end();
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';
-    console.error('❌ 오류:', errorMessage);
+    err('❌ 오류:', errorMessage);
     process.exit(1);
   }
 }
 
 // 실행
 populateUniqueNumbers().catch(error => {
-  console.error('❌ 에러:', error);
+  err('❌ 에러:', error);
   process.exit(1);
 });

@@ -1,6 +1,28 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useDashboardFilters } from '../useDashboardFilters';
 import { Instrument } from '@/types';
+
+// Mock useURLState to avoid browser API issues in tests
+jest.mock('@/hooks/useURLState', () => ({
+  useURLState: jest.fn(() => ({
+    urlState: {},
+    updateURLState: jest.fn(),
+    clearURLState: jest.fn(),
+  })),
+}));
+
+// Mock next/navigation for useURLState (fallback)
+jest.mock('next/navigation', () => ({
+  useRouter: jest.fn(() => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    refresh: jest.fn(),
+    back: jest.fn(),
+    forward: jest.fn(),
+    prefetch: jest.fn(),
+  })),
+  usePathname: jest.fn(() => '/dashboard'),
+}));
 
 describe('useDashboardFilters', () => {
   const mockItems: Instrument[] = [
@@ -64,15 +86,20 @@ describe('useDashboardFilters', () => {
     expect(result.current.filteredItems).toHaveLength(3);
   });
 
-  it('should filter by search term', () => {
+  it('should filter by search term', async () => {
     const { result } = renderHook(() => useDashboardFilters(mockItems));
 
     act(() => {
       result.current.setSearchTerm('Stradivari');
     });
 
-    expect(result.current.filteredItems).toHaveLength(1);
-    expect(result.current.filteredItems[0].maker).toBe('Stradivari');
+    await waitFor(
+      () => {
+        expect(result.current.filteredItems).toHaveLength(1);
+        expect(result.current.filteredItems[0].maker).toBe('Stradivari');
+      },
+      { timeout: 1000 }
+    );
   });
 
   it('should filter by status', () => {
@@ -149,7 +176,7 @@ describe('useDashboardFilters', () => {
     expect(result.current.filteredItems[0].price).toBe(20000);
   });
 
-  it('should combine multiple filters', () => {
+  it('should combine multiple filters', async () => {
     const { result } = renderHook(() => useDashboardFilters(mockItems));
 
     act(() => {
@@ -159,12 +186,17 @@ describe('useDashboardFilters', () => {
       result.current.handleFilterChange('status', 'Available');
     });
 
-    expect(result.current.filteredItems).toHaveLength(1);
-    expect(result.current.filteredItems[0].status).toBe('Available');
-    expect(result.current.filteredItems[0].type).toBe('Violin');
+    await waitFor(
+      () => {
+        expect(result.current.filteredItems).toHaveLength(1);
+        expect(result.current.filteredItems[0].status).toBe('Available');
+        expect(result.current.filteredItems[0].type).toBe('Violin');
+      },
+      { timeout: 1000 }
+    );
   });
 
-  it('should clear all filters', () => {
+  it('should clear all filters', async () => {
     const { result } = renderHook(() => useDashboardFilters(mockItems));
 
     act(() => {
@@ -174,14 +206,24 @@ describe('useDashboardFilters', () => {
       result.current.handleFilterChange('status', 'Available');
     });
 
-    expect(result.current.filteredItems).toHaveLength(0);
+    await waitFor(
+      () => {
+        expect(result.current.filteredItems).toHaveLength(0);
+      },
+      { timeout: 1000 }
+    );
 
     act(() => {
       result.current.clearAllFilters();
     });
 
-    expect(result.current.searchTerm).toBe('');
-    expect(result.current.filteredItems).toHaveLength(3);
+    await waitFor(
+      () => {
+        expect(result.current.searchTerm).toBe('');
+        expect(result.current.filteredItems).toHaveLength(3);
+      },
+      { timeout: 1000 }
+    );
   });
 
   it('should provide filter options', () => {

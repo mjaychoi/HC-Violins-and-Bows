@@ -159,11 +159,11 @@ test.describe('Navigation', () => {
     await page.getByText('Items').click();
     await expect(page).toHaveURL('/dashboard');
 
-    // Navigate to form page
+    // Navigate to connections page
     await hamburger.click();
     await page.waitForTimeout(500);
     await page.getByText('Connected Clients').click();
-    await expect(page).toHaveURL('/form');
+    await expect(page).toHaveURL('/connections');
 
     // Navigate back to clients
     await hamburger.click();

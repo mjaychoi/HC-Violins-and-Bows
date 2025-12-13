@@ -12,7 +12,34 @@ export const formatInstrumentPrice = (
   if (price === null) return 'N/A';
   const numPrice = typeof price === 'string' ? parseFloat(price) : price;
   if (isNaN(numPrice)) return 'N/A';
-  return `$${numPrice.toLocaleString()}`;
+  return `$${numPrice.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`;
+};
+
+/**
+ * Format price with compact notation for large amounts (e.g., $10.0M, $407.7K)
+ * Falls back to regular formatting for smaller amounts
+ * Useful for list views where space is limited
+ */
+export const formatInstrumentPriceCompact = (
+  price: string | number | null
+): string => {
+  if (price === null) return 'N/A';
+  const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+  if (isNaN(numPrice)) return 'N/A';
+
+  // For amounts >= 1M, use M notation
+  if (Math.abs(numPrice) >= 1000000) {
+    return `$${(numPrice / 1000000).toFixed(1)}M`;
+  }
+  // For amounts >= 1K, use K notation
+  if (Math.abs(numPrice) >= 1000) {
+    return `$${(numPrice / 1000).toFixed(1)}K`;
+  }
+  // Otherwise use regular formatting
+  return formatInstrumentPrice(numPrice);
 };
 
 export const formatInstrumentYear = (year: string | number | null): string => {

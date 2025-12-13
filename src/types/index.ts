@@ -130,6 +130,28 @@ export interface CalendarEvent {
   count: number;
 }
 
+// Sales History Types
+export interface SalesHistory {
+  id: string;
+  instrument_id: string | null;
+  client_id: string | null;
+  sale_price: number;
+  sale_date: string; // YYYY-MM-DD
+  notes: string | null;
+  created_at: string;
+  client?: Client;
+  instrument?: Instrument;
+}
+
+/**
+ * Enriched sale with resolved client and instrument relationships.
+ * Used in Sales History page for display and operations.
+ */
+export type EnrichedSale = SalesHistory & {
+  client?: Client;
+  instrument?: Instrument;
+};
+
 // Task Filter Types
 export interface TaskFilters {
   instrument_id?: string;
@@ -140,3 +162,6 @@ export interface TaskFilters {
   date_to?: string;
   search?: string;
 }
+
+// Re-export sort types
+export * from './sort';

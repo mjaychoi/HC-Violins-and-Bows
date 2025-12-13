@@ -1,21 +1,23 @@
 import { ApiClient } from '../apiClient';
+import { ALLOWED_SORT_COLUMNS } from '../inputValidation';
 import { errorHandler } from '../errorHandler';
-import { supabase } from '@/lib/supabase';
 
 // Mock dependencies
+const mockSupabaseClient = {
+  from: jest.fn(() => ({
+    select: jest.fn(),
+    eq: jest.fn(),
+    order: jest.fn(),
+    limit: jest.fn(),
+    insert: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    single: jest.fn(),
+  })),
+};
+
 jest.mock('@/lib/supabase', () => ({
-  supabase: {
-    from: jest.fn(() => ({
-      select: jest.fn(),
-      eq: jest.fn(),
-      order: jest.fn(),
-      limit: jest.fn(),
-      insert: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      single: jest.fn(),
-    })),
-  },
+  getSupabase: jest.fn(() => mockSupabaseClient),
 }));
 
 jest.mock('../errorHandler', () => ({
@@ -32,6 +34,16 @@ jest.mock('../logger', () => ({
   logApiRequest: jest.fn(),
   logPerformance: jest.fn(),
   logError: jest.fn(),
+  Logger: {
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
+
+jest.mock('../monitoring', () => ({
+  captureException: jest.fn(),
 }));
 
 describe('ApiClient', () => {
@@ -53,11 +65,13 @@ describe('ApiClient', () => {
   describe('query', () => {
     it('should query all items', async () => {
       const mockData = [{ id: '1' }, { id: '2' }];
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockResolvedValue({ data: mockData, error: null }),
       });
 
-      const result = await apiClient.query('test_table');
+      const result = await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS
+      );
 
       expect(result.data).toEqual(mockData);
       expect(result.error).toBeNull();
@@ -69,14 +83,17 @@ describe('ApiClient', () => {
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnThis(),
         eq: mockEq,
       });
 
-      await apiClient.query('test_table', {
-        eq: { column: 'status', value: 'active' },
-      });
+      await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        {
+          eq: { column: 'status', value: 'active' },
+        }
+      );
 
       expect(mockEq).toHaveBeenCalledWith('status', 'active');
     });
@@ -87,14 +104,17 @@ describe('ApiClient', () => {
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnThis(),
         order: mockOrder,
       });
 
-      await apiClient.query('test_table', {
-        order: { column: 'created_at', ascending: false },
-      });
+      await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        {
+          order: { column: 'created_at', ascending: false },
+        }
+      );
 
       expect(mockOrder).toHaveBeenCalledWith('created_at', {
         ascending: false,
@@ -107,23 +127,28 @@ describe('ApiClient', () => {
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockReturnThis(),
         limit: mockLimit,
       });
 
-      await apiClient.query('test_table', { limit: 10 });
+      await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        { limit: 10 }
+      );
 
       expect(mockLimit).toHaveBeenCalledWith(10);
     });
 
     it('should handle query errors', async () => {
       const mockError = { message: 'Query failed' };
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockResolvedValue({ data: null, error: mockError }),
       });
 
-      const result = await apiClient.query('test_table');
+      const result = await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS
+      );
 
       expect(result.data).toBeNull();
       expect(result.error).toBeDefined();
@@ -132,11 +157,13 @@ describe('ApiClient', () => {
 
     it('should handle query exceptions', async () => {
       const mockError = new Error('Network error');
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         select: jest.fn().mockRejectedValue(mockError),
       });
 
-      const result = await apiClient.query('test_table');
+      const result = await apiClient.query(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS
+      );
 
       expect(result.data).toBeNull();
       expect(result.error).toBeDefined();
@@ -152,13 +179,16 @@ describe('ApiClient', () => {
         .fn()
         .mockResolvedValue({ data: createdItem, error: null });
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         insert: mockInsert,
         select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
-      const result = await apiClient.create('test_table', newItem);
+      const result = await apiClient.create(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        newItem
+      );
 
       expect(mockInsert).toHaveBeenCalledWith([newItem]);
       expect(result.data).toEqual(createdItem);
@@ -172,13 +202,16 @@ describe('ApiClient', () => {
         .fn()
         .mockResolvedValue({ data: null, error: mockError });
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         insert: mockInsert,
         select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
-      const result = await apiClient.create('test_table', { name: 'Test' });
+      const result = await apiClient.create(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        { name: 'Test' }
+      );
 
       expect(result.data).toBeNull();
       expect(result.error).toBeDefined();
@@ -189,13 +222,16 @@ describe('ApiClient', () => {
       const mockInsert = jest.fn().mockReturnThis();
       const mockSingle = jest.fn().mockRejectedValue(mockError);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         insert: mockInsert,
         select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
-      const result = await apiClient.create('test_table', { name: 'Test' });
+      const result = await apiClient.create(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        { name: 'Test' }
+      );
 
       expect(result.data).toBeNull();
       expect(result.error).toBeDefined();
@@ -212,14 +248,18 @@ describe('ApiClient', () => {
         .fn()
         .mockResolvedValue({ data: updatedItem, error: null });
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         update: mockUpdate,
         eq: mockEq,
         select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
-      const result = await apiClient.update('test_table', '1', updates);
+      const result = await apiClient.update(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        '1',
+        updates
+      );
 
       expect(mockUpdate).toHaveBeenCalledWith(updates);
       expect(result.data).toEqual(updatedItem);
@@ -234,16 +274,20 @@ describe('ApiClient', () => {
         .fn()
         .mockResolvedValue({ data: null, error: mockError });
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         update: mockUpdate,
         eq: mockEq,
         select: jest.fn().mockReturnThis(),
         single: mockSingle,
       });
 
-      const result = await apiClient.update('test_table', '1', {
-        name: 'Updated',
-      });
+      const result = await apiClient.update(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        '1',
+        {
+          name: 'Updated',
+        }
+      );
 
       expect(result.data).toBeNull();
       expect(result.error).toBeDefined();
@@ -255,12 +299,15 @@ describe('ApiClient', () => {
       const mockDelete = jest.fn().mockReturnThis();
       const mockEq = jest.fn().mockResolvedValue({ error: null });
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         delete: mockDelete,
         eq: mockEq,
       });
 
-      const result = await apiClient.delete('test_table', '1');
+      const result = await apiClient.delete(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        '1'
+      );
 
       expect(mockEq).toHaveBeenCalledWith('id', '1');
       expect(result.success).toBe(true);
@@ -272,12 +319,15 @@ describe('ApiClient', () => {
       const mockDelete = jest.fn().mockReturnThis();
       const mockEq = jest.fn().mockResolvedValue({ error: mockError });
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         delete: mockDelete,
         eq: mockEq,
       });
 
-      const result = await apiClient.delete('test_table', '1');
+      const result = await apiClient.delete(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        '1'
+      );
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
@@ -288,12 +338,15 @@ describe('ApiClient', () => {
       const mockDelete = jest.fn().mockReturnThis();
       const mockEq = jest.fn().mockRejectedValue(mockError);
 
-      (supabase.from as jest.Mock).mockReturnValue({
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
         delete: mockDelete,
         eq: mockEq,
       });
 
-      const result = await apiClient.delete('test_table', '1');
+      const result = await apiClient.delete(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
+        '1'
+      );
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();

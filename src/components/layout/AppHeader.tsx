@@ -10,12 +10,14 @@ interface AppHeaderProps {
     onClick: () => void;
     icon?: React.ReactNode;
   };
+  headerActions?: React.ReactNode;
 }
 
 export default function AppHeader({
   title,
   onToggleSidebar,
   actionButton,
+  headerActions,
 }: AppHeaderProps) {
   const { user, signOut } = useAuth();
 
@@ -48,23 +50,29 @@ export default function AppHeader({
                 />
               </svg>
             </button>
-            <h1 className="ml-4 text-2xl font-semibold text-gray-900">
+            <h1 className="ml-2 sm:ml-4 text-xl sm:text-2xl font-semibold text-gray-900 truncate">
               {title}
             </h1>
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4">
+            {headerActions && (
+              <div className="flex items-center hidden sm:flex">
+                {headerActions}
+              </div>
+            )}
+
             {user && (
-              <div className="flex items-center space-x-3">
-                <span className="text-sm text-gray-600 hidden sm:inline">
+              <div className="flex items-center space-x-2 sm:space-x-3">
+                <span className="text-xs sm:text-sm text-gray-600 hidden md:inline truncate max-w-[120px] lg:max-w-none">
                   {user.email}
                 </span>
                 <button
                   onClick={handleSignOut}
-                  className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
+                  className="text-xs sm:text-sm text-gray-600 hover:text-gray-900 px-2 sm:px-3 py-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
                   aria-label="Sign out"
                 >
-                  Sign out
+                  SignOut
                 </button>
               </div>
             )}
@@ -72,10 +80,11 @@ export default function AppHeader({
             {actionButton && (
               <button
                 onClick={actionButton.onClick}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 flex items-center gap-2"
+                className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 flex items-center gap-1 sm:gap-2 text-sm sm:text-base"
               >
                 {actionButton.icon}
-                {actionButton.label}
+                <span className="hidden sm:inline">{actionButton.label}</span>
+                <span className="sm:hidden">Add</span>
               </button>
             )}
           </div>

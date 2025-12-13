@@ -1,3 +1,3 @@
 // src/app/clients/hooks/useClients.ts
-// Re-export the optimized version
-export { useOptimizedClients as useClients } from '@/hooks/useOptimizedClients';
+// Re-export the unified version (Context API based)
+export { useUnifiedClients as useClients } from '@/hooks/useUnifiedData';

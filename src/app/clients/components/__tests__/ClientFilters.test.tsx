@@ -45,8 +45,8 @@ describe('ClientFilters', () => {
     // Filter panel should be visible when open
     expect(screen.getByTestId('filters-panel')).toBeInTheDocument();
     // Check that filter options are displayed
-    expect(screen.getByText('Tags')).toBeInTheDocument();
-    expect(screen.getByText('Interest')).toBeInTheDocument();
+    expect(screen.getByText(/태그|Tags/i)).toBeInTheDocument();
+    expect(screen.getByText(/관심도|Interest/i)).toBeInTheDocument();
   });
 
   it('does not render filter panel when closed', () => {
@@ -58,6 +58,7 @@ describe('ClientFilters', () => {
   it('handles filter changes', () => {
     render(<ClientFilters {...mockProps} />);
 
+    // Filter groups are expanded by default, so no need to click expand button
     const musicianCheckbox = screen.getByLabelText('Musician');
     fireEvent.click(musicianCheckbox);
 
@@ -67,6 +68,7 @@ describe('ClientFilters', () => {
   it('handles additional filter changes', () => {
     render(<ClientFilters {...mockProps} />);
 
+    // Filter groups are expanded by default, so no need to click expand button
     const ownerCheckbox = screen.getByLabelText('Owner');
     fireEvent.click(ownerCheckbox);
 
@@ -79,8 +81,8 @@ describe('ClientFilters', () => {
     render(<ClientFilters {...mockProps} />);
 
     // Verify that filter options are displayed
-    expect(screen.getByText('Tags')).toBeInTheDocument();
-    expect(screen.getByText('Interest')).toBeInTheDocument();
+    expect(screen.getByText(/태그|Tags/i)).toBeInTheDocument();
+    expect(screen.getByText(/관심도|Interest/i)).toBeInTheDocument();
 
     // The clear all filters functionality is handled by the parent component
     // through the onClearAllFilters prop, which is called from the parent
@@ -102,10 +104,10 @@ describe('ClientFilters', () => {
     render(<ClientFilters {...mockProps} />);
 
     // Verify that filter options are displayed
-    expect(screen.getByText('Tags')).toBeInTheDocument();
-    expect(screen.getByText('Interest')).toBeInTheDocument();
-    expect(screen.getByText('Email')).toBeInTheDocument();
-    expect(screen.getByText('Contact Number')).toBeInTheDocument();
+    expect(screen.getByText(/태그|Tags/i)).toBeInTheDocument();
+    expect(screen.getByText(/관심도|Interest/i)).toBeInTheDocument();
+    expect(screen.getByText(/이메일|Email/i)).toBeInTheDocument();
+    expect(screen.getByText(/연락처|Contact Number/i)).toBeInTheDocument();
   });
 
   it('renders filter options when there are active filters', () => {
@@ -117,25 +119,99 @@ describe('ClientFilters', () => {
     render(<ClientFilters {...propsWithActiveFilters} />);
 
     // Verify that filter options are still displayed
-    expect(screen.getByText('Tags')).toBeInTheDocument();
-    expect(screen.getByText('Interest')).toBeInTheDocument();
+    expect(screen.getByText(/태그|Tags/i)).toBeInTheDocument();
+    expect(screen.getByText(/관심도|Interest/i)).toBeInTheDocument();
   });
 
-  it('handles hasInstruments filter', () => {
+  it('handles hasInstruments filter - single selection', () => {
     render(<ClientFilters {...mockProps} />);
 
-    const hasInstrumentsCheckbox = screen.getByLabelText('Has Instruments');
+    const hasInstrumentsCheckbox = screen.getByLabelText(
+      /악기 보유|Has Instruments/i
+    );
     fireEvent.click(hasInstrumentsCheckbox);
 
+    // 처음 선택 시: 다른 옵션이 있으면 제거 후 이 옵션만 선택
     expect(mockProps.onFilterChange).toHaveBeenCalledWith(
       'hasInstruments',
       'Has Instruments'
     );
   });
 
+  it('handles hasInstruments filter - deselecting removes filter', () => {
+    const propsWithSelected = {
+      ...mockProps,
+      filters: {
+        ...mockFilters,
+        hasInstruments: ['Has Instruments'],
+      },
+    };
+    render(<ClientFilters {...propsWithSelected} />);
+
+    const hasInstrumentsCheckbox = screen.getByLabelText(
+      /악기 보유|Has Instruments/i
+    );
+    expect(hasInstrumentsCheckbox).toBeChecked();
+
+    fireEvent.click(hasInstrumentsCheckbox);
+
+    // 선택 해제 시: 필터 제거
+    expect(mockProps.onFilterChange).toHaveBeenCalledWith(
+      'hasInstruments',
+      'Has Instruments'
+    );
+  });
+
+  it('handles hasInstruments filter - selecting one deselects the other', () => {
+    const propsWithSelected = {
+      ...mockProps,
+      filters: {
+        ...mockFilters,
+        hasInstruments: ['No Instruments'],
+      },
+    };
+    render(<ClientFilters {...propsWithSelected} />);
+
+    const hasInstrumentsCheckbox = screen.getByLabelText(
+      /악기 보유|Has Instruments/i
+    );
+    const noInstrumentsCheckbox = screen.getByLabelText(
+      /악기 미보유|No Instruments/i
+    );
+
+    expect(noInstrumentsCheckbox).toBeChecked();
+
+    // Has Instruments 선택 시 No Instruments가 먼저 제거됨
+    fireEvent.click(hasInstrumentsCheckbox);
+
+    // 다른 옵션 제거 호출이 먼저 발생
+    expect(mockProps.onFilterChange).toHaveBeenCalledWith(
+      'hasInstruments',
+      'No Instruments'
+    );
+    // 그 다음 새 옵션 선택
+    expect(mockProps.onFilterChange).toHaveBeenCalledWith(
+      'hasInstruments',
+      'Has Instruments'
+    );
+  });
+
+  it('has aria attributes for accessibility', () => {
+    render(<ClientFilters {...mockProps} />);
+
+    const filterPanel = screen.getByTestId('filters-panel');
+    expect(filterPanel).toHaveAttribute('role', 'dialog');
+    expect(filterPanel).toHaveAttribute('aria-modal', 'false');
+    expect(filterPanel).toHaveAttribute(
+      'aria-labelledby',
+      'filters-panel-title'
+    );
+  });
+
   it('handles interest filter', () => {
     render(<ClientFilters {...mockProps} />);
 
+    // Filter groups are expanded by default, so no need to click expand button
     const activeCheckbox = screen.getByLabelText('Active');
     fireEvent.click(activeCheckbox);
 
@@ -145,6 +221,7 @@ describe('ClientFilters', () => {
   it('handles email filter', () => {
     render(<ClientFilters {...mockProps} />);
 
+    // Filter groups are expanded by default, so no need to click expand button
     const emailCheckbox = screen.getByLabelText('john@example.com');
     fireEvent.click(emailCheckbox);
 
@@ -157,6 +234,7 @@ describe('ClientFilters', () => {
   it('handles contact number filter', () => {
     render(<ClientFilters {...mockProps} />);
 
+    // Filter groups are expanded by default, so no need to click expand button
     const contactCheckbox = screen.getByLabelText('123-456-7890');
     fireEvent.click(contactCheckbox);
 
@@ -169,6 +247,7 @@ describe('ClientFilters', () => {
   it('handles first name filter', () => {
     render(<ClientFilters {...mockProps} />);
 
+    // Filter groups are expanded by default, so no need to click expand button
     const firstNameCheckbox = screen.getByLabelText('John');
     fireEvent.click(firstNameCheckbox);
 
@@ -178,6 +257,7 @@ describe('ClientFilters', () => {
   it('handles last name filter', () => {
     render(<ClientFilters {...mockProps} />);
 
+    // Filter groups are expanded by default, so no need to click expand button
     const lastNameCheckbox = screen.getByLabelText('Doe');
     fireEvent.click(lastNameCheckbox);
 
@@ -188,13 +268,13 @@ describe('ClientFilters', () => {
     render(<ClientFilters {...mockProps} />);
 
     // Check that all filter options are displayed
-    expect(screen.getByText('Tags')).toBeInTheDocument();
-    expect(screen.getByText('Interest')).toBeInTheDocument();
-    expect(screen.getByText('Email')).toBeInTheDocument();
-    expect(screen.getByText('Contact Number')).toBeInTheDocument();
-    expect(screen.getByText('First Name')).toBeInTheDocument();
-    expect(screen.getByText('Last Name')).toBeInTheDocument();
-    expect(screen.getByText('Has Instruments')).toBeInTheDocument();
+    expect(screen.getByText(/태그|Tags/i)).toBeInTheDocument();
+    expect(screen.getByText(/관심도|Interest/i)).toBeInTheDocument();
+    expect(screen.getByText(/이메일|Email/i)).toBeInTheDocument();
+    expect(screen.getByText(/연락처|Contact Number/i)).toBeInTheDocument();
+    expect(screen.getByText(/이름|First Name/i)).toBeInTheDocument();
+    expect(screen.getByText(/성|Last Name/i)).toBeInTheDocument();
+    expect(screen.getByText(/악기 연결|Has Instruments/i)).toBeInTheDocument();
   });
 
   it('handles ESC key to close filters', () => {

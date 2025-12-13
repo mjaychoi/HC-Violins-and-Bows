@@ -6,10 +6,14 @@ import React, {
   useReducer,
   useCallback,
   useMemo,
+  useRef,
   ReactNode,
 } from 'react';
 import { Client, Instrument, ClientInstrument } from '@/types';
-import { SupabaseHelpers } from '@/utils/supabaseHelpers';
+import {
+  fetchClients as serviceFetchClients,
+  fetchInstruments as serviceFetchInstruments,
+} from '@/services/dataService';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 
 // 데이터 상태 타입
@@ -335,6 +339,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(dataReducer, initialState);
   const { handleError } = useErrorHandler();
 
+  // In-flight request deduplication
+  // Prevents duplicate requests when multiple hooks/components trigger the same fetch
+  // Example: useUnifiedData + useUnifiedDashboard both calling fetchClients() simultaneously
+  const inflight = useRef<Map<string, Promise<void>>>(new Map());
+
+  const deduped = useCallback(
+    <T extends () => Promise<void>>(key: string, fn: T): Promise<void> => {
+      const existing = inflight.current.get(key);
+      if (existing) {
+        return existing;
+      }
+      const p = fn().finally(() => {
+        inflight.current.delete(key);
+      });
+      inflight.current.set(key, p);
+      return p;
+    },
+    []
+  );
+
   // 캐시 무효화 함수
   const invalidateCache = useCallback(
     (dataType: keyof DataState['lastUpdated']) => {
@@ -350,28 +374,83 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Clients 액션들
   const fetchClients = useCallback(async () => {
-    dispatch({
-      type: 'SET_LOADING',
-      payload: { dataType: 'clients', loading: true },
-    });
-    try {
-      const { data, error } = await SupabaseHelpers.fetchAll<Client>(
-        'clients',
-        {
-          orderBy: { column: 'created_at', ascending: false },
-        }
-      );
-      if (error) throw error;
-      dispatch({ type: 'SET_CLIENTS', payload: data || [] });
-    } catch (error) {
-      handleError(error, 'Fetch clients');
-    } finally {
+    return deduped('clients', async () => {
       dispatch({
         type: 'SET_LOADING',
-        payload: { dataType: 'clients', loading: false },
+        payload: { dataType: 'clients', loading: true },
       });
-    }
-  }, [handleError]);
+      try {
+        const fetcher = async () => {
+          const response = await fetch(
+            '/api/clients?orderBy=created_at&ascending=false'
+          );
+          if (!response.ok) {
+            const errorData = await response.json();
+            const error =
+              errorData.error || new Error('Failed to fetch clients');
+
+            // 인증 에러 감지 (무한 루프 방지)
+            if (
+              error?.message?.includes('Invalid Refresh Token') ||
+              error?.message?.includes('Refresh Token Not Found') ||
+              error?.code === 'SESSION_EXPIRED' ||
+              error?.code === 'UNAUTHORIZED'
+            ) {
+              // 인증 에러는 빈 배열 반환하여 무한 루프 방지
+              console.warn(
+                'Authentication error detected, skipping fetch:',
+                error
+              );
+              return [];
+            }
+
+            throw error;
+          }
+          const result = await response.json();
+          return result.data || [];
+        };
+
+        const clients = await serviceFetchClients(fetcher);
+        console.log(
+          `[DataContext] fetchClients: Received ${clients.length} clients`
+        );
+        if (clients.length === 0) {
+          console.warn(
+            '[DataContext] fetchClients: Received empty array - check API response'
+          );
+        }
+        dispatch({ type: 'SET_CLIENTS', payload: clients });
+      } catch (error) {
+        // 인증 에러인 경우 무한 루프 방지를 위해 빈 배열로 설정
+        if (
+          error &&
+          typeof error === 'object' &&
+          ('message' in error || 'code' in error)
+        ) {
+          const err = error as { message?: string; code?: string };
+          if (
+            err.message?.includes('Invalid Refresh Token') ||
+            err.message?.includes('Refresh Token Not Found') ||
+            err.code === 'SESSION_EXPIRED' ||
+            err.code === 'UNAUTHORIZED'
+          ) {
+            console.warn(
+              'Authentication error in fetchClients, setting empty array:',
+              err
+            );
+            dispatch({ type: 'SET_CLIENTS', payload: [] });
+            return; // 에러 핸들러 호출하지 않고 종료
+          }
+        }
+        handleError(error, 'Fetch clients');
+      } finally {
+        dispatch({
+          type: 'SET_LOADING',
+          payload: { dataType: 'clients', loading: false },
+        });
+      }
+    });
+  }, [handleError, deduped]);
 
   const createClient = useCallback(
     async (client: Omit<Client, 'id' | 'created_at'>) => {
@@ -380,17 +459,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
         payload: { dataType: 'clients', submitting: true },
       });
       try {
-        const { data, error } = await SupabaseHelpers.create<Client>(
-          'clients',
-          client
-        );
-        if (error) throw error;
-        if (data) {
-          dispatch({ type: 'ADD_CLIENT', payload: data });
+        const response = await fetch('/api/clients', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(client),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to create client');
+        }
+        const result = await response.json();
+        if (result.data) {
+          dispatch({ type: 'ADD_CLIENT', payload: result.data });
           // 연결된 데이터 캐시 무효화
           invalidateCache('connections');
         }
-        return data;
+        return result.data;
       } catch (error) {
         handleError(error, 'Create client');
         return null;
@@ -411,18 +495,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
         payload: { dataType: 'clients', submitting: true },
       });
       try {
-        const { data, error } = await SupabaseHelpers.update<Client>(
-          'clients',
-          id,
-          client
-        );
-        if (error) throw error;
-        if (data) {
-          dispatch({ type: 'UPDATE_CLIENT', payload: { id, client: data } });
+        const response = await fetch('/api/clients', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, ...client }),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to update client');
+        }
+        const result = await response.json();
+        if (result.data) {
+          dispatch({
+            type: 'UPDATE_CLIENT',
+            payload: { id, client: result.data },
+          });
           // 연결된 데이터 캐시 무효화
           invalidateCache('connections');
         }
-        return data;
+        return result.data;
       } catch (error) {
         handleError(error, 'Update client');
         return null;
@@ -443,8 +534,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         payload: { dataType: 'clients', submitting: true },
       });
       try {
-        const { error } = await SupabaseHelpers.delete('clients', id);
-        if (error) throw error;
+        const response = await fetch(`/api/clients?id=${id}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to delete client');
+        }
         dispatch({ type: 'REMOVE_CLIENT', payload: id });
         // 연결된 데이터 캐시 무효화
         invalidateCache('connections');
@@ -464,32 +560,36 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Instruments 액션들
   const fetchInstruments = useCallback(async () => {
-    dispatch({
-      type: 'SET_LOADING',
-      payload: { dataType: 'instruments', loading: true },
-    });
-    try {
-      const { data, error } = await SupabaseHelpers.fetchAll<Instrument>(
-        'instruments',
-        {
-          orderBy: { column: 'created_at', ascending: false },
-        }
-      );
-      if (error) throw error;
-
-      // Parse type field: if it contains "/", split into type and subtype
-      const parsedData = (data || []).map(parseInstrumentType);
-
-      dispatch({ type: 'SET_INSTRUMENTS', payload: parsedData });
-    } catch (error) {
-      handleError(error, 'Fetch instruments');
-    } finally {
+    return deduped('instruments', async () => {
       dispatch({
         type: 'SET_LOADING',
-        payload: { dataType: 'instruments', loading: false },
+        payload: { dataType: 'instruments', loading: true },
       });
-    }
-  }, [handleError]);
+      try {
+        const fetcher = async () => {
+          const response = await fetch(
+            '/api/instruments?orderBy=created_at&ascending=false'
+          );
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw errorData.error || new Error('Failed to fetch instruments');
+          }
+          const result = await response.json();
+          return (result.data || []).map(parseInstrumentType);
+        };
+
+        const instruments = await serviceFetchInstruments(fetcher);
+        dispatch({ type: 'SET_INSTRUMENTS', payload: instruments });
+      } catch (error) {
+        handleError(error, 'Fetch instruments');
+      } finally {
+        dispatch({
+          type: 'SET_LOADING',
+          payload: { dataType: 'instruments', loading: false },
+        });
+      }
+    });
+  }, [handleError, deduped]);
 
   const createInstrument = useCallback(
     async (instrument: Omit<Instrument, 'id' | 'created_at'>) => {
@@ -498,22 +598,56 @@ export function DataProvider({ children }: { children: ReactNode }) {
         payload: { dataType: 'instruments', submitting: true },
       });
       try {
-        const { data, error } = await SupabaseHelpers.create<Instrument>(
-          'instruments',
-          instrument
-        );
-        if (error) throw error;
-        if (data) {
+        const response = await fetch('/api/instruments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(instrument),
+        });
+
+        // Response body를 한 번만 파싱
+        const result = await response.json();
+
+        if (!response.ok) {
+          console.error('[createInstrument] API error:', {
+            status: response.status,
+            statusText: response.statusText,
+            errorData: result,
+            instrument,
+          });
+          // 에러 객체가 있는 경우
+          if (result?.error) {
+            const error = result.error;
+            // 에러가 객체인 경우
+            if (typeof error === 'object' && error !== null) {
+              throw new Error(
+                error.message || error.details || 'Failed to create instrument'
+              );
+            }
+            // 에러가 문자열인 경우
+            throw new Error(
+              typeof error === 'string' ? error : 'Failed to create instrument'
+            );
+          }
+          throw new Error(
+            `Failed to create instrument: ${response.status} ${response.statusText}`
+          );
+        }
+        if (result.data) {
           // Parse type field if it contains "/"
-          const parsedData = parseInstrumentType(data);
+          const parsedData = parseInstrumentType(result.data);
           dispatch({ type: 'ADD_INSTRUMENT', payload: parsedData });
           // 연결된 데이터 캐시 무효화
           invalidateCache('connections');
           return parsedData;
         }
-        return data;
+        return result.data;
       } catch (error) {
-        handleError(error, 'Create instrument');
+        // 에러가 이미 Error 객체인 경우 그대로 전달, 아니면 새로 생성
+        const errorToHandle =
+          error instanceof Error
+            ? error
+            : new Error(`Failed to create instrument: ${String(error)}`);
+        handleError(errorToHandle, 'Create instrument');
         return null;
       } finally {
         dispatch({
@@ -532,15 +666,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         payload: { dataType: 'instruments', submitting: true },
       });
       try {
-        const { data, error } = await SupabaseHelpers.update<Instrument>(
-          'instruments',
-          id,
-          instrument
-        );
-        if (error) throw error;
-        if (data) {
+        const response = await fetch('/api/instruments', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, ...instrument }),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to update instrument');
+        }
+        const result = await response.json();
+        if (result.data) {
           // Parse type field if it contains "/"
-          const parsedData = parseInstrumentType(data);
+          const parsedData = parseInstrumentType(result.data);
           dispatch({
             type: 'UPDATE_INSTRUMENT',
             payload: { id, instrument: parsedData },
@@ -549,7 +687,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           invalidateCache('connections');
           return parsedData;
         }
-        return data;
+        return result.data;
       } catch (error) {
         handleError(error, 'Update instrument');
         return null;
@@ -570,8 +708,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         payload: { dataType: 'instruments', submitting: true },
       });
       try {
-        const { error } = await SupabaseHelpers.delete('instruments', id);
-        if (error) throw error;
+        const response = await fetch(`/api/instruments?id=${id}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to delete instrument');
+        }
         dispatch({ type: 'REMOVE_INSTRUMENT', payload: id });
         // 연결된 데이터 캐시 무효화
         invalidateCache('connections');
@@ -591,28 +734,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Connections 액션들
   const fetchConnections = useCallback(async () => {
-    dispatch({
-      type: 'SET_LOADING',
-      payload: { dataType: 'connections', loading: true },
-    });
-    try {
-      const { data, error } = await SupabaseHelpers.fetchAll<ClientInstrument>(
-        'client_instruments',
-        {
-          select: '*, client:clients(*), instrument:instruments(*)',
-        }
-      );
-      if (error) throw error;
-      dispatch({ type: 'SET_CONNECTIONS', payload: data || [] });
-    } catch (error) {
-      handleError(error, 'Fetch connections');
-    } finally {
+    return deduped('connections', async () => {
       dispatch({
         type: 'SET_LOADING',
-        payload: { dataType: 'connections', loading: false },
+        payload: { dataType: 'connections', loading: true },
       });
-    }
-  }, [handleError]);
+      try {
+        const response = await fetch(
+          '/api/connections?orderBy=created_at&ascending=false'
+        );
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to fetch connections');
+        }
+        const result = await response.json();
+        dispatch({ type: 'SET_CONNECTIONS', payload: result.data || [] });
+      } catch (error) {
+        handleError(error, 'Fetch connections');
+      } finally {
+        dispatch({
+          type: 'SET_LOADING',
+          payload: { dataType: 'connections', loading: false },
+        });
+      }
+    });
+  }, [handleError, deduped]);
 
   const createConnection = useCallback(
     async (connection: Omit<ClientInstrument, 'id' | 'created_at'>) => {
@@ -621,15 +767,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
         payload: { dataType: 'connections', submitting: true },
       });
       try {
-        const { data, error } = await SupabaseHelpers.create<ClientInstrument>(
-          'client_instruments',
-          connection
-        );
-        if (error) throw error;
-        if (data) {
-          dispatch({ type: 'ADD_CONNECTION', payload: data });
+        const response = await fetch('/api/connections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(connection),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to create connection');
         }
-        return data;
+        const result = await response.json();
+        if (result.data) {
+          dispatch({ type: 'ADD_CONNECTION', payload: result.data });
+        }
+        return result.data;
       } catch (error) {
         handleError(error, 'Create connection');
         return null;
@@ -650,19 +801,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
         payload: { dataType: 'connections', submitting: true },
       });
       try {
-        const { data, error } = await SupabaseHelpers.update<ClientInstrument>(
-          'client_instruments',
-          id,
-          connection
-        );
-        if (error) throw error;
-        if (data) {
+        const response = await fetch('/api/connections', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, ...connection }),
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to update connection');
+        }
+        const result = await response.json();
+        if (result.data) {
           dispatch({
             type: 'UPDATE_CONNECTION',
-            payload: { id, connection: data },
+            payload: { id, connection: result.data },
           });
         }
-        return data;
+        return result.data;
       } catch (error) {
         handleError(error, 'Update connection');
         return null;
@@ -683,11 +838,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         payload: { dataType: 'connections', submitting: true },
       });
       try {
-        const { error } = await SupabaseHelpers.delete(
-          'client_instruments',
-          id
-        );
-        if (error) throw error;
+        const response = await fetch(`/api/connections?id=${id}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to delete connection');
+        }
         dispatch({ type: 'REMOVE_CONNECTION', payload: id });
         return true;
       } catch (error) {

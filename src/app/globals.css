@@ -47,11 +47,13 @@ body {
 .calendar-container .rbc-month-row {
   flex: 1;
   display: flex;
+  min-height: 180px;
 }
 
 .calendar-container .rbc-day-bg {
   flex: 1;
-  min-height: 100px;
+  min-height: 180px;
+  padding-bottom: 4px;
 }
 
 .calendar-container .rbc-date-cell {
@@ -63,7 +65,25 @@ body {
 
 .calendar-container .rbc-off-range-bg {
   flex: 1;
-  min-height: 100px;
+  min-height: 180px;
+  padding-bottom: 4px;
+}
+
+.calendar-container .rbc-day-slot {
+  padding-bottom: 8px;
+  min-height: 4px;
+}
+
+.calendar-container .rbc-month-view {
+  padding-bottom: 12px;
+}
+
+.calendar-container .rbc-month-row {
+  margin-bottom: 0;
+}
+
+.calendar-container .rbc-row-content {
+  margin: 0;
 }
 
 .calendar-container .rbc-date-cell > a {
@@ -286,4 +306,26 @@ body {
 
 .timeline-view ::-webkit-scrollbar-thumb:hover {
   background: #555;
+}
+
+/* "+3 더보기" 스타일 개선 */
+.calendar-container .rbc-show-more {
+  background-color: #f9fafb;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+  margin-top: 2px;
+  transition: background-color 0.2s;
+}
+
+.calendar-container .rbc-show-more:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+/* 날짜 셀 배경 강조 (+3 더보기 있는 날짜) */
+.calendar-container .rbc-day-bg.has-more {
+  background-color: #f9fafb;
 }

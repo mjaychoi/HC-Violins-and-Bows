@@ -7,6 +7,11 @@ A modern, full-stack inventory management system for violin and bow dealers, bui
 - **Complete CRUD Operations** for clients, instruments, and connections
 - **Real-time Data Synchronization** with Supabase
 - **Advanced Filtering & Search** capabilities
+  - Calendar search with multi-field support (task title, instrument name/serial, client name)
+  - Tag-based filters (type, priority, status, ownership)
+  - Search result highlighting
+  - Sorting (date, priority, status, type)
+- **Maintenance Calendar** with multiple views (month, week, day, year, timeline)
 - **Responsive Design** with Tailwind CSS
 - **Type-safe** with TypeScript
 - **Comprehensive Testing** with Jest and Playwright

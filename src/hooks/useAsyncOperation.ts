@@ -45,8 +45,10 @@ export function useAsyncOperation<T = unknown>() {
           const onAbort = () => controller.abort();
           externalSignal.addEventListener('abort', onAbort, { once: true });
           // Clean the listener when this call completes
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (controller.signal as any).__externalCleanup = () =>
+          const signalWithCleanup = controller.signal as AbortSignal & {
+            __externalCleanup?: () => void;
+          };
+          signalWithCleanup.__externalCleanup = () =>
             externalSignal.removeEventListener('abort', onAbort);
         }
       }
@@ -76,8 +78,10 @@ export function useAsyncOperation<T = unknown>() {
         handleError(error, context);
         return null;
       } finally {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (controller.signal as any).__externalCleanup?.();
+        const signalWithCleanup = controller.signal as AbortSignal & {
+          __externalCleanup?: () => void;
+        };
+        signalWithCleanup.__externalCleanup?.();
         if (mountedRef.current) {
           if (myId === reqIdRef.current) {
             // Current request: set loading to false after completion

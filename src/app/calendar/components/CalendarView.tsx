@@ -1,25 +1,50 @@
 'use client';
 
-import React, { useMemo, useEffect, useState } from 'react';
-import { Calendar, momentLocalizer, Event, View } from 'react-big-calendar';
-import moment from 'moment';
-import 'moment/locale/ko';
+import React, { useMemo, useState, useCallback } from 'react';
+import { Calendar, dateFnsLocalizer, Event, View } from 'react-big-calendar';
+import { format, parse, startOfWeek, getDay } from 'date-fns';
+import { ko } from 'date-fns/locale';
+import { addHours } from 'date-fns';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { MaintenanceTask } from '@/types';
 import YearView from './YearView';
 import TimelineView from './TimelineView';
+import { getCalendarEventStyle, getDateStatus } from '@/utils/tasks/style';
+import { parseTaskDate } from '@/utils/tasks/dateUtils';
 
-const localizer = momentLocalizer(moment);
+// Custom styles for calendar events with icons
+const calendarEventStyles = `
+  .calendar-event-overdue::before {
+    content: '⏰';
+    margin-right: 4px;
+    font-size: 12px;
+  }
+  .calendar-event-upcoming {
+    border-style: dashed !important;
+  }
+  .calendar-event-completed {
+    opacity: 0.7;
+  }
+`;
+
+const locales = {
+  ko: ko,
+};
+
+// FIXED: startOfWeek now respects Korean locale (Monday start)
+const localizer = dateFnsLocalizer({
+  format: (date: Date, fmt: string, options?: { locale?: typeof ko }) =>
+    format(date, fmt, { locale: ko, ...options }),
+  parse: (value: string, fmt: string) =>
+    parse(value, fmt, new Date(), { locale: ko }),
+  startOfWeek: (date: Date) => startOfWeek(date, { locale: ko }),
+  getDay,
+  locales,
+});
 
 // Extended view type to include custom views
 // Only allow specific views we support
-export type ExtendedView =
-  | 'month'
-  | 'week'
-  | 'day'
-  | 'agenda'
-  | 'year'
-  | 'timeline';
+export type ExtendedView = 'month' | 'week' | 'agenda' | 'year' | 'timeline';
 
 interface CalendarViewProps {
   tasks: MaintenanceTask[];
@@ -53,13 +78,8 @@ export default function CalendarView({
 }: CalendarViewProps) {
   const [internalView, setInternalView] = useState<ExtendedView>(currentView);
 
-  // Set moment locale
-  useEffect(() => {
-    moment.locale('ko');
-  }, []);
-
   // Update internal view when currentView prop changes
-  useEffect(() => {
+  React.useEffect(() => {
     setInternalView(currentView);
   }, [currentView]);
 
@@ -91,27 +111,25 @@ export default function CalendarView({
           task.scheduled_date || task.due_date || task.personal_due_date;
         if (!dateStr) return null;
 
-        const date = moment(dateStr).toDate();
-        const endDate = moment(dateStr).endOf('day').toDate();
+        // FIXED: Use parseTaskDate to handle date-only strings correctly (avoid timezone shifts)
+        const date = parseTaskDate(dateStr);
+        // FIXED: For better visibility in week/agenda view, use 1-hour duration instead of all-day
+        // If you want all-day events, use: const endDate = endOfDay(date);
+        const endDate = addHours(date, 1);
 
         // Get instrument info from instruments map if available
         const instrument = task.instrument_id
           ? instruments?.get(task.instrument_id)
           : undefined;
-        const ownership = instrument?.ownership;
-        const instrumentType = instrument?.type || 'Unknown';
+        const instrumentType = instrument?.type;
 
-        // Build event title with ownership badge
+        // FIXED: Keep title clean for search/filtering; render metadata in custom event component if needed
+        // For now, keeping instrument type for context but removing emoji from title
         let eventTitle = task.title;
-        if (ownership) {
-          // Add ownership with icon indicator
-          eventTitle = `${task.title} 👤 ${ownership}`;
-        }
-
-        // Add instrument type if available
-        if (instrumentType !== 'Unknown') {
+        if (instrumentType) {
           eventTitle = `${instrumentType} - ${eventTitle}`;
         }
+        // Note: Ownership info can be added via custom event component styling instead of title pollution
 
         const event: Event = {
           title: eventTitle,
@@ -125,140 +143,100 @@ export default function CalendarView({
       .filter((event): event is Event => event !== null);
   }, [tasks, instruments]);
 
-  // Enhanced event style getter with improved colors and overdue/upcoming indicators
-  const eventStyleGetter = (event: Event) => {
+  // FIXED: Memoize eventStyleGetter to prevent recreation on every render
+  const eventStyleGetter = useCallback((event: Event) => {
     const task = event.resource as MaintenanceTask;
-    const now = new Date();
+    const eventStyle = getCalendarEventStyle(task);
 
-    // Check if task is overdue
-    let isOverdue = false;
-    let isUpcoming = false;
-    let targetDate: Date | null = null;
+    // Determine if task is overdue using utility function (instead of hardcoded color check)
+    const dateStatus = getDateStatus(task);
+    const isOverdue = dateStatus.status === 'overdue';
+    const isUpcoming = dateStatus.status === 'upcoming' && dateStatus.days <= 3;
+    const isCompleted = task.status === 'completed';
 
-    if (task.due_date) {
-      targetDate = new Date(task.due_date);
-    } else if (task.personal_due_date) {
-      targetDate = new Date(task.personal_due_date);
-    } else if (task.scheduled_date) {
-      targetDate = new Date(task.scheduled_date);
+    // Build border style - avoid mixing shorthand and non-shorthand properties
+    // If border shorthand is provided, use it; otherwise construct from borderColor
+    let borderStyle: React.CSSProperties = {};
+    if (eventStyle.border) {
+      // Use shorthand border, exclude borderColor to avoid conflict
+      borderStyle = { border: eventStyle.border };
+    } else if (eventStyle.borderColor) {
+      // Construct border from borderColor (avoiding shorthand conflict)
+      // Use dashed border for upcoming tasks (within 3 days)
+      borderStyle = {
+        borderWidth: isOverdue ? '2px' : '1px',
+        borderStyle: isUpcoming ? 'dashed' : 'solid',
+        borderColor: eventStyle.borderColor,
+      };
+    } else {
+      borderStyle = { border: 'none' };
     }
 
-    if (
-      targetDate &&
-      task.status !== 'completed' &&
-      task.status !== 'cancelled'
-    ) {
-      const daysDiff = Math.floor(
-        (targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      isOverdue = daysDiff < 0;
-      isUpcoming = daysDiff >= 0 && daysDiff <= 3;
+    // Build className for CSS-based icon styling
+    const classNames: string[] = [];
+    if (isOverdue) {
+      classNames.push('calendar-event-overdue');
+    }
+    if (isUpcoming) {
+      classNames.push('calendar-event-upcoming');
+    }
+    if (isCompleted) {
+      classNames.push('calendar-event-completed');
     }
 
+    // Base style properties for calendar events
     const style: React.CSSProperties = {
-      backgroundColor: '#3b82f6', // Default Blue-500
-      borderColor: '#3b82f6',
-      color: 'white',
+      backgroundColor: eventStyle.backgroundColor,
+      color: eventStyle.color,
       borderRadius: '6px',
-      border: 'none',
+      ...borderStyle,
       padding: '4px 8px',
       fontSize: '12px',
-      fontWeight: '500',
-      boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+      fontWeight: eventStyle.textDecoration ? '500' : '500',
+      boxShadow:
+        task.status === 'completed'
+          ? '0 1px 3px 0 rgba(0, 0, 0, 0.1)'
+          : isOverdue
+            ? '0 2px 4px 0 rgba(220, 38, 38, 0.4)'
+            : '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
       cursor: 'pointer',
-      opacity: task.status === 'cancelled' ? 0.6 : 1,
+      opacity: eventStyle.opacity ?? 1,
+      position: isOverdue ? 'relative' : 'static', // Visual indicator for overdue
+      textDecoration: eventStyle.textDecoration,
     };
 
-    if (task) {
-      // Overdue tasks - highest priority (red with warning indicator)
-      if (isOverdue) {
-        style.backgroundColor = '#dc2626'; // Red-600 (stronger red)
-        style.borderColor = '#991b1b'; // Red-800 (darker border)
-        style.fontWeight = '700';
-        style.boxShadow = '0 2px 4px 0 rgba(220, 38, 38, 0.4)';
-        style.border = '2px solid';
-        // Add a visual indicator for overdue tasks
-        style.position = 'relative';
-      }
-      // Upcoming tasks (within 3 days) - amber/yellow
-      else if (isUpcoming) {
-        style.backgroundColor = '#f59e0b'; // Amber-500
-        style.borderColor = '#d97706'; // Amber-600
-        style.fontWeight = '600';
-        style.boxShadow = '0 2px 4px 0 rgba(245, 158, 11, 0.3)';
-      }
-      // Priority-based colors (only if not overdue/upcoming)
-      else if (task.priority === 'urgent') {
-        style.backgroundColor = '#ef4444'; // Red-500
-        style.borderColor = '#dc2626'; // Red-600
-        style.fontWeight = '700';
-        style.boxShadow = '0 2px 4px 0 rgba(239, 68, 68, 0.3)';
-      } else if (task.priority === 'high') {
-        style.backgroundColor = '#f97316'; // Orange-500
-        style.borderColor = '#ea580c'; // Orange-600
-        style.fontWeight = '600';
-        style.boxShadow = '0 1px 3px 0 rgba(249, 115, 22, 0.3)';
-      } else if (task.priority === 'medium') {
-        style.backgroundColor = '#eab308'; // Yellow-500
-        style.borderColor = '#ca8a04'; // Yellow-600
-        style.fontWeight = '500';
-      } else if (task.priority === 'low') {
-        style.backgroundColor = '#22c55e'; // Green-500
-        style.borderColor = '#16a34a'; // Green-600
-        style.fontWeight = '500';
-      }
-
-      // Status-based colors (override priority for completed/cancelled)
-      if (task.status === 'completed') {
-        style.backgroundColor = '#10b981'; // Green-500
-        style.borderColor = '#059669'; // Green-600
-        style.opacity = 0.8;
-        style.textDecoration = 'line-through';
-      } else if (task.status === 'cancelled') {
-        style.backgroundColor = '#6b7280'; // Gray-500
-        style.borderColor = '#4b5563'; // Gray-600
-        style.opacity = 0.6;
-      } else if (
-        task.status === 'in_progress' &&
-        !isOverdue &&
-        !isUpcoming &&
-        task.priority !== 'urgent' &&
-        task.priority !== 'high'
-      ) {
-        style.backgroundColor = '#3b82f6'; // Blue-500
-        style.borderColor = '#2563eb'; // Blue-600
-      } else if (
-        task.status === 'pending' &&
-        !isOverdue &&
-        !isUpcoming &&
-        task.priority !== 'urgent' &&
-        task.priority !== 'high'
-      ) {
-        style.backgroundColor = '#f59e0b'; // Amber-500
-        style.borderColor = '#d97706'; // Amber-600
+    // Additional styling for overdue tasks
+    if (isOverdue) {
+      style.fontWeight = '700';
+      // If using individual border properties, update them
+      if (!eventStyle.border) {
+        style.borderWidth = '2px';
       }
     }
 
     return {
       style,
+      className: classNames.join(' '),
     };
-  };
+  }, []);
 
-  // Custom messages for Korean (optional)
-  const messages = {
-    next: '다음',
-    previous: '이전',
-    today: '오늘',
-    month: '월',
-    week: '주',
-    day: '일',
-    agenda: '일정',
-    date: '날짜',
-    time: '시간',
-    event: '이벤트',
-    noEventsInRange: '이 기간에 예정된 작업이 없습니다.',
-    showMore: (total: number) => `+${total} more`,
-  };
+  // FIXED: Translate messages to Korean to match culture="ko"
+  const messages = useMemo(
+    () => ({
+      next: '다음',
+      previous: '이전',
+      today: '오늘',
+      month: '월',
+      week: '주',
+      agenda: '일정',
+      date: '날짜',
+      time: '시간',
+      event: '일정',
+      noEventsInRange: '이 기간에는 예정된 작업이 없습니다.',
+      showMore: (total: number) => `+${total} 더보기`,
+    }),
+    []
+  );
 
   // Render custom views
   if (internalView === 'year' || internalView === 'timeline') {
@@ -299,41 +277,49 @@ export default function CalendarView({
 
   // Render standard react-big-calendar views
   return (
-    <div
-      className="w-full calendar-container"
-      style={{ height: '700px', minHeight: '700px', padding: '1rem' }}
-    >
-      <Calendar
-        localizer={localizer}
-        events={events}
-        startAccessor="start"
-        endAccessor="end"
-        style={{ height: '100%', minHeight: '600px' }}
-        eventPropGetter={eventStyleGetter}
-        onSelectEvent={event => {
-          if (onSelectEvent && event.resource) {
-            onSelectEvent(event.resource as MaintenanceTask);
-          }
+    <>
+      <style>{calendarEventStyles}</style>
+      <div
+        className="w-full calendar-container"
+        style={{
+          height: '800px',
+          minHeight: '800px',
+          padding: '1rem',
+          paddingBottom: '1.5rem',
         }}
-        onSelectSlot={onSelectSlot}
-        selectable
-        date={currentDate}
-        onNavigate={onNavigate}
-        view={internalView as View}
-        onView={(view: View) => {
-          // Only handle standard react-big-calendar views
-          if (view === 'month' || view === 'week' || view === 'agenda') {
-            handleViewChange(view);
-          }
-        }}
-        views={['month', 'week', 'agenda']}
-        messages={messages}
-        popup
-        showMultiDayTimes
-        step={60}
-        timeslots={1}
-        culture="ko"
-      />
-    </div>
+      >
+        <Calendar
+          localizer={localizer}
+          events={events}
+          startAccessor="start"
+          endAccessor="end"
+          style={{ height: '100%', minHeight: '700px' }}
+          eventPropGetter={eventStyleGetter}
+          onSelectEvent={event => {
+            if (onSelectEvent && event.resource) {
+              onSelectEvent(event.resource as MaintenanceTask);
+            }
+          }}
+          onSelectSlot={onSelectSlot}
+          selectable
+          date={currentDate}
+          onNavigate={onNavigate}
+          view={internalView as View}
+          onView={(view: View) => {
+            // Handle standard react-big-calendar views (day view not supported)
+            if (view === 'month' || view === 'week' || view === 'agenda') {
+              handleViewChange(view);
+            }
+          }}
+          views={['month', 'week', 'agenda']}
+          messages={messages}
+          popup
+          showMultiDayTimes
+          step={60}
+          timeslots={1}
+          culture="ko"
+        />
+      </div>
+    </>
   );
 }

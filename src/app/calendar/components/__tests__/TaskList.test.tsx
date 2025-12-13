@@ -11,10 +11,6 @@ jest.mock('@/utils/formatUtils', () => ({
   }),
 }));
 
-// Mock window.confirm
-const mockConfirm = jest.fn();
-window.confirm = mockConfirm;
-
 describe('TaskList', () => {
   const mockTasks: MaintenanceTask[] = [
     {
@@ -49,10 +45,11 @@ describe('TaskList', () => {
 
   const mockOnTaskClick = jest.fn();
   const mockOnTaskDelete = jest.fn();
+  let confirmSpy: jest.SpyInstance;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockConfirm.mockReturnValue(true);
+    confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
   });
 
   it('should render task list', () => {
@@ -98,9 +95,8 @@ describe('TaskList', () => {
     expect(mockOnTaskClick).toHaveBeenCalledWith(mockTasks[0]);
   });
 
-  it('should handle task deletion', async () => {
+  it('should handle task deletion with task object (not window.confirm)', async () => {
     const user = userEvent.setup();
-    mockConfirm.mockReturnValue(true);
 
     render(
       <TaskList
@@ -115,28 +111,12 @@ describe('TaskList', () => {
     const deleteButton = screen.getByLabelText('Delete task');
     await user.click(deleteButton);
 
-    expect(mockConfirm).toHaveBeenCalled();
-    expect(mockOnTaskDelete).toHaveBeenCalledWith('1');
-  });
+    // Should call onTaskDelete with the full task object, not just ID
+    expect(mockOnTaskDelete).toHaveBeenCalledWith(mockTasks[0]);
+    expect(mockOnTaskDelete).toHaveBeenCalledTimes(1);
 
-  it('should not delete task if confirmation is cancelled', async () => {
-    const user = userEvent.setup();
-    mockConfirm.mockReturnValue(false);
-
-    render(
-      <TaskList
-        tasks={mockTasks}
-        instruments={mockInstruments}
-        onTaskClick={mockOnTaskClick}
-        onTaskDelete={mockOnTaskDelete}
-      />
-    );
-
-    const deleteButton = screen.getByLabelText('Delete task');
-    await user.click(deleteButton);
-
-    expect(mockConfirm).toHaveBeenCalled();
-    expect(mockOnTaskDelete).not.toHaveBeenCalled();
+    // Should NOT use window.confirm
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it('should display task details', () => {

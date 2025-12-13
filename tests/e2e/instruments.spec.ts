@@ -98,11 +98,13 @@ test.describe('Navigation', () => {
     await expect(page).toHaveURL('/clients');
   });
 
-  test('should navigate to form page from instruments', async ({ page }) => {
+  test('should navigate to connections page from instruments', async ({
+    page,
+  }) => {
     await page.goto('/instruments');
 
     await page.getByText('Connected Clients').click();
-    await expect(page).toHaveURL('/form');
+    await expect(page).toHaveURL('/connections');
   });
 });
 

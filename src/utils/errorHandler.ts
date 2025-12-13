@@ -7,6 +7,8 @@ import {
   ErrorCategory,
 } from '@/types/errors';
 import { logError as structuredLogError } from './logger';
+import { captureException } from './monitoring';
+import { getUserFriendlyErrorMessage } from './errorSanitization';
 
 // Error Handler Class
 export class ErrorHandler {
@@ -87,10 +89,29 @@ export class ErrorHandler {
         message?: string;
         details?: string;
         hint?: string;
+        name?: string;
       };
       errorCode = err.code;
       errorMessage = err.message || errorMessage;
       errorDetails = err.details || err.hint;
+
+      // Invalid Refresh Token 에러 감지 (AuthApiError)
+      if (
+        err.name === 'AuthApiError' ||
+        errorMessage?.includes('Invalid Refresh Token') ||
+        errorMessage?.includes('Refresh Token Not Found')
+      ) {
+        return this.createError(
+          ErrorCodes.SESSION_EXPIRED,
+          'Session expired. Please sign in again.',
+          errorDetails,
+          {
+            context,
+            originalError: error,
+            preventRetry: true, // 무한 루프 방지 플래그
+          }
+        );
+      }
 
       // 특정 에러 코드에 대한 안내 메시지 추가
       if (err.code === 'PGRST204' && err.message?.includes('subtype')) {
@@ -135,8 +156,10 @@ export class ErrorHandler {
       'message' in error
     ) {
       const { status } = error as { status?: number };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const msg = (error as any).message as string | undefined;
+      const msg =
+        typeof (error as { message?: unknown }).message === 'string'
+          ? ((error as { message?: string }).message as string)
+          : undefined;
 
       // 개발 환경에서만 상세 로그 출력 (subtype 에러는 이미 처리됨)
       // 구조화된 로거는 이미 handleSupabaseError 호출 전후에 사용됨
@@ -211,15 +234,16 @@ export class ErrorHandler {
       }
     }
 
-    return this.createError(
-      code,
-      message,
-      (error as { details?: string }).details,
-      {
-        context,
-        originalError: error,
-      }
-    );
+    // Safe access to details property
+    const details =
+      error && typeof error === 'object' && 'details' in error
+        ? String((error as { details?: unknown }).details)
+        : undefined;
+
+    return this.createError(code, message, details, {
+      context,
+      originalError: error,
+    });
   }
 
   // Handle network errors
@@ -278,26 +302,31 @@ export class ErrorHandler {
 
   // Get user-friendly error message
   getUserFriendlyMessage(error: AppError): string {
-    const messages: Record<string, string> = {
-      [ErrorCodes.NETWORK_ERROR]: 'Please check your network connection.',
-      [ErrorCodes.TIMEOUT_ERROR]: 'Request timeout. Please try again.',
-      [ErrorCodes.UNAUTHORIZED]: 'Login required.',
-      [ErrorCodes.FORBIDDEN]: 'Access denied.',
-      [ErrorCodes.SESSION_EXPIRED]: 'Session expired. Please login again.',
-      [ErrorCodes.DATABASE_ERROR]: 'Database error occurred.',
-      [ErrorCodes.RECORD_NOT_FOUND]: 'Requested data not found.',
-      [ErrorCodes.DUPLICATE_RECORD]: 'Data already exists.',
-      [ErrorCodes.VALIDATION_ERROR]: 'Please check your input data.',
-      [ErrorCodes.REQUIRED_FIELD]: 'Please fill in required fields.',
-      [ErrorCodes.INVALID_FORMAT]: 'Please enter in correct format.',
-      [ErrorCodes.FILE_TOO_LARGE]: 'File size is too large.',
-      [ErrorCodes.INVALID_FILE_TYPE]: 'Unsupported file type.',
-      [ErrorCodes.UPLOAD_FAILED]: 'File upload failed.',
-      [ErrorCodes.UNKNOWN_ERROR]: 'Unknown error occurred.',
-      [ErrorCodes.INTERNAL_ERROR]: 'Server error occurred.',
-    };
+    // 개발 환경에서는 원본 메시지 사용
+    if (process.env.NODE_ENV === 'development') {
+      const messages: Record<string, string> = {
+        [ErrorCodes.NETWORK_ERROR]: 'Please check your network connection.',
+        [ErrorCodes.TIMEOUT_ERROR]: 'Request timeout. Please try again.',
+        [ErrorCodes.UNAUTHORIZED]: 'Login required.',
+        [ErrorCodes.FORBIDDEN]: 'Access denied.',
+        [ErrorCodes.SESSION_EXPIRED]: 'Session expired. Please login again.',
+        [ErrorCodes.DATABASE_ERROR]: 'Database error occurred.',
+        [ErrorCodes.RECORD_NOT_FOUND]: 'Requested data not found.',
+        [ErrorCodes.DUPLICATE_RECORD]: 'Data already exists.',
+        [ErrorCodes.VALIDATION_ERROR]: 'Please check your input data.',
+        [ErrorCodes.REQUIRED_FIELD]: 'Please fill in required fields.',
+        [ErrorCodes.INVALID_FORMAT]: 'Please enter in correct format.',
+        [ErrorCodes.FILE_TOO_LARGE]: 'File size is too large.',
+        [ErrorCodes.INVALID_FILE_TYPE]: 'Unsupported file type.',
+        [ErrorCodes.UPLOAD_FAILED]: 'File upload failed.',
+        [ErrorCodes.UNKNOWN_ERROR]: 'Unknown error occurred.',
+        [ErrorCodes.INTERNAL_ERROR]: 'Server error occurred.',
+      };
+      return messages[error.code] || error.message;
+    }
 
-    return messages[error.code] || error.message;
+    // 프로덕션 환경에서는 sanitized 메시지 사용
+    return getUserFriendlyErrorMessage(error);
   }
 
   // Log error with enhanced tracking
@@ -336,21 +365,37 @@ export class ErrorHandler {
 
     // For critical errors, send to external logging service
     if (severity === ErrorSeverity.CRITICAL) {
-      this.sendToExternalLogger();
+      this.sendToExternalLogger(error);
     }
   }
 
   // Send critical errors to external logging service
-  private sendToExternalLogger(): void {
-    // Example integration with external services
+  private sendToExternalLogger(error: AppError): void {
+    // Use captureException for integrated error handling and alerting
+    captureException(
+      error,
+      'ErrorHandler',
+      {
+        code: error.code,
+        context: error.context,
+        details: error.details,
+      },
+      ErrorSeverity.CRITICAL
+    );
+
+    // Example integration with external services (Sentry, LogRocket, etc.)
     if (typeof window !== 'undefined') {
       // Sentry integration example
-      // Sentry.captureException(new Error(error.message), {
-      //   tags: { code: error.code, severity: 'critical' },
-      //   extra: error.context
-      // })
+      // if (window.Sentry) {
+      //   window.Sentry.captureException(new Error(error.message), {
+      //     tags: { code: error.code, severity: 'critical' },
+      //     extra: error.context
+      //   });
+      // }
       // LogRocket integration example
-      // LogRocket.captureException(new Error(error.message))
+      // if (window.LogRocket) {
+      //   window.LogRocket.captureException(new Error(error.message));
+      // }
     }
   }
 

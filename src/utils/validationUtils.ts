@@ -69,16 +69,21 @@ export function validateField<T>(
   rules: ValidationRule<T>[],
   fieldName: string
 ): string | null {
+  // Helper to check if value is empty (handles 0, false correctly)
+  const isEmpty =
+    value === null ||
+    value === undefined ||
+    (typeof value === 'string' && value.trim() === '');
+
   for (const rule of rules) {
     // Required check
-    if (
-      rule.required &&
-      (!value || (typeof value === 'string' && value.trim() === ''))
-    ) {
+    if (rule.required && isEmpty) {
       return rule.message || `${fieldName} is required`;
     }
 
-    if (!value) continue; // Skip other validations if value is empty and not required
+    // Skip other validations if value is empty and not required
+    // (0 and false are considered valid non-empty values)
+    if (isEmpty) continue;
 
     const stringValue = String(value);
 
@@ -181,8 +186,16 @@ export const connectionValidation = {
 };
 
 // Form validation hooks
+/**
+ * Hook for form validation
+ * @param data - Current form data (should be updated on each change)
+ * @param validationSchema - Validation rules for each field
+ *
+ * NOTE: data should be the current form state, not just initial data.
+ * Pass the updated form data on each render to ensure validation uses current values.
+ */
 export function useFormValidation<T extends Record<string, unknown>>(
-  initialData: T,
+  data: T,
   validationSchema: Record<keyof T, ValidationRule<T[keyof T]>[]>
 ) {
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -203,11 +216,12 @@ export function useFormValidation<T extends Record<string, unknown>>(
     [validationSchema]
   );
 
+  // FIXED: Now uses current data instead of initialData
   const validateFormHook = useCallback(() => {
-    const result = validateForm(initialData, validationSchema);
+    const result = validateForm(data, validationSchema);
     setErrors(result.errors);
     return result;
-  }, [initialData, validationSchema]);
+  }, [data, validationSchema]);
 
   const setFieldTouched = useCallback(
     (fieldName: keyof T, isTouched = true) => {

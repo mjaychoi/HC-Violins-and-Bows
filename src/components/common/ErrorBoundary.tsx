@@ -3,6 +3,11 @@
 import React, { Component, ReactNode } from 'react';
 import { AppError, ErrorCodes } from '@/types/errors';
 import { logError } from '@/utils/logger';
+import {
+  getUserFriendlyErrorMessage,
+  sanitizeError,
+  isProduction,
+} from '@/utils/errorSanitization';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -47,17 +52,21 @@ export default class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // 프로덕션 환경에서는 민감한 정보를 제거
+    const sanitized = sanitizeError(error);
+    const userMessage = getUserFriendlyErrorMessage(error);
+
     const appError: AppError = {
       code: ErrorCodes.UNKNOWN_ERROR,
-      message: error.message,
-      details: error.stack,
+      message: userMessage,
+      details: isProduction() ? undefined : sanitized.details,
       timestamp: new Date(),
       context: { component: 'ErrorBoundary' },
     };
 
     this.setState({
       error: appError,
-      errorInfo,
+      errorInfo: isProduction() ? null : errorInfo, // 프로덕션에서는 errorInfo 제거
     });
 
     // Call onError callback if provided
@@ -65,7 +74,7 @@ export default class ErrorBoundary extends Component<
       this.props.onError(appError, errorInfo);
     }
 
-    // Log error with structured logger
+    // Log error with structured logger (상세 정보는 로그에만 기록)
     logError('ErrorBoundary caught an error', error, 'ErrorBoundary', {
       componentStack: errorInfo.componentStack,
       errorMessage: error.message,
@@ -140,21 +149,23 @@ export default class ErrorBoundary extends Component<
               </div>
             </div>
 
-            {process.env.NODE_ENV === 'development' && errorInfo && (
+            {!isProduction() && errorInfo && (
               <details className="mt-4">
                 <summary className="text-sm font-medium text-gray-700 cursor-pointer">
-                  Error Details (Development)
+                  Error Details (Development Only)
                 </summary>
                 <div className="mt-2 p-3 bg-gray-100 rounded text-xs font-mono text-gray-600 overflow-auto max-h-40">
                   <div>
                     <strong>Error:</strong> {error.message}
                   </div>
-                  <div>
-                    <strong>Stack:</strong>
-                  </div>
-                  <pre className="whitespace-pre-wrap">
-                    {error.details || 'No stack trace available'}
-                  </pre>
+                  {error.details && (
+                    <>
+                      <div>
+                        <strong>Stack:</strong>
+                      </div>
+                      <pre className="whitespace-pre-wrap">{error.details}</pre>
+                    </>
+                  )}
                   <div>
                     <strong>Component Stack:</strong>
                   </div>

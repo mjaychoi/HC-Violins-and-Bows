@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Client } from '@/types';
+import { shouldShowInterestDropdown } from '@/policies/interest';
+import { ClientViewFormData } from '../types';
 
 export function useClientView() {
   const [showViewModal, setShowViewModal] = useState(false);
@@ -7,22 +9,19 @@ export function useClientView() {
   const [isEditing, setIsEditing] = useState(false);
   const [showInterestDropdown, setShowInterestDropdown] = useState(false);
 
-  const [viewFormData, setViewFormData] = useState({
+  const [viewFormData, setViewFormData] = useState<ClientViewFormData>({
     last_name: '',
     first_name: '',
     contact_number: '',
     email: '',
-    tags: [] as string[],
+    tags: [],
     interest: '',
     note: '',
   });
 
   // Interest 드롭다운 표시 여부: 태그에 따라 항상 반영
   useEffect(() => {
-    const shouldShowInterest = viewFormData.tags.some(tag =>
-      ['Musician', 'Dealer', 'Collector'].includes(tag)
-    );
-    setShowInterestDropdown(shouldShowInterest);
+    setShowInterestDropdown(shouldShowInterestDropdown(viewFormData.tags));
   }, [viewFormData.tags]);
 
   const openClientView = (client: Client, editMode: boolean = true) => {
@@ -49,7 +48,7 @@ export function useClientView() {
   const startEditing = () => setIsEditing(true);
   const stopEditing = () => setIsEditing(false);
 
-  const updateViewFormData = (updates: Partial<typeof viewFormData>) => {
+  const updateViewFormData = (updates: Partial<ClientViewFormData>) => {
     setViewFormData(prev => ({ ...prev, ...updates }));
   };
 

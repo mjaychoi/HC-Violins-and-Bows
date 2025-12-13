@@ -1,33 +1,40 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { Instrument } from '@/types';
 import { getPriceRange } from '../utils/dashboardUtils';
-import { getUniqueValues } from '@/utils/uniqueValues';
-// import { classNames } from '@/utils/classNames'
-// import Button from '@/components/common/Button'
-import { useEscapeKey } from '@/hooks/useEscapeKey';
+import { DateRange, FilterOperator } from '@/types/search';
+import PageFilters, {
+  FilterGroupConfig,
+} from '@/components/common/PageFilters';
+import { DashboardFilters, DashboardArrayFilterKeys } from '../types';
+import {
+  DASHBOARD_FILTER_LABELS,
+  DASHBOARD_FILTER_KEYS,
+  DASHBOARD_FILTER_LABEL_STRINGS,
+  DASHBOARD_DATE_FIELD_LABELS,
+  buildDashboardFilterOptions,
+} from '../constants';
 
 interface ItemFiltersProps {
   items: Instrument[];
   searchTerm: string;
   onSearchChange: (term: string) => void;
-  filters: {
-    status: string[];
-    maker: string[];
-    type: string[];
-    subtype: string[];
-    ownership: string[];
-    certificate: boolean[];
-    priceRange: { min: string; max: string };
-    hasClients: string[];
-  };
-  onFilterChange: (filterType: string, value: string | boolean) => void;
+  filters: DashboardFilters;
+  onFilterChange: (
+    filterType: DashboardArrayFilterKeys,
+    value: string | boolean
+  ) => void;
   onPriceRangeChange: (field: 'min' | 'max', value: string) => void;
   onClearFilters: () => void;
   showFilters: boolean;
   onToggleFilters: () => void;
   activeFiltersCount: number;
+  // 고급 검색
+  dateRange?: DateRange | null;
+  onDateRangeChange?: (range: DateRange | null) => void;
+  filterOperator: FilterOperator; // Required - managed by parent hook
+  onOperatorChange?: (operator: FilterOperator) => void;
 }
 
 export default function ItemFilters({
@@ -37,214 +44,265 @@ export default function ItemFilters({
   filters,
   onFilterChange,
   onPriceRangeChange,
-  // onClearFilters,
+  onClearFilters,
   showFilters,
   onToggleFilters,
   activeFiltersCount,
+  dateRange,
+  onDateRangeChange,
+  filterOperator,
+  onOperatorChange,
 }: ItemFiltersProps) {
-  const filterPanelRef = useRef<HTMLDivElement>(null);
+  // filterOperator is managed by parent (useDashboardFilters) to avoid default value duplication
+  // FIXED: Memoize buildDashboardFilterOptions to avoid recomputing on every render
+  const filterOptions = useMemo(
+    () => buildDashboardFilterOptions(items),
+    [items]
+  );
+  const priceRange = getPriceRange(items);
+  const hasActiveFilters =
+    activeFiltersCount > 0 ||
+    Boolean(searchTerm) ||
+    Boolean(dateRange?.from) ||
+    Boolean(dateRange?.to);
 
-  // Close filter panel with ESC key
-  useEscapeKey(onToggleFilters, showFilters);
+  // 활성 필터 배지
+  const activeBadges = useMemo(() => {
+    const badges = [
+      ...filters.status.map(value => ({
+        key: `${DASHBOARD_FILTER_KEYS.STATUS}-${value}`,
+        label: `${DASHBOARD_FILTER_LABELS.status}: ${value}`,
+        remove: () => onFilterChange(DASHBOARD_FILTER_KEYS.STATUS, value),
+      })),
+      ...filters.maker.map(value => ({
+        key: `${DASHBOARD_FILTER_KEYS.MAKER}-${value}`,
+        label: `${DASHBOARD_FILTER_LABELS.maker}: ${value}`,
+        remove: () => onFilterChange(DASHBOARD_FILTER_KEYS.MAKER, value),
+      })),
+      ...filters.type.map(value => ({
+        key: `${DASHBOARD_FILTER_KEYS.TYPE}-${value}`,
+        label: `${DASHBOARD_FILTER_LABELS.type}: ${value}`,
+        remove: () => onFilterChange(DASHBOARD_FILTER_KEYS.TYPE, value),
+      })),
+      ...filters.subtype.map(value => ({
+        key: `${DASHBOARD_FILTER_KEYS.SUBTYPE}-${value}`,
+        label: `${DASHBOARD_FILTER_LABELS.subtype}: ${value}`,
+        remove: () => onFilterChange(DASHBOARD_FILTER_KEYS.SUBTYPE, value),
+      })),
+      ...filters.ownership.map(value => ({
+        key: `${DASHBOARD_FILTER_KEYS.OWNERSHIP}-${value}`,
+        label: `${DASHBOARD_FILTER_LABELS.ownership}: ${value}`,
+        remove: () => onFilterChange(DASHBOARD_FILTER_KEYS.OWNERSHIP, value),
+      })),
+    ];
 
-  // Handle click outside filter panel
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      const filterButton = document.querySelector('[data-filter-button]');
-      if (filterButton && filterButton.contains(target)) {
-        return;
-      }
-
-      if (filterPanelRef.current && !filterPanelRef.current.contains(target)) {
-        onToggleFilters();
-      }
-    };
-
-    if (showFilters) {
-      document.addEventListener('mousedown', handleClickOutside);
+    if (filters.priceRange.min || filters.priceRange.max) {
+      badges.push({
+        key: DASHBOARD_FILTER_KEYS.PRICE_RANGE,
+        label: `${DASHBOARD_FILTER_LABEL_STRINGS.PRICE_RANGE}: ${filters.priceRange.min || '0'} - ${filters.priceRange.max || 'max'}`,
+        remove: () => {
+          onPriceRangeChange('min', '');
+          onPriceRangeChange('max', '');
+        },
+      });
     }
 
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showFilters, onToggleFilters]);
+    if (searchTerm) {
+      badges.push({
+        key: 'search',
+        label: `${DASHBOARD_FILTER_LABEL_STRINGS.SEARCH}: ${searchTerm}`,
+        remove: () => onSearchChange(''),
+      });
+    }
 
-  const filterOptions = {
-    status: getUniqueValues(items, 'status'),
-    maker: getUniqueValues(items, 'maker'),
-    type: getUniqueValues(items, 'type'),
-    subtype: getUniqueValues(items, 'subtype'),
-    ownership: getUniqueValues(items, 'ownership'),
-  };
+    if (dateRange?.from || dateRange?.to) {
+      badges.push({
+        key: 'dateRange',
+        label: `${DASHBOARD_FILTER_LABEL_STRINGS.DATE_RANGE}: ${dateRange.from || '시작'} ~ ${dateRange.to || '종료'}`,
+        remove: () => onDateRangeChange?.(null),
+      });
+    }
 
-  const priceRange = getPriceRange(items);
+    return badges;
+  }, [
+    filters,
+    searchTerm,
+    dateRange,
+    onFilterChange,
+    onPriceRangeChange,
+    onSearchChange,
+    onDateRangeChange,
+  ]);
 
-  return (
-    <div className="mb-6">
-      {/* Search and Filter Controls */}
-      <div className="flex items-center justify-between mb-4">
-        <input
-          placeholder="Search items..."
-          className="w-full max-w-lg h-10 rounded-lg border border-gray-200 bg-gray-50 px-3
-                     focus:outline-none focus:ring-2 focus:ring-blue-100"
-          value={searchTerm}
-          onChange={e => onSearchChange(e.target.value)}
-        />
-        <div className="ml-4">
-          <button
-            data-filter-button
-            onClick={onToggleFilters}
-            className="h-10 px-3 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
-          >
-            Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
-          </button>
-        </div>
-      </div>
-
-      {/* Filter Panel */}
-      {showFilters && (
-        <div
-          ref={filterPanelRef}
-          className="bg-white border border-gray-200 rounded-lg p-4 shadow-lg"
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Status Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Status
-              </label>
-              <div className="space-y-2">
-                {filterOptions.status.map(status => (
-                  <label key={status} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={filters.status.includes(status)}
-                      onChange={() => onFilterChange('status', status)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">{status}</span>
-                  </label>
-                ))}
-              </div>
+  // Price Range 커스텀 렌더링
+  const renderPriceRange = useCallback(() => {
+    return (
+      <div className="border-b border-gray-100 pb-3 last:border-b-0">
+        <h4 className="text-sm font-semibold text-gray-900 mb-3">
+          가격 범위
+          {(filters.priceRange.min || filters.priceRange.max) && (
+            <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium text-white bg-blue-600 rounded-full">
+              1
+            </span>
+          )}
+        </h4>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              placeholder="최소"
+              value={filters.priceRange.min}
+              onChange={e => onPriceRangeChange('min', e.target.value)}
+              className="flex-1 h-10 px-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+              aria-label="Minimum price"
+            />
+            <span
+              className="text-sm font-medium text-gray-500"
+              aria-hidden="true"
+            >
+              ~
+            </span>
+            <input
+              type="number"
+              placeholder="최대"
+              value={filters.priceRange.max}
+              onChange={e => onPriceRangeChange('max', e.target.value)}
+              className="flex-1 h-10 px-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+              aria-label="Maximum price"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-gray-500">
+              Range: ${priceRange.min.toLocaleString()} - $
+              {priceRange.max.toLocaleString()}
             </div>
-
-            {/* Maker Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Maker
-              </label>
-              <div className="space-y-2 max-h-32 overflow-y-auto">
-                {filterOptions.maker.map(maker => (
-                  <label key={maker} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={filters.maker.includes(maker)}
-                      onChange={() => onFilterChange('maker', maker)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">{maker}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Type Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Type
-              </label>
-              <div className="space-y-2 max-h-32 overflow-y-auto">
-                {filterOptions.type.map(type => (
-                  <label key={type} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={filters.type.includes(type)}
-                      onChange={() => onFilterChange('type', type)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">{type}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Subtype Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Subtype
-              </label>
-              <div className="space-y-2 max-h-32 overflow-y-auto">
-                {filterOptions.subtype.map(subtype => (
-                  <label key={subtype} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={filters.subtype.includes(subtype)}
-                      onChange={() => onFilterChange('subtype', subtype)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">
-                      {subtype}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Ownership Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Ownership
-              </label>
-              <div className="space-y-2 max-h-32 overflow-y-auto">
-                {filterOptions.ownership.map(ownership => (
-                  <label key={ownership} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={filters.ownership.includes(ownership)}
-                      onChange={() => onFilterChange('ownership', ownership)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">
-                      {ownership}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Price Range Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Price Range
-              </label>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="number"
-                    placeholder="Min"
-                    value={filters.priceRange.min}
-                    onChange={e => onPriceRangeChange('min', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-gray-500">to</span>
-                  <input
-                    type="number"
-                    placeholder="Max"
-                    value={filters.priceRange.max}
-                    onChange={e => onPriceRangeChange('max', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="text-xs text-gray-500">
-                  Range: ${priceRange.min.toLocaleString()} - $
-                  {priceRange.max.toLocaleString()}
-                </div>
-              </div>
-            </div>
+            {(filters.priceRange.min || filters.priceRange.max) && (
+              <button
+                onClick={() => {
+                  onPriceRangeChange('min', '');
+                  onPriceRangeChange('max', '');
+                }}
+                className="text-xs text-gray-600 hover:text-red-600 hover:underline transition-colors"
+                type="button"
+                aria-label="Clear price range"
+              >
+                Clear
+              </button>
+            )}
           </div>
         </div>
-      )}
-    </div>
+      </div>
+    );
+  }, [filters.priceRange, onPriceRangeChange, priceRange]);
+
+  // 필터 그룹 설정
+  const filterGroups: FilterGroupConfig[] = useMemo(
+    () => [
+      {
+        key: DASHBOARD_FILTER_KEYS.STATUS,
+        title: DASHBOARD_FILTER_LABELS.status,
+        options: filterOptions.status,
+        selectedValues: filters.status,
+        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.STATUS, value),
+        searchable: filterOptions.status.length > 10,
+        defaultCollapsed: false,
+        variant: 'card',
+        maxHeight: 'max-h-48',
+      },
+      {
+        key: DASHBOARD_FILTER_KEYS.MAKER,
+        title: DASHBOARD_FILTER_LABELS.maker,
+        options: filterOptions.maker,
+        selectedValues: filters.maker,
+        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.MAKER, value),
+        searchable: true,
+        defaultCollapsed: false,
+        variant: 'card',
+        maxHeight: 'max-h-48',
+      },
+      {
+        key: DASHBOARD_FILTER_KEYS.TYPE,
+        title: DASHBOARD_FILTER_LABELS.type,
+        options: filterOptions.type,
+        selectedValues: filters.type,
+        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.TYPE, value),
+        searchable: filterOptions.type.length > 10,
+        defaultCollapsed: false,
+        variant: 'card',
+        maxHeight: 'max-h-48',
+      },
+      {
+        key: DASHBOARD_FILTER_KEYS.SUBTYPE,
+        title: DASHBOARD_FILTER_LABELS.subtype,
+        options: filterOptions.subtype,
+        selectedValues: filters.subtype,
+        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.SUBTYPE, value),
+        searchable: filterOptions.subtype.length > 10,
+        defaultCollapsed: false,
+        variant: 'card',
+        maxHeight: 'max-h-48',
+      },
+      {
+        key: DASHBOARD_FILTER_KEYS.OWNERSHIP,
+        title: DASHBOARD_FILTER_LABELS.ownership,
+        options: filterOptions.ownership,
+        selectedValues: filters.ownership,
+        onToggle: value =>
+          onFilterChange(DASHBOARD_FILTER_KEYS.OWNERSHIP, value),
+        searchable: true,
+        defaultCollapsed: false,
+        variant: 'card',
+        maxHeight: 'max-h-48',
+      },
+      {
+        key: DASHBOARD_FILTER_KEYS.PRICE_RANGE,
+        title: DASHBOARD_FILTER_LABEL_STRINGS.PRICE_RANGE,
+        options: [],
+        selectedValues: [],
+        onToggle: () => {},
+        customRender: renderPriceRange,
+      },
+    ],
+    [filterOptions, filters, onFilterChange, renderPriceRange]
+  );
+
+  // FIXED: Change "Apply" to "Done" since filters apply immediately (live update)
+  return (
+    <PageFilters
+      isOpen={showFilters}
+      onClose={onToggleFilters}
+      filterGroups={filterGroups}
+      activeFiltersCount={activeFiltersCount}
+      onClearAllFilters={onClearFilters}
+      title={DASHBOARD_FILTER_LABEL_STRINGS.FILTER_OPTIONS}
+      activeBadges={hasActiveFilters ? activeBadges : undefined}
+      advancedSearchConfig={
+        onDateRangeChange
+          ? {
+              dateRange: dateRange || null,
+              onDateRangeChange,
+              operator: filterOperator,
+              onOperatorChange: onOperatorChange || undefined,
+              dateFields: [
+                {
+                  field: 'created_at',
+                  label: DASHBOARD_DATE_FIELD_LABELS.CREATED_AT,
+                },
+                {
+                  field: 'updated_at',
+                  label: DASHBOARD_DATE_FIELD_LABELS.UPDATED_AT,
+                },
+              ],
+              onReset: () => onDateRangeChange(null),
+            }
+          : undefined
+      }
+      footerText={DASHBOARD_FILTER_LABEL_STRINGS.ACTIVE_FILTERS}
+      clearButtonText={DASHBOARD_FILTER_LABEL_STRINGS.CLEAR_ALL}
+      applyButtonText="Done"
+      showSearchBar={false}
+      onToggleFilters={onToggleFilters}
+      dataTestId="filters-panel"
+    />
   );
 }

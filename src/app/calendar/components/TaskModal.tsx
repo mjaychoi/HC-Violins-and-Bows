@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   MaintenanceTask,
   Instrument,
@@ -12,6 +12,8 @@ import {
 import { classNames } from '@/utils/classNames';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
+import { todayLocalYMD } from '@/utils/dateParsing';
+import { useOutsideClose } from '@/hooks/useOutsideClose';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -48,7 +50,8 @@ export default function TaskModal({
     title: '',
     description: '',
     status: 'pending' as TaskStatus,
-    received_date: new Date().toISOString().split('T')[0],
+    // FIXED: Use todayLocalYMD() instead of toISOString() to avoid UTC timezone issues
+    received_date: todayLocalYMD(),
     due_date: '',
     personal_due_date: '',
     scheduled_date: '',
@@ -84,6 +87,7 @@ export default function TaskModal({
       });
     } else {
       // Reset form for new task
+      // FIXED: Use todayLocalYMD() instead of toISOString() to avoid UTC timezone issues
       setFormData({
         instrument_id: '',
         client_id: '',
@@ -91,7 +95,7 @@ export default function TaskModal({
         title: '',
         description: '',
         status: 'pending',
-        received_date: new Date().toISOString().split('T')[0],
+        received_date: todayLocalYMD(),
         due_date: '',
         personal_due_date: '',
         scheduled_date: defaultScheduledDate || '',
@@ -140,10 +144,14 @@ export default function TaskModal({
     // Set completed_date if status is completed and it wasn't already completed
     const wasCompleted = selectedTask?.status === 'completed';
     const isNowCompleted = formData.status === 'completed';
+    // FIXED: Use todayLocalYMD() instead of toISOString() to avoid UTC timezone issues
+    // FIXED: If user switches status away from completed, set completed_date to null
     const completedDate =
       isNowCompleted && !wasCompleted
-        ? new Date().toISOString().split('T')[0]
-        : selectedTask?.completed_date || null;
+        ? todayLocalYMD()
+        : isNowCompleted
+          ? selectedTask?.completed_date || todayLocalYMD()
+          : null;
 
     const taskData: Omit<
       MaintenanceTask,
@@ -185,6 +193,13 @@ export default function TaskModal({
     await onSubmit(taskData);
   };
 
+  // Close modal with ESC key and outside click
+  const modalRef = useRef<HTMLDivElement>(null);
+  useOutsideClose(modalRef, {
+    isOpen,
+    onClose,
+  });
+
   if (!isOpen) return null;
 
   const taskTypes: TaskType[] = [
@@ -214,6 +229,7 @@ export default function TaskModal({
       }}
     >
       <div
+        ref={modalRef}
         className="bg-white rounded-xl shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"

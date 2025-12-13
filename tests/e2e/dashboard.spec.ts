@@ -155,11 +155,13 @@ test.describe('Navigation', () => {
     await expect(page).toHaveURL('/clients');
   });
 
-  test('should navigate to form page from dashboard', async ({ page }) => {
+  test('should navigate to connections page from dashboard', async ({
+    page,
+  }) => {
     await page.goto('/dashboard');
 
     await page.getByText('Connected Clients').click();
-    await expect(page).toHaveURL('/form');
+    await expect(page).toHaveURL('/connections');
   });
 });
 

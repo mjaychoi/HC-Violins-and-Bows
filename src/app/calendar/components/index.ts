@@ -1,3 +1,8 @@
 export { default as CalendarView } from './CalendarView';
 export { default as TaskModal } from './TaskModal';
 export { default as TaskList } from './TaskList';
+export { default as GroupedTaskList } from './GroupedTaskList';
+export { default as CalendarHeader } from './CalendarHeader';
+export { default as CalendarFilters } from './CalendarFilters';
+export { default as CalendarSummary } from './CalendarSummary';
+export { default as CalendarEmptyState } from './CalendarEmptyState';

@@ -63,7 +63,8 @@ jest.mock('react-big-calendar', () => {
         )
       );
     },
-    momentLocalizer: jest.fn(() => ({})),
+    dateFnsLocalizer: jest.fn(() => ({})),
+    momentLocalizer: jest.fn(() => ({})), // Keep for backward compatibility
   };
 });
 

@@ -9,6 +9,7 @@ import { Client } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
+import { logError, logInfo } from '@/utils/logger';
 
 // 로컬 환경에서 SSL 인증서 검증 비활성화
 if (process.env.NODE_ENV !== 'production') {
@@ -66,11 +67,11 @@ async function getSupabaseConnection(): Promise<Client> {
   ];
   let client: Client | null = null;
 
-  console.log('🔌 Pooler 연결 시도 (포트 5432)...\n');
+  logInfo('🔌 Pooler 연결 시도 (포트 5432)...\n', 'checkSchema');
 
   for (const region of regions) {
     try {
-      console.log(`🔌 ${region} 지역 pooler 연결 시도...`);
+      logInfo(`🔌 ${region} 지역 pooler 연결 시도...`, 'checkSchema');
 
       client = new Client({
         host: `aws-0-${region}.pooler.supabase.com`,
@@ -84,7 +85,7 @@ async function getSupabaseConnection(): Promise<Client> {
       });
 
       await client.connect();
-      console.log(`✅ ${region} 지역 pooler 연결 성공!\n`);
+      logInfo(`✅ ${region} 지역 pooler 연결 성공!\n`, 'checkSchema');
       return client;
     } catch (error) {
       if (client) {
@@ -102,7 +103,11 @@ async function getSupabaseConnection(): Promise<Client> {
         'code' in error &&
         (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED')
       ) {
-        console.log(`⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`);
+        logError(
+          `⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`,
+          undefined,
+          'checkSchema'
+        );
         continue;
       } else if (
         error &&
@@ -113,7 +118,11 @@ async function getSupabaseConnection(): Promise<Client> {
           error.message.includes('certificate') ||
           error.message.includes('SSL'))
       ) {
-        console.log(`⚠️  ${region} 지역 SSL 인증서 오류, 다음 지역 시도...\n`);
+        logError(
+          `⚠️  ${region} 지역 SSL 인증서 오류, 다음 지역 시도...\n`,
+          undefined,
+          'checkSchema'
+        );
         continue;
       } else if (
         error &&
@@ -122,7 +131,7 @@ async function getSupabaseConnection(): Promise<Client> {
         typeof error.message === 'string' &&
         error.message.includes('password authentication failed')
       ) {
-        console.log(`❌ 비밀번호 인증 실패\n`);
+        logError(`❌ 비밀번호 인증 실패\n`, undefined, 'checkSchema');
         break;
       } else {
         // 상세한 에러 정보 출력
@@ -132,9 +141,9 @@ async function getSupabaseConnection(): Promise<Client> {
           error && typeof error === 'object' && 'code' in error
             ? error.code
             : 'unknown';
-        console.log(`⚠️  ${region} 지역 연결 오류:`);
-        console.log(`   코드: ${errorCode}`);
-        console.log(`   메시지: ${errorMessage}\n`);
+        logError(`⚠️  ${region} 지역 연결 오류:`, error, 'checkSchema');
+        logError(`   코드: ${errorCode}`, undefined, 'checkSchema');
+        logError(`   메시지: ${errorMessage}\n`, error, 'checkSchema');
         continue;
       }
     }
@@ -307,30 +316,30 @@ function saveSchemaToFile(tables: TableInfo[], outputPath: string): void {
   }
 
   fs.writeFileSync(outputPath, output, 'utf-8');
-  console.log(`✅ 스키마가 ${outputPath}에 저장되었습니다.\n`);
+  logInfo(`✅ 스키마가 ${outputPath}에 저장되었습니다.\n`, 'checkSchema');
 }
 
 async function checkSchema() {
   let client: Client | null = null;
 
   try {
-    console.log('🔄 Supabase 데이터베이스 스키마 확인 중...\n');
+    logInfo('🔄 Supabase 데이터베이스 스키마 확인 중...\n', 'checkSchema');
 
     // Connect to database
     client = await getSupabaseConnection();
 
     // Get all tables
     const tableNames = await getTables(client);
-    console.log(`📊 발견된 테이블 (${tableNames.length}개):\n`);
-    tableNames.forEach(name => console.log(`  • ${name}`));
-    console.log('');
+    logInfo(`📊 발견된 테이블 (${tableNames.length}개):\n`, 'checkSchema');
+    tableNames.forEach(name => logInfo(`  • ${name}`, 'checkSchema'));
+    logInfo('', 'checkSchema');
 
     // Get table info for each table
     const tables: TableInfo[] = [];
     for (const tableName of tableNames) {
       const tableInfo = await getTableInfo(client, tableName);
       tables.push(tableInfo);
-      console.log(formatTableInfo(tableInfo));
+      logInfo(formatTableInfo(tableInfo), 'checkSchema');
     }
 
     // Save schema to file
@@ -338,9 +347,15 @@ async function checkSchema() {
     saveSchemaToFile(tables, outputPath);
 
     // Check specific tables
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🔍 주요 테이블 상세 정보');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    logInfo(
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      'checkSchema'
+    );
+    logInfo('🔍 주요 테이블 상세 정보', 'checkSchema');
+    logInfo(
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n',
+      'checkSchema'
+    );
 
     const importantTables = [
       'instruments',
@@ -354,7 +369,7 @@ async function checkSchema() {
     for (const tableName of importantTables) {
       const table = tables.find(t => t.table_name === tableName);
       if (table) {
-        console.log(`✅ ${tableName} 테이블 존재`);
+        logInfo(`✅ ${tableName} 테이블 존재`, 'checkSchema');
 
         // Check for important columns
         if (tableName === 'instruments') {
@@ -370,13 +385,11 @@ async function checkSchema() {
               c.constraint_definition.includes('CHECK')
           );
 
-          console.log(
-            `  • subtype 컬럼: ${hasSubtype ? '✅ 있음' : '❌ 없음'}`
-          );
-          console.log(
+          logInfo(`  • subtype 컬럼: ${hasSubtype ? '✅ 있음' : '❌ 없음'}`);
+          logInfo(
             `  • updated_at 컬럼: ${hasUpdatedAt ? '✅ 있음' : '❌ 없음'}`
           );
-          console.log(
+          logInfo(
             `  • status 제약조건: ${statusConstraint ? '✅ 있음' : '❌ 없음'}`
           );
 
@@ -385,26 +398,36 @@ async function checkSchema() {
               statusConstraint.constraint_definition.includes('Reserved');
             const hasMaintenance =
               statusConstraint.constraint_definition.includes('Maintenance');
-            console.log(`    - Reserved 허용: ${hasReserved ? '✅' : '❌'}`);
-            console.log(
-              `    - Maintenance 허용: ${hasMaintenance ? '✅' : '❌'}`
+            logInfo(
+              `    - Reserved 허용: ${hasReserved ? '✅' : '❌'}`,
+              'checkSchema'
+            );
+            logInfo(
+              `    - Maintenance 허용: ${hasMaintenance ? '✅' : '❌'}`,
+              'checkSchema'
             );
           }
         }
 
-        console.log('');
+        logInfo('', 'checkSchema');
       } else {
-        console.log(`❌ ${tableName} 테이블 없음\n`);
+        logInfo(`❌ ${tableName} 테이블 없음\n`, 'checkSchema');
       }
     }
 
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('✅ 스키마 확인 완료!');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    logInfo(
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      'checkSchema'
+    );
+    logInfo('✅ 스키마 확인 완료!', 'checkSchema');
+    logInfo(
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n',
+      'checkSchema'
+    );
   } catch (error: unknown) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';
-    console.error('❌ 에러:', errorMessage);
+    logError('❌ 에러:', errorMessage, 'checkSchema');
     process.exit(1);
   } finally {
     if (client) {
@@ -415,7 +438,7 @@ async function checkSchema() {
 
 // Run
 checkSchema().catch(error => {
-  console.error('❌ 에러:', error);
+  logError('❌ 에러:', error, 'checkSchema');
   process.exit(1);
 });
 

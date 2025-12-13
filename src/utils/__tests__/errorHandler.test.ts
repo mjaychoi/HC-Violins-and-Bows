@@ -97,7 +97,9 @@ describe('ErrorHandler', () => {
       );
       const message = errorHandler.getUserFriendlyMessage(error);
 
-      expect(message).toBe('Please check your network connection.');
+      expect(message).toBe(
+        'Network connection error. Please check your internet connection.'
+      );
     });
 
     it('should return original message for unknown error codes', () => {
@@ -107,7 +109,7 @@ describe('ErrorHandler', () => {
       );
       const message = errorHandler.getUserFriendlyMessage(error);
 
-      expect(message).toBe('Custom error');
+      expect(message).toBe('An error occurred. Please try again.');
     });
   });
 

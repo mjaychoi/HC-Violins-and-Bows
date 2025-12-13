@@ -24,9 +24,9 @@ export function useDashboardForm() {
   const [priceInput, setPriceInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
-  // Sync price input with form data
+  // FIXED: Handle price.toString() safely - normalize null/undefined/0 to empty string
   useEffect(() => {
-    setPriceInput(formData.price.toString());
+    setPriceInput(formData.price ? String(formData.price) : '');
   }, [formData.price]);
 
   const handlePriceChange = (value: string) => {

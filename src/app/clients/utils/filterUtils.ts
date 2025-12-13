@@ -5,6 +5,7 @@ import {
   getUniqueArrayValues,
 } from '@/utils/uniqueValues';
 import { toggleValue } from '@/utils/filterHelpers';
+import { FilterState } from '../types';
 
 // Filter utility functions
 export const getUniqueValues = (
@@ -42,8 +43,8 @@ export const handleFilterChange = (
   };
 };
 
-// Clear all filters
-export const clearAllFilters = () => ({
+// Empty filter state - single source of truth
+export const EMPTY_FILTER_STATE: FilterState = {
   last_name: [],
   first_name: [],
   contact_number: [],
@@ -51,7 +52,10 @@ export const clearAllFilters = () => ({
   tags: [],
   interest: [],
   hasInstruments: [],
-});
+};
+
+// Clear all filters - returns EMPTY_FILTER_STATE
+export const clearAllFilters = (): FilterState => EMPTY_FILTER_STATE;
 
 // Sort utilities
 export const handleColumnSort = (

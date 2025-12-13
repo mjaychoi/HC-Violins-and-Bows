@@ -54,7 +54,6 @@ describe('useDashboardForm', () => {
     const { result } = renderHook(() => useDashboardForm());
 
     const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fileList = { 0: file, length: 1, item: () => file } as any;
 
     act(() => {
@@ -70,7 +69,6 @@ describe('useDashboardForm', () => {
 
     const file1 = new File(['test1'], 'test1.jpg', { type: 'image/jpeg' });
     const file2 = new File(['test2'], 'test2.jpg', { type: 'image/jpeg' });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fileList = {
       0: file1,
       1: file2,

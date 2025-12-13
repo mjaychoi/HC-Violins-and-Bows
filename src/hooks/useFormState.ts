@@ -1,23 +1,32 @@
 // src/hooks/useFormState.ts
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 // Generic form state management hook
 export function useFormState<T extends Record<string, unknown>>(
   initialState: T
 ) {
-  const [formData, setFormData] = useState<T>(initialState);
-  const [errors, setErrors] = useState<Partial<Record<keyof T, string>>>({});
+  const initialRef = useRef(initialState);
+
+  useEffect(() => {
+    initialRef.current = initialState;
+  }, [initialState]);
+
+  const [formData, setFormData] = useState<T>(initialRef.current);
+  // FIXED: Type now allows undefined (which we set when clearing errors)
+  const [errors, setErrors] = useState<
+    Partial<Record<keyof T, string | undefined>>
+  >({});
   const [touched, setTouched] = useState<Partial<Record<keyof T, boolean>>>({});
 
+  // FIXED: Removed errors from deps and use functional update to avoid stale closure
+  // This prevents unnecessary re-renders and stale error state issues
   const updateField = useCallback(
     <K extends keyof T>(field: K, value: T[K]) => {
       setFormData(prev => ({ ...prev, [field]: value }));
-      // Clear error when user starts typing
-      if (errors[field]) {
-        setErrors(prev => ({ ...prev, [field]: undefined }));
-      }
+      // Clear error when user starts typing using functional update
+      setErrors(prev => (prev[field] ? { ...prev, [field]: undefined } : prev));
     },
-    [errors]
+    [] // No deps needed - using functional updates
   );
 
   const updateFields = useCallback((updates: Partial<T>) => {
@@ -39,12 +48,14 @@ export function useFormState<T extends Record<string, unknown>>(
   );
 
   const resetForm = useCallback(() => {
-    setFormData(initialState);
+    setFormData(initialRef.current);
     setErrors({});
     setTouched({});
-  }, [initialState]);
+  }, []);
 
-  const hasErrors = Object.values(errors).some(error => error !== undefined);
+  const hasErrors = Object.values(errors).some(
+    (error): error is string => error !== undefined
+  );
   const isTouched = Object.values(touched).some(t => t === true);
 
   return {

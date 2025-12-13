@@ -1,6 +1,22 @@
 import { errorHandler } from './errorHandler';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { logApiRequest, logError } from './logger';
+import { captureException } from './monitoring';
+import { ErrorSeverity } from '@/types/errors';
+import { validateSortColumn, ALLOWED_SORT_COLUMNS } from './inputValidation';
+
+// Lazy load Supabase client to prevent dependency leakage
+// Only load when actually used, not at module initialization time
+const getSupabaseClient = () => getSupabase();
+
+// Safe timing helper that works in both browser and Node.js/SSR
+const nowMs = (): number => {
+  if (typeof globalThis !== 'undefined' && globalThis.performance?.now) {
+    const perfNow = globalThis.performance.now();
+    return typeof perfNow === 'number' ? perfNow : Date.now();
+  }
+  return Date.now();
+};
 
 export class ApiClient {
   private static instance: ApiClient;
@@ -13,7 +29,7 @@ export class ApiClient {
   }
 
   async query<T>(
-    table: string,
+    table: keyof typeof ALLOWED_SORT_COLUMNS,
     options?: {
       select?: string;
       eq?: { column: string; value: unknown };
@@ -21,18 +37,24 @@ export class ApiClient {
       limit?: number;
     }
   ): Promise<{ data: T[] | null; error: unknown }> {
-    const startTime = performance.now();
+    const startTime = nowMs();
     const url = `supabase://${table}`;
 
     try {
+      const supabase = getSupabaseClient();
       let query = supabase.from(table).select(options?.select || '*');
 
       if (options?.eq) {
         query = query.eq(options.eq.column, options.eq.value);
       }
 
+      // SECURITY: Validate order column against whitelist to prevent injection
       if (options?.order) {
-        query = query.order(options.order.column, {
+        const safeColumn = validateSortColumn(
+          table,
+          options.order.column ?? null
+        );
+        query = query.order(safeColumn, {
           ascending: options.order.ascending ?? true,
         });
       }
@@ -43,7 +65,7 @@ export class ApiClient {
 
       const queryResult = await query;
       const { data, error } = queryResult;
-      const duration = Math.round(performance.now() - startTime);
+      const duration = Math.round(nowMs() - startTime);
 
       if (error) {
         const appError = errorHandler.handleSupabaseError(
@@ -56,6 +78,12 @@ export class ApiClient {
           error: true,
           errorCode: (appError as { code?: string })?.code,
         });
+        captureException(
+          appError,
+          `ApiClient.query(${table})`,
+          { table, operation: 'query', duration },
+          ErrorSeverity.MEDIUM
+        );
         return { data: null, error: appError };
       }
 
@@ -67,7 +95,7 @@ export class ApiClient {
 
       return { data: data as T[], error: null };
     } catch (error) {
-      const duration = Math.round(performance.now() - startTime);
+      const duration = Math.round(nowMs() - startTime);
       const appError = errorHandler.handleSupabaseError(
         error,
         `Query ${table}`
@@ -77,6 +105,12 @@ export class ApiClient {
         operation: 'query',
         duration,
       });
+      captureException(
+        error,
+        `ApiClient.query(${table})`,
+        { table, operation: 'query', duration },
+        ErrorSeverity.HIGH
+      );
       return { data: null, error: appError };
     }
   }
@@ -85,10 +119,11 @@ export class ApiClient {
     table: string,
     data: Record<string, unknown>
   ): Promise<{ data: T | null; error: unknown }> {
-    const startTime = performance.now();
+    const startTime = nowMs();
     const url = `supabase://${table}`;
 
     try {
+      const supabase = getSupabaseClient();
       const { data: result, error } = await supabase
         .from(table)
         .insert([data])
@@ -108,6 +143,12 @@ export class ApiClient {
           error: true,
           errorCode: (appError as { code?: string })?.code,
         });
+        captureException(
+          appError,
+          `ApiClient.create(${table})`,
+          { table, operation: 'create', duration },
+          ErrorSeverity.MEDIUM
+        );
         return { data: null, error: appError };
       }
 
@@ -119,7 +160,7 @@ export class ApiClient {
 
       return { data: result, error: null };
     } catch (error) {
-      const duration = Math.round(performance.now() - startTime);
+      const duration = Math.round(nowMs() - startTime);
       const appError = errorHandler.handleSupabaseError(
         error,
         `Create ${table}`
@@ -129,6 +170,12 @@ export class ApiClient {
         operation: 'create',
         duration,
       });
+      captureException(
+        error,
+        `ApiClient.create(${table})`,
+        { table, operation: 'create', duration },
+        ErrorSeverity.HIGH
+      );
       return { data: null, error: appError };
     }
   }
@@ -138,10 +185,11 @@ export class ApiClient {
     id: string,
     data: Record<string, unknown>
   ): Promise<{ data: T | null; error: unknown }> {
-    const startTime = performance.now();
+    const startTime = nowMs();
     const url = `supabase://${table}/${id}`;
 
     try {
+      const supabase = getSupabaseClient();
       const { data: result, error } = await supabase
         .from(table)
         .update(data)
@@ -163,6 +211,12 @@ export class ApiClient {
           error: true,
           errorCode: (appError as { code?: string })?.code,
         });
+        captureException(
+          appError,
+          `ApiClient.update(${table})`,
+          { table, id, operation: 'update', duration },
+          ErrorSeverity.MEDIUM
+        );
         return { data: null, error: appError };
       }
 
@@ -174,7 +228,7 @@ export class ApiClient {
 
       return { data: result, error: null };
     } catch (error) {
-      const duration = Math.round(performance.now() - startTime);
+      const duration = Math.round(nowMs() - startTime);
       const appError = errorHandler.handleSupabaseError(
         error,
         `Update ${table}`
@@ -185,6 +239,12 @@ export class ApiClient {
         operation: 'update',
         duration,
       });
+      captureException(
+        error,
+        `ApiClient.update(${table})`,
+        { table, id, operation: 'update', duration },
+        ErrorSeverity.HIGH
+      );
       return { data: null, error: appError };
     }
   }
@@ -193,12 +253,13 @@ export class ApiClient {
     table: string,
     id: string
   ): Promise<{ success: boolean; error: unknown }> {
-    const startTime = performance.now();
+    const startTime = nowMs();
     const url = `supabase://${table}/${id}`;
 
     try {
+      const supabase = getSupabaseClient();
       const { error } = await supabase.from(table).delete().eq('id', id);
-      const duration = Math.round(performance.now() - startTime);
+      const duration = Math.round(nowMs() - startTime);
 
       if (error) {
         const appError = errorHandler.handleSupabaseError(
@@ -212,6 +273,12 @@ export class ApiClient {
           error: true,
           errorCode: (appError as { code?: string })?.code,
         });
+        captureException(
+          appError,
+          `ApiClient.delete(${table})`,
+          { table, id, operation: 'delete', duration },
+          ErrorSeverity.MEDIUM
+        );
         return { success: false, error: appError };
       }
 
@@ -223,7 +290,7 @@ export class ApiClient {
 
       return { success: true, error: null };
     } catch (error) {
-      const duration = Math.round(performance.now() - startTime);
+      const duration = Math.round(nowMs() - startTime);
       const appError = errorHandler.handleSupabaseError(
         error,
         `Delete ${table}`
@@ -234,6 +301,12 @@ export class ApiClient {
         operation: 'delete',
         duration,
       });
+      captureException(
+        error,
+        `ApiClient.delete(${table})`,
+        { table, id, operation: 'delete', duration },
+        ErrorSeverity.HIGH
+      );
       return { success: false, error: appError };
     }
   }

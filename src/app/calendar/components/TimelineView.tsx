@@ -8,10 +8,11 @@ import {
   eachDayOfInterval,
   isSameDay,
   addWeeks,
-  parseISO,
 } from 'date-fns';
-import { ko } from 'date-fns/locale';
+import { enUS } from 'date-fns/locale';
 import { MaintenanceTask } from '@/types';
+import { parseTaskDateLocal, taskDayKey } from '@/utils/dateParsing';
+import { getDateStatus } from '@/utils/tasks/style';
 
 interface TimelineViewProps {
   currentDate: Date;
@@ -33,16 +34,18 @@ export default function TimelineView({
   tasks,
   instruments,
   onSelectEvent,
-  onNavigate: _onNavigate, // eslint-disable-line @typescript-eslint/no-unused-vars
+  onNavigate: _onNavigate,
 }: TimelineViewProps) {
+  // onNavigate reserved for future enhancements
+  void _onNavigate;
   const [weekOffset, setWeekOffset] = useState(0);
 
   const weekRange = useMemo(() => {
     const weekStart = startOfWeek(addWeeks(currentDate, weekOffset), {
-      locale: ko,
+      locale: enUS,
     });
     const weekEnd = endOfWeek(addWeeks(currentDate, weekOffset), {
-      locale: ko,
+      locale: enUS,
     });
     return { weekStart, weekEnd };
   }, [currentDate, weekOffset]);
@@ -54,50 +57,79 @@ export default function TimelineView({
     });
   }, [weekRange]);
 
+  // FIXED: Build dayKey → tasks map once (O(N) instead of O(7 * N))
+  // FIXED: Use parseTaskDateLocal to avoid timezone shifts
   const tasksByDay = useMemo(() => {
-    const tasksMap = new Map<string, MaintenanceTask[]>();
+    const map = new Map<string, MaintenanceTask[]>();
 
-    days.forEach(day => {
-      const dayKey = format(day, 'yyyy-MM-dd');
-      const dayTasks = tasks.filter(task => {
-        const taskDate =
-          task.scheduled_date || task.due_date || task.personal_due_date;
-        if (!taskDate) return false;
-        try {
-          const taskDateObj = parseISO(taskDate);
-          return isSameDay(taskDateObj, day);
-        } catch {
-          return false;
-        }
-      });
-      tasksMap.set(dayKey, dayTasks);
-    });
+    // Build map of all tasks by day key
+    for (const task of tasks) {
+      const raw =
+        task.scheduled_date || task.due_date || task.personal_due_date;
+      if (!raw) continue;
 
-    return tasksMap;
-  }, [days, tasks]);
+      const key = taskDayKey(raw);
+      const arr = map.get(key) ?? [];
+      arr.push(task);
+      map.set(key, arr);
+    }
+
+    // Keep only visible week days (optional optimization)
+    const visibleKeys = new Set(days.map(d => format(d, 'yyyy-MM-dd')));
+    for (const k of Array.from(map.keys())) {
+      if (!visibleKeys.has(k)) map.delete(k);
+    }
+
+    return map;
+  }, [tasks, days]);
 
   const hours = useMemo(() => {
     return Array.from({ length: 24 }, (_, i) => i);
   }, []);
 
   const getTaskColor = (task: MaintenanceTask): string => {
-    if (task.status === 'completed') return 'bg-green-500';
-    if (task.status === 'cancelled') return 'bg-gray-400';
-    if (task.priority === 'urgent') return 'bg-red-500';
-    if (task.priority === 'high') return 'bg-orange-500';
-    if (task.priority === 'medium') return 'bg-yellow-500';
-    if (task.priority === 'low') return 'bg-blue-500';
-    return 'bg-gray-500';
+    const dateStatus = getDateStatus(task);
+    const isOverdue = dateStatus.status === 'overdue';
+    const status = (task.status ?? '').toLowerCase();
+
+    // Completed/Cancelled: Gray
+    if (status === 'completed' || status === 'cancelled') {
+      return 'bg-gray-400';
+    }
+
+    // Overdue: Red
+    if (isOverdue) {
+      return 'bg-red-500';
+    }
+
+    // In Progress: Blue
+    if (status === 'in_progress') {
+      return 'bg-blue-500';
+    }
+
+    // Scheduled/Pending: Green
+    return 'bg-emerald-500';
   };
 
+  // FIXED: Only extract time if task date has time component (timestamp)
+  // For date-only strings, use default 9:00 AM for visibility
   const getTaskTime = (
     task: MaintenanceTask
   ): { hour: number; minute: number } => {
     const taskDate =
       task.scheduled_date || task.due_date || task.personal_due_date;
     if (!taskDate) return { hour: 9, minute: 0 };
+
+    // Check if date string includes time component
+    const hasTime = taskDate.includes('T');
+    if (!hasTime) {
+      // Date-only: use default time
+      return { hour: 9, minute: 0 };
+    }
+
     try {
-      const date = parseISO(taskDate);
+      // Has time: extract from parsed date
+      const date = parseTaskDateLocal(taskDate);
       return { hour: date.getHours(), minute: date.getMinutes() };
     } catch {
       return { hour: 9, minute: 0 };
@@ -109,8 +141,8 @@ export default function TimelineView({
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            {format(weekRange.weekStart, 'yyyy년 M월 d일', { locale: ko })} -{' '}
-            {format(weekRange.weekEnd, 'M월 d일', { locale: ko })}
+            {format(weekRange.weekStart, 'MMMM d, yyyy')} -{' '}
+            {format(weekRange.weekEnd, 'MMMM d, yyyy')}
           </h2>
         </div>
         <div className="flex gap-2">
@@ -118,19 +150,19 @@ export default function TimelineView({
             onClick={() => setWeekOffset(prev => prev - 1)}
             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
           >
-            이전 주
+            Previous Week
           </button>
           <button
             onClick={() => setWeekOffset(0)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            오늘
+            Today
           </button>
           <button
             onClick={() => setWeekOffset(prev => prev + 1)}
             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
           >
-            다음 주
+            Next Week
           </button>
         </div>
       </div>
@@ -141,7 +173,7 @@ export default function TimelineView({
             {/* Header */}
             <div className="grid grid-cols-8 border-b border-gray-200 bg-gray-50">
               <div className="p-3 text-sm font-semibold text-gray-700 border-r border-gray-200">
-                시간
+                Time
               </div>
               {days.map(day => {
                 const isToday = isSameDay(day, new Date());
@@ -152,9 +184,9 @@ export default function TimelineView({
                       isToday ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
                     }`}
                   >
-                    <div>{format(day, 'EEE', { locale: ko })}</div>
+                    <div>{format(day, 'EEE', { locale: enUS })}</div>
                     <div className="text-xs mt-1">
-                      {format(day, 'M/d', { locale: ko })}
+                      {format(day, 'M/d', { locale: enUS })}
                     </div>
                   </div>
                 );

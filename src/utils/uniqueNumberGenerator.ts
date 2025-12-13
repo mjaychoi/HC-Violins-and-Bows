@@ -37,10 +37,13 @@ function getInstrumentPrefix(type: string | null): string {
   return 'IN'; // 기본값
 }
 
+export const INSTRUMENT_SERIAL_REGEX = /^[A-Z]{2}\d{7}$/;
+
+const normalizePrefix = (value: string) => value.trim().toUpperCase();
+
 /**
  * 악기 고유 번호 생성
- * 형식: {접두사}{숫자} (예: VI001, BO123)
- * 또는 사용자 정의 형식 (예: mj123)
+ * 형식: {접두사}{숫자7자리} (예: VI0000001, BO0000123)
  */
 export function generateInstrumentSerialNumber(
   type: string | null,
@@ -50,22 +53,71 @@ export function generateInstrumentSerialNumber(
 
   // 기존 번호에서 같은 접두사를 가진 번호 찾기
   const samePrefixNumbers = existingNumbers
-    .filter(num => num && num.toUpperCase().startsWith(prefix))
+    .filter(num => num && normalizePrefix(num).startsWith(prefix))
     .map(num => {
-      // 숫자 부분 추출
-      const match = num.match(/\d+$/);
+      const match = normalizeInstrumentSerial(num).match(/\d+$/);
       return match ? parseInt(match[0], 10) : 0;
     });
 
-  // 다음 번호 계산
   const maxNumber =
     samePrefixNumbers.length > 0 ? Math.max(...samePrefixNumbers) : 0;
   const nextNumber = maxNumber + 1;
 
-  // 3자리 숫자로 포맷팅 (예: 001, 123)
-  const paddedNumber = nextNumber.toString().padStart(3, '0');
+  const paddedNumber = nextNumber.toString().padStart(7, '0');
 
   return `${prefix}${paddedNumber}`;
+}
+
+/**
+ * 악기 고유 번호 정규화
+ * - 공백 제거, 대문자 변환
+ * - 접두사(2글자)+숫자(1~7자리)면 숫자를 7자리 zero-pad
+ */
+export function normalizeInstrumentSerial(
+  number: string | null | undefined
+): string {
+  if (!number) return '';
+  const trimmed = number.trim().toUpperCase();
+  const match = trimmed.match(/^([A-Z]{2})(\d{1,7})$/);
+  if (!match) return trimmed;
+
+  const [, prefix, digits] = match;
+  return `${prefix}${digits.padStart(7, '0')}`;
+}
+
+export function validateInstrumentSerial(
+  serial: string | null | undefined,
+  existingNumbers: string[] = [],
+  currentNumber?: string | null
+): { valid: boolean; error?: string; normalizedSerial?: string } {
+  const normalized = normalizeInstrumentSerial(serial);
+
+  if (!normalized) {
+    return { valid: false, error: 'Serial number is required.' };
+  }
+
+  if (!INSTRUMENT_SERIAL_REGEX.test(normalized)) {
+    return {
+      valid: false,
+      error:
+        'Serial number must match pattern AA0000000 (2 letters + 7 digits).',
+    };
+  }
+
+  const normalizedCurrent = normalizeInstrumentSerial(currentNumber);
+  const normalizedExisting = existingNumbers.map(n =>
+    normalizeInstrumentSerial(n)
+  );
+
+  const isDuplicate = normalizedExisting.some(
+    num => num === normalized && num !== normalizedCurrent
+  );
+
+  if (isDuplicate) {
+    return { valid: false, error: 'Serial number is already in use.' };
+  }
+
+  return { valid: true, normalizedSerial: normalized };
 }
 
 /**

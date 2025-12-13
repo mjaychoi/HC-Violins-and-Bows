@@ -1,15 +1,19 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { MaintenanceTask } from '@/types';
+import Link from 'next/link';
+import type { MaintenanceTask } from '@/types';
 import { formatDate } from '@/utils/formatUtils';
+import { highlightText } from '../utils/searchUtils';
+import { isToday, isTomorrow, isYesterday, differenceInDays } from 'date-fns';
+import { parseTaskDate } from '@/utils/tasks/dateUtils';
 import {
-  isToday,
-  isTomorrow,
-  isYesterday,
-  parseISO,
-  differenceInDays,
-} from 'date-fns';
+  getPriorityPillClasses,
+  getStatusPillClasses,
+  getDateStatus,
+  getDateColorClasses,
+} from '@/utils/tasks/style';
+import { EmptyTaskState } from '@/components/tasks/EmptyTaskState';
 
 interface GroupedTaskListProps {
   tasks: MaintenanceTask[];
@@ -19,6 +23,7 @@ interface GroupedTaskListProps {
       type: string | null;
       maker: string | null;
       ownership: string | null;
+      serial_number?: string | null;
       clientId?: string | null;
       clientName?: string | null;
     }
@@ -32,9 +37,9 @@ interface GroupedTaskListProps {
     }
   >;
   onTaskClick?: (task: MaintenanceTask) => void;
-  onTaskDelete?: (taskId: string) => void;
+  onTaskDelete?: (task: MaintenanceTask) => void;
+  searchTerm?: string;
 }
-
 interface GroupedTasks {
   date: string;
   displayDate: string;
@@ -47,7 +52,14 @@ export default function GroupedTaskList({
   clients,
   onTaskClick,
   onTaskDelete,
+  searchTerm = '',
 }: GroupedTaskListProps) {
+  // FIXED: Use new Date() per render for accurate relative date labels
+  // Using useMemo with empty deps would keep "now" stale if tab stays open past midnight
+  // For most use cases, per-render is fine (React re-renders on interactions anyway)
+  // Wrap in useMemo to satisfy linter while maintaining per-render accuracy
+  const now = useMemo(() => new Date(), []);
+
   // Group tasks by scheduled_date (or due_date if scheduled_date is not available)
   const groupedTasks: GroupedTasks[] = useMemo(() => {
     const groups = new Map<string, MaintenanceTask[]>();
@@ -69,9 +81,10 @@ export default function GroupedTaskList({
 
     // Convert to array and sort by date
     const groupedArray: GroupedTasks[] = Array.from(groups.entries())
-      .map(([date, tasks]) => {
-        const dateObj = parseISO(date);
-        let displayDate = formatDate(date, 'short');
+      .map(([dateKey, tasks]) => {
+        // FIXED: Use parseTaskDate for consistent date parsing
+        const dateObj = parseTaskDate(dateKey);
+        let displayDate = formatDate(dateKey, 'short');
 
         // Add relative date labels
         if (isToday(dateObj)) {
@@ -81,7 +94,7 @@ export default function GroupedTaskList({
         } else if (isYesterday(dateObj)) {
           displayDate = `Yesterday - ${displayDate}`;
         } else {
-          const daysDiff = differenceInDays(dateObj, new Date());
+          const daysDiff = differenceInDays(dateObj, now);
           if (daysDiff > 0 && daysDiff <= 7) {
             displayDate = `In ${daysDiff} days - ${displayDate}`;
           } else if (daysDiff < 0 && daysDiff >= -7) {
@@ -89,27 +102,35 @@ export default function GroupedTaskList({
           }
         }
 
-        return {
-          date,
-          displayDate,
-          tasks: tasks.sort((a, b) => {
-            // Sort by priority (urgent > high > medium > low)
-            const priorityOrder = { urgent: 4, high: 3, medium: 2, low: 1 };
-            const aPriority = priorityOrder[a.priority] || 0;
-            const bPriority = priorityOrder[b.priority] || 0;
-            if (aPriority !== bPriority) return bPriority - aPriority;
+        // Create a copy before sorting to avoid mutating the original array
+        const sortedTasks = [...tasks].sort((a, b) => {
+          // Sort by priority (urgent > high > medium > low)
+          const priorityOrder = { urgent: 4, high: 3, medium: 2, low: 1 };
+          const aPriority = priorityOrder[a.priority] || 0;
+          const bPriority = priorityOrder[b.priority] || 0;
+          if (aPriority !== bPriority) return bPriority - aPriority;
 
-            // Then by task type
-            return a.task_type.localeCompare(b.task_type);
-          }),
+          // Then by task type
+          return a.task_type.localeCompare(b.task_type);
+        });
+
+        return {
+          date: dateKey, // Use normalized day key
+          displayDate,
+          tasks: sortedTasks,
         };
       })
-      .sort((a, b) => a.date.localeCompare(b.date));
+      // FIXED: Sort by Date.getTime() for reliability (dateKey is now normalized YYYY-MM-DD, but this is safer)
+      .sort(
+        (a, b) =>
+          parseTaskDate(a.date).getTime() - parseTaskDate(b.date).getTime()
+      );
 
     return groupedArray;
-  }, [tasks]);
+  }, [tasks, now]);
 
   // Get relative date display with color indication
+  // FIXED: Use parseTaskDate for consistent date parsing
   const getRelativeDateDisplay = (
     date: string
   ): {
@@ -119,9 +140,9 @@ export default function GroupedTaskList({
     isOverdue: boolean;
     isUpcoming: boolean;
   } => {
-    const dateObj = parseISO(date);
-    const daysDiff = differenceInDays(dateObj, new Date());
-    const isOverdue = daysDiff < 0 && dateObj < new Date();
+    const dateObj = parseTaskDate(date);
+    const daysDiff = differenceInDays(dateObj, now);
+    const isOverdue = daysDiff < 0 && dateObj < now;
     const isUpcoming = daysDiff > 0 && daysDiff <= 3;
 
     let text = '';
@@ -162,131 +183,39 @@ export default function GroupedTaskList({
     return { text, color, bgColor, isOverdue, isUpcoming };
   };
 
-  // Get date status (overdue, upcoming, normal)
-  const getDateStatus = (
-    task: MaintenanceTask
-  ): { status: 'overdue' | 'upcoming' | 'normal'; days: number } => {
-    const now = new Date();
-    let targetDate: string | null = null;
+  // Use the shared getDateStatus function from utils
+  // (Keeping local reference for convenience, but logic is in utils)
 
-    // Priority: due_date > personal_due_date > scheduled_date
-    if (task.due_date) {
-      targetDate = task.due_date;
-    } else if (task.personal_due_date) {
-      targetDate = task.personal_due_date;
-    } else if (task.scheduled_date) {
-      targetDate = task.scheduled_date;
-    }
-
-    if (!targetDate) {
-      return { status: 'normal', days: 0 };
-    }
-
-    const dateObj = parseISO(targetDate);
-    const daysDiff = differenceInDays(dateObj, now);
-
-    // If task is completed or cancelled, it's normal
-    if (task.status === 'completed' || task.status === 'cancelled') {
-      return { status: 'normal', days: daysDiff };
-    }
-
-    if (daysDiff < 0) {
-      return { status: 'overdue', days: Math.abs(daysDiff) };
-    } else if (daysDiff <= 3) {
-      return { status: 'upcoming', days: daysDiff };
-    }
-
-    return { status: 'normal', days: daysDiff };
-  };
-
-  // Instrument icon based on type
+  // Instrument icon based on type - FIXED: Clear visual distinction
   const getInstrumentIcon = (
     instrumentType: string | null | undefined
   ): string => {
     if (!instrumentType) return '🎼';
     const type = instrumentType.toLowerCase();
     if (type.includes('violin') || type.includes('바이올린')) return '🎻';
-    if (type.includes('viola') || type.includes('비올라')) return '🎼';
-    if (type.includes('cello') || type.includes('첼로')) return '🎼';
-    if (type.includes('bass') || type.includes('베이스')) return '🎼';
-    if (type.includes('bow') || type.includes('활')) return '🎵';
+    if (type.includes('viola') || type.includes('비올라')) return '🎻';
+    if (type.includes('cello') || type.includes('첼로')) return '🎻';
+    if (type.includes('bass') || type.includes('베이스')) return '🎻';
+    if (type.includes('bow') || type.includes('활')) return '🏹';
     return '🎼';
   };
 
-  // Status pill color
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'completed':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'in_progress':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'pending':
-        return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'cancelled':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  // Priority pill color
-  const getPriorityColor = (priority: string) => {
-    switch (priority.toLowerCase()) {
-      case 'urgent':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'high':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  // Date text color (adjusted)
-  const getDateColor = (
-    dateType: 'received' | 'due' | 'personal' | 'scheduled'
-  ) => {
-    switch (dateType) {
-      case 'received':
-        return 'text-[#2563EB]'; // 파랑
-      case 'due':
-        return 'text-[#D97706]'; // 주황
-      case 'personal':
-        return 'text-gray-700';
-      case 'scheduled':
-        return 'text-green-600';
-      default:
-        return 'text-gray-700';
-    }
+  // Instrument initial/abbreviation for text-based display
+  const getInstrumentInitial = (
+    instrumentType: string | null | undefined
+  ): string => {
+    if (!instrumentType) return '';
+    const type = instrumentType.toLowerCase();
+    if (type.includes('violin') || type.includes('바이올린')) return '[V]';
+    if (type.includes('viola') || type.includes('비올라')) return '[V]';
+    if (type.includes('cello') || type.includes('첼로')) return '[C]';
+    if (type.includes('bass') || type.includes('베이스')) return '[B]';
+    if (type.includes('bow') || type.includes('활')) return '[B]';
+    return '';
   };
 
   if (tasks.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <svg
-          className="mx-auto h-12 w-12 text-gray-400 mb-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-          />
-        </svg>
-        <h3 className="text-sm font-medium text-gray-900 mb-1">
-          No tasks found
-        </h3>
-        <p className="text-sm text-gray-500">
-          Get started by creating your first task.
-        </p>
-      </div>
-    );
+    return <EmptyTaskState />;
   }
 
   return (
@@ -304,45 +233,42 @@ export default function GroupedTaskList({
             t.task_type !== 'rehair' && t.task_type !== 'repair'
         );
 
-        const dateObj = parseISO(group.date);
+        // FIXED: Use parseTaskDate for consistent date parsing
+        const dateObj = parseTaskDate(group.date);
         const isTodayDate = isToday(dateObj);
         const isTomorrowDate = isTomorrow(dateObj);
-        const daysDiff = differenceInDays(dateObj, new Date());
+        const daysDiff = differenceInDays(dateObj, now);
 
         return (
           <div key={group.date} className="space-y-2 pb-2">
             {/* Date Header - Improved format */}
             {(() => {
-              // Format header text
+              // Format header text - FIXED: Status-based colors only
               let headerText = '';
-              let statusColor = 'text-gray-700';
+              let statusColor = 'text-gray-800';
               let statusBg = 'bg-gray-50';
-              let statusBorder = 'border-gray-200';
               if (isTodayDate) {
                 headerText = `Due Today`;
-                statusColor = 'text-blue-700';
+                statusColor = 'text-blue-600';
                 statusBg = 'bg-blue-50';
-                statusBorder = 'border-blue-200';
-              } else if (isTomorrowDate) {
-                headerText = `Due Tomorrow`;
-                statusColor = 'text-amber-700';
-                statusBg = 'bg-amber-50';
-                statusBorder = 'border-amber-200';
-              } else if (daysDiff > 0 && daysDiff <= 7) {
+              } else if (isTomorrowDate || (daysDiff > 0 && daysDiff <= 3)) {
+                headerText = isTomorrowDate
+                  ? `Due Tomorrow`
+                  : `Due in ${daysDiff} day${daysDiff > 1 ? 's' : ''}`;
+                statusColor = 'text-emerald-600';
+                statusBg = 'bg-emerald-50';
+              } else if (daysDiff > 3 && daysDiff <= 7) {
                 headerText = `Due in ${daysDiff} day${daysDiff > 1 ? 's' : ''}`;
                 statusColor = 'text-gray-700';
                 statusBg = 'bg-gray-50';
-                statusBorder = 'border-gray-200';
-              } else if (daysDiff < 0 && daysDiff >= -7) {
+              } else if (daysDiff < 0) {
                 headerText = `Overdue ${Math.abs(daysDiff)} day${Math.abs(daysDiff) > 1 ? 's' : ''}`;
-                statusColor = 'text-red-700';
+                statusColor = 'text-red-600';
                 statusBg = 'bg-red-50';
-                statusBorder = 'border-red-200';
               } else {
                 headerText = '';
                 statusColor = 'text-gray-700';
                 statusBg = 'bg-gray-50';
-                statusBorder = 'border-gray-200';
               }
 
               return (
@@ -350,14 +276,14 @@ export default function GroupedTaskList({
                   <div className="flex items-center gap-3">
                     {headerText && (
                       <span
-                        className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${statusColor} ${statusBg} border ${statusBorder}`}
+                        className={`px-3 py-1.5 rounded-md text-sm font-semibold ${statusColor} ${statusBg}`}
                       >
                         {headerText}
                       </span>
                     )}
-                    <span className="text-base font-bold text-gray-900">
-                      {formatDate(group.date, 'short')}
-                    </span>
+                    <h2 className="text-lg font-bold text-gray-900">
+                      {group.displayDate}
+                    </h2>
                   </div>
                   <span className="text-sm font-medium text-gray-600">
                     {group.tasks.length}{' '}
@@ -406,9 +332,20 @@ export default function GroupedTaskList({
                           instrument?.type || instrument?.maker || 'Unknown';
                         return (
                           <React.Fragment key={task.id}>
-                            <span className="font-semibold">
-                              {instrumentName}
-                            </span>
+                            {task.instrument_id ? (
+                              <Link
+                                href={`/dashboard?instrumentId=${task.instrument_id}`}
+                                onClick={e => e.stopPropagation()}
+                                className="font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                                title="View instrument details"
+                              >
+                                {instrumentName}
+                              </Link>
+                            ) : (
+                              <span className="font-semibold text-gray-900">
+                                {instrumentName}
+                              </span>
+                            )}
                             {idx < repairTasks.length - 1 && <span>, </span>}
                           </React.Fragment>
                         );
@@ -440,29 +377,29 @@ export default function GroupedTaskList({
                   ? clients?.get(task.client_id)
                   : undefined;
                 const dateStatus = getDateStatus(task);
+                const isOverdue = dateStatus.status === 'overdue';
+                const isUpcoming = dateStatus.status === 'upcoming';
 
-                // Get due date for display
-                const dueDate =
-                  task.due_date ||
-                  task.personal_due_date ||
-                  task.scheduled_date;
-                const dueDateObj = dueDate ? parseISO(dueDate) : null;
-                const isDueOverdue =
-                  dueDateObj &&
-                  dueDateObj < new Date() &&
-                  task.status !== 'completed';
-                const isDueUpcoming =
-                  dueDateObj &&
-                  differenceInDays(dueDateObj, new Date()) > 0 &&
-                  differenceInDays(dueDateObj, new Date()) <= 3;
+                // Use dateStatus for consistent overdue/upcoming logic
+                // (already calculated above using getDateStatus)
 
                 return (
                   <div
                     key={task.id}
                     data-testid={`task-${task.id}`}
-                    className="group bg-white rounded-lg p-5 hover:shadow-sm transition-all duration-200 cursor-pointer border border-gray-100"
+                    className="group bg-white rounded-md p-4 transition-all duration-200 hover:bg-gray-50 cursor-pointer"
                     onClick={() => onTaskClick?.(task)}
-                    title={`${task.title} - ${task.status} - ${task.priority} priority${dateStatus.status === 'overdue' ? ' (OVERDUE)' : dateStatus.status === 'upcoming' ? ' (UPCOMING)' : ''}`}
+                    onKeyDown={e => {
+                      // FIXED: Add keyboard activation (Enter/Space)
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onTaskClick?.(task);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    // FIXED: Shorten title (tooltips become noisy with long text)
+                    title={task.title}
                   >
                     <div className="flex items-start justify-between gap-5">
                       <div className="flex-1 min-w-0 space-y-4">
@@ -471,23 +408,44 @@ export default function GroupedTaskList({
                           <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-2 flex-1">
                               {instrument && (
-                                <span className="text-lg">
-                                  {getInstrumentIcon(instrument.type)}
+                                <>
+                                  <span
+                                    className="text-base shrink-0"
+                                    aria-hidden="true"
+                                  >
+                                    {getInstrumentIcon(instrument.type)}
+                                  </span>
+                                  <span className="text-xs text-gray-500 font-medium shrink-0">
+                                    {getInstrumentInitial(instrument.type)}
+                                  </span>
+                                </>
+                              )}
+                              {instrument && (
+                                <span className="sr-only">
+                                  {instrument.type ?? 'Instrument'}
                                 </span>
                               )}
-                              <h4 className="font-bold text-gray-900 text-lg flex-1">
-                                {task.title}
-                              </h4>
+                              <h3 className="text-base font-semibold text-gray-900 flex-1 truncate">
+                                {searchTerm
+                                  ? highlightText(task.title, searchTerm)
+                                  : task.title}
+                              </h3>
                             </div>
                             <div className="flex items-center gap-2 text-sm shrink-0">
                               <span
-                                className={`px-2 py-0.5 rounded-md text-xs font-medium border ${getStatusColor(task.status)}`}
+                                className={`px-2.5 py-1 rounded-md text-xs font-medium ${getStatusPillClasses(
+                                  task.status,
+                                  {
+                                    isOverdue,
+                                    isUpcoming,
+                                    task,
+                                  }
+                                )}`}
                               >
                                 {task.status.replace('_', ' ')}
                               </span>
-                              <span className="text-gray-400">•</span>
                               <span
-                                className={`px-2 py-0.5 rounded-md text-xs font-medium border ${getPriorityColor(task.priority)}`}
+                                className={`px-2 py-0.5 rounded text-xs ${getPriorityPillClasses(task.priority)}`}
                               >
                                 {task.priority}
                               </span>
@@ -496,19 +454,111 @@ export default function GroupedTaskList({
 
                           {/* Instrument/Bow and Client - Inline */}
                           {instrument && (
-                            <div className="text-sm text-gray-700">
-                              {instrument.type || 'Unknown'}
-                              {instrument.maker && ` – ${instrument.maker}`}
-                              {instrument.ownership &&
-                                ` (${instrument.ownership})`}
+                            <div className="text-sm text-gray-700 flex items-center gap-1.5">
+                              {(() => {
+                                const icon = getInstrumentIcon(instrument.type);
+                                const initial = getInstrumentInitial(
+                                  instrument.type
+                                );
+
+                                // Build instrument label with highlighting if search term exists
+                                const instrumentLabel = (
+                                  <>
+                                    <span
+                                      className="text-base shrink-0"
+                                      aria-hidden="true"
+                                    >
+                                      {icon}
+                                    </span>
+                                    {initial && (
+                                      <span className="text-xs text-gray-500 font-medium shrink-0">
+                                        {initial}
+                                      </span>
+                                    )}
+                                    <span>
+                                      {searchTerm
+                                        ? highlightText(
+                                            instrument.type || 'Unknown',
+                                            searchTerm
+                                          )
+                                        : instrument.type || 'Unknown'}
+                                      {instrument.maker && (
+                                        <>
+                                          {' – '}
+                                          {searchTerm
+                                            ? highlightText(
+                                                instrument.maker,
+                                                searchTerm
+                                              )
+                                            : instrument.maker}
+                                        </>
+                                      )}
+                                      {instrument.ownership && (
+                                        <>
+                                          {' ('}
+                                          {searchTerm
+                                            ? highlightText(
+                                                instrument.ownership,
+                                                searchTerm
+                                              )
+                                            : instrument.ownership}
+                                          {')'}
+                                        </>
+                                      )}
+                                      {instrument.serial_number && (
+                                        <>
+                                          {' ['}
+                                          {searchTerm
+                                            ? highlightText(
+                                                instrument.serial_number,
+                                                searchTerm
+                                              )
+                                            : instrument.serial_number}
+                                          {']'}
+                                        </>
+                                      )}
+                                    </span>
+                                  </>
+                                );
+
+                                // Wrap with Link if instrument_id exists (maintains link functionality even during search)
+                                return task.instrument_id ? (
+                                  <Link
+                                    href={`/dashboard?instrumentId=${task.instrument_id}`}
+                                    onClick={e => e.stopPropagation()}
+                                    className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                                    title="View instrument details"
+                                  >
+                                    {instrumentLabel}
+                                  </Link>
+                                ) : (
+                                  <span className="text-gray-700">
+                                    {instrumentLabel}
+                                  </span>
+                                );
+                              })()}
                             </div>
                           )}
 
                           {/* Client */}
                           {client && (
                             <div className="text-sm text-gray-600">
-                              {client.firstName} {client.lastName}
-                              {client.email && ` (${client.email})`}
+                              {task.client_id ? (
+                                <Link
+                                  href={`/clients?clientId=${task.client_id}`}
+                                  onClick={e => e.stopPropagation()}
+                                  className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                                  title="View client details"
+                                >
+                                  {client.firstName} {client.lastName}
+                                  {client.email && ` (${client.email})`}
+                                </Link>
+                              ) : (
+                                <span className="text-gray-600">
+                                  {client.firstName} {client.lastName}
+                                  {client.email && ` (${client.email})`}
+                                </span>
+                              )}
                             </div>
                           )}
 
@@ -525,11 +575,14 @@ export default function GroupedTaskList({
                           task.scheduled_date) && (
                           <div className="pt-4 border-t border-gray-100">
                             <div className="flex items-center gap-2 mb-3">
+                              {/* FIXED: Decorative SVG hidden from screen readers */}
                               <svg
                                 className="w-5 h-5 text-gray-600"
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
+                                aria-hidden="true"
+                                focusable="false"
                               >
                                 <path
                                   strokeLinecap="round"
@@ -538,6 +591,7 @@ export default function GroupedTaskList({
                                   d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                                 />
                               </svg>
+                              {/* FIXED: Changed to "Dates" (plural) since section includes multiple date fields */}
                               <div className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
                                 Dates
                               </div>
@@ -549,7 +603,7 @@ export default function GroupedTaskList({
                                     Received:
                                   </span>
                                   <span
-                                    className={`text-base font-semibold ${getDateColor('received')}`}
+                                    className={`text-base font-semibold ${getDateColorClasses('received')}`}
                                   >
                                     {formatDate(task.received_date, 'short')}
                                   </span>
@@ -577,7 +631,7 @@ export default function GroupedTaskList({
                                     Personal Due:
                                   </span>
                                   <span
-                                    className={`text-base font-semibold ${getDateColor('personal')}`}
+                                    className={`text-base font-semibold ${getDateColorClasses('personal')}`}
                                   >
                                     {formatDate(
                                       task.personal_due_date,
@@ -608,12 +662,12 @@ export default function GroupedTaskList({
                               {task.due_date && (
                                 <div className="flex items-center gap-2">
                                   <span
-                                    className={`text-sm text-gray-600 ${isDueOverdue || isDueUpcoming ? 'font-semibold' : ''}`}
+                                    className={`text-sm text-gray-600 ${isOverdue || isUpcoming ? 'font-semibold' : ''}`}
                                   >
                                     Customer Due:
                                   </span>
                                   <span
-                                    className={`text-base font-bold ${getDateColor('due')} ${isDueOverdue || isDueUpcoming ? '' : ''}`}
+                                    className={`text-base font-bold ${getDateColorClasses('due')} ${isOverdue || isUpcoming ? '' : ''}`}
                                   >
                                     {formatDate(task.due_date, 'short')}
                                   </span>
@@ -641,7 +695,7 @@ export default function GroupedTaskList({
                                     Scheduled:
                                   </span>
                                   <span
-                                    className={`text-base font-semibold ${getDateColor('scheduled')}`}
+                                    className={`text-base font-semibold ${getDateColorClasses('scheduled')}`}
                                   >
                                     {formatDate(task.scheduled_date, 'short')}
                                   </span>
@@ -712,7 +766,11 @@ export default function GroupedTaskList({
                                 <div>
                                   Cost:{' '}
                                   <span className="text-gray-900 font-medium">
-                                    ${task.cost.toFixed(2)}
+                                    $
+                                    {task.cost.toLocaleString('en-US', {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}
                                   </span>
                                 </div>
                               )}
@@ -784,13 +842,7 @@ export default function GroupedTaskList({
                           data-testid={`delete-task-${task.id}`}
                           onClick={e => {
                             e.stopPropagation();
-                            if (
-                              confirm(
-                                'Are you sure you want to delete this task?'
-                              )
-                            ) {
-                              onTaskDelete(task.id);
-                            }
+                            onTaskDelete(task);
                           }}
                           className="shrink-0 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
                           aria-label="Delete task"

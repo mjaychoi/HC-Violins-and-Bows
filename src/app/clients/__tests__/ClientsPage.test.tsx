@@ -7,9 +7,46 @@ jest.mock('next/dynamic', () => ({
   default: (importer: any) => {
     const src = String(importer);
     if (src.includes('ClientList')) {
-      // Use the mocked ClientList from '../components'
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      return require('../components').ClientList;
+      // Return the mocked ClientList component directly
+      const MockClientList = ({
+        clients,
+        onClientClick,
+        onColumnSort,
+      }: any) => (
+        <div>
+          <table role="table">
+            <thead>
+              <tr>
+                <th>
+                  <button
+                    onClick={() => onColumnSort && onColumnSort('first_name')}
+                  >
+                    Name
+                  </button>
+                </th>
+                <th>Email</th>
+                <th>Contact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients?.map((c: any) => (
+                <tr
+                  key={c.id}
+                  onClick={() => onClientClick && onClientClick(c)}
+                >
+                  <td>{`${c.first_name} ${c.last_name}`}</td>
+                  <td>{c.email}</td>
+                  <td>{c.contact_number}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {/* Simplified instrument indicator */}
+          <div>Stradivarius Violin</div>
+        </div>
+      );
+      MockClientList.displayName = 'MockClientList';
+      return MockClientList;
     }
     if (src.includes('ClientModal')) {
       return () => null;
@@ -29,18 +66,38 @@ jest.mock('@/components/common', () => ({
   SpinnerLoading: ({ message }: { message?: string }) => (
     <div data-testid="spinner-loading">{message}</div>
   ),
+  ConfirmDialog: ({ isOpen, onConfirm, onCancel, title, message }: any) =>
+    isOpen ? (
+      <div data-testid="confirm-dialog">
+        <div>{title}</div>
+        <div>{message}</div>
+        <button onClick={onConfirm} data-testid="confirm-button">
+          Confirm
+        </button>
+        <button onClick={onCancel} data-testid="cancel-button">
+          Cancel
+        </button>
+      </div>
+    ) : null,
 }));
 
-// Mock next/navigation to avoid invalid hook call for usePathname
+// Mock next/navigation to avoid invalid hook call for usePathname and useRouter
 jest.mock('next/navigation', () => ({
   usePathname: jest.fn(() => '/clients'),
+  useRouter: jest.fn(() => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    refresh: jest.fn(),
+    back: jest.fn(),
+    forward: jest.fn(),
+    prefetch: jest.fn(),
+  })),
 }));
 
 // Mock next/link to render native anchor for tests
 jest.mock('next/link', () => ({
   __esModule: true,
   default: ({ href, children, ...props }: any) => (
-    // eslint-disable-next-line jsx-a11y/anchor-is-valid
     <a href={href} {...props}>
       {children}
     </a>
@@ -52,36 +109,7 @@ jest.mock('../components', () => ({
   ClientForm: () => null,
   ClientModal: () => null,
   ClientFilters: () => <div>Filters</div>,
-  ClientList: ({ clients, onClientClick, onColumnSort }: any) => (
-    <div>
-      <table role="table">
-        <thead>
-          <tr>
-            <th>
-              <button
-                onClick={() => onColumnSort && onColumnSort('first_name')}
-              >
-                Name
-              </button>
-            </th>
-            <th>Email</th>
-            <th>Contact</th>
-          </tr>
-        </thead>
-        <tbody>
-          {clients?.map((c: any) => (
-            <tr key={c.id} onClick={() => onClientClick && onClientClick(c)}>
-              <td>{`${c.first_name} ${c.last_name}`}</td>
-              <td>{c.email}</td>
-              <td>{c.contact_number}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {/* Simplified instrument indicator */}
-      <div>Stradivarius Violin</div>
-    </div>
-  ),
+  // ClientList is now handled by next/dynamic mock above
 }));
 
 // Mock the hooks BEFORE importing the component
@@ -95,7 +123,7 @@ const mockClearAllFilters = jest.fn();
 const mockHandleColumnSort = jest.fn();
 const mockGetSortArrow = jest.fn(() => '');
 const mockGetActiveFiltersCount = jest.fn(() => 0);
-const mockFetchInstrumentRelationships = jest.fn();
+const mockFetchInstrumentRelationships = jest.fn().mockResolvedValue(undefined);
 const mockAddInstrumentRelationship = jest.fn();
 const mockRemoveInstrumentRelationship = jest.fn();
 const mockOpenClientView = jest.fn();
@@ -107,7 +135,7 @@ const mockHandleViewInputChange = jest.fn();
 const mockOpenInstrumentSearch = jest.fn();
 const mockCloseInstrumentSearch = jest.fn();
 const mockHandleInstrumentSearch = jest.fn();
-const mockFetchOwnedItems = jest.fn();
+const mockFetchOwnedItems = jest.fn().mockResolvedValue(undefined);
 const mockClearOwnedItems = jest.fn();
 
 jest.mock('../hooks', () => ({
@@ -125,8 +153,14 @@ jest.mock('../hooks', () => ({
         created_at: new Date().toISOString(),
       },
     ],
-    loading: false,
-    submitting: false,
+    loading: {
+      clients: false,
+      any: false,
+    },
+    submitting: {
+      clients: false,
+      any: false,
+    },
     createClient: mockCreateClient,
     updateClient: mockUpdateClient,
     removeClient: mockRemoveClient,
@@ -158,7 +192,7 @@ jest.mock('../hooks', () => ({
     ],
     clientsWithInstruments: new Set(['1']),
     fetchInstrumentRelationships: mockFetchInstrumentRelationships,
-    fetchAllInstrumentRelationships: jest.fn(),
+    fetchAllInstrumentRelationships: jest.fn().mockResolvedValue(undefined),
     addInstrumentRelationship: mockAddInstrumentRelationship,
     removeInstrumentRelationship: mockRemoveInstrumentRelationship,
   }),
@@ -169,6 +203,19 @@ jest.mock('../hooks', () => ({
     setShowFilters: mockSetShowFilters,
     filters: {},
     filteredClients: [
+      {
+        id: '1',
+        first_name: 'John',
+        last_name: 'Doe',
+        contact_number: '123-456-7890',
+        email: 'john@example.com',
+        tags: ['Owner'],
+        interest: 'Active',
+        note: 'Test note',
+        created_at: new Date().toISOString(),
+      },
+    ],
+    paginatedClients: [
       {
         id: '1',
         first_name: 'John',
@@ -259,6 +306,10 @@ jest.mock('@/hooks/useSidebarState', () => ({
 // Mock React hooks
 // Mock unified data hook to avoid DataContext provider requirement
 jest.mock('@/hooks/useUnifiedData', () => ({
+  useUnifiedData: jest.fn(() => {
+    // Empty function - Single Source of Truth fetcher
+    // In tests, we don't need actual fetching
+  }),
   useUnifiedClients: () => ({
     clients: [
       {
@@ -273,8 +324,14 @@ jest.mock('@/hooks/useUnifiedData', () => ({
         created_at: new Date().toISOString(),
       },
     ],
-    loading: false,
-    submitting: false,
+    loading: {
+      clients: false,
+      any: false,
+    },
+    submitting: {
+      clients: false,
+      any: false,
+    },
     createClient: mockCreateClient,
     updateClient: mockUpdateClient,
     deleteClient: mockRemoveClient,
@@ -623,7 +680,6 @@ describe('ClientsPage', () => {
       jest.doMock('next/link', () => ({
         __esModule: true,
         default: ({ href, children, ...props }: any) => (
-          // eslint-disable-next-line jsx-a11y/anchor-is-valid
           <a href={href} {...props}>
             {children}
           </a>
@@ -645,7 +701,7 @@ describe('ClientsPage', () => {
         useClientInstruments: () => ({
           instrumentRelationships: [],
           clientsWithInstruments: new Set(),
-          fetchInstrumentRelationships: mockFetchInstrumentRelationships,
+          fetchInstrumentRelationships: jest.fn().mockResolvedValue(undefined),
           fetchAllInstrumentRelationships: jest
             .fn()
             .mockResolvedValue(undefined),
@@ -711,7 +767,6 @@ describe('ClientsPage', () => {
       }));
 
       // require 동기 import
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       ClientsPageEmpty = require('../page').default;
     });
 
@@ -735,7 +790,6 @@ describe('ClientsPage', () => {
       jest.doMock('next/link', () => ({
         __esModule: true,
         default: ({ href, children, ...props }: any) => (
-          // eslint-disable-next-line jsx-a11y/anchor-is-valid
           <a href={href} {...props}>
             {children}
           </a>
@@ -744,8 +798,14 @@ describe('ClientsPage', () => {
       jest.doMock('@/hooks/useUnifiedData', () => ({
         useUnifiedClients: () => ({
           clients: [],
-          loading: true,
-          submitting: false,
+          loading: {
+            clients: true,
+            any: true,
+          },
+          submitting: {
+            clients: false,
+            any: false,
+          },
           createClient: mockCreateClient,
           updateClient: mockUpdateClient,
           deleteClient: mockRemoveClient,
@@ -757,7 +817,7 @@ describe('ClientsPage', () => {
         useClientInstruments: () => ({
           instrumentRelationships: [],
           clientsWithInstruments: new Set(),
-          fetchInstrumentRelationships: mockFetchInstrumentRelationships,
+          fetchInstrumentRelationships: jest.fn().mockResolvedValue(undefined),
           fetchAllInstrumentRelationships: jest
             .fn()
             .mockResolvedValue(undefined),
@@ -822,7 +882,6 @@ describe('ClientsPage', () => {
         }),
       }));
 
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       ClientsPageLoading = require('../page').default;
     });
 
@@ -831,5 +890,35 @@ describe('ClientsPage', () => {
     });
 
     expect(screen.getByText('Loading clients...')).toBeInTheDocument();
+  });
+
+  describe('Delete confirmation flow', () => {
+    it('should use ConfirmDialog instead of window.confirm for delete', async () => {
+      const mockConfirm = jest.spyOn(window, 'confirm');
+      mockConfirm.mockReturnValue(false);
+
+      render(<ClientsPage />);
+
+      await act(async () => {
+        await flushPromises();
+      });
+
+      // Verify window.confirm was never called (we use ConfirmDialog instead)
+      expect(mockConfirm).not.toHaveBeenCalled();
+
+      mockConfirm.mockRestore();
+    });
+
+    it('should render ConfirmDialog component in page structure', async () => {
+      render(<ClientsPage />);
+
+      await act(async () => {
+        await flushPromises();
+      });
+
+      // ConfirmDialog mock is available (even if not visible)
+      // The component should support showing it when delete is requested
+      expect(screen.queryByTestId('confirm-dialog')).not.toBeInTheDocument();
+    });
   });
 });

@@ -21,6 +21,41 @@ const baseConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['date-fns', 'react-window'],
   },
+  // Webpack config only applies when NOT using Turbopack
+  webpack: (config, { isServer }) => {
+    // Optimize bundle size: prevent client-side bundling of server-only dependencies
+    if (!isServer) {
+      // Externalize server-only packages for client bundle
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+
+      // Optimize large dependencies that come from Supabase SDK chain
+      // tr46/mappingTable.json is part of whatwg-url → tr46 dependency chain
+      // These are URL parsing utilities that may not be needed in all client contexts
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          ...config.optimization.splitChunks,
+          cacheGroups: {
+            ...config.optimization.splitChunks?.cacheGroups,
+            // Isolate Supabase SDK and its dependencies into separate chunk
+            supabase: {
+              test: /[\\/]node_modules[\\/](@supabase|tr46|whatwg-url)[\\/]/,
+              name: 'supabase',
+              chunks: 'all',
+              priority: 30,
+              reuseExistingChunk: true,
+            },
+          },
+        },
+      };
+    }
+    return config;
+  },
   async headers() {
     return [
       {

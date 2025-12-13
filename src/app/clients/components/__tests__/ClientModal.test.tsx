@@ -3,6 +3,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ClientModal from '../ClientModal';
 import { Client, ClientInstrument, Instrument } from '@/types';
+import { useState } from 'react';
+import { shouldShowInterestDropdown } from '@/policies/interest';
+import { ClientViewFormData } from '../../types';
 
 const mockClient: Client = {
   id: '1',
@@ -77,7 +80,6 @@ const mockProps = {
   instrumentRelationships: mockInstrumentRelationships,
   onAddInstrument: jest.fn(),
   onRemoveInstrument: jest.fn(),
-  onSearchInstruments: jest.fn(),
   searchResults: mockSearchResults,
   isSearchingInstruments: false,
   showInstrumentSearch: false,
@@ -86,26 +88,61 @@ const mockProps = {
   onInstrumentSearchTermChange: jest.fn(),
 };
 
+function ModalWithState(props: Partial<typeof mockProps> = {}) {
+  const [viewFormData, setViewFormData] = useState<ClientViewFormData>({
+    last_name: mockClient.last_name || '',
+    first_name: mockClient.first_name || '',
+    contact_number: mockClient.contact_number || '',
+    email: mockClient.email || '',
+    tags: mockClient.tags || [],
+    interest: mockClient.interest || '',
+    note: mockClient.note || '',
+  });
+
+  return (
+    <ClientModal
+      {...mockProps}
+      {...props}
+      client={props.client || mockClient}
+      viewFormData={viewFormData}
+      showInterestDropdown={shouldShowInterestDropdown(viewFormData.tags)}
+      onViewInputChange={e => {
+        const { name, value } = e.target as HTMLInputElement;
+        setViewFormData((prev: ClientViewFormData) => ({
+          ...prev,
+          [name]: value,
+        }));
+      }}
+      onUpdateViewFormData={(updates: Partial<ClientViewFormData>) => {
+        setViewFormData((prev: ClientViewFormData) => ({
+          ...prev,
+          ...updates,
+        }));
+      }}
+    />
+  );
+}
+
 describe('ClientModal', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it('renders modal when open', () => {
-    render(<ClientModal {...mockProps} />);
+    render(<ModalWithState />);
 
     expect(screen.getByText('John Doe')).toBeInTheDocument();
     expect(screen.getByText('123-456-7890')).toBeInTheDocument();
   });
 
   it('does not render modal when closed', () => {
-    render(<ClientModal {...mockProps} isOpen={false} />);
+    render(<ModalWithState isOpen={false} />);
 
     expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
   });
 
   it('handles close button click', () => {
-    const { container } = render(<ClientModal {...mockProps} />);
+    const { container } = render(<ModalWithState />);
 
     // 헤더의 우측 닫기 버튼은 aria-label이 없어 클래스 셀렉터로 조회
     const closeButton = container.querySelector(
@@ -118,7 +155,7 @@ describe('ClientModal', () => {
   });
 
   it('shows edit mode when editing', () => {
-    render(<ClientModal {...mockProps} isEditing={true} />);
+    render(<ModalWithState isEditing={true} />);
 
     expect(screen.getByDisplayValue('John')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Doe')).toBeInTheDocument();
@@ -126,13 +163,13 @@ describe('ClientModal', () => {
   });
 
   it('shows view mode when not editing', () => {
-    render(<ClientModal {...mockProps} isEditing={false} />);
+    render(<ModalWithState isEditing={false} />);
 
     expect(screen.getByText('John Doe')).toBeInTheDocument();
   });
 
   it('handles edit button click', () => {
-    render(<ClientModal {...mockProps} />);
+    render(<ModalWithState />);
 
     const editButton = screen.getByText('Edit');
     fireEvent.click(editButton);
@@ -141,7 +178,7 @@ describe('ClientModal', () => {
   });
 
   it('handles save button click', async () => {
-    render(<ClientModal {...mockProps} isEditing={true} />);
+    render(<ModalWithState isEditing={true} />);
 
     const saveButton = screen.getByText('Save Changes');
     fireEvent.click(saveButton);
@@ -152,7 +189,7 @@ describe('ClientModal', () => {
   });
 
   it('handles cancel button click', () => {
-    render(<ClientModal {...mockProps} isEditing={true} />);
+    render(<ModalWithState isEditing={true} />);
 
     const cancelButton = screen.getByText('Cancel');
     fireEvent.click(cancelButton);
@@ -161,7 +198,7 @@ describe('ClientModal', () => {
   });
 
   it('handles delete button click', () => {
-    render(<ClientModal {...mockProps} />);
+    render(<ModalWithState />);
 
     const deleteButton = screen.getByText('Delete');
     fireEvent.click(deleteButton);
@@ -170,7 +207,7 @@ describe('ClientModal', () => {
   });
 
   it('shows instrument relationships', () => {
-    render(<ClientModal {...mockProps} />);
+    render(<ModalWithState />);
 
     expect(screen.getByText('Stradivari - Violin')).toBeInTheDocument();
     // "1700 • Interested" 같이 렌더링되므로 텍스트 포함 조건으로 확인
@@ -180,7 +217,7 @@ describe('ClientModal', () => {
   });
 
   it('handles instrument search toggle', () => {
-    render(<ClientModal {...mockProps} />);
+    render(<ModalWithState />);
 
     const searchButton = screen.getByText('Add Instrument');
     fireEvent.click(searchButton);
@@ -189,7 +226,7 @@ describe('ClientModal', () => {
   });
 
   it('shows instrument search when enabled', () => {
-    render(<ClientModal {...mockProps} showInstrumentSearch={true} />);
+    render(<ModalWithState showInstrumentSearch={true} />);
 
     expect(
       screen.getByPlaceholderText('Search instruments...')
@@ -197,7 +234,7 @@ describe('ClientModal', () => {
   });
 
   it('handles instrument search input', () => {
-    render(<ClientModal {...mockProps} showInstrumentSearch={true} />);
+    render(<ModalWithState showInstrumentSearch={true} />);
 
     const searchInput = screen.getByPlaceholderText('Search instruments...');
     fireEvent.change(searchInput, { target: { value: 'Stradivari' } });
@@ -208,14 +245,14 @@ describe('ClientModal', () => {
   });
 
   it('shows search results', () => {
-    render(<ClientModal {...mockProps} showInstrumentSearch={true} />);
+    render(<ModalWithState showInstrumentSearch={true} />);
 
     expect(screen.getByText('Guarneri')).toBeInTheDocument();
     expect(screen.getByText(/Violin\s*\(\s*1750\s*\)/)).toBeInTheDocument();
   });
 
   it('handles adding instrument', () => {
-    render(<ClientModal {...mockProps} showInstrumentSearch={true} />);
+    render(<ModalWithState showInstrumentSearch={true} />);
 
     const addButton = screen.getByText('Add');
     fireEvent.click(addButton);
@@ -224,7 +261,7 @@ describe('ClientModal', () => {
   });
 
   it('handles removing instrument relationship', () => {
-    render(<ClientModal {...mockProps} />);
+    render(<ModalWithState />);
 
     const removeButton = screen.getByText('Remove');
     fireEvent.click(removeButton);
@@ -233,32 +270,32 @@ describe('ClientModal', () => {
   });
 
   it('shows loading state when submitting', () => {
-    render(<ClientModal {...mockProps} isEditing={true} submitting={true} />);
+    render(<ModalWithState isEditing={true} submitting={true} />);
 
     const saveButton = screen.getByText('Saving...');
     expect(saveButton).toBeDisabled();
   });
 
   it('shows client tags', () => {
-    render(<ClientModal {...mockProps} />);
+    render(<ModalWithState />);
 
     expect(screen.getByText('Musician')).toBeInTheDocument();
   });
 
   it('shows client interest', () => {
-    render(<ClientModal {...mockProps} />);
+    render(<ModalWithState />);
 
     expect(screen.getByText('Active')).toBeInTheDocument();
   });
 
   it('shows client notes', () => {
-    render(<ClientModal {...mockProps} />);
+    render(<ModalWithState />);
 
     expect(screen.getByText('Test client')).toBeInTheDocument();
   });
 
   it('handles empty instrument relationships', () => {
-    render(<ClientModal {...mockProps} instrumentRelationships={[]} />);
+    render(<ModalWithState instrumentRelationships={[]} />);
 
     // 컴포넌트는 'No instrument connections' 문구를 출력함
     expect(screen.getByText('No instrument connections')).toBeInTheDocument();
@@ -266,8 +303,7 @@ describe('ClientModal', () => {
 
   it('shows search loading state', () => {
     const { container } = render(
-      <ClientModal
-        {...mockProps}
+      <ModalWithState
         showInstrumentSearch={true}
         isSearchingInstruments={true}
       />
@@ -275,5 +311,77 @@ describe('ClientModal', () => {
 
     // 로딩 텍스트 대신 스피너가 표시됨(animate-spin 클래스)
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+  });
+
+  it('handles checkbox input change safely', () => {
+    render(<ModalWithState isEditing={true} />);
+
+    const tagsCheckbox = screen.getByLabelText('Owner');
+    // 초기에는 체크되지 않음 (mockClient의 tags는 ['Musician'])
+    expect(tagsCheckbox).not.toBeChecked();
+
+    fireEvent.click(tagsCheckbox);
+
+    // 체크박스 상태 변경이 안전하게 처리되어야 함
+    // (타입 안전성 테스트 - handleViewInputChange에서 'type' in target 체크로 안전하게 처리)
+    // 실제 상태 변경은 클라이언트의 tags 배열 업데이트에 따라 다르므로, 클릭만 테스트
+    expect(tagsCheckbox).toBeInTheDocument();
+  });
+
+  it('handles text input change safely', () => {
+    render(<ModalWithState isEditing={true} />);
+
+    const firstNameInput = screen.getByDisplayValue('John');
+    fireEvent.change(firstNameInput, { target: { value: 'Jane' } });
+
+    // 텍스트 입력이 안전하게 처리되어야 함
+    expect(firstNameInput).toHaveValue('Jane');
+  });
+
+  it('handles textarea input change safely', () => {
+    render(<ModalWithState isEditing={true} />);
+
+    const noteTextarea = screen.getByDisplayValue('Test client');
+    fireEvent.change(noteTextarea, { target: { value: 'Updated note' } });
+
+    // Textarea 입력이 안전하게 처리되어야 함 (type 체크 없이 value만 사용)
+    expect(noteTextarea).toHaveValue('Updated note');
+  });
+
+  it('handles select input change safely', () => {
+    // Interest 드롭다운이 보이도록 tags 설정
+    const propsWithTags = {
+      ...mockProps,
+      client: {
+        ...mockProps.client,
+        tags: ['Musician'], // Interest 드롭다운 표시를 위한 태그
+      },
+    };
+    const { container } = render(
+      <ModalWithState client={propsWithTags.client} isEditing={true} />
+    );
+
+    // name="interest"인 select 요소를 찾음 (name 속성 사용)
+    const interestSelect = container.querySelector(
+      'select[name="interest"]'
+    ) as HTMLSelectElement;
+    expect(interestSelect).toBeInTheDocument();
+    expect(interestSelect).toHaveValue('Active');
+
+    fireEvent.change(interestSelect, { target: { value: 'Passive' } });
+
+    // Select 입력이 안전하게 처리되어야 함
+    expect(interestSelect).toHaveValue('Passive');
+  });
+
+  it('handles tags using CLIENT_TAG_OPTIONS constant', () => {
+    render(<ModalWithState isEditing={true} />);
+
+    // 상수에서 정의된 모든 태그 옵션이 표시되어야 함
+    expect(screen.getByLabelText('Owner')).toBeInTheDocument();
+    expect(screen.getByLabelText('Musician')).toBeInTheDocument();
+    expect(screen.getByLabelText('Dealer')).toBeInTheDocument();
+    expect(screen.getByLabelText('Collector')).toBeInTheDocument();
+    expect(screen.getByLabelText('Other')).toBeInTheDocument();
   });
 });

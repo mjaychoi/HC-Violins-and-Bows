@@ -1,5 +1,6 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { Client, Instrument, ClientInstrument } from '@/types';
 import {
   getTagColor,
@@ -7,7 +8,10 @@ import {
   formatClientName,
   formatClientContact,
 } from '../utils';
-import { useEscapeKey } from '@/hooks/useEscapeKey';
+import { useOutsideClose } from '@/hooks/useOutsideClose';
+import ClientTagSelector from './ClientTagSelector';
+import InterestSelector from './InterestSelector';
+import { ClientRelationshipType, ClientViewFormData } from '../types';
 
 interface ClientModalProps {
   isOpen: boolean;
@@ -22,16 +26,23 @@ interface ClientModalProps {
   instrumentRelationships: ClientInstrument[];
   onAddInstrument: (
     instrumentId: string,
-    relationshipType: ClientInstrument['relationship_type']
+    relationshipType: ClientRelationshipType
   ) => Promise<void>;
   onRemoveInstrument: (relationshipId: string) => Promise<void>;
-  onSearchInstruments: (searchTerm: string) => void;
   searchResults: Instrument[];
   isSearchingInstruments: boolean;
   showInstrumentSearch: boolean;
   onToggleInstrumentSearch: () => void;
   instrumentSearchTerm: string;
   onInstrumentSearchTermChange: (term: string) => void;
+  viewFormData: ClientViewFormData;
+  showInterestDropdown: boolean;
+  onViewInputChange: (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >
+  ) => void;
+  onUpdateViewFormData: (updates: Partial<ClientViewFormData>) => void;
 }
 
 export default function ClientModal({
@@ -47,68 +58,36 @@ export default function ClientModal({
   instrumentRelationships,
   onAddInstrument,
   onRemoveInstrument,
-  onSearchInstruments,
   searchResults,
   isSearchingInstruments,
   showInstrumentSearch,
   onToggleInstrumentSearch,
   instrumentSearchTerm,
   onInstrumentSearchTermChange,
+  viewFormData,
+  showInterestDropdown,
+  onViewInputChange,
+  onUpdateViewFormData,
 }: ClientModalProps) {
-  // Close modal with ESC key
-  useEscapeKey(onClose, isOpen);
-
-  const [viewFormData, setViewFormData] = useState({
-    last_name: '',
-    first_name: '',
-    contact_number: '',
-    email: '',
-    tags: [] as string[],
-    interest: '',
-    note: '',
+  // Close modal with ESC key and outside click
+  const modalRef = useRef<HTMLDivElement>(null);
+  useOutsideClose(modalRef, {
+    isOpen,
+    onClose,
   });
 
-  const [showInterestDropdown, setShowInterestDropdown] = useState(false);
-
-  const handleViewInputChange = (
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-    >
-  ) => {
-    const { name, value, type, checked } = e.target as HTMLInputElement;
-    setViewFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
-  };
+  const filteredInstrumentRelationships = useMemo(
+    () =>
+      instrumentRelationships.filter(
+        rel => rel.client_id === client?.id && rel.instrument_id
+      ),
+    [instrumentRelationships, client?.id]
+  );
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     await onSave(viewFormData);
   };
-
-  // Update form data when client changes
-  useEffect(() => {
-    if (client) {
-      setViewFormData({
-        last_name: client.last_name || '',
-        first_name: client.first_name || '',
-        contact_number: client.contact_number || '',
-        email: client.email || '',
-        tags: client.tags || [],
-        interest: client.interest || '',
-        note: client.note || '',
-      });
-    }
-  }, [client]);
-
-  // Update interest dropdown visibility based on tags
-  useEffect(() => {
-    const shouldShowInterest = viewFormData.tags.some(tag =>
-      ['Musician', 'Dealer', 'Collector'].includes(tag)
-    );
-    setShowInterestDropdown(shouldShowInterest);
-  }, [viewFormData.tags]);
 
   if (!isOpen || !client) return null;
 
@@ -118,12 +97,11 @@ export default function ClientModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="client-modal-title"
-      onClick={onClose}
     >
       <div
+        ref={modalRef}
         className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col"
         tabIndex={-1}
-        onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="p-6 border-b border-gray-200">
@@ -173,7 +151,7 @@ export default function ClientModal({
                       type="text"
                       name="last_name"
                       value={viewFormData.last_name}
-                      onChange={handleViewInputChange}
+                      onChange={onViewInputChange}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                       placeholder="Enter last name"
@@ -188,7 +166,7 @@ export default function ClientModal({
                       type="text"
                       name="first_name"
                       value={viewFormData.first_name}
-                      onChange={handleViewInputChange}
+                      onChange={onViewInputChange}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                       placeholder="Enter first name"
@@ -203,7 +181,7 @@ export default function ClientModal({
                       type="tel"
                       name="contact_number"
                       value={viewFormData.contact_number}
-                      onChange={handleViewInputChange}
+                      onChange={onViewInputChange}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                       placeholder="Enter contact number"
                     />
@@ -217,7 +195,7 @@ export default function ClientModal({
                       type="email"
                       name="email"
                       value={viewFormData.email}
-                      onChange={handleViewInputChange}
+                      onChange={onViewInputChange}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                       placeholder="Enter email address"
                     />
@@ -228,41 +206,10 @@ export default function ClientModal({
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Tags
                     </label>
-                    <div className="space-y-2">
-                      {[
-                        'Owner',
-                        'Musician',
-                        'Dealer',
-                        'Collector',
-                        'Other',
-                      ].map(tag => (
-                        <label key={tag} className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={viewFormData.tags.includes(tag)}
-                            onChange={e => {
-                              if (e.target.checked) {
-                                if (!viewFormData.tags.includes(tag)) {
-                                  setViewFormData(prev => ({
-                                    ...prev,
-                                    tags: [...prev.tags, tag],
-                                  }));
-                                }
-                              } else {
-                                setViewFormData(prev => ({
-                                  ...prev,
-                                  tags: prev.tags.filter(t => t !== tag),
-                                }));
-                              }
-                            }}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                          <span className="ml-2 text-sm text-gray-700">
-                            {tag}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
+                    <ClientTagSelector
+                      selectedTags={viewFormData.tags}
+                      onChange={next => onUpdateViewFormData({ tags: next })}
+                    />
                   </div>
 
                   {/* Interest Section - Conditional */}
@@ -271,17 +218,13 @@ export default function ClientModal({
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Interest
                       </label>
-                      <select
-                        name="interest"
+                      <InterestSelector
                         value={viewFormData.interest}
-                        onChange={handleViewInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      >
-                        <option value="">Select interest level</option>
-                        <option value="Active">Active</option>
-                        <option value="Passive">Passive</option>
-                        <option value="Inactive">Inactive</option>
-                      </select>
+                        onChange={value =>
+                          onUpdateViewFormData({ interest: value })
+                        }
+                        name="interest"
+                      />
                     </div>
                   )}
 
@@ -292,7 +235,7 @@ export default function ClientModal({
                     <textarea
                       name="note"
                       value={viewFormData.note}
-                      onChange={handleViewInputChange}
+                      onChange={onViewInputChange}
                       rows={3}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                       placeholder="Enter any additional notes"
@@ -323,7 +266,6 @@ export default function ClientModal({
                         value={instrumentSearchTerm}
                         onChange={e => {
                           onInstrumentSearchTermChange(e.target.value);
-                          onSearchInstruments(e.target.value);
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
@@ -367,9 +309,9 @@ export default function ClientModal({
                     </div>
                   )}
 
-                  {instrumentRelationships.length > 0 ? (
+                  {filteredInstrumentRelationships.length > 0 ? (
                     <div className="space-y-2">
-                      {instrumentRelationships.map(relationship => (
+                      {filteredInstrumentRelationships.map(relationship => (
                         <div
                           key={relationship.id}
                           className="flex justify-between items-center bg-gray-50 p-3 rounded-md"
@@ -439,7 +381,7 @@ export default function ClientModal({
                 <div>
                   <h4 className="text-sm font-medium text-gray-500">Tags</h4>
                   <div className="flex flex-wrap gap-2 mt-1">
-                    {sortTags([...client.tags]).map(tag => (
+                    {sortTags([...(client.tags ?? [])]).map(tag => (
                       <span
                         key={tag}
                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
@@ -489,7 +431,6 @@ export default function ClientModal({
                       value={instrumentSearchTerm}
                       onChange={e => {
                         onInstrumentSearchTermChange(e.target.value);
-                        onSearchInstruments(e.target.value);
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
@@ -532,18 +473,30 @@ export default function ClientModal({
                   </div>
                 )}
 
-                {instrumentRelationships.length > 0 ? (
+                {filteredInstrumentRelationships.length > 0 ? (
                   <div className="space-y-2">
-                    {instrumentRelationships.map(relationship => (
+                    {filteredInstrumentRelationships.map(relationship => (
                       <div
                         key={relationship.id}
                         className="flex justify-between items-center bg-gray-50 p-3 rounded-md"
                       >
-                        <div>
-                          <div className="text-sm font-medium">
-                            {relationship.instrument?.maker} -{' '}
-                            {relationship.instrument?.type}
-                          </div>
+                        <div className="flex-1">
+                          {relationship.instrument_id ? (
+                            <Link
+                              href={`/dashboard?instrumentId=${relationship.instrument_id}`}
+                              onClick={e => e.stopPropagation()}
+                              className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left block"
+                              title="View instrument details"
+                            >
+                              {relationship.instrument?.maker} -{' '}
+                              {relationship.instrument?.type}
+                            </Link>
+                          ) : (
+                            <span className="text-sm font-medium text-gray-900">
+                              {relationship.instrument?.maker} -{' '}
+                              {relationship.instrument?.type}
+                            </span>
+                          )}
                           <div className="text-xs text-gray-500">
                             {relationship.instrument?.year} •{' '}
                             {relationship.relationship_type}
@@ -551,7 +504,7 @@ export default function ClientModal({
                         </div>
                         <button
                           onClick={() => onRemoveInstrument(relationship.id)}
-                          className="text-red-600 hover:text-red-800 text-sm"
+                          className="text-red-600 hover:text-red-800 text-sm ml-2"
                         >
                           Remove
                         </button>
