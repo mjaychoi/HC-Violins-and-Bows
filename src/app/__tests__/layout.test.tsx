@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react';
-import RootLayout from '../layout';
+import { RootProviders } from '../layout';
 
 // Mock ErrorBoundary
 jest.mock('@/components/common', () => ({
@@ -22,12 +22,19 @@ jest.mock('@/contexts/AuthContext', () => ({
   ),
 }));
 
+// Mock DataInitializer
+jest.mock('@/components/providers/DataInitializer', () => ({
+  DataInitializer: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="data-initializer">{children}</div>
+  ),
+}));
+
 describe('RootLayout', () => {
   it('should render children within providers', () => {
     const { getByText } = render(
-      <RootLayout>
+      <RootProviders>
         <div>Test Content</div>
-      </RootLayout>
+      </RootProviders>
     );
 
     expect(getByText('Test Content')).toBeInTheDocument();
@@ -35,9 +42,9 @@ describe('RootLayout', () => {
 
   it('should render ErrorBoundary', () => {
     const { getByTestId } = render(
-      <RootLayout>
+      <RootProviders>
         <div>Test Content</div>
-      </RootLayout>
+      </RootProviders>
     );
 
     expect(getByTestId('error-boundary')).toBeInTheDocument();
@@ -45,9 +52,9 @@ describe('RootLayout', () => {
 
   it('should render AuthProvider', () => {
     const { getByTestId } = render(
-      <RootLayout>
+      <RootProviders>
         <div>Test Content</div>
-      </RootLayout>
+      </RootProviders>
     );
 
     expect(getByTestId('auth-provider')).toBeInTheDocument();
@@ -55,9 +62,9 @@ describe('RootLayout', () => {
 
   it('should render DataProvider', () => {
     const { getByTestId } = render(
-      <RootLayout>
+      <RootProviders>
         <div>Test Content</div>
-      </RootLayout>
+      </RootProviders>
     );
 
     expect(getByTestId('data-provider')).toBeInTheDocument();
@@ -65,9 +72,9 @@ describe('RootLayout', () => {
 
   it('should have correct provider nesting order', () => {
     const { container } = render(
-      <RootLayout>
+      <RootProviders>
         <div>Test Content</div>
-      </RootLayout>
+      </RootProviders>
     );
 
     const errorBoundary = container.querySelector(
@@ -93,9 +100,9 @@ describe('RootLayout', () => {
     // This is tested implicitly by the component rendering
     // The import statement is at the top of the file
     render(
-      <RootLayout>
+      <RootProviders>
         <div>Test Content</div>
-      </RootLayout>
+      </RootProviders>
     );
 
     // If the import fails, the test would fail

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Form Page (Connected Clients)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/form');
+    await page.goto('/connections');
   });
 
   test('should display the form page', async ({ page }) => {
@@ -25,7 +25,7 @@ test.describe('Form Page (Connected Clients)', () => {
 
 test.describe('Connection Management', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/form');
+    await page.goto('/connections');
     await page.waitForTimeout(1000); // Wait for data to load
   });
 
@@ -63,7 +63,7 @@ test.describe('Connection Management', () => {
 
 test.describe('Connection List', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/form');
+    await page.goto('/connections');
     await page.waitForTimeout(1000); // Wait for data to load
   });
 
@@ -89,7 +89,7 @@ test.describe('Connection List', () => {
 
 test.describe('Search and Filter', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/form');
+    await page.goto('/connections');
     await page.waitForTimeout(1000);
   });
 
@@ -111,14 +111,14 @@ test.describe('Search and Filter', () => {
 
 test.describe('Navigation', () => {
   test('should navigate to dashboard from form', async ({ page }) => {
-    await page.goto('/form');
+    await page.goto('/connections');
 
     await page.getByText('Items').click();
     await expect(page).toHaveURL('/dashboard');
   });
 
   test('should navigate to clients from form', async ({ page }) => {
-    await page.goto('/form');
+    await page.goto('/connections');
 
     await page.getByText('Clients').click();
     await expect(page).toHaveURL('/clients');
@@ -128,14 +128,14 @@ test.describe('Navigation', () => {
 test.describe('Responsive Design', () => {
   test('should be responsive on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/form');
+    await page.goto('/connections');
 
     await expect(page.getByRole('heading')).toBeVisible();
   });
 
   test('should be responsive on tablet', async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
-    await page.goto('/form');
+    await page.goto('/connections');
 
     await expect(page.getByRole('heading')).toBeVisible();
   });
@@ -143,13 +143,13 @@ test.describe('Responsive Design', () => {
 
 test.describe('Accessibility', () => {
   test('should have proper heading structure', async ({ page }) => {
-    await page.goto('/form');
+    await page.goto('/connections');
 
     await expect(page.getByRole('heading')).toBeVisible();
   });
 
   test('should be keyboard navigable', async ({ page }) => {
-    await page.goto('/form');
+    await page.goto('/connections');
 
     // Tab through the page
     await page.keyboard.press('Tab');
