@@ -7,7 +7,7 @@ import { ConnectionCard } from './ConnectionCard';
 interface ConnectionsListProps {
   groupedConnections: GroupedConnections;
   selectedFilter: string | null;
-  onDeleteConnection: (connectionId: string) => void;
+  onDeleteConnection: (connection: ClientInstrument) => void;
   onEditConnection: (connection: ClientInstrument) => void;
 }
 

@@ -11,7 +11,7 @@ import {
 
 interface ConnectionListProps {
   connections: ClientInstrument[];
-  onDeleteConnection: (connectionId: string) => void;
+  onDeleteConnection: (connection: ClientInstrument) => void;
   submitting: boolean;
 }
 
@@ -20,9 +20,8 @@ const ConnectionList = React.memo(function ConnectionList({
   onDeleteConnection,
   submitting,
 }: ConnectionListProps) {
-  const handleDelete = async (connectionId: string) => {
-    if (!confirm('Are you sure you want to delete this connection?')) return;
-    await onDeleteConnection(connectionId);
+  const handleDelete = async (connection: ClientInstrument) => {
+    await onDeleteConnection(connection);
   };
 
   if (connections.length === 0) {
@@ -82,7 +81,7 @@ const ConnectionList = React.memo(function ConnectionList({
             </div>
 
             <button
-              onClick={() => handleDelete(connection.id)}
+              onClick={() => handleDelete(connection)}
               disabled={submitting}
               aria-disabled={submitting}
               className="ml-4 text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed"

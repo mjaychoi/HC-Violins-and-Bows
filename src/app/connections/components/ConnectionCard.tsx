@@ -3,7 +3,7 @@ import { ClientInstrument } from '@/types';
 
 interface ConnectionCardProps {
   connection: ClientInstrument;
-  onDelete: (connectionId: string) => void;
+  onDelete: (connection: ClientInstrument) => void;
   onEdit: (connection: ClientInstrument) => void;
 }
 
@@ -105,7 +105,7 @@ export const ConnectionCard = memo(function ConnectionCard({
           {/* Delete Button - Always visible on mobile, hover on desktop */}
           <button
             type="button"
-            onClick={() => onDelete(connection.id)}
+            onClick={() => onDelete(connection)}
             className="text-gray-400 hover:text-red-500 transition-all duration-200 lg:opacity-0 lg:group-hover:opacity-100 hover:scale-110 p-2 lg:p-0"
             title="Delete connection"
             aria-label="Delete connection"

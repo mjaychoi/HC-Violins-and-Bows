@@ -1,7 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { RelationshipType, Client, Instrument } from '@/types';
+import type {
+  RelationshipType,
+  Client,
+  Instrument,
+  ClientInstrument,
+} from '@/types';
 import { useUnifiedConnectionForm } from '@/hooks/useUnifiedData';
 import { useConnectionFilters, useConnectionEdit } from './hooks';
 import {
@@ -110,6 +115,17 @@ export default function ConnectedClientsPage() {
     }
   };
 
+  // Handle connection delete - wrapper to convert connection object to ID
+  const handleDeleteConnection = async (connection: ClientInstrument) => {
+    try {
+      await withSubmitting(async () => {
+        await deleteConnection(connection.id);
+      });
+    } catch (error) {
+      handleError(error, 'Failed to delete connection');
+    }
+  };
+
   return (
     <ErrorBoundary>
       <AppLayout
@@ -193,7 +209,7 @@ export default function ConnectedClientsPage() {
               groupedConnections={groupedConnections}
               selectedFilter={selectedFilter}
               onEditConnection={openEditModal}
-              onDeleteConnection={deleteConnection}
+              onDeleteConnection={handleDeleteConnection}
             />
           )}
         </div>
