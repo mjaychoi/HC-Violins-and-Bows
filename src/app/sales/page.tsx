@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useCallback, useState } from 'react';
+import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { AppLayout } from '@/components/layout';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import {
@@ -113,12 +113,22 @@ export default function SalesPage() {
     sortDirection
   );
 
-  // FIXED: Reset page to 1 when filters change to avoid empty pages
-  // FIXED: Only update page if it's not already 1 to prevent unnecessary re-renders and double fetches
+  // 필터 변경 시 page를 1로 리셋 (API 호출은 하지 않음)
+  const prevFiltersRef = useRef({ from, to, search, hasClient, sortColumn, sortDirection });
   useEffect(() => {
-    if (page !== 1) {
+    const prevFilters = prevFiltersRef.current;
+    const filtersChanged =
+      prevFilters.from !== from ||
+      prevFilters.to !== to ||
+      prevFilters.search !== search ||
+      prevFilters.hasClient !== hasClient ||
+      prevFilters.sortColumn !== sortColumn ||
+      prevFilters.sortDirection !== sortDirection;
+
+    if (filtersChanged && page !== 1) {
       setPage(1);
     }
+    prevFiltersRef.current = { from, to, search, hasClient, sortColumn, sortDirection };
   }, [from, to, search, hasClient, sortColumn, sortDirection, page, setPage]);
 
   // 초기 로드 및 필터/페이지/정렬 변경 시 API 호출
@@ -126,7 +136,7 @@ export default function SalesPage() {
     fetchSales({
       fromDate: from || undefined,
       toDate: to || undefined,
-      page, // FIXED: page is now required in FetchOptions
+      page,
       search: search || undefined,
       hasClient: hasClient !== null ? hasClient : undefined,
       sortColumn: sortColumn === 'client_name' ? undefined : sortColumn, // client_name은 클라이언트에서만 처리
