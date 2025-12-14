@@ -4,7 +4,7 @@ import Modal from './Modal';
 interface ConfirmDialogProps {
   isOpen: boolean;
   title?: string;
-  message: string;
+  message: string | React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   onConfirm: () => void;
@@ -28,7 +28,11 @@ export default function ConfirmDialog({
   return (
     <Modal isOpen={isOpen} onClose={onCancel} title={title} size="sm">
       <div className="space-y-4">
-        <p className="text-sm text-gray-700">{message}</p>
+        {typeof message === 'string' ? (
+          <p className="text-sm text-gray-700">{message}</p>
+        ) : (
+          <div className="text-sm text-gray-700">{message}</div>
+        )}
         <div className="flex justify-end gap-3">
           {/* ✅ FIXED: destructive면 Cancel에 기본 포커스 (더 안전) */}
           <button

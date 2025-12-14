@@ -101,7 +101,9 @@ const styles = StyleSheet.create({
     left: 28,
     right: 28,
     bottom: 28,
-    border: `2 solid ${COLORS.navy}`,
+    borderWidth: 2,
+    borderColor: COLORS.navy,
+    borderStyle: 'solid',
     borderRadius: 6,
   },
   goldRuleTop: {
@@ -155,7 +157,9 @@ const styles = StyleSheet.create({
   metaLine: {
     marginTop: 12,
     paddingTop: 12,
-    borderTop: `1 solid ${COLORS.line}`,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.line,
+    borderTopStyle: 'solid',
     fontSize: 9,
     color: COLORS.muted,
     lineHeight: 1.4,
@@ -167,10 +171,18 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     backgroundColor: '#f7f7f7',
-    borderLeft: `4 solid ${COLORS.ink}`,
-    borderRight: `0 solid ${COLORS.line}`,
-    borderTop: `0 solid ${COLORS.line}`,
-    borderBottom: `0 solid ${COLORS.line}`,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.ink,
+    borderLeftStyle: 'solid',
+    borderRightWidth: 0,
+    borderRightColor: COLORS.line,
+    borderRightStyle: 'solid',
+    borderTopWidth: 0,
+    borderTopColor: COLORS.line,
+    borderTopStyle: 'solid',
+    borderBottomWidth: 0,
+    borderBottomColor: COLORS.line,
+    borderBottomStyle: 'solid',
   },
   certBadgeLabel: { fontSize: 9, color: COLORS.muted, marginBottom: 6 },
   certBadgeValue: {
@@ -203,7 +215,9 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    border: `1 solid ${COLORS.line}`,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    borderStyle: 'solid',
     borderRadius: 10,
     padding: 12,
     backgroundColor: COLORS.white,
@@ -232,7 +246,9 @@ const styles = StyleSheet.create({
   },
 
   noteBox: {
-    borderTop: `1 solid ${COLORS.line}`,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.line,
+    borderTopStyle: 'solid',
     paddingTop: 12,
     marginTop: 12,
   },
@@ -246,7 +262,9 @@ const styles = StyleSheet.create({
   attest: {
     marginTop: 24,
     paddingTop: 16,
-    borderTop: `1 solid ${COLORS.line}`,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.line,
+    borderTopStyle: 'solid',
   },
   attestText: {
     fontSize: 10,
@@ -274,13 +292,17 @@ const styles = StyleSheet.create({
   },
   signLine: {
     height: 40,
-    borderTop: `1 solid ${COLORS.ink}`,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.ink,
+    borderTopStyle: 'solid',
     backgroundColor: COLORS.white,
     paddingTop: 8,
   },
   sealBox: {
     height: 40,
-    borderTop: `1 solid ${COLORS.ink}`,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.ink,
+    borderTopStyle: 'solid',
     backgroundColor: COLORS.white,
     paddingTop: 8,
   },
@@ -298,7 +320,9 @@ const styles = StyleSheet.create({
     bottom: 38,
     left: 46,
     right: 46,
-    borderTop: `1 solid ${COLORS.line}`,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.line,
+    borderTopStyle: 'solid',
     paddingTop: 12,
     fontSize: 9,
     color: COLORS.muted,
@@ -315,10 +339,14 @@ const styles = StyleSheet.create({
 });
 
 function field(label: string, value?: React.ReactNode) {
+  // FIXED: Filter out false/undefined from style array (react-pdf compatibility)
+  const fieldStyle = [
+    styles.field,
+    { flexDirection: 'row' as const, alignItems: 'flex-start' as const },
+  ].filter(Boolean);
+  
   return (
-    <View
-      style={[styles.field, { flexDirection: 'row', alignItems: 'flex-start' }]}
-    >
+    <View style={fieldStyle}>
       <Text style={styles.fieldLabel}>{label}:</Text>
       <Text style={styles.fieldValue}>{value ?? 'N/A'}</Text>
     </View>
@@ -359,9 +387,9 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
       ? `₩ ${instrument.price.toLocaleString('ko-KR')} KRW`
       : undefined;
 
-  // ✅ FIXED: 원격 URL 실패 대비 - 기본값 제거 (호출부에서 제공)
-  // 원격 URL은 서버 환경에서 실패할 수 있으므로 기본값을 제공하지 않음
-  const finalLogoSrc = logoSrc;
+  // ✅ FIXED: logoSrc가 없으면 Image를 렌더하지 않음 (undefined/null 방지)
+  // resolveLogoSrc는 string | null을 반환하므로, null 체크로 안전하게 처리
+  const finalLogoSrc = logoSrc || null;
 
   // Use provided verifyUrl or generate default
   const finalVerifyUrl =

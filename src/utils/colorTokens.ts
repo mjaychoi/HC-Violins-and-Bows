@@ -29,7 +29,8 @@ export type ColorToken = {
 
 /**
  * 상태 매핑의 UX 원칙
- * - 빨강/로즈: "손실/종료/위험" → Sold, Overdue, Refunded
+ * - 초록/연두: "판매 완료/성공" → Sold
+ * - 빨강/로즈: "손실/종료/위험" → Overdue, Refunded
  * - 앰버: "대기/홀드/주의" → Reserved, Pending
  * - 보라: "예약 확정/관계형 상태" → Booked
  * - 블루: "진행/작업" → Maintenance, InProgress
@@ -100,12 +101,12 @@ export const STATUS_TOKENS: Record<StatusKey, ColorToken> = {
     dot: 'bg-green-500',
   },
   Sold: {
-    soft: 'bg-red-100 text-red-800 border-red-200',
-    solid: 'bg-red-500 text-white',
-    outline: 'border-red-300 text-red-700 bg-white',
-    muted: 'bg-rose-50 text-rose-600 ring-1 ring-rose-100',
+    soft: 'bg-green-100 text-green-800 border-green-200',
+    solid: 'bg-green-500 text-white',
+    outline: 'border-green-300 text-green-700 bg-white',
+    muted: 'bg-green-50 text-green-600 ring-1 ring-green-100',
     accent: '', // Sold는 accent line 없음 (배경만)
-    dot: 'bg-red-500',
+    dot: 'bg-green-500',
   },
   Reserved: {
     soft: 'bg-yellow-100 text-yellow-800 border-yellow-200',
@@ -420,7 +421,7 @@ export const SALES_STATUS_TOKENS: Record<SalesStatusKey, ColorToken> = {
 
 /**
  * Relationship Type 색상 토큰 (Connections 전용)
- * ✅ FIXED: Status와 동일한 의미 체계 사용 (Sold=red, Booked=purple, Interested=amber)
+ * ✅ FIXED: Status와 동일한 의미 체계 사용 (Sold=green, Booked=purple, Interested=amber)
  */
 export const RELATIONSHIP_TOKENS: Record<RelationshipKey, ColorToken> = {
   Interested: {
@@ -438,18 +439,18 @@ export const RELATIONSHIP_TOKENS: Record<RelationshipKey, ColorToken> = {
     dot: 'bg-purple-500',
   },
   Sold: {
-    soft: 'bg-red-100 text-red-800 border-red-200', // ✅ FIXED: green → red
-    solid: 'bg-red-500 text-white',
-    outline: 'border-red-300 text-red-700 bg-white',
-    muted: 'bg-rose-50 text-rose-600 ring-1 ring-rose-100',
-    dot: 'bg-red-500',
+    soft: 'bg-green-100 text-green-800 border-green-200',
+    solid: 'bg-green-500 text-white',
+    outline: 'border-green-300 text-green-700 bg-white',
+    muted: 'bg-green-50 text-green-600 ring-1 ring-green-100',
+    dot: 'bg-green-500',
   },
   Owned: {
-    soft: 'bg-purple-100 text-purple-800 border-purple-200',
-    solid: 'bg-purple-500 text-white',
-    outline: 'border-purple-300 text-purple-700 bg-white',
-    muted: 'bg-purple-50 text-purple-700 ring-1 ring-purple-100',
-    dot: 'bg-purple-500',
+    soft: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+    solid: 'bg-indigo-500 text-white',
+    outline: 'border-indigo-300 text-indigo-700 bg-white',
+    muted: 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100',
+    dot: 'bg-indigo-500',
   },
   Default: {
     soft: 'bg-gray-100 text-gray-800 border-gray-200',
@@ -781,7 +782,7 @@ export const getPurchaseStatusColor = (
  *
  * 1. Status (Items & Clients 공통):
  *    - Available: green (가능/정상)
- *    - Sold: red/rose (손실/종료)
+ *    - Sold: green (판매 완료)
  *    - Reserved: amber/yellow (대기/홀드)
  *    - Booked: purple (예약 확정) ✅ FIXED
  *    - Maintenance: blue (진행/작업)
@@ -814,7 +815,7 @@ export const getPurchaseStatusColor = (
  * 7. Relationship (Connections 전용):
  *    - Interested: amber (대기) ✅ FIXED
  *    - Booked: purple (예약 확정) ✅ FIXED
- *    - Sold: red (Status와 일관성) ✅ FIXED
+ *    - Sold: green (판매 완료) ✅ FIXED
  *    - Owned: purple
  *
  * 8. Purchase Status (PurchaseHistory 전용):
