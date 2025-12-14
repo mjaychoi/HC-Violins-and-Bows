@@ -203,8 +203,8 @@ export default function SalesTable({
                           onClick={() => onRefund(sale)}
                           disabled={loading}
                           size="sm"
-                          variant="danger"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 border border-rose-600"
+                          variant="secondary"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-700 bg-white hover:bg-red-50 border border-red-300 hover:border-red-400"
                           title="Issue refund"
                         >
                           <svg

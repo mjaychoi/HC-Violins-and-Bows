@@ -126,7 +126,8 @@ describe('SalesCharts', () => {
     render(<SalesCharts sales={sales} />);
 
     expect(screen.getByText('Monthly Sales Comparison')).toBeInTheDocument();
-    expect(screen.getAllByTestId('composed-chart').length).toBeGreaterThan(0);
+    // Monthly Sales Comparison is now a BarChart, not ComposedChart
+    expect(screen.getAllByTestId('bar-chart').length).toBeGreaterThan(0);
   });
 
   it('should render top instruments chart', () => {
@@ -178,7 +179,7 @@ describe('SalesCharts', () => {
     expect(screen.getAllByTestId('line-chart').length).toBeGreaterThan(0);
   });
 
-  it('should display overall refund rate when refunds exist', () => {
+  it('should display refund rate in tooltip when refunds exist', () => {
     const sales: EnrichedSale[] = [
       ...createBaselineSales(),
       createMockSale({
@@ -190,8 +191,10 @@ describe('SalesCharts', () => {
 
     render(<SalesCharts sales={sales} />);
 
-    // 환불율이 표시되는지 확인 (월별 차트에)
-    expect(screen.getByText(/Overall Refund Rate/i)).toBeInTheDocument();
+    // 환불율은 이제 tooltip에만 표시됨 (월별 차트 헤더에서 제거됨)
+    // 차트가 렌더링되는지 확인
+    expect(screen.getByText('Monthly Sales Comparison')).toBeInTheDocument();
+    expect(screen.getAllByTestId('bar-chart').length).toBeGreaterThan(0);
   });
 
   it('should handle multiple sales on same day', () => {
@@ -249,8 +252,9 @@ describe('SalesCharts', () => {
 
     render(<SalesCharts sales={sales} />);
 
-    // 최근 12개월만 표시되는지 확인
-    expect(screen.getAllByTestId('composed-chart').length).toBeGreaterThan(0);
+    // 최근 12개월만 표시되는지 확인 (Monthly Sales Comparison은 이제 BarChart)
+    expect(screen.getByText('Monthly Sales Comparison')).toBeInTheDocument();
+    expect(screen.getAllByTestId('bar-chart').length).toBeGreaterThan(0);
   });
 
   it('should sort instrument types by revenue', () => {

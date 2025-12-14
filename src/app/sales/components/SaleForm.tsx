@@ -8,6 +8,9 @@ import {
 } from '@/hooks/useUnifiedData';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import { logInfo } from '@/utils/logger';
+import { todayLocalYMD } from '@/utils/dateParsing';
+import { modalStyles } from '@/components/common/modalStyles';
+import { ModalHeader } from '@/components/common/ModalHeader';
 
 interface SaleFormProps {
   isOpen: boolean;
@@ -20,8 +23,6 @@ interface SaleFormProps {
   // 판매 후 악기 상태 자동 업데이트 여부
   autoUpdateInstrumentStatus?: boolean;
 }
-
-import { todayLocalYMD } from '@/utils/dateParsing';
 
 export default function SaleForm({
   isOpen,
@@ -179,46 +180,25 @@ export default function SaleForm({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-gray-900 bg-opacity-20 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+    <div className={modalStyles.overlay}>
       <div
         ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="sale-form-title"
-        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+        className={modalStyles.container}
       >
-        {/* Header */}
-        <div className="flex-shrink-0 flex items-center justify-between p-6 border-b border-gray-200">
-          <h3
-            id="sale-form-title"
-            className="text-lg font-semibold text-gray-900"
-          >
-            {initialInstrument
+        <ModalHeader
+          title={
+            initialInstrument
               ? `Sell: ${initialInstrument.maker || ''} ${initialInstrument.type || ''}`.trim() ||
                 'New Sale'
-              : 'New Sale'}
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-            type="button"
-            aria-label="Close"
-          >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
+              : 'New Sale'
+          }
+          icon="sale"
+          onClose={onClose}
+          titleId="sale-form-title"
+        />
 
         {/* Content - Scrollable */}
         <div className="flex-1 overflow-y-auto">

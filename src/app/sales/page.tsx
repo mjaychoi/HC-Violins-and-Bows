@@ -476,7 +476,27 @@ export default function SalesPage() {
         <ConfirmDialog
           isOpen={Boolean(confirmRefundSale)}
           title="Issue Refund?"
-          message={`Are you sure you want to issue a refund for this sale? This action will mark the sale as refunded and cannot be easily undone.`}
+          message={
+            confirmRefundSale ? (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-700">
+                  Are you sure you want to issue a refund for this sale? This
+                  action will mark the sale as refunded and cannot be easily
+                  undone.
+                </p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-xs font-medium text-red-800 mb-1">
+                    Refund Amount:
+                  </p>
+                  <p className="text-lg font-bold text-red-900">
+                    {currency.format(Math.abs(confirmRefundSale.sale_price))}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              ''
+            )
+          }
           confirmLabel="Issue Refund"
           cancelLabel="Cancel"
           onConfirm={handleConfirmRefund}
