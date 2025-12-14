@@ -15,8 +15,7 @@ import {
 } from '@/utils/uniqueNumberGenerator';
 import Link from 'next/link';
 import { arrowToClass } from '@/utils/filterHelpers';
-import { ListSkeleton, Pagination } from '@/components/common';
-import Button from '@/components/common/Button';
+import { ListSkeleton, Pagination, EmptyState } from '@/components/common';
 import StatusBadge from './StatusBadge';
 import CertificateBadge from './CertificateBadge';
 import RowActions from './RowActions';
@@ -58,6 +57,7 @@ interface ItemListProps {
     message?: string;
     actionLabel?: string;
     hasActiveFilters?: boolean;
+    onResetFilters?: () => void;
   };
   // Pagination
   currentPage?: number;
@@ -384,72 +384,31 @@ const ItemList = memo(function ItemList({
     return <ListSkeleton rows={5} columns={9} />;
   }
 
-  // UX: Improved empty state - distinguish between "no items" and "no results after filtering"
+  // UX: Improved empty state - use consistent EmptyState component
   if (items.length === 0) {
     const hasFilters = emptyState?.hasActiveFilters ?? false;
-    const message =
-      emptyState?.message ||
-      (hasFilters ? 'No items found matching your filters' : 'No items yet');
-    const subMessage = hasFilters
-      ? 'Try adjusting your filters or clearing them to see all items.'
-      : 'Add your first instrument to get started.';
-    const actionLabel = emptyState?.actionLabel || 'Add Item';
-
     return (
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
-        <div
-          className="text-center py-16 px-4"
-          role="status"
-          aria-live="polite"
-        >
-          <svg
-            className="mx-auto h-16 w-16 text-gray-300"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-            />
-          </svg>
-          <h3 className="mt-4 text-base font-semibold text-gray-900">
-            {message}
-          </h3>
-          <p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">
-            {subMessage}
-          </p>
-          {!hasFilters && onAddClick && (
-            <div className="mt-8">
-              <Button
-                onClick={onAddClick}
-                variant="primary"
-                size="md"
-                className="inline-flex items-center"
-              >
-                <svg
-                  className="w-5 h-5 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                  />
-                </svg>
-                {actionLabel}
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
+      <EmptyState
+        title={
+          emptyState?.message ||
+          (hasFilters ? 'No items found matching your filters' : 'No items yet')
+        }
+        description={
+          hasFilters
+            ? 'Try adjusting your filters or clearing them to see all items.'
+            : 'Add your first instrument to get started.'
+        }
+        hasActiveFilters={hasFilters}
+        onResetFilters={emptyState?.onResetFilters}
+        actionButton={
+          !hasFilters && onAddClick
+            ? {
+                label: emptyState?.actionLabel || 'Add Item',
+                onClick: onAddClick,
+              }
+            : undefined
+        }
+      />
     );
   }
 

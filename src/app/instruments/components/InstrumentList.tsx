@@ -87,10 +87,10 @@ export default function InstrumentList({
   if (items.length === 0) {
     return (
       <EmptyState
-        title="등록된 악기가 없습니다"
-        description="첫 번째 악기를 추가해서 목록을 시작해 보세요."
+        title="No instruments yet"
+        description="Add your first instrument to get started."
         actionButton={{
-          label: '악기 추가하기',
+          label: 'Add Instrument',
           onClick: onAddInstrument,
           icon: (
             <svg
