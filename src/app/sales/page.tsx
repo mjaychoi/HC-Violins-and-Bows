@@ -436,9 +436,7 @@ export default function SalesPage() {
             {/* DataQualityWarning 주석 처리 - Limited Data Available 경고 비활성화 */}
             {/* <DataQualityWarning dataQuality={dataQuality} /> */}
 
-            <SalesSummary totals={totals} period={periodInfo} />
-
-            {/* Filters & Search - KPI 아래로 이동 */}
+            {/* Filters & Search - KPI 위로 이동 */}
             <SalesFilters
               showFilters={showFilters}
               onToggleFilters={() => setShowFilters(!showFilters)}
@@ -453,6 +451,8 @@ export default function SalesPage() {
               onExportCSV={handleExportCSV}
               hasData={enrichedSales.length > 0}
             />
+
+            <SalesSummary totals={totals} period={periodInfo} />
 
             {/* Sales Alerts */}
             {!loading && <SalesAlerts sales={enrichedSales} />}
