@@ -68,7 +68,13 @@ export async function GET(request: NextRequest) {
 
     // Order by display_order first (if available), then by the specified orderBy
     // This ensures custom ordering is preserved
-    query = query.order('display_order', { ascending: true, nullsFirst: false });
+    // Note: display_order may not exist in all databases, so we handle gracefully
+    try {
+      query = query.order('display_order', { ascending: true, nullsFirst: false });
+    } catch (error) {
+      // display_order column doesn't exist, skip it
+      // This can happen if migration hasn't been run yet
+    }
     if (orderBy !== 'display_order') {
       query = query.order(orderBy, { ascending });
     }
