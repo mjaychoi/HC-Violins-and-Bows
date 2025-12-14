@@ -91,6 +91,7 @@ export default function ContactLogComponent({
   const handleUpdate = useCallback(
     async (id: string) => {
       await onUpdateContact(id, {
+        contact_type: formData.contact_type,
         subject: formData.subject || null,
         content: formData.content.trim(),
         contact_date: formData.contact_date,
@@ -307,6 +308,54 @@ export default function ContactLogComponent({
               >
                 {isEditing ? (
                   <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Contact Type
+                        </label>
+                        <select
+                          value={formData.contact_type}
+                          onChange={e =>
+                            setFormData({
+                              ...formData,
+                              contact_type: e.target.value as ContactType,
+                            })
+                          }
+                          className="w-full text-xs border border-gray-300 rounded-md px-2 py-1"
+                        >
+                          {Object.entries(contactTypeLabels).map(
+                            ([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Purpose
+                        </label>
+                        <select
+                          value={formData.purpose || ''}
+                          onChange={e =>
+                            setFormData({
+                              ...formData,
+                              purpose: (e.target.value ||
+                                null) as ContactPurpose | null,
+                            })
+                          }
+                          className="w-full text-xs border border-gray-300 rounded-md px-2 py-1"
+                        >
+                          <option value="">None</option>
+                          {Object.entries(purposeLabels).map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">
