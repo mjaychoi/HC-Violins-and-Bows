@@ -23,6 +23,7 @@ export const runtime = 'nodejs';
 // React PDF's reconciler has issues with React 19's internal API changes in Next.js 15
 // renderToBuffer is more stable in this environment
 // FIXED: Promise cache to prevent race conditions on concurrent requests
+// In development, we invalidate cache to allow hot reloading
 let reactPdfLoader: Promise<{
   renderToBuffer: typeof import('@react-pdf/renderer').renderToBuffer;
   CertificateDocument: React.ComponentType<{
@@ -31,9 +32,13 @@ let reactPdfLoader: Promise<{
     verifyUrl?: string;
   }>;
 }> | null = null;
+let lastLoadTime = 0;
 
 async function loadReactPDF() {
-  if (!reactPdfLoader) {
+  // In development, always reload to allow hot reloading
+  const isDev = process.env.NODE_ENV === 'development';
+
+  if (!reactPdfLoader || isDev) {
     reactPdfLoader = (async () => {
       // FIXED: React 19 compatibility - explicitly provide React to react-pdf
       // React PDF's reconciler needs access to React's internal APIs
@@ -47,6 +52,7 @@ async function loadReactPDF() {
       }
 
       const reactPdf = await import('@react-pdf/renderer');
+      // In development, always reload the component module
       const CertificateDocument = (
         await import('@/components/certificates/CertificateDocument')
       ).default;
@@ -55,6 +61,12 @@ async function loadReactPDF() {
         CertificateDocument,
       };
     })();
+    // In development, reset cache after a short delay to allow next request to reload
+    if (isDev) {
+      setTimeout(() => {
+        reactPdfLoader = null;
+      }, 100);
+    }
   }
   return reactPdfLoader;
 }
