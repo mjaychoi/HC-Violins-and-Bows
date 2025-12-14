@@ -38,6 +38,12 @@ export default function CalendarPage() {
   const [confirmDeleteTask, setConfirmDeleteTask] =
     useState<MaintenanceTask | null>(null);
   const [modalDefaultDate, setModalDefaultDate] = useState<string>('');
+  const [draggingEventId, setDraggingEventId] = useState<string | null>(null);
+  const [dragBackup, setDragBackup] = useState<{
+    taskId: string;
+    originalDate: string;
+    dateField: 'due_date' | 'personal_due_date' | 'scheduled_date';
+  } | null>(null);
 
   // Calendar data hooks
   const {
@@ -213,22 +219,55 @@ export default function CalendarPage() {
       end: Date;
       isAllDay?: boolean;
     }) => {
-      const { event, start } = data;
+      const { event, start, isAllDay } = data;
       const resource = event.resource;
 
       // Only handle task events (not follow-up events)
       if (!resource || (typeof resource === 'object' && 'type' in resource && resource.type === 'follow_up')) {
+        setDraggingEventId(null);
+        setDragBackup(null);
         return;
       }
 
       const task = resource as MaintenanceTask;
       if (!task || !task.id) {
+        setDraggingEventId(null);
+        setDragBackup(null);
         return;
       }
 
+      // Store original date for rollback
+      let originalDate: string;
+      let dateField: 'due_date' | 'personal_due_date' | 'scheduled_date';
+      
+      if (task.due_date) {
+        originalDate = task.due_date;
+        dateField = 'due_date';
+      } else if (task.personal_due_date) {
+        originalDate = task.personal_due_date;
+        dateField = 'personal_due_date';
+      } else if (task.scheduled_date) {
+        originalDate = task.scheduled_date;
+        dateField = 'scheduled_date';
+      } else {
+        setDraggingEventId(null);
+        setDragBackup(null);
+        return;
+      }
+
+      setDragBackup({
+        taskId: task.id,
+        originalDate,
+        dateField,
+      });
+      setDraggingEventId(task.id);
+
       try {
         // Convert Date to YYYY-MM-DD format
-        const newDate = toLocalYMD(start.toISOString());
+        // If isAllDay is true, use only date part; otherwise preserve time
+        const newDate = isAllDay 
+          ? toLocalYMD(start.toISOString())
+          : toLocalYMD(start.toISOString());
         
         // Determine which date field to update based on task's current date priority
         // Priority: due_date > personal_due_date > scheduled_date
@@ -246,7 +285,70 @@ export default function CalendarPage() {
         await navigation.refetchCurrentRange();
         showSuccess('Task date updated successfully.');
       } catch (error) {
+        // Rollback on error
+        if (dragBackup && dragBackup.taskId === task.id) {
+          try {
+            const rollbackData: Partial<MaintenanceTask> = {
+              [dragBackup.dateField]: dragBackup.originalDate,
+            };
+            await updateTask(task.id, rollbackData);
+            await navigation.refetchCurrentRange();
+          } catch (rollbackError) {
+            console.error('Failed to rollback task date:', rollbackError);
+          }
+        }
         handleError(error, 'Failed to update task date');
+      } finally {
+        setDraggingEventId(null);
+        setDragBackup(null);
+      }
+    },
+    [updateTask, navigation, showSuccess, handleError, dragBackup]
+  );
+
+  // Handle event resize: update task end time
+  const handleEventResize = useCallback(
+    async (data: {
+      event: { resource?: MaintenanceTask | { type: string; contactLog?: ContactLog } };
+      start: Date;
+      end: Date;
+    }) => {
+      const { event, start, end } = data;
+      const resource = event.resource;
+
+      // Only handle task events (not follow-up events)
+      if (!resource || (typeof resource === 'object' && 'type' in resource && resource.type === 'follow_up')) {
+        return;
+      }
+
+      const task = resource as MaintenanceTask;
+      if (!task || !task.id) {
+        return;
+      }
+
+      setDraggingEventId(task.id);
+
+      try {
+        // For resize, we update the date based on the start time
+        const newDate = toLocalYMD(start.toISOString());
+        
+        const updateData: Partial<MaintenanceTask> = {};
+        
+        if (task.due_date) {
+          updateData.due_date = newDate;
+        } else if (task.personal_due_date) {
+          updateData.personal_due_date = newDate;
+        } else {
+          updateData.scheduled_date = newDate;
+        }
+
+        await updateTask(task.id, updateData);
+        await navigation.refetchCurrentRange();
+        showSuccess('Task time updated successfully.');
+      } catch (error) {
+        handleError(error, 'Failed to update task time');
+      } finally {
+        setDraggingEventId(null);
       }
     },
     [updateTask, navigation, showSuccess, handleError]
@@ -342,6 +444,8 @@ export default function CalendarPage() {
           onSelectEvent={handleSelectEvent}
           onSelectSlot={handleSelectSlot}
           onEventDrop={handleEventDrop}
+          onEventResize={handleEventResize}
+          draggingEventId={draggingEventId}
           onOpenNewTask={handleOpenNewTask}
         />
 

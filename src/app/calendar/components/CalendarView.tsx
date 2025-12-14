@@ -32,7 +32,7 @@ const calendarEventStyles = `
     font-size: 11px !important;
     line-height: 1.3 !important;
     transition: all 0.15s ease !important;
-    cursor: pointer !important;
+    cursor: grab !important;
     width: 100% !important;
     min-width: 0 !important;
     overflow: hidden !important;
@@ -41,6 +41,13 @@ const calendarEventStyles = `
   .rbc-event:hover {
     box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.08) !important;
     border-color: #d1d5db !important;
+  }
+  .rbc-event:active {
+    cursor: grabbing !important;
+  }
+  .rbc-event-dragging {
+    cursor: grabbing !important;
+    z-index: 1000 !important;
   }
   /* Status-based accent colors: left border only (3px) */
   .rbc-event.status-overdue {
@@ -251,7 +258,13 @@ interface CalendarViewProps {
     start: Date;
     end: Date;
     isAllDay?: boolean;
-  }) => void;
+  }) => Promise<void> | void;
+  onEventResize?: (data: {
+    event: Event;
+    start: Date;
+    end: Date;
+  }) => Promise<void> | void;
+  draggingEventId?: string | null; // Track currently dragging event for visual feedback
   currentDate?: Date;
   onNavigate?: (date: Date) => void;
   currentView?: ExtendedView;
@@ -259,17 +272,26 @@ interface CalendarViewProps {
 }
 
 // Enhanced Calendar with drag and drop
-const DragAndDropCalendar = withDragAndDrop(Calendar) as React.ComponentType<
-  React.ComponentProps<typeof Calendar> & {
-    onEventDrop?: (data: {
-      event: Event;
-      start: Date;
-      end: Date;
-      isAllDay?: boolean;
-    }) => void;
-    draggableAccessor?: (event: Event) => boolean;
-  }
->;
+// Properly typed DragAndDropCalendar component
+type CalendarProps = React.ComponentProps<typeof Calendar>;
+type DragAndDropCalendarProps = CalendarProps & {
+  onEventDrop?: (data: {
+    event: Event;
+    start: Date;
+    end: Date;
+    isAllDay?: boolean;
+  }) => Promise<void> | void;
+  onEventResize?: (data: {
+    event: Event;
+    start: Date;
+    end: Date;
+  }) => Promise<void> | void;
+  draggableAccessor?: (event: Event) => boolean;
+  resizableAccessor?: (event: Event) => boolean;
+};
+
+// Use type assertion to handle react-big-calendar's drag and drop types
+const DragAndDropCalendar = withDragAndDrop(Calendar) as React.ComponentType<DragAndDropCalendarProps>;
 
 export default function CalendarView({
   tasks,
@@ -278,6 +300,8 @@ export default function CalendarView({
   onSelectEvent,
   onSelectSlot,
   onEventDrop,
+  onEventResize,
+  draggingEventId,
   currentDate = new Date(),
   onNavigate,
   currentView = 'month',
@@ -475,6 +499,8 @@ export default function CalendarView({
   const eventStyleGetter = useCallback(
     (event: Event) => {
       const resource = event.resource as EventResource | MaintenanceTask;
+      const task = 'task' in resource && resource.task ? resource.task : (resource as MaintenanceTask);
+      const isDragging = draggingEventId && task && task.id === draggingEventId;
 
       // Handle follow-up events
       if (
@@ -495,14 +521,13 @@ export default function CalendarView({
             fontWeight: '500',
             boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.04)',
             cursor: 'pointer',
+            opacity: isDragging ? 0.5 : 1,
           },
           className: 'rbc-event status-today',
         };
       }
 
       // Handle task events
-      const task =
-        'task' in resource ? resource.task : (resource as MaintenanceTask);
       if (!task) {
         // Fallback for invalid task
         return {
@@ -515,6 +540,7 @@ export default function CalendarView({
             padding: '6px 8px',
             fontSize: '11px',
             cursor: 'pointer',
+            opacity: isDragging ? 0.5 : 1,
           },
           className: 'rbc-event status-normal',
         };
@@ -540,7 +566,7 @@ export default function CalendarView({
       }
 
       // Professional card style: white background with border
-      // Icon is already included in eventTitle, so no need for separate icon styling
+      // Enhanced visual feedback for dragging
       const style: React.CSSProperties = {
         backgroundColor: '#ffffff',
         color: '#111827', // Gray-900
@@ -549,18 +575,23 @@ export default function CalendarView({
         padding: '6px 8px',
         fontSize: '11px',
         fontWeight: '400',
-        boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.04)',
-        cursor: 'pointer',
-        opacity: isCompleted ? 0.7 : 1,
+        boxShadow: isDragging
+          ? '0px 4px 8px rgba(0, 0, 0, 0.15)'
+          : '0px 1px 2px rgba(0, 0, 0, 0.04)',
+        cursor: isDragging ? 'grabbing' : 'grab',
+        opacity: isDragging ? 0.6 : isCompleted ? 0.7 : 1,
         textDecoration: isCompleted ? 'line-through' : 'none',
+        transform: isDragging ? 'scale(1.02)' : 'scale(1)',
+        transition: isDragging ? 'none' : 'all 0.2s ease',
+        zIndex: isDragging ? 1000 : 'auto',
       };
 
       return {
         style,
-        className: `rbc-event ${statusClass}`,
+        className: `rbc-event ${statusClass} ${isDragging ? 'rbc-event-dragging' : ''}`,
       };
     },
-    [] // getDateStatus is a stable imported function
+    [draggingEventId] // Include draggingEventId in dependencies
   );
 
   // FIXED: Translate messages to Korean to match culture="ko"
@@ -647,14 +678,8 @@ export default function CalendarView({
                 }
               },
               onSelectSlot,
-              ...(onEventDrop && {
-                onEventDrop: onEventDrop as (data: {
-                  event: Event;
-                  start: Date;
-                  end: Date;
-                  isAllDay?: boolean;
-                }) => void,
-              }),
+              ...(onEventDrop && { onEventDrop }),
+              ...(onEventResize && { onEventResize }),
               draggableAccessor: (event: Event) => {
                 // Only allow dragging task events, not follow-up events
                 const resource = event.resource as EventResource | MaintenanceTask;
@@ -668,7 +693,21 @@ export default function CalendarView({
                 }
                 return true; // Tasks are draggable
               },
+              resizableAccessor: (event: Event) => {
+                // Only allow resizing task events, not follow-up events
+                const resource = event.resource as EventResource | MaintenanceTask;
+                if (
+                  resource &&
+                  typeof resource === 'object' &&
+                  'type' in resource &&
+                  resource.type === 'follow_up'
+                ) {
+                  return false; // Follow-ups are not resizable
+                }
+                return true; // Tasks are resizable
+              },
               selectable: true,
+              resizable: true,
               date: currentDate,
               onNavigate,
               view: view as View,
@@ -689,7 +728,7 @@ export default function CalendarView({
               step: 60,
               timeslots: 1,
               culture: 'ko',
-            } as any)}
+            } as unknown as DragAndDropCalendarProps)}
           components={{
             event: ({ event }: { event: Event }) => {
               // Custom event component with 2-line structure
