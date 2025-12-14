@@ -6,7 +6,7 @@ import { todayLocalYMD, parseYMDLocal } from '@/utils/dateParsing';
 import { useCalendarFilters } from '../hooks/useCalendarFilters';
 import { useCalendarTasks } from '../hooks/useCalendarTasks';
 import { calculateSummaryStats } from '../utils/filterUtils';
-import type { MaintenanceTask, Instrument, Client } from '@/types';
+import type { MaintenanceTask, Instrument, Client, ContactLog } from '@/types';
 import {
   CalendarFilters,
   CalendarSummary,
@@ -18,9 +18,11 @@ import CalendarView from './CalendarView';
 import { TableSkeleton, Pagination } from '@/components/common';
 import Button from '@/components/common/Button';
 import type { ExtendedView } from './CalendarView';
+import TodayFollowUps from '@/app/clients/components/TodayFollowUps';
 
 interface CalendarContentProps {
   tasks: MaintenanceTask[];
+  contactLogs?: ContactLog[];
   instruments: Instrument[];
   clients: Client[];
   loading: {
@@ -50,6 +52,7 @@ interface CalendarContentProps {
 
 function CalendarContentInner({
   tasks,
+  contactLogs = [],
   instruments,
   clients,
   loading,
@@ -229,6 +232,9 @@ function CalendarContentInner({
 
   return (
     <div className="p-6">
+      {/* Today Follow-ups */}
+      <TodayFollowUps />
+
       {/* Compressed Header: Navigation + Summary Pills in one line */}
       <div className="mb-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -483,6 +489,7 @@ function CalendarContentInner({
         >
           <CalendarView
             tasks={filteredTasks}
+            contactLogs={contactLogs}
             instruments={taskData.instrumentsMap}
             onSelectEvent={onSelectEvent}
             onSelectSlot={onSelectSlot}

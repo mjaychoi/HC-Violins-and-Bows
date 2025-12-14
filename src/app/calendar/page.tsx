@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
-import { format } from 'date-fns';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useMaintenanceTasks } from '@/hooks/useMaintenanceTasks';
 import {
   useUnifiedInstruments,
@@ -19,7 +18,8 @@ import {
 import { TaskModal } from './components';
 import CalendarContent from './components/CalendarContent';
 import Button from '@/components/common/Button';
-import type { MaintenanceTask } from '@/types';
+import type { MaintenanceTask, ContactLog } from '@/types';
+import { toLocalYMD } from '@/utils/dateParsing';
 import { useCalendarNavigation, useCalendarView } from './hooks';
 import {
   CALENDAR_MESSAGES,
@@ -98,6 +98,35 @@ export default function CalendarPage() {
   // Calendar view (calendar/list toggle)
   const { view, setView } = useCalendarView();
 
+  // Fetch contact logs for follow-ups
+  const [contactLogs, setContactLogs] = useState<ContactLog[]>([]);
+
+  const fetchContactLogs = useCallback(async () => {
+    try {
+      // Fetch all follow-ups (past, today, and future) for calendar display
+      // hasFollowUp=true gets all logs with next_follow_up_date set (regardless of date)
+      const response = await fetch(`/api/contacts?hasFollowUp=true`);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to fetch contact logs');
+      }
+
+      // Filter to only include incomplete follow-ups (not completed)
+      const incompleteFollowUps = (result.data || []).filter(
+        (log: ContactLog) => !log.follow_up_completed_at
+      );
+
+      setContactLogs(incompleteFollowUps);
+    } catch (error) {
+      handleError(error, 'Fetch follow-ups');
+    }
+  }, [handleError]);
+
+  useEffect(() => {
+    fetchContactLogs();
+  }, [fetchContactLogs]);
+
   const handleOpenNewTask = useCallback(() => {
     setModalDefaultDate('');
     openModal();
@@ -169,7 +198,8 @@ export default function CalendarPage() {
   const handleSelectSlot = useCallback(
     (slotInfo: { start: Date; end: Date }) => {
       navigation.setSelectedDate(slotInfo.start);
-      setModalDefaultDate(format(slotInfo.start, 'yyyy-MM-dd'));
+      // FIXED: Use toLocalYMD utility to convert Date to YYYY-MM-DD (single source of truth)
+      setModalDefaultDate(toLocalYMD(slotInfo.start.toISOString()));
       openModal();
     },
     [navigation, openModal]
@@ -252,6 +282,7 @@ export default function CalendarPage() {
       >
         <CalendarContent
           tasks={tasks}
+          contactLogs={contactLogs}
           instruments={instruments}
           clients={clients}
           loading={loading}
