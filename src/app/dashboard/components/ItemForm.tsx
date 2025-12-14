@@ -13,6 +13,8 @@ import {
   normalizeInstrumentSerial,
   validateInstrumentSerial,
 } from '@/utils/uniqueNumberGenerator';
+import { modalStyles } from '@/components/common/modalStyles';
+import { ModalHeader } from '@/components/common/ModalHeader';
 
 interface ItemFormProps {
   isOpen: boolean;
@@ -263,37 +265,28 @@ export default function ItemForm({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
+    <div
+      className={modalStyles.overlay}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <div
         ref={modalRef}
-        className="relative mx-auto border w-full max-w-2xl max-h-[90vh] flex flex-col shadow-lg rounded-md bg-white overflow-hidden"
+        className={modalStyles.container}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="item-form-title"
       >
-        <div className="flex-shrink-0 p-5 border-b border-gray-200">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-medium text-gray-900">
-              {isEditing ? 'Edit Item' : 'Add New Item'}
-            </h3>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-6">
+        <ModalHeader
+          title={isEditing ? 'Edit Item' : 'Add New Item'}
+          icon="item"
+          onClose={onClose}
+          titleId="item-form-title"
+        />
+        <div className={modalStyles.body}>
           {/* UX: Success message with action buttons */}
           {success && !isEditing && (
             <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">

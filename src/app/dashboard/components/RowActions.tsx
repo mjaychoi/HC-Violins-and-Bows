@@ -78,7 +78,7 @@ export default function RowActions({
   }, [isOpen]);
 
   return (
-    <div className="relative flex justify-end">
+    <div className="relative flex justify-end" style={{ position: 'relative' }}>
       <button
         ref={triggerRef}
         onClick={e => {
@@ -115,7 +115,7 @@ export default function RowActions({
           <div
             id={menuId}
             role="menu"
-            className="absolute right-0 z-20 mt-2 w-56 rounded-md border border-gray-200 bg-white shadow-lg"
+            className="absolute left-0 z-20 mt-2 w-56 rounded-md border border-gray-200 bg-white shadow-lg origin-top-left"
           >
             {/* Current Status Header */}
             {currentStatus && (

@@ -131,9 +131,9 @@ describe('dashboardUtils', () => {
       );
     });
 
-    it('should return red for Sold', () => {
+    it('should return green for Sold', () => {
       expect(getStatusColor('Sold')).toBe(
-        'bg-red-100 text-red-800 border-red-200'
+        'bg-green-100 text-green-800 border-green-200'
       );
     });
 
@@ -323,15 +323,15 @@ describe('dashboardUtils', () => {
       );
     });
 
-    it('should return red for Sold', () => {
+    it('should return green for Sold', () => {
       expect(getRelationshipColor('Sold')).toBe(
-        'bg-red-100 text-red-800 border-red-200'
+        'bg-green-100 text-green-800 border-green-200'
       );
     });
 
-    it('should return purple for Owned', () => {
+    it('should return indigo for Owned', () => {
       expect(getRelationshipColor('Owned')).toBe(
-        'bg-purple-100 text-purple-800 border-purple-200'
+        'bg-indigo-100 text-indigo-800 border-indigo-200'
       );
     });
 

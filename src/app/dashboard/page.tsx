@@ -203,7 +203,7 @@ export default function DashboardPage() {
   return (
     <ErrorBoundary>
       <AppLayout
-        title="Items"
+        title="Dashboard"
         actionButton={{
           label: 'Add Item',
           onClick: handleAddItem,

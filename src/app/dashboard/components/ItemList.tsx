@@ -265,7 +265,7 @@ const ItemList = memo(function ItemList({
         );
       }
 
-      return <span className="text-gray-400">—</span>;
+      return <span className="text-gray-400 text-center">—</span>;
     },
     // FIXED: clientsMap already includes all clients data, so allClients dependency is unnecessary
     [clientsMap, clientsLoading]
@@ -885,7 +885,7 @@ const ItemList = memo(function ItemList({
                         placeholder="Subtype"
                       />
                     ) : (
-                      <div className="text-sm text-gray-900">
+                      <div className="text-sm text-gray-900 text-center">
                         {item.subtype || '—'}
                       </div>
                     )}
@@ -974,7 +974,7 @@ const ItemList = memo(function ItemList({
                       />
                     ) : (
                       // FIXED: Use memoized renderOwnership callback instead of inline IIFE
-                      <div className="text-sm text-gray-900">
+                      <div className="text-sm text-gray-900 text-center">
                         {renderOwnership(item)}
                       </div>
                     )}
