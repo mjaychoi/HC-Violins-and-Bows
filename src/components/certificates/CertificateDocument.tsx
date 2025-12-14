@@ -148,11 +148,11 @@ const styles = StyleSheet.create({
   certTitleWrap: { alignItems: 'flex-end' },
   certTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: 700,
     color: COLORS.ink,
-    letterSpacing: 1.2,
+    letterSpacing: 2.2,
   },
-  certSubtitle: { fontSize: 11, color: COLORS.muted, marginTop: 4 },
+  certSubtitle: { fontSize: 10, color: '#9CA3AF', marginTop: 4 },
 
   metaLine: {
     marginTop: 12,
@@ -165,34 +165,26 @@ const styles = StyleSheet.create({
     lineHeight: 1.4,
   },
 
-  // Certificate Number - 공식 문서 느낌
+  // Certificate Number - 공식 문서 느낌 (고급스러운 스타일)
   certBadge: {
-    marginTop: 30,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    backgroundColor: '#f7f7f7',
+    marginTop: 26,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.line,
     borderLeftWidth: 4,
-    borderLeftColor: COLORS.ink,
-    borderLeftStyle: 'solid',
-    borderRightWidth: 0,
-    borderRightColor: COLORS.line,
-    borderRightStyle: 'solid',
-    borderTopWidth: 0,
-    borderTopColor: COLORS.line,
-    borderTopStyle: 'solid',
-    borderBottomWidth: 0,
-    borderBottomColor: COLORS.line,
-    borderBottomStyle: 'solid',
+    borderLeftColor: COLORS.gold,
+    borderRadius: 10,
     overflow: 'hidden',
   },
   certBadgeLabel: { fontSize: 9, color: COLORS.muted, marginBottom: 6 },
   certBadgeValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 13,
+    letterSpacing: 1.6,
+    fontFamily: 'Courier',
+    fontWeight: 700,
     color: COLORS.ink,
-    letterSpacing: 1.2,
-    fontFamily: 'Courier', // Keep Courier for certificate number (monospace)
-    maxWidth: '100%',
   },
 
   // Sections - 라인 기반
@@ -227,25 +219,26 @@ const styles = StyleSheet.create({
   },
 
   // 2-column grid for fields
-  // ✅ FIXED: gap을 marginRight로 변경 (react-pdf 호환성)
+  // ✅ FIXED: padding 방식으로 변경하여 오른쪽 컬럼 오버플로우 방지
   grid: { flexDirection: 'row' },
-  col: { width: '50%', marginRight: 16, minWidth: 0 },
+  colLeft: { flexBasis: '50%', paddingRight: 10, minWidth: 0 },
+  colRight: { flexBasis: '50%', paddingLeft: 10, minWidth: 0 },
   field: { marginBottom: 10, flexDirection: 'row' },
   // ✅ FIXED: label 폭 조정 (값이 긴 경우 대비)
   fieldLabel: {
-    fontSize: 11,
-    width: 100,
+    fontSize: 10,
+    width: 86,
     color: '#555555',
-    marginRight: 12,
+    marginRight: 10,
   },
-  // ✅ FIXED: fieldValue에 lineHeight와 maxWidth 추가 (긴 값 줄바꿈 개선)
+  // ✅ FIXED: fieldValue에 flexShrink 명시하여 긴 값 줄바꿈 개선
   fieldValue: {
     fontSize: 12,
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
     fontWeight: 'bold',
     color: COLORS.ink,
     lineHeight: 1.4,
-    maxWidth: '100%',
   },
 
   noteBox: {
@@ -394,9 +387,12 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
       ? `₩ ${instrument.price.toLocaleString('ko-KR')} KRW`
       : undefined;
 
-  // ✅ FIXED: logoSrc가 없으면 Image를 렌더하지 않음 (undefined/null 방지)
-  // resolveLogoSrc는 string | null을 반환하므로, null 체크로 안전하게 처리
-  const finalLogoSrc = logoSrc || null;
+  // ✅ FIXED: Image src 안전성 체크 (빈 문자열도 처리)
+  const safeSrc = (s?: string | null) =>
+    typeof s === 'string' && s.trim() ? s : null;
+
+  const finalLogoSrc = safeSrc(logoSrc);
+  const finalWatermarkSrc = safeSrc(watermarkSrc);
 
   // Use provided verifyUrl or generate default
   const finalVerifyUrl =
@@ -410,8 +406,8 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
         <View style={styles.goldRuleTop} />
 
         {/* Watermark (optional) */}
-        {watermarkSrc ? (
-          <Image src={watermarkSrc} style={styles.watermark} />
+        {finalWatermarkSrc ? (
+          <Image src={finalWatermarkSrc} style={styles.watermark} />
         ) : null}
 
         {/* Header */}
@@ -457,7 +453,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
 
           <View style={styles.card}>
             <View style={styles.grid}>
-              <View style={styles.col}>
+              <View style={styles.colLeft}>
                 {field('Maker / 제작자', instrument.maker)}
                 {field('Type / 종류', instrument.type)}
                 {field('Subtype / 세부 종류', instrument.subtype)}
@@ -467,7 +463,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
                 )}
               </View>
 
-              <View style={styles.col}>
+              <View style={styles.colRight}>
                 {field('Serial Number / 시리얼 번호', instrument.serial_number)}
                 {field('Size / 크기', instrument.size)}
                 {field('Weight / 무게', instrument.weight)}
@@ -533,9 +529,14 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
               Issued Date / 발급일: {issueDate}
             </Text>
             {finalVerifyUrl ? (
-              <Text style={styles.footerLeftItem} wrap>
-                Verification / 검증: {finalVerifyUrl}
-              </Text>
+              <>
+                <Text style={styles.footerLeftItem}>
+                  Verification / 검증:
+                </Text>
+                <Text style={styles.footerLeftItem} wrap>
+                  {finalVerifyUrl}
+                </Text>
+              </>
             ) : null}
           </View>
           <Text style={styles.footerRight}>
