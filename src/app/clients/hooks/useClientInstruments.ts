@@ -42,8 +42,8 @@ export const useClientInstruments = () => {
     // If refresh needed, call DataContext actions.fetchConnections()
   }, []);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const fetchInstrumentRelationships = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async (_clientId: string) => {
       // No-op: instrumentRelationships comes from DataContext
       // If refresh needed, call DataContext actions.fetchConnections()
