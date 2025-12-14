@@ -57,8 +57,6 @@ function DashboardContentInner({
     getActiveFiltersCount,
     dateRange,
     setDateRange,
-    filterOperator,
-    setFilterOperator,
     // Pagination
     currentPage,
     totalPages,
@@ -168,8 +166,6 @@ function DashboardContentInner({
             activeFiltersCount={getActiveFiltersCount()}
             dateRange={dateRange}
             onDateRangeChange={setDateRange}
-            filterOperator={filterOperator}
-            onOperatorChange={setFilterOperator}
             clients={clients}
           />
         )}

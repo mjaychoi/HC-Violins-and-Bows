@@ -6,8 +6,8 @@ import { DateRange, FilterOperator } from '@/types/search';
 interface AdvancedSearchProps {
   dateRange: DateRange | null;
   onDateRangeChange: (range: DateRange | null) => void;
-  operator: FilterOperator;
-  onOperatorChange: (operator: FilterOperator) => void;
+  operator?: FilterOperator; // Optional - not used, kept for backward compatibility
+  onOperatorChange?: (operator: FilterOperator) => void; // Optional - not used
   dateFields?: Array<{ field: string; label: string }>;
   onApply?: () => void;
   onReset?: () => void;
@@ -16,8 +16,8 @@ interface AdvancedSearchProps {
 export default function AdvancedSearch({
   dateRange,
   onDateRangeChange,
-  operator,
-  onOperatorChange,
+  operator: _operator, // Unused - kept for backward compatibility
+  onOperatorChange: _onOperatorChange, // Unused - kept for backward compatibility
   dateFields = [],
   onApply,
   onReset,
@@ -139,38 +139,7 @@ export default function AdvancedSearch({
                 </div>
               </div>
 
-              {/* Operator selection (for future expansion) */}
-              {dateFields.length > 1 && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Condition Operator
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => onOperatorChange('AND')}
-                      className={`flex-1 h-10 rounded-lg border text-sm font-medium transition-colors ${
-                        operator === 'AND'
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                      }`}
-                      aria-label="All Match (AND)"
-                    >
-                      All Match (AND)
-                    </button>
-                    <button
-                      onClick={() => onOperatorChange('OR')}
-                      className={`flex-1 h-10 rounded-lg border text-sm font-medium transition-colors ${
-                        operator === 'OR'
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                      }`}
-                      aria-label="Any Match (OR)"
-                    >
-                      Any Match (OR)
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* Operator selection removed - only date range filter is used */}
 
               {/* Apply/Reset buttons */}
               <div className="flex gap-2 pt-2 border-t border-gray-200">

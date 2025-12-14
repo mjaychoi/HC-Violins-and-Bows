@@ -1,6 +1,5 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Instrument, ClientInstrument } from '@/types';
-import { FilterOperator } from '@/types/search';
 import {
   DashboardFilters,
   DashboardFilterOptions,
@@ -24,9 +23,6 @@ export function useDashboardFilters(
   items: EnrichedInstrument[] | Instrument[]
 ) {
   const [dateRange, setDateRange] = useState<DateRange | null>(null);
-  // TODO: filterOperator is currently unused - implement AND/OR logic for multiple filter combinations
-  // When implementing, update filterDashboardItems to accept FilterOperator parameter
-  const [filterOperator, setFilterOperator] = useState<FilterOperator>('AND');
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -62,7 +58,6 @@ export function useDashboardFilters(
     initialFilters: EMPTY_DASHBOARD_FILTERS,
     resetFilters: () => EMPTY_DASHBOARD_FILTERS,
     enableDateRange: false, // 직접 관리
-    enableFilterOperator: false, // 직접 관리
     syncWithURL: true, // URL 쿼리 파라미터와 상태 동기화
     urlParamMapping: {
       searchTerm: 'search',
@@ -271,11 +266,9 @@ export function useDashboardFilters(
     handleSort: handleSortProxy,
     getSortArrow: getSortArrowProxy,
     getActiveFiltersCount,
-    // 고급 검색
+    // 고급 검색 (날짜 범위만)
     dateRange,
     setDateRange,
-    filterOperator,
-    setFilterOperator,
     // Pagination
     currentPage,
     totalPages,

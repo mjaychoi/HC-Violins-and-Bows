@@ -205,10 +205,8 @@ export default function PageFilters({
                 <AdvancedSearch
                   dateRange={advancedSearchConfig.dateRange || null}
                   onDateRangeChange={advancedSearchConfig.onDateRangeChange}
-                  operator={advancedSearchConfig.operator || 'AND'}
-                  onOperatorChange={
-                    advancedSearchConfig.onOperatorChange || (() => {})
-                  }
+                  operator={advancedSearchConfig.operator} // Optional - not used
+                  onOperatorChange={advancedSearchConfig.onOperatorChange} // Optional - not used
                   dateFields={advancedSearchConfig.dateFields || []}
                   onReset={advancedSearchConfig.onReset}
                 />

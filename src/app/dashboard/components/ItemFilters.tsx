@@ -3,7 +3,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { Instrument, ClientInstrument } from '@/types';
 import { getPriceRange } from '../utils/dashboardUtils';
-import { DateRange, FilterOperator } from '@/types/search';
+import { DateRange } from '@/types/search';
 import PageFilters, {
   FilterGroupConfig,
 } from '@/components/common/PageFilters';
@@ -35,11 +35,9 @@ interface ItemFiltersProps {
   showFilters: boolean;
   onToggleFilters: () => void;
   activeFiltersCount: number;
-  // 고급 검색
+  // 고급 검색 (날짜 범위만)
   dateRange?: DateRange | null;
   onDateRangeChange?: (range: DateRange | null) => void;
-  filterOperator: FilterOperator; // Required - managed by parent hook
-  onOperatorChange?: (operator: FilterOperator) => void;
   // 클라이언트 데이터 (ownership 필터에서 UUID를 이름으로 변환하기 위해)
   clients?: Array<{
     id: string;
@@ -62,11 +60,8 @@ export default function ItemFilters({
   activeFiltersCount,
   dateRange,
   onDateRangeChange,
-  filterOperator,
-  onOperatorChange,
   clients = [],
 }: ItemFiltersProps) {
-  // filterOperator is managed by parent (useDashboardFilters) to avoid default value duplication
   // FIXED: Memoize buildDashboardFilterOptions to avoid recomputing on every render
   // buildDashboardFilterOptions only needs Instrument fields, not clients array
   const filterOptions = useMemo(
@@ -342,8 +337,7 @@ export default function ItemFilters({
           ? {
               dateRange: dateRange || null,
               onDateRangeChange,
-              operator: filterOperator,
-              onOperatorChange: onOperatorChange || undefined,
+              // 날짜 범위 필터만 사용 (operator 제거)
               dateFields: [
                 {
                   field: 'created_at',

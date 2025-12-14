@@ -42,7 +42,6 @@ describe('ItemFilters', () => {
     showFilters: true,
     onToggleFilters: jest.fn(),
     activeFiltersCount: 0,
-    filterOperator: 'AND' as const,
   };
 
   it('renders filter panel', () => {
