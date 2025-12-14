@@ -22,6 +22,8 @@
     "prepare": "husky",
     "pre-commit": "lint-staged",
     "type-check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "final": "npm run lint && npm run type-check && npm run test && npm run build",
     "migrate": "tsx scripts/migrate.ts",
     "migrate:postgres": "tsx scripts/migrate.ts --postgres",
     "migrate:cli": "tsx scripts/migrate.ts --cli",
