@@ -14,9 +14,13 @@ export default function Input({
   helperText,
   required = false,
   className = '',
+  value,
   ...props
 }: InputProps) {
   const inputClasses = error ? classNames.inputError : classNames.input;
+  
+  // Fix controlled/uncontrolled input warning: convert undefined to empty string
+  const controlledValue = value === undefined || value === null ? '' : value;
 
   return (
     <div className="space-y-1">
@@ -27,7 +31,11 @@ export default function Input({
         </label>
       )}
 
-      <input className={`${inputClasses} ${className}`} {...props} />
+      <input 
+        className={`${inputClasses} ${className}`} 
+        value={controlledValue}
+        {...props} 
+      />
 
       {error && <p className={classNames.formError}>{error}</p>}
 
