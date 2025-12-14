@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
   const startTime = performance.now();
   const searchParams = request.nextUrl.searchParams;
   const clientId = searchParams.get('clientId');
+  const clientIds = searchParams.get('clientIds'); // Batch query: comma-separated UUIDs
   const instrumentId = searchParams.get('instrumentId');
   const fromDate = searchParams.get('fromDate');
   const toDate = searchParams.get('toDate');
@@ -34,8 +35,18 @@ export async function GET(request: NextRequest) {
       { count: 'exact' }
     );
 
-    // Filter by client_id
-    if (clientId && validateUUID(clientId)) {
+    // Filter by client_id(s) - support both single and batch
+    if (clientIds) {
+      // Batch query: parse comma-separated UUIDs
+      const ids = clientIds
+        .split(',')
+        .map(id => id.trim())
+        .filter(id => validateUUID(id));
+      if (ids.length > 0) {
+        query = query.in('client_id', ids);
+      }
+    } else if (clientId && validateUUID(clientId)) {
+      // Single client query (backward compatibility)
       query = query.eq('client_id', clientId);
     }
 
@@ -125,10 +136,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(safeError, { status: 500 });
     }
 
-    logApiRequest('GET', '/api/contacts', undefined, duration, 'ContactsAPI', {
-      clientId,
-      count: data?.length || 0,
-    });
+      logApiRequest('GET', '/api/contacts', undefined, duration, 'ContactsAPI', {
+        clientId,
+        clientIds: clientIds ? `${clientIds.split(',').length} clients` : undefined,
+        count: data?.length || 0,
+      });
 
     return NextResponse.json({
       data: data || [],

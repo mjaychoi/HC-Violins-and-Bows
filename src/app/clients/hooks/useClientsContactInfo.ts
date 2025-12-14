@@ -52,9 +52,9 @@ export function useClientsContactInfo({
     const fetchContactInfo = async () => {
       setLoading(true);
       try {
-        // Fetch all contact logs for all clients
-        // We'll fetch them in batches to avoid URL length issues
-        const batchSize = 50;
+        // Fetch all contact logs for all clients using batch endpoint
+        // Batch size limit: 100 clientIds per request to avoid URL length issues
+        const batchSize = 100;
         const batches: string[][] = [];
         const sortedClientIds = [...clientIds].sort(); // Use sorted copy
         for (let i = 0; i < sortedClientIds.length; i += batchSize) {
@@ -66,28 +66,27 @@ export function useClientsContactInfo({
         for (const batch of batches) {
           if (cancelled) return;
 
-          // Fetch logs for this batch of clients
-          const promises = batch.map(async clientId => {
-            try {
-              const response = await fetch(
-                `/api/contacts?clientId=${clientId}`
-              );
-              const result = await response.json();
-              if (response.ok && result.data) {
-                return result.data as ContactLog[];
-              }
-              return [];
-            } catch (error) {
+          try {
+            // Use batch endpoint: /api/contacts?clientIds=id1,id2,id3
+            const clientIdsParam = batch.join(',');
+            const response = await fetch(
+              `/api/contacts?clientIds=${encodeURIComponent(clientIdsParam)}`
+            );
+            const result = await response.json();
+            if (response.ok && result.data) {
+              allLogs.push(...(result.data as ContactLog[]));
+            } else {
               console.error(
-                `Failed to fetch contact logs for client ${clientId}:`,
-                error
+                `Failed to fetch contact logs for batch:`,
+                result.error || 'Unknown error'
               );
-              return [];
             }
-          });
-
-          const batchResults = await Promise.all(promises);
-          allLogs.push(...batchResults.flat());
+          } catch (error) {
+            console.error(
+              `Failed to fetch contact logs for batch:`,
+              error
+            );
+          }
         }
 
         if (cancelled) return;
