@@ -158,7 +158,7 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         process.env.NODE_ENV === 'development'
       ) {
         console.warn(
-          '[useCustomers] 클라이언트 데이터가 없습니다. clientsLoading:',
+          '[useCustomers] No client data available. clientsLoading:',
           clientsLoading,
           'clients.length:',
           clients.length
