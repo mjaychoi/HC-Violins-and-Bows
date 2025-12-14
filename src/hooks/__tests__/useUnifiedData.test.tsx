@@ -147,7 +147,7 @@ describe('useUnifiedData', () => {
         resetState: jest.fn(),
       },
     }));
-    (useConnectionsContext as jest.Mock).mockImplementation(() => ({
+    mockUseConnectionsContext.mockImplementation(() => ({
       state: {
         connections: mockState.connections,
         loading: mockState.loading.connections,
@@ -176,7 +176,7 @@ describe('useUnifiedData', () => {
       invalidateCache: jest.fn(),
       resetState: jest.fn(),
     }));
-    (useInstruments as jest.Mock).mockImplementation(() => ({
+    mockUseInstruments.mockImplementation(() => ({
       instruments: mockState.instruments,
       loading: mockState.loading.instruments,
       submitting: mockState.submitting.instruments,
@@ -734,15 +734,15 @@ describe('useUnifiedData', () => {
   describe('useUnifiedCache', () => {
     it('should provide invalidate function', () => {
       const mockInvalidateCache = jest.fn();
-      (useClientsContext as jest.Mock).mockReturnValueOnce({
+      mockUseClientsContext.mockReturnValueOnce({
         state: { clients: [], loading: false, submitting: false, lastUpdated: null },
         actions: { invalidateCache: mockInvalidateCache },
       });
-      (useInstrumentsContext as jest.Mock).mockReturnValueOnce({
+      mockUseInstrumentsContext.mockReturnValueOnce({
         state: { instruments: [], loading: false, submitting: false, lastUpdated: null },
         actions: { invalidateCache: jest.fn() },
       });
-      (useConnectionsContext as jest.Mock).mockReturnValueOnce({
+      mockUseConnectionsContext.mockReturnValueOnce({
         state: { connections: [], loading: false, submitting: false, lastUpdated: null },
         actions: { invalidateCache: jest.fn() },
       });
@@ -758,15 +758,15 @@ describe('useUnifiedData', () => {
       const mockInvalidateClients = jest.fn();
       const mockInvalidateInstruments = jest.fn();
       const mockInvalidateConnections = jest.fn();
-      (useClientsContext as jest.Mock).mockReturnValueOnce({
+      mockUseClientsContext.mockReturnValueOnce({
         state: { clients: [], loading: false, submitting: false, lastUpdated: null },
         actions: { invalidateCache: mockInvalidateClients },
       });
-      (useInstrumentsContext as jest.Mock).mockReturnValueOnce({
+      mockUseInstrumentsContext.mockReturnValueOnce({
         state: { instruments: [], loading: false, submitting: false, lastUpdated: null },
         actions: { invalidateCache: mockInvalidateInstruments },
       });
-      (useConnectionsContext as jest.Mock).mockReturnValueOnce({
+      mockUseConnectionsContext.mockReturnValueOnce({
         state: { connections: [], loading: false, submitting: false, lastUpdated: null },
         actions: { invalidateCache: mockInvalidateConnections },
       });
@@ -784,15 +784,15 @@ describe('useUnifiedData', () => {
       const mockResetClients = jest.fn();
       const mockResetInstruments = jest.fn();
       const mockResetConnections = jest.fn();
-      (useClientsContext as jest.Mock).mockReturnValueOnce({
+      mockUseClientsContext.mockReturnValueOnce({
         state: { clients: [], loading: false, submitting: false, lastUpdated: null },
         actions: { resetState: mockResetClients },
       });
-      (useInstrumentsContext as jest.Mock).mockReturnValueOnce({
+      mockUseInstrumentsContext.mockReturnValueOnce({
         state: { instruments: [], loading: false, submitting: false, lastUpdated: null },
         actions: { resetState: mockResetInstruments },
       });
-      (useConnectionsContext as jest.Mock).mockReturnValueOnce({
+      mockUseConnectionsContext.mockReturnValueOnce({
         state: { connections: [], loading: false, submitting: false, lastUpdated: null },
         actions: { resetState: mockResetConnections },
       });

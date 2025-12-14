@@ -61,9 +61,10 @@ const SalesTable = dynamic(() => import('./components/SalesTable'), {
 });
 
 // Dynamic import for SaleForm (451 lines) - modal, loaded when needed
-const SaleForm = dynamic(() => import('./components/SaleForm'), {
-  ssr: false,
-});
+// TODO: SaleForm is currently unused but may be needed for future sale creation functionality
+// const SaleForm = dynamic(() => import('./components/SaleForm'), {
+//   ssr: false,
+// });
 
 // Dynamic import for SalesSummary (215 lines) - KPI cards, can be lazy loaded
 const SalesSummary = dynamic(() => import('./components/SalesSummary'), {
