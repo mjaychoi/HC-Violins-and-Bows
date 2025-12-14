@@ -130,7 +130,7 @@ export default function ContactLogComponent({
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-gray-900">연락 기록</h4>
+        <h4 className="text-sm font-semibold text-gray-900">Contact Log</h4>
         {!isAdding && (
           <Button
             type="button"
@@ -229,7 +229,7 @@ export default function ContactLogComponent({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                연락 날짜
+                Contact Date
               </label>
               <input
                 type="date"
@@ -326,7 +326,7 @@ export default function ContactLogComponent({
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">
-                          연락 날짜
+                          Contact Date
                         </label>
                         <input
                           type="date"

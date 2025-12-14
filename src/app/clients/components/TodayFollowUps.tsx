@@ -404,7 +404,7 @@ export default function TodayFollowUps() {
                           disabled={processingIds.has(primaryLog.id)}
                           className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         >
-                          30일 후
+                          In 30 days
                         </button>
                         <button
                           type="button"
