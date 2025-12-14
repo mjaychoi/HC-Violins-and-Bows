@@ -10,9 +10,6 @@ import {
   useUnifiedCache,
 } from '../useUnifiedData';
 import { Client, Instrument, ClientInstrument } from '@/types';
-import { useClientsContext } from '@/contexts/ClientsContext';
-import { useInstrumentsContext } from '@/contexts/InstrumentsContext';
-import { useConnectionsContext } from '@/contexts/ConnectionsContext';
 
 // Mock DataContext
 // Export for use in jest.mock factory functions
@@ -73,16 +70,30 @@ jest.mock('@/contexts/ConnectionsContext', () => ({
 
 describe('useUnifiedData', () => {
   // Get mock implementations to update them
-  const { useClientsContext } = require('@/contexts/ClientsContext');
-  const { useInstrumentsContext } = require('@/contexts/InstrumentsContext');
-  const { useConnectionsContext } = require('@/contexts/ConnectionsContext');
-  const { useClients } = require('@/contexts/ClientsContext');
-  const { useInstruments } = require('@/contexts/InstrumentsContext');
-  const { useConnections } = require('@/contexts/ConnectionsContext');
+  // Use require inside beforeEach to ensure mocks are available
+  let mockUseClientsContext: jest.MockedFunction<any>;
+  let mockUseInstrumentsContext: jest.MockedFunction<any>;
+  let mockUseConnectionsContext: jest.MockedFunction<any>;
+  let mockUseClients: jest.MockedFunction<any>;
+  let mockUseInstruments: jest.MockedFunction<any>;
+  let mockUseConnections: jest.MockedFunction<any>;
 
 
   beforeEach(() => {
     jest.clearAllMocks();
+    
+    // Get mocked functions after jest.mock has run
+    const clientsContextModule = require('@/contexts/ClientsContext');
+    const instrumentsContextModule = require('@/contexts/InstrumentsContext');
+    const connectionsContextModule = require('@/contexts/ConnectionsContext');
+    
+    mockUseClientsContext = clientsContextModule.useClientsContext;
+    mockUseInstrumentsContext = instrumentsContextModule.useInstrumentsContext;
+    mockUseConnectionsContext = connectionsContextModule.useConnectionsContext;
+    mockUseClients = clientsContextModule.useClients;
+    mockUseInstruments = instrumentsContextModule.useInstruments;
+    mockUseConnections = connectionsContextModule.useConnections;
+    
     mockState.clients = [];
     mockState.instruments = [];
     mockState.connections = [];
@@ -104,7 +115,7 @@ describe('useUnifiedData', () => {
 
     // Update mock implementations to return current mockState using mockImplementation
     // Use arrow functions that read mockState at call time, not definition time
-    (useClientsContext as jest.Mock).mockImplementation(() => ({
+    mockUseClientsContext.mockImplementation(() => ({
       state: {
         clients: mockState.clients,
         loading: mockState.loading.clients,
@@ -120,7 +131,7 @@ describe('useUnifiedData', () => {
         resetState: jest.fn(),
       },
     }));
-    (useInstrumentsContext as jest.Mock).mockImplementation(() => ({
+    mockUseInstrumentsContext.mockImplementation(() => ({
       state: {
         instruments: mockState.instruments,
         loading: mockState.loading.instruments,
@@ -153,7 +164,7 @@ describe('useUnifiedData', () => {
       },
     }));
     
-    (useClients as jest.Mock).mockImplementation(() => ({
+    mockUseClients.mockImplementation(() => ({
       clients: mockState.clients,
       loading: mockState.loading.clients,
       submitting: mockState.submitting.clients,
@@ -177,7 +188,7 @@ describe('useUnifiedData', () => {
       invalidateCache: jest.fn(),
       resetState: jest.fn(),
     }));
-    (useConnections as jest.Mock).mockImplementation(() => ({
+    mockUseConnections.mockImplementation(() => ({
       connections: mockState.connections,
       loading: mockState.loading.connections,
       submitting: mockState.submitting.connections,
