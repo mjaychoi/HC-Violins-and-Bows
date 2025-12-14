@@ -23,7 +23,8 @@ const baseConfig: NextConfig = {
       'date-fns',
       'react-window',
       'recharts',
-      'react-big-calendar',
+      // react-big-calendar removed: causes barrel optimization issues with dateFnsLocalizer
+      // 'react-big-calendar',
     ],
     // Turbopack HMR 안정성 개선
     // Note: @swc/helpers 모듈 HMR 오류가 발생하면 dev:webpack 스크립트 사용 권장
