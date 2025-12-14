@@ -23,11 +23,12 @@ const baseConfig: NextConfig = {
       'date-fns',
       'react-window',
       'recharts',
-      '@react-pdf/renderer',
       'react-big-calendar',
     ],
     // Turbopack HMR 안정성 개선
     // Note: @swc/helpers 모듈 HMR 오류가 발생하면 dev:webpack 스크립트 사용 권장
+    // Note: @react-pdf/renderer is excluded from optimizePackageImports
+    // because it's server-only and causes conflicts with serverExternalPackages
   },
   // serverComponentsExternalPackages has been moved from experimental to top-level
   // @react-pdf/renderer is only used in server components (API routes), not in client components
