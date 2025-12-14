@@ -87,17 +87,48 @@ jest.mock('../components/SaleForm', () => ({
     ) : null,
 }));
 
-// Mock dynamic import for SalesCharts
+// Mock dynamic import - return mocked components based on import path
 jest.mock('next/dynamic', () => {
-  return () => {
-    // For tests, immediately resolve the dynamic import
-    const MockedComponent = (props: any) => (
-      <div data-testid="sales-charts">
-        Charts for {props.sales?.length || 0} sales
-      </div>
-    );
-    MockedComponent.displayName = 'MockedSalesCharts';
-    return MockedComponent;
+  return (importFn: () => Promise<any>, options?: any) => {
+    // Use a factory function that returns the appropriate mock based on the import
+    // We'll use require to get the mocked component
+    const importPath = importFn.toString();
+    
+    if (importPath.includes('SalesCharts')) {
+      return (props: any) => (
+        <div data-testid="sales-charts">
+          Charts for {props.sales?.length || 0} sales
+        </div>
+      );
+    }
+    
+    if (importPath.includes('SalesSummary')) {
+      const { default: SalesSummary } = require('../components/SalesSummary');
+      return SalesSummary;
+    }
+    
+    if (importPath.includes('SalesFilters')) {
+      const { default: SalesFilters } = require('../components/SalesFilters');
+      return SalesFilters;
+    }
+    
+    if (importPath.includes('SalesTable')) {
+      const { default: SalesTable } = require('../components/SalesTable');
+      return SalesTable;
+    }
+    
+    if (importPath.includes('SalesInsights')) {
+      const { default: SalesInsights } = require('../components/SalesInsights');
+      return SalesInsights;
+    }
+    
+    if (importPath.includes('SalesAlerts')) {
+      const { default: SalesAlerts } = require('../components/SalesAlerts');
+      return SalesAlerts;
+    }
+    
+    // Default fallback
+    return () => null;
   };
 });
 
@@ -138,6 +169,7 @@ jest.mock('../components/SalesFilters', () => ({
       <label>
         From date
         <input
+          aria-label="From date"
           data-testid="from-date"
           type="date"
           value={from}
@@ -147,6 +179,7 @@ jest.mock('../components/SalesFilters', () => ({
       <label>
         To date
         <input
+          aria-label="To date"
           data-testid="to-date"
           type="date"
           value={to}
@@ -158,7 +191,7 @@ jest.mock('../components/SalesFilters', () => ({
       <button data-testid="clear-filters" onClick={onClearFilters}>
         Clear filters
       </button>
-      <button onClick={onExportCSV}>Export CSV</button>
+      <button onClick={onExportCSV} data-testid="export-csv-button">Export CSV</button>
     </div>
   ),
 }));
