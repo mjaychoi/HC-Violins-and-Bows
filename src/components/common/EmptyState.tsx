@@ -56,6 +56,7 @@ export default function EmptyState({
 
   return (
     <div
+      data-testid="empty-state"
       className={`rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}
     >
       <div className="text-center py-16 px-4" role="status" aria-live="polite">

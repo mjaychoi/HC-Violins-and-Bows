@@ -205,7 +205,11 @@ describe('useUnifiedData', () => {
       const { result } = renderHook(() => useUnifiedClients());
 
       expect(result.current.clients).toEqual([]);
-      expect(result.current.loading).toEqual({ clients: false, any: false });
+      expect(result.current.loading).toEqual({
+        clients: false,
+        any: false,
+        hasAnyLoading: false,
+      });
       expect(result.current.fetchClients).toBeDefined();
     });
 

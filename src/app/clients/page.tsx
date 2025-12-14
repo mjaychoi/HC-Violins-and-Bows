@@ -518,7 +518,7 @@ export default function ClientsPage() {
                       onPageChange={setAnalyticsCurrentPage}
                       totalCount={analyticsData.customers.length}
                       pageSize={analyticsPageSize}
-                      loading={analyticsData.loading}
+                      loading={Boolean(analyticsData.loading)}
                     />
                   </div>
                 )}
