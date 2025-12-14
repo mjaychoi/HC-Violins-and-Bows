@@ -183,6 +183,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
     borderBottomColor: COLORS.line,
     borderBottomStyle: 'solid',
+    overflow: 'hidden',
   },
   certBadgeLabel: { fontSize: 9, color: COLORS.muted, marginBottom: 6 },
   certBadgeValue: {
@@ -191,6 +192,7 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
     letterSpacing: 1.2,
     fontFamily: 'Courier', // Keep Courier for certificate number (monospace)
+    maxWidth: '100%',
   },
 
   // Sections - 라인 기반
@@ -221,12 +223,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 12,
     backgroundColor: COLORS.white,
+    overflow: 'hidden',
   },
 
   // 2-column grid for fields
   // ✅ FIXED: gap을 marginRight로 변경 (react-pdf 호환성)
   grid: { flexDirection: 'row' },
-  col: { width: '50%', marginRight: 16 },
+  col: { width: '50%', marginRight: 16, minWidth: 0 },
   field: { marginBottom: 10, flexDirection: 'row' },
   // ✅ FIXED: label 폭 조정 (값이 긴 경우 대비)
   fieldLabel: {
@@ -256,6 +259,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: COLORS.ink,
     lineHeight: 1.5,
+    maxWidth: '100%',
   },
 
   // Signature - 공식 문서 느낌
@@ -334,7 +338,7 @@ const styles = StyleSheet.create({
   },
   // ✅ FIXED: gap을 marginBottom으로 변경 (react-pdf 호환성)
   footerLeft: { flexDirection: 'column' },
-  footerLeftItem: { marginBottom: 2 },
+  footerLeftItem: { marginBottom: 2, maxWidth: '100%' },
   footerRight: { textAlign: 'right' },
 });
 
@@ -345,10 +349,13 @@ function field(label: string, value?: React.ReactNode) {
     { flexDirection: 'row' as const, alignItems: 'flex-start' as const },
   ].filter(Boolean);
 
+  // Convert value to string for proper text wrapping
+  const valueStr = value !== null && value !== undefined ? String(value) : 'N/A';
+
   return (
     <View style={fieldStyle}>
       <Text style={styles.fieldLabel}>{label}:</Text>
-      <Text style={styles.fieldValue}>{value ?? 'N/A'}</Text>
+      <Text style={styles.fieldValue} wrap>{valueStr}</Text>
     </View>
   );
 }
@@ -435,7 +442,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
             <Text style={styles.certBadgeLabel}>
               Certificate Number / 인증서 번호
             </Text>
-            <Text style={styles.certBadgeValue}>{certificateNumber}</Text>
+            <Text style={styles.certBadgeValue} wrap>{certificateNumber}</Text>
           </View>
         </View>
 
@@ -474,7 +481,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
                 {instrument.note ? (
                   <View style={styles.noteBox}>
                     <Text style={styles.fieldLabel}>Notes / 비고</Text>
-                    <Text style={styles.noteText}>{instrument.note}</Text>
+                    <Text style={styles.noteText} wrap>{instrument.note}</Text>
                   </View>
                 ) : null}
               </View>
@@ -526,7 +533,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
               Issued Date / 발급일: {issueDate}
             </Text>
             {finalVerifyUrl ? (
-              <Text style={styles.footerLeftItem}>
+              <Text style={styles.footerLeftItem} wrap>
                 Verification / 검증: {finalVerifyUrl}
               </Text>
             ) : null}
