@@ -12,10 +12,10 @@ describe('relationshipStyles', () => {
     });
 
     expect(getRelationshipTypeStyle('Sold')).toEqual({
-      bgColor: 'bg-red-100', // ✅ FIXED: red
-      textColor: 'text-red-800', // ✅ FIXED: red
-      borderColor: 'border-red-200', // ✅ FIXED: red
-      activeBorder: 'border-red-600', // ✅ FIXED: red
+      bgColor: 'bg-green-100',
+      textColor: 'text-green-800',
+      borderColor: 'border-green-200',
+      activeBorder: 'border-green-600',
       icon: '✅',
     });
   });

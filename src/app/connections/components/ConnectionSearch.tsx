@@ -15,7 +15,7 @@ export default function ConnectionSearch({
     <div className="relative">
       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
         <svg
-          className="h-5 w-5 text-gray-400"
+          className="h-4 w-4 text-gray-400"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -33,7 +33,7 @@ export default function ConnectionSearch({
         placeholder={placeholder}
         value={searchTerm}
         onChange={e => onSearchChange(e.target.value)}
-        className="w-full pl-10 pr-4 py-3 lg:py-2.5 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:border-gray-300 transition-all duration-200"
+        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:border-gray-300 transition-all duration-200"
       />
     </div>
   );

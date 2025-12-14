@@ -26,7 +26,7 @@ export const FilterBar = ({
               : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
           }`}
         >
-          All ({totalConnections})
+          All <span className="text-gray-400">({totalConnections})</span>
         </button>
         {relationshipTypeCounts.map(({ type, count }) => {
           const style = getRelationshipTypeStyle(type);
@@ -42,7 +42,8 @@ export const FilterBar = ({
               }`}
               title={`Filter by ${type}`}
             >
-              {style.icon} {type} ({count})
+              {style.icon} {type}{' '}
+              <span className="text-gray-400">({count})</span>
             </button>
           );
         })}

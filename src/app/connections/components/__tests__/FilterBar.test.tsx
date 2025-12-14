@@ -26,8 +26,8 @@ jest.mock('../../utils/relationshipStyles', () => ({
         icon: '✅',
       },
       Owned: {
-        activeBorder: 'border-purple-600',
-        textColor: 'text-purple-600',
+        activeBorder: 'border-indigo-600',
+        textColor: 'text-indigo-600',
         icon: '🏠',
       },
     };
@@ -65,7 +65,9 @@ describe('FilterBar', () => {
       />
     );
 
-    expect(screen.getByText(/All \(11\)/i)).toBeInTheDocument();
+    // FIXED: Text is split across elements (All + span with count)
+    expect(screen.getByText('All')).toBeInTheDocument();
+    expect(screen.getByText('(11)')).toBeInTheDocument();
   });
 
   it('should render relationship type filter buttons', () => {
@@ -78,10 +80,15 @@ describe('FilterBar', () => {
       />
     );
 
-    expect(screen.getByText(/Interested \(5\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/Booked \(3\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/Sold \(2\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/Owned \(1\)/i)).toBeInTheDocument();
+    // FIXED: Text includes emoji and spaces, use regex or getByRole
+    expect(screen.getByText(/Interested/i)).toBeInTheDocument();
+    expect(screen.getByText('(5)')).toBeInTheDocument();
+    expect(screen.getByText(/Booked/i)).toBeInTheDocument();
+    expect(screen.getByText('(3)')).toBeInTheDocument();
+    expect(screen.getByText(/Sold/i)).toBeInTheDocument();
+    expect(screen.getByText('(2)')).toBeInTheDocument();
+    expect(screen.getByText(/Owned/i)).toBeInTheDocument();
+    expect(screen.getByText('(1)')).toBeInTheDocument();
   });
 
   it('should highlight "All" button when selectedFilter is null', () => {
@@ -94,7 +101,8 @@ describe('FilterBar', () => {
       />
     );
 
-    const allButton = screen.getByText(/All \(11\)/i);
+    // FIXED: Use getByRole to find button containing "All" text
+    const allButton = screen.getByRole('button', { name: /All/i });
     expect(allButton.className).toContain('border-blue-600');
     expect(allButton.className).toContain('text-blue-600');
   });
@@ -109,7 +117,8 @@ describe('FilterBar', () => {
       />
     );
 
-    const interestedButton = screen.getByText(/Interested \(5\)/i);
+    // FIXED: Use getByRole to find button containing "Interested" text
+    const interestedButton = screen.getByRole('button', { name: /Interested/i });
     expect(interestedButton.className).toContain('border-yellow-600');
     expect(interestedButton.className).toContain('text-yellow-600');
   });
@@ -125,7 +134,8 @@ describe('FilterBar', () => {
       />
     );
 
-    const allButton = screen.getByText(/All \(11\)/i);
+    // FIXED: Use getByRole to find button containing "All" text
+    const allButton = screen.getByRole('button', { name: /All/i });
     await user.click(allButton);
 
     expect(mockOnFilterChange).toHaveBeenCalledWith(null);
@@ -142,7 +152,8 @@ describe('FilterBar', () => {
       />
     );
 
-    const bookedButton = screen.getByText(/Booked \(3\)/i);
+    // FIXED: Use getByRole to find button containing "Booked" text
+    const bookedButton = screen.getByRole('button', { name: /Booked/i });
     await user.click(bookedButton);
 
     expect(mockOnFilterChange).toHaveBeenCalledWith('Booked');
@@ -158,11 +169,17 @@ describe('FilterBar', () => {
       />
     );
 
-    expect(screen.getByText(/All \(11\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/Interested \(5\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/Booked \(3\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/Sold \(2\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/Owned \(1\)/i)).toBeInTheDocument();
+    // FIXED: Text includes emoji and spaces, use regex for type names
+    expect(screen.getByText(/All/i)).toBeInTheDocument();
+    expect(screen.getByText('(11)')).toBeInTheDocument();
+    expect(screen.getByText(/Interested/i)).toBeInTheDocument();
+    expect(screen.getByText('(5)')).toBeInTheDocument();
+    expect(screen.getByText(/Booked/i)).toBeInTheDocument();
+    expect(screen.getByText('(3)')).toBeInTheDocument();
+    expect(screen.getByText(/Sold/i)).toBeInTheDocument();
+    expect(screen.getByText('(2)')).toBeInTheDocument();
+    expect(screen.getByText(/Owned/i)).toBeInTheDocument();
+    expect(screen.getByText('(1)')).toBeInTheDocument();
   });
 
   it('should render icons for relationship types', () => {
@@ -191,7 +208,9 @@ describe('FilterBar', () => {
       />
     );
 
-    expect(screen.getByText(/All \(0\)/i)).toBeInTheDocument();
+    // FIXED: Text is split across elements
+    expect(screen.getByText('All')).toBeInTheDocument();
+    expect(screen.getByText('(0)')).toBeInTheDocument();
     expect(screen.queryByText(/Interested/i)).not.toBeInTheDocument();
   });
 
@@ -205,7 +224,8 @@ describe('FilterBar', () => {
       />
     );
 
-    const interestedButton = screen.getByText(/Interested \(5\)/i);
+    // FIXED: Use getByRole to find button containing "Interested" text
+    const interestedButton = screen.getByRole('button', { name: /Interested/i });
     expect(interestedButton).toHaveAttribute('title', 'Filter by Interested');
   });
 
@@ -219,7 +239,8 @@ describe('FilterBar', () => {
       />
     );
 
-    const bookedButton = screen.getByText(/Booked \(3\)/i);
+    // FIXED: Use getByRole to find button containing "Booked" text
+    const bookedButton = screen.getByRole('button', { name: /Booked/i });
     expect(bookedButton.className).toContain('hover:text-gray-800');
     expect(bookedButton.className).toContain('hover:border-gray-300');
   });

@@ -35,7 +35,7 @@ export const groupConnectionsByType = (
     if (!acc[type]) {
       acc[type] = [];
     }
-    acc[type].push(connection);
+    acc[type]?.push(connection);
     return acc;
   }, {} as GroupedConnections);
 };
@@ -96,4 +96,25 @@ export const sortConnectionsForAllTab = (
     const typeB = b.instrument?.type ?? '';
     return typeA.localeCompare(typeB);
   });
+};
+
+/**
+ * Group connections by client (for Client-unit card display)
+ * Returns a map of client_id -> connections array
+ */
+export interface ClientGroupedConnections {
+  [clientId: string]: ClientInstrument[];
+}
+
+export const groupConnectionsByClient = (
+  connections: ClientInstrument[]
+): ClientGroupedConnections => {
+  return connections.reduce((acc, connection) => {
+    const clientId = connection.client_id;
+    if (!acc[clientId]) {
+      acc[clientId] = [];
+    }
+    acc[clientId].push(connection);
+    return acc;
+  }, {} as ClientGroupedConnections);
 };

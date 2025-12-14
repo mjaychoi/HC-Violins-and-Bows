@@ -73,10 +73,10 @@ export const ConnectionsList = memo(function ConnectionsList({
   }, [connectionsToPaginate, currentPage, pageSize]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {isAll ? (
         // All 탭: 섹션 없이 flat list로 표시 (각 카드에 배지로 type 표시)
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-6 gap-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-4 gap-y-4">
           {pageItems.map(connection => (
             <ConnectionCard
               key={connection.id}
@@ -95,7 +95,7 @@ export const ConnectionsList = memo(function ConnectionsList({
           return (
             <div key={type}>
               <RelationshipSectionHeader type={type} count={totalCount} />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-6 gap-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-4 gap-y-4">
                 {pageItems.map(connection => (
                   <ConnectionCard
                     key={connection.id}
