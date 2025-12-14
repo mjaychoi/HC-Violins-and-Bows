@@ -225,7 +225,27 @@ export default function SalesPage() {
     }
     return calculateTotals(enrichedSales);
   }, [apiTotals, enrichedSales]);
-  const periodInfo = useMemo(() => formatPeriodInfo(from, to), [from, to]);
+
+  // Calculate actual date range from sales data (for "All time" display)
+  const actualDateRange = useMemo(() => {
+    if (enrichedSales.length === 0) return { from: undefined, to: undefined };
+    const dates = enrichedSales.map(sale => sale.sale_date).sort();
+    return {
+      from: dates[0],
+      to: dates[dates.length - 1],
+    };
+  }, [enrichedSales]);
+
+  const periodInfo = useMemo(
+    () =>
+      formatPeriodInfo(
+        from,
+        to,
+        actualDateRange.from,
+        actualDateRange.to
+      ),
+    [from, to, actualDateRange.from, actualDateRange.to]
+  );
 
   const handleSendReceipt = useCallback(
     async (sale: EnrichedSale) => {

@@ -114,8 +114,17 @@ export function calculateTotals(sales: EnrichedSale[]): SalesTotals {
 /**
  * 기간 정보를 포맷팅합니다.
  * FIXED: Use parseYMDUTC to avoid timezone issues
+ * @param from - 시작일 (필터)
+ * @param to - 종료일 (필터)
+ * @param actualFromDate - 실제 데이터의 시작일 (optional, all 기간일 때 사용)
+ * @param actualToDate - 실제 데이터의 종료일 (optional, all 기간일 때 사용)
  */
-export function formatPeriodInfo(from: string, to: string): string {
+export function formatPeriodInfo(
+  from: string,
+  to: string,
+  actualFromDate?: string,
+  actualToDate?: string
+): string {
   if (from && to) {
     try {
       // FIXED: Use parseYMDUTC instead of parseISO to avoid timezone shifts
@@ -162,6 +171,14 @@ export function formatPeriodInfo(from: string, to: string): string {
       return 'Until selected date';
     }
   } else {
+    // All time: show actual data date range if available
+    if (actualFromDate && actualToDate) {
+      try {
+        return `${formatDisplayDate(actualFromDate)} - ${formatDisplayDate(actualToDate)}`;
+      } catch {
+        return 'All time';
+      }
+    }
     return 'All time';
   }
 }
