@@ -245,7 +245,9 @@ describe('useUnifiedData', () => {
       // to prevent duplicate fetches across component remounts (React Strict Mode).
       // In test environment, these refs persist across tests, making this unit test unreliable.
       // The fetch behavior is verified through integration tests and actual usage.
-      renderHook(() => useUnifiedData());
+      rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       await waitFor(() => {
         expect(mockActions.fetchClients).toHaveBeenCalled();
@@ -271,7 +273,9 @@ describe('useUnifiedData', () => {
         } as ClientInstrument,
       ];
 
-      renderHook(() => useUnifiedData());
+      rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       // Wait for initial render and any useEffect to complete
       await waitFor(
@@ -496,7 +500,9 @@ describe('useUnifiedData', () => {
         { id: '1', client_id: '1', instrument_id: '1' } as ClientInstrument,
       ];
 
-      renderHook(() => useUnifiedDashboard());
+      rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       // useUnifiedDashboard only calculates relationships from existing state, doesn't fetch
       expect(mockActions.fetchInstruments).not.toHaveBeenCalled();
@@ -603,7 +609,9 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedSearch', () => {
     it('should return search function and data', () => {
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.searchAll).toBeDefined();
       expect(result.current.clients).toEqual([]);
@@ -620,7 +628,9 @@ describe('useUnifiedData', () => {
       } as Client;
       mockState.clients = [client];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('John');
 
       expect(searchResult.clients).toHaveLength(1);
@@ -635,7 +645,9 @@ describe('useUnifiedData', () => {
       } as Client;
       mockState.clients = [client];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('Doe');
 
       expect(searchResult.clients).toHaveLength(1);
@@ -650,7 +662,9 @@ describe('useUnifiedData', () => {
       } as Client;
       mockState.clients = [client];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('john@example.com');
 
       expect(searchResult.clients).toHaveLength(1);
@@ -665,7 +679,9 @@ describe('useUnifiedData', () => {
       } as Client;
       mockState.clients = [client];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('CL001');
 
       expect(searchResult.clients).toHaveLength(1);
@@ -679,7 +695,9 @@ describe('useUnifiedData', () => {
       } as Instrument;
       mockState.instruments = [instrument];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('Stradivarius');
 
       expect(searchResult.instruments).toHaveLength(1);
@@ -693,7 +711,9 @@ describe('useUnifiedData', () => {
       } as Instrument;
       mockState.instruments = [instrument];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('Violin');
 
       expect(searchResult.instruments).toHaveLength(1);
@@ -707,7 +727,9 @@ describe('useUnifiedData', () => {
       } as Instrument;
       mockState.instruments = [instrument];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('VI001');
 
       expect(searchResult.instruments).toHaveLength(1);
@@ -722,7 +744,9 @@ describe('useUnifiedData', () => {
       } as ClientInstrument;
       mockState.connections = [connection];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('Test notes');
 
       expect(searchResult.connections).toHaveLength(1);
@@ -739,7 +763,9 @@ describe('useUnifiedData', () => {
       } as ClientInstrument;
       mockState.connections = [connection];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('Owned');
 
       expect(searchResult.connections).toHaveLength(1);
@@ -751,7 +777,9 @@ describe('useUnifiedData', () => {
       mockState.clients = [client];
       mockState.instruments = [instrument];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('John');
 
       expect(searchResult.total).toBe(1);
@@ -761,7 +789,9 @@ describe('useUnifiedData', () => {
       const client: Client = { id: '1', first_name: 'John' } as Client;
       mockState.clients = [client];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('JOHN');
 
       expect(searchResult.clients).toHaveLength(1);
@@ -784,7 +814,9 @@ describe('useUnifiedData', () => {
         actions: { invalidateCache: jest.fn() },
       });
 
-      const { result } = renderHook(() => useUnifiedCache());
+      const { result } = rtlRenderHook(() => useUnifiedCache(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       result.current.invalidate('clients');
 
@@ -808,7 +840,9 @@ describe('useUnifiedData', () => {
         actions: { invalidateCache: mockInvalidateConnections },
       });
 
-      const { result } = renderHook(() => useUnifiedCache());
+      const { result } = rtlRenderHook(() => useUnifiedCache(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       result.current.invalidateAll();
 
@@ -834,7 +868,9 @@ describe('useUnifiedData', () => {
         actions: { resetState: mockResetConnections },
       });
 
-      const { result } = renderHook(() => useUnifiedCache());
+      const { result } = rtlRenderHook(() => useUnifiedCache(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       result.current.reset();
 
