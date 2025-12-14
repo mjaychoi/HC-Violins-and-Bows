@@ -128,11 +128,12 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 24,
   },
-  headerRow: {
+  // ✅ FIXED: 헤더를 세로 레이아웃으로 재구성하여 로고와 제목 겹침 방지
+  headerTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   // ✅ FIXED: gap을 marginRight로 변경 (react-pdf 호환성)
   brandLeft: { flexDirection: 'row', alignItems: 'center' },
@@ -146,13 +147,20 @@ const styles = StyleSheet.create({
   brandTagline: { fontSize: 8, color: COLORS.muted, marginTop: 2 },
 
   certTitleWrap: { alignItems: 'flex-end' },
+  certSubtitle: { fontSize: 10, color: '#9CA3AF' },
+  
+  // ✅ FIXED: 제목을 별도 행으로 분리하여 겹침 방지
+  headerTitleRow: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   certTitle: {
     fontSize: 24,
     fontWeight: 700,
     color: COLORS.ink,
     letterSpacing: 2.2,
+    textAlign: 'center',
   },
-  certSubtitle: { fontSize: 10, color: '#9CA3AF', marginTop: 4 },
 
   metaLine: {
     marginTop: 12,
@@ -175,7 +183,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.line,
     borderLeftWidth: 4,
     borderLeftColor: COLORS.gold,
-    borderRadius: 10,
+    borderRadius: 4,
     overflow: 'hidden',
   },
   certBadgeLabel: { fontSize: 9, color: COLORS.muted, marginBottom: 6 },
@@ -412,7 +420,8 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
 
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.headerRow}>
+          {/* Top row: Logo + Brand (left), Korean subtitle (right) */}
+          <View style={styles.headerTop}>
             <View style={styles.brandLeft}>
               {finalLogoSrc ? (
                 <Image src={finalLogoSrc} style={styles.logo} />
@@ -424,9 +433,13 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
             </View>
 
             <View style={styles.certTitleWrap}>
-              <Text style={styles.certTitle}>CERTIFICATE OF AUTHENTICITY</Text>
               <Text style={styles.certSubtitle}>악기 인증서</Text>
             </View>
+          </View>
+
+          {/* Main title: Centered, separate row to avoid overlap */}
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.certTitle}>CERTIFICATE OF AUTHENTICITY</Text>
           </View>
 
           <Text style={styles.metaLine}>
@@ -467,7 +480,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
                 {field('Serial Number / 시리얼 번호', instrument.serial_number)}
                 {field('Size / 크기', instrument.size)}
                 {field('Weight / 무게', instrument.weight)}
-                {field('Ownership / 소유권', instrument.ownership)}
+                {/* Ownership은 UUID이므로 인증서에 표시하지 않음 (사용자 친화적이지 않음) */}
               </View>
             </View>
 
