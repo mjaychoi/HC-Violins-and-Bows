@@ -205,6 +205,53 @@ export default function CalendarPage() {
     [navigation, openModal]
   );
 
+  // Handle drag & drop: update task date when event is dropped
+  const handleEventDrop = useCallback(
+    async (data: {
+      event: { resource?: MaintenanceTask | { type: string; contactLog?: ContactLog } };
+      start: Date;
+      end: Date;
+      isAllDay?: boolean;
+    }) => {
+      const { event, start } = data;
+      const resource = event.resource;
+
+      // Only handle task events (not follow-up events)
+      if (!resource || (typeof resource === 'object' && 'type' in resource && resource.type === 'follow_up')) {
+        return;
+      }
+
+      const task = resource as MaintenanceTask;
+      if (!task || !task.id) {
+        return;
+      }
+
+      try {
+        // Convert Date to YYYY-MM-DD format
+        const newDate = toLocalYMD(start.toISOString());
+        
+        // Determine which date field to update based on task's current date priority
+        // Priority: due_date > personal_due_date > scheduled_date
+        const updateData: Partial<MaintenanceTask> = {};
+        
+        if (task.due_date) {
+          updateData.due_date = newDate;
+        } else if (task.personal_due_date) {
+          updateData.personal_due_date = newDate;
+        } else {
+          updateData.scheduled_date = newDate;
+        }
+
+        await updateTask(task.id, updateData);
+        await navigation.refetchCurrentRange();
+        showSuccess('Task date updated successfully.');
+      } catch (error) {
+        handleError(error, 'Failed to update task date');
+      }
+    },
+    [updateTask, navigation, showSuccess, handleError]
+  );
+
   const handleTaskClick = (task: MaintenanceTask) => {
     openEditModal(task);
   };
@@ -294,6 +341,7 @@ export default function CalendarPage() {
           onTaskEdit={handleTaskClick}
           onSelectEvent={handleSelectEvent}
           onSelectSlot={handleSelectSlot}
+          onEventDrop={handleEventDrop}
           onOpenNewTask={handleOpenNewTask}
         />
 

@@ -5,14 +5,30 @@ import {
   sortConnectionsForAllTab,
 } from '../utils/connectionGrouping';
 import { RelationshipSectionHeader } from './RelationshipSectionHeader';
-import { ConnectionCard } from './ConnectionCard';
+import { SortableConnectionCard } from './SortableConnectionCard';
 import { Pagination } from '@/components/common';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 
 interface ConnectionsListProps {
   groupedConnections: GroupedConnections;
   selectedFilter: RelationshipType | null;
   onDeleteConnection: (connection: ClientInstrument) => void;
   onEditConnection: (connection: ClientInstrument) => void;
+  onConnectionReorder?: (connections: ClientInstrument[]) => void;
   // Pagination
   currentPage?: number;
   pageSize?: number;
@@ -25,11 +41,43 @@ export const ConnectionsList = memo(function ConnectionsList({
   selectedFilter,
   onDeleteConnection,
   onEditConnection,
+  onConnectionReorder,
   currentPage = 1,
   pageSize = 20,
   onPageChange,
   loading = false,
 }: ConnectionsListProps) {
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Handle drag end
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    if (onConnectionReorder) {
+      // Get current connections array
+      const currentConnections = isAll ? flatConnections : filteredTypeConnections;
+      
+      // Find indices
+      const oldIndex = currentConnections.findIndex(c => c.id === active.id);
+      const newIndex = currentConnections.findIndex(c => c.id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        // Reorder connections
+        const newConnections = arrayMove(currentConnections, oldIndex, newIndex);
+        onConnectionReorder(newConnections);
+      }
+    }
+  };
   // FIXED: A안 - All 탭은 flat list, 필터 선택 시 섹션 유지
   const isAll = selectedFilter === null;
 
@@ -73,42 +121,57 @@ export const ConnectionsList = memo(function ConnectionsList({
   }, [connectionsToPaginate, currentPage, pageSize]);
 
   return (
-    <div className="space-y-4">
-      {isAll ? (
-        // All 탭: 섹션 없이 flat list로 표시 (각 카드에 배지로 type 표시)
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-4 gap-y-4">
-          {pageItems.map(connection => (
-            <ConnectionCard
-              key={connection.id}
-              connection={connection}
-              onDelete={onDeleteConnection}
-              onEdit={onEditConnection}
-            />
-          ))}
-        </div>
-      ) : (
-        // 필터 선택 시: 섹션 헤더 유지 (해당 타입의 연결만 페이지네이션)
-        filteredEntries.map(([type]) => {
-          // 현재 필터와 일치하는 타입만 표시
-          if (type !== selectedFilter) return null;
-
-          return (
-            <div key={type}>
-              <RelationshipSectionHeader type={type} count={totalCount} />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-4 gap-y-4">
-                {pageItems.map(connection => (
-                  <ConnectionCard
-                    key={connection.id}
-                    connection={connection}
-                    onDelete={onDeleteConnection}
-                    onEdit={onEditConnection}
-                  />
-                ))}
-              </div>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="space-y-4">
+        {isAll ? (
+          // All 탭: 섹션 없이 flat list로 표시 (각 카드에 배지로 type 표시)
+          <SortableContext
+            items={pageItems.map(c => c.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-4 gap-y-4">
+              {pageItems.map(connection => (
+                <SortableConnectionCard
+                  key={connection.id}
+                  connection={connection}
+                  onDelete={onDeleteConnection}
+                  onEdit={onEditConnection}
+                />
+              ))}
             </div>
-          );
-        })
-      )}
+          </SortableContext>
+        ) : (
+          // 필터 선택 시: 섹션 헤더 유지 (해당 타입의 연결만 페이지네이션)
+          filteredEntries.map(([type]) => {
+            // 현재 필터와 일치하는 타입만 표시
+            if (type !== selectedFilter) return null;
+
+            return (
+              <div key={type}>
+                <RelationshipSectionHeader type={type} count={totalCount} />
+                <SortableContext
+                  items={pageItems.map(c => c.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-4 gap-y-4">
+                    {pageItems.map(connection => (
+                      <SortableConnectionCard
+                        key={connection.id}
+                        connection={connection}
+                        onDelete={onDeleteConnection}
+                        onEdit={onEditConnection}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </div>
+            );
+          })
+        )}
 
       {/* Pagination */}
       {onPageChange && totalPages > 1 && (
@@ -123,6 +186,7 @@ export const ConnectionsList = memo(function ConnectionsList({
           />
         </div>
       )}
-    </div>
+      </div>
+    </DndContext>
   );
 });

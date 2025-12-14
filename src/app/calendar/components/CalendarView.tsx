@@ -2,10 +2,14 @@
 
 import React, { useMemo, useCallback } from 'react';
 import { Calendar, dateFnsLocalizer, Event, View } from 'react-big-calendar';
+import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
+import { DndProvider } from 'react-dnd/dist/core';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { addHours } from 'date-fns';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 import { MaintenanceTask, ContactLog } from '@/types';
 import YearView from './YearView';
 import TimelineView from './TimelineView';
@@ -242,11 +246,30 @@ interface CalendarViewProps {
   >;
   onSelectEvent?: (task: MaintenanceTask) => void;
   onSelectSlot?: (slotInfo: { start: Date; end: Date }) => void;
+  onEventDrop?: (data: {
+    event: Event;
+    start: Date;
+    end: Date;
+    isAllDay?: boolean;
+  }) => void;
   currentDate?: Date;
   onNavigate?: (date: Date) => void;
   currentView?: ExtendedView;
   onViewChange?: (view: ExtendedView) => void;
 }
+
+// Enhanced Calendar with drag and drop
+const DragAndDropCalendar = withDragAndDrop(Calendar) as React.ComponentType<
+  React.ComponentProps<typeof Calendar> & {
+    onEventDrop?: (data: {
+      event: Event;
+      start: Date;
+      end: Date;
+      isAllDay?: boolean;
+    }) => void;
+    draggableAccessor?: (event: Event) => boolean;
+  }
+>;
 
 export default function CalendarView({
   tasks,
@@ -254,6 +277,7 @@ export default function CalendarView({
   instruments,
   onSelectEvent,
   onSelectSlot,
+  onEventDrop,
   currentDate = new Date(),
   onNavigate,
   currentView = 'month',
@@ -598,52 +622,76 @@ export default function CalendarView({
   return (
     <>
       <style>{calendarEventStyles}</style>
-      <div
-        className="w-full calendar-container"
-        style={{
-          height: '850px', // Increased height to accommodate bottom row
-          minHeight: '850px',
-          padding: '1rem',
-          paddingBottom: '3rem', // Increased padding to prevent bottom row cutoff
-          overflow: 'visible', // Allow content to overflow if needed
-        }}
-      >
-        <Calendar
-          localizer={localizer}
-          events={events}
-          startAccessor="start"
-          endAccessor="end"
-          style={{ height: '100%', minHeight: '750px' }}
-          eventPropGetter={eventStyleGetter}
-          onSelectEvent={event => {
-            if (onSelectEvent && event.resource) {
-              onSelectEvent(event.resource as MaintenanceTask);
-            }
+      <DndProvider backend={HTML5Backend}>
+        <div
+          className="w-full calendar-container"
+          style={{
+            height: '850px', // Increased height to accommodate bottom row
+            minHeight: '850px',
+            padding: '1rem',
+            paddingBottom: '3rem', // Increased padding to prevent bottom row cutoff
+            overflow: 'visible', // Allow content to overflow if needed
           }}
-          onSelectSlot={onSelectSlot}
-          selectable
-          date={currentDate}
-          onNavigate={onNavigate}
-          view={view as View}
-          onView={(newView: View) => {
-            // Handle standard react-big-calendar views (day view not supported)
-            if (
-              newView === 'month' ||
-              newView === 'week' ||
-              newView === 'agenda'
-            ) {
-              handleViewChange(newView);
-            }
-          }}
-          views={['month', 'week', 'agenda']}
-          messages={messages}
-          popup
-          showMultiDayTimes
-          step={60}
-          timeslots={1}
-          culture="ko"
+        >
+          <DragAndDropCalendar
+            {...({
+              localizer,
+              events,
+              startAccessor: 'start',
+              endAccessor: 'end',
+              style: { height: '100%', minHeight: '750px' },
+              eventPropGetter: eventStyleGetter,
+              onSelectEvent: (event: Event) => {
+                if (onSelectEvent && event.resource) {
+                  onSelectEvent(event.resource as MaintenanceTask);
+                }
+              },
+              onSelectSlot,
+              ...(onEventDrop && {
+                onEventDrop: onEventDrop as (data: {
+                  event: Event;
+                  start: Date;
+                  end: Date;
+                  isAllDay?: boolean;
+                }) => void,
+              }),
+              draggableAccessor: (event: Event) => {
+                // Only allow dragging task events, not follow-up events
+                const resource = event.resource as EventResource | MaintenanceTask;
+                if (
+                  resource &&
+                  typeof resource === 'object' &&
+                  'type' in resource &&
+                  resource.type === 'follow_up'
+                ) {
+                  return false; // Follow-ups are not draggable
+                }
+                return true; // Tasks are draggable
+              },
+              selectable: true,
+              date: currentDate,
+              onNavigate,
+              view: view as View,
+              onView: (newView: View) => {
+                // Handle standard react-big-calendar views (day view not supported)
+                if (
+                  newView === 'month' ||
+                  newView === 'week' ||
+                  newView === 'agenda'
+                ) {
+                  handleViewChange(newView);
+                }
+              },
+              views: ['month', 'week', 'agenda'],
+              messages,
+              popup: true,
+              showMultiDayTimes: true,
+              step: 60,
+              timeslots: 1,
+              culture: 'ko',
+            } as any)}
           components={{
-            event: ({ event }) => {
+            event: ({ event }: { event: Event }) => {
               // Custom event component with 2-line structure
               interface EventResource {
                 task?: MaintenanceTask;
@@ -720,7 +768,8 @@ export default function CalendarView({
             },
           }}
         />
-      </div>
+        </div>
+      </DndProvider>
     </>
   );
 }

@@ -47,6 +47,12 @@ interface CalendarContentProps {
   onTaskEdit?: (task: MaintenanceTask) => void;
   onSelectEvent: (task: MaintenanceTask) => void;
   onSelectSlot: (slotInfo: { start: Date; end: Date }) => void;
+  onEventDrop?: (data: {
+    event: { resource?: MaintenanceTask | { type: string; contactLog?: ContactLog } };
+    start: Date;
+    end: Date;
+    isAllDay?: boolean;
+  }) => void;
   onOpenNewTask: () => void;
 }
 
@@ -64,6 +70,7 @@ function CalendarContentInner({
   onTaskEdit,
   onSelectEvent,
   onSelectSlot,
+  onEventDrop,
   onOpenNewTask,
 }: CalendarContentProps) {
   // onTaskEdit is optional, so we need to handle it
@@ -493,6 +500,7 @@ function CalendarContentInner({
             instruments={taskData.instrumentsMap}
             onSelectEvent={onSelectEvent}
             onSelectSlot={onSelectSlot}
+            onEventDrop={onEventDrop}
             currentDate={navigation.currentDate}
             onNavigate={navigation.setCurrentDate}
             currentView={navigation.calendarView}

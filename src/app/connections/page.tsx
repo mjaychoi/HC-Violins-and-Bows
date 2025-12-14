@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import type { RelationshipType, ClientInstrument } from '@/types';
 import { useConnectedClientsData } from '@/hooks/useUnifiedData';
 import { useConnectionFilters, useConnectionEdit } from './hooks';
@@ -192,6 +192,17 @@ export default function ConnectedClientsPage() {
     }
   };
 
+  // Handle connection reorder (local state only - visual reordering)
+  // Note: This doesn't persist to database as connections don't have an order field
+  const handleConnectionReorder = useCallback(
+    (_reorderedConnections: ClientInstrument[]) => {
+      // Note: This is visual-only reordering. To persist, we'd need an order field in the database.
+      // For now, we just accept the reorder but don't persist it.
+      // In the future, we could add an `order` field to the connections table.
+    },
+    []
+  );
+
   return (
     <ErrorBoundary>
       <AppLayout
@@ -344,6 +355,7 @@ export default function ConnectedClientsPage() {
                 selectedFilter={selectedFilter}
                 onEditConnection={openEditModal}
                 onDeleteConnection={handleDeleteConnection}
+                onConnectionReorder={handleConnectionReorder}
                 currentPage={currentPage}
                 pageSize={pageSize}
                 onPageChange={setCurrentPage}
