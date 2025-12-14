@@ -41,10 +41,11 @@ export default function AppLayout({
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  // 모바일에서도 사이드바가 항상 보이도록 설정
+  // 모바일에서도 사이드바가 닫힌 상태로 항상 보이도록 설정 (사라지지 않게)
+  // 사이드바는 닫힌 상태(isExpanded=false)로 유지되지만 항상 표시됨
   useEffect(() => {
-    if (isMobile && !isExpanded) {
-      toggleSidebar(); // 모바일에서 사이드바를 항상 열어둠
+    if (isMobile && isExpanded) {
+      collapseSidebar(); // 모바일에서 사이드바를 닫힌 상태로 유지
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMobile]);
@@ -81,12 +82,8 @@ export default function AppLayout({
       />
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Sidebar - 모바일에서도 항상 표시 */}
-        <div
-          className={`flex-shrink-0 transition-all duration-300 ease-in-out z-50 ${
-            isMobile ? 'w-64' : ''
-          }`}
-        >
+        {/* Sidebar - 모바일에서도 닫힌 상태로 항상 표시 (사라지지 않게) */}
+        <div className="flex-shrink-0 transition-all duration-300 ease-in-out z-50">
           <AppSidebar isExpanded={isExpanded} currentPath={pathname} />
         </div>
 
