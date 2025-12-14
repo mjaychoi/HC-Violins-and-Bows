@@ -63,8 +63,9 @@ export default function TimelineView({
   // Note: This function is used in useMemo, so it must be defined before useMemo
   const getTaskTime = useCallback(
     (task: MaintenanceTask): { hour: number; minute: number } => {
+      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
       const taskDate =
-        task.scheduled_date || task.due_date || task.personal_due_date;
+        task.due_date || task.personal_due_date || task.scheduled_date;
       if (!taskDate) return { hour: 9, minute: 0 };
 
       // Check if date string includes time component
@@ -97,8 +98,9 @@ export default function TimelineView({
 
     // Build map of all tasks by day key and hour
     for (const task of tasks) {
+      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
       const raw =
-        task.scheduled_date || task.due_date || task.personal_due_date;
+        task.due_date || task.personal_due_date || task.scheduled_date;
       if (!raw) continue;
 
       const dayKey = taskDayKey(raw);

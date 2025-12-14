@@ -52,8 +52,9 @@ export default function YearView({
 
     // Single pass through tasks
     for (const task of tasks) {
+      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
       const raw =
-        task.scheduled_date || task.due_date || task.personal_due_date;
+        task.due_date || task.personal_due_date || task.scheduled_date;
       if (!raw) continue;
 
       let d: Date | null = null;

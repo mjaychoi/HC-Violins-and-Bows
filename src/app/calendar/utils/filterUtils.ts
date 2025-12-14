@@ -38,10 +38,10 @@ export const filterByDateRange = (
   }
 
   return tasks.filter(task => {
-    // FIXED: Use same date fields as calculateSummaryStats for consistency
-    // Use scheduled_date, due_date, or personal_due_date (in priority order)
+    // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
+    // This matches the priority used in getTaskDueDate and classifyNotification
     const dateStr =
-      task.scheduled_date || task.due_date || task.personal_due_date;
+      task.due_date || task.personal_due_date || task.scheduled_date;
 
     if (!dateStr) return false;
 
@@ -152,7 +152,7 @@ export const calculateSummaryStats = (
 
   tasks.forEach(task => {
     const dateStr =
-      task.scheduled_date || task.due_date || task.personal_due_date;
+      task.due_date || task.personal_due_date || task.scheduled_date;
     if (!dateStr) return;
 
     if (task.status === 'completed' || task.status === 'cancelled') return;

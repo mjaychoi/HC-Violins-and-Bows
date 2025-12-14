@@ -53,16 +53,16 @@ export default function GroupedTaskList({
   // Track expanded tasks
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
 
-  // Group tasks by scheduled_date (or due_date if scheduled_date is not available)
+  // Group tasks by due_date (or personal_due_date or scheduled_date if due_date is not available)
   const groupedTasks: GroupedTasks[] = useMemo(() => {
     const groups = new Map<string, MaintenanceTask[]>();
 
     tasks.forEach(task => {
-      // Use scheduled_date first, then due_date, then personal_due_date
+      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
       const dateKey =
-        task.scheduled_date ||
         task.due_date ||
         task.personal_due_date ||
+        task.scheduled_date ||
         task.received_date;
       if (!dateKey) return;
 

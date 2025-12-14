@@ -290,12 +290,12 @@ export default function CalendarView({
     // Task events
     const taskEvents = tasks
       .filter(
-        task => task.scheduled_date || task.due_date || task.personal_due_date
+        task => task.due_date || task.personal_due_date || task.scheduled_date
       )
       .map(task => {
-        // Use scheduled_date if available, otherwise use due_date or personal_due_date
+        // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
         const raw =
-          task.scheduled_date || task.due_date || task.personal_due_date;
+          task.due_date || task.personal_due_date || task.scheduled_date;
         if (!raw) return null;
 
         // FIXED: Use parseYMDLocal for consistent date parsing strategy
