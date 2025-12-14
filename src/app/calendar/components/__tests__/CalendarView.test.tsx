@@ -4,6 +4,21 @@ import userEvent from '@testing-library/user-event';
 import CalendarView from '../CalendarView';
 import { MaintenanceTask } from '@/types';
 
+// Mock react-dnd
+jest.mock('react-dnd/dist/core', () => ({
+  DndProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+jest.mock('react-dnd-html5-backend', () => ({
+  HTML5Backend: {},
+}));
+
+// Mock react-big-calendar drag and drop
+jest.mock('react-big-calendar/lib/addons/dragAndDrop', () => {
+  const React = require('react');
+  return (Component: any) => Component; // Return component as-is (no HOC wrapping)
+});
+
 // Mock react-big-calendar
 jest.mock('react-big-calendar', () => {
   const React = require('react');
