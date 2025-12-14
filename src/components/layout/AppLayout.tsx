@@ -41,21 +41,12 @@ export default function AppLayout({
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  // ✅ FIXED: 모바일 사이드바 열렸을 때 body scroll lock
+  // 모바일에서도 사이드바가 항상 보이도록 설정
   useEffect(() => {
-    if (!isMobile) return;
-    document.body.style.overflow = isExpanded ? 'hidden' : '';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isMobile, isExpanded]);
-
-  // Close sidebar when route changes on mobile
-  useEffect(() => {
-    if (isMobile && isExpanded) {
-      collapseSidebar();
+    if (isMobile && !isExpanded) {
+      toggleSidebar(); // 모바일에서 사이드바를 항상 열어둠
     }
-  }, [pathname, isMobile, isExpanded, collapseSidebar]);
+  }, [isMobile]);
 
   // ✅ FIXED: redirect는 AppLayout에서만 처리 (AuthProvider는 상태만 관리)
   useEffect(() => {
@@ -89,35 +80,17 @@ export default function AppLayout({
       />
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* ✅ FIXED: Mobile Overlay를 button으로 처리 (접근성 개선) */}
-        {isMobile && isExpanded && (
-          <button
-            type="button"
-            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-            onClick={collapseSidebar}
-            aria-label="Close sidebar overlay"
-          />
-        )}
-
-        {/* Sidebar */}
+        {/* Sidebar - 모바일에서도 항상 표시 */}
         <div
           className={`flex-shrink-0 transition-all duration-300 ease-in-out z-50 ${
-            isMobile
-              ? `fixed inset-y-0 left-0 ${
-                  isExpanded ? 'translate-x-0' : '-translate-x-full'
-                }`
-              : ''
+            isMobile ? 'w-64' : ''
           }`}
         >
           <AppSidebar isExpanded={isExpanded} currentPath={pathname} />
         </div>
 
         {/* Main Content */}
-        <div
-          className={`flex-1 overflow-auto transition-all duration-300 ease-in-out ${
-            isMobile && isExpanded ? 'lg:ml-0' : ''
-          }`}
-        >
+        <div className="flex-1 overflow-auto">
           {children}
         </div>
       </div>
