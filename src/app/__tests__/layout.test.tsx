@@ -1,4 +1,5 @@
-import { render } from '@/test-utils/render';
+import { render as rtlRender } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import RootProviders from '@/components/providers/RootProviders';
 
 // Mock ErrorBoundary
