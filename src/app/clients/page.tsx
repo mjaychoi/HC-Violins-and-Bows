@@ -568,7 +568,7 @@ export default function ClientsPage() {
             if (selectedClient) {
               await updateClient(selectedClient.id, clientData);
               stopEditing();
-              showSuccess('고객 정보가 성공적으로 수정되었습니다.');
+              showSuccess('Client information updated successfully.');
               // Update local view data
               // updateViewFormData(clientData)
             }
