@@ -15,7 +15,6 @@ jest.mock('react-dnd-html5-backend', () => ({
 
 // Mock react-big-calendar drag and drop
 jest.mock('react-big-calendar/lib/addons/dragAndDrop', () => {
-  const React = require('react');
   return (Component: any) => Component; // Return component as-is (no HOC wrapping)
 });
 

@@ -313,7 +313,7 @@ export default function CalendarPage() {
       start: Date;
       end: Date;
     }) => {
-      const { event, start, end } = data;
+      const { event, start } = data;
       const resource = event.resource;
 
       // Only handle task events (not follow-up events)

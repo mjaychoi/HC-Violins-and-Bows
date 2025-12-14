@@ -226,7 +226,7 @@ export default function ConnectedClientsPage() {
         // Optionally: rollback UI state here
       }
     },
-    [withSubmitting, handleError]
+    [withSubmitting, handleError, fetchConnections]
   );
 
   return (
