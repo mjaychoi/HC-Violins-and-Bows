@@ -30,6 +30,7 @@ let reactPdfLoader: Promise<{
     instrument: Instrument;
     logoSrc?: string;
     verifyUrl?: string;
+    ownerName?: string | null;
   }>;
 }> | null = null;
 
@@ -154,13 +155,44 @@ export async function GET(
       );
     }
 
-    // 2. Fetch instrument data (RLS will enforce permissions if enabled)
+    // 2. Fetch instrument data and owner client (RLS will enforce permissions if enabled)
     const supabase = await getSupabaseClient();
     const { data: instrument, error } = await supabase
       .from('instruments')
       .select('*')
       .eq('id', id)
       .single();
+
+    // Fetch owner client if ownership exists (find client with 'Owned' relationship)
+    let ownerName: string | null = null;
+    if (instrument && instrument.ownership) {
+      try {
+        const { data: connection } = await supabase
+          .from('client_instruments')
+          .select('client:clients(first_name, last_name, email)')
+          .eq('instrument_id', id)
+          .eq('relationship_type', 'Owned')
+          .maybeSingle();
+
+        if (connection?.client) {
+          const client = connection.client as {
+            first_name: string | null;
+            last_name: string | null;
+            email: string | null;
+          };
+          ownerName =
+            `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+            client.email ||
+            null;
+        }
+      } catch (ownerError) {
+        // Log but don't fail - owner name is optional
+        console.warn(
+          'Failed to fetch owner client for certificate:',
+          ownerError instanceof Error ? ownerError.message : String(ownerError)
+        );
+      }
+    }
 
     const duration = Math.round(performance.now() - startTime);
 
@@ -283,6 +315,7 @@ export async function GET(
         instrument: validatedInstrument,
         logoSrc: logoSrc || undefined, // Convert null to undefined for react-pdf
         verifyUrl: `https://www.hcviolins.com/verify/CERT-${validatedInstrument.serial_number?.trim() || validatedInstrument.id.slice(0, 8).toUpperCase()}-${new Date().getFullYear()}`,
+        ownerName: ownerName || undefined, // Pass owner name if available
       }) as React.ReactElement<DocumentProps>
     );
 

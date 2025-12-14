@@ -82,6 +82,8 @@ type CertificateDocumentProps = {
   watermarkSrc?: string;
   // optional: verification url (for QR later)
   verifyUrl?: string;
+  // optional: owner name (client name for ownership display)
+  ownerName?: string | null;
 };
 
 const styles = StyleSheet.create({
@@ -366,6 +368,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
   logoSrc,
   watermarkSrc,
   verifyUrl,
+  ownerName,
 }) => {
   // FIXED: Ensure fonts are registered when component is rendered (not at module load)
   ensureFonts();
@@ -480,7 +483,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
                 {field('Serial Number / 시리얼 번호', instrument.serial_number)}
                 {field('Size / 크기', instrument.size)}
                 {field('Weight / 무게', instrument.weight)}
-                {/* Ownership은 UUID이므로 인증서에 표시하지 않음 (사용자 친화적이지 않음) */}
+                {field('Ownership / 소유권', ownerName)}
               </View>
             </View>
 
