@@ -73,24 +73,19 @@ describe('AdvancedSearch', () => {
     expect(baseProps.onDateRangeChange).toHaveBeenCalledWith(null);
   });
 
-  it('switches operator and calls onApply/onReset', async () => {
+  it('calls onApply/onReset', async () => {
     render(
       <AdvancedSearch
         {...baseProps}
         dateRange={{ from: '2024-01-01', to: '2024-01-02' }}
-        dateFields={[
-          { field: 'created_at', label: 'Created' },
-          { field: 'updated_at', label: 'Updated' },
-        ]}
       />
     );
 
     fireEvent.click(screen.getByTestId('advanced-search-toggle'));
     await screen.findByText('Advanced Search');
 
-    fireEvent.click(screen.getByText('Any Match (OR)'));
-    expect(baseProps.onOperatorChange).toHaveBeenCalledWith('OR');
-
+    // Operator selection UI has been removed - only date range filter is used
+    // Test onReset and onApply instead
     fireEvent.click(screen.getByText('Reset'));
     expect(baseProps.onReset).toHaveBeenCalled();
 
