@@ -498,7 +498,7 @@ export default function ClientsPage() {
               <div className="mb-6">
                 <CustomerStats
                   customers={
-                    analyticsData.selectedCustomer
+                    analyticsData.selectedCustomerId && analyticsData.selectedCustomer
                       ? [analyticsData.selectedCustomer]
                       : analyticsData.customers
                   }
