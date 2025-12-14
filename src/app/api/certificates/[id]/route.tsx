@@ -163,26 +163,21 @@ export async function GET(
       .eq('id', id)
       .single();
 
-    // Fetch owner client if ownership exists (find client with 'Owned' relationship)
+    // Fetch owner client if ownership exists
+    // instrument.ownership is a client_id (UUID), so fetch directly from clients table
     let ownerName: string | null = null;
-    if (instrument && instrument.ownership) {
+    if (instrument && instrument.ownership && validateUUID(instrument.ownership)) {
       try {
-        const { data: connection } = await supabase
-          .from('client_instruments')
-          .select('client:clients(first_name, last_name, email)')
-          .eq('instrument_id', id)
-          .eq('relationship_type', 'Owned')
+        const { data: ownerClient } = await supabase
+          .from('clients')
+          .select('first_name, last_name, email')
+          .eq('id', instrument.ownership)
           .maybeSingle();
 
-        if (connection?.client) {
-          const client = connection.client as {
-            first_name: string | null;
-            last_name: string | null;
-            email: string | null;
-          };
+        if (ownerClient) {
           ownerName =
-            `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
-            client.email ||
+            `${ownerClient.first_name || ''} ${ownerClient.last_name || ''}`.trim() ||
+            ownerClient.email ||
             null;
         }
       } catch (ownerError) {
