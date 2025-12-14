@@ -1,6 +1,6 @@
 // src/hooks/useAsyncOperation.ts
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { useErrorHandler } from './useErrorHandler';
+import { useErrorHandler } from '@/contexts/ToastContext';
 
 type Options<T> = {
   context?: string;
@@ -37,6 +37,9 @@ export function useAsyncOperation<T = unknown>() {
       const controller = new AbortController();
       abortRef.current = controller;
 
+      // ✅ FIXED: cleanup을 signal에 붙이지 말고 로컬 변수로 들고 가기
+      let externalCleanup: (() => void) | undefined;
+
       // Bridge external + internal signals (abort if either fires)
       if (externalSignal) {
         if (externalSignal.aborted) {
@@ -44,11 +47,7 @@ export function useAsyncOperation<T = unknown>() {
         } else {
           const onAbort = () => controller.abort();
           externalSignal.addEventListener('abort', onAbort, { once: true });
-          // Clean the listener when this call completes
-          const signalWithCleanup = controller.signal as AbortSignal & {
-            __externalCleanup?: () => void;
-          };
-          signalWithCleanup.__externalCleanup = () =>
+          externalCleanup = () =>
             externalSignal.removeEventListener('abort', onAbort);
         }
       }
@@ -78,10 +77,8 @@ export function useAsyncOperation<T = unknown>() {
         handleError(error, context);
         return null;
       } finally {
-        const signalWithCleanup = controller.signal as AbortSignal & {
-          __externalCleanup?: () => void;
-        };
-        signalWithCleanup.__externalCleanup?.();
+        // ✅ FIXED: 로컬 변수로 cleanup 실행
+        externalCleanup?.();
         if (mountedRef.current) {
           if (myId === reqIdRef.current) {
             // Current request: set loading to false after completion

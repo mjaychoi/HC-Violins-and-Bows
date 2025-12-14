@@ -1,14 +1,18 @@
 'use client';
 
-import React, { Suspense } from 'react';
+import React from 'react';
 import { useDashboardFilters } from '../hooks';
 import { ItemList, ItemFilters } from './';
-import { CardSkeleton, SearchInput } from '@/components/common';
+import { SearchInput } from '@/components/common';
 import type { Instrument, Client, ClientInstrument } from '@/types';
 
+// FIXED: Use explicit EnrichedInstrument type
+type EnrichedInstrument = Instrument & {
+  clients: ClientInstrument[];
+};
+
 interface DashboardContentProps {
-  enrichedItems: (Instrument & { clients?: ClientInstrument[] })[];
-  instruments: Instrument[];
+  enrichedItems: EnrichedInstrument[];
   clients: Client[];
   clientRelationships: ClientInstrument[];
   clientsLoading: boolean;
@@ -22,11 +26,11 @@ interface DashboardContentProps {
   ) => Promise<void>;
   onAddClick: () => void;
   onSellClick: (item: Instrument) => void;
+  existingSerialNumbers?: string[]; // Serial numbers for validation
 }
 
 function DashboardContentInner({
   enrichedItems,
-  instruments,
   clients,
   clientRelationships,
   clientsLoading,
@@ -35,6 +39,7 @@ function DashboardContentInner({
   onUpdateItemInline,
   onAddClick,
   onSellClick,
+  existingSerialNumbers = [],
 }: DashboardContentProps) {
   // Dashboard filters - use enrichedItems instead of instruments
   const {
@@ -67,8 +72,8 @@ function DashboardContentInner({
       {/* Search and Filters */}
       <div className="mb-6 space-y-4">
         <div className="flex flex-wrap items-center gap-3">
-          {/* Search Input */}
-          <div className="flex-1 min-w-[260px]">
+          {/* Search Input - FIXED: Max width limit for better layout */}
+          <div className="flex-1 min-w-[260px] max-w-[600px]">
             <SearchInput
               placeholder="Search items by maker, type, serial..."
               value={searchTerm}
@@ -149,7 +154,7 @@ function DashboardContentInner({
         {/* Advanced Filters Panel - Collapsible */}
         {showFilters && (
           <ItemFilters
-            items={instruments}
+            items={enrichedItems}
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
             filters={filters}
@@ -170,6 +175,7 @@ function DashboardContentInner({
         )}
 
         {/* Items List */}
+        {/* FIXED: paginatedItems is already EnrichedInstrument[], pass directly */}
         <ItemList
           items={paginatedItems}
           loading={loading.any}
@@ -178,6 +184,7 @@ function DashboardContentInner({
           clientRelationships={clientRelationships}
           allClients={clients}
           clientsLoading={clientsLoading}
+          existingSerialNumbers={existingSerialNumbers}
           getSortArrow={getSortArrow}
           onSort={handleSort}
           onAddClick={onAddClick}
@@ -209,23 +216,7 @@ function DashboardContentInner({
 }
 
 export default function DashboardContent(props: DashboardContentProps) {
-  return (
-    <Suspense
-      fallback={
-        <div className="p-6 space-y-4">
-          <div className="mb-6">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex-1 min-w-[260px] h-10 bg-gray-200 rounded animate-pulse" />
-              <div className="h-10 w-24 bg-gray-200 rounded animate-pulse" />
-            </div>
-          </div>
-          <div className="bg-white shadow rounded-lg p-6">
-            <CardSkeleton count={5} />
-          </div>
-        </div>
-      }
-    >
-      <DashboardContentInner {...props} />
-    </Suspense>
-  );
+  // FIXED: Removed Suspense wrapper as it's not needed (DashboardContentInner is not lazy-loaded)
+  // If lazy loading is needed in the future, add Suspense back with React.lazy()
+  return <DashboardContentInner {...props} />;
 }

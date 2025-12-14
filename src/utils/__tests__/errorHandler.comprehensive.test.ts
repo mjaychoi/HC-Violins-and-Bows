@@ -64,7 +64,9 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       expect(error.status).toBe(500);
       expect(error.endpoint).toBe('/api/test');
       expect(error.details).toBe('Connection timeout');
-      expect(error.timestamp).toBeInstanceOf(Date);
+      // ✅ FIXED: timestamp는 이제 ISO string (Date 아님)
+      expect(typeof error.timestamp).toBe('string');
+      expect(error.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     });
 
     it('should create API error with minimal parameters', () => {
@@ -780,7 +782,9 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       expect(error.field).toBe('email');
       expect(error.value).toBe('invalid-email');
       expect(error.details).toBe('Email format is incorrect');
-      expect(error.timestamp).toBeInstanceOf(Date);
+      // ✅ FIXED: timestamp는 이제 ISO string (Date 아님)
+      expect(typeof error.timestamp).toBe('string');
+      expect(error.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     });
 
     it('should create validation error with minimal parameters', () => {

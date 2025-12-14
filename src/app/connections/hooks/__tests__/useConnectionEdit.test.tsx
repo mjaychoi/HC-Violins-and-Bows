@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '@/test-utils/render';
 import { useConnectionEdit } from '../useConnectionEdit';
 import { ClientInstrument, Client, Instrument } from '@/types';
 

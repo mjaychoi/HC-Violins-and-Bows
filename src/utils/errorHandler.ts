@@ -26,6 +26,7 @@ export class ErrorHandler {
   }
 
   // Create standardized error
+  // ✅ FIXED: timestamp를 ISO string으로 통일
   createError(
     code: ErrorCodes,
     message: string,
@@ -36,7 +37,7 @@ export class ErrorHandler {
       code,
       message,
       details,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       context,
     };
   }
@@ -53,7 +54,7 @@ export class ErrorHandler {
       code,
       message,
       details,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       status,
       endpoint,
     };
@@ -70,7 +71,7 @@ export class ErrorHandler {
       code: ErrorCodes.VALIDATION_ERROR,
       message,
       details,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       field,
       value,
     };

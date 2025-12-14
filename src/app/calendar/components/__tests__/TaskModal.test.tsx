@@ -1,5 +1,5 @@
 // src/app/calendar/components/__tests__/TaskModal.test.tsx
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import TaskModal from '../TaskModal';
 import { MaintenanceTask, Instrument } from '@/types';

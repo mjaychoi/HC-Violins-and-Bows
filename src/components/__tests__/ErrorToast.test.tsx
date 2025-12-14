@@ -1,12 +1,10 @@
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  act,
-} from '@testing-library/react';
-import ErrorToast from '../ErrorToast';
+import { render, screen, fireEvent, waitFor, act } from '@/test-utils/render';
 import { AppError, ErrorCodes } from '@/types/errors';
+
+// ✅ FIXED: ErrorToast는 실제 컴포넌트를 테스트해야 하므로 전역 mock 해제
+// jest.unmock은 jest.mock보다 먼저 호출되어야 함
+jest.unmock('@/components/ErrorToast');
+import ErrorToast from '../ErrorToast';
 
 // Mock the errorHandler
 jest.mock('@/utils/errorHandler', () => ({
@@ -23,7 +21,7 @@ describe('ErrorToast', () => {
   const mockError: AppError = {
     code: ErrorCodes.NETWORK_ERROR,
     message: 'Network connection failed',
-    timestamp: new Date(),
+    timestamp: new Date().toISOString(),
     context: { endpoint: '/api/test' },
   };
 

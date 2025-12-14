@@ -21,40 +21,42 @@ type FixedSizeListProps = {
 
 type FixedSizeListComponent = React.ComponentType<FixedSizeListProps>;
 
+// Fallback component
+const FallbackVirtualList = (props: FixedSizeListProps) => {
+  return (
+    <div style={{ height: props.height }}>
+      {Array.from({ length: props.itemCount }, (_, index) => {
+        const style: React.CSSProperties = {
+          height: props.itemSize,
+          position: 'relative',
+        };
+        return (
+          <div key={index} style={style}>
+            {props.children({ index, style })}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const FixedSizeList = dynamic(
-  () =>
-    import('react-window').then((mod: typeof import('react-window')) => {
+  async () => {
+    try {
+      const mod = await import('react-window');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const FixedSizeListComponent = (mod as any).FixedSizeList;
-      if (!FixedSizeListComponent) {
-        // Fallback if FixedSizeList is not available (v2)
-        console.warn('FixedSizeList not found in react-window, using fallback');
-        return ((props: FixedSizeListProps) => {
-          return (
-            <div style={{ height: props.height }}>
-              {Array.from({ length: props.itemCount }, (_, index) => {
-                const style: React.CSSProperties = {
-                  height: props.itemSize,
-                  position: 'relative',
-                };
-                return (
-                  <div key={index} style={style}>
-                    {props.children({ index, style })}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        }) as FixedSizeListComponent;
+      if (FixedSizeListComponent) {
+        return { default: FixedSizeListComponent as FixedSizeListComponent };
       }
-      return { default: FixedSizeListComponent };
-    }),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="h-96 flex items-center justify-center">Loading...</div>
-    ),
-  }
+    } catch (error) {
+      console.error('Failed to load react-window:', error);
+    }
+    // Fallback if FixedSizeList is not available (v2) or import failed
+    console.warn('FixedSizeList not found in react-window, using fallback');
+    return { default: FallbackVirtualList };
+  },
+  { ssr: false }
 ) as FixedSizeListComponent;
 
 interface InstrumentListProps {

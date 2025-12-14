@@ -1,3 +1,5 @@
+'use client';
+
 // unified data management hook - replace existing hooks
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 // Note: useRef is only used in useUnifiedData (Single Source of Truth for fetching)
@@ -317,8 +319,12 @@ export function useUnifiedDashboard() {
     // loading state
     loading: {
       instruments: state.loading.instruments,
+      clients: state.loading.clients,
       connections: state.loading.connections,
-      any: state.loading.instruments || state.loading.connections,
+      any:
+        state.loading.instruments ||
+        state.loading.clients ||
+        state.loading.connections,
     },
 
     // submitting state
@@ -328,15 +334,29 @@ export function useUnifiedDashboard() {
       any: state.submitting.instruments || state.submitting.connections,
     },
 
-    // actions
-    ...actions,
+    // actions - explicitly list to avoid webpack issues with spread operator
+    fetchClients: actions.fetchClients,
+    createClient: actions.createClient,
+    updateClient: actions.updateClient,
+    deleteClient: actions.deleteClient,
+    fetchInstruments: actions.fetchInstruments,
+    createInstrument: actions.createInstrument,
+    updateInstrument: actions.updateInstrument,
+    deleteInstrument: actions.deleteInstrument,
+    fetchConnections: actions.fetchConnections,
+    createConnection: actions.createConnection,
+    updateConnection: actions.updateConnection,
+    deleteConnection: actions.deleteConnection,
+    invalidateCache: actions.invalidateCache,
+    resetState: actions.resetState,
   };
 }
 
-// form-specific hook (replace existing useConnectionForm)
+// Connected clients data hook (provides data + CRUD operations for connections)
 // FIXED: Removed fetch - useUnifiedData is the Single Source of Truth for fetching
-// This hook only provides CRUD operations for connections
-export function useUnifiedConnectionForm() {
+// This hook provides clients, instruments, connections data and CRUD operations
+// Renamed from useUnifiedConnectionForm for clarity - this is not just a form hook
+export function useConnectedClientsData() {
   const { state, actions } = useDataContext();
   // state is used below in return statement (state.clients, state.instruments, etc.)
 

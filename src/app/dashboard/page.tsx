@@ -12,7 +12,7 @@ import {
 } from '@/components/common';
 import { usePageNotifications } from '@/hooks/usePageNotifications';
 import React, { useCallback, useMemo, useEffect, useState } from 'react';
-import { Instrument, SalesHistory, Client } from '@/types';
+import { Instrument, SalesHistory, Client, ClientInstrument } from '@/types';
 import dynamic from 'next/dynamic';
 import { useSalesHistory } from '@/app/sales/hooks/useSalesHistory';
 
@@ -22,8 +22,7 @@ const SaleForm = dynamic(() => import('@/app/sales/components/SaleForm'), {
 });
 
 export default function DashboardPage() {
-  const { ErrorToasts, SuccessToasts, showSuccess, handleError } =
-    useAppFeedback();
+  const { showSuccess, handleError } = useAppFeedback();
 
   // 판매 모달 상태
   const [showSaleModal, setShowSaleModal] = useState(false);
@@ -61,22 +60,19 @@ export default function DashboardPage() {
     handleDeleteItem,
   } = useDashboardData();
 
-  // Track clients loading state separately
-  const clientsLoading = useMemo(() => {
-    // Check if clients array is empty but we're still loading
-    return clients.length === 0 && loading.any;
-  }, [clients.length, loading.any]);
+  // FIXED: Use clients loading directly from useUnifiedDashboard
+  const clientsLoading = loading.clients;
 
   // FIXED: Enrich items with clients array for HAS_CLIENTS filter
   // This ensures filterDashboardItems can properly check hasClients without type casting
+  // FIXED: Use explicit ClientInstrument[] type instead of typeof clientRelationships
   type EnrichedInstrument = Instrument & {
-    clients: typeof clientRelationships;
+    clients: ClientInstrument[];
   };
   const enrichedItems = useMemo<EnrichedInstrument[]>(() => {
     // Group relationships by instrument_id for O(1) lookup
-    type RelationshipType = (typeof clientRelationships)[number];
-    const relationshipsByInstrument = new Map<string, RelationshipType[]>();
-    clientRelationships.forEach((rel: RelationshipType) => {
+    const relationshipsByInstrument = new Map<string, ClientInstrument[]>();
+    clientRelationships.forEach((rel: ClientInstrument) => {
       if (rel.instrument_id) {
         const existing = relationshipsByInstrument.get(rel.instrument_id) || [];
         existing.push(rel);
@@ -143,17 +139,21 @@ export default function DashboardPage() {
     handleCancelDelete,
   } = useDashboardModal();
 
-  // Calculate existing serial numbers for ItemForm validation
+  // FIXED: Calculate existing serial numbers as Set for O(1) lookup performance
   // This avoids duplicate data fetching in ItemForm (DashboardPage already has instruments)
-  const existingSerialNumbers = useMemo(
-    () =>
+  const existingSerialNumbersSet = useMemo(() => {
+    return new Set(
       instruments
         .map((i: Instrument) => i.serial_number)
-        .filter(
-          (num: string | null | undefined): num is string =>
-            num !== null && num !== undefined
-        ),
-    [instruments]
+        .filter((n): n is string => !!n)
+    );
+  }, [instruments]);
+
+  // Also provide as array for backwards compatibility (ItemForm/ItemList still use array)
+  // TODO: Update validateInstrumentSerial to accept Set<string> for better performance
+  const existingSerialNumbers = useMemo(
+    () => Array.from(existingSerialNumbersSet),
+    [existingSerialNumbersSet]
   );
 
   // Handle confirmed deletion
@@ -207,6 +207,23 @@ export default function DashboardPage() {
         actionButton={{
           label: 'Add Item',
           onClick: handleAddItem,
+          icon: (
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+          ),
         }}
         headerActions={
           <NotificationBadge
@@ -219,7 +236,6 @@ export default function DashboardPage() {
       >
         <DashboardContent
           enrichedItems={enrichedItems}
-          instruments={instruments}
           clients={clients}
           clientRelationships={clientRelationships}
           clientsLoading={clientsLoading}
@@ -228,6 +244,7 @@ export default function DashboardPage() {
           onUpdateItemInline={handleUpdateItemInline}
           onAddClick={handleAddItem}
           onSellClick={handleSellClick}
+          existingSerialNumbers={existingSerialNumbers}
         />
 
         {/* Item Form Modal - Show when editing or creating */}
@@ -249,10 +266,6 @@ export default function DashboardPage() {
           existingSerialNumbers={existingSerialNumbers}
         />
 
-        {/* Error Toasts */}
-        <ErrorToasts />
-        {/* Success Toasts */}
-        <SuccessToasts />
         <ConfirmDialog
           isOpen={isConfirmDialogOpen}
           title="Delete item?"

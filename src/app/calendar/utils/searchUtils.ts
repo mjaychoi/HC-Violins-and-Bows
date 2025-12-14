@@ -13,10 +13,10 @@ export function highlightText(
   const regex = new RegExp(`(${escapeRegex(searchTerm)})`, 'gi');
   const parts = text.split(regex);
 
+  const lowerSearch = searchTerm.toLowerCase();
   return parts.map((part, index) => {
-    const isMatch = regex.test(part);
-    // Reset regex lastIndex for next test
-    regex.lastIndex = 0;
+    // Simplified: use case-insensitive string comparison instead of regex.test
+    const isMatch = part.toLowerCase() === lowerSearch;
     return isMatch
       ? React.createElement(
           'mark',
@@ -154,7 +154,8 @@ export function sortTasks(
         break;
 
       case 'type':
-        comparison = a.task_type.localeCompare(b.task_type);
+        // Null-safe comparison
+        comparison = (a.task_type ?? '').localeCompare(b.task_type ?? '');
         break;
 
       default:

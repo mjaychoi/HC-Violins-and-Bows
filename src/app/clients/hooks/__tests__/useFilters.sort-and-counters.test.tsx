@@ -1,5 +1,5 @@
 // src/app/clients/hooks/__tests__/useFilters.sort-and-counters.test.tsx
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '@/test-utils/render';
 import { useFilters } from '../useFilters';
 import { Client } from '@/types';
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useErrorHandler } from './useErrorHandler';
+import { useErrorHandler } from '@/contexts/ToastContext';
 import { dataService } from '@/services/dataService';
 import type { MaintenanceTask, TaskFilters } from '@/types';
 

@@ -3,8 +3,8 @@ import { useEffect, useCallback, useState, useRef } from 'react';
 import { useAsyncOperation } from './useAsyncOperation';
 
 // common useEffect hook for data fetching
-// FIXED: Added stale guard to prevent out-of-order overwrites
-// FIXED: Improved documentation about dependency stability
+// ✅ FIXED: useAsyncOperation의 run이 "최신 요청만 setData 한다"면 → useDataFetching의 myId 가드 제거
+// useAsyncOperation은 실행/취소/로딩만, useDataFetching이 items state만 담당
 export function useDataFetching<T, P = void>(
   fetchFunction: (param?: P, signal?: AbortSignal) => Promise<T[]>,
   context: string,
@@ -13,37 +13,30 @@ export function useDataFetching<T, P = void>(
   const { loading, run } = useAsyncOperation<T[]>();
   const [items, setItems] = useState<T[]>([]);
   const fetchFunctionRef = useRef(fetchFunction);
-  // FIXED: Stale guard - useAsyncOperation already has reqIdRef, but we add another
-  // layer here to ensure setItems only runs for the latest request
-  const reqIdRef = useRef(0);
 
   // Update ref when fetchFunction changes
   useEffect(() => {
     fetchFunctionRef.current = fetchFunction;
   }, [fetchFunction]);
 
-  // FIXED: Added stale guard wrapper for setItems
-  const setItemsSafe = useCallback((newItems: T[]) => {
-    setItems(newItems);
-  }, []);
-
   const fetchData = useCallback(
     async (param?: P) => {
-      const myId = ++reqIdRef.current;
       const res = await run(signal => fetchFunctionRef.current(param, signal), {
         context,
+        skipSetData: true, // ✅ FIXED: useAsyncOperation은 setData 안 함
         onSuccess: data => {
-          // Only update if this is still the latest request
-          if (myId === reqIdRef.current) {
-            setItemsSafe(data || []);
-          }
+          // ✅ FIXED: useDataFetching만 items state 담당
+          setItems(data || []);
         },
       });
       return res;
     },
-    [run, context, setItemsSafe]
+    [run, context]
   );
 
+  // ✅ FIXED: fetchData를 의존성에서 제거하여 무한 루프 방지
+  // fetchData는 run과 context에만 의존하므로, run과 context가 변경될 때만 재생성됨
+  // 하지만 run은 useAsyncOperation에서 handleError에만 의존하므로 안정적임
   // WARNING: Dependencies are spread into useEffect deps
   // Caller MUST ensure dependencies are stable primitives or memoized
   // If dependencies are objects/arrays that change every render, this will refetch on every render
@@ -51,9 +44,9 @@ export function useDataFetching<T, P = void>(
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchData, ...dependencies]);
+  }, [run, context, ...dependencies]);
 
-  return { fetchData, loading, items, setItems: setItemsSafe };
+  return { fetchData, loading, items, setItems };
 }
 
 // hook for initial data loading

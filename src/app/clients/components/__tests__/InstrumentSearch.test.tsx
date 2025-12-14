@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import InstrumentSearch from '../InstrumentSearch';
 import { Instrument } from '@/types';
 

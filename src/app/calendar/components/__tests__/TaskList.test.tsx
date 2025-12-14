@@ -1,5 +1,5 @@
 // src/app/calendar/components/__tests__/TaskList.test.tsx
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import TaskList from '../TaskList';
 import { MaintenanceTask } from '@/types';

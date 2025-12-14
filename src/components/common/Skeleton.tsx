@@ -131,13 +131,28 @@ interface TableSkeletonProps {
   rows?: number;
   columns?: number;
   header?: boolean;
+  /**
+   * 가상화 사용 여부 - true면 SpinnerLoading 사용 (가상화와 충돌 방지)
+   */
+  shouldVirtualize?: boolean;
+  /**
+   * SpinnerLoading 메시지 (shouldVirtualize가 true일 때 사용)
+   */
+  loadingMessage?: string;
 }
 
 export const TableSkeleton = memo(function TableSkeleton({
   rows = 5,
   columns = 6,
   header = true,
+  shouldVirtualize = false,
+  loadingMessage = 'Loading...',
 }: TableSkeletonProps) {
+  // ✅ FIXED: 가상화 켜진 페이지에서는 SpinnerLoading만 사용 (가상화 + 테이블 스켈레톤 충돌 방지)
+  if (shouldVirtualize) {
+    return <SpinnerLoading message={loadingMessage} />;
+  }
+
   return (
     <div className={classNames.tableWrapper}>
       <div className={classNames.tableContainer}>

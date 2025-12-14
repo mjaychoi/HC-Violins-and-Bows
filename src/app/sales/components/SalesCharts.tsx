@@ -16,6 +16,12 @@ import {
 } from 'recharts';
 import { EnrichedSale } from '@/types';
 import { currency } from '../utils/salesFormatters';
+import {
+  toDateOnly,
+  parseYMDLocal,
+  formatCompactDate,
+  formatMonth,
+} from '@/utils/dateParsing';
 
 interface SalesChartsProps {
   sales: EnrichedSale[];
@@ -37,14 +43,19 @@ export default function SalesCharts({
   onInstrumentFilter,
 }: SalesChartsProps) {
   // 날짜 필터 적용된 데이터
-  // Note: 문자열 비교 사용 - sale_date, fromDate, toDate는 모두 'YYYY-MM-DD' 형식이 보장되므로
-  // lexicographical order로 안전하게 비교 가능. API에서 이 형식을 강제하므로 string 비교 사용.
+  // FIXED: Normalize date strings to date-only format (YYYY-MM-DD) to handle ISO timestamps
+  // This prevents issues when sale_date comes as ISO timestamp (e.g., 2025-12-13T00:00:00Z)
   const filteredSales = useMemo(() => {
-    if (!fromDate && !toDate) return sales;
+    const from = toDateOnly(fromDate);
+    const to = toDateOnly(toDate);
+
+    if (!from && !to) return sales;
+
     return sales.filter(sale => {
-      const saleDate = sale.sale_date;
-      if (fromDate && saleDate < fromDate) return false;
-      if (toDate && saleDate > toDate) return false;
+      const saleDate = toDateOnly(sale.sale_date);
+      if (!saleDate) return false;
+      if (from && saleDate < from) return false;
+      if (to && saleDate > to) return false;
       return true;
     });
   }, [sales, fromDate, toDate]);
@@ -57,7 +68,8 @@ export default function SalesCharts({
     >();
 
     filteredSales.forEach(sale => {
-      const date = sale.sale_date; // YYYY-MM-DD 형식
+      // FIXED: Normalize to date-only to prevent grouping issues with timestamps
+      const date = toDateOnly(sale.sale_date); // YYYY-MM-DD 형식
       if (!dailyMap.has(date)) {
         dailyMap.set(date, { revenue: 0, refunds: 0, count: 0 });
       }
@@ -73,15 +85,8 @@ export default function SalesCharts({
 
     return Array.from(dailyMap.entries())
       .map(([dateStr, data]) => {
-        // YYYY-MM-DD 형식에서 날짜 파싱 (타임존 이슈 방지를 위해 UTC 사용)
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const date = new Date(Date.UTC(year, month - 1, day));
-        // FIXED: Force UTC timezone for formatting to prevent day shift in negative UTC offsets
-        const formattedDate = date.toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          timeZone: 'UTC',
-        });
+        // FIXED: Use unified date formatter for consistency
+        const formattedDate = formatCompactDate(dateStr);
 
         return {
           date: formattedDate,
@@ -103,9 +108,10 @@ export default function SalesCharts({
     >();
 
     filteredSales.forEach(sale => {
-      const [year, month, day] = sale.sale_date.split('-').map(Number);
-      const date = new Date(Date.UTC(year, month - 1, day));
-      const dayOfWeek = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
+      // FIXED: Use parseYMDLocal for day-of-week calculations (local timezone)
+      const saleDay = parseYMDLocal(sale.sale_date);
+      if (!saleDay) return;
+      const dayOfWeek = saleDay.getDay(); // Local day of week (0 = Sunday, 6 = Saturday)
 
       if (!weekdayMap.has(dayOfWeek)) {
         weekdayMap.set(dayOfWeek, { revenue: 0, refunds: 0, count: 0 });
@@ -141,8 +147,10 @@ export default function SalesCharts({
     >();
 
     filteredSales.forEach(sale => {
+      // FIXED: Normalize to date-only first to handle timestamps
       // YYYY-MM-DD 형식에서 월 키 추출 (타임존 이슈 방지)
-      const [year, month] = sale.sale_date.split('-');
+      const dateOnly = toDateOnly(sale.sale_date);
+      const [year, month] = dateOnly.split('-');
       const monthKey = `${year}-${month}`;
 
       if (!monthlyMap.has(monthKey)) {
@@ -160,17 +168,8 @@ export default function SalesCharts({
 
     return Array.from(monthlyMap.entries())
       .map(([key, data]) => {
-        // YYYY-MM 형식에서 날짜 생성 (타임존 이슈 방지를 위해 UTC 사용)
-        const [year, month] = key.split('-');
-        const date = new Date(
-          Date.UTC(parseInt(year, 10), parseInt(month, 10) - 1, 1)
-        );
-        // FIXED: Force UTC timezone for formatting to prevent day shift in negative UTC offsets
-        const monthLabel = date.toLocaleDateString('en-US', {
-          month: 'short',
-          year: 'numeric',
-          timeZone: 'UTC',
-        });
+        // FIXED: Use unified date formatter for consistency
+        const monthLabel = formatMonth(`${key}-01`);
 
         // FIXED: Refund rate should be refunds relative to revenue (not total flow)
         const refundRate =
@@ -272,8 +271,13 @@ export default function SalesCharts({
 
   // Custom formatters
   // YAxis용 compact formatter (차트 축 라벨) - $28M 형식
+  // FIXED: For small amounts, use integer format to avoid clutter
   const formatCurrencyCompact = (value: number) => {
     if (value === 0) return '$0';
+    // For small amounts (< $1000), show as integer to reduce clutter
+    if (Math.abs(value) < 1000) {
+      return `$${Math.round(value)}`;
+    }
     const absValue = Math.abs(value);
 
     // For amounts >= 1M, use M notation
@@ -350,7 +354,12 @@ export default function SalesCharts({
         refunds: data.refunds,
         count: data.count,
       }))
-      .sort((a, b) => b.refunds - a.refunds)
+      .sort((a, b) => {
+        // FIXED: Sort Unknown to bottom for better UX
+        if (a.clientId === 'unknown') return 1;
+        if (b.clientId === 'unknown') return -1;
+        return b.refunds - a.refunds;
+      })
       .slice(0, 10);
   }, [filteredSales]);
 
@@ -389,32 +398,48 @@ export default function SalesCharts({
         refunds: data.refunds,
         count: data.count,
       }))
-      .sort((a, b) => b.refunds - a.refunds)
+      .sort((a, b) => {
+        // FIXED: Sort Unknown to bottom for better UX
+        if (a.instrumentId === 'unknown') return 1;
+        if (b.instrumentId === 'unknown') return -1;
+        return b.refunds - a.refunds;
+      })
       .slice(0, 10);
   }, [filteredSales]);
 
-  // 차트 클릭 핸들러 (Drill-down)
-  // FIXED: Improved click handler - guard against empty/stale activePayload
-  const handleChartClick = (data: unknown, chartType: 'daily' | 'monthly') => {
+  // FIXED: Helper to safely extract payload from Recharts click event
+  function getFirstPayload<T extends { fullDate?: string; monthKey?: string }>(
+    e: unknown
+  ): T | null {
     const payload = (
-      data as {
+      e as {
         activePayload?: Array<{
-          payload?: { fullDate?: string; monthKey?: string };
+          payload?: T;
         }>;
         activeLabel?: string;
       }
     )?.activePayload;
-    // FIXED: Guard against empty/stale payload
-    if (!payload || payload.length === 0 || !payload[0]?.payload) return;
-    if (!onDateFilter) return;
+    if (!payload || payload.length === 0 || !payload[0]?.payload) return null;
+    return payload[0].payload as T;
+  }
 
-    if (chartType === 'daily' && payload[0].payload.fullDate) {
+  // 차트 클릭 핸들러 (Drill-down)
+  // FIXED: Improved click handler - guard against empty/stale activePayload
+  const handleChartClick = (data: unknown, chartType: 'daily' | 'monthly') => {
+    const payload = getFirstPayload<{ fullDate?: string; monthKey?: string }>(
+      data
+    );
+    if (!payload || !onDateFilter) return;
+
+    if (chartType === 'daily' && payload.fullDate) {
       // 일별 차트 클릭 시 해당 날짜로 필터링
-      const fullDate = payload[0].payload.fullDate;
+      // FIXED: toDate is inclusive (matches filteredSales comparison logic)
+      const fullDate = payload.fullDate;
       onDateFilter(fullDate, fullDate);
-    } else if (chartType === 'monthly' && payload[0].payload.monthKey) {
+    } else if (chartType === 'monthly' && payload.monthKey) {
       // 월별 차트 클릭 시 해당 월로 필터링
-      const monthKey = payload[0].payload.monthKey;
+      // FIXED: toDate is inclusive (matches filteredSales comparison logic)
+      const monthKey = payload.monthKey;
       const [year, month] = monthKey.split('-');
       const from = `${year}-${month}-01`;
       // FIXED: Use UTC for lastDay calculation to avoid timezone issues (consistent with rest of file)
@@ -946,7 +971,11 @@ export default function SalesCharts({
                     d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-10">
+                {/* FIXED: Add title attribute for accessibility (mobile/touch devices) */}
+                <div
+                  className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-10"
+                  title="Net Sales = Revenue – Refunds (absolute $)"
+                >
                   Net Sales = Revenue – Refunds (absolute $)
                 </div>
               </div>
@@ -1059,7 +1088,11 @@ export default function SalesCharts({
                     d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-10">
+                {/* FIXED: Add title attribute for accessibility (mobile/touch devices) */}
+                <div
+                  className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-10"
+                  title="Net Sales = Revenue – Refunds (absolute $)"
+                >
                   Net Sales = Revenue – Refunds (absolute $)
                 </div>
               </div>

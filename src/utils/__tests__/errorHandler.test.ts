@@ -24,7 +24,9 @@ describe('ErrorHandler', () => {
       expect(error.message).toBe('Network failed');
       expect(error.details).toBe('Connection timeout');
       expect(error.context).toEqual({ endpoint: '/api/test' });
-      expect(error.timestamp).toBeInstanceOf(Date);
+      // ✅ FIXED: timestamp는 이제 ISO string (Date 아님)
+      expect(typeof error.timestamp).toBe('string');
+      expect(error.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     });
   });
 

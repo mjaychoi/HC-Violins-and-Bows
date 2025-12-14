@@ -4,14 +4,14 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 /**
- * @deprecated This page has been moved to /clients/analytics
+ * @deprecated This page has been moved to /clients?tab=analytics
  * This page redirects to the new location for backward compatibility
  */
 export default function CustomerPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/clients/analytics');
+    router.replace('/clients?tab=analytics');
   }, [router]);
 
   return (

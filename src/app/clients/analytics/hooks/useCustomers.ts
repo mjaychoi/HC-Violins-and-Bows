@@ -2,10 +2,14 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { CustomerWithPurchases, salesHistoryToPurchase } from '../types';
 import { SalesHistory, Instrument } from '@/types';
 import { useUnifiedClients } from '@/hooks/useUnifiedData';
-import { useErrorHandler } from '@/hooks/useErrorHandler';
-import { getMostRecentDate, compareDatesDesc } from '@/utils/dateParsing';
+import { useErrorHandler } from '@/contexts/ToastContext';
+import { parseYMDUTC, compareDatesDesc } from '@/utils/dateParsing';
 
-export function useCustomers() {
+interface UseCustomersOptions {
+  enabled?: boolean; // ✅ Control whether to fetch data (default: true)
+}
+
+export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
   const { clients, loading: clientsLoading } = useUnifiedClients();
   const { handleError } = useErrorHandler();
   const [loading, setLoading] = useState(false);
@@ -40,8 +44,6 @@ export function useCustomers() {
     }
     try {
       setLoading(true);
-      console.log('[useCustomers] Fetching sales history...');
-
       // FIXED: Performance note - fetching all sales (10k limit) for analytics
       // TODO: Consider server-side aggregation endpoint /api/sales/summary-by-client
       // that returns {client_id, total_spend, last_purchase_date, purchase_count}
@@ -58,7 +60,6 @@ export function useCustomers() {
       }
 
       const sales = (result.data || []) as SalesHistory[];
-      console.log('[useCustomers] Sales fetched:', { count: sales.length });
 
       // Group sales by client_id
       const grouped = new Map<string, SalesHistory[]>();
@@ -68,11 +69,6 @@ export function useCustomers() {
           existing.push(sale);
           grouped.set(sale.client_id, existing);
         }
-      });
-
-      console.log('[useCustomers] Sales grouped by client:', {
-        uniqueClients: grouped.size,
-        totalSales: sales.length,
       });
       setSalesByClient(grouped);
 
@@ -85,9 +81,6 @@ export function useCustomers() {
       });
 
       if (instrumentIds.size > 0) {
-        console.log('[useCustomers] Fetching instruments...', {
-          count: instrumentIds.size,
-        });
         // FIXED: Performance note - fetching all instruments when only specific IDs are needed
         // TODO: Add endpoint /api/instruments?ids=... (or POST body) to fetch only required IDs
         // This reduces network transfer and memory usage
@@ -103,9 +96,6 @@ export function useCustomers() {
               map.set(inst.id, inst);
             }
           });
-          console.log('[useCustomers] Instruments loaded:', {
-            count: map.size,
-          });
           setInstrumentsMap(map);
         } else {
           console.warn(
@@ -113,8 +103,6 @@ export function useCustomers() {
             instrumentsResult
           );
         }
-      } else {
-        console.log('[useCustomers] No instruments to fetch');
       }
     } catch (error) {
       console.error('[useCustomers] Error fetching sales history:', error);
@@ -129,8 +117,19 @@ export function useCustomers() {
   // Store fetchSalesHistory in ref for stable reference
   fetchSalesHistoryRef.current = fetchSalesHistory;
 
-  // Fetch sales history when clients are loaded (only once)
+  // ✅ Fetch sales history when clients are loaded (only if enabled)
   useEffect(() => {
+    // ✅ Don't fetch if disabled (e.g., not in analytics tab)
+    if (!enabled) {
+      if (
+        typeof window !== 'undefined' &&
+        process.env.NODE_ENV === 'development'
+      ) {
+        console.log('[useCustomers] Fetch disabled (enabled=false)');
+      }
+      return;
+    }
+
     if (
       typeof window !== 'undefined' &&
       process.env.NODE_ENV === 'development'
@@ -141,6 +140,7 @@ export function useCustomers() {
         shouldFetch:
           !clientsLoading && clients.length > 0 && !hasFetchedRef.current,
         hasFetched: hasFetchedRef.current,
+        enabled,
       });
     }
 
@@ -165,7 +165,7 @@ export function useCustomers() {
         );
       }
     }
-  }, [clientsLoading, clients.length]);
+  }, [enabled, clientsLoading, clients.length]);
   // Note: fetchSalesHistoryRef.current is used instead of fetchSalesHistory to prevent infinite loops
   // The ref is updated whenever fetchSalesHistory changes, but doesn't trigger re-renders
 
@@ -181,28 +181,33 @@ export function useCustomers() {
         return salesHistoryToPurchase(sale, instrument);
       });
 
+      // Calculate last purchase date for sorting (raw ISO string, not formatted)
+      const lastPurchaseAt =
+        purchases.length > 0
+          ? purchases
+              .map(p => p.date)
+              .sort((a, b) => {
+                // Sort dates descending to get most recent
+                try {
+                  const dateA = parseYMDUTC(a);
+                  const dateB = parseYMDUTC(b);
+                  return dateB.getTime() - dateA.getTime();
+                } catch {
+                  return 0;
+                }
+              })[0]
+          : null;
+
       return {
         ...client,
         tags: Array.isArray(client.tags) ? client.tags : [],
         note: client.note || null,
         purchases,
+        lastPurchaseAt, // ✅ Raw ISO date string for sorting
       };
     });
 
-    // Debug logging
-    if (
-      typeof window !== 'undefined' &&
-      process.env.NODE_ENV === 'development'
-    ) {
-      console.log('[useCustomers] Customers calculated:', {
-        clientsCount: clients.length,
-        customersCount: result.length,
-        salesByClientSize: salesByClient.size,
-        instrumentsMapSize: instrumentsMap.size,
-        customersWithPurchases: result.filter(c => c.purchases.length > 0)
-          .length,
-      });
-    }
+    // Debug logging removed to reduce console noise
 
     return result;
   }, [clients, salesByClient, instrumentsMap]);
@@ -235,20 +240,9 @@ export function useCustomers() {
         return spendB - spendA;
       }
       // recent
-      // FIXED: Use getMostRecentDate and compareDatesDesc for reliable date sorting
-      // FIXED: Handle empty purchases array - use created_at as fallback when getMostRecentDate returns '—'
-      const aRecentDate =
-        a.purchases.length > 0
-          ? getMostRecentDate(a.purchases.map(p => p.date))
-          : null;
-      const bRecentDate =
-        b.purchases.length > 0
-          ? getMostRecentDate(b.purchases.map(p => p.date))
-          : null;
-      const recentA =
-        aRecentDate && aRecentDate !== '—' ? aRecentDate : a.created_at || '';
-      const recentB =
-        bRecentDate && bRecentDate !== '—' ? bRecentDate : b.created_at || '';
+      // ✅ FIXED: Use lastPurchaseAt (raw ISO string) for sorting, fallback to created_at
+      const recentA = a.lastPurchaseAt || a.created_at || '';
+      const recentB = b.lastPurchaseAt || b.created_at || '';
       return compareDatesDesc(recentA, recentB);
     });
 
@@ -280,6 +274,7 @@ export function useCustomers() {
   return {
     customers: filteredCustomers,
     rawCustomers: customers,
+    allCustomersCount: customers.length, // Total count before filtering
     searchTerm,
     setSearchTerm,
     tagFilter,

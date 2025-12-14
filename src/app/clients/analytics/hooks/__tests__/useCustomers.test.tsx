@@ -1,6 +1,6 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '@/test-utils/render';
 import { useCustomers } from '../useCustomers';
-import { waitFor } from '@testing-library/react';
+import { waitFor } from '@/test-utils/render';
 
 const mockClients = [
   {
@@ -85,11 +85,16 @@ jest.mock('@/hooks/useUnifiedData', () => ({
   }),
 }));
 
-jest.mock('@/hooks/useErrorHandler', () => ({
-  useErrorHandler: () => ({
-    handleError: jest.fn(),
-  }),
-}));
+// ✅ FIXED: ToastProvider도 export하도록 mock 수정
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    useErrorHandler: () => ({
+      handleError: jest.fn(),
+    }),
+  };
+});
 
 beforeEach(() => {
   // FIXED: Use mockResolvedValue instead of mockResolvedValueOnce to reset for each test

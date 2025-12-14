@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { EmptyState } from '../EmptyState';
+import { render, screen } from '@/test-utils/render';
+import { InlineEmptyState as EmptyState } from '../EmptyState';
 
 describe('EmptyState', () => {
   it('should render message', () => {

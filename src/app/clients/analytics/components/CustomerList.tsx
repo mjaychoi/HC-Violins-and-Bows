@@ -1,6 +1,10 @@
+import { useEffect, useRef } from 'react';
 import { CustomerWithPurchases } from '../types';
-import { getMostRecentDate } from '@/utils/dateParsing';
+import { format } from 'date-fns';
 import { EmptyState } from '@/components/common';
+import { parseYMDUTC } from '@/utils/dateParsing';
+// ✅ FIXED: Use centralized color tokens
+import { getInterestColor } from '@/utils/colorTokens';
 
 interface CustomerListProps {
   customers: CustomerWithPurchases[];
@@ -20,6 +24,55 @@ export function CustomerList({
   selectedId,
   onSelect,
 }: CustomerListProps) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // ✅ Keyboard navigation support
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!listRef.current?.contains(e.target as Node)) return;
+
+      const currentIndex = customers.findIndex(c => c.id === selectedId);
+      if (currentIndex === -1) return;
+
+      let newIndex = currentIndex;
+
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          newIndex = Math.min(currentIndex + 1, customers.length - 1);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          newIndex = Math.max(currentIndex - 1, 0);
+          break;
+        case 'Home':
+          e.preventDefault();
+          newIndex = 0;
+          break;
+        case 'End':
+          e.preventDefault();
+          newIndex = customers.length - 1;
+          break;
+        default:
+          return;
+      }
+
+      if (newIndex !== currentIndex && customers[newIndex]) {
+        onSelect(customers[newIndex].id);
+        buttonRefs.current[newIndex]?.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [customers, selectedId, onSelect]);
+
+  // Update button refs array when customers change
+  useEffect(() => {
+    buttonRefs.current = buttonRefs.current.slice(0, customers.length);
+  }, [customers.length]);
+
   if (!customers.length) {
     return (
       <EmptyState
@@ -29,8 +82,25 @@ export function CustomerList({
     );
   }
 
+  // ✅ Format date for display (separate from sorting)
+  const formatDateForDisplay = (dateStr: string | null): string => {
+    if (!dateStr) return '—';
+    try {
+      const date = parseYMDUTC(dateStr);
+      return format(date, 'MMM d, yyyy');
+    } catch {
+      return dateStr; // Fallback to raw string if parsing fails
+    }
+  };
+
   return (
-    <div className="bg-white rounded-lg shadow border border-gray-200 divide-y divide-gray-200">
+    <div
+      ref={listRef}
+      className="bg-white rounded-lg shadow border border-gray-200 divide-y divide-gray-200"
+      role="listbox"
+      aria-label="Customer list"
+      tabIndex={0}
+    >
       {customers.map(customer => {
         const fullName =
           `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
@@ -39,25 +109,27 @@ export function CustomerList({
           (sum: number, p: { amount: number }) => sum + p.amount,
           0
         );
-        // FIXED: Use getMostRecentDate instead of string sorting
-        const recentDate =
-          customer.purchases.length > 0
-            ? getMostRecentDate(
-                customer.purchases.map((p: { date: string }) => p.date)
-              )
-            : '—';
-        // FIXED: Normalize tags to prevent runtime crash
-        const tags = Array.isArray(customer.tags) ? customer.tags : [];
+        // ✅ Use lastPurchaseAt for display (already formatted in useCustomers)
+        const recentDate = formatDateForDisplay(customer.lastPurchaseAt);
+        // ✅ Tags are already normalized in useCustomers
+        const tags = customer.tags;
+        const index = customers.indexOf(customer);
         return (
           <button
             key={customer.id}
+            ref={el => {
+              buttonRefs.current[index] = el;
+            }}
             onClick={() => onSelect(customer.id)}
-            className={`w-full text-left px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors ${
+            // ✅ Removed unused focusedIndex handlers
+            role="option"
+            aria-selected={selectedId === customer.id}
+            tabIndex={selectedId === customer.id ? 0 : -1}
+            className={`w-full text-left px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
               selectedId === customer.id
                 ? 'bg-blue-50 border-l-4 border-l-blue-600'
                 : ''
             }`}
-            aria-pressed={selectedId === customer.id}
           >
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-gray-900 truncate">
@@ -86,7 +158,9 @@ export function CustomerList({
                   </div>
                 )}
                 {customer.interest && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getInterestColor(customer.interest)}`}
+                  >
                     {customer.interest}
                   </span>
                 )}

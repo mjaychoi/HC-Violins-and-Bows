@@ -12,9 +12,10 @@ import {
   isSameDay,
   isSameMonth,
 } from 'date-fns';
-import { enUS } from 'date-fns/locale';
+import { ko } from 'date-fns/locale';
 import { MaintenanceTask } from '@/types';
-import { parseTaskDateLocal, taskDayKey } from '@/utils/dateParsing';
+import { parseYMDLocal, taskDayKey } from '@/utils/dateParsing';
+import { parseISO, isValid } from 'date-fns';
 import { getDateStatus } from '@/utils/tasks/style';
 
 interface YearViewProps {
@@ -38,6 +39,60 @@ export default function YearView({
   onSelectEvent,
   onNavigate,
 }: YearViewProps) {
+  // FIXED: Pre-process tasks once (O(N)) instead of filtering 12 times (O(12N))
+  const yearBuckets = useMemo(() => {
+    const year = currentDate.getFullYear();
+    const monthMap = new Map<
+      string,
+      {
+        monthTasks: MaintenanceTask[];
+        dayMap: Map<string, MaintenanceTask[]>;
+      }
+    >();
+
+    // Single pass through tasks
+    for (const task of tasks) {
+      const raw =
+        task.scheduled_date || task.due_date || task.personal_due_date;
+      if (!raw) continue;
+
+      let d: Date | null = null;
+      try {
+        // Try parseYMDLocal first (handles YYYY-MM-DD as local)
+        d = parseYMDLocal(raw);
+        // If that fails, try parseISO for timestamps
+        if (!d) {
+          const isoDate = parseISO(raw);
+          d = isValid(isoDate) ? isoDate : null;
+        }
+      } catch {
+        continue;
+      }
+
+      if (!d) continue;
+
+      // Skip tasks outside current year
+      if (d.getFullYear() !== year) continue;
+
+      const monthKey = format(d, 'yyyy-MM'); // ex) 2025-01
+      const dayKey = taskDayKey(raw); // ex) 2025-01-03
+
+      const bucket = monthMap.get(monthKey) ?? {
+        monthTasks: [],
+        dayMap: new Map<string, MaintenanceTask[]>(),
+      };
+      bucket.monthTasks.push(task);
+
+      const dayTasks = bucket.dayMap.get(dayKey) ?? [];
+      dayTasks.push(task);
+      bucket.dayMap.set(dayKey, dayTasks);
+
+      monthMap.set(monthKey, bucket);
+    }
+
+    return monthMap;
+  }, [tasks, currentDate]);
+
   const year = useMemo(() => {
     const yearStart = startOfYear(currentDate);
     const yearEnd = endOfYear(currentDate);
@@ -48,39 +103,21 @@ export default function YearView({
       const monthEnd = endOfMonth(month);
       const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
-      // Get tasks for this month (FIXED: Use parseTaskDateLocal to avoid timezone shifts)
-      const monthTasks = tasks.filter(task => {
-        const taskDate =
-          task.scheduled_date || task.due_date || task.personal_due_date;
-        if (!taskDate) return false;
-        try {
-          const taskDateObj = parseTaskDateLocal(taskDate);
-          return isSameMonth(taskDateObj, month);
-        } catch {
-          return false;
-        }
-      });
-
-      // FIXED: Build dayKey → tasks map once per month (O(days * monthTasks) → O(monthTasks))
-      const dayMap = new Map<string, MaintenanceTask[]>();
-      for (const task of monthTasks) {
-        const raw =
-          task.scheduled_date || task.due_date || task.personal_due_date;
-        if (!raw) continue;
-        const key = taskDayKey(raw);
-        const arr = dayMap.get(key) ?? [];
-        arr.push(task);
-        dayMap.set(key, arr);
-      }
+      // Get pre-processed bucket for this month
+      const monthKey = format(month, 'yyyy-MM');
+      const bucket = yearBuckets.get(monthKey) ?? {
+        monthTasks: [],
+        dayMap: new Map<string, MaintenanceTask[]>(),
+      };
 
       return {
         month,
         days,
-        tasks: monthTasks,
-        dayMap, // Add dayMap for efficient day lookup
+        tasks: bucket.monthTasks,
+        dayMap: bucket.dayMap,
       };
     });
-  }, [currentDate, tasks]);
+  }, [currentDate, yearBuckets]);
 
   const getTaskColor = useCallback((task: MaintenanceTask): string => {
     const dateStatus = getDateStatus(task);
@@ -110,28 +147,21 @@ export default function YearView({
     <div className="year-view">
       <div className="mb-6">
         <h2 className="text-2xl font-semibold text-gray-900">
-          {format(currentDate, 'yyyy', { locale: enUS })}
+          {format(currentDate, 'yyyy', { locale: ko })}
         </h2>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {year.map(({ month, days, tasks: monthTasks, dayMap }) => (
-          <div
+          <button
             key={month.toISOString()}
-            className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+            type="button"
+            className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer text-left w-full"
             onClick={() => onNavigate?.(month)}
-            role="button"
-            tabIndex={0}
-            aria-label={`View ${format(month, 'MMMM yyyy', { locale: enUS })}`}
-            onKeyDown={e => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onNavigate?.(month);
-              }
-            }}
+            aria-label={`View ${format(month, 'MMMM yyyy', { locale: ko })}`}
           >
             <div className="mb-3">
               <h3 className="text-base font-semibold text-gray-900">
-                {format(month, 'MMMM', { locale: enUS })}
+                {format(month, 'MMMM', { locale: ko })}
               </h3>
               <p className="text-xs text-gray-500 mt-1">
                 {monthTasks.length} {monthTasks.length === 1 ? 'task' : 'tasks'}
@@ -150,14 +180,17 @@ export default function YearView({
             </div>
             <div className="grid grid-cols-7 gap-1">
               {days.map(day => {
-                // FIXED: Use dayMap for O(1) lookup instead of O(monthTasks) filter
-                const dayKey = format(day, 'yyyy-MM-dd');
+                // FIXED: Use taskDayKey for consistent day key generation (matches dayMap keys)
+                // Convert Date to string first, then use taskDayKey for consistency
+                const dayStr = format(day, 'yyyy-MM-dd');
+                const dayKey = taskDayKey(dayStr);
                 const dayTasks = dayMap.get(dayKey) ?? [];
                 const isToday = isSameDay(day, new Date());
 
                 return (
-                  <div
+                  <button
                     key={day.toISOString()}
+                    type="button"
                     className={`relative min-h-[32px] flex items-center justify-center text-xs rounded transition-colors ${
                       isToday
                         ? 'bg-blue-100 text-blue-700 font-semibold'
@@ -169,39 +202,22 @@ export default function YearView({
                       e.stopPropagation();
                       onNavigate?.(day);
                     }}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`View ${format(day, 'MMMM d, yyyy', { locale: enUS })}${dayTasks.length > 0 ? ` - ${dayTasks.length} tasks` : ''}`}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onNavigate?.(day);
-                      }
-                    }}
+                    aria-label={`View ${format(day, 'MMMM d, yyyy', { locale: ko })}${dayTasks.length > 0 ? ` - ${dayTasks.length} tasks` : ''}`}
                   >
                     <span>{format(day, 'd')}</span>
                     {dayTasks.length > 0 && (
                       <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-0.5 pb-0.5 pointer-events-none">
                         {dayTasks.slice(0, 3).map(task => (
-                          <div
+                          <button
                             key={task.id}
+                            type="button"
                             className={`w-1.5 h-1.5 rounded-full ${getTaskColor(task)} pointer-events-auto cursor-pointer`}
                             title={task.title}
                             onClick={e => {
                               e.stopPropagation();
                               onSelectEvent?.(task);
                             }}
-                            role="button"
-                            tabIndex={0}
                             aria-label={`Task: ${task.title}`}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                onSelectEvent?.(task);
-                              }
-                            }}
                           />
                         ))}
                         {dayTasks.length > 3 && (
@@ -211,11 +227,11 @@ export default function YearView({
                         )}
                       </div>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </div>

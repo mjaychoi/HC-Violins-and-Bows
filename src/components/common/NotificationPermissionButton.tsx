@@ -36,30 +36,75 @@ export default function NotificationPermissionButton({
   className = '',
   variant = 'default',
 }: NotificationPermissionButtonProps) {
-  const [permission, setPermission] = useState<NotificationPermission>(() => {
-    if (typeof window === 'undefined') return 'denied';
-    return getNotificationPermission();
-  });
+  // ✅ FIXED: 초기 state를 null로 시작해서 hydration 후 값 채우기 (SSR 안전)
+  const [permission, setPermission] = useState<NotificationPermission | null>(
+    () => {
+      if (typeof window === 'undefined') return null;
+      return getNotificationPermission();
+    }
+  );
 
   const [isRequesting, setIsRequesting] = useState(false);
   const isSupported = isNotificationSupported();
 
+  // ✅ FIXED: 폴링 제거, 이벤트 기반으로 변경
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const updatePermission = () => {
+    let cleanupPerm: (() => void) | undefined;
+
+    const update = () => {
       const current = getNotificationPermission();
       setPermission(current);
       onPermissionChange?.(current);
     };
 
     // 초기 권한 확인
-    updatePermission();
+    update();
 
-    // 주기적으로 권한 상태 확인 (사용자가 브라우저 설정에서 변경할 수 있음)
-    const interval = setInterval(updatePermission, 10000); // 10초마다
+    // 탭이 다시 활성화될 때만 체크
+    const onVis = () => {
+      if (document.visibilityState === 'visible') update();
+    };
 
-    return () => clearInterval(interval);
+    window.addEventListener('focus', update);
+    document.addEventListener('visibilitychange', onVis);
+
+    // Optional: Permissions API (지원 브라우저에서만)
+    (async () => {
+      try {
+        // ✅ FIXED: any 타입 제거 - Permissions API 타입 정의
+        interface PermissionStatusWithEvents {
+          addEventListener?: (event: 'change', handler: () => void) => void;
+          removeEventListener?: (event: 'change', handler: () => void) => void;
+        }
+        // Permissions API는 선택적이므로 타입 단언 사용
+        const perms = (
+          navigator as {
+            permissions?: {
+              query: (options: {
+                name: PermissionName;
+              }) => Promise<PermissionStatusWithEvents>;
+            };
+          }
+        ).permissions;
+        if (!perms?.query) return;
+        const status = await perms.query({
+          name: 'notifications' as PermissionName,
+        });
+        const handler = () => update();
+        status.addEventListener?.('change', handler);
+        cleanupPerm = () => status.removeEventListener?.('change', handler);
+      } catch {
+        // ignore - Permissions API not supported
+      }
+    })();
+
+    return () => {
+      window.removeEventListener('focus', update);
+      document.removeEventListener('visibilitychange', onVis);
+      cleanupPerm?.();
+    };
   }, [onPermissionChange]);
 
   const handleRequestPermission = async () => {
@@ -81,6 +126,11 @@ export default function NotificationPermissionButton({
 
   if (!isSupported) {
     return null; // 브라우저가 알림을 지원하지 않으면 표시하지 않음
+  }
+
+  // ✅ FIXED: hydration 전에는 null 반환 (SSR 안전)
+  if (permission === null) {
+    return null;
   }
 
   if (permission === 'granted') {

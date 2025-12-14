@@ -15,6 +15,7 @@ import {
   validateCreateMaintenanceTask,
   safeValidate,
 } from '@/utils/typeGuards';
+import { todayLocalYMD } from '@/utils/dateParsing';
 import {
   validateUUID,
   sanitizeSearchTerm,
@@ -175,7 +176,8 @@ export async function GET(request: NextRequest) {
       );
     }
     if (overdue) {
-      const today = new Date().toISOString().split('T')[0];
+      // FIXED: Use todayLocalYMD for consistent date format (YYYY-MM-DD)
+      const today = todayLocalYMD();
       query = query
         .in('status', ['pending', 'in_progress'])
         .or(`due_date.lt.${today},personal_due_date.lt.${today}`);

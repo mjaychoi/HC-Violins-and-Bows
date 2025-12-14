@@ -1,11 +1,11 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor } from '@/test-utils/render';
 import {
   useUnifiedData,
   useUnifiedClients,
   useUnifiedInstruments,
   useUnifiedConnections,
   useUnifiedDashboard,
-  useUnifiedConnectionForm,
+  useConnectedClientsData,
   useUnifiedSearch,
   useUnifiedCache,
 } from '../useUnifiedData';
@@ -372,9 +372,9 @@ describe('useUnifiedData', () => {
     });
   });
 
-  describe('useUnifiedConnectionForm', () => {
+  describe('useConnectedClientsData', () => {
     it('should return form data', () => {
-      const { result } = renderHook(() => useUnifiedConnectionForm());
+      const { result } = renderHook(() => useConnectedClientsData());
 
       expect(result.current.clients).toEqual([]);
       expect(result.current.instruments).toEqual([]);
@@ -382,7 +382,7 @@ describe('useUnifiedData', () => {
     });
 
     it('should provide createConnection function', async () => {
-      const { result } = renderHook(() => useUnifiedConnectionForm());
+      const { result } = renderHook(() => useConnectedClientsData());
 
       await result.current.createConnection(
         'client-1',
@@ -400,7 +400,7 @@ describe('useUnifiedData', () => {
     });
 
     it('should handle null notes in createConnection', async () => {
-      const { result } = renderHook(() => useUnifiedConnectionForm());
+      const { result } = renderHook(() => useConnectedClientsData());
 
       await result.current.createConnection(
         'client-1',
@@ -418,7 +418,7 @@ describe('useUnifiedData', () => {
     });
 
     it('should provide updateConnection function', async () => {
-      const { result } = renderHook(() => useUnifiedConnectionForm());
+      const { result } = renderHook(() => useConnectedClientsData());
 
       await result.current.updateConnection('connection-1', {
         relationshipType: 'Interested',
@@ -435,7 +435,7 @@ describe('useUnifiedData', () => {
     });
 
     it('should handle null notes in updateConnection', async () => {
-      const { result } = renderHook(() => useUnifiedConnectionForm());
+      const { result } = renderHook(() => useConnectedClientsData());
 
       await result.current.updateConnection('connection-1', {
         relationshipType: 'Interested',
@@ -455,7 +455,7 @@ describe('useUnifiedData', () => {
     it.skip('should fetch form data when empty', async () => {
       // This test is skipped because useUnifiedConnectionForm no longer performs fetching
       // Fetching is now handled by useUnifiedData (Single Source of Truth)
-      // useUnifiedConnectionForm only provides CRUD operations
+      // useConnectedClientsData only provides CRUD operations
     });
   });
 

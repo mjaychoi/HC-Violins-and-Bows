@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import { FilterBar } from '../FilterBar';
 import { RelationshipTypeCount } from '../../utils/connectionGrouping';

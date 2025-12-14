@@ -1,13 +1,16 @@
 import { memo, useMemo } from 'react';
-import { ClientInstrument } from '@/types';
-import { GroupedConnections } from '../utils/connectionGrouping';
+import { ClientInstrument, RelationshipType } from '@/types';
+import {
+  GroupedConnections,
+  sortConnectionsForAllTab,
+} from '../utils/connectionGrouping';
 import { RelationshipSectionHeader } from './RelationshipSectionHeader';
 import { ConnectionCard } from './ConnectionCard';
 import { Pagination } from '@/components/common';
 
 interface ConnectionsListProps {
   groupedConnections: GroupedConnections;
-  selectedFilter: string | null;
+  selectedFilter: RelationshipType | null;
   onDeleteConnection: (connection: ClientInstrument) => void;
   onEditConnection: (connection: ClientInstrument) => void;
   // Pagination
@@ -27,68 +30,95 @@ export const ConnectionsList = memo(function ConnectionsList({
   onPageChange,
   loading = false,
 }: ConnectionsListProps) {
-  // memoized filtered connections
-  const filteredConnections = useMemo(() => {
-    return Object.entries(groupedConnections).filter(
-      ([type]) => selectedFilter === null || selectedFilter === type
-    );
-  }, [groupedConnections, selectedFilter]);
+  // FIXED: A안 - All 탭은 flat list, 필터 선택 시 섹션 유지
+  const isAll = selectedFilter === null;
 
-  // 모든 연결을 평탄화하여 페이지네이션 적용
-  const allConnections = useMemo(() => {
-    return filteredConnections.flatMap(([, connections]) => connections);
-  }, [filteredConnections]);
+  // 필터링된 entries (All이면 모든 타입, 필터 선택 시 해당 타입만)
+  const filteredEntries = useMemo(
+    () =>
+      (
+        Object.entries(groupedConnections) as [
+          RelationshipType,
+          ClientInstrument[],
+        ][]
+      ).filter(([type]) => isAll || type === selectedFilter),
+    [groupedConnections, isAll, selectedFilter]
+  );
 
-  // 페이지네이션 계산
-  const totalConnections = allConnections.length;
-  const totalPages = Math.ceil(totalConnections / pageSize);
-  const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = startIndex + pageSize;
-  const paginatedConnections = allConnections.slice(startIndex, endIndex);
+  // All 탭: 모든 연결을 평탄화하고 정렬 (페이지네이션 기준)
+  const flatConnections = useMemo(() => {
+    if (!isAll) return [];
+    const all = filteredEntries.flatMap(([, connections]) => connections);
+    return sortConnectionsForAllTab(all);
+  }, [filteredEntries, isAll]);
 
-  // 페이지네이션된 연결을 다시 그룹화
-  const paginatedGroupedConnections = useMemo(() => {
-    const grouped: GroupedConnections = {};
-    paginatedConnections.forEach(connection => {
-      const type = connection.relationship_type;
-      if (!grouped[type]) {
-        grouped[type] = [];
-      }
-      grouped[type].push(connection);
-    });
-    return grouped;
-  }, [paginatedConnections]);
+  // 필터 선택 시: 해당 타입의 연결만
+  const filteredTypeConnections = useMemo(() => {
+    if (isAll) return [];
+    const entry = filteredEntries.find(([type]) => type === selectedFilter);
+    return entry ? entry[1] : [];
+  }, [filteredEntries, isAll, selectedFilter]);
+
+  // 공통 pagination 계산 - 하나의 배열만 사용
+  const connectionsToPaginate = useMemo(() => {
+    if (isAll) return flatConnections;
+    return filteredTypeConnections;
+  }, [isAll, flatConnections, filteredTypeConnections]);
+
+  const totalCount = connectionsToPaginate.length;
+  const totalPages = Math.ceil(totalCount / pageSize);
+  const pageItems = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return connectionsToPaginate.slice(start, start + pageSize);
+  }, [connectionsToPaginate, currentPage, pageSize]);
 
   return (
     <div className="space-y-6">
-      {Object.entries(paginatedGroupedConnections).map(
-        ([type, connections]) => (
-          <div key={type}>
-            <RelationshipSectionHeader type={type} count={connections.length} />
+      {isAll ? (
+        // All 탭: 섹션 없이 flat list로 표시 (각 카드에 배지로 type 표시)
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-6 gap-y-4">
+          {pageItems.map(connection => (
+            <ConnectionCard
+              key={connection.id}
+              connection={connection}
+              onDelete={onDeleteConnection}
+              onEdit={onEditConnection}
+            />
+          ))}
+        </div>
+      ) : (
+        // 필터 선택 시: 섹션 헤더 유지 (해당 타입의 연결만 페이지네이션)
+        filteredEntries.map(([type]) => {
+          // 현재 필터와 일치하는 타입만 표시
+          if (type !== selectedFilter) return null;
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-6 gap-y-4">
-              {connections.map(connection => (
-                <ConnectionCard
-                  key={connection.id}
-                  connection={connection}
-                  onDelete={onDeleteConnection}
-                  onEdit={onEditConnection}
-                />
-              ))}
+          return (
+            <div key={type}>
+              <RelationshipSectionHeader type={type} count={totalCount} />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 lg:gap-x-6 gap-y-4">
+                {pageItems.map(connection => (
+                  <ConnectionCard
+                    key={connection.id}
+                    connection={connection}
+                    onDelete={onDeleteConnection}
+                    onEdit={onEditConnection}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-        )
+          );
+        })
       )}
 
       {/* Pagination */}
-      {totalPages > 1 && onPageChange && (
+      {onPageChange && totalPages > 1 && (
         <div className="border-t border-gray-200 pt-6">
           <Pagination
             currentPage={currentPage}
             totalPages={totalPages}
             onPageChange={onPageChange}
             loading={loading}
-            totalCount={totalConnections}
+            totalCount={totalCount}
             pageSize={pageSize}
           />
         </div>

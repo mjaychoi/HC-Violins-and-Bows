@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { renderHook } from '@/test-utils/render';
 import { useNotifications, useNotificationCounts } from '../useNotifications';
 import { MaintenanceTask } from '@/types';
 import { addDays, subDays } from 'date-fns';

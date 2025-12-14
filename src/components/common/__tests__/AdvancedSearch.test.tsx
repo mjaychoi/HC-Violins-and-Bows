@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@/test-utils/render';
 import AdvancedSearch from '../AdvancedSearch';
 
 describe('AdvancedSearch', () => {

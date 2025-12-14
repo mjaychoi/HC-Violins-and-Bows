@@ -14,7 +14,9 @@ describe('ErrorHandler - Simple Tests', () => {
 
     expect(error.code).toBe(ErrorCodes.NETWORK_ERROR);
     expect(error.message).toBe('Test error message');
-    expect(error.timestamp).toBeInstanceOf(Date);
+    // ✅ FIXED: timestamp는 이제 ISO string (Date 아님)
+    expect(typeof error.timestamp).toBe('string');
+    expect(error.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 
   test('should get user friendly message', () => {

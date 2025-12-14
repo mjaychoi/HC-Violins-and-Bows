@@ -1,18 +1,20 @@
+import { parseYMDUTC, formatDisplayDate } from '@/utils/dateParsing';
+
 export const currency = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
 });
 
-// FIXED: Helper to parse YYYY-MM-DD as UTC to avoid timezone shifts
-export const parseYMDUTC = (ymd: string): Date => {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
-};
+// Re-export for backward compatibility
+export { parseYMDUTC };
 
-// FIXED: Format dates with UTC timezone to prevent day shift in negative UTC offsets
-export const dateFormat = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
+// FIXED: Unified date formatter - use formatDisplayDate from dateParsing utils
+// This ensures consistent date formatting across all pages
+// Maintains Intl.DateTimeFormat interface for backward compatibility
+export const dateFormat = {
+  format: (date: Date) => {
+    // Convert Date to YYYY-MM-DD string for formatDisplayDate
+    const ymd = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+    return formatDisplayDate(ymd);
+  },
+} as Intl.DateTimeFormat;

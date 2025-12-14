@@ -1,5 +1,5 @@
 /* eslint-disable react/display-name */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@/test-utils/render';
 import AppSidebar from '../AppSidebar';
 
 jest.mock('next/link', () => {

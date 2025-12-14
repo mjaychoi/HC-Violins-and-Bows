@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Client, SalesHistory } from '@/types';
-import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { useErrorHandler } from '@/contexts/ToastContext';
 import { getMostRecentDate } from '@/utils/dateParsing';
 
 export interface ClientKPIs {
@@ -16,7 +16,11 @@ export interface ClientKPIs {
  * Calculate KPI statistics for all clients
  * This hook fetches sales history and calculates aggregate metrics
  */
-export function useClientKPIs(clients: Client[]): ClientKPIs {
+export function useClientKPIs(
+  clients: Client[],
+  opts?: { enabled?: boolean }
+): ClientKPIs {
+  const enabled = opts?.enabled ?? true;
   const { handleError } = useErrorHandler();
   const [loading, setLoading] = useState(false);
   const [salesByClient, setSalesByClient] = useState<
@@ -65,10 +69,12 @@ export function useClientKPIs(clients: Client[]): ClientKPIs {
     }
   }, [handleError]);
 
-  // Fetch sales history on mount
+  // ✅ Fetch sales history only if enabled and clients exist
   useEffect(() => {
+    if (!enabled) return;
+    if (clients.length === 0) return;
     fetchSalesHistory();
-  }, [fetchSalesHistory]);
+  }, [enabled, clients.length, fetchSalesHistory]);
 
   // Calculate KPIs
   const kpis = useCallback((): ClientKPIs => {
@@ -126,8 +132,9 @@ export function useClientSalesData(clientId: string | null) {
     const fetchClientSales = async () => {
       try {
         setLoading(true);
+        // ✅ FIXED: Use client_id parameter for server-side filtering (much more efficient)
         const response = await fetch(
-          `/api/sales?hasClient=true&page=1&pageSize=1000`
+          `/api/sales?client_id=${clientId}&page=1&pageSize=200`
         );
         const result = await response.json();
 
@@ -135,11 +142,8 @@ export function useClientSalesData(clientId: string | null) {
           throw result.error || new Error('Failed to fetch client sales');
         }
 
-        const allSales = (result.data || []) as SalesHistory[];
-        // Filter to this specific client
-        const clientSales = allSales.filter(
-          sale => sale.client_id === clientId
-        );
+        // ✅ Server already filtered, no need to filter client-side
+        const clientSales = (result.data || []) as SalesHistory[];
         setSales(clientSales);
       } catch (error) {
         handleError(error, 'Failed to fetch client sales');

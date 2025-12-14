@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '@/test-utils/render';
 import { useClientInstruments } from '../useClientInstruments';
 import { Client, ClientInstrument, Instrument } from '@/types';
 import { flushPromises } from '../../../../../tests/utils/flushPromises';
@@ -44,16 +44,38 @@ const mockInstrumentRelationship: ClientInstrument = {
   instrument: mockInstrument,
 };
 
-const mockFetchResponse = (data: unknown, ok = true) =>
-  Promise.resolve({
-    ok,
-    json: () => Promise.resolve(data),
-  });
+// ✅ FIXED: DataContext mock (hook이 DataContext를 사용하도록 변경됨)
+// jest.mock은 호이스팅되므로 함수를 사용하여 동적으로 접근
+const mockConnectionsRef = { current: [] as ClientInstrument[] };
+const mockCreateConnection = jest.fn();
+const mockUpdateConnection = jest.fn();
+const mockDeleteConnection = jest.fn();
+
+jest.mock('@/hooks/useUnifiedData', () => {
+  const actual = jest.requireActual('@/hooks/useUnifiedData');
+  return {
+    ...actual,
+    useUnifiedConnections: jest.fn(() => {
+      // ✅ FIXED: 매번 호출될 때마다 현재 connections 반환
+      return {
+        connections: mockConnectionsRef.current,
+      };
+    }),
+    useConnectedClientsData: jest.fn(() => ({
+      createConnection: mockCreateConnection,
+      updateConnection: mockUpdateConnection,
+      deleteConnection: mockDeleteConnection,
+    })),
+  };
+});
 
 describe('useClientInstruments', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (global as any).fetch = jest.fn(() => mockFetchResponse({ data: [] }));
+    mockConnectionsRef.current = [];
+    mockCreateConnection.mockResolvedValue(mockInstrumentRelationship);
+    mockUpdateConnection.mockResolvedValue(null);
+    mockDeleteConnection.mockResolvedValue(true);
   });
 
   it('initializes with default values', async () => {
@@ -69,12 +91,12 @@ describe('useClientInstruments', () => {
   });
 
   it('fetches instrument relationships', async () => {
-    (fetch as jest.Mock).mockResolvedValueOnce(
-      mockFetchResponse({ data: [mockInstrumentRelationship] })
-    );
+    // ✅ FIXED: DataContext를 통해 connections 설정
+    mockConnectionsRef.current = [mockInstrumentRelationship];
 
     const { result } = renderHook(() => useClientInstruments());
 
+    // fetchInstrumentRelationships는 no-op이지만, connections는 DataContext에서 가져옴
     await act(async () => {
       await result.current.fetchInstrumentRelationships('1');
     });
@@ -84,12 +106,8 @@ describe('useClientInstruments', () => {
   });
 
   it('handles fetch error', async () => {
-    (fetch as jest.Mock).mockResolvedValueOnce(
-      Promise.resolve({
-        ok: false,
-        json: () => Promise.resolve({ error: new Error('Fetch failed') }),
-      })
-    );
+    // ✅ FIXED: fetchInstrumentRelationships는 no-op이므로 빈 connections로 테스트
+    mockConnectionsRef.current = [];
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -101,9 +119,9 @@ describe('useClientInstruments', () => {
   });
 
   it('adds instrument relationship', async () => {
-    (fetch as jest.Mock).mockResolvedValueOnce(
-      mockFetchResponse({ data: mockInstrumentRelationship })
-    );
+    // ✅ FIXED: createConnection이 호출되고, 성공 시 connections에 추가됨
+    mockCreateConnection.mockResolvedValue(mockInstrumentRelationship);
+    mockConnectionsRef.current = [];
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -111,17 +129,24 @@ describe('useClientInstruments', () => {
       await result.current.addInstrumentRelationship('1', '1', 'Interested');
     });
 
-    expect(result.current.instrumentRelationships).toHaveLength(1);
-    expect(result.current.clientsWithInstruments.has('1')).toBe(true);
+    expect(mockCreateConnection).toHaveBeenCalledWith(
+      '1',
+      '1',
+      'Interested',
+      ''
+    );
+    // ✅ FIXED: DataContext가 업데이트되면 connections도 업데이트됨 (테스트에서는 수동으로 설정)
+    mockConnectionsRef.current = [mockInstrumentRelationship];
+    // hook을 다시 렌더링하여 업데이트된 connections 반영
+    const { result: result2 } = renderHook(() => useClientInstruments());
+    expect(result2.current.instrumentRelationships).toHaveLength(1);
+    expect(result2.current.clientsWithInstruments.has('1')).toBe(true);
   });
 
   it('handles add relationship error', async () => {
-    (fetch as jest.Mock).mockResolvedValueOnce(
-      Promise.resolve({
-        ok: false,
-        json: () => Promise.resolve({ error: new Error('Add failed') }),
-      })
-    );
+    // ✅ FIXED: createConnection이 실패하면 null 반환
+    mockCreateConnection.mockResolvedValue(null);
+    mockConnectionsRef.current = [];
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -129,15 +154,14 @@ describe('useClientInstruments', () => {
       await result.current.addInstrumentRelationship('1', '1', 'Interested');
     });
 
+    expect(mockCreateConnection).toHaveBeenCalled();
     expect(result.current.instrumentRelationships).toEqual([]);
   });
 
   it('removes instrument relationship', async () => {
-    (fetch as jest.Mock)
-      .mockResolvedValueOnce(
-        mockFetchResponse({ data: [mockInstrumentRelationship] })
-      ) // fetchInstrumentRelationships
-      .mockResolvedValueOnce(mockFetchResponse({ data: null })); // removeInstrumentRelationship
+    // ✅ FIXED: DataContext를 통해 connections 설정
+    mockConnectionsRef.current = [mockInstrumentRelationship];
+    mockDeleteConnection.mockResolvedValue(true);
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -150,17 +174,18 @@ describe('useClientInstruments', () => {
       await result.current.removeInstrumentRelationship('1');
     });
 
-    expect(result.current.instrumentRelationships).toHaveLength(0);
-    expect(result.current.clientsWithInstruments.has('1')).toBe(false);
+    expect(mockDeleteConnection).toHaveBeenCalledWith('1');
+    // ✅ FIXED: DataContext가 업데이트되면 connections도 업데이트됨
+    mockConnectionsRef.current = [];
+    const { result: result2 } = renderHook(() => useClientInstruments());
+    expect(result2.current.instrumentRelationships).toHaveLength(0);
+    expect(result2.current.clientsWithInstruments.has('1')).toBe(false);
   });
 
   it('handles remove relationship error', async () => {
-    (fetch as jest.Mock).mockResolvedValueOnce(
-      Promise.resolve({
-        ok: false,
-        json: () => Promise.resolve({ error: new Error('Remove failed') }),
-      })
-    );
+    // ✅ FIXED: deleteConnection이 실패하면 false 반환
+    mockDeleteConnection.mockResolvedValue(false);
+    mockConnectionsRef.current = [mockInstrumentRelationship];
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -168,13 +193,14 @@ describe('useClientInstruments', () => {
       await result.current.removeInstrumentRelationship('1');
     });
 
-    expect(result.current.instrumentRelationships).toEqual([]);
+    expect(mockDeleteConnection).toHaveBeenCalledWith('1');
+    // 실패 시 connections는 그대로 유지됨
+    expect(result.current.instrumentRelationships).toHaveLength(1);
   });
 
   it('updates clients with instruments set correctly', async () => {
-    (fetch as jest.Mock).mockResolvedValueOnce(
-      mockFetchResponse({ data: [mockInstrumentRelationship] })
-    );
+    // ✅ FIXED: DataContext를 통해 connections 설정
+    mockConnectionsRef.current = [mockInstrumentRelationship];
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -186,11 +212,9 @@ describe('useClientInstruments', () => {
   });
 
   it('removes client from set when no relationships remain', async () => {
-    (fetch as jest.Mock)
-      .mockResolvedValueOnce(
-        mockFetchResponse({ data: [mockInstrumentRelationship] })
-      )
-      .mockResolvedValueOnce(mockFetchResponse({ data: null }));
+    // ✅ FIXED: DataContext를 통해 connections 설정
+    mockConnectionsRef.current = [mockInstrumentRelationship];
+    mockDeleteConnection.mockResolvedValue(true);
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -203,16 +227,18 @@ describe('useClientInstruments', () => {
       await result.current.removeInstrumentRelationship('1');
     });
 
-    expect(result.current.clientsWithInstruments.has('1')).toBe(false);
+    expect(mockDeleteConnection).toHaveBeenCalledWith('1');
+    // ✅ FIXED: DataContext가 업데이트되면 connections도 업데이트됨
+    mockConnectionsRef.current = [];
+    const { result: result2 } = renderHook(() => useClientInstruments());
+    expect(result2.current.clientsWithInstruments.has('1')).toBe(false);
   });
 
   it('keeps client in set when other relationships exist', async () => {
+    // ✅ FIXED: DataContext를 통해 connections 설정
     const rel2 = { ...mockInstrumentRelationship, id: '2' };
-    (fetch as jest.Mock)
-      .mockResolvedValueOnce(
-        mockFetchResponse({ data: [mockInstrumentRelationship, rel2] })
-      )
-      .mockResolvedValueOnce(mockFetchResponse({ data: null }));
+    mockConnectionsRef.current = [mockInstrumentRelationship, rel2];
+    mockDeleteConnection.mockResolvedValue(true);
 
     const { result } = renderHook(() => useClientInstruments());
 
@@ -225,49 +251,32 @@ describe('useClientInstruments', () => {
       await result.current.removeInstrumentRelationship('1');
     });
 
-    expect(result.current.clientsWithInstruments.has('1')).toBe(true);
+    expect(mockDeleteConnection).toHaveBeenCalledWith('1');
+    // ✅ FIXED: DataContext가 업데이트되면 connections도 업데이트됨 (하나만 제거)
+    mockConnectionsRef.current = [rel2];
+    const { result: result2 } = renderHook(() => useClientInstruments());
+    expect(result2.current.clientsWithInstruments.has('1')).toBe(true);
   });
 
   it('handles loading states correctly', async () => {
-    let resolveJson: (value: unknown) => void;
-    const jsonPromise = new Promise(resolve => {
-      resolveJson = resolve;
-    });
-
-    (fetch as jest.Mock).mockResolvedValueOnce(
-      Promise.resolve({
-        ok: true,
-        json: () => jsonPromise,
-      })
-    );
+    // ✅ FIXED: hook이 loading을 false로 반환함 (DataContext가 loading 관리)
+    mockConnectionsRef.current = [];
 
     const { result } = renderHook(() => useClientInstruments());
 
     expect(result.current.loading).toBe(false);
 
-    act(() => {
-      result.current.fetchInstrumentRelationships('1');
-    });
-
-    expect(result.current.loading).toBe(true);
-
     await act(async () => {
-      resolveJson!({ data: [] });
-      await flushPromises();
+      await result.current.fetchInstrumentRelationships('1');
     });
 
+    // ✅ FIXED: fetchInstrumentRelationships는 no-op이므로 loading 상태 변경 없음
     expect(result.current.loading).toBe(false);
   });
 
   it('clears error when new operation succeeds', async () => {
-    (fetch as jest.Mock)
-      .mockResolvedValueOnce(
-        Promise.resolve({
-          ok: false,
-          json: () => Promise.resolve({ error: new Error('First error') }),
-        })
-      )
-      .mockResolvedValueOnce(mockFetchResponse({ data: [] }));
+    // ✅ FIXED: fetchInstrumentRelationships는 no-op이므로 에러 처리 없음
+    mockConnectionsRef.current = [];
 
     const { result } = renderHook(() => useClientInstruments());
 

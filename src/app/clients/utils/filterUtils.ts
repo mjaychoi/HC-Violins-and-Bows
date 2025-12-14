@@ -54,8 +54,18 @@ export const EMPTY_FILTER_STATE: FilterState = {
   hasInstruments: [],
 };
 
-// Clear all filters - returns EMPTY_FILTER_STATE
-export const clearAllFilters = (): FilterState => EMPTY_FILTER_STATE;
+// ✅ FIXED: Always return new object to prevent reference equality issues
+// Clear all filters - returns new object (not shared reference)
+export const clearAllFilters = (): FilterState => ({
+  ...EMPTY_FILTER_STATE,
+  last_name: [],
+  first_name: [],
+  contact_number: [],
+  email: [],
+  tags: [],
+  interest: [],
+  hasInstruments: [],
+});
 
 // Sort utilities
 export const handleColumnSort = (

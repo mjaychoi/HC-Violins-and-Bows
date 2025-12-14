@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '@/test-utils/render';
 import { useOwnedItems } from '../useOwnedItems';
 import { Client, Instrument } from '@/types';
 import { flushPromises } from '../../../../../tests/utils/flushPromises';
@@ -86,10 +86,12 @@ describe('useOwnedItems', () => {
       await flushPromises();
     });
 
+    // ✅ FIXED: URLSearchParams는 공백을 +로 인코딩
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringMatching(
-        /\/api\/instruments\?ownership=John\+Doe|John%20Doe.*orderBy=created_at.*ascending=false/
-      )
+        /\/api\/instruments\?ownership=John\+Doe.*orderBy=created_at.*ascending=false/
+      ),
+      expect.any(Object)
     );
     expect(result.current.ownedItems).toEqual(mockOwnedItems);
     expect(result.current.loadingOwnedItems).toBe(false);
@@ -202,8 +204,10 @@ describe('useOwnedItems', () => {
       await flushPromises();
     });
 
+    // ✅ FIXED: URLSearchParams는 공백을 +로 인코딩
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringMatching(/ownership=John\+Doe|John%20Doe/)
+      expect.stringMatching(/ownership=John\+Doe/),
+      expect.any(Object)
     );
   });
 
@@ -220,8 +224,10 @@ describe('useOwnedItems', () => {
       await flushPromises();
     });
 
+    // ✅ FIXED: URLSearchParams는 공백을 +로 인코딩
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringMatching(/ownership=Jane\+Smith|Jane%20Smith/)
+      expect.stringMatching(/ownership=Jane\+Smith/),
+      expect.any(Object)
     );
   });
 });

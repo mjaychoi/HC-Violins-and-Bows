@@ -1,60 +1,48 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { getSupabaseClient } from './supabase-client';
 
 /**
- * Lazy singleton pattern for Supabase client
- * This ensures the client is created only when env vars are available,
- * preventing placeholder client from persisting to production runtime.
+ * FIXED: Unified Supabase client access
+ * This file now delegates to supabase-client.ts to ensure single instance
+ * All Supabase client creation goes through supabase-client.ts
+ * This prevents "Multiple GoTrueClient instances" warning
  */
-let _supabase: SupabaseClient | null = null;
 
 /**
- * Get or create Supabase client instance
+ * Get or create Supabase client instance (async)
+ * Delegates to getSupabaseClient() to ensure single instance across the app
  * Throws error if required environment variables are missing
  */
-export function getSupabase(): SupabaseClient {
-  if (_supabase) {
-    return _supabase;
-  }
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !key) {
-    throw new Error(
-      'Missing Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY'
-    );
-  }
-
-  _supabase = createClient(url, key, {
-    auth: { persistSession: true, autoRefreshToken: true },
-  });
-
-  return _supabase;
+export async function getSupabase(): Promise<SupabaseClient> {
+  return getSupabaseClient();
 }
 
 /**
- * @deprecated Use getSupabase() instead for lazy initialization
- * Kept for backward compatibility - using lazy getter to reduce initial bundle size
- * This defers the Supabase SDK import until actually used
- * Note: This is now async-compatible but may cause issues in sync contexts
+ * @deprecated Use getSupabaseClient() directly instead
+ * Kept for backward compatibility only - this Proxy will throw on first access
+ * For new code, use async getSupabase() or getSupabaseClient() directly
  */
-let _supabaseInstance: SupabaseClient | null = null;
+let _supabaseProxyInstance: SupabaseClient | null = null;
 export const supabase = new Proxy({} as SupabaseClient, {
   get(target, prop) {
-    if (!_supabaseInstance) {
-      // For sync access, try to use existing instance or throw
-      if (!_supabase) {
-        throw new Error(
-          'Supabase client accessed synchronously before initialization. Use async getSupabase() or await initialization.'
-        );
-      }
-      _supabaseInstance = _supabase;
+    if (!_supabaseProxyInstance) {
+      // Try to initialize asynchronously, but throw for sync access
+      getSupabaseClient()
+        .then(client => {
+          _supabaseProxyInstance = client;
+        })
+        .catch(() => {
+          // Ignore - will be initialized on first use
+        });
+      throw new Error(
+        'Supabase client accessed synchronously before initialization. Use async getSupabase() or getSupabaseClient() instead.'
+      );
     }
-    const value = (_supabaseInstance as unknown as Record<string, unknown>)[
-      prop as string
-    ];
+    const value = (
+      _supabaseProxyInstance as unknown as Record<string, unknown>
+    )[prop as string];
     if (typeof value === 'function') {
-      return value.bind(_supabaseInstance);
+      return value.bind(_supabaseProxyInstance);
     }
     return value;
   },

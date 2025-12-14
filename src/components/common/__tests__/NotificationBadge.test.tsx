@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import '@testing-library/jest-dom';
 import NotificationBadge from '../NotificationBadge';
 

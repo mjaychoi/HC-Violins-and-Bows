@@ -9,7 +9,7 @@ import {
   useFormValidation,
   useDebouncedValidation,
 } from '../validationUtils';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@/test-utils/render';
 
 describe('validationUtils', () => {
   describe('commonRules', () => {

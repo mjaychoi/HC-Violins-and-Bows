@@ -1,10 +1,9 @@
-import { getSupabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase-client';
 import { logApiRequest, logError } from './logger';
 import type { MaintenanceTask, TaskFilters } from '@/types';
 
-// Lazy load Supabase client to prevent dependency leakage
-// Only load when actually used, not at module initialization time
-const getSupabaseClient = () => getSupabase();
+// FIXED: Use unified getSupabaseClient() to ensure single instance
+// This prevents Multiple GoTrueClient instances warning
 
 // Supabase error type for better type safety
 interface SupabaseError {
@@ -47,7 +46,7 @@ export class SupabaseHelpers {
     const url = `supabase://${table}`;
 
     try {
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       let query = supabase.from(table).select(options?.select || '*');
 
       // SECURITY: Validate orderBy column against whitelist to prevent injection
@@ -108,7 +107,7 @@ export class SupabaseHelpers {
     const url = `supabase://${table}/${id}`;
 
     try {
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       const { data, error } = await supabase
         .from(table)
         .select(select || '*')
@@ -153,7 +152,7 @@ export class SupabaseHelpers {
     const url = `supabase://${table}`;
 
     try {
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       const { data: result, error } = await supabase
         .from(table)
         .insert([data])
@@ -197,7 +196,7 @@ export class SupabaseHelpers {
     const url = `supabase://${table}/${id}`;
 
     try {
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       const { data: result, error } = await supabase
         .from(table)
         .update(data)
@@ -240,7 +239,7 @@ export class SupabaseHelpers {
     const url = `supabase://${table}/${id}`;
 
     try {
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       const { error } = await supabase.from(table).delete().eq('id', id);
       const duration = Math.round(performance.now() - startTime);
 
@@ -298,7 +297,7 @@ export class SupabaseHelpers {
         .map(col => `${col}.ilike.%${term}%`)
         .join(',');
 
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       const { data, error } = await supabase
         .from(table)
         .select('*')
@@ -345,7 +344,7 @@ export class SupabaseHelpers {
   ): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
     // Fetch tasks without instrument relation to avoid foreign key relationship errors
     // Instrument data can be fetched separately if needed
-    const supabase = getSupabaseClient();
+    const supabase = await getSupabaseClient();
     let query = supabase
       .from('maintenance_tasks')
       .select('*')
@@ -391,7 +390,7 @@ export class SupabaseHelpers {
   ): Promise<{ data: MaintenanceTask | null; error: unknown }> {
     // Fetch task without instrument relation to avoid foreign key relationship errors
     // Instrument data can be fetched separately if needed
-    const supabase = getSupabaseClient();
+    const supabase = await getSupabaseClient();
     const { data, error } = await supabase
       .from('maintenance_tasks')
       .select('*')
@@ -410,7 +409,7 @@ export class SupabaseHelpers {
       // received_date를 기준으로 필터링
       // 실제로는 여러 날짜 필드를 고려해야 하지만, 우선 received_date 기준으로 구현
       // Note: instrument relationship is fetched separately if needed to avoid foreign key relationship errors
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       const { data, error } = await supabase
         .from('maintenance_tasks')
         .select('*')
@@ -526,7 +525,7 @@ export class SupabaseHelpers {
     >
   ): Promise<{ data: MaintenanceTask | null; error: unknown }> {
     // Fetch task without instrument relation to avoid foreign key relationship errors
-    const supabase = getSupabaseClient();
+    const supabase = await getSupabaseClient();
     const { data, error } = await supabase
       .from('maintenance_tasks')
       .insert([task])
@@ -546,7 +545,7 @@ export class SupabaseHelpers {
     >
   ): Promise<{ data: MaintenanceTask | null; error: unknown }> {
     // Fetch task without instrument relation to avoid foreign key relationship errors
-    const supabase = getSupabaseClient();
+    const supabase = await getSupabaseClient();
     const { data, error } = await supabase
       .from('maintenance_tasks')
       .update(updates)
@@ -558,7 +557,7 @@ export class SupabaseHelpers {
   }
 
   static async deleteMaintenanceTask(id: string): Promise<{ error: unknown }> {
-    const supabase = getSupabaseClient();
+    const supabase = await getSupabaseClient();
     const { error } = await supabase
       .from('maintenance_tasks')
       .delete()
@@ -571,7 +570,7 @@ export class SupabaseHelpers {
     date: string
   ): Promise<{ data: MaintenanceTask[] | null; error: unknown }> {
     // Fetch tasks without instrument relation to avoid foreign key relationship errors
-    const supabase = getSupabaseClient();
+    const supabase = await getSupabaseClient();
     const { data, error } = await supabase
       .from('maintenance_tasks')
       .select('*')
@@ -587,7 +586,7 @@ export class SupabaseHelpers {
     error: unknown;
   }> {
     // Fetch tasks without instrument relation to avoid foreign key relationship errors
-    const supabase = getSupabaseClient();
+    const supabase = await getSupabaseClient();
     const today = new Date().toISOString().split('T')[0];
     const { data, error } = await supabase
       .from('maintenance_tasks')

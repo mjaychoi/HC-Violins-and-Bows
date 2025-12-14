@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useCallback } from 'react';
-import { Instrument } from '@/types';
+import { Instrument, ClientInstrument } from '@/types';
 import { getPriceRange } from '../utils/dashboardUtils';
 import { DateRange, FilterOperator } from '@/types/search';
 import PageFilters, {
@@ -16,8 +16,13 @@ import {
   buildDashboardFilterOptions,
 } from '../constants';
 
+// Enriched items type (Instrument with optional clients array)
+type EnrichedInstrument = Instrument & {
+  clients?: ClientInstrument[];
+};
+
 interface ItemFiltersProps {
-  items: Instrument[];
+  items: Instrument[] | EnrichedInstrument[];
   searchTerm: string;
   onSearchChange: (term: string) => void;
   filters: DashboardFilters;
@@ -63,8 +68,9 @@ export default function ItemFilters({
 }: ItemFiltersProps) {
   // filterOperator is managed by parent (useDashboardFilters) to avoid default value duplication
   // FIXED: Memoize buildDashboardFilterOptions to avoid recomputing on every render
+  // buildDashboardFilterOptions only needs Instrument fields, not clients array
   const filterOptions = useMemo(
-    () => buildDashboardFilterOptions(items),
+    () => buildDashboardFilterOptions(items as Instrument[]),
     [items]
   );
 
@@ -82,19 +88,8 @@ export default function ItemFilters({
         }
       });
     }
-    if (
-      typeof window !== 'undefined' &&
-      process.env.NODE_ENV === 'development'
-    ) {
-      console.log('[ItemFilters] Clients map created:', {
-        clientsCount: clients?.length || 0,
-        mapSize: map.size,
-        sampleEntries: Array.from(map.entries()).slice(0, 3),
-        ownershipOptions: filterOptions.ownership?.slice(0, 3),
-      });
-    }
     return map;
-  }, [clients, filterOptions.ownership]);
+  }, [clients]);
 
   // UUID를 클라이언트 이름으로 변환하는 함수
   const getOwnershipLabel = useCallback(
@@ -109,24 +104,13 @@ export default function ItemFilters({
         if (clientName && clientName !== uuid) {
           return clientName;
         }
-        // 클라이언트를 찾을 수 없으면 UUID 반환 (디버깅용)
-        if (
-          typeof window !== 'undefined' &&
-          process.env.NODE_ENV === 'development'
-        ) {
-          console.warn('[ItemFilters] Client not found for UUID:', uuid, {
-            clientsCount: clients?.length || 0,
-            clientsMapSize: clientsMap.size,
-            availableIds: Array.from(clientsMap.keys()).slice(0, 5),
-            isInMap: clientsMap.has(uuid),
-          });
-        }
+        // 클라이언트를 찾을 수 없으면 UUID 반환
         return uuid;
       }
       // UUID가 아니면 그대로 반환 (문자열 ownership)
       return uuid;
     },
-    [clientsMap, clients]
+    [clientsMap]
   );
   const priceRange = getPriceRange(items);
   const hasActiveFilters =

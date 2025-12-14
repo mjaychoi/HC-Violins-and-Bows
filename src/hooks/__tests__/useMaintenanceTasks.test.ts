@@ -1,15 +1,19 @@
 // src/hooks/__tests__/useMaintenanceTasks.test.ts
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@/test-utils/render';
 import { useMaintenanceTasks } from '../useMaintenanceTasks';
 import { MaintenanceTask, TaskType, TaskStatus, TaskPriority } from '@/types';
 import { dataService } from '@/services/dataService';
 
-// Mock useErrorHandler
-jest.mock('../useErrorHandler', () => ({
-  useErrorHandler: () => ({
-    handleError: jest.fn(),
-  }),
-}));
+// ✅ FIXED: ToastProvider도 export하도록 mock 수정
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    useErrorHandler: () => ({
+      handleError: jest.fn(),
+    }),
+  };
+});
 
 // Mock apiClient to prevent actual Supabase calls
 jest.mock('@/utils/apiClient', () => ({

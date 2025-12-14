@@ -78,7 +78,7 @@ export default function CalendarHeader({
 
           {/* 날짜 범위 표시 */}
           <div className="flex flex-col">
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
+            <h1 className="text-lg font-semibold tracking-tight text-gray-900">
               {viewRangeLabel}
             </h1>
           </div>

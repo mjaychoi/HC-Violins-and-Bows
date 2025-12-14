@@ -1,5 +1,5 @@
 // src/app/clients/hooks/__tests__/useClients.fetch-and-init.test.tsx
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '@/test-utils/render';
 import { useClients } from '../useClients';
 import { Client } from '@/types';
 import { flushPromises } from '../../../../../tests/utils/flushPromises';
@@ -36,11 +36,16 @@ jest.mock('@/contexts/DataContext', () => ({
   })),
 }));
 
-jest.mock('@/hooks/useErrorHandler', () => ({
-  useErrorHandler: () => ({
-    handleError: jest.fn(),
-  }),
-}));
+// ✅ FIXED: ToastProvider도 export하도록 mock 수정
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    useErrorHandler: () => ({
+      handleError: jest.fn(),
+    }),
+  };
+});
 
 describe('useClients - init & fetch', () => {
   const mockClient: Client = {

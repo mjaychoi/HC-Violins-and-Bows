@@ -21,7 +21,6 @@ import CalendarContent from './components/CalendarContent';
 import Button from '@/components/common/Button';
 import type { MaintenanceTask } from '@/types';
 import { useCalendarNavigation, useCalendarView } from './hooks';
-import { getDateRangeForView } from './utils';
 import {
   CALENDAR_MESSAGES,
   CALENDAR_ERROR_MESSAGES,
@@ -29,8 +28,7 @@ import {
 } from './constants';
 
 export default function CalendarPage() {
-  const { ErrorToasts, SuccessToasts, handleError, showSuccess } =
-    useAppFeedback();
+  const { handleError, showSuccess } = useAppFeedback();
 
   // FIXED: useUnifiedData is now called at root layout level
   // Use specific hooks to read data (they don't trigger fetches)
@@ -50,17 +48,6 @@ export default function CalendarPage() {
     deleteTask,
     fetchTasksByDateRange,
   } = useMaintenanceTasks();
-
-  // Page notifications (badge with click handler)
-  // For calendar page, clicking badge should navigate to today
-  // FIXED: Now passes tasks to prevent duplicate fetch
-  const { notificationBadge } = usePageNotifications({
-    tasks, // Use tasks from useMaintenanceTasks to avoid duplicate fetch
-    navigateTo: '', // Don't navigate, use custom handler instead
-    showToastOnClick: true,
-    showSuccess,
-    // Uses default formatter from policies/notifications.ts
-  });
 
   const {
     isOpen: showModal,
@@ -92,20 +79,21 @@ export default function CalendarPage() {
     onError: handleTableError,
   });
 
-  // Override onClick to go to today instead of navigating
-  // Note: notificationBadge is a data object with { overdue, upcoming, today, onClick } structure
-  // as defined by usePageNotifications hook (not a ReactNode)
-  const handleNotificationBadgeClick = () => {
-    const hasNotifications =
-      notificationBadge.overdue +
-        notificationBadge.upcoming +
-        notificationBadge.today >
-      0;
-    if (hasNotifications) {
-      notificationBadge.onClick();
+  // Page notifications (badge with click handler)
+  // For calendar page, clicking badge should navigate to today
+  // FIXED: Now passes tasks to prevent duplicate fetch
+  // FIXED: Use customClickHandler to avoid double navigation
+  const { notificationBadge } = usePageNotifications({
+    tasks, // Use tasks from useMaintenanceTasks to avoid duplicate fetch
+    navigateTo: '', // Don't navigate, use custom handler instead
+    showToastOnClick: true,
+    showSuccess,
+    customClickHandler: () => {
+      // Custom handler: navigate to today (toast is handled by default onClick)
       navigation.handleGoToToday();
-    }
-  };
+    },
+    // Uses default formatter from policies/notifications.ts
+  });
 
   // Calendar view (calendar/list toggle)
   const { view, setView } = useCalendarView();
@@ -125,25 +113,14 @@ export default function CalendarPage() {
       try {
         await createTask(taskData);
         closeModal();
-        const { startDate, endDate } = getDateRangeForView(
-          navigation.calendarView,
-          navigation.currentDate
-        );
-        await fetchTasksByDateRange(startDate, endDate);
+        // Use navigation's refetchCurrentRange instead of manual range calculation
+        await navigation.refetchCurrentRange();
         showSuccess(CALENDAR_MESSAGES.TASK_CREATED);
       } catch (error) {
         handleError(error, CALENDAR_ERROR_MESSAGES.CREATE_TASK);
       }
     },
-    [
-      createTask,
-      closeModal,
-      navigation.calendarView,
-      navigation.currentDate,
-      fetchTasksByDateRange,
-      showSuccess,
-      handleError,
-    ]
+    [createTask, closeModal, navigation, showSuccess, handleError]
   );
 
   const handleUpdateTask = useCallback(
@@ -157,26 +134,14 @@ export default function CalendarPage() {
       try {
         await updateTask(selectedTask.id, taskData);
         closeModal();
-        const { startDate, endDate } = getDateRangeForView(
-          navigation.calendarView,
-          navigation.currentDate
-        );
-        await fetchTasksByDateRange(startDate, endDate);
+        // Use navigation's refetchCurrentRange instead of manual range calculation
+        await navigation.refetchCurrentRange();
         showSuccess(CALENDAR_MESSAGES.TASK_UPDATED);
       } catch (error) {
         handleError(error, CALENDAR_ERROR_MESSAGES.UPDATE_TASK);
       }
     },
-    [
-      selectedTask,
-      updateTask,
-      closeModal,
-      navigation.calendarView,
-      navigation.currentDate,
-      fetchTasksByDateRange,
-      showSuccess,
-      handleError,
-    ]
+    [selectedTask, updateTask, closeModal, navigation, showSuccess, handleError]
   );
 
   const handleDeleteTaskRequest = useCallback((task: MaintenanceTask) => {
@@ -188,25 +153,14 @@ export default function CalendarPage() {
 
     try {
       await deleteTask(confirmDeleteTask.id);
-      const { startDate, endDate } = getDateRangeForView(
-        navigation.calendarView,
-        navigation.currentDate
-      );
-      await fetchTasksByDateRange(startDate, endDate);
+      // Use navigation's refetchCurrentRange instead of manual range calculation
+      await navigation.refetchCurrentRange();
       showSuccess(CALENDAR_MESSAGES.TASK_DELETED);
       setConfirmDeleteTask(null);
     } catch (error) {
       handleError(error, CALENDAR_ERROR_MESSAGES.DELETE_TASK);
     }
-  }, [
-    confirmDeleteTask,
-    deleteTask,
-    navigation.calendarView,
-    navigation.currentDate,
-    fetchTasksByDateRange,
-    showSuccess,
-    handleError,
-  ]);
+  }, [confirmDeleteTask, deleteTask, navigation, showSuccess, handleError]);
 
   const handleSelectEvent = (task: MaintenanceTask) => {
     openEditModal(task);
@@ -274,8 +228,6 @@ export default function CalendarPage() {
             </div>
           </div>
         </AppLayout>
-        <ErrorToasts />
-        <SuccessToasts />
       </ErrorBoundary>
     );
   }
@@ -293,7 +245,7 @@ export default function CalendarPage() {
               overdue={notificationBadge.overdue}
               upcoming={notificationBadge.upcoming}
               today={notificationBadge.today}
-              onClick={handleNotificationBadgeClick}
+              onClick={notificationBadge.onClick}
             />
           ) : null
         }
@@ -308,6 +260,7 @@ export default function CalendarPage() {
           setView={setView}
           onTaskClick={handleTaskClick}
           onTaskDelete={handleDeleteTaskRequest}
+          onTaskEdit={handleTaskClick}
           onSelectEvent={handleSelectEvent}
           onSelectSlot={handleSelectSlot}
           onOpenNewTask={handleOpenNewTask}
@@ -329,10 +282,6 @@ export default function CalendarPage() {
           defaultScheduledDate={modalDefaultDate}
         />
 
-        {/* Error Toasts */}
-        <ErrorToasts />
-        {/* Success Toasts */}
-        <SuccessToasts />
         <ConfirmDialog
           isOpen={Boolean(confirmDeleteTask)}
           title={CALENDAR_CONFIRM_MESSAGES.DELETE_TASK_TITLE}

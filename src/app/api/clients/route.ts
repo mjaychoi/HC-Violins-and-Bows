@@ -34,7 +34,8 @@ export async function GET(request: NextRequest) {
 
     // Add search filter if provided
     if (search && search.length >= 2) {
-      const sanitizedSearch = search.trim();
+      // ✅ FIXED: 특수문자 이스케이프 (검색어 특수문자에서 터지는 것 방지)
+      const sanitizedSearch = search.trim().replace(/[(),%]/g, ' ');
       query = query.or(
         `last_name.ilike.%${sanitizedSearch}%,first_name.ilike.%${sanitizedSearch}%,email.ilike.%${sanitizedSearch}%`
       );

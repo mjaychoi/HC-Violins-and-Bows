@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '@/test-utils/render';
 import { useClientView } from '../useClientView';
 import { Client } from '@/types';
 

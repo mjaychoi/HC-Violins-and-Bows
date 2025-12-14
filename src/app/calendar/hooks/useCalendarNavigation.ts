@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   getDateRangeForView,
   navigatePrevious,
@@ -38,19 +38,26 @@ export const useCalendarNavigation = ({
     onErrorRef.current = onError;
   }, [onError]);
 
-  // Fetch tasks when date or view changes
-  useEffect(() => {
-    const { startDate, endDate } = getDateRangeForView(
-      calendarView,
-      currentDate
-    );
+  // Current date range for the view (memoized)
+  const currentRange = useMemo(() => {
+    return getDateRangeForView(calendarView, currentDate);
+  }, [calendarView, currentDate]);
 
-    fetchRef.current(startDate, endDate).catch(error => {
+  // Refetch current range
+  const refetchCurrentRange = useCallback(async () => {
+    try {
+      await fetchRef.current(currentRange.startDate, currentRange.endDate);
+    } catch (error) {
       if (onErrorRef.current) {
         onErrorRef.current(error);
       }
-    });
-  }, [currentDate, calendarView]);
+    }
+  }, [currentRange]);
+
+  // Fetch tasks when date or view changes
+  useEffect(() => {
+    refetchCurrentRange();
+  }, [refetchCurrentRange]);
 
   // Navigate to previous period
   const handlePrevious = useCallback(() => {
@@ -86,5 +93,8 @@ export const useCalendarNavigation = ({
     handlePrevious,
     handleNext,
     handleGoToToday,
+    // Expose current range and refetch function
+    currentRange,
+    refetchCurrentRange,
   };
 };

@@ -10,11 +10,7 @@ import {
   differenceInCalendarDays,
 } from 'date-fns';
 
-// FIXED: Helper to parse YYYY-MM-DD as UTC to avoid timezone shifts
-const parseYMDUTC = (ymd: string): Date => {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
-};
+import { parseYMDUTC } from '@/utils/dateParsing';
 
 interface SalesInsightsProps {
   sales: EnrichedSale[];

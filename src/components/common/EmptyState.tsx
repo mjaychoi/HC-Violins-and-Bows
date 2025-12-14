@@ -36,9 +36,10 @@ export default function EmptyState({
   onResetFilters,
   className = '',
 }: EmptyStateProps) {
+  // ✅ FIXED: defaultIcon 크기 조정 (wrapper가 size 담당)
   const defaultIcon = (
     <svg
-      className="mx-auto h-16 w-16 text-gray-300"
+      className="h-8 w-8 text-gray-300"
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
@@ -77,6 +78,7 @@ export default function EmptyState({
           <div className="mt-8 flex items-center justify-center gap-3">
             {hasActiveFilters && onResetFilters && (
               <button
+                type="button"
                 onClick={onResetFilters}
                 className="inline-flex items-center px-4 py-2.5 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
               >
@@ -85,6 +87,7 @@ export default function EmptyState({
             )}
             {actionButton && (
               <button
+                type="button"
                 onClick={actionButton.onClick}
                 className="inline-flex items-center px-5 py-2.5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
               >

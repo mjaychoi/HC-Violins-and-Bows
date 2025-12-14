@@ -190,7 +190,16 @@ export default function TaskModal({
       notes: formData.notes.trim() || null,
     };
 
-    await onSubmit(taskData);
+    try {
+      await onSubmit(taskData);
+    } catch (error) {
+      // Show error in modal for better UX
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Failed to save task. Please try again.';
+      setErrors([errorMessage]);
+    }
   };
 
   // Close modal with ESC key and outside click
@@ -230,13 +239,13 @@ export default function TaskModal({
     >
       <div
         ref={modalRef}
-        className="bg-white rounded-xl shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200"
+        className="bg-white rounded-xl shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
         aria-labelledby="task-modal-title"
       >
         {/* Header */}
-        <div className="p-6 border-b border-gray-100 bg-blue-50">
+        <div className="flex-shrink-0 p-6 border-b border-gray-100 bg-blue-50">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-100 rounded-lg">
@@ -284,11 +293,8 @@ export default function TaskModal({
           </div>
         </div>
 
-        {/* Form */}
-        <form
-          onSubmit={handleSubmit}
-          className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]"
-        >
+        {/* Form - Scrollable */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
           {errors.length > 0 && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
               <ul className="list-disc list-inside text-sm text-red-600">
@@ -537,7 +543,7 @@ export default function TaskModal({
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-gray-100 bg-gray-50 -mx-6 -mb-6 px-6 py-4">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
             <Button
               type="button"
               variant="secondary"

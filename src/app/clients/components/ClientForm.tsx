@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Client, Instrument, ClientInstrument } from '@/types';
 // Removed direct supabase import to reduce bundle size - using API routes instead
 import { useDataState } from '@/hooks/useDataState';
@@ -12,7 +12,7 @@ import { generateClientNumber } from '@/utils/uniqueNumberGenerator';
 import { useUnifiedClients } from '@/hooks/useUnifiedData';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
-import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { useErrorHandler } from '@/contexts/ToastContext';
 import { shouldShowInterestDropdown } from '@/policies/interest';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
@@ -144,33 +144,42 @@ export default function ClientForm({
   );
 
   const lastReqIdRef = useRef(0);
-  const searchInstrumentsForNew = async (searchTerm: string) => {
-    if (searchTerm.length < 2) {
-      clearSearchResults();
-      return;
-    }
-
-    setIsSearchingInstrumentsForNew(true);
-    const reqId = ++lastReqIdRef.current;
-    try {
-      const results = await searchInstruments(searchTerm);
-      if (reqId === lastReqIdRef.current && results) {
-        setSearchResultsForNew(results);
-      }
-    } catch (error) {
-      logError('Error searching instruments', error, 'ClientForm', {
-        searchTerm: instrumentSearchTermForNew,
-        action: 'searchInstruments',
-      });
-      if (reqId === lastReqIdRef.current) {
+  // ✅ Memoize search function to avoid dependency issues
+  const searchInstrumentsForNew = useCallback(
+    async (searchTerm: string) => {
+      if (searchTerm.length < 2) {
         clearSearchResults();
+        return;
       }
-    } finally {
-      if (reqId === lastReqIdRef.current) {
-        setIsSearchingInstrumentsForNew(false);
+
+      setIsSearchingInstrumentsForNew(true);
+      const reqId = ++lastReqIdRef.current;
+      try {
+        const results = await searchInstruments(searchTerm);
+        if (reqId === lastReqIdRef.current && results) {
+          setSearchResultsForNew(results);
+        }
+      } catch (error) {
+        logError('Error searching instruments', error, 'ClientForm', {
+          searchTerm: instrumentSearchTermForNew,
+          action: 'searchInstruments',
+        });
+        if (reqId === lastReqIdRef.current) {
+          clearSearchResults();
+        }
+      } finally {
+        if (reqId === lastReqIdRef.current) {
+          setIsSearchingInstrumentsForNew(false);
+        }
       }
-    }
-  };
+    },
+    [
+      searchInstruments,
+      clearSearchResults,
+      setSearchResultsForNew,
+      instrumentSearchTermForNew,
+    ]
+  );
 
   const { handleError } = useErrorHandler();
 
@@ -259,6 +268,26 @@ export default function ClientForm({
     }
   }, [isOpen, clients, formData.client_number, updateField]);
 
+  // ✅ Debounced instrument search (prevents excessive API calls)
+  useEffect(() => {
+    if (!showInstrumentSearchForNew) return;
+
+    const timeoutId = setTimeout(() => {
+      if (instrumentSearchTermForNew.length >= 2) {
+        searchInstrumentsForNew(instrumentSearchTermForNew);
+      } else {
+        clearSearchResults();
+      }
+    }, 250); // 250ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    instrumentSearchTermForNew,
+    showInstrumentSearchForNew,
+    searchInstrumentsForNew,
+    clearSearchResults,
+  ]);
+
   if (!isOpen) return null;
 
   return (
@@ -342,240 +371,204 @@ export default function ClientForm({
 
           <form
             onSubmit={handleSubmit}
-            className="p-6 space-y-4 text-gray-900"
+            className="space-y-4"
             style={{ display: success ? 'none' : 'block' }}
           >
-            <div className="space-y-4">
-              <Input
-                label="Last Name"
-                name="last_name"
-                value={formData.last_name}
-                onChange={handleInputChange}
-                required
-                placeholder="Enter last name"
+            <Input
+              label="Last Name"
+              name="last_name"
+              value={formData.last_name}
+              onChange={handleInputChange}
+              required
+              placeholder="Enter last name"
+            />
+
+            <Input
+              label="First Name"
+              name="first_name"
+              value={formData.first_name}
+              onChange={handleInputChange}
+              placeholder="Enter first name"
+            />
+
+            <Input
+              label="Contact Number"
+              name="contact_number"
+              type="tel"
+              value={formData.contact_number}
+              onChange={handleInputChange}
+              placeholder="Enter contact number"
+              helperText="Phone number for reaching this client (optional)"
+            />
+
+            <Input
+              label="Email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleInputChange}
+              placeholder="Enter email address"
+              helperText="Email address for communication (optional)"
+            />
+
+            {/* Tags Section */}
+            <div>
+              <label className={classNames.formLabel}>Tags</label>
+              <ClientTagSelector
+                selectedTags={formData.tags}
+                onChange={next => updateField('tags', next)}
               />
+            </div>
 
+            {/* Interest Section - Conditional */}
+            {showInterestDropdown && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  First Name
+                <label htmlFor="interest" className={classNames.formLabel}>
+                  Interest
                 </label>
-                <input
-                  type="text"
-                  name="first_name"
-                  value={formData.first_name}
-                  onChange={handleInputChange}
-                  required
-                  className={classNames.input}
-                  placeholder="Enter first name"
+                <InterestSelector
+                  value={formData.interest}
+                  onChange={value => updateField('interest', value)}
+                  selectClassName={classNames.input}
+                  name="interest"
+                  id="interest"
                 />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Contact Number
-                </label>
-                <input
-                  type="tel"
-                  name="contact_number"
-                  value={formData.contact_number}
-                  onChange={handleInputChange}
-                  className={classNames.input}
-                  placeholder="Enter contact number"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Phone number for reaching this client (optional)
+                <p className="mt-1 text-sm text-gray-500">
+                  Appears when certain tags are selected. Shows client&apos;s
+                  primary interest area
                 </p>
               </div>
+            )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  className={classNames.input}
-                  placeholder="Enter email address"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Email address for communication (optional)
-                </p>
-              </div>
+            <div>
+              <label className={classNames.formLabel}>
+                Client Number
+                <span className="ml-2 text-xs text-gray-500">(자동 생성)</span>
+              </label>
+              <input
+                type="text"
+                name="client_number"
+                value={formData.client_number}
+                onChange={handleInputChange}
+                disabled
+                className={classNames.input + ' bg-gray-100 cursor-not-allowed'}
+                placeholder="자동 생성됨"
+              />
+              <p className="mt-1 text-sm text-gray-500">
+                클라이언트 추가 시 자동으로 생성됩니다
+              </p>
+            </div>
 
-              {/* Tags Section */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Tags
-                </label>
-                <ClientTagSelector
-                  selectedTags={formData.tags}
-                  onChange={next => updateField('tags', next)}
-                />
-              </div>
+            <div>
+              <label className={classNames.formLabel}>Note</label>
+              <textarea
+                name="note"
+                value={formData.note}
+                onChange={handleInputChange}
+                rows={3}
+                className={classNames.input}
+                placeholder="Enter any additional notes"
+              />
+            </div>
 
-              {/* Interest Section - Conditional */}
-              {showInterestDropdown && (
-                <div>
-                  <label
-                    htmlFor="interest"
-                    className="block text-sm font-medium text-gray-700 mb-1"
-                  >
-                    Interest
-                  </label>
-                  <InterestSelector
-                    value={formData.interest}
-                    onChange={value => updateField('interest', value)}
-                    selectClassName={classNames.input}
-                    name="interest"
-                    id="interest"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Appears when certain tags are selected. Shows client&apos;s
-                    primary interest area
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Client Number
-                  <span className="ml-2 text-xs text-gray-500">
-                    (자동 생성)
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  name="client_number"
-                  value={formData.client_number}
-                  onChange={handleInputChange}
-                  disabled
-                  className={
-                    classNames.input + ' bg-gray-100 cursor-not-allowed'
+            {/* Instrument Connection Section */}
+            <div>
+              <label className={classNames.formLabel}>
+                Connect Instruments (Optional)
+              </label>
+              <p className="mb-2 text-sm text-gray-500">
+                Link instruments to this client (e.g., owned, interested, or
+                booked items)
+              </p>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowInstrumentSearchForNew(!showInstrumentSearchForNew)
                   }
-                  placeholder="자동 생성됨"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  클라이언트 추가 시 자동으로 생성됩니다
-                </p>
-              </div>
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  {showInstrumentSearchForNew
+                    ? 'Hide Instrument Search'
+                    : 'Search for Instruments'}
+                </button>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Note
-                </label>
-                <textarea
-                  name="note"
-                  value={formData.note}
-                  onChange={handleInputChange}
-                  rows={3}
-                  className={classNames.input}
-                  placeholder="Enter any additional notes"
-                />
-              </div>
+                {showInstrumentSearchForNew && (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Search instruments..."
+                      value={instrumentSearchTermForNew}
+                      onChange={e => {
+                        // ✅ Only update state, debounced search in useEffect
+                        setInstrumentSearchTermForNew(e.target.value);
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
 
-              {/* Instrument Connection Section */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Connect Instruments (Optional)
-                </label>
-                <p className="mb-2 text-xs text-gray-500">
-                  Link instruments to this client (e.g., owned, interested, or
-                  booked items)
-                </p>
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShowInstrumentSearchForNew(!showInstrumentSearchForNew)
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-left text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    {showInstrumentSearchForNew
-                      ? 'Hide Instrument Search'
-                      : 'Search for Instruments'}
-                  </button>
+                    {isSearchingInstrumentsForNew && (
+                      <div className="text-center py-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mx-auto"></div>
+                      </div>
+                    )}
 
-                  {showInstrumentSearchForNew && (
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        placeholder="Search instruments..."
-                        value={instrumentSearchTermForNew}
-                        onChange={e => {
-                          setInstrumentSearchTermForNew(e.target.value);
-                          searchInstrumentsForNew(e.target.value);
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-
-                      {isSearchingInstrumentsForNew && (
-                        <div className="text-center py-2">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mx-auto"></div>
-                        </div>
-                      )}
-
-                      {searchResultsForNew.length > 0 && (
-                        <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md">
-                          {searchResultsForNew.map(instrument => (
-                            <div
-                              key={instrument.id}
-                              className="p-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                            >
-                              <div className="flex justify-between items-center">
-                                <div>
-                                  <div className="text-sm font-medium">
-                                    {instrument.maker}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {instrument.type} ({instrument.year})
-                                  </div>
+                    {searchResultsForNew.length > 0 && (
+                      <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md">
+                        {searchResultsForNew.map(instrument => (
+                          <div
+                            key={instrument.id}
+                            className="p-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                          >
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <div className="text-sm font-medium">
+                                  {instrument.maker}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    addInstrumentForNew(instrument)
-                                  }
-                                  className="text-blue-600 hover:text-blue-800 text-sm"
-                                >
-                                  Add
-                                </button>
+                                <div className="text-xs text-gray-500">
+                                  {instrument.type} ({instrument.year})
+                                </div>
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {selectedInstrumentsForNew.length > 0 && (
-                        <div className="space-y-1">
-                          <div className="text-xs font-medium text-gray-700">
-                            Selected Instruments:
-                          </div>
-                          {selectedInstrumentsForNew.map(item => (
-                            <div
-                              key={item.instrument.id}
-                              className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm"
-                            >
-                              <span>
-                                {item.instrument.maker} - {item.instrument.type}
-                              </span>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  removeInstrumentForNew(item.instrument.id)
-                                }
-                                className="text-red-600 hover:text-red-800"
+                                onClick={() => addInstrumentForNew(instrument)}
+                                className="text-blue-600 hover:text-blue-800 text-sm"
                               >
-                                Remove
+                                Add
                               </button>
                             </div>
-                          ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {selectedInstrumentsForNew.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-gray-700">
+                          Selected Instruments:
                         </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                        {selectedInstrumentsForNew.map(item => (
+                          <div
+                            key={item.instrument.id}
+                            className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm"
+                          >
+                            <span>
+                              {item.instrument.maker} - {item.instrument.type}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removeInstrumentForNew(item.instrument.id)
+                              }
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

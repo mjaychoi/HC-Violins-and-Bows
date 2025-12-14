@@ -64,8 +64,7 @@ export default function SalesPage() {
     refundSale,
     undoRefund,
   } = useSalesHistory();
-  const { ErrorToasts, SuccessToasts, showSuccess, handleError } =
-    useAppFeedback();
+  const { showSuccess, handleError } = useAppFeedback();
 
   // Confirmation dialog state
   const [confirmRefundSale, setConfirmRefundSale] =
@@ -115,9 +114,12 @@ export default function SalesPage() {
   );
 
   // FIXED: Reset page to 1 when filters change to avoid empty pages
+  // FIXED: Only update page if it's not already 1 to prevent unnecessary re-renders and double fetches
   useEffect(() => {
-    setPage(1);
-  }, [from, to, search, hasClient, sortColumn, sortDirection, setPage]);
+    if (page !== 1) {
+      setPage(1);
+    }
+  }, [from, to, search, hasClient, sortColumn, sortDirection, page, setPage]);
 
   // 초기 로드 및 필터/페이지/정렬 변경 시 API 호출
   useEffect(() => {
@@ -330,10 +332,9 @@ export default function SalesPage() {
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
-      link.setAttribute(
-        'download',
-        `sales-history-${new Date().toISOString().split('T')[0]}.csv`
-      );
+      // FIXED: Use todayLocalYMD for consistent date format in filename
+      const { todayLocalYMD } = await import('@/utils/dateParsing');
+      link.setAttribute('download', `sales-history-${todayLocalYMD()}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -463,18 +464,13 @@ export default function SalesPage() {
                 filteredCount={totalCount}
                 pageSize={10}
                 loading={loading}
-                hasFilters={!!(search || from || to)}
+                hasFilters={!!(search || from || to || hasClient !== null)}
                 onPageChange={setPage}
                 compact={false}
               />
             </div>
           </div>
         )}
-
-        {/* Error Toasts */}
-        <ErrorToasts />
-        {/* Success Toasts */}
-        <SuccessToasts />
 
         {/* Refund Confirmation Dialog */}
         <ConfirmDialog

@@ -29,8 +29,7 @@ const InstrumentForm = dynamic(() => import('./components/InstrumentForm'), {
 
 export default function InstrumentsPage() {
   // Error/Success handling
-  const { ErrorToasts, SuccessToasts, handleError, showSuccess } =
-    useAppFeedback();
+  const { handleError, showSuccess } = useAppFeedback();
 
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched
@@ -106,16 +105,18 @@ export default function InstrumentsPage() {
           onClick: openModal,
           icon: (
             <svg
-              className="w-5 h-5"
+              className="h-4 w-4"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
             >
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
               />
             </svg>
           ),
@@ -134,11 +135,6 @@ export default function InstrumentsPage() {
           onSubmit={handleSubmit}
           submitting={submitting.any}
         />
-
-        {/* Error Toasts */}
-        <ErrorToasts />
-        {/* Success Toasts */}
-        <SuccessToasts />
       </AppLayout>
     </ErrorBoundary>
   );

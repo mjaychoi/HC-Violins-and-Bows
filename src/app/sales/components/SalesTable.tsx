@@ -8,10 +8,7 @@ import { TableSkeleton, EmptyState } from '@/components/common';
 import Button from '@/components/common/Button';
 
 // FIXED: Helper to parse YYYY-MM-DD as UTC to avoid timezone shifts
-const parseYMDUTC = (ymd: string): Date => {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
-};
+import { formatDisplayDate } from '@/utils/dateParsing';
 
 interface SalesTableProps {
   sales: EnrichedSale[];
@@ -26,15 +23,16 @@ interface SalesTableProps {
   onResetFilters?: () => void;
 }
 
+// ✅ FIXED: Use centralized color tokens
+import { getSalesStatusColor } from '@/utils/colorTokens';
+
 function StatusBadge({ status }: { status: SaleStatus }) {
-  const styles: Record<SaleStatus, string> = {
-    Paid: 'bg-green-100 text-green-700 border border-green-200',
-    Refunded: 'bg-rose-100 text-rose-700 border border-rose-200',
-  };
+  // ✅ FIXED: Use centralized color tokens
+  const className = getSalesStatusColor(status);
 
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status]}`}
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className}`}
     >
       {status}
     </span>
@@ -123,21 +121,7 @@ export default function SalesTable({
               return (
                 <tr key={sale.id} className={classNames.tableRow}>
                   <td className={classNames.tableCell}>
-                    {(() => {
-                      try {
-                        // FIXED: Use parseYMDUTC and format with UTC timezone to prevent day shift
-                        const date = parseYMDUTC(sale.sale_date);
-                        // Format with UTC timezone to ensure correct day display
-                        return date.toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                          timeZone: 'UTC',
-                        });
-                      } catch {
-                        return sale.sale_date;
-                      }
-                    })()}
+                    {formatDisplayDate(sale.sale_date)}
                   </td>
                   <td className={classNames.tableCell}>
                     {sale.client && sale.client_id ? (
@@ -220,7 +204,7 @@ export default function SalesTable({
                           disabled={loading}
                           size="sm"
                           variant="danger"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 border border-rose-600"
                           title="Issue refund"
                         >
                           <svg

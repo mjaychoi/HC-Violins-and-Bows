@@ -12,17 +12,21 @@ export default function SuccessToast({
   autoClose = true,
 }: SuccessToastProps) {
   const [isVisible, setIsVisible] = React.useState(true);
+  // ✅ FIXED: "한 번만 close" 보장하는 guard
+  const closedRef = React.useRef(false);
+
+  const requestClose = React.useCallback(() => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    setIsVisible(false);
+    window.setTimeout(onClose, 300);
+  }, [onClose]);
 
   React.useEffect(() => {
-    if (autoClose) {
-      const timer = setTimeout(() => {
-        setIsVisible(false);
-        setTimeout(onClose, 300); // Allow fade out animation
-      }, 3000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [autoClose, onClose]);
+    if (!autoClose) return;
+    const timer = window.setTimeout(requestClose, 3000);
+    return () => window.clearTimeout(timer);
+  }, [autoClose, requestClose]);
 
   if (!isVisible) return null;
 
@@ -48,10 +52,7 @@ export default function SuccessToast({
           <p className="text-sm font-medium text-gray-900">{message}</p>
         </div>
         <button
-          onClick={() => {
-            setIsVisible(false);
-            setTimeout(onClose, 300);
-          }}
+          onClick={requestClose}
           className="ml-4 flex-shrink-0 inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
           aria-label="Close"
         >

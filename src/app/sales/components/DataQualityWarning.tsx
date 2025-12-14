@@ -23,7 +23,7 @@ export default function DataQualityWarning({
       'Data is spread across many days, making daily patterns less reliable.'
     );
   }
-  messages.push('Charts and insights may not be fully representative.');
+  // FIXED: Keep "Charts and insights..." as separate paragraph for clarity
 
   return (
     <div
@@ -50,7 +50,17 @@ export default function DataQualityWarning({
           <h4 className="text-sm font-semibold text-yellow-900 mb-1">
             Limited Data Available
           </h4>
-          <p className="text-sm text-yellow-700">{messages.join(' ')}</p>
+          {/* FIXED: Display messages as list for better readability and accessibility */}
+          {messages.length > 0 && (
+            <ul className="text-sm text-yellow-700 list-disc pl-5 space-y-1 mb-2">
+              {messages.map((message, index) => (
+                <li key={index}>{message}</li>
+              ))}
+            </ul>
+          )}
+          <p className="text-sm text-yellow-700">
+            Charts and insights may not be fully representative.
+          </p>
         </div>
       </div>
     </div>

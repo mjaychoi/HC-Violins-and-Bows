@@ -1,5 +1,5 @@
-import { render } from '@testing-library/react';
-import { RootProviders } from '../layout';
+import { render } from '@/test-utils/render';
+import RootProviders from '@/components/providers/RootProviders';
 
 // Mock ErrorBoundary
 jest.mock('@/components/common', () => ({

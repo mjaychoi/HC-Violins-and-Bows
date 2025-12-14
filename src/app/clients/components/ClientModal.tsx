@@ -137,231 +137,226 @@ export default function ClientModal({
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           {isEditing ? (
-            <div className="flex-1 overflow-y-auto">
-              <form
-                onSubmit={handleSave}
-                className="p-6 space-y-4 text-gray-900"
-              >
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      name="last_name"
-                      value={viewFormData.last_name}
-                      onChange={onViewInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="Enter last name"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      First Name
-                    </label>
-                    <input
-                      type="text"
-                      name="first_name"
-                      value={viewFormData.first_name}
-                      onChange={onViewInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="Enter first name"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Contact Number
-                    </label>
-                    <input
-                      type="tel"
-                      name="contact_number"
-                      value={viewFormData.contact_number}
-                      onChange={onViewInputChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="Enter contact number"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={viewFormData.email}
-                      onChange={onViewInputChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="Enter email address"
-                    />
-                  </div>
-
-                  {/* Tags Section */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Tags
-                    </label>
-                    <ClientTagSelector
-                      selectedTags={viewFormData.tags}
-                      onChange={next => onUpdateViewFormData({ tags: next })}
-                    />
-                  </div>
-
-                  {/* Interest Section - Conditional */}
-                  {showInterestDropdown && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Interest
-                      </label>
-                      <InterestSelector
-                        value={viewFormData.interest}
-                        onChange={value =>
-                          onUpdateViewFormData({ interest: value })
-                        }
-                        name="interest"
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Note
-                    </label>
-                    <textarea
-                      name="note"
-                      value={viewFormData.note}
-                      onChange={onViewInputChange}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                      placeholder="Enter any additional notes"
-                    />
-                  </div>
+            <form onSubmit={handleSave} className="p-6 space-y-4 text-gray-900">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Last Name
+                  </label>
+                  <input
+                    type="text"
+                    name="last_name"
+                    value={viewFormData.last_name}
+                    onChange={onViewInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                    placeholder="Enter last name"
+                  />
                 </div>
 
-                {/* Instrument Connections - Edit Mode */}
-                <div className="pt-4 border-t border-gray-200">
-                  <div className="flex justify-between items-center mb-4">
-                    <h4 className="text-sm font-medium text-gray-700">
-                      Instrument Connections
-                    </h4>
-                    <button
-                      type="button"
-                      onClick={onToggleInstrumentSearch}
-                      className="text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      {showInstrumentSearch ? 'Hide Search' : 'Add Instrument'}
-                    </button>
-                  </div>
-
-                  {showInstrumentSearch && (
-                    <div className="mb-4 space-y-2">
-                      <input
-                        type="text"
-                        placeholder="Search instruments..."
-                        value={instrumentSearchTerm}
-                        onChange={e => {
-                          onInstrumentSearchTermChange(e.target.value);
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-
-                      {isSearchingInstruments && (
-                        <div className="text-center py-2">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mx-auto"></div>
-                        </div>
-                      )}
-
-                      {searchResults.length > 0 && (
-                        <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md">
-                          {searchResults.map(instrument => (
-                            <div
-                              key={instrument.id}
-                              className="p-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                            >
-                              <div className="flex justify-between items-center">
-                                <div>
-                                  <div className="text-sm font-medium">
-                                    {instrument.maker}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {instrument.type} ({instrument.year})
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    onAddInstrument(instrument.id, 'Interested')
-                                  }
-                                  className="text-blue-600 hover:text-blue-800 text-sm"
-                                >
-                                  Add
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {filteredInstrumentRelationships.length > 0 ? (
-                    <div className="space-y-2">
-                      {filteredInstrumentRelationships.map(relationship => (
-                        <div
-                          key={relationship.id}
-                          className="flex justify-between items-center bg-gray-50 p-3 rounded-md"
-                        >
-                          <div>
-                            <div className="text-sm font-medium">
-                              {relationship.instrument?.maker} -{' '}
-                              {relationship.instrument?.type}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {relationship.instrument?.year} •{' '}
-                              {relationship.relationship_type}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => onRemoveInstrument(relationship.id)}
-                            className="text-red-600 hover:text-red-800 text-sm"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-500 text-sm">
-                      No instrument connections
-                    </p>
-                  )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    First Name
+                  </label>
+                  <input
+                    type="text"
+                    name="first_name"
+                    value={viewFormData.first_name}
+                    onChange={onViewInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                    placeholder="Enter first name"
+                  />
                 </div>
 
-                {/* Action Buttons */}
-                <div className="pt-4 border-t border-gray-200 flex space-x-3">
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {submitting ? 'Saving...' : 'Save Changes'}
-                  </button>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Contact Number
+                  </label>
+                  <input
+                    type="tel"
+                    name="contact_number"
+                    value={viewFormData.contact_number}
+                    onChange={onViewInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                    placeholder="Enter contact number"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={viewFormData.email}
+                    onChange={onViewInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                    placeholder="Enter email address"
+                  />
+                </div>
+
+                {/* Tags Section */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tags
+                  </label>
+                  <ClientTagSelector
+                    selectedTags={viewFormData.tags}
+                    onChange={next => onUpdateViewFormData({ tags: next })}
+                  />
+                </div>
+
+                {/* Interest Section - Conditional */}
+                {showInterestDropdown && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Interest
+                    </label>
+                    <InterestSelector
+                      value={viewFormData.interest}
+                      onChange={value =>
+                        onUpdateViewFormData({ interest: value })
+                      }
+                      name="interest"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Note
+                  </label>
+                  <textarea
+                    name="note"
+                    value={viewFormData.note}
+                    onChange={onViewInputChange}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                    placeholder="Enter any additional notes"
+                  />
+                </div>
+              </div>
+
+              {/* Instrument Connections - Edit Mode */}
+              <div className="pt-4 border-t border-gray-200">
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="text-sm font-medium text-gray-700">
+                    Instrument Connections
+                  </h4>
                   <button
                     type="button"
-                    onClick={onCancel}
-                    className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                    onClick={onToggleInstrumentSearch}
+                    className="text-sm text-blue-600 hover:text-blue-800"
                   >
-                    Cancel
+                    {showInstrumentSearch ? 'Hide Search' : 'Add Instrument'}
                   </button>
                 </div>
-              </form>
-            </div>
+
+                {showInstrumentSearch && (
+                  <div className="mb-4 space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Search instruments..."
+                      value={instrumentSearchTerm}
+                      onChange={e => {
+                        onInstrumentSearchTermChange(e.target.value);
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+
+                    {isSearchingInstruments && (
+                      <div className="text-center py-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mx-auto"></div>
+                      </div>
+                    )}
+
+                    {searchResults.length > 0 && (
+                      <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md">
+                        {searchResults.map(instrument => (
+                          <div
+                            key={instrument.id}
+                            className="p-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                          >
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <div className="text-sm font-medium">
+                                  {instrument.maker}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {instrument.type} ({instrument.year})
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onAddInstrument(instrument.id, 'Interested')
+                                }
+                                className="text-blue-600 hover:text-blue-800 text-sm"
+                              >
+                                Add
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {filteredInstrumentRelationships.length > 0 ? (
+                  <div className="space-y-2">
+                    {filteredInstrumentRelationships.map(relationship => (
+                      <div
+                        key={relationship.id}
+                        className="flex justify-between items-center bg-gray-50 p-3 rounded-md"
+                      >
+                        <div>
+                          <div className="text-sm font-medium">
+                            {relationship.instrument?.maker} -{' '}
+                            {relationship.instrument?.type}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {relationship.instrument?.year} •{' '}
+                            {relationship.relationship_type}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onRemoveInstrument(relationship.id)}
+                          className="text-red-600 hover:text-red-800 text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-sm">
+                    No instrument connections
+                  </p>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-4 border-t border-gray-200 flex space-x-3">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           ) : (
             <div className="p-6 space-y-6">
               {/* Client Info */}

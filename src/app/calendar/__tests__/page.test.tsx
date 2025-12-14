@@ -1,5 +1,5 @@
 // src/app/calendar/__tests__/page.test.tsx
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import CalendarPage from '../page';
 import { MaintenanceTask } from '@/types';

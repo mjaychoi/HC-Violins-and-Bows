@@ -1,9 +1,10 @@
+import { RelationshipType } from '@/types';
 import { RelationshipTypeCount } from '../utils/connectionGrouping';
 import { getRelationshipTypeStyle } from '../utils/relationshipStyles';
 
 interface FilterBarProps {
-  selectedFilter: string | null;
-  onFilterChange: (filter: string | null) => void;
+  selectedFilter: RelationshipType | null;
+  onFilterChange: (filter: RelationshipType | null) => void;
   relationshipTypeCounts: RelationshipTypeCount[];
   totalConnections: number;
 }

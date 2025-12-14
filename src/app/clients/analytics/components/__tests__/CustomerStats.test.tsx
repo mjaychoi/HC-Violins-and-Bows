@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '@/test-utils/render';
 import { CustomerStats } from '../CustomerStats';
 import { CustomerWithPurchases } from '../../types';
 
@@ -29,6 +29,7 @@ const mockCustomer1: CustomerWithPurchases = {
       status: 'Completed',
     },
   ],
+  lastPurchaseAt: '2024-05-12',
 };
 
 const mockCustomer2: CustomerWithPurchases = {
@@ -51,6 +52,7 @@ const mockCustomer2: CustomerWithPurchases = {
       status: 'Pending',
     },
   ],
+  lastPurchaseAt: '2024-06-01',
 };
 
 describe('CustomerStats', () => {

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import InstrumentForm from '../InstrumentForm';
 
 // Mock fetch API (replacing direct Supabase calls)

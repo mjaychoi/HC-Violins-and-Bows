@@ -1,15 +1,18 @@
-import { renderHook } from '@testing-library/react';
+import { renderHook } from '@/test-utils/render';
 import { useAppFeedback } from '../useAppFeedback';
-import { useErrorHandler } from '../useErrorHandler';
-import { useToast } from '../useToast';
+import { useErrorHandler, useToast } from '@/contexts/ToastContext';
 
-jest.mock('../useErrorHandler');
-jest.mock('../useToast');
+// ✅ FIXED: ToastProvider도 export하도록 mock 수정
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    useErrorHandler: jest.fn(),
+    useToast: jest.fn(),
+  };
+});
 
-const mockUseErrorHandler = useErrorHandler as jest.MockedFunction<
-  typeof useErrorHandler
->;
-const mockUseToast = useToast as jest.MockedFunction<typeof useToast>;
+// Mock functions are now defined in jest.mock above
 
 describe('useAppFeedback', () => {
   beforeEach(() => {
@@ -17,45 +20,35 @@ describe('useAppFeedback', () => {
   });
 
   it('should combine error handler and toast hooks', () => {
-    const mockErrorToasts = jest.fn();
-    const mockSuccessToasts = jest.fn();
     const mockHandleError = jest.fn();
     const mockShowSuccess = jest.fn();
 
-    mockUseErrorHandler.mockReturnValue({
-      ErrorToasts: mockErrorToasts,
+    (useErrorHandler as jest.Mock).mockReturnValue({
       handleError: mockHandleError,
-    } as unknown as ReturnType<typeof useErrorHandler>);
+    });
 
-    mockUseToast.mockReturnValue({
-      SuccessToasts: mockSuccessToasts,
+    (useToast as jest.Mock).mockReturnValue({
       showSuccess: mockShowSuccess,
-      removeToast: jest.fn(),
     });
 
     const { result } = renderHook(() => useAppFeedback());
 
-    expect(result.current.ErrorToasts).toBe(mockErrorToasts);
-    expect(result.current.SuccessToasts).toBe(mockSuccessToasts);
     expect(result.current.handleError).toBe(mockHandleError);
     expect(result.current.showSuccess).toBe(mockShowSuccess);
   });
 
   it('should call useErrorHandler and useToast', () => {
-    mockUseErrorHandler.mockReturnValue({
-      ErrorToasts: jest.fn(),
+    (useErrorHandler as jest.Mock).mockReturnValue({
       handleError: jest.fn(),
-    } as unknown as ReturnType<typeof useErrorHandler>);
+    });
 
-    mockUseToast.mockReturnValue({
-      SuccessToasts: jest.fn(),
+    (useToast as jest.Mock).mockReturnValue({
       showSuccess: jest.fn(),
-      removeToast: jest.fn(),
     });
 
     renderHook(() => useAppFeedback());
 
-    expect(mockUseErrorHandler).toHaveBeenCalled();
-    expect(mockUseToast).toHaveBeenCalled();
+    expect(useErrorHandler).toHaveBeenCalled();
+    expect(useToast).toHaveBeenCalled();
   });
 });

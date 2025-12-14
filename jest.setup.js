@@ -182,12 +182,89 @@ jest.mock('@/components/layout', () => {
   };
 });
 
+// ✅ FIXED: Toast 컴포넌트 mock (테스트 안정성 향상)
+// ToastProvider의 disableHost와 함께 사용하여 테스트 환경에서 안정적으로 동작
+// React 컴포넌트로 반환하여 모듈 로딩 문제 방지
+jest.mock('@/components/ErrorToast', () => {
+  const MockErrorToast = function MockErrorToast() {
+    return null;
+  };
+  MockErrorToast.displayName = 'MockErrorToast';
+  return {
+    __esModule: true,
+    default: MockErrorToast,
+  };
+});
+
+jest.mock('@/components/common/SuccessToasts', () => {
+  const MockSuccessToasts = function MockSuccessToasts() {
+    return null;
+  };
+  MockSuccessToasts.displayName = 'MockSuccessToasts';
+  return {
+    __esModule: true,
+    default: MockSuccessToasts,
+  };
+});
+
+// ✅ FIXED: ToastContext를 부분적으로 mock하여 ToastProvider는 항상 사용 가능하도록
+// 각 테스트 파일의 mock이 ToastProvider를 포함하지 않을 수 있으므로, 전역적으로 보장
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    // useErrorHandler와 useToast는 각 테스트에서 필요에 따라 override 가능
+    // ToastProvider는 항상 실제 구현 사용
+  };
+});
+
 // Mock DataContext hooks to avoid provider requirement in unit tests
 jest.mock('@/contexts/DataContext', () => {
   const empty = [];
   const noop = async () => {};
+  const mockState = {
+    clients: empty,
+    instruments: empty,
+    connections: empty,
+    loading: {
+      clients: false,
+      instruments: false,
+      connections: false,
+    },
+    submitting: {
+      clients: false,
+      instruments: false,
+      connections: false,
+    },
+    lastUpdated: {
+      clients: null,
+      instruments: null,
+      connections: null,
+    },
+  };
+  const mockActions = {
+    fetchClients: noop,
+    createClient: async () => null,
+    updateClient: async () => null,
+    deleteClient: async () => true,
+    fetchInstruments: noop,
+    createInstrument: async () => null,
+    updateInstrument: async () => null,
+    deleteInstrument: async () => true,
+    fetchConnections: noop,
+    createConnection: async () => null,
+    updateConnection: async () => null,
+    deleteConnection: async () => true,
+    invalidateCache: noop,
+    resetState: noop,
+  };
   return {
     __esModule: true,
+    useDataContext: () => ({
+      state: mockState,
+      actions: mockActions,
+      dispatch: noop,
+    }),
     useClients: () => ({
       clients: empty,
       loading: false,

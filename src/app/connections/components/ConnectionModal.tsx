@@ -2,6 +2,8 @@
 
 import { Client, Instrument, ClientInstrument } from '@/types';
 import { formatClientName, formatInstrumentName } from '../utils';
+import { classNames } from '@/utils/classNames';
+import { RELATIONSHIP_TYPES } from '../utils/connectionGrouping';
 
 interface ConnectionModalProps {
   isOpen: boolean;
@@ -56,35 +58,24 @@ export default function ConnectionModal({
     if (!selectedClient || !selectedInstrument) return;
 
     try {
+      // FIXED: Let parent handle closing - don't call onClose() here
+      // Parent (page.tsx) will close modal and reset form after successful creation
       await onSubmit(
         selectedClient,
         selectedInstrument,
         relationshipType,
         connectionNotes
       );
-      // Only close modal on success - errors are handled by parent
-      onClose();
+      // Parent handles: setShowConnectionModal(false) and resetConnectionForm()
     } catch {
       // Error is handled by parent component's error handler
       // Don't close modal on error - let user see the error and retry
     }
   };
 
-  const filteredClients = clients.filter(
-    client =>
-      clientSearchTerm === '' ||
-      formatClientName(client)
-        .toLowerCase()
-        .includes(clientSearchTerm.toLowerCase())
-  );
-
-  const filteredItems = items.filter(
-    item =>
-      instrumentSearchTerm === '' ||
-      formatInstrumentName(item)
-        .toLowerCase()
-        .includes(instrumentSearchTerm.toLowerCase())
-  );
+  // FIXED: Filtering is already done in parent (page.tsx) via useFilterSort
+  // Use clients and items directly from parent - no duplicate filtering
+  // Parent passes filteredClients and filteredItems which are already filtered
 
   if (!isOpen) return null;
 
@@ -98,13 +89,13 @@ export default function ConnectionModal({
       }}
     >
       <div
-        className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden animate-in zoom-in-95 duration-200"
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
         aria-labelledby="connection-modal-title"
       >
         {/* Header */}
-        <div className="p-6 border-b border-gray-200">
+        <div className="flex-shrink-0 p-6 border-b border-gray-200">
           <div className="flex justify-between items-center">
             <h3
               id="connection-modal-title"
@@ -135,73 +126,122 @@ export default function ConnectionModal({
           </div>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        {/* Form - Scrollable */}
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 overflow-y-auto p-6 space-y-6"
+        >
           {/* Client Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Client
-            </label>
+            <label className={classNames.formLabel}>Select Client</label>
             <input
               type="text"
               placeholder="Search clients..."
               value={clientSearchTerm}
               onChange={e => onClientSearchChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+              className={`${classNames.input} mb-2`}
             />
             <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md">
-              {filteredClients.map(client => (
-                <div
-                  key={client.id}
-                  className={`p-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${
-                    selectedClient === client.id ? 'bg-blue-50' : ''
-                  }`}
-                  onClick={() => onClientChange(client.id)}
-                >
-                  <div className="font-medium text-gray-900">
-                    {formatClientName(client)}
+              {clients.map(client => {
+                const isSelected = selectedClient === client.id;
+                return (
+                  <div
+                    key={client.id}
+                    className={`p-3 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors ${
+                      isSelected
+                        ? 'bg-blue-50 border-l-4 border-l-blue-500'
+                        : 'border-l-4 border-l-transparent hover:bg-gray-50'
+                    }`}
+                    onClick={() => onClientChange(client.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">
+                          {formatClientName(client)}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {client.email}
+                        </div>
+                      </div>
+                      {isSelected && (
+                        <svg
+                          className="w-5 h-5 text-blue-500 flex-shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-500">{client.email}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
           {/* Instrument Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Instrument
-            </label>
+            <label className={classNames.formLabel}>Select Instrument</label>
             <input
               type="text"
               placeholder="Search instruments..."
               value={instrumentSearchTerm}
               onChange={e => onInstrumentSearchChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+              className={`${classNames.input} mb-2`}
             />
             <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md">
-              {filteredItems.map(item => (
-                <div
-                  key={item.id}
-                  className={`p-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${
-                    selectedInstrument === item.id ? 'bg-blue-50' : ''
-                  }`}
-                  onClick={() => onInstrumentChange(item.id)}
-                >
-                  <div className="font-medium text-gray-900">
-                    {formatInstrumentName(item)}
+              {items.map(item => {
+                const isSelected = selectedInstrument === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-3 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors ${
+                      isSelected
+                        ? 'bg-blue-50 border-l-4 border-l-blue-500'
+                        : 'border-l-4 border-l-transparent hover:bg-gray-50'
+                    }`}
+                    onClick={() => onInstrumentChange(item.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">
+                          {formatInstrumentName(item)}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          Year: {item.year}
+                        </div>
+                      </div>
+                      {isSelected && (
+                        <svg
+                          className="w-5 h-5 text-blue-500 flex-shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-500">Year: {item.year}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
           {/* Relationship Type */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Relationship Type
-            </label>
+            <label className={classNames.formLabel}>Relationship Type</label>
             <select
               value={relationshipType}
               onChange={e =>
@@ -209,25 +249,24 @@ export default function ConnectionModal({
                   e.target.value as ClientInstrument['relationship_type']
                 )
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={classNames.input}
             >
-              <option value="Interested">Interested</option>
-              <option value="Booked">Booked</option>
-              <option value="Sold">Sold</option>
-              <option value="Owned">Owned</option>
+              {RELATIONSHIP_TYPES.map(type => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
             </select>
           </div>
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Notes (Optional)
-            </label>
+            <label className={classNames.formLabel}>Notes (Optional)</label>
             <textarea
               value={connectionNotes}
               onChange={e => onNotesChange(e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={classNames.input}
               placeholder="Add any notes about this connection..."
             />
           </div>

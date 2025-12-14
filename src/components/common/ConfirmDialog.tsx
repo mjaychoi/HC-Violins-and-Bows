@@ -9,6 +9,10 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /**
+   * Destructive action 여부 (true면 Cancel에 기본 포커스)
+   */
+  destructive?: boolean;
 }
 
 export default function ConfirmDialog({
@@ -19,20 +23,26 @@ export default function ConfirmDialog({
   cancelLabel = 'Cancel',
   onConfirm,
   onCancel,
+  destructive = true,
 }: ConfirmDialogProps) {
   return (
     <Modal isOpen={isOpen} onClose={onCancel} title={title} size="sm">
       <div className="space-y-4">
         <p className="text-sm text-gray-700">{message}</p>
         <div className="flex justify-end gap-3">
+          {/* ✅ FIXED: destructive면 Cancel에 기본 포커스 (더 안전) */}
           <button
+            type="button"
             onClick={onCancel}
-            className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            autoFocus={destructive}
+            className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
           >
             {cancelLabel}
           </button>
           <button
+            type="button"
             onClick={onConfirm}
+            autoFocus={!destructive}
             className="px-4 py-2 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
           >
             {confirmLabel}

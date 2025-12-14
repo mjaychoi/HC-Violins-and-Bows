@@ -1,18 +1,19 @@
 'use client';
 
-import React, { useMemo, useCallback, Suspense } from 'react';
-import { format, startOfDay, subDays, addDays } from 'date-fns';
+import React, { useMemo, useCallback } from 'react';
+import { format, subDays, addDays } from 'date-fns';
+import { todayLocalYMD, parseYMDLocal } from '@/utils/dateParsing';
 import { useCalendarFilters } from '../hooks/useCalendarFilters';
 import { useCalendarTasks } from '../hooks/useCalendarTasks';
 import { calculateSummaryStats } from '../utils/filterUtils';
 import type { MaintenanceTask, Instrument, Client } from '@/types';
 import {
-  CalendarHeader,
   CalendarFilters,
   CalendarSummary,
   CalendarEmptyState,
   GroupedTaskList,
 } from './';
+import { getViewRangeLabel } from '../utils/viewUtils';
 import CalendarView from './CalendarView';
 import { TableSkeleton, Pagination } from '@/components/common';
 import Button from '@/components/common/Button';
@@ -41,6 +42,7 @@ interface CalendarContentProps {
   setView: (view: 'calendar' | 'list') => void;
   onTaskClick: (task: MaintenanceTask) => void;
   onTaskDelete: (task: MaintenanceTask) => void;
+  onTaskEdit?: (task: MaintenanceTask) => void;
   onSelectEvent: (task: MaintenanceTask) => void;
   onSelectSlot: (slotInfo: { start: Date; end: Date }) => void;
   onOpenNewTask: () => void;
@@ -56,10 +58,15 @@ function CalendarContentInner({
   setView,
   onTaskClick,
   onTaskDelete,
+  onTaskEdit,
   onSelectEvent,
   onSelectSlot,
   onOpenNewTask,
 }: CalendarContentProps) {
+  // onTaskEdit is optional, so we need to handle it
+  const handleTaskEdit = onTaskEdit || onTaskClick;
+  // Filters drawer state for calendar view
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
   // Calendar tasks (maps, filter options)
   const taskData = useCalendarTasks({
     tasks,
@@ -81,11 +88,6 @@ function CalendarContentInner({
     instrumentsMap: taskData.instrumentsMap,
     filterOptions: taskData.filterOptions,
   });
-
-  // Calculate summary stats with filtered tasks
-  const summaryStats = useMemo(() => {
-    return calculateSummaryStats(filteredTasks);
-  }, [filteredTasks]);
 
   // Alias for cleaner code
   const {
@@ -110,48 +112,116 @@ function CalendarContentInner({
     resetFilters,
   } = filterState;
 
+  // Calculate summary stats with ALL tasks (not filtered)
+  // FIXED: Stats should always show totals from all tasks, not filtered subset
+  const summaryStats = useMemo(() => {
+    return calculateSummaryStats(tasks);
+  }, [tasks]);
+
+  // Determine active filter preset based on current filter state
+  const activePreset = useMemo(():
+    | 'all'
+    | 'overdue'
+    | 'today'
+    | 'upcoming'
+    | null => {
+    if (!dateRange) return 'all';
+
+    const today = parseYMDLocal(todayLocalYMD())!;
+    const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
+    const todayStr = fmt(today);
+    const yesterdayStr = fmt(subDays(today, 1));
+    const tomorrowStr = fmt(addDays(today, 1));
+    const nextWeekStr = fmt(addDays(today, 7));
+
+    // Check if "all" (no filters)
+    if (
+      !hasActiveFilters ||
+      (!dateRange.from && !dateRange.to && !filterStatus)
+    ) {
+      return 'all';
+    }
+
+    // Check if "today"
+    if (
+      dateRange.from === todayStr &&
+      dateRange.to === todayStr &&
+      !filterStatus
+    ) {
+      return 'today';
+    }
+
+    // Check if "overdue"
+    if (
+      dateRange.to === yesterdayStr &&
+      !dateRange.from &&
+      filterStatus === 'pending'
+    ) {
+      return 'overdue';
+    }
+
+    // Check if "upcoming" (next 7 days)
+    if (
+      dateRange.from === tomorrowStr &&
+      dateRange.to === nextWeekStr &&
+      !filterStatus
+    ) {
+      return 'upcoming';
+    }
+
+    return null; // Custom filter active
+  }, [dateRange, filterStatus, hasActiveFilters]);
+
   const resetFiltersAndUpdate = useCallback(() => {
     resetFilters();
     navigation.setSelectedDate(null);
   }, [resetFilters, navigation]);
 
+  // Apply preset filter - optimized to batch state updates
+  const applyPreset = useCallback(
+    (preset: 'all' | 'overdue' | 'today' | 'upcoming') => {
+      const today = parseYMDLocal(todayLocalYMD())!;
+      const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
+
+      if (preset === 'all') {
+        // Reset all filters in one batch
+        resetFilters();
+        navigation.setSelectedDate(null);
+        return;
+      }
+
+      // Batch all state updates together
+      if (preset === 'overdue') {
+        resetFilters();
+        navigation.setSelectedDate(null);
+        setDateRange({ from: null, to: fmt(subDays(today, 1)) });
+        setFilterStatus('pending');
+        return;
+      }
+      if (preset === 'today') {
+        const t = fmt(today);
+        resetFilters();
+        navigation.setSelectedDate(null);
+        setDateRange({ from: t, to: t });
+        return;
+      }
+      // upcoming
+      resetFilters();
+      navigation.setSelectedDate(null);
+      setDateRange({
+        from: fmt(addDays(today, 1)),
+        to: fmt(addDays(today, 7)),
+      });
+    },
+    [resetFilters, navigation, setDateRange, setFilterStatus]
+  );
+
   // Handle summary card clicks to apply filters
   const handleSummaryCardClick = useCallback(
     (status: 'all' | 'overdue' | 'today' | 'upcoming') => {
-      const today = startOfDay(new Date());
-
-      switch (status) {
-        case 'all':
-          // Reset all filters
-          resetFiltersAndUpdate();
-          break;
-        case 'overdue':
-          // Filter to overdue tasks (before today)
-          setDateRange({
-            from: null, // No start date
-            to: format(subDays(today, 1), 'yyyy-MM-dd'), // Yesterday
-          });
-          // Also set status filter to exclude completed/cancelled
-          setFilterStatus('pending');
-          break;
-        case 'today':
-          // Filter to tasks due today
-          const todayStr = format(today, 'yyyy-MM-dd');
-          setDateRange({
-            from: todayStr,
-            to: todayStr,
-          });
-          break;
-        case 'upcoming':
-          // Filter to upcoming tasks (next 7 days)
-          setDateRange({
-            from: format(addDays(today, 1), 'yyyy-MM-dd'), // Tomorrow
-            to: format(addDays(today, 7), 'yyyy-MM-dd'), // 7 days from now
-          });
-          break;
-      }
+      applyPreset(status);
     },
-    [resetFiltersAndUpdate, setDateRange, setFilterStatus]
+    [applyPreset]
   );
 
   const isEmptyState = !loading.fetch && filteredTasks.length === 0;
@@ -159,61 +229,245 @@ function CalendarContentInner({
 
   return (
     <div className="p-6">
-      {/* Header with Navigation */}
+      {/* Compressed Header: Navigation + Summary Pills in one line */}
       <div className="mb-4">
-        <CalendarHeader
-          currentDate={navigation.currentDate}
-          calendarView={navigation.calendarView}
-          view={view}
-          onPrevious={navigation.handlePrevious}
-          onNext={navigation.handleNext}
-          onGoToToday={navigation.handleGoToToday}
-          onViewChange={setView}
-          onOpenNewTask={onOpenNewTask}
-        />
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          {/* Left: Navigation + Date */}
+          <div className="flex items-center gap-3">
+            {/* Navigation buttons */}
+            <div className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white px-1 py-0.5">
+              <button
+                onClick={navigation.handlePrevious}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-gray-600 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="Previous"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 19l-7-7 7-7"
+                  />
+                </svg>
+              </button>
+              <button
+                onClick={navigation.handleNext}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-gray-600 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="Next"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* Date label */}
+            <h1 className="text-base font-semibold tracking-tight text-gray-900 whitespace-nowrap">
+              {getViewRangeLabel(
+                navigation.calendarView,
+                navigation.currentDate
+              )}
+            </h1>
+
+            {/* Divider */}
+            <div className="hidden md:block h-6 w-px bg-gray-300" />
+
+            {/* Summary Pills */}
+            <CalendarSummary
+              total={summaryStats.total}
+              overdue={summaryStats.overdue}
+              today={summaryStats.today}
+              upcoming={summaryStats.upcoming}
+              onFilterByStatus={handleSummaryCardClick}
+              onOpenFilters={() => setFiltersOpen(v => !v)}
+              hasActiveFilters={hasActiveFilters}
+              activePreset={activePreset}
+            />
+          </div>
+
+          {/* Right: Today / View Toggle / New Task Button */}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={navigation.handleGoToToday}
+              className="flex h-9 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Go to today"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              Today
+            </button>
+
+            <div className="flex gap-1 rounded-lg bg-gray-100 p-1 border border-gray-200">
+              <button
+                onClick={() => setView('calendar')}
+                className={`flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
+                  view === 'calendar'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-white hover:text-gray-900'
+                }`}
+                aria-label="Calendar view"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+                Calendar
+              </button>
+              <button
+                onClick={() => setView('list')}
+                className={`flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
+                  view === 'list'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-white hover:text-gray-900'
+                }`}
+                aria-label="List view"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 10h16M4 14h16M4 18h16"
+                  />
+                </svg>
+                List
+              </button>
+            </div>
+
+            <button
+              onClick={onOpenNewTask}
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Add new task"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              Add New Task
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="mb-4">
-        <CalendarFilters
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          searchFilters={searchFilters}
-          onFilterChange={setSearchFilters}
-          filterOptions={taskData.filterOptions}
-          filterStatus={filterStatus}
-          onStatusChange={setFilterStatus}
-          filterOwnership={filterOwnership}
-          onOwnershipChange={setFilterOwnership}
-          ownershipOptions={taskData.ownershipOptions}
-          sortBy={sortBy}
-          onSortByChange={setSortBy}
-          sortOrder={sortOrder}
-          onSortOrderChange={setSortOrder}
-          dateRange={dateRange}
-          onDateRangeChange={setDateRange}
-          filterOperator={filterOperator}
-          onFilterOperatorChange={setFilterOperator}
-          taskCount={filteredTasks.length}
-          hasActiveFilters={hasActiveFilters}
-          onResetFilters={resetFiltersAndUpdate}
-        />
-      </div>
+      {/* Filters Drawer - hidden by default, shown when filtersOpen */}
+      {filtersOpen && view === 'calendar' && (
+        <div className="mb-4">
+          <CalendarFilters
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchFilters={searchFilters}
+            onFilterChange={setSearchFilters}
+            filterOptions={taskData.filterOptions}
+            filterStatus={filterStatus}
+            onStatusChange={setFilterStatus}
+            filterOwnership={filterOwnership}
+            onOwnershipChange={setFilterOwnership}
+            ownershipOptions={taskData.ownershipOptions}
+            sortBy={sortBy}
+            onSortByChange={setSortBy}
+            sortOrder={sortOrder}
+            onSortOrderChange={setSortOrder}
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+            filterOperator={filterOperator}
+            onFilterOperatorChange={setFilterOperator}
+            taskCount={filteredTasks.length}
+            hasActiveFilters={hasActiveFilters}
+            onResetFilters={resetFiltersAndUpdate}
+            showSort={false}
+          />
+        </div>
+      )}
 
-      {/* Summary Cards */}
-      <div className="mb-4">
-        <CalendarSummary
-          total={summaryStats.total}
-          overdue={summaryStats.overdue}
-          today={summaryStats.today}
-          upcoming={summaryStats.upcoming}
-          onFilterByStatus={handleSummaryCardClick}
-        />
-      </div>
+      {/* Filters - always visible for list view */}
+      {view === 'list' && (
+        <div className="mb-4">
+          <CalendarFilters
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchFilters={searchFilters}
+            onFilterChange={setSearchFilters}
+            filterOptions={taskData.filterOptions}
+            filterStatus={filterStatus}
+            onStatusChange={setFilterStatus}
+            filterOwnership={filterOwnership}
+            onOwnershipChange={setFilterOwnership}
+            ownershipOptions={taskData.ownershipOptions}
+            sortBy={sortBy}
+            onSortByChange={setSortBy}
+            sortOrder={sortOrder}
+            onSortOrderChange={setSortOrder}
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+            filterOperator={filterOperator}
+            onFilterOperatorChange={setFilterOperator}
+            taskCount={filteredTasks.length}
+            hasActiveFilters={hasActiveFilters}
+            onResetFilters={resetFiltersAndUpdate}
+          />
+        </div>
+      )}
 
       {/* Calendar or List View */}
       {loading.fetch ? (
-        <div className="rounded-lg bg-white p-4 shadow-sm md:p-6 border border-gray-200">
+        <div className="rounded-lg bg-white p-6 shadow-sm border border-gray-200">
           <TableSkeleton rows={8} columns={4} />
         </div>
       ) : isEmptyState ? (
@@ -224,8 +478,8 @@ function CalendarContentInner({
         />
       ) : view === 'calendar' ? (
         <div
-          className="rounded-lg bg-white overflow-hidden p-4 shadow-sm md:p-6 border border-gray-200"
-          style={{ minHeight: '700px' }}
+          className="rounded-lg bg-white p-6 border border-gray-200"
+          style={{ minHeight: '700px', overflow: 'visible' }}
         >
           <CalendarView
             tasks={filteredTasks}
@@ -240,7 +494,7 @@ function CalendarContentInner({
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="border-b border-gray-100 p-4 md:p-6">
+          <div className="border-b border-gray-100 p-6">
             {navigation.selectedDate ? (
               <div className="flex items-center justify-between">
                 <div>
@@ -274,14 +528,14 @@ function CalendarContentInner({
               </div>
             )}
           </div>
-          <div className="p-4 md:p-6">
+          <div className="p-6">
             <GroupedTaskList
               tasks={paginatedTasks}
               instruments={taskData.instrumentsMap}
               clients={taskData.clientsMap}
               onTaskClick={onTaskClick}
               onTaskDelete={onTaskDelete}
-              searchTerm={searchTerm}
+              onTaskEdit={handleTaskEdit}
             />
             {showPagination && (
               <div className="mt-6 border-t border-gray-200 pt-4">
@@ -303,24 +557,9 @@ function CalendarContentInner({
   );
 }
 
+// FIXED: Removed Suspense wrapper - using loading.fetch for skeleton display instead
+// Suspense is only effective when child components actually throw promises,
+// which is not the case here. The loading state is already handled by loading.fetch.
 export default function CalendarContent(props: CalendarContentProps) {
-  return (
-    <Suspense
-      fallback={
-        <div className="p-6">
-          <div className="mb-4">
-            <div className="h-16 bg-gray-200 rounded animate-pulse" />
-          </div>
-          <div className="mb-4">
-            <div className="h-32 bg-gray-200 rounded animate-pulse" />
-          </div>
-          <div className="rounded-lg bg-white p-4 shadow-sm md:p-6 border border-gray-200">
-            <TableSkeleton rows={8} columns={4} />
-          </div>
-        </div>
-      }
-    >
-      <CalendarContentInner {...props} />
-    </Suspense>
-  );
+  return <CalendarContentInner {...props} />;
 }

@@ -40,7 +40,16 @@ export default function Sidebar({
       </button>
 
       {/* Sidebar Content */}
-      <div className={`${isExpanded ? 'block' : 'hidden'} p-4`}>{children}</div>
+      {/* ✅ FIXED: DOM은 유지하되 opacity-0 pointer-events-none으로 처리 (내부 상태 유지, 애니메이션 부드럽게) */}
+      <div
+        className={`p-4 transition-all duration-300 ${
+          isExpanded
+            ? 'opacity-100 pointer-events-auto'
+            : 'opacity-0 pointer-events-none'
+        }`}
+      >
+        {children}
+      </div>
     </div>
   );
 }

@@ -2,23 +2,29 @@ import { SupabaseHelpers } from '../supabaseHelpers';
 import { ALLOWED_SORT_COLUMNS } from '../inputValidation';
 
 // Mock supabase client
-const mockSupabaseClient = {
-  from: jest.fn(() => ({
-    select: jest.fn(),
-    eq: jest.fn(),
-    order: jest.fn(),
-    limit: jest.fn(),
-    insert: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-    single: jest.fn(),
-    or: jest.fn(),
-  })),
+// Create chainable mock functions that return 'this' for method chaining
+const createChainableMock = () => {
+  const chain = {
+    select: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    order: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    insert: jest.fn().mockReturnThis(),
+    update: jest.fn().mockReturnThis(),
+    delete: jest.fn().mockReturnThis(),
+    single: jest.fn().mockReturnThis(),
+    or: jest.fn().mockReturnThis(),
+  };
+  return chain;
 };
 
-// Mock getSupabase function
-jest.mock('@/lib/supabase', () => ({
-  getSupabase: jest.fn(() => mockSupabaseClient),
+const mockSupabaseClient = {
+  from: jest.fn(() => createChainableMock()),
+};
+
+// Mock getSupabaseClient function (async)
+jest.mock('@/lib/supabase-client', () => ({
+  getSupabaseClient: jest.fn(() => Promise.resolve(mockSupabaseClient)),
 }));
 
 describe('SupabaseHelpers', () => {
@@ -29,10 +35,14 @@ describe('SupabaseHelpers', () => {
   describe('fetchAll', () => {
     it('should fetch all items', async () => {
       const mockData = [{ id: '1' }, { id: '2' }];
+      const mockSelect = jest
+        .fn()
+        .mockResolvedValue({ data: mockData, error: null });
 
-      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
-        select: jest.fn(() => ({ data: mockData, error: null })),
-      });
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
 
       const result = await SupabaseHelpers.fetchAll(
         'instruments' as keyof typeof ALLOWED_SORT_COLUMNS
@@ -47,11 +57,13 @@ describe('SupabaseHelpers', () => {
       const mockOrder = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
+      const mockSelect = jest.fn().mockReturnThis();
 
-      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        order: mockOrder,
-      });
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+      chainableMock.order = mockOrder;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
 
       await SupabaseHelpers.fetchAll(
         'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
@@ -70,11 +82,13 @@ describe('SupabaseHelpers', () => {
       const mockLimit = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
+      const mockSelect = jest.fn().mockReturnThis();
 
-      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        limit: mockLimit,
-      });
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+      chainableMock.limit = mockLimit;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
 
       await SupabaseHelpers.fetchAll(
         'instruments' as keyof typeof ALLOWED_SORT_COLUMNS,
@@ -92,10 +106,14 @@ describe('SupabaseHelpers', () => {
       const mockSingle = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
+      const mockSelect = jest
+        .fn()
+        .mockReturnValue({ eq: mockEq, single: mockSingle });
 
-      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
-        select: jest.fn(() => ({ eq: mockEq, single: mockSingle })),
-      });
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
 
       const result = await SupabaseHelpers.fetchById('test_table', '1');
 
@@ -108,15 +126,17 @@ describe('SupabaseHelpers', () => {
       const newItem = { name: 'Test' };
       const createdItem = { id: '1', ...newItem };
       const mockInsert = jest.fn().mockReturnThis();
+      const mockSelect = jest.fn().mockReturnThis();
       const mockSingle = jest
         .fn()
         .mockResolvedValue({ data: createdItem, error: null });
 
-      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
-        insert: mockInsert,
-        select: jest.fn().mockReturnThis(),
-        single: mockSingle,
-      });
+      const chainableMock = createChainableMock();
+      chainableMock.insert = mockInsert;
+      chainableMock.select = mockSelect;
+      chainableMock.single = mockSingle;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
 
       const result = await SupabaseHelpers.create('test_table', newItem);
 
@@ -131,16 +151,18 @@ describe('SupabaseHelpers', () => {
       const updatedItem = { id: '1', ...updates };
       const mockUpdate = jest.fn().mockReturnThis();
       const mockEq = jest.fn().mockReturnThis();
+      const mockSelect = jest.fn().mockReturnThis();
       const mockSingle = jest
         .fn()
         .mockResolvedValue({ data: updatedItem, error: null });
 
-      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
-        update: mockUpdate,
-        eq: mockEq,
-        select: jest.fn().mockReturnThis(),
-        single: mockSingle,
-      });
+      const chainableMock = createChainableMock();
+      chainableMock.update = mockUpdate;
+      chainableMock.eq = mockEq;
+      chainableMock.select = mockSelect;
+      chainableMock.single = mockSingle;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
 
       const result = await SupabaseHelpers.update('test_table', '1', updates);
 
@@ -154,10 +176,11 @@ describe('SupabaseHelpers', () => {
       const mockDelete = jest.fn().mockReturnThis();
       const mockEq = jest.fn().mockResolvedValue({ error: null });
 
-      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
-        delete: mockDelete,
-        eq: mockEq,
-      });
+      const chainableMock = createChainableMock();
+      chainableMock.delete = mockDelete;
+      chainableMock.eq = mockEq;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
 
       const result = await SupabaseHelpers.delete('test_table', '1');
 
@@ -173,10 +196,14 @@ describe('SupabaseHelpers', () => {
       const mockLimit = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
+      const mockSelect = jest
+        .fn()
+        .mockReturnValue({ or: mockOr, limit: mockLimit });
 
-      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
-        select: jest.fn(() => ({ or: mockOr, limit: mockLimit })),
-      });
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
 
       const result = await SupabaseHelpers.search('test_table', 'test', [
         'name',
@@ -193,10 +220,14 @@ describe('SupabaseHelpers', () => {
       const mockLimit = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
+      const mockSelect = jest
+        .fn()
+        .mockReturnValue({ or: mockOr, limit: mockLimit });
 
-      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
-        select: jest.fn(() => ({ or: mockOr, limit: mockLimit })),
-      });
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
 
       await SupabaseHelpers.search('test_table', 'test%_value', ['name']);
 
@@ -209,10 +240,14 @@ describe('SupabaseHelpers', () => {
       const mockLimit = jest
         .fn()
         .mockResolvedValue({ data: mockData, error: null });
+      const mockSelect = jest
+        .fn()
+        .mockReturnValue({ or: mockOr, limit: mockLimit });
 
-      (mockSupabaseClient.from as jest.Mock).mockReturnValue({
-        select: jest.fn(() => ({ or: mockOr, limit: mockLimit })),
-      });
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
 
       await SupabaseHelpers.search('test_table', 'test', ['name'], {
         limit: 20,

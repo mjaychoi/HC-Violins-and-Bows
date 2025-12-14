@@ -18,7 +18,8 @@ interface ErrorBoundaryState {
 
 interface ErrorBoundaryProps {
   children: ReactNode;
-  fallback?: (error: AppError, errorInfo: React.ErrorInfo) => ReactNode;
+  // ✅ FIXED: fallback 타입을 errorInfo?: React.ErrorInfo | null로 변경 (프로덕션 안전)
+  fallback?: (error: AppError, errorInfo?: React.ErrorInfo | null) => ReactNode;
   onError?: (error: AppError, errorInfo: React.ErrorInfo) => void;
   resetOnPropsChange?: boolean;
   resetKeys?: Array<string | number>;
@@ -28,7 +29,7 @@ export default class ErrorBoundary extends Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
 > {
-  private resetTimeoutId: number | null = null;
+  // ✅ FIXED: resetTimeoutId 제거 (사용되지 않음)
 
   constructor(props: ErrorBoundaryProps) {
     super(props);
@@ -46,7 +47,7 @@ export default class ErrorBoundary extends Component<
         code: ErrorCodes.UNKNOWN_ERROR,
         message: error.message,
         details: error.stack,
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
         context: { component: 'ErrorBoundary' },
       },
     };
@@ -61,7 +62,7 @@ export default class ErrorBoundary extends Component<
       code: ErrorCodes.UNKNOWN_ERROR,
       message: userMessage,
       details: isProduction() ? undefined : sanitized.details,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       context: { component: 'ErrorBoundary' },
     };
 
@@ -106,17 +107,7 @@ export default class ErrorBoundary extends Component<
     }
   }
 
-  componentWillUnmount() {
-    if (this.resetTimeoutId) {
-      clearTimeout(this.resetTimeoutId);
-    }
-  }
-
   resetErrorBoundary = () => {
-    if (this.resetTimeoutId) {
-      clearTimeout(this.resetTimeoutId);
-    }
-
     this.setState({
       hasError: false,
       error: null,
@@ -130,7 +121,8 @@ export default class ErrorBoundary extends Component<
 
     if (hasError && error) {
       if (fallback) {
-        return fallback(error, errorInfo!);
+        // ✅ FIXED: null-safe 처리 (프로덕션에서 errorInfo가 null일 수 있음)
+        return fallback(error, errorInfo ?? null);
       }
 
       return (
@@ -228,7 +220,7 @@ export function withErrorBoundary<P extends object>(
   return WrappedComponent;
 }
 
-// Hook for error boundary context
+// ✅ FIXED: Hook for error boundary context - throw를 렌더에서 바로
 export function useErrorBoundary() {
   const [error, setError] = React.useState<Error | null>(null);
 
@@ -236,15 +228,14 @@ export function useErrorBoundary() {
     setError(null);
   }, []);
 
-  const captureError = React.useCallback((error: Error) => {
-    setError(error);
+  const captureError = React.useCallback((e: Error) => {
+    setError(e);
   }, []);
 
-  React.useEffect(() => {
-    if (error) {
-      throw error;
-    }
-  }, [error]);
+  // ✅ FIXED: 렌더에서 throw (정석 패턴)
+  if (error) {
+    throw error; // render phase throw
+  }
 
   return { captureError, resetError };
 }

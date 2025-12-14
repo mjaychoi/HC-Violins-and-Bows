@@ -1,9 +1,10 @@
+'use client';
+
 import { useCallback, useMemo } from 'react';
 import { Instrument, ClientInstrument } from '@/types';
 import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
 import { useLoadingState } from '@/hooks/useLoadingState';
-import { useErrorHandler } from '@/hooks/useErrorHandler';
-import { useToast } from '@/hooks/useToast';
+import { useErrorHandler, useToast } from '@/contexts/ToastContext';
 import { format } from 'date-fns';
 
 export const useDashboardData = () => {
@@ -71,11 +72,10 @@ export const useDashboardData = () => {
         const previousInstrument = instrumentMap.get(itemId) as
           | Instrument
           | undefined;
-        const wasSold = previousInstrument?.status === 'Sold';
-        const isNowSold = formData.status === 'Sold';
 
-        // FIXED: Early return side effects when status is not changing
-        const statusIsChanging = typeof formData.status !== 'undefined';
+        // FIXED: Clearer status change logic
+        const nextStatus = formData.status; // possibly undefined
+        const statusIsChanging = nextStatus !== undefined;
 
         // 악기 업데이트
         const result = await updateInstrument(itemId, formData);
@@ -90,6 +90,9 @@ export const useDashboardData = () => {
         if (!statusIsChanging) {
           return result;
         }
+
+        const wasSold = previousInstrument?.status === 'Sold';
+        const isNowSold = nextStatus === 'Sold';
 
         // 상태가 'Sold'로 변경되었고, 이전에는 'Sold'가 아니었을 때 sales_history 생성
         if (isNowSold && !wasSold && previousInstrument) {
@@ -109,25 +112,49 @@ export const useDashboardData = () => {
             const clientId = soldConnection?.client_id || null;
 
             // 판매 가격이 있으면 sales_history 생성
-            if (salePrice && salePrice > 0) {
-              const response = await fetch('/api/sales', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  sale_price: salePrice,
-                  sale_date: saleDate,
-                  instrument_id: itemId,
-                  client_id: clientId,
-                  notes: `Auto-created when instrument status changed to Sold`,
-                }),
-              });
+            // FIXED: Clearer check that avoids falsey surprises and NaN
+            if (
+              typeof salePrice === 'number' &&
+              Number.isFinite(salePrice) &&
+              salePrice > 0
+            ) {
+              // FIXED: Make idempotent by checking for existing auto-created entry first
+              // Query for existing auto-created sales history for this instrument on this date
+              const checkResponse = await fetch(
+                `/api/sales?instrument_id=${itemId}&sale_date=${saleDate}&page=1&pageSize=1`
+              );
+              let existingAutoSale = null;
+              if (checkResponse.ok) {
+                const checkResult = await checkResponse.json();
+                existingAutoSale = checkResult.data?.find(
+                  (sale: { notes?: string }) =>
+                    sale.notes?.includes(
+                      'Auto-created when instrument status changed to Sold'
+                    )
+                );
+              }
 
-              if (!response.ok) {
-                const errorData = await response.json();
-                console.warn('Failed to create sales history:', errorData);
-                // 에러가 발생해도 악기 업데이트는 성공했으므로 계속 진행
+              // Only create if it doesn't already exist (idempotent)
+              if (!existingAutoSale) {
+                const response = await fetch('/api/sales', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    sale_price: salePrice,
+                    sale_date: saleDate,
+                    instrument_id: itemId,
+                    client_id: clientId,
+                    notes: `Auto-created when instrument status changed to Sold`,
+                  }),
+                });
+
+                if (!response.ok) {
+                  const errorData = await response.json();
+                  console.warn('Failed to create sales history:', errorData);
+                  // 에러가 발생해도 악기 업데이트는 성공했으므로 계속 진행
+                }
               }
             }
           } catch (salesError) {
@@ -147,8 +174,18 @@ export const useDashboardData = () => {
               const result = await response.json();
               // 환불되지 않은 최근 판매 기록 찾기
               const recentSale = result.data?.find(
-                (sale: { sale_price: number; instrument_id: string | null }) =>
-                  sale.instrument_id === itemId && sale.sale_price > 0
+                (sale: {
+                  sale_price: number;
+                  instrument_id: string | null;
+                }) => {
+                  const price = sale.sale_price;
+                  return (
+                    sale.instrument_id === itemId &&
+                    typeof price === 'number' &&
+                    Number.isFinite(price) &&
+                    price > 0
+                  );
+                }
               );
 
               if (recentSale) {

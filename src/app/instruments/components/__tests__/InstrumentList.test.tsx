@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import InstrumentList from '../InstrumentList';
 
 jest.mock('@/components/common', () => ({

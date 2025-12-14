@@ -4,28 +4,25 @@
  */
 
 import {
-  parseISO,
-  startOfDay,
   differenceInCalendarDays,
   isSameDay,
   format,
+  parseISO,
 } from 'date-fns';
 import type { MaintenanceTask } from '@/types';
+import { parseYMDLocal, startOfDay } from '@/utils/dateParsing';
 
 /**
- * FIXED: Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
+ * Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
  * parseISO('2025-12-12') interprets as UTC midnight, which can render as previous day in US timezones
  * This function parses date-only strings as local dates instead
+ *
+ * @deprecated Use parseYMDLocal from '@/utils/dateParsing' for consistency
  */
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
 export function parseTaskDate(dateStr: string): Date {
-  if (DATE_ONLY_PATTERN.test(dateStr)) {
-    // Date-only string: parse as local date (avoid timezone shift)
-    const [y, m, d] = dateStr.split('-').map(Number);
-    return new Date(y, m - 1, d); // Local midnight
-  }
-  // ISO string with time/timezone: use parseISO
+  const parsed = parseYMDLocal(dateStr);
+  if (parsed) return parsed;
+  // Fallback for non-date-only strings
   return parseISO(dateStr);
 }
 

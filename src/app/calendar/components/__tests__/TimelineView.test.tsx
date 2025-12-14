@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import TimelineView from '../TimelineView';
 import { MaintenanceTask } from '@/types';
 

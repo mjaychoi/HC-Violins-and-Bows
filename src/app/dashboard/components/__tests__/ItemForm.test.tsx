@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@/test-utils/render';
 import ItemForm from '../ItemForm';
 import { useDashboardForm } from '../../hooks/useDashboardForm';
 import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Instrument, ClientInstrument } from '@/types';
 import { FilterOperator } from '@/types/search';
 import {
@@ -15,8 +15,9 @@ import {
 } from '../utils/filterUtils';
 
 // FIXED: Accept enriched items (Instrument with clients array) for HAS_CLIENTS filter
+// FIXED: Use explicit ClientInstrument[] type (not optional, always present even if empty)
 type EnrichedInstrument = Instrument & {
-  clients?: ClientInstrument[];
+  clients: ClientInstrument[];
 };
 
 export function useDashboardFilters(
@@ -31,10 +32,22 @@ export function useDashboardFilters(
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20; // Items per page
 
+  // FIXED: Normalize items to ensure all have clients array (even if empty)
+  // This prevents runtime issues when filterDashboardItems expects clients for HAS_CLIENTS logic
+  const normalizedItems = useMemo<EnrichedInstrument[]>(
+    () =>
+      (items as Array<Instrument | EnrichedInstrument>).map(it => ({
+        ...it,
+        clients: (it as EnrichedInstrument).clients ?? [],
+      })),
+    [items]
+  );
+
   // 기본 필터/검색/정렬은 공용 훅을 사용한다.
   // dateRange를 customFieldFilter에서 직접 사용하도록 개선
-  const baseFilters = usePageFilters<Instrument>({
-    items,
+  // FIXED: Type the hook to accept EnrichedInstrument for better type safety
+  const baseFilters = usePageFilters<EnrichedInstrument>({
+    items: normalizedItems,
     filterOptionsConfig: {
       status: 'simple',
       maker: 'simple',
@@ -56,11 +69,10 @@ export function useDashboardFilters(
     },
     // FIXED: Don't rely on customFieldFilter closure for dateRange - apply it outside
     customFieldFilter: (items, filters) => {
-      const instruments = items as EnrichedInstrument[];
       const dashboardFilters = filters as DashboardFilters;
       // Apply filters except dateRange (dateRange applied outside)
       return filterDashboardItems(
-        instruments as Instrument[],
+        items as Instrument[],
         dashboardFilters,
         null // dateRange is applied outside customFieldFilter
       ) as EnrichedInstrument[];
@@ -84,7 +96,7 @@ export function useDashboardFilters(
       return baseFilters.filteredItems;
     }
     return filterDashboardItems(
-      baseFilters.filteredItems as EnrichedInstrument[] as Instrument[],
+      baseFilters.filteredItems as Instrument[],
       baseFilters.filters as DashboardFilters,
       dateRange
     ) as EnrichedInstrument[];
@@ -95,7 +107,7 @@ export function useDashboardFilters(
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   // Reset to page 1 when filters change
-  React.useEffect(() => {
+  useEffect(() => {
     setCurrentPage(1);
   }, [baseFilters.searchTerm, baseFilters.filters, dateRange]);
 

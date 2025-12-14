@@ -1,7 +1,8 @@
+import { RelationshipType } from '@/types';
 import { getRelationshipTypeStyle } from '../utils/relationshipStyles';
 
 interface RelationshipSectionHeaderProps {
-  type: string;
+  type: RelationshipType;
   count: number;
 }
 

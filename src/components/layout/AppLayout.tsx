@@ -29,18 +29,26 @@ export default function AppLayout({
   const pathname = usePathname();
   const { user, loading } = useAuth();
   const router = useRouter();
+
+  // ✅ FIXED: matchMedia 훅으로 변경 (리렌더/이벤트 줄이기)
   const [isMobile, setIsMobile] = useState(false);
 
-  // Detect mobile screen size
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768); // md breakpoint
-    };
-
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    const mq = window.matchMedia('(max-width: 767px)');
+    const handler = () => setIsMobile(mq.matches);
+    handler(); // 초기값 설정
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
   }, []);
+
+  // ✅ FIXED: 모바일 사이드바 열렸을 때 body scroll lock
+  useEffect(() => {
+    if (!isMobile) return;
+    document.body.style.overflow = isExpanded ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isMobile, isExpanded]);
 
   // Close sidebar when route changes on mobile
   useEffect(() => {
@@ -49,7 +57,7 @@ export default function AppLayout({
     }
   }, [pathname, isMobile, isExpanded, collapseSidebar]);
 
-  // Protect routes - redirect to login if not authenticated
+  // ✅ FIXED: redirect는 AppLayout에서만 처리 (AuthProvider는 상태만 관리)
   useEffect(() => {
     if (!loading && !user) {
       router.push('/');
@@ -81,12 +89,13 @@ export default function AppLayout({
       />
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Mobile Overlay */}
+        {/* ✅ FIXED: Mobile Overlay를 button으로 처리 (접근성 개선) */}
         {isMobile && isExpanded && (
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          <button
+            type="button"
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
             onClick={collapseSidebar}
-            aria-hidden="true"
+            aria-label="Close sidebar overlay"
           />
         )}
 

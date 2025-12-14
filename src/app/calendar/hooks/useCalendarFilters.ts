@@ -61,25 +61,14 @@ export const useCalendarFilters = ({
     urlParamMapping: {
       searchTerm: 'search',
     },
-    customFieldFilter: (items, filters) => {
-      const calendarFilters = filters as unknown as CalendarFilters;
-      // Apply filters (but not search term - that's handled separately below)
-      return filterCalendarTasks(
-        items,
-        calendarFilters,
-        dateRange,
-        filterOperator,
-        instrumentsMap,
-        '' // No search term here
-      );
-    },
+    // Remove customFieldFilter - filtering is done in filteredTasks useMemo below
     customFilter: () => true,
   });
 
   // Synchronize status filter between searchFilters.status and filterStatus
   const handleStatusFilterChange = useCallback(
     (status: string) => {
-      baseFilters.setFilters(prev => {
+      baseFilters.setFilters((prev: Record<string, unknown>) => {
         const filters = prev as unknown as CalendarFilters;
         return {
           ...filters,
@@ -94,7 +83,7 @@ export const useCalendarFilters = ({
   // Handle quick filter changes (type, priority, status, owner)
   const handleSearchFilterChange = useCallback(
     (filter: 'type' | 'priority' | 'status' | 'owner', value: string) => {
-      baseFilters.setFilters(prev => {
+      baseFilters.setFilters((prev: Record<string, unknown>) => {
         const filters = prev as unknown as CalendarFilters;
         const updated = {
           ...filters,
@@ -251,7 +240,7 @@ export const useCalendarFilters = ({
     // Actions
     setFilterStatus: handleStatusFilterChange,
     setFilterOwnership: (ownership: string) => {
-      baseFilters.setFilters(prev => {
+      baseFilters.setFilters((prev: Record<string, unknown>) => {
         const filters = prev as unknown as CalendarFilters;
         return {
           ...filters,

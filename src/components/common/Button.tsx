@@ -6,6 +6,10 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   children: React.ReactNode;
+  /**
+   * 로딩 중 UI에 "Loading..." 텍스트 표시 여부 (기본: false, sr-only)
+   */
+  showLoadingText?: boolean;
 }
 
 export default function Button({
@@ -15,6 +19,8 @@ export default function Button({
   disabled,
   children,
   className = '',
+  showLoadingText = false,
+  type = 'button', // ✅ FIXED: 기본 type="button" (submit 사고 방지)
   ...props
 }: ButtonProps) {
   const variantClasses = {
@@ -36,15 +42,23 @@ export default function Button({
 
   return (
     <button
+      type={type}
       className={`${variantClasses[variant]} ${sizeClasses[size]} ${baseClasses} ${className}`}
       disabled={disabled || loading}
+      aria-busy={loading}
       {...props}
     >
       {loading ? (
-        <div className="flex items-center">
-          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-          Loading...
-        </div>
+        <span className="flex items-center">
+          {/* ✅ FIXED: border-current로 variant 색상에 맞게 자동 조정 */}
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
+          {showLoadingText ? (
+            'Loading...'
+          ) : (
+            // ✅ FIXED: 화면리더에만 읽히게 (UI에 텍스트 없음)
+            <span className="sr-only">Loading</span>
+          )}
+        </span>
       ) : (
         children
       )}

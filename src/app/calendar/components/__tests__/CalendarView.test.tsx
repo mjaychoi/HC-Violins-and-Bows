@@ -1,5 +1,5 @@
 // src/app/calendar/components/__tests__/CalendarView.test.tsx
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import CalendarView from '../CalendarView';
 import { MaintenanceTask } from '@/types';
@@ -77,13 +77,20 @@ jest.mock('date-fns', () => ({
 }));
 
 describe('CalendarView', () => {
+  const mockInstruments = new Map([
+    [
+      'instrument-1',
+      { type: 'Violin', maker: 'Stradivarius', ownership: 'Private' },
+    ],
+  ]);
+
   const mockTasks: MaintenanceTask[] = [
     {
       id: '1',
       instrument_id: 'instrument-1',
       client_id: null,
       task_type: 'repair',
-      title: 'Violin Repair',
+      title: 'Repair', // Task title only (instrument type will be added in CalendarView)
       description: 'Fix bridge',
       status: 'pending',
       received_date: '2024-01-01',
@@ -100,13 +107,6 @@ describe('CalendarView', () => {
       updated_at: '2024-01-01T00:00:00Z',
     },
   ];
-
-  const mockInstruments = new Map([
-    [
-      'instrument-1',
-      { type: 'Violin', maker: 'Stradivarius', ownership: 'Private' },
-    ],
-  ]);
 
   const mockOnSelectEvent = jest.fn();
   const mockOnSelectSlot = jest.fn();
@@ -174,8 +174,9 @@ describe('CalendarView', () => {
     expect(eventsContainer).toBeInTheDocument();
 
     // Find event by test id - task.id is '1' (now it's a button)
+    // Event title format is now "🎻 Instrument · Task" (icon + instrument type + task)
     const eventButton =
-      screen.queryByRole('button', { name: /violin repair/i }) ||
+      screen.queryByRole('button', { name: /violin.*repair/i }) ||
       screen.queryByTestId('calendar-event-1');
     expect(eventButton).toBeInTheDocument();
 
@@ -185,7 +186,9 @@ describe('CalendarView', () => {
     // Test that onSelectEvent handler is passed to Calendar component
     // The actual click behavior is tested in integration tests
     // Here we verify that events are rendered and have the correct structure
-    expect(eventButton).toHaveTextContent('Violin Repair');
+    // Note: Event title format is now "🎻 Instrument · Task" (icon + instrument type + task)
+    // The title will be "🎻 Violin · Repair" (icon + instrument type + task title)
+    expect(eventButton?.textContent).toMatch(/Violin.*Repair/i);
   });
 
   it('should handle slot selection', async () => {

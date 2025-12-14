@@ -14,7 +14,7 @@ import {
   fetchClients as serviceFetchClients,
   fetchInstruments as serviceFetchInstruments,
 } from '@/services/dataService';
-import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { useErrorHandler } from '@/contexts/ToastContext';
 
 // 데이터 상태 타입
 interface DataState {

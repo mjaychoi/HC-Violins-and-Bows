@@ -1,33 +1,55 @@
 import { memo, useMemo } from 'react';
 import { ClientInstrument } from '@/types';
+import { getRelationshipTypeStyle } from '../utils/relationshipStyles';
 
 interface ConnectionCardProps {
   connection: ClientInstrument;
   onDelete: (connection: ClientInstrument) => void;
   onEdit: (connection: ClientInstrument) => void;
+  showCreatedAt?: boolean;
+}
+
+/**
+ * Format tags for display
+ * Owner tag is prioritized, then alphabetical order
+ */
+function formatTags(tags?: string[]): string {
+  if (!tags?.length) return 'No tags';
+  return [...tags]
+    .sort((a, b) => {
+      if (a === 'Owner') return -1;
+      if (b === 'Owner') return 1;
+      return a.localeCompare(b);
+    })
+    .join(', ');
 }
 
 export const ConnectionCard = memo(function ConnectionCard({
   connection,
   onDelete,
   onEdit,
+  showCreatedAt = false,
 }: ConnectionCardProps) {
-  const formatTags = useMemo(() => {
-    const tags = connection.client?.tags ?? [];
-    if (!tags.length) return 'No tags';
-    return [...tags]
-      .sort((a, b) => {
-        if (a === 'Owner') return -1;
-        if (b === 'Owner') return 1;
-        return a.localeCompare(b);
-      })
-      .join(', ');
-  }, [connection.client?.tags]);
+  // FIXED: Add relationship type badge for All tab (flat list view)
+  const relationshipStyle = useMemo(
+    () => getRelationshipTypeStyle(connection.relationship_type),
+    [connection.relationship_type]
+  );
 
   return (
     <div className="group rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-md hover:scale-[1.01] hover:-translate-y-[1px] transition-all duration-200 hover:bg-gray-50">
       <div className="px-4 lg:px-5 py-3 flex justify-between items-start lg:items-center">
         <div className="flex flex-col space-y-2 leading-relaxed">
+          {/* Relationship Type Badge - for All tab flat list view */}
+          <div className="flex items-center gap-2 mb-1">
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${relationshipStyle.bgColor} ${relationshipStyle.textColor} border ${relationshipStyle.borderColor}`}
+            >
+              <span>{relationshipStyle.icon}</span>
+              <span>{connection.relationship_type}</span>
+            </span>
+          </div>
+
           {/* Client Info - Primary */}
           <div className="flex items-center gap-2">
             <svg
@@ -50,12 +72,14 @@ export const ConnectionCard = memo(function ConnectionCard({
 
           {/* Client Details - Secondary */}
           <div className="text-sm text-gray-500 ml-6">
-            {connection.client?.email} • {formatTags}
+            {connection.client?.email ?? 'No email'} •{' '}
+            {formatTags(connection.client?.tags)}
           </div>
 
           {/* Instrument Info - Primary */}
           <div className="text-gray-800 font-medium text-[14px] mt-1">
-            ↳ {connection.instrument?.maker} {connection.instrument?.type}
+            <span className="text-gray-400 mr-1">•</span>
+            {connection.instrument?.maker} {connection.instrument?.type}
           </div>
 
           {/* Instrument Details - Secondary */}
@@ -72,9 +96,16 @@ export const ConnectionCard = memo(function ConnectionCard({
 
           {/* Notes - Tertiary */}
           {connection.notes && (
-            <p className="text-xs text-gray-600 mt-2 italic ml-6 bg-gray-50 px-2 py-1 rounded">
+            <p className="text-xs text-gray-600 mt-2 italic ml-6 bg-gray-50 border border-gray-100 px-2 py-1 rounded">
               &quot;{connection.notes}&quot;
             </p>
+          )}
+
+          {/* Created At - Optional */}
+          {showCreatedAt && connection.created_at && (
+            <div className="text-xs text-gray-400 mt-2 ml-6">
+              Created: {new Date(connection.created_at).toLocaleDateString()}
+            </div>
           )}
         </div>
 

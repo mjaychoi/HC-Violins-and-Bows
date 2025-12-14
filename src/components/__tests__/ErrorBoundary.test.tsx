@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '@/test-utils/render';
 import ErrorBoundary from '../common/ErrorBoundary';
 import { AppError } from '@/types/errors';
 import { ErrorInfo } from 'react';
@@ -46,7 +46,10 @@ describe('ErrorBoundary', () => {
   });
 
   it('should render custom fallback when provided', () => {
-    const customFallback = (_error: AppError, _errorInfo: ErrorInfo) => {
+    const customFallback = (
+      _error: AppError,
+      _errorInfo?: ErrorInfo | null
+    ) => {
       void _error;
       void _errorInfo;
       return <div>Custom error message</div>;

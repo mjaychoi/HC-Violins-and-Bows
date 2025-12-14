@@ -5,12 +5,8 @@ export function CustomerDetail({
 }: {
   customer: CustomerWithPurchases | null;
 }) {
-  // FIXED: Normalize tags to prevent runtime crash
-  const tags = customer
-    ? Array.isArray(customer.tags)
-      ? customer.tags
-      : []
-    : [];
+  // ✅ Tags are already normalized in useCustomers
+  const tags = customer?.tags || [];
   if (!customer) {
     return (
       <div className="bg-white rounded-lg shadow border border-gray-200">

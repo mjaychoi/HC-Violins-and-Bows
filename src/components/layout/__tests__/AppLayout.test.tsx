@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@/test-utils/render';
 import AppLayout from '../AppLayout';
 
 jest.mock('@/hooks/useSidebarState', () => ({

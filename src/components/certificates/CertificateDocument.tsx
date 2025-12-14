@@ -12,38 +12,44 @@ import {
 } from '@react-pdf/renderer';
 import { Instrument } from '@/types';
 
-// Register Korean font (Noto Sans KR)
-// React-PDF requires TTF/OTF font files for proper Korean character rendering
-// Using CDN URLs since server-side rendering cannot access public folder directly
-// Note: Variable fonts support multiple weights, but react-pdf may need explicit weight mapping
-try {
-  Font.register({
-    family: 'NotoSansKR',
-    fonts: [
-      {
-        // Variable font supports normal weight (400)
-        src: 'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/Variable/TTF/Subset/NotoSansKR-VF.ttf',
-        fontWeight: 'normal',
-        fontStyle: 'normal',
-      },
-      {
-        // Variable font supports bold weight (700)
-        src: 'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/Variable/TTF/Subset/NotoSansKR-VF.ttf',
-        fontWeight: 'bold',
-        fontStyle: 'normal',
-      },
-      // Note: Italic variants are not registered - if italic is needed, add font files
-      // For now, italic will fallback to regular font
-    ],
-  });
-} catch (error) {
-  // Log error but continue - react-pdf will use fallback font
-  if (typeof window === 'undefined') {
-    // Server-side only
-    console.warn(
-      'Korean font registration failed. Using fallback font.',
-      error instanceof Error ? error.message : String(error)
-    );
+// FIXED: Font registration moved to function to avoid module load-time execution
+// This prevents unnecessary CDN fetches on cold starts and bundle loading
+let fontRegistered = false;
+
+function ensureFonts() {
+  if (fontRegistered) return;
+  fontRegistered = true;
+
+  try {
+    // ✅ FIXED: fontWeight를 숫자로 변경 (react-pdf 안정성)
+    Font.register({
+      family: 'NotoSansKR',
+      fonts: [
+        {
+          // Variable font supports normal weight (400)
+          src: 'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/Variable/TTF/Subset/NotoSansKR-VF.ttf',
+          fontWeight: 400,
+          fontStyle: 'normal',
+        },
+        {
+          // Variable font supports bold weight (700)
+          src: 'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/Variable/TTF/Subset/NotoSansKR-VF.ttf',
+          fontWeight: 700,
+          fontStyle: 'normal',
+        },
+        // Note: Italic variants are not registered - if italic is needed, add font files
+        // For now, italic will fallback to regular font
+      ],
+    });
+  } catch (error) {
+    // Log error but continue - react-pdf will use fallback font
+    if (typeof window === 'undefined') {
+      // Server-side only
+      console.warn(
+        'Korean font registration failed. Using fallback font.',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
   }
 }
 
@@ -126,8 +132,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 16,
   },
-  brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  logo: { width: 42, height: 42 },
+  // ✅ FIXED: gap을 marginRight로 변경 (react-pdf 호환성)
+  brandLeft: { flexDirection: 'row', alignItems: 'center' },
+  logo: { width: 42, height: 42, marginRight: 10 },
   brandName: {
     fontSize: 14,
     fontWeight: 'bold',
@@ -176,10 +183,10 @@ const styles = StyleSheet.create({
 
   // Sections - 라인 기반
   section: { marginTop: 24 },
+  // ✅ FIXED: gap을 marginRight로 변경 (react-pdf 호환성)
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
     marginBottom: 14,
   },
   sectionTitle: {
@@ -187,6 +194,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.ink,
     letterSpacing: 0.5,
+    marginRight: 10,
   },
   sectionRule: {
     flexGrow: 1,
@@ -202,20 +210,25 @@ const styles = StyleSheet.create({
   },
 
   // 2-column grid for fields
-  grid: { flexDirection: 'row', gap: 16 },
-  col: { width: '50%' },
+  // ✅ FIXED: gap을 marginRight로 변경 (react-pdf 호환성)
+  grid: { flexDirection: 'row' },
+  col: { width: '50%', marginRight: 16 },
   field: { marginBottom: 10, flexDirection: 'row' },
+  // ✅ FIXED: label 폭 조정 (값이 긴 경우 대비)
   fieldLabel: {
     fontSize: 11,
-    width: 120,
+    width: 100,
     color: '#555555',
     marginRight: 12,
   },
+  // ✅ FIXED: fieldValue에 lineHeight와 maxWidth 추가 (긴 값 줄바꿈 개선)
   fieldValue: {
     fontSize: 12,
     flex: 1,
     fontWeight: 'bold',
     color: COLORS.ink,
+    lineHeight: 1.4,
+    maxWidth: '100%',
   },
 
   noteBox: {
@@ -250,9 +263,9 @@ const styles = StyleSheet.create({
     marginTop: 50,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 20,
   },
-  signCol: { width: '45%' },
+  // ✅ FIXED: gap을 marginRight로 변경 (react-pdf 호환성)
+  signCol: { width: '45%', marginRight: 20 },
   signLabel: {
     fontSize: 9,
     color: COLORS.muted,
@@ -290,13 +303,14 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: COLORS.muted,
     flexDirection: 'column',
-    gap: 4,
   },
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  footerLeft: { flexDirection: 'column', gap: 2 },
+  // ✅ FIXED: gap을 marginBottom으로 변경 (react-pdf 호환성)
+  footerLeft: { flexDirection: 'column' },
+  footerLeftItem: { marginBottom: 2 },
   footerRight: { textAlign: 'right' },
 });
 
@@ -317,26 +331,37 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
   watermarkSrc,
   verifyUrl,
 }) => {
-  const issueDate = new Date().toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  // FIXED: Ensure fonts are registered when component is rendered (not at module load)
+  ensureFonts();
 
-  const certKey =
+  // ✅ FIXED: issueDate 포맷팅 개선 (locale 문제 방지, Intl 의존 제거)
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const issueDate = `${year}-${month}-${day}`;
+
+  // ✅ FIXED: certKey 정규화 (문서-safe하게)
+  const rawKey =
     instrument.serial_number?.trim() ||
     instrument.id?.slice(0, 8)?.toUpperCase() ||
     'UNKNOWN';
 
-  const certificateNumber = `CERT-${certKey}-${new Date().getFullYear()}`;
+  const certKey = rawKey
+    .toUpperCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^A-Z0-9-]/g, '');
+
+  const certificateNumber = `CERT-${certKey}-${year}`;
 
   const priceKRW =
     typeof instrument.price === 'number'
       ? `₩ ${instrument.price.toLocaleString('ko-KR')} KRW`
       : undefined;
 
-  // Use provided logoSrc or default to /logo.png
-  const finalLogoSrc = logoSrc || '/logo.png';
+  // ✅ FIXED: 원격 URL 실패 대비 - 기본값 제거 (호출부에서 제공)
+  // 원격 URL은 서버 환경에서 실패할 수 있으므로 기본값을 제공하지 않음
+  const finalLogoSrc = logoSrc;
 
   // Use provided verifyUrl or generate default
   const finalVerifyUrl =
@@ -469,9 +494,13 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
         {/* Footer */}
         <View style={styles.footer}>
           <View style={styles.footerLeft}>
-            <Text>Issued Date / 발급일: {issueDate}</Text>
+            <Text style={styles.footerLeftItem}>
+              Issued Date / 발급일: {issueDate}
+            </Text>
             {finalVerifyUrl ? (
-              <Text>Verification / 검증: {finalVerifyUrl}</Text>
+              <Text style={styles.footerLeftItem}>
+                Verification / 검증: {finalVerifyUrl}
+              </Text>
             ) : null}
           </View>
           <Text style={styles.footerRight}>

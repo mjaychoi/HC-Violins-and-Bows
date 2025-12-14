@@ -86,10 +86,11 @@ type ViewMode = 'list' | 'analytics';
 export default function ClientsPage() {
   const router = useRouter();
 
-  // View mode state - check URL params for initial tab (client-side only)
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  // ✅ Initialize viewMode from URL to prevent flicker
+  // Use null initially to detect if we need to read from URL
+  const [viewMode, setViewMode] = useState<ViewMode | null>(null);
 
-  // Update view mode from URL on client side
+  // ✅ Update view mode from URL on mount (prevents flicker)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -106,12 +107,7 @@ export default function ClientsPage() {
   };
 
   // Error/Success handling
-  const {
-    ErrorToasts,
-    SuccessToasts: SuccessToastContainer,
-    handleError,
-    showSuccess,
-  } = useAppFeedback();
+  const { handleError, showSuccess } = useAppFeedback();
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
 
   // FIXED: useUnifiedData is now called at root layout level
@@ -327,8 +323,8 @@ export default function ClientsPage() {
     }
   };
 
-  // Analytics hooks (only when in analytics view)
-  const analyticsData = useCustomers();
+  // ✅ Analytics hooks (only when in analytics view) - prevent unnecessary fetch
+  const analyticsData = useCustomers({ enabled: viewMode === 'analytics' });
   const [purchaseStatusFilter, setPurchaseStatusFilter] = useState<
     'All' | 'Completed' | 'Pending' | 'Refunded'
   >('All');
@@ -390,16 +386,18 @@ export default function ClientsPage() {
                 onClick: openModal,
                 icon: (
                   <svg
-                    className="w-5 h-5"
+                    className="h-4 w-4"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
                   >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                      d="M12 4v16m8-8H4"
                     />
                   </svg>
                 ),
@@ -441,7 +439,15 @@ export default function ClientsPage() {
           </div>
         </div>
 
-        {viewMode === 'list' ? (
+        {/* ✅ Show loading state while determining viewMode from URL */}
+        {viewMode === null ? (
+          <div className="p-6">
+            <div className="animate-pulse space-y-4">
+              <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+              <div className="h-64 bg-gray-100 rounded"></div>
+            </div>
+          </div>
+        ) : viewMode === 'list' ? (
           loading.any ? (
             <div className="p-6">
               <TableSkeleton rows={8} columns={7} />
@@ -490,7 +496,18 @@ export default function ClientsPage() {
             {/* Customer Stats */}
             {analyticsData.customers.length > 0 && (
               <div className="mb-6">
-                <CustomerStats customers={analyticsData.customers} />
+                <CustomerStats
+                  customers={analyticsData.customers}
+                  hasActiveFilters={
+                    Boolean(analyticsData.searchTerm) ||
+                    analyticsData.tagFilter !== 'all' ||
+                    analyticsData.sortBy !== 'name'
+                  }
+                  totalCustomers={
+                    analyticsData.allCustomersCount ||
+                    analyticsData.customers.length
+                  }
+                />
               </div>
             )}
 
@@ -570,10 +587,6 @@ export default function ClientsPage() {
           onUpdateViewFormData={updateViewFormData}
         />
 
-        {/* Error Toasts */}
-        <ErrorToasts />
-        {/* Success Toasts */}
-        <SuccessToastContainer />
         <ConfirmDialog
           isOpen={Boolean(confirmDelete)}
           title="고객을 삭제하시겠어요?"

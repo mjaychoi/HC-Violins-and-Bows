@@ -59,19 +59,19 @@ export default function DashboardKPIs({
     ).length;
 
     // Sold this month: count of items with Sold relationship created this month
+    // FIXED: Use local timezone boundaries to avoid timezone parsing issues
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
+    const start = new Date(currentYear, currentMonth, 1);
+    const end = new Date(currentYear, currentMonth + 1, 1);
 
     const soldThisMonth = clientRelationships.filter(rel => {
       if (rel.relationship_type !== 'Sold') return false;
       if (!rel.created_at) return false;
 
-      const createdDate = new Date(rel.created_at);
-      return (
-        createdDate.getMonth() === currentMonth &&
-        createdDate.getFullYear() === currentYear
-      );
+      const d = new Date(rel.created_at);
+      return d >= start && d < end;
     }).length;
 
     return {

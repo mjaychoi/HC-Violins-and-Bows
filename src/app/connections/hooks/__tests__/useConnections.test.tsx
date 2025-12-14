@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { renderHook } from '@/test-utils/render';
 import { useConnections } from '../useConnections';
 
 // Mock DataContext

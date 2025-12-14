@@ -1,7 +1,13 @@
+/**
+ * @deprecated This hook is deprecated. Use `useUnifiedData` or `useUnifiedDashboard` instead.
+ *
+ * This hook is kept for backward compatibility with tests only.
+ * All production code should use `useUnifiedData` → `useUnifiedDashboard` for consistent data fetching.
+ */
 // src/hooks/useSupabaseQuery.ts
 import { useState, useCallback, useRef } from 'react';
 import { apiClient } from '@/utils/apiClient';
-import { useErrorHandler } from './useErrorHandler';
+import { useErrorHandler } from '@/contexts/ToastContext';
 
 export function useSupabaseQuery<T>(table: string) {
   // NOTE: table parameter is intentionally string (not restricted to ALLOWED_SORT_COLUMNS)

@@ -1,304 +1,94 @@
 // src/app/clients/hooks/useClientInstruments.ts
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ClientInstrument } from '@/types';
-import { logError } from '@/utils/logger';
-import { useUnifiedConnections } from '@/hooks/useUnifiedData';
+import {
+  useUnifiedConnections,
+  useConnectedClientsData,
+} from '@/hooks/useUnifiedData';
 
+/**
+ * ✅ FIXED: DataContext as single source of truth
+ * - Removed local state duplication
+ * - Use connections directly from DataContext
+ * - Use DataContext mutations for add/remove/update
+ * - No more sync logic or change detection needed
+ */
 export const useClientInstruments = () => {
-  // FIXED: Use connections from DataContext instead of separate state
-  // This prevents duplicate API calls - connections are already fetched by useUnifiedData
-  const { connections: connectionsFromContext } = useUnifiedConnections();
+  // ✅ Use DataContext connections directly (single source of truth)
+  const { connections: instrumentRelationships } = useUnifiedConnections();
 
-  const [instrumentRelationships, setInstrumentRelationships] = useState<
-    ClientInstrument[]
-  >([]);
-  const [clientsWithInstruments, setClientsWithInstruments] = useState<
-    Set<string>
-  >(new Set());
-  const [loading, setLoading] = useState(false);
+  // ✅ Use DataContext actions for mutations
+  const { createConnection, updateConnection, deleteConnection } =
+    useConnectedClientsData();
 
-  // Optimized: Create Map for O(1) lookups instead of O(n) find operations
-  const relationshipsMap = useMemo(
-    () => new Map(instrumentRelationships.map(rel => [rel.id, rel])),
-    [instrumentRelationships]
-  );
-
-  // FIXED: Sync with DataContext connections to avoid duplicate state
-  // This ensures we use data from DataContext instead of fetching separately
-  // Use a ref to track if we've already synced to prevent infinite loops
-  const hasSyncedRef = useRef(false);
-  const lastConnectionsLengthRef = useRef(0);
-  const lastConnectionsIdsRef = useRef<string>('');
-
-  useEffect(() => {
-    // Create a stable ID string from connections to detect actual changes
-    const connectionsIds = JSON.stringify(
-      connectionsFromContext.map(c => c.id).sort()
+  // ✅ Derived state: clientsWithInstruments from connections (no separate state needed)
+  const clientsWithInstruments = useMemo(() => {
+    return new Set(
+      instrumentRelationships.map(rel => rel.client_id).filter(Boolean)
     );
-    const connectionsLength = connectionsFromContext.length;
+  }, [instrumentRelationships]);
 
-    // Only sync if:
-    // 1. We haven't synced yet, OR
-    // 2. The connections have actually changed (different IDs or length)
-    const hasChanged =
-      !hasSyncedRef.current ||
-      lastConnectionsLengthRef.current !== connectionsLength ||
-      lastConnectionsIdsRef.current !== connectionsIds;
+  // ✅ Removed fetch functions - DataContext handles all fetching
+  // If you need to refresh, use DataContext actions.fetchConnections()
 
-    if (hasChanged && connectionsLength > 0) {
-      setInstrumentRelationships(connectionsFromContext);
-
-      // Sync clientsWithInstruments set
-      const clientIds = new Set<string>(
-        connectionsFromContext.map(rel => rel.client_id).filter(Boolean)
-      );
-      setClientsWithInstruments(clientIds);
-
-      // Update refs
-      hasSyncedRef.current = true;
-      lastConnectionsLengthRef.current = connectionsLength;
-      lastConnectionsIdsRef.current = connectionsIds;
-    }
-  }, [connectionsFromContext]);
-
+  // ✅ For backward compatibility, provide no-op functions
   const fetchClientsWithInstruments = useCallback(async () => {
-    try {
-      const response = await fetch('/api/connections');
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData.error || new Error('Failed to fetch connections');
-      }
-      const result = await response.json();
-      const clientIds = new Set<string>(
-        (result.data || [])
-          .map((item: ClientInstrument) => item.client_id)
-          .filter(Boolean)
-      );
-      setClientsWithInstruments(clientIds);
-    } catch (error) {
-      logError(
-        'Error fetching clients with instruments',
-        error,
-        'useClientInstruments',
-        {
-          operation: 'fetchClientsWithInstruments',
-        }
-      );
-    }
+    // No-op: clientsWithInstruments is derived from DataContext
+    // If refresh needed, call DataContext actions.fetchConnections()
   }, []);
 
   const fetchAllInstrumentRelationships = useCallback(async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/connections');
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData.error || new Error('Failed to fetch connections');
-      }
-      const result = await response.json();
-      const relationships = result.data || [];
-
-      setInstrumentRelationships(relationships);
-
-      // clientsWithInstruments 집합을 동기화
-      const clientIds = new Set<string>(
-        relationships
-          .map((rel: ClientInstrument) => rel.client_id)
-          .filter(Boolean)
-      );
-      setClientsWithInstruments(clientIds);
-    } catch (error) {
-      logError(
-        'Error fetching all instrument relationships',
-        error,
-        'useClientInstruments',
-        {
-          operation: 'fetchAllInstrumentRelationships',
-        }
-      );
-    } finally {
-      setLoading(false);
-    }
+    // No-op: instrumentRelationships comes from DataContext
+    // If refresh needed, call DataContext actions.fetchConnections()
   }, []);
 
-  const fetchInstrumentRelationships = useCallback(async (clientId: string) => {
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/connections?client_id=${clientId}`);
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData.error || new Error('Failed to fetch connections');
-      }
-      const result = await response.json();
-      const relationships = result.data || [];
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const fetchInstrumentRelationships = useCallback(
+    async (_clientId: string) => {
+      // No-op: instrumentRelationships comes from DataContext
+      // If refresh needed, call DataContext actions.fetchConnections()
+      // Note: For specific client filtering, filter instrumentRelationships in component
+    },
+    []
+  );
 
-      // 기존 관계들을 유지하면서 특정 클라이언트의 관계만 업데이트
-      setInstrumentRelationships(prev => {
-        // 다른 클라이언트의 관계들은 유지
-        const otherRelationships = prev.filter(
-          rel => rel.client_id !== clientId
-        );
-        // 새로 가져온 관계들과 합치기
-        return [...otherRelationships, ...relationships];
-      });
-
-      // clientsWithInstruments 집합을 동기화
-      if (relationships.length > 0) {
-        setClientsWithInstruments(prev => new Set([...prev, clientId]));
-      } else {
-        setClientsWithInstruments(prev => {
-          const next = new Set(prev);
-          next.delete(clientId);
-          return next;
-        });
-      }
-    } catch (error) {
-      logError(
-        'Error fetching instrument relationships',
-        error,
-        'useClientInstruments',
-        {
-          operation: 'fetchInstrumentRelationships',
-          clientId,
-        }
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // ✅ Use DataContext mutation (updates context, which updates instrumentRelationships)
   const addInstrumentRelationship = useCallback(
     async (
       clientId: string,
       instrumentId: string,
       relationshipType: ClientInstrument['relationship_type'] = 'Interested'
     ) => {
-      try {
-        const response = await fetch('/api/connections', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            client_id: clientId,
-            instrument_id: instrumentId,
-            relationship_type: relationshipType,
-          }),
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to create connection');
-        }
-        const result = await response.json();
-        if (result.data) {
-          setInstrumentRelationships(prev => [...prev, result.data]);
-          setClientsWithInstruments(prev => new Set([...prev, clientId]));
-          return result.data;
-        }
-        return null;
-      } catch (error) {
-        logError(
-          'Error adding instrument relationship',
-          error,
-          'useClientInstruments',
-          {
-            operation: 'addInstrumentRelationship',
-            clientId,
-            instrumentId,
-          }
-        );
-        return null;
-      }
+      return await createConnection(
+        clientId,
+        instrumentId,
+        relationshipType,
+        ''
+      );
     },
-    []
+    [createConnection]
   );
 
+  // ✅ Use DataContext mutation (updates context automatically)
   const removeInstrumentRelationship = useCallback(
     async (relationshipId: string) => {
-      try {
-        // O(1) lookup instead of O(n) find
-        const rel = relationshipsMap.get(relationshipId);
-        const clientId = rel?.client_id;
-
-        const response = await fetch(`/api/connections?id=${relationshipId}`, {
-          method: 'DELETE',
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to delete connection');
-        }
-
-        setInstrumentRelationships(prev => {
-          const next = prev.filter(rel => rel.id !== relationshipId);
-          if (clientId) {
-            const stillHas = next.some(r => r.client_id === clientId);
-            if (!stillHas) {
-              setClientsWithInstruments(prevSet => {
-                const nextSet = new Set(prevSet);
-                nextSet.delete(clientId);
-                return nextSet;
-              });
-            }
-          }
-          return next;
-        });
-
-        return true;
-      } catch (error) {
-        logError(
-          'Error removing instrument relationship',
-          error,
-          'useClientInstruments',
-          {
-            operation: 'removeInstrumentRelationship',
-            relationshipId,
-          }
-        );
-        return false;
-      }
+      return await deleteConnection(relationshipId);
     },
-    [relationshipsMap]
+    [deleteConnection]
   );
 
+  // ✅ Use DataContext mutation (updates context automatically)
   const updateInstrumentRelationship = useCallback(
     async (
       relationshipId: string,
       relationshipType: ClientInstrument['relationship_type']
     ) => {
-      try {
-        const response = await fetch('/api/connections', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: relationshipId,
-            relationship_type: relationshipType,
-          }),
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to update connection');
-        }
-        const result = await response.json();
-        if (result.data) {
-          setInstrumentRelationships(prev =>
-            prev.map(rel => (rel.id === relationshipId ? result.data : rel))
-          );
-          return result.data;
-        }
-        return null;
-      } catch (error) {
-        logError(
-          'Error updating instrument relationship',
-          error,
-          'useClientInstruments',
-          {
-            operation: 'updateInstrumentRelationship',
-            relationshipId,
-            relationshipType,
-          }
-        );
-        return null;
-      }
+      return await updateConnection(relationshipId, {
+        relationshipType: relationshipType,
+        notes: '',
+      });
     },
-    []
+    [updateConnection]
   );
 
   const getClientInstruments = (clientId: string): ClientInstrument[] => {
@@ -317,7 +107,7 @@ export const useClientInstruments = () => {
   return {
     instrumentRelationships,
     clientsWithInstruments,
-    loading,
+    loading: false, // ✅ Loading is handled by DataContext
     fetchClientsWithInstruments,
     fetchAllInstrumentRelationships,
     fetchInstrumentRelationships,

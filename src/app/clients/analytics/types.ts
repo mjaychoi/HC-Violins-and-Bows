@@ -10,6 +10,7 @@ export type Purchase = {
 
 export type CustomerWithPurchases = Client & {
   purchases: Purchase[];
+  lastPurchaseAt: string | null; // ✅ Raw ISO date string for sorting (not formatted)
 };
 
 // Helper function to convert SalesHistory to Purchase

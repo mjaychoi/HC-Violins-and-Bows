@@ -179,7 +179,7 @@ export default function PageFilters({
     Boolean(activeBadges?.length) ||
     Boolean(
       advancedSearchConfig?.dateRange?.from ||
-        advancedSearchConfig?.dateRange?.to
+      advancedSearchConfig?.dateRange?.to
     );
 
   return (
@@ -273,7 +273,7 @@ export default function PageFilters({
         title={title}
         contentClassName={filterPanelClasses.content}
         footer={
-          <div className={filterPanelClasses.footer}>
+          <div className={`${filterPanelClasses.footer} px-4 py-3`}>
             <div className="text-sm text-gray-600">
               {activeFiltersCount > 0 && (
                 <span>{footerText(activeFiltersCount)}</span>
@@ -300,7 +300,7 @@ export default function PageFilters({
           </div>
         }
       >
-        <div className={`grid ${gridClass} gap-6`}>
+        <div className={`grid ${gridClass} gap-4 pb-4`}>
           {filterGroups.map(group => {
             // 커스텀 렌더링이 있으면 그것을 사용
             if (group.customRender) {

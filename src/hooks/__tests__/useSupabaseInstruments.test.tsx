@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { renderHook } from '@/test-utils/render';
 import { useSupabaseInstruments } from '../useSupabaseInstruments';
 import { useSupabaseQuery } from '../useSupabaseQuery';
 

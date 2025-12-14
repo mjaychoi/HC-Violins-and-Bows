@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@/test-utils/render';
 import ConnectionModal from '../ConnectionModal';
 import { Client, ClientInstrument, Instrument } from '@/types';
 
@@ -77,6 +77,7 @@ describe('ConnectionModal', () => {
     fireEvent.click(screen.getByText('Create Connection'));
     await screen.findByText('Create Connection'); // wait for async
     expect(props.onSubmit).toHaveBeenCalledWith('c1', 'i1', 'Interested', '');
-    expect(props.onClose).toHaveBeenCalled();
+    // FIXED: Modal no longer calls onClose() - parent handles closing after successful submission
+    expect(props.onClose).not.toHaveBeenCalled();
   });
 });

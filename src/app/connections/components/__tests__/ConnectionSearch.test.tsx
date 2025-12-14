@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@/test-utils/render';
 import ConnectionSearch from '../ConnectionSearch';
 
 describe('ConnectionSearch', () => {

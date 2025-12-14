@@ -14,6 +14,9 @@ interface ModalProps {
   swipeToClose?: boolean;
 }
 
+// ✅ FIXED: 스크롤 잠금 카운터 (중첩 모달 지원)
+let scrollLockCount = 0;
+
 export default function Modal({
   isOpen,
   onClose,
@@ -24,6 +27,8 @@ export default function Modal({
   swipeToClose = true,
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   // Touch gesture for swipe to close (mobile)
   const { setElementRef } = useTouchGestures({
@@ -38,23 +43,82 @@ export default function Modal({
     }
   }, [isOpen, setElementRef]);
 
-  // Close on Escape key
+  // ✅ FIXED: 포커스 트랩 및 스크롤 잠금
   useEffect(() => {
+    if (!isOpen) return;
+
+    // 스크롤 잠금 (중첩 모달 지원)
+    scrollLockCount++;
+    if (scrollLockCount === 1) {
+      document.body.style.overflow = 'hidden';
+    }
+
+    // 이전 포커스 저장
+    previousFocusRef.current = document.activeElement as HTMLElement;
+
+    // 첫 번째 focusable 요소에 포커스
+    const focusableElements = modalRef.current?.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstElement = focusableElements?.[0] as HTMLElement | undefined;
+    firstElement?.focus();
+
+    // 포커스 트랩
+    const handleTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !modalRef.current) return;
+
+      const focusableElements = Array.from(
+        modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter(el => {
+        const isDisabled =
+          'disabled' in el &&
+          (el as HTMLButtonElement | HTMLInputElement).disabled;
+        return !isDisabled && el.offsetParent !== null;
+      });
+
+      if (focusableElements.length === 0) return;
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (e.shiftKey) {
+        // Shift+Tab
+        if (document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        // Tab
+        if (document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement.focus();
+        }
+      }
+    };
+
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape') {
         onClose();
       }
     };
 
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-      // Prevent body scroll when modal is open
-      document.body.style.overflow = 'hidden';
-    }
+    document.addEventListener('keydown', handleTab);
+    document.addEventListener('keydown', handleEscape);
 
     return () => {
+      document.removeEventListener('keydown', handleTab);
       document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = '';
+
+      // 스크롤 잠금 해제 (중첩 모달 지원)
+      scrollLockCount--;
+      if (scrollLockCount === 0) {
+        document.body.style.overflow = '';
+      }
+
+      // 포커스 복귀
+      previousFocusRef.current?.focus();
     };
   }, [isOpen, onClose]);
 
@@ -78,10 +142,15 @@ export default function Modal({
     >
       <div
         ref={modalRef}
-        className={`${sizeClasses[size]} ${className} w-full max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-xl`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        className={`${sizeClasses[size]} ${className} w-full max-h-[90vh] flex flex-col bg-white rounded-lg shadow-xl overflow-hidden`}
       >
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center z-10">
-          <h3 className="text-lg font-medium text-gray-900">{title}</h3>
+        <div className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+          <h3 id="modal-title" className="text-lg font-medium text-gray-900">
+            {title}
+          </h3>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors"
@@ -103,8 +172,10 @@ export default function Modal({
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-4 sm:p-6">{children}</div>
+        {/* Content - Scrollable */}
+        <div ref={contentRef} className="flex-1 overflow-y-auto p-4 sm:p-6">
+          {children}
+        </div>
       </div>
     </div>
   );

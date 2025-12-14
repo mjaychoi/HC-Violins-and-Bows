@@ -2,27 +2,10 @@
 
 import { useMemo } from 'react';
 import { EnrichedSale } from '@/types';
-import { subDays, isBefore, isWithinInterval, startOfDay } from 'date-fns';
+import { subDays, isBefore, isWithinInterval } from 'date-fns';
+import { parseYMDLocal, startOfDay } from '@/utils/dateParsing';
 
 import { currency } from '../utils/salesFormatters';
-
-// FIXED: Date parsing helper to handle timezone issues (parse date-only strings as UTC)
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-function parseSaleDay(s: string): Date | null {
-  if (!s) return null;
-  if (DATE_ONLY_PATTERN.test(s)) {
-    // Date-only string: parse as UTC date (avoid timezone shift)
-    const [y, m, d] = s.split('-').map(Number);
-    return startOfDay(new Date(Date.UTC(y, m - 1, d)));
-  }
-  // For timestamps with time/timezone, use Date constructor (will parse ISO strings)
-  try {
-    const t = new Date(s);
-    return Number.isFinite(t.getTime()) ? startOfDay(t) : null;
-  } catch {
-    return null;
-  }
-}
 
 interface SalesAlertsProps {
   sales: EnrichedSale[];
@@ -45,10 +28,10 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     const today = startOfDay(new Date());
     const sevenDaysAgo = startOfDay(subDays(today, 7));
 
-    // FIXED: Use parseSaleDay to handle timezone issues
+    // FIXED: Use parseYMDLocal to handle timezone issues (local day-of-week)
     const recentSales = sales
       .filter(s => {
-        const saleDay = parseSaleDay(s.sale_date);
+        const saleDay = parseYMDLocal(s.sale_date);
         if (!saleDay) return false;
         // sevenDaysAgo 이후 또는 같은 날 (경계값 포함)
         return !isBefore(saleDay, sevenDaysAgo);
@@ -57,7 +40,7 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
 
     const recentRefunds = sales
       .filter(s => {
-        const saleDay = parseSaleDay(s.sale_date);
+        const saleDay = parseYMDLocal(s.sale_date);
         if (!saleDay) return false;
         // sevenDaysAgo 이후 또는 같은 날 (경계값 포함)
         return !isBefore(saleDay, sevenDaysAgo);
@@ -73,13 +56,13 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     };
 
     const previousSales = sales.filter(s => {
-      const saleDay = parseSaleDay(s.sale_date);
+      const saleDay = parseYMDLocal(s.sale_date);
       if (!saleDay) return false;
       return isWithinInterval(saleDay, previousInterval) && s.sale_price > 0;
     });
 
     const previousRefunds = sales.filter(s => {
-      const saleDay = parseSaleDay(s.sale_date);
+      const saleDay = parseYMDLocal(s.sale_date);
       if (!saleDay) return false;
       return isWithinInterval(saleDay, previousInterval) && s.sale_price < 0;
     });
@@ -194,20 +177,20 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     // 4. 특정 요일 Orders 급락
     const weekdayMap = new Map<number, { recent: number; previous: number }>();
     recentSales.forEach(sale => {
-      // FIXED: Use parseSaleDay instead of parseISO
-      const saleDay = parseSaleDay(sale.sale_date);
+      // FIXED: Use parseYMDLocal and getDay() for local day-of-week
+      const saleDay = parseYMDLocal(sale.sale_date);
       if (!saleDay) return;
-      const dayOfWeek = saleDay.getUTCDay();
+      const dayOfWeek = saleDay.getDay(); // Local day of week (0 = Sunday, 6 = Saturday)
       if (!weekdayMap.has(dayOfWeek)) {
         weekdayMap.set(dayOfWeek, { recent: 0, previous: 0 });
       }
       weekdayMap.get(dayOfWeek)!.recent += 1;
     });
     previousSales.forEach(sale => {
-      // FIXED: Use parseSaleDay instead of parseISO
-      const saleDay = parseSaleDay(sale.sale_date);
+      // FIXED: Use parseYMDLocal and getDay() for local day-of-week
+      const saleDay = parseYMDLocal(sale.sale_date);
       if (!saleDay) return;
-      const dayOfWeek = saleDay.getUTCDay();
+      const dayOfWeek = saleDay.getDay(); // Local day of week
       if (!weekdayMap.has(dayOfWeek)) {
         weekdayMap.set(dayOfWeek, { recent: 0, previous: 0 });
       }
@@ -247,9 +230,9 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
   return (
     <div className="space-y-3">
       {/* FIXED: Use stable key instead of index to prevent incorrect DOM reuse */}
-      {alerts.map((alert, index) => (
+      {alerts.map(alert => (
         <div
-          key={`${alert.type}:${alert.title}:${index}`}
+          key={`${alert.type}:${alert.title}:${alert.message}`}
           className={`border rounded-lg p-4 ${
             alert.type === 'error'
               ? 'bg-red-50 border-red-200'

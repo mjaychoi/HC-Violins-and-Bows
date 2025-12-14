@@ -5,7 +5,12 @@ import { useDebounce } from '@/hooks/useDebounce';
 
 interface SearchInputProps {
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string) => void; // 즉시 UI 업데이트
+  /**
+   * Debounced onChange - 실제 검색 트리거 (필터/URL sync/API)
+   * 제공되지 않으면 onChange만 사용 (기존 동작)
+   */
+  onDebouncedChange?: (value: string) => void;
   placeholder?: string;
   debounceMs?: number;
   className?: string;
@@ -27,6 +32,7 @@ interface SearchInputProps {
 export default function SearchInput({
   value,
   onChange,
+  onDebouncedChange,
   placeholder = 'Search...',
   debounceMs = 200,
   className = '',
@@ -50,14 +56,13 @@ export default function SearchInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
+  // ✅ FIXED: debounced onChange를 옵션으로 분리
   const debouncedValue = useDebounce(value, debounceMs);
 
-  // Use debouncedValue to trigger search
+  // ✅ FIXED: onDebouncedChange가 제공되면 debounced 값으로 호출
   useEffect(() => {
-    if (debouncedValue !== value) {
-      // onSearchChange(debouncedValue)
-    }
-  }, [debouncedValue, value]);
+    onDebouncedChange?.(debouncedValue);
+  }, [debouncedValue, onDebouncedChange]);
 
   // Size classes
   const sizeClasses = {
@@ -103,9 +108,31 @@ export default function SearchInput({
     onFocus?.();
   }, [showSuggestions, suggestions.length, onFocus]);
 
+  // ✅ FIXED: outside click으로 suggestions 닫기 (더 안전)
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(event.target as Node) &&
+        inputRef.current &&
+        !inputRef.current.contains(event.target as Node)
+      ) {
+        setShowSuggestionsList(false);
+        setSelectedSuggestionIndex(-1);
+      }
+    };
+
+    if (showSuggestionsList) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showSuggestionsList]);
+
   const handleBlur = useCallback(() => {
     setIsFocused(false);
-    // Delay hiding suggestions to allow for clicks
+    // Delay hiding suggestions to allow for clicks (키보드 탐색 후 Enter 등)
     setTimeout(() => {
       setShowSuggestionsList(false);
       setSelectedSuggestionIndex(-1);

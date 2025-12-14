@@ -1,4 +1,4 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@/test-utils/render';
 import { useSupabaseQuery } from '../useSupabaseQuery';
 
 // Mock apiClient
@@ -21,11 +21,16 @@ const mockDelete = apiClient.delete;
 // Mock useErrorHandler
 const mockHandleError = jest.fn(error => error);
 
-jest.mock('../useErrorHandler', () => ({
-  useErrorHandler: () => ({
-    handleError: mockHandleError,
-  }),
-}));
+// ✅ FIXED: ToastProvider도 export하도록 mock 수정
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    useErrorHandler: () => ({
+      handleError: mockHandleError,
+    }),
+  };
+});
 
 describe('useSupabaseQuery', () => {
   beforeEach(() => {

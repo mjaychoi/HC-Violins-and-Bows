@@ -1,114 +1,94 @@
 /**
  * Common filter utilities for building filter options from data
+ * ✅ FIXED: buildFilterOptions를 범용 함수로 통합 (extractor/sortFn/normalize 지원)
  */
 
-import {
-  getUniqueValues as getUniqueValuesGeneric,
-  getUniqueArrayValues,
-} from './uniqueValues';
+export type FieldType = 'scalar' | 'array';
+
+export type FieldConfig<T> = {
+  label?: string;
+  type?: FieldType; // default 'scalar'
+  extractor?: (item: T) => unknown; // scalar or array return OK
+  sortFn?: (a: string, b: string) => number;
+  normalize?: (v: unknown) => string | null;
+};
 
 /**
- * Build filter options from an array of items
- * Extracts unique values for specified fields
+ * ✅ FIXED: 범용 필터 옵션 빌더 - array/simple 분기 없이 extractor로 처리
+ * 타입 캐스팅 대폭 감소, normalize까지 한 곳에서 일관되게 처리
  */
-export function buildFilterOptions<T extends Record<string, unknown>>(
+export function buildFilterOptions<T>(
   items: T[],
-  fieldConfig: {
-    [K in keyof T]?: {
-      field: K;
-      extractor?: (item: T) => unknown;
-      sortFn?: (a: unknown, b: unknown) => number;
-    };
-  }
-): {
-  [K in keyof typeof fieldConfig]: string[];
-} {
-  const result: Record<string, string[]> = {};
+  fields: Record<string, FieldConfig<T>>
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
 
-  Object.entries(fieldConfig).forEach(([key, config]) => {
-    if (!config) return;
-
+  for (const [key, cfg] of Object.entries(fields)) {
     const values = new Set<string>();
 
-    items.forEach(item => {
-      let value: unknown;
+    for (const item of items) {
+      const raw = cfg.extractor
+        ? cfg.extractor(item)
+        : (item as Record<string, unknown>)[key];
 
-      if (config.extractor) {
-        value = config.extractor(item);
+      const push = (v: unknown) => {
+        const norm = cfg.normalize
+          ? cfg.normalize(v)
+          : v == null || v === ''
+            ? null
+            : String(v);
+        if (norm) values.add(norm);
+      };
+
+      if (Array.isArray(raw)) {
+        raw.forEach(push);
       } else {
-        value = item[config.field];
+        push(raw);
       }
+    }
 
-      if (value != null) {
-        if (Array.isArray(value)) {
-          value.forEach(v => {
-            if (v != null) values.add(String(v));
-          });
-        } else {
-          values.add(String(value));
-        }
-      }
-    });
+    const arr = Array.from(values);
+    arr.sort(cfg.sortFn ?? ((a, b) => a.localeCompare(b)));
+    out[key] = arr;
+  }
 
-    const sorted = Array.from(values).sort((a, b) => {
-      if (config.sortFn) {
-        return config.sortFn(a, b);
-      }
-      return a.localeCompare(b);
-    });
-
-    result[key] = sorted;
-  });
-
-  return result as {
-    [K in keyof typeof fieldConfig]: string[];
-  };
+  return out;
 }
 
 /**
- * Build filter options from a single field using getUniqueValues
- * Simpler version for single field extraction
+ * ✅ FIXED: 기존 함수들을 thin wrapper로 유지 (하위 호환성)
  */
 export function buildFilterOptionsFromField<T extends Record<string, unknown>>(
   items: T[],
   field: keyof T
 ): string[] {
-  return getUniqueValuesGeneric(items, field);
+  const result = buildFilterOptions(items, {
+    [String(field)]: { extractor: item => item[field] },
+  });
+  return result[String(field)] || [];
 }
 
-/**
- * Build filter options from an array field using getUniqueArrayValues
- */
 export function buildFilterOptionsFromArrayField<
   T extends Record<string, unknown>,
 >(items: T[], field: keyof T): string[] {
-  // Type assertion: ensure field is an array field
-  // Caller must ensure field points to an array type
-  return getUniqueArrayValues(
-    items as unknown as Array<Record<string, readonly unknown[]>>,
-    field as keyof Record<string, readonly unknown[]>
-  );
+  const result = buildFilterOptions(items, {
+    [String(field)]: {
+      extractor: item => item[field],
+      type: 'array',
+    },
+  });
+  return result[String(field)] || [];
 }
 
-/**
- * Build filter options for multiple fields at once
- * Returns an object with field names as keys and arrays of unique values as values
- */
 export function buildMultiFieldFilterOptions<T extends Record<string, unknown>>(
   items: T[],
   fields: (keyof T)[]
 ): Record<string, string[]> {
-  const result: Record<string, string[]> = {};
-
+  const config: Record<string, FieldConfig<T>> = {};
   fields.forEach(field => {
-    // Type assertion needed because getUniqueValuesGeneric expects items that satisfy its constraint
-    result[String(field)] = getUniqueValuesGeneric(
-      items as unknown as Array<Record<string, unknown>>,
-      String(field)
-    );
+    config[String(field)] = { extractor: item => item[field] };
   });
-
-  return result;
+  return buildFilterOptions(items, config);
 }
 
 /**

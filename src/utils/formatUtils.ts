@@ -10,41 +10,89 @@ export const dateFormats = {
   display: "MMM dd, yyyy 'at' HH:mm",
 } as const;
 
+import { formatDisplayDate, toDateOnly } from './dateParsing';
+
+/**
+ * ✅ FIXED: date-only 전용 포맷터 - Date 객체 받지 않음 (YYYY-MM-DD만)
+ * UTC/로컬 혼재 문제 해결
+ */
+export function formatDateOnly(
+  ymd: string,
+  style: 'short' | 'long' | 'iso' = 'short'
+): string {
+  const dateStr = toDateOnly(ymd);
+  if (!dateStr) return 'Invalid Date';
+  if (style === 'iso') return dateStr;
+  return formatDisplayDate(dateStr);
+}
+
+/**
+ * ✅ FIXED: timestamp 전용 포맷터 - Date 또는 ISO string
+ */
+export function formatTimestamp(
+  ts: string | Date,
+  style: 'time' | 'datetime' = 'datetime'
+): string {
+  const d = typeof ts === 'string' ? new Date(ts) : ts;
+  if (!Number.isFinite(d.getTime())) return '';
+
+  return d.toLocaleString('en-US', {
+    ...(style === 'time'
+      ? { hour: '2-digit', minute: '2-digit' }
+      : {
+          year: 'numeric',
+          month: 'short',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+  });
+}
+
+/**
+ * @deprecated Use formatDateOnly or formatTimestamp instead
+ * This function mixes date-only and timestamp logic, causing UTC/local confusion
+ */
 export function formatDate(
   date: string | Date,
   style: keyof typeof dateFormats = 'short'
 ): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  // Legacy support: try to detect if it's date-only or timestamp
+  if (typeof date === 'string') {
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(date);
+    if (isDateOnly) {
+      return formatDateOnly(
+        date,
+        style === 'iso' ? 'iso' : style === 'long' ? 'long' : 'short'
+      );
+    }
+    // Timestamp
+    if (style === 'time' || style === 'datetime' || style === 'display') {
+      return formatTimestamp(date, style === 'time' ? 'time' : 'datetime');
+    }
+    // For other styles, treat as date-only
+    return formatDateOnly(
+      toDateOnly(date),
+      style === 'iso' ? 'iso' : style === 'long' ? 'long' : 'short'
+    );
+  }
 
-  if (isNaN(d.getTime())) return 'Invalid Date';
+  // Date object: check if it has time component
+  const hasTime =
+    date.getHours() !== 0 || date.getMinutes() !== 0 || date.getSeconds() !== 0;
+  if (
+    hasTime &&
+    (style === 'time' || style === 'datetime' || style === 'display')
+  ) {
+    return formatTimestamp(date, style === 'time' ? 'time' : 'datetime');
+  }
 
-  // Map allowed styles to Intl options
-  const map: Record<keyof typeof dateFormats, Intl.DateTimeFormatOptions> = {
-    short: { year: 'numeric', month: 'short', day: '2-digit' },
-    long: { year: 'numeric', month: 'long', day: '2-digit' },
-    time: { hour: '2-digit', minute: '2-digit', hour12: false },
-    datetime: {
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    },
-    iso: {},
-    display: {
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    },
-  };
-
-  if (style === 'iso') return d.toISOString().slice(0, 10); // yyyy-MM-dd
-
-  return new Intl.DateTimeFormat('en-US', map[style]).format(d);
+  // Date-only
+  const ymd = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+  return formatDateOnly(
+    ymd,
+    style === 'iso' ? 'iso' : style === 'long' ? 'long' : 'short'
+  );
 }
 
 export function formatRelativeTime(date: string | Date): string {
@@ -128,16 +176,27 @@ export function formatText(
   return formatted;
 }
 
+// ✅ FIXED: 빈 문자열 방어 로직 추가
 export function formatName(firstName: string, lastName: string): string {
-  return `${firstName.trim()} ${lastName.trim()}`;
+  const first = firstName?.trim() || '';
+  const last = lastName?.trim() || '';
+  if (!first && !last) return '';
+  return `${first} ${last}`.trim();
 }
 
 export function formatInitials(firstName: string, lastName: string): string {
-  return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+  const first = firstName?.trim() || '';
+  const last = lastName?.trim() || '';
+  if (!first && !last) return '';
+  return `${first.charAt(0) || ''}${last.charAt(0) || ''}`.toUpperCase();
 }
 
 // Phone number formatting
-export function formatPhone(phone?: string | null): string {
+// ✅ FIXED: 길이 맞지 않으면 원본 반환 옵션 (UI에서 선택 가능)
+export function formatPhone(
+  phone?: string | null,
+  options: { returnOriginal?: boolean } = {}
+): string {
   if (!phone) return '';
 
   const cleaned = phone.replace(/\D/g, '');
@@ -150,7 +209,8 @@ export function formatPhone(phone?: string | null): string {
     return `+1 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
   }
 
-  return ''; // Return empty if format doesn't match
+  // ✅ FIXED: 길이 맞지 않으면 원본 반환 옵션
+  return options.returnOriginal ? phone : '';
 }
 
 // Email formatting
@@ -248,19 +308,53 @@ export function formatTableData<T>(
 }
 
 // Search highlighting
-function escapeRegex(s: string) {
+// ✅ FIXED: XSS 위험 제거 - ReactNode 배열로 반환 (가장 안전)
+import React from 'react';
+
+function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function highlightSearchTerm(text: string, searchTerm: string): string {
+export function highlightSearchTerm(
+  text: string,
+  searchTerm: string
+): React.ReactNode {
   if (!searchTerm) return text;
 
   const safe = escapeRegex(searchTerm);
-  const regex = new RegExp(`(${safe})`, 'gi');
-  return text.replace(regex, '<mark>$1</mark>');
+  const parts = text.split(new RegExp(`(${safe})`, 'gi'));
+  const lowerSearch = searchTerm.toLowerCase();
+
+  return parts.map((part, i) =>
+    part.toLowerCase() === lowerSearch
+      ? React.createElement(
+          'mark',
+          { key: i, className: 'bg-yellow-200 px-1 rounded' },
+          part
+        )
+      : part
+  );
 }
 
 // CSV formatting
+// ✅ FIXED: 모든 타입을 string으로 직렬화 (number/boolean/object 처리)
+function csvCell(v: unknown): string {
+  if (v == null) return '';
+
+  const s =
+    typeof v === 'string'
+      ? v
+      : typeof v === 'number' || typeof v === 'boolean'
+        ? String(v)
+        : JSON.stringify(v);
+
+  // Escape commas, quotes, and newlines
+  if (/[,"\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
 export function formatCSV(
   data: Record<string, unknown>[],
   headers?: string[]
@@ -268,25 +362,8 @@ export function formatCSV(
   if (data.length === 0) return '';
 
   const keys = headers || Object.keys(data[0]);
-  const csvHeaders = keys.join(',');
-
-  const csvRows = data.map(row =>
-    keys
-      .map(key => {
-        const value = row[key];
-        // Escape commas and quotes in CSV
-        if (
-          typeof value === 'string' &&
-          (value.includes(',') || value.includes('"'))
-        ) {
-          return `"${value.replace(/"/g, '""')}"`;
-        }
-        return value;
-      })
-      .join(',')
-  );
-
-  return [csvHeaders, ...csvRows].join('\n');
+  const rows = data.map(row => keys.map(k => csvCell(row[k])).join(','));
+  return [keys.join(','), ...rows].join('\n');
 }
 
 // JSON formatting
@@ -295,11 +372,13 @@ export function formatJSON(data: unknown, indent: number = 2): string {
 }
 
 // URL formatting
+// ✅ FIXED: javascript: 같은 위험한 스킴 차단
 export function formatURL(url: string): string {
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    return `https://${url}`;
-  }
-  return url;
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  // ✅ FIXED: 위험한 스킴 차단
+  if (/^[a-z]+:/i.test(trimmed)) return ''; // block weird schemes (javascript:, data:, etc.)
+  return `https://${trimmed}`;
 }
 
 // Color formatting
