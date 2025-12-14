@@ -171,7 +171,7 @@ export default function ContactLogComponent({
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                연락 목적
+                Contact Purpose
               </label>
               <select
                 value={formData.purpose || ''}
