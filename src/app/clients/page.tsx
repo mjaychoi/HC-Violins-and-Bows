@@ -434,7 +434,7 @@ export default function ClientsPage() {
             </div>
           </div>
         ) : viewMode === 'list' ? (
-          loading.any ? (
+          loading.hasAnyLoading ? (
             <div className="p-6">
               <TableSkeleton rows={8} columns={7} />
             </div>
@@ -443,10 +443,7 @@ export default function ClientsPage() {
               clients={clients}
               clientsWithInstruments={clientsWithInstruments}
               instrumentRelationships={instrumentRelationships}
-              loading={{
-                ...loading,
-                hasAnyLoading: loading.any,
-              }}
+              loading={loading}
               onClientClick={handleRowClick}
               onUpdateClient={async (clientId, updates) => {
                 try {
@@ -543,7 +540,7 @@ export default function ClientsPage() {
           isOpen={showModal}
           onClose={closeModal}
           onSubmit={handleSubmit}
-          submitting={submitting.any}
+          submitting={submitting.hasAnySubmitting}
         />
 
         {/* View/Edit Client Modal */}
@@ -564,7 +561,7 @@ export default function ClientsPage() {
           }}
           onDelete={handleDeleteClient}
           onCancel={stopEditing}
-          submitting={submitting.any}
+          submitting={submitting.hasAnySubmitting}
           instrumentRelationships={instrumentRelationships}
           onAddInstrument={addInstrumentRelationship}
           onRemoveInstrument={removeInstrumentRelationship}

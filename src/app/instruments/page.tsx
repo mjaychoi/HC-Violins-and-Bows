@@ -124,7 +124,7 @@ export default function InstrumentsPage() {
       >
         <InstrumentsContent
           items={items}
-          loading={loading.any}
+          loading={loading.hasAnyLoading}
           onAddInstrument={openModal}
         />
 
@@ -133,7 +133,7 @@ export default function InstrumentsPage() {
           isOpen={showModal}
           onClose={closeModal}
           onSubmit={handleSubmit}
-          submitting={submitting.any}
+          submitting={submitting.hasAnySubmitting}
         />
       </AppLayout>
     </ErrorBoundary>

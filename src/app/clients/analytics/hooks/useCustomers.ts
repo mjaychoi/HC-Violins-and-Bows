@@ -290,8 +290,14 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
     selectedCustomer,
     availableTags,
     loading:
-      (typeof clientsLoading === 'object' && 'any' in clientsLoading
-        ? clientsLoading.any
-        : Boolean(clientsLoading)) || loading,
+      (typeof clientsLoading === 'object' &&
+      clientsLoading !== null &&
+      'hasAnyLoading' in clientsLoading
+        ? (clientsLoading as { hasAnyLoading: boolean }).hasAnyLoading
+        : typeof clientsLoading === 'object' &&
+            clientsLoading !== null &&
+            'any' in clientsLoading
+          ? (clientsLoading as { any: boolean }).any // Fallback for deprecated 'any'
+          : Boolean(clientsLoading)) || loading,
   };
 }

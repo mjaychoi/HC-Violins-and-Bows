@@ -157,7 +157,7 @@ function ClientsListContentInner({
         totalCount={totalCount}
         pageSize={pageSize}
         onPageChange={setPage}
-        loading={loading.any}
+        loading={loading.hasAnyLoading}
       />
     </div>
   );

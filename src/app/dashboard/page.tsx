@@ -95,7 +95,7 @@ export default function DashboardPage() {
     ) {
       console.log('[Dashboard] Clients state:', {
         clientsCount: clients?.length ?? 0,
-        loading: loading.any,
+        loading: loading.hasAnyLoading,
         sampleClientIds:
           clients?.slice(0, 3).map((c: { id: string }) => c.id) ?? [],
         clientRelationshipsCount: clientRelationships?.length ?? 0,
@@ -118,7 +118,7 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     clients?.length,
-    loading.any,
+    loading.hasAnyLoading,
     clientRelationships?.length,
     enrichedItems.length,
   ]);
@@ -260,7 +260,7 @@ export default function DashboardPage() {
                 }
               : handleCreateItem
           }
-          submitting={submitting.any}
+          submitting={submitting.hasAnySubmitting}
           selectedItem={selectedItem}
           isEditing={isEditing}
           existingSerialNumbers={existingSerialNumbers}
@@ -285,7 +285,7 @@ export default function DashboardPage() {
             setSelectedClientForSale(null);
           }}
           onSubmit={handleSaleSubmit}
-          submitting={submitting.any}
+          submitting={submitting.hasAnySubmitting}
           initialInstrument={selectedInstrumentForSale}
           initialClient={selectedClientForSale}
           autoUpdateInstrumentStatus={true}

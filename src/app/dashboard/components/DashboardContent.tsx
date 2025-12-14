@@ -176,7 +176,7 @@ function DashboardContentInner({
         {/* FIXED: paginatedItems is already EnrichedInstrument[], pass directly */}
         <ItemList
           items={paginatedItems}
-          loading={loading.any}
+          loading={loading.hasAnyLoading}
           onDeleteClick={onDeleteClick}
           onUpdateItem={onUpdateItemInline}
           clientRelationships={clientRelationships}

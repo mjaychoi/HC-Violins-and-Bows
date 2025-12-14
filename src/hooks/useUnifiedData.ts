@@ -246,7 +246,9 @@ export function useUnifiedClients() {
     ...clientsHook,
     loading: {
       clients: clientsHook.loading,
+      // @deprecated Use hasAnyLoading instead
       any: clientsHook.loading,
+      hasAnyLoading: clientsHook.loading,
     },
     submitting: {
       clients: clientsHook.submitting,
