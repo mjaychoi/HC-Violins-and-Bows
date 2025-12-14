@@ -46,6 +46,7 @@ export default function AppLayout({
     if (isMobile && !isExpanded) {
       toggleSidebar(); // 모바일에서 사이드바를 항상 열어둠
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMobile]);
 
   // ✅ FIXED: redirect는 AppLayout에서만 처리 (AuthProvider는 상태만 관리)
