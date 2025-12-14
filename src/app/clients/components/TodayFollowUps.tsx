@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { addDays, format } from 'date-fns';
+import { addDays, format, differenceInDays } from 'date-fns';
 import { ContactLog } from '@/types';
 import { todayLocalYMD } from '@/utils/dateParsing';
 import { formatDisplayDate } from '@/utils/dateParsing';
@@ -260,10 +260,16 @@ export default function TodayFollowUps() {
               'Unknown Client'
             : 'Unknown Client';
 
-          // Check if overdue
+          // Check if overdue and calculate days
           const isOverdue =
             primaryLog.next_follow_up_date &&
             primaryLog.next_follow_up_date < today;
+          const daysOverdue = isOverdue && primaryLog.next_follow_up_date
+            ? differenceInDays(
+                new Date(`${today}T00:00:00`),
+                new Date(`${primaryLog.next_follow_up_date}T00:00:00`)
+              )
+            : 0;
           const purpose = primaryLog.purpose
             ? primaryLog.purpose === 'follow_up'
               ? 'Follow-up'
@@ -288,7 +294,7 @@ export default function TodayFollowUps() {
                     </Link>
                     {isOverdue ? (
                       <span className="text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
-                        days overdue
+                        {daysOverdue} {daysOverdue === 1 ? 'day' : 'days'} overdue
                       </span>
                     ) : (
                       <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
