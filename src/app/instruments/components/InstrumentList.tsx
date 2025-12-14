@@ -44,10 +44,9 @@ const FixedSizeList = dynamic(
   async () => {
     try {
       const mod = await import('react-window');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const FixedSizeListComponent = (mod as any).FixedSizeList;
-      if (FixedSizeListComponent) {
-        return { default: FixedSizeListComponent as FixedSizeListComponent };
+      // Type-safe import: react-window exports FixedSizeList with proper types
+      if ('FixedSizeList' in mod && typeof mod.FixedSizeList === 'function') {
+        return { default: mod.FixedSizeList as FixedSizeListComponent };
       }
     } catch (error) {
       console.error('Failed to load react-window:', error);
