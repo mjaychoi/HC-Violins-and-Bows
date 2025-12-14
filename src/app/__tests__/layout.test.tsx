@@ -113,9 +113,15 @@ describe('RootLayout', () => {
     expect(instrumentsProvider).toBeInTheDocument();
     expect(connectionsProvider).toBeInTheDocument();
 
-    // Verify nesting: ErrorBoundary > AuthProvider > ClientsProvider > InstrumentsProvider > ConnectionsProvider > children
+    // Verify nesting: ErrorBoundary > AuthProvider > ToastProvider > ClientsProvider > InstrumentsProvider > ConnectionsProvider > children
+    const toastProvider = container.querySelector(
+      '[data-testid="toast-provider"]'
+    );
+    expect(toastProvider).toBeInTheDocument();
+    
     expect(errorBoundary?.contains(authProvider)).toBe(true);
-    expect(authProvider?.contains(clientsProvider)).toBe(true);
+    expect(authProvider?.contains(toastProvider)).toBe(true);
+    expect(toastProvider?.contains(clientsProvider)).toBe(true);
     expect(clientsProvider?.contains(instrumentsProvider)).toBe(true);
     expect(instrumentsProvider?.contains(connectionsProvider)).toBe(true);
   });

@@ -10,9 +10,13 @@ import {
   useUnifiedCache,
 } from '../useUnifiedData';
 import { Client, Instrument, ClientInstrument } from '@/types';
+import { useClientsContext } from '@/contexts/ClientsContext';
+import { useInstrumentsContext } from '@/contexts/InstrumentsContext';
+import { useConnectionsContext } from '@/contexts/ConnectionsContext';
 
 // Mock DataContext
-const mockState = {
+// Export for use in jest.mock factory functions
+export const mockState = {
   clients: [] as Client[],
   instruments: [] as Instrument[],
   connections: [] as ClientInstrument[],
@@ -50,41 +54,33 @@ const mockActions = {
   resetState: jest.fn(),
 };
 
-jest.mock('@/contexts/DataContext', () => ({
-  useDataContext: jest.fn(() => ({
-    state: mockState,
-    actions: mockActions,
-  })),
-  useClients: jest.fn(() => ({
-    clients: mockState.clients,
-    loading: mockState.loading.clients,
-    submitting: mockState.submitting.clients,
-    fetchClients: mockActions.fetchClients,
-    createClient: mockActions.createClient,
-    updateClient: mockActions.updateClient,
-    deleteClient: mockActions.deleteClient,
-  })),
-  useInstruments: jest.fn(() => ({
-    instruments: mockState.instruments,
-    loading: mockState.loading.instruments,
-    submitting: mockState.submitting.instruments,
-    fetchInstruments: mockActions.fetchInstruments,
-    createInstrument: mockActions.createInstrument,
-    updateInstrument: mockActions.updateInstrument,
-    deleteInstrument: mockActions.deleteInstrument,
-  })),
-  useConnections: jest.fn(() => ({
-    connections: mockState.connections,
-    loading: mockState.loading.connections,
-    submitting: mockState.submitting.connections,
-    fetchConnections: mockActions.fetchConnections,
-    createConnection: mockActions.createConnection,
-    updateConnection: mockActions.updateConnection,
-    deleteConnection: mockActions.deleteConnection,
-  })),
+// Mock individual Contexts (replaced DataContext mock)
+// Mock with default implementations that read from mockState
+jest.mock('@/contexts/ClientsContext', () => ({
+  useClientsContext: jest.fn(),
+  useClients: jest.fn(),
+}));
+
+jest.mock('@/contexts/InstrumentsContext', () => ({
+  useInstrumentsContext: jest.fn(),
+  useInstruments: jest.fn(),
+}));
+
+jest.mock('@/contexts/ConnectionsContext', () => ({
+  useConnectionsContext: jest.fn(),
+  useConnections: jest.fn(),
 }));
 
 describe('useUnifiedData', () => {
+  // Get mock implementations to update them
+  const { useClientsContext } = require('@/contexts/ClientsContext');
+  const { useInstrumentsContext } = require('@/contexts/InstrumentsContext');
+  const { useConnectionsContext } = require('@/contexts/ConnectionsContext');
+  const { useClients } = require('@/contexts/ClientsContext');
+  const { useInstruments } = require('@/contexts/InstrumentsContext');
+  const { useConnections } = require('@/contexts/ConnectionsContext');
+
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockState.clients = [];
@@ -100,6 +96,99 @@ describe('useUnifiedData', () => {
       instruments: false,
       connections: false,
     };
+    mockState.lastUpdated = {
+      clients: null,
+      instruments: null,
+      connections: null,
+    };
+
+    // Update mock implementations to return current mockState using mockImplementation
+    // Use arrow functions that read mockState at call time, not definition time
+    (useClientsContext as jest.Mock).mockImplementation(() => ({
+      state: {
+        clients: mockState.clients,
+        loading: mockState.loading.clients,
+        submitting: mockState.submitting.clients,
+        lastUpdated: mockState.lastUpdated.clients,
+      },
+      actions: {
+        fetchClients: mockActions.fetchClients,
+        createClient: mockActions.createClient,
+        updateClient: mockActions.updateClient,
+        deleteClient: mockActions.deleteClient,
+        invalidateCache: jest.fn(),
+        resetState: jest.fn(),
+      },
+    }));
+    (useInstrumentsContext as jest.Mock).mockImplementation(() => ({
+      state: {
+        instruments: mockState.instruments,
+        loading: mockState.loading.instruments,
+        submitting: mockState.submitting.instruments,
+        lastUpdated: mockState.lastUpdated.instruments,
+      },
+      actions: {
+        fetchInstruments: mockActions.fetchInstruments,
+        createInstrument: mockActions.createInstrument,
+        updateInstrument: mockActions.updateInstrument,
+        deleteInstrument: mockActions.deleteInstrument,
+        invalidateCache: jest.fn(),
+        resetState: jest.fn(),
+      },
+    }));
+    (useConnectionsContext as jest.Mock).mockImplementation(() => ({
+      state: {
+        connections: mockState.connections,
+        loading: mockState.loading.connections,
+        submitting: mockState.submitting.connections,
+        lastUpdated: mockState.lastUpdated.connections,
+      },
+      actions: {
+        fetchConnections: mockActions.fetchConnections,
+        createConnection: mockActions.createConnection,
+        updateConnection: mockActions.updateConnection,
+        deleteConnection: mockActions.deleteConnection,
+        invalidateCache: jest.fn(),
+        resetState: jest.fn(),
+      },
+    }));
+    
+    (useClients as jest.Mock).mockImplementation(() => ({
+      clients: mockState.clients,
+      loading: mockState.loading.clients,
+      submitting: mockState.submitting.clients,
+      lastUpdated: mockState.lastUpdated.clients,
+      fetchClients: mockActions.fetchClients,
+      createClient: mockActions.createClient,
+      updateClient: mockActions.updateClient,
+      deleteClient: mockActions.deleteClient,
+      invalidateCache: jest.fn(),
+      resetState: jest.fn(),
+    }));
+    (useInstruments as jest.Mock).mockImplementation(() => ({
+      instruments: mockState.instruments,
+      loading: mockState.loading.instruments,
+      submitting: mockState.submitting.instruments,
+      lastUpdated: mockState.lastUpdated.instruments,
+      fetchInstruments: mockActions.fetchInstruments,
+      createInstrument: mockActions.createInstrument,
+      updateInstrument: mockActions.updateInstrument,
+      deleteInstrument: mockActions.deleteInstrument,
+      invalidateCache: jest.fn(),
+      resetState: jest.fn(),
+    }));
+    (useConnections as jest.Mock).mockImplementation(() => ({
+      connections: mockState.connections,
+      loading: mockState.loading.connections,
+      submitting: mockState.submitting.connections,
+      lastUpdated: mockState.lastUpdated.connections,
+      fetchConnections: mockActions.fetchConnections,
+      createConnection: mockActions.createConnection,
+      updateConnection: mockActions.updateConnection,
+      deleteConnection: mockActions.deleteConnection,
+      invalidateCache: jest.fn(),
+      resetState: jest.fn(),
+    }));
   });
 
   describe('useUnifiedData', () => {
@@ -123,6 +212,7 @@ describe('useUnifiedData', () => {
 
     it('should return submitting states', () => {
       mockState.submitting.instruments = true;
+
       const { result } = renderHook(() => useUnifiedData());
 
       expect(result.current.submitting.instruments).toBe(true);
@@ -632,29 +722,77 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedCache', () => {
     it('should provide invalidate function', () => {
+      const mockInvalidateCache = jest.fn();
+      (useClientsContext as jest.Mock).mockReturnValueOnce({
+        state: { clients: [], loading: false, submitting: false, lastUpdated: null },
+        actions: { invalidateCache: mockInvalidateCache },
+      });
+      (useInstrumentsContext as jest.Mock).mockReturnValueOnce({
+        state: { instruments: [], loading: false, submitting: false, lastUpdated: null },
+        actions: { invalidateCache: jest.fn() },
+      });
+      (useConnectionsContext as jest.Mock).mockReturnValueOnce({
+        state: { connections: [], loading: false, submitting: false, lastUpdated: null },
+        actions: { invalidateCache: jest.fn() },
+      });
+
       const { result } = renderHook(() => useUnifiedCache());
 
       result.current.invalidate('clients');
 
-      expect(mockActions.invalidateCache).toHaveBeenCalledWith('clients');
+      expect(mockInvalidateCache).toHaveBeenCalled();
     });
 
     it('should provide invalidateAll function', () => {
+      const mockInvalidateClients = jest.fn();
+      const mockInvalidateInstruments = jest.fn();
+      const mockInvalidateConnections = jest.fn();
+      (useClientsContext as jest.Mock).mockReturnValueOnce({
+        state: { clients: [], loading: false, submitting: false, lastUpdated: null },
+        actions: { invalidateCache: mockInvalidateClients },
+      });
+      (useInstrumentsContext as jest.Mock).mockReturnValueOnce({
+        state: { instruments: [], loading: false, submitting: false, lastUpdated: null },
+        actions: { invalidateCache: mockInvalidateInstruments },
+      });
+      (useConnectionsContext as jest.Mock).mockReturnValueOnce({
+        state: { connections: [], loading: false, submitting: false, lastUpdated: null },
+        actions: { invalidateCache: mockInvalidateConnections },
+      });
+
       const { result } = renderHook(() => useUnifiedCache());
 
       result.current.invalidateAll();
 
-      expect(mockActions.invalidateCache).toHaveBeenCalledWith('clients');
-      expect(mockActions.invalidateCache).toHaveBeenCalledWith('instruments');
-      expect(mockActions.invalidateCache).toHaveBeenCalledWith('connections');
+      expect(mockInvalidateClients).toHaveBeenCalled();
+      expect(mockInvalidateInstruments).toHaveBeenCalled();
+      expect(mockInvalidateConnections).toHaveBeenCalled();
     });
 
     it('should provide reset function', () => {
+      const mockResetClients = jest.fn();
+      const mockResetInstruments = jest.fn();
+      const mockResetConnections = jest.fn();
+      (useClientsContext as jest.Mock).mockReturnValueOnce({
+        state: { clients: [], loading: false, submitting: false, lastUpdated: null },
+        actions: { resetState: mockResetClients },
+      });
+      (useInstrumentsContext as jest.Mock).mockReturnValueOnce({
+        state: { instruments: [], loading: false, submitting: false, lastUpdated: null },
+        actions: { resetState: mockResetInstruments },
+      });
+      (useConnectionsContext as jest.Mock).mockReturnValueOnce({
+        state: { connections: [], loading: false, submitting: false, lastUpdated: null },
+        actions: { resetState: mockResetConnections },
+      });
+
       const { result } = renderHook(() => useUnifiedCache());
 
       result.current.reset();
 
-      expect(mockActions.resetState).toHaveBeenCalled();
+      expect(mockResetClients).toHaveBeenCalled();
+      expect(mockResetInstruments).toHaveBeenCalled();
+      expect(mockResetConnections).toHaveBeenCalled();
     });
   });
 });
