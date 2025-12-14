@@ -497,7 +497,11 @@ export default function ClientsPage() {
             {analyticsData.customers.length > 0 && (
               <div className="mb-6">
                 <CustomerStats
-                  customers={analyticsData.customers}
+                  customers={
+                    analyticsData.selectedCustomer
+                      ? [analyticsData.selectedCustomer]
+                      : analyticsData.customers
+                  }
                   hasActiveFilters={
                     Boolean(analyticsData.searchTerm) ||
                     analyticsData.tagFilter !== 'all' ||
