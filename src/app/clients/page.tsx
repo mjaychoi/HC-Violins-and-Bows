@@ -123,24 +123,14 @@ export default function ClientsPage() {
     deleteClient,
   } = useUnifiedClients();
 
-  // FIXED: useClientInstruments now uses DataContext connections internally
-  // No need to fetch separately - useUnifiedData already fetches at root level
+  // useClientInstruments uses DataContext connections directly
+  // No separate fetching needed - DataContext handles all data fetching
   const {
     instrumentRelationships,
     clientsWithInstruments,
     addInstrumentRelationship: addInstrumentRelationshipHook,
     removeInstrumentRelationship: removeInstrumentRelationshipHook,
-    fetchInstrumentRelationships,
   } = useClientInstruments();
-
-  // FIXED: Initialize instrumentRelationships from DataContext connections
-  // This avoids duplicate API calls - connections are already fetched by useUnifiedData
-  // TODO: Refactor useClientInstruments to use DataContext connections directly
-  React.useEffect(() => {
-    // Note: useClientInstruments maintains its own state for instrumentRelationships
-    // This is a temporary solution - ideally useClientInstruments should use DataContext
-    // For now, we rely on the hook's internal state which may be updated via mutations
-  }, []);
 
   // Note: Filters are now handled in ClientsListContent component
   // to support Suspense boundary for useSearchParams()
@@ -272,10 +262,8 @@ export default function ClientsPage() {
     // 바로 편집 모드로 열기
     openClientView(client, true);
 
-    // Fetch instrument relationships for this client with error handling
-    fetchInstrumentRelationships(client.id).catch(error => {
-      handleError(error, 'Failed to fetch instrument relationships');
-    });
+    // Instrument relationships are already available from DataContext
+    // No need to fetch separately - they're managed by useUnifiedData
 
     // Fetch owned items if client has Owner tag with error handling
     if (client.tags?.includes('Owner')) {
@@ -300,8 +288,8 @@ export default function ClientsPage() {
         relationshipType
       );
 
-      // Refresh relationships
-      await fetchInstrumentRelationships(selectedClient.id);
+      // Relationships are automatically updated in DataContext
+      // No need to manually refresh
       closeInstrumentSearch();
       showSuccess('Instrument connection added.');
     } catch (error) {
@@ -313,10 +301,8 @@ export default function ClientsPage() {
     try {
       await removeInstrumentRelationshipHook(relationshipId);
 
-      // Refresh relationships
-      if (selectedClient) {
-        await fetchInstrumentRelationships(selectedClient.id);
-      }
+      // Relationships are automatically updated in DataContext
+      // No need to manually refresh
       showSuccess('Instrument connection removed.');
     } catch (error) {
       handleError(error, 'Failed to remove instrument relationship');

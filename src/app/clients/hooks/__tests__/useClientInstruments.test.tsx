@@ -83,36 +83,33 @@ describe('useClientInstruments', () => {
 
     expect(result.current.instrumentRelationships).toEqual([]);
     expect(result.current.clientsWithInstruments).toEqual(new Set());
-    expect(result.current.loading).toBe(false);
 
     await act(async () => {
       await flushPromises();
     });
   });
 
-  it('fetches instrument relationships', async () => {
-    // ✅ FIXED: DataContext를 통해 connections 설정
+  it('returns instrument relationships from DataContext', async () => {
+    // DataContext를 통해 connections 설정
     mockConnectionsRef.current = [mockInstrumentRelationship];
 
     const { result } = renderHook(() => useClientInstruments());
 
-    // fetchInstrumentRelationships는 no-op이지만, connections는 DataContext에서 가져옴
     await act(async () => {
-      await result.current.fetchInstrumentRelationships('1');
+      await flushPromises();
     });
 
     expect(result.current.instrumentRelationships).toHaveLength(1);
     expect(result.current.clientsWithInstruments.has('1')).toBe(true);
   });
 
-  it('handles fetch error', async () => {
-    // ✅ FIXED: fetchInstrumentRelationships는 no-op이므로 빈 connections로 테스트
+  it('returns empty relationships when DataContext has no connections', async () => {
     mockConnectionsRef.current = [];
 
     const { result } = renderHook(() => useClientInstruments());
 
     await act(async () => {
-      await result.current.fetchInstrumentRelationships('1');
+      await flushPromises();
     });
 
     expect(result.current.instrumentRelationships).toEqual([]);
@@ -159,14 +156,14 @@ describe('useClientInstruments', () => {
   });
 
   it('removes instrument relationship', async () => {
-    // ✅ FIXED: DataContext를 통해 connections 설정
+    // DataContext를 통해 connections 설정
     mockConnectionsRef.current = [mockInstrumentRelationship];
     mockDeleteConnection.mockResolvedValue(true);
 
     const { result } = renderHook(() => useClientInstruments());
 
     await act(async () => {
-      await result.current.fetchInstrumentRelationships('1');
+      await flushPromises();
     });
     expect(result.current.instrumentRelationships).toHaveLength(1);
 
@@ -175,9 +172,12 @@ describe('useClientInstruments', () => {
     });
 
     expect(mockDeleteConnection).toHaveBeenCalledWith('1');
-    // ✅ FIXED: DataContext가 업데이트되면 connections도 업데이트됨
+    // DataContext가 업데이트되면 connections도 업데이트됨
     mockConnectionsRef.current = [];
     const { result: result2 } = renderHook(() => useClientInstruments());
+    await act(async () => {
+      await flushPromises();
+    });
     expect(result2.current.instrumentRelationships).toHaveLength(0);
     expect(result2.current.clientsWithInstruments.has('1')).toBe(false);
   });
@@ -199,27 +199,27 @@ describe('useClientInstruments', () => {
   });
 
   it('updates clients with instruments set correctly', async () => {
-    // ✅ FIXED: DataContext를 통해 connections 설정
+    // DataContext를 통해 connections 설정
     mockConnectionsRef.current = [mockInstrumentRelationship];
 
     const { result } = renderHook(() => useClientInstruments());
 
     await act(async () => {
-      await result.current.fetchInstrumentRelationships('1');
+      await flushPromises();
     });
 
     expect(result.current.clientsWithInstruments.has('1')).toBe(true);
   });
 
   it('removes client from set when no relationships remain', async () => {
-    // ✅ FIXED: DataContext를 통해 connections 설정
+    // DataContext를 통해 connections 설정
     mockConnectionsRef.current = [mockInstrumentRelationship];
     mockDeleteConnection.mockResolvedValue(true);
 
     const { result } = renderHook(() => useClientInstruments());
 
     await act(async () => {
-      await result.current.fetchInstrumentRelationships('1');
+      await flushPromises();
     });
     expect(result.current.clientsWithInstruments.has('1')).toBe(true);
 
@@ -228,14 +228,17 @@ describe('useClientInstruments', () => {
     });
 
     expect(mockDeleteConnection).toHaveBeenCalledWith('1');
-    // ✅ FIXED: DataContext가 업데이트되면 connections도 업데이트됨
+    // DataContext가 업데이트되면 connections도 업데이트됨
     mockConnectionsRef.current = [];
     const { result: result2 } = renderHook(() => useClientInstruments());
+    await act(async () => {
+      await flushPromises();
+    });
     expect(result2.current.clientsWithInstruments.has('1')).toBe(false);
   });
 
   it('keeps client in set when other relationships exist', async () => {
-    // ✅ FIXED: DataContext를 통해 connections 설정
+    // DataContext를 통해 connections 설정
     const rel2 = { ...mockInstrumentRelationship, id: '2' };
     mockConnectionsRef.current = [mockInstrumentRelationship, rel2];
     mockDeleteConnection.mockResolvedValue(true);
@@ -243,7 +246,7 @@ describe('useClientInstruments', () => {
     const { result } = renderHook(() => useClientInstruments());
 
     await act(async () => {
-      await result.current.fetchInstrumentRelationships('1');
+      await flushPromises();
     });
     expect(result.current.clientsWithInstruments.has('1')).toBe(true);
 
@@ -252,43 +255,31 @@ describe('useClientInstruments', () => {
     });
 
     expect(mockDeleteConnection).toHaveBeenCalledWith('1');
-    // ✅ FIXED: DataContext가 업데이트되면 connections도 업데이트됨 (하나만 제거)
+    // DataContext가 업데이트되면 connections도 업데이트됨 (하나만 제거)
     mockConnectionsRef.current = [rel2];
     const { result: result2 } = renderHook(() => useClientInstruments());
+    await act(async () => {
+      await flushPromises();
+    });
     expect(result2.current.clientsWithInstruments.has('1')).toBe(true);
   });
 
-  it('handles loading states correctly', async () => {
-    // ✅ FIXED: hook이 loading을 false로 반환함 (DataContext가 loading 관리)
-    mockConnectionsRef.current = [];
-
-    const { result } = renderHook(() => useClientInstruments());
-
-    expect(result.current.loading).toBe(false);
-
-    await act(async () => {
-      await result.current.fetchInstrumentRelationships('1');
-    });
-
-    // ✅ FIXED: fetchInstrumentRelationships는 no-op이므로 loading 상태 변경 없음
-    expect(result.current.loading).toBe(false);
-  });
-
-  it('clears error when new operation succeeds', async () => {
-    // ✅ FIXED: fetchInstrumentRelationships는 no-op이므로 에러 처리 없음
-    mockConnectionsRef.current = [];
+  it('provides utility functions', async () => {
+    mockConnectionsRef.current = [mockInstrumentRelationship];
 
     const { result } = renderHook(() => useClientInstruments());
 
     await act(async () => {
-      await result.current.fetchInstrumentRelationships('1');
-    });
-    expect(result.current.instrumentRelationships).toEqual([]);
-
-    await act(async () => {
-      await result.current.fetchInstrumentRelationships('1');
+      await flushPromises();
     });
 
-    expect(result.current.instrumentRelationships).toEqual([]);
+    // Test getClientInstruments
+    const clientInstruments = result.current.getClientInstruments('1');
+    expect(clientInstruments).toHaveLength(1);
+    expect(clientInstruments[0].id).toBe('1');
+
+    // Test hasInstrumentRelationship
+    expect(result.current.hasInstrumentRelationship('1', '1')).toBe(true);
+    expect(result.current.hasInstrumentRelationship('1', '2')).toBe(false);
   });
 });

@@ -202,7 +202,6 @@ const mockClearAllFilters = jest.fn();
 const mockHandleColumnSort = jest.fn();
 const mockGetSortArrow = jest.fn(() => '');
 const mockGetActiveFiltersCount = jest.fn(() => 0);
-const mockFetchInstrumentRelationships = jest.fn().mockResolvedValue(undefined);
 const mockAddInstrumentRelationship = jest.fn();
 const mockRemoveInstrumentRelationship = jest.fn();
 const mockOpenClientView = jest.fn();
@@ -270,8 +269,6 @@ jest.mock('../hooks', () => ({
       },
     ],
     clientsWithInstruments: new Set(['1']),
-    fetchInstrumentRelationships: mockFetchInstrumentRelationships,
-    fetchAllInstrumentRelationships: jest.fn().mockResolvedValue(undefined),
     addInstrumentRelationship: mockAddInstrumentRelationship,
     removeInstrumentRelationship: mockRemoveInstrumentRelationship,
   }),
@@ -537,7 +534,7 @@ describe('ClientsPage', () => {
 
     // ✅ FIXED: userEvent.click이 자동으로 상태 업데이트를 처리
     expect(mockOpenClientView).toHaveBeenCalled();
-    expect(mockFetchInstrumentRelationships).toHaveBeenCalledWith('1');
+    // Instrument relationships are now managed by DataContext, no manual fetch needed
   });
 
   it('should fetch owned items for clients with Owner tag', async () => {
@@ -690,10 +687,6 @@ describe('ClientsPage', () => {
         useClientInstruments: () => ({
           instrumentRelationships: [],
           clientsWithInstruments: new Set(),
-          fetchInstrumentRelationships: jest.fn().mockResolvedValue(undefined),
-          fetchAllInstrumentRelationships: jest
-            .fn()
-            .mockResolvedValue(undefined),
           addInstrumentRelationship: mockAddInstrumentRelationship,
           removeInstrumentRelationship: mockRemoveInstrumentRelationship,
         }),
@@ -806,10 +799,6 @@ describe('ClientsPage', () => {
         useClientInstruments: () => ({
           instrumentRelationships: [],
           clientsWithInstruments: new Set(),
-          fetchInstrumentRelationships: jest.fn().mockResolvedValue(undefined),
-          fetchAllInstrumentRelationships: jest
-            .fn()
-            .mockResolvedValue(undefined),
           addInstrumentRelationship: mockAddInstrumentRelationship,
           removeInstrumentRelationship: mockRemoveInstrumentRelationship,
         }),
