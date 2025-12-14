@@ -29,6 +29,10 @@ const calendarEventStyles = `
     line-height: 1.3 !important;
     transition: all 0.15s ease !important;
     cursor: pointer !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
   }
   .rbc-event:hover {
     box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.08) !important;
@@ -91,6 +95,14 @@ const calendarEventStyles = `
   .rbc-row-segment {
     overflow: visible !important;
     padding-left: 2px !important; /* Prevent border-left from overflowing */
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  /* Prevent event text from overflowing */
+  .rbc-event-label {
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
   }
   /* Month cell styling: date in top-right, reduced padding */
   .rbc-date-cell {
@@ -142,15 +154,28 @@ const calendarEventStyles = `
     align-items: flex-start !important;
     gap: 2px !important;
     line-height: 1.2 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
   }
   .rbc-event-content .event-instrument {
     font-weight: 500 !important;
     font-size: 11px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
   }
   .rbc-event-content .event-description {
     font-size: 10px !important;
     color: #6b7280 !important;
     opacity: 0.9 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
   }
   /* Target emoji icon (first character) - note: CSS can't directly style emoji opacity,
      so we rely on the emoji being in the title string itself */
