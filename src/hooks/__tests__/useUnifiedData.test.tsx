@@ -1,4 +1,5 @@
-import { renderHook, waitFor } from '@/test-utils/render';
+import { renderHook as rtlRenderHook, waitFor } from '@testing-library/react';
+import React from 'react';
 import {
   useUnifiedData,
   useUnifiedClients,
@@ -204,7 +205,9 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedData', () => {
     it('should return initial state with empty arrays', () => {
-      const { result } = renderHook(() => useUnifiedData());
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.clients).toEqual([]);
       expect(result.current.instruments).toEqual([]);
@@ -213,7 +216,9 @@ describe('useUnifiedData', () => {
 
     it('should return loading states', () => {
       mockState.loading.clients = true;
-      const { result } = renderHook(() => useUnifiedData());
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.loading.clients).toBe(true);
       expect(result.current.loading.instruments).toBe(false);
@@ -224,7 +229,9 @@ describe('useUnifiedData', () => {
     it('should return submitting states', () => {
       mockState.submitting.instruments = true;
 
-      const { result } = renderHook(() => useUnifiedData());
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.submitting.instruments).toBe(true);
       expect(result.current.submitting.any).toBe(true);
@@ -279,7 +286,9 @@ describe('useUnifiedData', () => {
     });
 
     it('should return all actions', () => {
-      const { result } = renderHook(() => useUnifiedData());
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.fetchClients).toBeDefined();
       expect(result.current.fetchInstruments).toBeDefined();
@@ -293,7 +302,9 @@ describe('useUnifiedData', () => {
       const now = new Date();
       mockState.lastUpdated.clients = now;
 
-      const { result } = renderHook(() => useUnifiedData());
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.lastUpdated.clients).toBe(now);
       expect(result.current.lastUpdated.instruments).toBeNull();
@@ -303,7 +314,9 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedClients', () => {
     it('should return clients hook data', () => {
-      const { result } = renderHook(() => useUnifiedClients());
+      const { result } = rtlRenderHook(() => useUnifiedClients(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.clients).toEqual([]);
       expect(result.current.loading).toEqual({
@@ -326,7 +339,9 @@ describe('useUnifiedData', () => {
         { id: '1', first_name: 'Test', last_name: 'Client' } as Client,
       ];
 
-      renderHook(() => useUnifiedClients());
+      rtlRenderHook(() => useUnifiedClients(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       // useUnifiedClients only reads from state, doesn't fetch
       expect(mockActions.fetchClients).not.toHaveBeenCalled();
@@ -335,7 +350,9 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedInstruments', () => {
     it('should return instruments hook data', () => {
-      const { result } = renderHook(() => useUnifiedInstruments());
+      const { result } = rtlRenderHook(() => useUnifiedInstruments(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.instruments).toEqual([]);
       expect(result.current.loading).toBe(false);
@@ -351,7 +368,9 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedConnections', () => {
     it('should return connections hook data', () => {
-      const { result } = renderHook(() => useUnifiedConnections());
+      const { result } = rtlRenderHook(() => useUnifiedConnections(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.connections).toEqual([]);
       expect(result.current.loading).toBe(false);
@@ -367,7 +386,9 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedDashboard', () => {
     it('should return dashboard data', () => {
-      const { result } = renderHook(() => useUnifiedDashboard());
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.instruments).toEqual([]);
       expect(result.current.connections).toEqual([]);
@@ -398,7 +419,9 @@ describe('useUnifiedData', () => {
       mockState.instruments = [instrument];
       mockState.connections = [connection];
 
-      const { result } = renderHook(() => useUnifiedDashboard());
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.clientRelationships).toHaveLength(1);
       expect(result.current.clientRelationships[0].client).toEqual(client);
@@ -421,7 +444,9 @@ describe('useUnifiedData', () => {
       mockState.instruments = [];
       mockState.connections = [connection];
 
-      const { result } = renderHook(() => useUnifiedDashboard());
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.clientRelationships).toHaveLength(0);
     });
@@ -450,7 +475,9 @@ describe('useUnifiedData', () => {
       mockState.instruments = [instrument];
       mockState.connections = [connection];
 
-      const { result } = renderHook(() => useUnifiedDashboard());
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.instrumentRelationships).toEqual(
         result.current.clientRelationships
@@ -479,7 +506,9 @@ describe('useUnifiedData', () => {
 
   describe('useConnectedClientsData', () => {
     it('should return form data', () => {
-      const { result } = renderHook(() => useConnectedClientsData());
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.clients).toEqual([]);
       expect(result.current.instruments).toEqual([]);
@@ -487,7 +516,9 @@ describe('useUnifiedData', () => {
     });
 
     it('should provide createConnection function', async () => {
-      const { result } = renderHook(() => useConnectedClientsData());
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       await result.current.createConnection(
         'client-1',
@@ -505,7 +536,9 @@ describe('useUnifiedData', () => {
     });
 
     it('should handle null notes in createConnection', async () => {
-      const { result } = renderHook(() => useConnectedClientsData());
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       await result.current.createConnection(
         'client-1',
@@ -523,7 +556,9 @@ describe('useUnifiedData', () => {
     });
 
     it('should provide updateConnection function', async () => {
-      const { result } = renderHook(() => useConnectedClientsData());
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       await result.current.updateConnection('connection-1', {
         relationshipType: 'Interested',
@@ -540,7 +575,9 @@ describe('useUnifiedData', () => {
     });
 
     it('should handle null notes in updateConnection', async () => {
-      const { result } = renderHook(() => useConnectedClientsData());
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       await result.current.updateConnection('connection-1', {
         relationshipType: 'Interested',
