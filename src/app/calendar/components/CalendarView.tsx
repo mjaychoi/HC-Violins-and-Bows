@@ -6,7 +6,7 @@ import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { addHours } from 'date-fns';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { MaintenanceTask } from '@/types';
+import { MaintenanceTask, ContactLog } from '@/types';
 import YearView from './YearView';
 import TimelineView from './TimelineView';
 import { getDateStatus } from '@/utils/tasks/style';
@@ -15,18 +15,18 @@ import { parseISO, isValid } from 'date-fns';
 
 // Custom styles for calendar events - professional card design
 const calendarEventStyles = `
-  /* Professional card design: white background with left accent bar (3px) */
+  /* Professional card design: white background with left accent bar (2px default, 4px for priority) */
   .rbc-event {
     background: #ffffff !important;
     border: 1px solid #e5e7eb !important;
-    border-left: 3px solid !important;
+    border-left: 2px solid !important;
     border-radius: 6px !important;
     padding: 6px 8px !important;
     margin: 1px 0 !important;
     box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.04) !important;
     color: #111827 !important;
     font-size: 11px !important;
-    line-height: 1.4 !important;
+    line-height: 1.3 !important;
     transition: all 0.15s ease !important;
     cursor: pointer !important;
   }
@@ -37,15 +37,26 @@ const calendarEventStyles = `
   /* Status-based accent colors: left border only (3px) */
   .rbc-event.status-overdue {
     border-left-color: #ef4444 !important; /* Red-500 */
+    border-left-width: 4px !important; /* Thicker for priority */
+    background-color: #fef2f2 !important; /* Red-50 tint */
   }
   .rbc-event.status-due-soon {
     border-left-color: #f59e0b !important; /* Amber-500 */
+    border-left-width: 4px !important; /* Thicker for priority */
+    background-color: #fffbeb !important; /* Amber-50 tint */
+  }
+  .rbc-event.status-today {
+    border-left-color: #10b981 !important; /* Green-500 */
+    border-left-width: 4px !important; /* Thicker for priority */
+    background-color: #f0fdf4 !important; /* Green-50 tint */
   }
   .rbc-event.status-normal {
     border-left-color: #10b981 !important; /* Emerald-500 */
+    border-left-width: 2px !important; /* Normal thickness */
   }
   .rbc-event.status-completed {
     border-left-color: #9ca3af !important; /* Gray-400 */
+    border-left-width: 2px !important;
     opacity: 0.7 !important;
   }
   /* Remove old styles */
@@ -106,18 +117,40 @@ const calendarEventStyles = `
   .rbc-today .rbc-day-bg {
     border-left: 2px solid #3B82F6 !important; /* Blue-500 accent */
   }
-  /* Weekend: slightly lighter text */
+  /* Weekend: stronger background distinction */
+  .rbc-day-bg.rbc-sat,
+  .rbc-day-bg.rbc-sun {
+    background-color: #f9fafb !important; /* Neutral-50 */
+  }
+  .rbc-sat .rbc-date-cell > a,
+  .rbc-sun .rbc-date-cell > a {
+    color: #9ca3af !important; /* Muted for weekend */
+  }
+  /* Previous/next month dates: lower opacity */
   .rbc-off-range-bg {
     background-color: #fafafa !important;
+    opacity: 0.5 !important;
   }
   .rbc-off-range .rbc-date-cell > a {
     color: #d1d5db !important;
+    opacity: 0.6 !important;
   }
-  /* Event icon styling: emoji opacity 60% via span wrapper */
+  /* Event content: 2-line structure */
   .rbc-event-content {
     display: flex !important;
-    align-items: center !important;
-    gap: 4px !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 2px !important;
+    line-height: 1.2 !important;
+  }
+  .rbc-event-content .event-instrument {
+    font-weight: 500 !important;
+    font-size: 11px !important;
+  }
+  .rbc-event-content .event-description {
+    font-size: 10px !important;
+    color: #6b7280 !important;
+    opacity: 0.9 !important;
   }
   /* Target emoji icon (first character) - note: CSS can't directly style emoji opacity,
      so we rely on the emoji being in the title string itself */
@@ -171,6 +204,7 @@ export type ExtendedView = 'month' | 'week' | 'agenda' | 'year' | 'timeline';
 
 interface CalendarViewProps {
   tasks: MaintenanceTask[];
+  contactLogs?: ContactLog[]; // Follow-up 이벤트용
   instruments?: Map<
     string,
     {
@@ -191,6 +225,7 @@ interface CalendarViewProps {
 
 export default function CalendarView({
   tasks,
+  contactLogs = [],
   instruments,
   onSelectEvent,
   onSelectSlot,
@@ -218,9 +253,17 @@ export default function CalendarView({
     }
   };
 
-  // Convert tasks to calendar events
+  // EventData interface for structured event data
+  interface EventData {
+    instrument: string;
+    instrumentColor: string;
+    description: string;
+  }
+
+  // Convert tasks and follow-ups to calendar events
   const events: Event[] = useMemo(() => {
-    return tasks
+    // Task events
+    const taskEvents = tasks
       .filter(
         task => task.scheduled_date || task.due_date || task.personal_due_date
       )
@@ -260,24 +303,24 @@ export default function CalendarView({
           : undefined;
         const instrumentType = instrument?.type;
 
-        // FIXED: Get instrument icon for visual scanning
-        const getInstrumentIcon = (type: string | null | undefined): string => {
-          if (!type) return '🎼';
+        // Get instrument color for visual distinction (no icon)
+        const getInstrumentColor = (type: string | null | undefined): string => {
+          if (!type) return 'text-gray-600';
           const t = type.toLowerCase();
-          if (t.includes('violin') || t.includes('바이올린')) return '🎻';
-          if (t.includes('viola') || t.includes('비올라')) return '🎻';
-          if (t.includes('cello') || t.includes('첼로')) return '🎻';
-          if (t.includes('bass') || t.includes('베이스')) return '🎻';
-          if (t.includes('bow') || t.includes('활')) return '🏹';
-          return '🎼';
+          if (t.includes('violin') || t.includes('바이올린')) return 'text-blue-600';
+          if (t.includes('viola') || t.includes('비올라')) return 'text-purple-600';
+          if (t.includes('cello') || t.includes('첼로')) return 'text-green-600';
+          if (t.includes('bass') || t.includes('베이스')) return 'text-indigo-600';
+          if (t.includes('bow') || t.includes('활')) return 'text-amber-600';
+          return 'text-gray-600';
         };
 
-        // FIXED: Improved text hierarchy - prioritize task type and instrument
-        // Format: "🎻 [Instrument] Task Type" with better visual scanning
-        let eventTitle = task.title;
-        const icon = getInstrumentIcon(instrumentType);
-
-        // Extract task type from title (common patterns: "복원", "교체", "점검", etc.)
+        // 2-line structure: Instrument (line 1) + Task Description (line 2)
+        const instrumentColor = getInstrumentColor(instrumentType);
+        const instrumentName = instrumentType || 'Unknown';
+        
+        // Clean task title (remove common prefixes/suffixes)
+        let taskDescription = task.title.trim();
         const taskTypePatterns = [
           /(복원|restoration)/i,
           /(교체|replace|replacement)/i,
@@ -286,55 +329,139 @@ export default function CalendarView({
           /(조율|tuning)/i,
         ];
 
-        let taskType = '';
-        let taskDescription = eventTitle;
+        // Extract and clean task description
         for (const pattern of taskTypePatterns) {
-          const match = eventTitle.match(pattern);
+          const match = taskDescription.match(pattern);
           if (match) {
-            taskType = match[1];
-            taskDescription = eventTitle.replace(pattern, '').trim();
+            taskDescription = taskDescription.replace(pattern, '').trim();
             break;
           }
         }
 
-        if (instrumentType) {
-          // Format: "🎻 [Instrument] Task Type" or "🎻 [Instrument] Task Description"
-          const instrumentPart = instrumentType;
-          const taskPart =
-            taskType ||
-            (taskDescription.length > 12
-              ? `${taskDescription.slice(0, 10)}...`
-              : taskDescription);
-          // Icon emoji is included in title - CSS will style it
-          eventTitle = `${icon} ${instrumentPart} · ${taskPart}`;
-        } else {
-          // No instrument: just show task
-          const displayTitle = taskType || taskDescription;
-          if (displayTitle.length > 20) {
-            eventTitle = `${displayTitle.slice(0, 18)}...`;
-          } else {
-            eventTitle = displayTitle;
-          }
+        // Truncate if too long
+        if (taskDescription.length > 20) {
+          taskDescription = `${taskDescription.slice(0, 18)}...`;
         }
 
+        // Store structured data for custom event component
+        const eventData: EventData = {
+          instrument: instrumentName,
+          instrumentColor,
+          description: taskDescription || 'Task',
+        };
+
         const event: Event = {
-          title: eventTitle,
+          title: `${eventData.instrument}\n${eventData.description}`, // 2-line format
           start: start,
           end: endDate,
-          resource: task,
+          resource: { task, eventData }, // Store structured data
         };
 
         return event;
       })
       .filter((event): event is Event => event !== null);
-  }, [tasks, instruments]);
+
+    // Follow-up events (from contact logs)
+    const followUpEvents = contactLogs
+      .filter(log => log.next_follow_up_date)
+      .map(log => {
+        const followUpDate = parseYMDLocal(log.next_follow_up_date!);
+        if (!followUpDate) return null;
+
+        const start = new Date(followUpDate);
+        start.setHours(10, 0, 0, 0); // 10AM for follow-ups
+        const endDate = addHours(start, 1);
+
+        const clientName = log.client
+          ? `${log.client.first_name || ''} ${log.client.last_name || ''}`.trim() ||
+            log.client.email ||
+            'Unknown Client'
+          : 'Unknown Client';
+
+        const eventData: EventData = {
+          instrument: log.instrument
+            ? `${log.instrument.maker || ''} ${log.instrument.type || ''}`.trim() ||
+              'Unknown Instrument'
+            : 'Follow-up',
+          instrumentColor: 'text-amber-600',
+          description: `Follow-up: ${clientName}`,
+        };
+
+        const event: Event = {
+          title: `${eventData.instrument}\n${eventData.description}`,
+          start: start,
+          end: endDate,
+          resource: { 
+            type: 'follow_up',
+            contactLog: log,
+            clientName,
+          },
+        };
+
+        return event;
+      })
+      .filter((event): event is Event => event !== null);
+
+    return [...taskEvents, ...followUpEvents];
+  }, [tasks, contactLogs, instruments]);
 
   // FIXED: Lightweight event style - white background with left color bar
+  interface EventResource {
+    task?: MaintenanceTask;
+    type?: 'follow_up';
+    contactLog?: ContactLog;
+    clientName?: string;
+    eventData?: {
+      instrument: string;
+      instrumentColor: string;
+      description: string;
+    };
+  }
   const eventStyleGetter = useCallback(
     (event: Event) => {
-      const task = event.resource as MaintenanceTask;
+      const resource = event.resource as EventResource | MaintenanceTask;
+      
+      // Handle follow-up events
+      if (resource && typeof resource === 'object' && 'type' in resource && resource.type === 'follow_up') {
+        return {
+          style: {
+            backgroundColor: '#fef3c7', // Amber-100
+            color: '#92400e', // Amber-800
+            border: '1px solid #fbbf24', // Amber-400
+            borderLeft: '4px solid #f59e0b', // Amber-500
+            borderRadius: '6px',
+            padding: '6px 8px',
+            fontSize: '11px',
+            fontWeight: '500',
+            boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.04)',
+            cursor: 'pointer',
+          },
+          className: 'rbc-event status-today',
+        };
+      }
+
+      // Handle task events
+      const task = 'task' in resource ? resource.task : (resource as MaintenanceTask);
+      if (!task) {
+        // Fallback for invalid task
+        return {
+          style: {
+            backgroundColor: '#ffffff',
+            color: '#111827',
+            border: '1px solid #e5e7eb',
+            borderLeft: '2px solid #9ca3af',
+            borderRadius: '6px',
+            padding: '6px 8px',
+            fontSize: '11px',
+            cursor: 'pointer',
+          },
+          className: 'rbc-event status-normal',
+        };
+      }
+      
       const dateStatus = getDateStatus(task);
       const isOverdue = dateStatus.status === 'overdue';
+      const isToday = dateStatus.days === 0 && !isOverdue;
       const isDueSoon =
         dateStatus.status === 'upcoming' && dateStatus.days <= 3;
       const isCompleted = task.status === 'completed';
@@ -345,6 +472,8 @@ export default function CalendarView({
         statusClass = 'status-completed';
       } else if (isOverdue) {
         statusClass = 'status-overdue';
+      } else if (isToday) {
+        statusClass = 'status-today';
       } else if (isDueSoon) {
         statusClass = 'status-due-soon';
       }
@@ -478,40 +607,72 @@ export default function CalendarView({
           culture="ko"
           components={{
             event: ({ event }) => {
-              // Custom event component to style icon with opacity 60%
+              // Custom event component with 2-line structure
+              interface EventResource {
+                task?: MaintenanceTask;
+                type?: 'follow_up';
+                contactLog?: ContactLog;
+                clientName?: string;
+                eventData?: {
+                  instrument: string;
+                  instrumentColor: string;
+                  description: string;
+                };
+              }
+              const resource = event.resource as EventResource | MaintenanceTask;
+              
+              // Handle follow-up events
+              if (resource && typeof resource === 'object' && 'type' in resource && resource.type === 'follow_up') {
+                const clientName = resource.clientName || 'Unknown Client';
+                return (
+                  <div className="rbc-event-content">
+                    <div className="event-instrument text-amber-600">
+                      ⏰ Follow-up
+                    </div>
+                    <div className="event-description">
+                      {clientName}
+                    </div>
+                  </div>
+                );
+              }
+
+              // Handle task events
+              const eventData = 'eventData' in resource ? resource.eventData : null;
+              
+              if (eventData) {
+                // Use structured data for 2-line display
+                return (
+                  <div className="rbc-event-content">
+                    <div className={`event-instrument ${eventData.instrumentColor}`}>
+                      {eventData.instrument}
+                    </div>
+                    <div className="event-description">
+                      {eventData.description}
+                    </div>
+                  </div>
+                );
+              }
+              
+              // Fallback: parse title (2-line format: "Instrument\nDescription")
               const title =
                 typeof event.title === 'string'
                   ? event.title
                   : String(event.title || '');
-              // Match emoji icon at start of title
-              const iconMatch = title.match(
-                /^([\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}])/u
-              );
-              if (iconMatch) {
-                const icon = iconMatch[0];
-                const rest = title.slice(icon.length).trim();
+              const lines = title.split('\n');
+              
+              if (lines.length >= 2) {
                 return (
-                  <div
-                    className="rbc-event-content"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                  >
-                    <span
-                      style={{
-                        opacity: 0.6,
-                        fontSize: '12px',
-                        lineHeight: '1',
-                      }}
-                    >
-                      {icon}
-                    </span>
-                    <span>{rest}</span>
+                  <div className="rbc-event-content">
+                    <div className="event-instrument text-gray-700">
+                      {lines[0]}
+                    </div>
+                    <div className="event-description">
+                      {lines[1]}
+                    </div>
                   </div>
                 );
               }
+              
               return <div className="rbc-event-content">{title}</div>;
             },
           }}

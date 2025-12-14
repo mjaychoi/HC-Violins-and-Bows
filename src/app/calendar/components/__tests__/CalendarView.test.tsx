@@ -174,9 +174,9 @@ describe('CalendarView', () => {
     expect(eventsContainer).toBeInTheDocument();
 
     // Find event by test id - task.id is '1' (now it's a button)
-    // Event title format is now "🎻 Instrument · Task" (icon + instrument type + task)
+    // Event title format is now 2-line: "Instrument\nTask Description" (no icon, no separator)
     const eventButton =
-      screen.queryByRole('button', { name: /violin.*repair/i }) ||
+      screen.queryByRole('button', { name: /violin/i }) ||
       screen.queryByTestId('calendar-event-1');
     expect(eventButton).toBeInTheDocument();
 
@@ -186,9 +186,17 @@ describe('CalendarView', () => {
     // Test that onSelectEvent handler is passed to Calendar component
     // The actual click behavior is tested in integration tests
     // Here we verify that events are rendered and have the correct structure
-    // Note: Event title format is now "🎻 Instrument · Task" (icon + instrument type + task)
-    // The title will be "🎻 Violin · Repair" (icon + instrument type + task title)
-    expect(eventButton?.textContent).toMatch(/Violin.*Repair/i);
+    // Note: Event format is now 2-line structure with custom event component
+    // The event shows instrument name (line 1) and task description (line 2)
+    // Custom event component renders: <div className="event-instrument">Violin</div>
+    //                                  <div className="event-description">Task Description</div>
+    const buttonText = eventButton?.textContent || '';
+    expect(buttonText).toMatch(/Violin/i);
+    // FIXED: CalendarView removes task type patterns (like "repair") from task.title
+    // If task.title is "Repair", the pattern /(수리|repair)/i matches and removes it,
+    // leaving an empty string, which then defaults to 'Task' (see line 348 in CalendarView.tsx)
+    // So we check for "Task" instead of "Repair"
+    expect(buttonText).toMatch(/Task/i);
   });
 
   it('should handle slot selection', async () => {

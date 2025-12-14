@@ -33,7 +33,7 @@ function SummaryCard({
     onClick ? 'cursor-pointer hover:shadow-sm' : ''
   }`;
 
-  // Active state: full background color, bold number
+  // Active state: full background color, bold label, muted number
   if (isActive) {
     if (isOverdue) {
       return (
@@ -43,8 +43,7 @@ function SummaryCard({
           onClick={onClick}
         >
           <span className="text-sm font-semibold">{label}</span>
-          <span className="text-sm font-bold">{value}</span>
-          <span className="text-xs">🔴</span>
+          <span className="text-sm font-medium text-gray-500">({value})</span>
         </button>
       );
     }
@@ -58,12 +57,6 @@ function SummaryCard({
       orange: 'bg-orange-100 border-orange-400 text-orange-800',
     };
 
-    const emojiMap: Record<string, string> = {
-      All: '',
-      Today: '🟢',
-      'Next 7d': '🟣',
-    };
-
     return (
       <button
         type="button"
@@ -71,13 +64,12 @@ function SummaryCard({
         onClick={onClick}
       >
         <span className="text-sm font-semibold">{label}</span>
-        <span className="text-sm font-bold">{value}</span>
-        {emojiMap[label] && <span className="text-xs">{emojiMap[label]}</span>}
+        <span className="text-sm font-medium text-gray-500">({value})</span>
       </button>
     );
   }
 
-  // Inactive state: outline only
+  // Inactive state: outline only, muted number
   if (isOverdue) {
     return (
       <button
@@ -86,13 +78,12 @@ function SummaryCard({
         onClick={onClick}
       >
         <span className="text-sm font-medium">{label}</span>
-        <span className="text-sm font-semibold">{value}</span>
-        <span className="text-xs">🔴</span>
+        <span className="text-sm font-medium text-gray-400">({value})</span>
       </button>
     );
   }
 
-  // Other pills: border-only color scheme (inactive)
+  // Other pills: border-only color scheme (inactive), muted number
   const colorClasses = {
     green:
       'bg-white border-green-300 text-gray-700 hover:border-green-400 hover:bg-green-50',
@@ -104,12 +95,6 @@ function SummaryCard({
       'bg-white border-orange-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50',
   };
 
-  const emojiMap: Record<string, string> = {
-    All: '',
-    Today: '🟢',
-    'Next 7d': '🟣',
-  };
-
   return (
     <button
       type="button"
@@ -117,8 +102,7 @@ function SummaryCard({
       onClick={onClick}
     >
       <span className="text-sm font-medium">{label}</span>
-      <span className="text-sm font-semibold">{value}</span>
-      {emojiMap[label] && <span className="text-xs">{emojiMap[label]}</span>}
+      <span className="text-sm font-medium text-gray-400">({value})</span>
     </button>
   );
 }
