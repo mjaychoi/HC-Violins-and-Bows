@@ -130,19 +130,27 @@ describe('connectionUtils filtering helpers', () => {
 describe('connectionUtils relationship presentation helpers', () => {
   it('returns relationship colors and icons with defaults', () => {
     expect(getRelationshipColor('Interested')).toBe(
-      'bg-yellow-100 text-yellow-800'
+      'bg-amber-100 text-amber-800 border-amber-200' // ✅ FIXED: amber
     );
-    expect(getRelationshipColor('Sold')).toBe('bg-green-100 text-green-800');
-    expect(getRelationshipColor('Owned')).toBe('bg-purple-100 text-purple-800');
-    expect(getRelationshipColor('Booked')).toBe('bg-blue-100 text-blue-800');
+    expect(getRelationshipColor('Sold')).toBe(
+      'bg-red-100 text-red-800 border-red-200'
+    ); // ✅ FIXED: red
+    expect(getRelationshipColor('Owned')).toBe(
+      'bg-purple-100 text-purple-800 border-purple-200'
+    );
+    expect(getRelationshipColor('Booked')).toBe(
+      'bg-purple-100 text-purple-800 border-purple-200'
+    ); // ✅ FIXED: purple
     // @ts-expect-error intentionally passing unknown
-    expect(getRelationshipColor('Unknown')).toBe('bg-gray-100 text-gray-800');
+    expect(getRelationshipColor('Unknown')).toBe(
+      'bg-gray-100 text-gray-800 border-gray-200'
+    );
 
-    expect(getRelationshipIcon('Interested')).toBe('👀');
+    expect(getRelationshipIcon('Interested')).toBe('💡');
     expect(getRelationshipIcon('Sold')).toBe('✅');
     expect(getRelationshipIcon('Owned')).toBe('🏠');
     expect(getRelationshipIcon('Booked')).toBe('📅');
     // @ts-expect-error intentionally passing unknown
-    expect(getRelationshipIcon('Unknown')).toBe('❓');
+    expect(getRelationshipIcon('Unknown')).toBe('📋');
   });
 });

@@ -126,23 +126,33 @@ describe('dashboardUtils', () => {
 
   describe('getStatusColor', () => {
     it('should return green for Available', () => {
-      expect(getStatusColor('Available')).toBe('bg-green-100 text-green-800');
+      expect(getStatusColor('Available')).toBe(
+        'bg-green-100 text-green-800 border-green-200'
+      );
     });
 
     it('should return red for Sold', () => {
-      expect(getStatusColor('Sold')).toBe('bg-red-100 text-red-800');
+      expect(getStatusColor('Sold')).toBe(
+        'bg-red-100 text-red-800 border-red-200'
+      );
     });
 
     it('should return yellow for Reserved', () => {
-      expect(getStatusColor('Reserved')).toBe('bg-yellow-100 text-yellow-800');
+      expect(getStatusColor('Reserved')).toBe(
+        'bg-yellow-100 text-yellow-800 border-yellow-200'
+      );
     });
 
     it('should return blue for Maintenance', () => {
-      expect(getStatusColor('Maintenance')).toBe('bg-blue-100 text-blue-800');
+      expect(getStatusColor('Maintenance')).toBe(
+        'bg-blue-100 text-blue-800 border-blue-200'
+      );
     });
 
     it('should return gray for unknown status', () => {
-      expect(getStatusColor('Unknown')).toBe('bg-gray-100 text-gray-800');
+      expect(getStatusColor('Unknown')).toBe(
+        'bg-gray-100 text-gray-800 border-gray-200'
+      );
     });
   });
 
@@ -301,30 +311,34 @@ describe('dashboardUtils', () => {
   });
 
   describe('getRelationshipColor', () => {
-    it('should return yellow for Interested', () => {
+    it('should return amber for Interested', () => {
       expect(getRelationshipColor('Interested')).toBe(
-        'bg-yellow-100 text-yellow-800'
+        'bg-amber-100 text-amber-800 border-amber-200'
       );
     });
 
-    it('should return blue for Booked', () => {
-      expect(getRelationshipColor('Booked')).toBe('bg-blue-100 text-blue-800');
+    it('should return purple for Booked', () => {
+      expect(getRelationshipColor('Booked')).toBe(
+        'bg-purple-100 text-purple-800 border-purple-200'
+      );
     });
 
-    it('should return green for Sold', () => {
-      expect(getRelationshipColor('Sold')).toBe('bg-green-100 text-green-800');
+    it('should return red for Sold', () => {
+      expect(getRelationshipColor('Sold')).toBe(
+        'bg-red-100 text-red-800 border-red-200'
+      );
     });
 
     it('should return purple for Owned', () => {
       expect(getRelationshipColor('Owned')).toBe(
-        'bg-purple-100 text-purple-800'
+        'bg-purple-100 text-purple-800 border-purple-200'
       );
     });
 
     it('should return gray for unknown type', () => {
       expect(
         getRelationshipColor('Unknown' as ClientInstrument['relationship_type'])
-      ).toBe('bg-gray-100 text-gray-800');
+      ).toBe('bg-gray-100 text-gray-800 border-gray-200');
     });
   });
 

@@ -1,8 +1,8 @@
-import { addDays, isBefore, isSameDay, startOfDay } from 'date-fns';
+import { addDays, isBefore, isSameDay } from 'date-fns';
 import type { MaintenanceTask } from '@/types';
 import type { DateRange, FilterOperator } from '@/types/search';
 import type { TaskType, TaskStatus, TaskPriority } from '@/types';
-import { toLocalYMD, parseTaskDateLocal } from '@/utils/dateParsing';
+import { toLocalYMD, parseYMDLocal, todayLocalYMD } from '@/utils/dateParsing';
 
 /**
  * Check if a date string is within the date range
@@ -29,7 +29,8 @@ const checkDateInRange = (dateStr: string, dateRange: DateRange): boolean => {
 export const filterByDateRange = (
   tasks: MaintenanceTask[],
   dateRange: DateRange | null,
-  operator: FilterOperator
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _operator: FilterOperator // 향후 구현 예정 (현재는 사용하지 않음)
 ): MaintenanceTask[] => {
   // Early return if no date range provided
   if (!dateRange?.from && !dateRange?.to) {
@@ -37,24 +38,15 @@ export const filterByDateRange = (
   }
 
   return tasks.filter(task => {
-    const dateFields = [
-      task.received_date,
-      task.due_date,
-      task.personal_due_date,
-      task.scheduled_date,
-      task.completed_date,
-    ].filter(Boolean) as string[];
+    // FIXED: Use same date fields as calculateSummaryStats for consistency
+    // Use scheduled_date, due_date, or personal_due_date (in priority order)
+    const dateStr =
+      task.scheduled_date || task.due_date || task.personal_due_date;
 
-    if (dateFields.length === 0) return false;
+    if (!dateStr) return false;
 
-    // OR condition: at least one date must be in range
-    if (operator === 'OR') {
-      return dateFields.some(date => checkDateInRange(date, dateRange));
-    }
-    // AND condition: all dates must be in range
-    // Note: This is more restrictive - all date fields must be within the range.
-    // Tasks with some dates in range and others outside will be excluded.
-    return dateFields.every(date => checkDateInRange(date, dateRange));
+    // Check if the primary date field is in range
+    return checkDateInRange(dateStr, dateRange);
   });
 };
 
@@ -141,7 +133,7 @@ export const filterBySearchFilters = (
 
 /**
  * Calculate summary statistics for tasks
- * FIXED: Use parseTaskDateLocal to handle date-only strings correctly (avoid timezone shifts)
+ * FIXED: Use parseYMDLocal for consistent date parsing strategy
  */
 export const calculateSummaryStats = (
   tasks: MaintenanceTask[]
@@ -151,7 +143,9 @@ export const calculateSummaryStats = (
   upcoming: number;
   total: number;
 } => {
-  const today = startOfDay(new Date());
+  // Use standardized "today" source for consistency
+  const todayYMD = todayLocalYMD();
+  const today = parseYMDLocal(todayYMD)!;
   let overdue = 0;
   let todayCount = 0;
   let upcoming = 0;
@@ -164,8 +158,9 @@ export const calculateSummaryStats = (
     if (task.status === 'completed' || task.status === 'cancelled') return;
 
     try {
-      // FIXED: Use parseTaskDateLocal to handle date-only strings correctly
-      const taskDate = startOfDay(parseTaskDateLocal(dateStr));
+      // FIXED: Use parseYMDLocal for consistent date parsing strategy
+      const taskDate = parseYMDLocal(dateStr);
+      if (!taskDate) return;
 
       if (isBefore(taskDate, today)) {
         overdue += 1;

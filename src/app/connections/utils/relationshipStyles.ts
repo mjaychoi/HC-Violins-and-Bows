@@ -1,3 +1,7 @@
+import { RelationshipType } from '@/types';
+// ✅ FIXED: Use centralized color tokens with new variant-based structure
+import { RELATIONSHIP_TOKENS } from '@/utils/colorTokens';
+
 export interface RelationshipStyle {
   bgColor: string;
   textColor: string;
@@ -6,47 +10,37 @@ export interface RelationshipStyle {
   icon: string;
 }
 
-export const getRelationshipTypeStyle = (type: string): RelationshipStyle => {
-  switch (type) {
-    case 'Interested':
-      return {
-        bgColor: 'bg-yellow-50',
-        textColor: 'text-yellow-600',
-        borderColor: 'border-yellow-200',
-        activeBorder: 'border-yellow-600',
-        icon: '💡',
-      };
-    case 'Booked':
-      return {
-        bgColor: 'bg-blue-50',
-        textColor: 'text-blue-700',
-        borderColor: 'border-blue-200',
-        activeBorder: 'border-blue-600',
-        icon: '📅',
-      };
-    case 'Sold':
-      return {
-        bgColor: 'bg-green-50',
-        textColor: 'text-green-700',
-        borderColor: 'border-green-200',
-        activeBorder: 'border-green-600',
-        icon: '✅',
-      };
-    case 'Owned':
-      return {
-        bgColor: 'bg-purple-50',
-        textColor: 'text-purple-700',
-        borderColor: 'border-purple-200',
-        activeBorder: 'border-purple-600',
-        icon: '🏠',
-      };
-    default:
-      return {
-        bgColor: 'bg-gray-50',
-        textColor: 'text-gray-700',
-        borderColor: 'border-gray-200',
-        activeBorder: 'border-gray-600',
-        icon: '📋',
-      };
-  }
+// ✅ FIXED: Use centralized color tokens with consistent styling
+export const getRelationshipTypeStyle = (
+  type: RelationshipType
+): RelationshipStyle => {
+  // Get token from new structure (soft variant for relationship cards)
+  const token =
+    RELATIONSHIP_TOKENS[type as keyof typeof RELATIONSHIP_TOKENS] ||
+    RELATIONSHIP_TOKENS.Default;
+  const softColor = token.soft;
+
+  // Parse color classes from soft variant
+  const bgMatch = softColor.match(/bg-(\S+)/);
+  const textMatch = softColor.match(/text-(\S+)/);
+  const bgColor = bgMatch ? `bg-${bgMatch[1]}` : 'bg-gray-50';
+  const textColor = textMatch ? `text-${textMatch[1]}` : 'text-gray-700';
+
+  // Extract color name for border (e.g., amber-100 -> amber-200, amber-600)
+  const colorName = bgMatch?.[1]?.split('-')[0] || 'gray';
+
+  const iconMap: Record<RelationshipType, string> = {
+    Interested: '💡',
+    Booked: '📅',
+    Sold: '✅',
+    Owned: '🏠',
+  };
+
+  return {
+    bgColor,
+    textColor,
+    borderColor: `border-${colorName}-200`,
+    activeBorder: `border-${colorName}-600`,
+    icon: iconMap[type] || '📋',
+  };
 };
