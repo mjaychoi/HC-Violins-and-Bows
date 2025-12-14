@@ -8,10 +8,22 @@ jest.mock('@/components/common', () => ({
   ),
 }));
 
-// Mock DataProvider
-jest.mock('@/contexts/DataContext', () => ({
-  DataProvider: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="data-provider">{children}</div>
+// Mock individual Context Providers (replaced DataProvider)
+jest.mock('@/contexts/ClientsContext', () => ({
+  ClientsProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="clients-provider">{children}</div>
+  ),
+}));
+
+jest.mock('@/contexts/InstrumentsContext', () => ({
+  InstrumentsProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="instruments-provider">{children}</div>
+  ),
+}));
+
+jest.mock('@/contexts/ConnectionsContext', () => ({
+  ConnectionsProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="connections-provider">{children}</div>
   ),
 }));
 
@@ -60,14 +72,16 @@ describe('RootLayout', () => {
     expect(getByTestId('auth-provider')).toBeInTheDocument();
   });
 
-  it('should render DataProvider', () => {
+  it('should render Context Providers', () => {
     const { getByTestId } = render(
       <RootProviders>
         <div>Test Content</div>
       </RootProviders>
     );
 
-    expect(getByTestId('data-provider')).toBeInTheDocument();
+    expect(getByTestId('clients-provider')).toBeInTheDocument();
+    expect(getByTestId('instruments-provider')).toBeInTheDocument();
+    expect(getByTestId('connections-provider')).toBeInTheDocument();
   });
 
   it('should have correct provider nesting order', () => {
@@ -83,17 +97,27 @@ describe('RootLayout', () => {
     const authProvider = container.querySelector(
       '[data-testid="auth-provider"]'
     );
-    const dataProvider = container.querySelector(
-      '[data-testid="data-provider"]'
+    const clientsProvider = container.querySelector(
+      '[data-testid="clients-provider"]'
+    );
+    const instrumentsProvider = container.querySelector(
+      '[data-testid="instruments-provider"]'
+    );
+    const connectionsProvider = container.querySelector(
+      '[data-testid="connections-provider"]'
     );
 
     expect(errorBoundary).toBeInTheDocument();
     expect(authProvider).toBeInTheDocument();
-    expect(dataProvider).toBeInTheDocument();
+    expect(clientsProvider).toBeInTheDocument();
+    expect(instrumentsProvider).toBeInTheDocument();
+    expect(connectionsProvider).toBeInTheDocument();
 
-    // Verify nesting: ErrorBoundary > AuthProvider > DataProvider > children
+    // Verify nesting: ErrorBoundary > AuthProvider > ClientsProvider > InstrumentsProvider > ConnectionsProvider > children
     expect(errorBoundary?.contains(authProvider)).toBe(true);
-    expect(authProvider?.contains(dataProvider)).toBe(true);
+    expect(authProvider?.contains(clientsProvider)).toBe(true);
+    expect(clientsProvider?.contains(instrumentsProvider)).toBe(true);
+    expect(instrumentsProvider?.contains(connectionsProvider)).toBe(true);
   });
 
   it('should import globals.css', () => {
