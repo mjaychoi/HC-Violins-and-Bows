@@ -66,18 +66,12 @@ export async function GET(request: NextRequest) {
       query = query.eq('instrument_id', instrumentId);
     }
 
-    // Order by display_order first (if available), then by the specified orderBy
-    // This ensures custom ordering is preserved
-    // Note: display_order may not exist in all databases, so we handle gracefully
-    try {
-      query = query.order('display_order', { ascending: true, nullsFirst: false });
-    } catch (error) {
-      // display_order column doesn't exist, skip it
-      // This can happen if migration hasn't been run yet
-    }
-    if (orderBy !== 'display_order') {
-      query = query.order(orderBy, { ascending });
-    }
+    // Order by the specified orderBy
+    // Note: display_order column may not exist if migration hasn't been run
+    // We'll skip ordering by display_order for now and just use the specified orderBy
+    // TODO: Once migration 20250115000003_add_connection_order.sql is applied,
+    // we can add display_order as a secondary sort
+    query = query.order(orderBy, { ascending });
 
     // Apply pagination if provided
     if (page && pageSize) {
