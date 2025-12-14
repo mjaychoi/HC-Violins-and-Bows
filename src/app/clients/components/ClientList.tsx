@@ -16,10 +16,7 @@ import React, {
   Fragment,
   forwardRef,
   useMemo,
-  useRef,
-  useEffect,
 } from 'react';
-import dynamic from 'next/dynamic';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
 import { classNames, cn } from '@/utils/classNames';
@@ -396,63 +393,27 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
   );
 });
 
-// react-window를 dynamic import로 로드 (SSR 문제 방지)
-type VariableSizeListProps = {
-  height: number;
-  itemCount: number;
-  itemSize: (index: number) => number;
-  overscanCount?: number;
-  className?: string;
-  children: (props: {
-    index: number;
-    style: React.CSSProperties;
-  }) => React.ReactNode;
-  onItemsRendered?: (props: {
-    overscanStartIndex: number;
-    overscanStopIndex: number;
-    visibleStartIndex: number;
-    visibleStopIndex: number;
-  }) => void;
-};
-
-type VariableSizeListComponent = React.ComponentType<VariableSizeListProps>;
-
-// Fallback component for when react-window is not available
-const FallbackVirtualList = (props: VariableSizeListProps) => {
-  return (
-    <div style={{ height: props.height }}>
-      {Array.from({ length: props.itemCount }, (_, index) => {
-        const style: React.CSSProperties = {
-          height: props.itemSize(index),
-          position: 'relative',
-        };
-        return (
-          <div key={index} style={style}>
-            {props.children({ index, style })}
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-const VariableSizeList = dynamic(
-  async () => {
-    try {
-      const mod = await import('react-window');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const VariableSizeListComponent = (mod as any).VariableSizeList;
-      if (VariableSizeListComponent) {
-        return { default: VariableSizeListComponent as VariableSizeListComponent };
-      }
-    } catch (error) {
-      console.error('Failed to load react-window:', error);
-    }
-    console.warn('VariableSizeList not found in react-window, using fallback');
-    return { default: FallbackVirtualList };
-  },
-  { ssr: false }
-) as VariableSizeListComponent;
+// TODO: Virtualization will be implemented when needed for 200+ clients
+// Currently using pagination (20 items per page) which is sufficient
+// When implementing, uncomment the following code:
+// type VariableSizeListProps = {
+//   height: number;
+//   itemCount: number;
+//   itemSize: (index: number) => number;
+//   overscanCount?: number;
+//   className?: string;
+//   children: (props: {
+//     index: number;
+//     style: React.CSSProperties;
+//   }) => React.ReactNode;
+//   onItemsRendered?: (props: {
+//     overscanStartIndex: number;
+//     overscanStopIndex: number;
+//     visibleStartIndex: number;
+//     visibleStopIndex: number;
+//   }) => void;
+// };
+// const VariableSizeList = dynamic(...);
 
 interface ClientListProps {
   clients: Client[];
@@ -582,51 +543,13 @@ const ClientList = memo(function ClientList({
     }
   }, []);
 
-  // Virtualization: Enable for 50+ clients to improve performance
-  const shouldVirtualize = clients.length >= 50;
-  const rowHeightRef = useRef<Map<number, number>>(new Map());
-  const listRef = useRef<{ resetAfterIndex: (index: number) => void } | null>(null);
-
-  // Calculate row height (base height + expanded row height if expanded)
-  const getRowHeight = useCallback(
-    (index: number) => {
-      const client = clients[index];
-      if (!client) return 60; // Default row height
-
-      const baseHeight = 60; // Base row height
-      const expandedHeight = 300; // Expanded row height (approximate)
-
-      if (expandedClientId === client.id) {
-        return baseHeight + expandedHeight;
-      }
-
-      // Check cached height
-      const cached = rowHeightRef.current.get(index);
-      if (cached) return cached;
-
-      return baseHeight;
-    },
-    [clients, expandedClientId]
-  );
-
-  // Update row height when expanded state changes
-  useEffect(() => {
-    if (listRef.current && shouldVirtualize) {
-      clients.forEach((_, index) => {
-        if (expandedClientId === clients[index]?.id) {
-          listRef.current?.resetAfterIndex(index);
-        }
-      });
-    }
-  }, [expandedClientId, clients, shouldVirtualize]);
-
-  // Calculate list height
-  const listHeight = useMemo(() => {
-    if (!shouldVirtualize) return null;
-    // Max 600px, min 400px, or calculated based on visible items
-    const estimatedHeight = Math.min(600, Math.max(400, clients.length * 60 * 0.5));
-    return estimatedHeight;
-  }, [shouldVirtualize, clients.length]);
+  // TODO: Virtualization will be implemented when needed for 200+ clients
+  // Currently using pagination (20 items per page) which is sufficient
+  // const shouldVirtualize = clients.length >= 50;
+  // const rowHeightRef = useRef<Map<number, number>>(new Map());
+  // const listRef = useRef<{ resetAfterIndex: (index: number) => void } | null>(null);
+  // const getRowHeight = useCallback(...);
+  // const listHeight = useMemo(...);
 
   if (clients.length === 0) {
     return (

@@ -16,9 +16,12 @@ interface AdvancedSearchProps {
 export default function AdvancedSearch({
   dateRange,
   onDateRangeChange,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   operator: _operator, // Unused - kept for backward compatibility
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onOperatorChange: _onOperatorChange, // Unused - kept for backward compatibility
-  dateFields = [],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  dateFields: _dateFields = [], // Unused - kept for backward compatibility
   onApply,
   onReset,
 }: AdvancedSearchProps) {

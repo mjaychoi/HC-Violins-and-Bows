@@ -32,7 +32,6 @@ let reactPdfLoader: Promise<{
     verifyUrl?: string;
   }>;
 }> | null = null;
-let lastLoadTime = 0;
 
 async function loadReactPDF() {
   // In development, always reload to allow hot reloading
