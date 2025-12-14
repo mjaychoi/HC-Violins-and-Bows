@@ -89,17 +89,19 @@ jest.mock('../components/SaleForm', () => ({
 
 // Mock dynamic import - return mocked components based on import path
 jest.mock('next/dynamic', () => {
-  return (importFn: () => Promise<any>, options?: any) => {
+  return (importFn: () => Promise<any>) => {
     // Use a factory function that returns the appropriate mock based on the import
     // We'll use require to get the mocked component
     const importPath = importFn.toString();
     
     if (importPath.includes('SalesCharts')) {
-      return (props: any) => (
+      const MockedSalesCharts = (props: any) => (
         <div data-testid="sales-charts">
           Charts for {props.sales?.length || 0} sales
         </div>
       );
+      MockedSalesCharts.displayName = 'MockedSalesCharts';
+      return MockedSalesCharts;
     }
     
     if (importPath.includes('SalesSummary')) {
@@ -128,7 +130,9 @@ jest.mock('next/dynamic', () => {
     }
     
     // Default fallback
-    return () => null;
+    const DefaultMock = () => null;
+    DefaultMock.displayName = 'DefaultMock';
+    return DefaultMock;
   };
 });
 
@@ -191,7 +195,7 @@ jest.mock('../components/SalesFilters', () => ({
       <button data-testid="clear-filters" onClick={onClearFilters}>
         Clear filters
       </button>
-      <button onClick={onExportCSV} data-testid="export-csv-button">Export CSV</button>
+      <button onClick={onExportCSV}>Export CSV</button>
     </div>
   ),
 }));
