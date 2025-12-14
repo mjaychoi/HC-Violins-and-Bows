@@ -398,9 +398,24 @@ export default function SalesPage() {
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
-      // FIXED: Use todayLocalYMD for consistent date format in filename
+      // FIXED: Include date range in filename if filters are applied
       const { todayLocalYMD } = await import('@/utils/dateParsing');
-      link.setAttribute('download', `sales-history-${todayLocalYMD()}.csv`);
+      let filename = 'sales-history';
+      if (from && to) {
+        // Format dates for filename (remove dashes for cleaner filename)
+        const fromDate = from.replace(/-/g, '');
+        const toDate = to.replace(/-/g, '');
+        filename = `sales-history-${fromDate}-${toDate}`;
+      } else if (from) {
+        const fromDate = from.replace(/-/g, '');
+        filename = `sales-history-${fromDate}`;
+      } else if (to) {
+        const toDate = to.replace(/-/g, '');
+        filename = `sales-history-${toDate}`;
+      } else {
+        filename = `sales-history-${todayLocalYMD().replace(/-/g, '')}`;
+      }
+      link.setAttribute('download', `${filename}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
