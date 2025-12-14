@@ -6,6 +6,7 @@ import { useClientKPIs } from '../hooks/useClientKPIs';
 import ClientList from './ClientList';
 import ClientFilters from './ClientFilters';
 import { ClientKPISummary } from './ClientKPISummary';
+import TodayFollowUps from './TodayFollowUps';
 import { SearchInput, CardSkeleton } from '@/components/common';
 import type { Client, ClientInstrument } from '@/types';
 
@@ -57,6 +58,9 @@ function ClientsListContentInner({
 
   return (
     <div className="p-6">
+      {/* Today Follow-ups */}
+      <TodayFollowUps />
+
       {/* KPI Summary */}
       <ClientKPISummary kpis={kpis} />
 

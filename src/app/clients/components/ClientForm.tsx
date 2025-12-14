@@ -17,6 +17,8 @@ import { shouldShowInterestDropdown } from '@/policies/interest';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
 import { ClientRelationshipType } from '../types';
+import { modalStyles } from '@/components/common/modalStyles';
+import { ModalHeader } from '@/components/common/ModalHeader';
 
 interface ClientFormProps {
   isOpen: boolean;
@@ -291,41 +293,30 @@ export default function ClientForm({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-xl z-40 border-l border-gray-200">
-      <div className="h-full flex flex-col">
-        {/* Header */}
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-medium text-gray-900">
-              Add New Client
-            </h3>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
-              aria-label="Close"
-            >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
+    <div
+      className={modalStyles.overlay}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="client-form-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div className={modalStyles.container}>
+        <ModalHeader
+          title="Add New Client"
+          icon="client"
+          onClose={onClose}
+          titleId="client-form-title"
+        />
 
         {/* Form */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={modalStyles.body}>
           {/* UX: Success message with action buttons */}
           {success && (
-            <div className="p-6 bg-green-50 border-b border-green-200">
+            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
               <div className="flex items-start">
                 <svg
                   className="w-5 h-5 text-green-600 mt-0.5"
