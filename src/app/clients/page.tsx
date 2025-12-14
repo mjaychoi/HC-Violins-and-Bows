@@ -239,7 +239,7 @@ export default function ClientsPage() {
 
       if (newClient) {
         closeModal();
-        showSuccess('고객이 성공적으로 추가되었습니다.');
+        showSuccess('Client added successfully.');
       }
     } catch (error) {
       handleError(error, 'Failed to create client');
@@ -259,7 +259,7 @@ export default function ClientsPage() {
 
       if (success) {
         closeClientView();
-        showSuccess('고객이 성공적으로 삭제되었습니다.');
+        showSuccess('Client deleted successfully.');
       }
     } catch (error) {
       handleError(error, 'Failed to delete client');
@@ -303,7 +303,7 @@ export default function ClientsPage() {
       // Refresh relationships
       await fetchInstrumentRelationships(selectedClient.id);
       closeInstrumentSearch();
-      showSuccess('악기 연결이 추가되었습니다.');
+      showSuccess('Instrument connection added.');
     } catch (error) {
       handleError(error, 'Failed to add instrument relationship');
     }
@@ -466,7 +466,7 @@ export default function ClientsPage() {
                     // updateClient returns null on error
                     throw new Error('Failed to update client');
                   }
-                  showSuccess('고객 정보가 성공적으로 수정되었습니다.');
+                  showSuccess('Client information updated successfully.');
                 } catch (error) {
                   handleError(error, 'Failed to update client');
                   throw error; // Re-throw to prevent saveEditing from closing editing mode
@@ -593,10 +593,10 @@ export default function ClientsPage() {
 
         <ConfirmDialog
           isOpen={Boolean(confirmDelete)}
-          title="고객을 삭제하시겠어요?"
-          message="삭제한 고객은 복구할 수 없습니다."
-          confirmLabel="삭제"
-          cancelLabel="취소"
+          title="Delete client?"
+          message="Deleted clients cannot be recovered."
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
           onConfirm={confirmDeleteClient}
           onCancel={() => setConfirmDelete(null)}
         />

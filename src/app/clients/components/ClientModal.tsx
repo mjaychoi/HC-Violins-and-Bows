@@ -433,7 +433,7 @@ export default function ClientModal({
               {client && contactInfo && (
                 <div className="pt-4 border-t border-gray-200">
                   <h4 className="text-sm font-semibold text-gray-900 mb-3">
-                    연락 요약
+                    Contact Summary
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3">
@@ -446,18 +446,18 @@ export default function ClientModal({
                             {contactInfo.lastContactDateDisplay}
                             {contactInfo.daysSinceLastContact !== null && (
                               <span className="ml-2 text-xs font-normal text-gray-500">
-                                ({contactInfo.daysSinceLastContact}일 전)
+                                ({contactInfo.daysSinceLastContact} days ago)
                               </span>
                             )}
                           </>
                         ) : (
-                          <span className="text-gray-400">없음</span>
+                          <span className="text-gray-400">None</span>
                         )}
                       </div>
                     </div>
                     <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3">
                       <div className="text-xs font-medium text-gray-500 mb-1">
-                        다음 연락
+                        Next Contact
                       </div>
                       <div className="text-sm font-semibold text-gray-900">
                         {contactInfo.nextFollowUpDateDisplay ? (
@@ -476,10 +476,10 @@ export default function ClientModal({
                               <span className="ml-2 text-xs font-normal text-gray-500">
                                 (
                                 {contactInfo.daysUntilFollowUp < 0
-                                  ? `${Math.abs(contactInfo.daysUntilFollowUp)}일 지남`
+                                  ? `${Math.abs(contactInfo.daysUntilFollowUp)} days overdue`
                                   : contactInfo.daysUntilFollowUp === 0
-                                    ? '오늘'
-                                    : `${contactInfo.daysUntilFollowUp}일 후`}
+                                    ? 'Today'
+                                    : `${contactInfo.daysUntilFollowUp} days later`}
                                 )
                               </span>
                             )}
@@ -490,7 +490,7 @@ export default function ClientModal({
                             )}
                           </span>
                         ) : (
-                          <span className="text-gray-400">없음</span>
+                          <span className="text-gray-400">None</span>
                         )}
                       </div>
                     </div>

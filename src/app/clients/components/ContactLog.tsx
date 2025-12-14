@@ -139,7 +139,7 @@ export default function ContactLogComponent({
             onClick={() => setIsAdding(true)}
             disabled={loading}
           >
-            + 기록 추가
+            + Add Contact
           </Button>
         )}
       </div>
@@ -242,7 +242,7 @@ export default function ContactLogComponent({
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                다음 Follow-up
+                Next Follow-up
               </label>
               <input
                 type="date"
@@ -275,7 +275,7 @@ export default function ContactLogComponent({
                 });
               }}
             >
-              취소
+              Cancel
             </Button>
             <Button
               type="button"
@@ -284,7 +284,7 @@ export default function ContactLogComponent({
               disabled={!formData.content.trim() || loading}
               loading={loading}
             >
-              추가
+              Add
             </Button>
           </div>
         </div>
@@ -356,7 +356,7 @@ export default function ContactLogComponent({
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">
-                        다음 Follow-up
+                        Next Follow-up
                       </label>
                       <input
                         type="date"
@@ -387,7 +387,7 @@ export default function ContactLogComponent({
                           });
                         }}
                       >
-                        취소
+                        Cancel
                       </Button>
                       <Button
                         type="button"
@@ -396,7 +396,7 @@ export default function ContactLogComponent({
                         disabled={!formData.content.trim() || loading}
                         loading={loading}
                       >
-                        저장
+                        Save
                       </Button>
                     </div>
                   </>
@@ -428,7 +428,7 @@ export default function ContactLogComponent({
                         {log.next_follow_up_date && (
                           <div className="mt-2 flex items-center gap-1">
                             <span className="text-xs text-amber-600 font-medium">
-                              ⏰ 다음 연락:
+                              ⏰ Next Contact:
                             </span>
                             <span className="text-xs text-amber-700">
                               {formatDisplayDate(log.next_follow_up_date)}
@@ -441,7 +441,7 @@ export default function ContactLogComponent({
                           type="button"
                           onClick={() => startEdit(log)}
                           className="text-xs text-gray-400 hover:text-blue-600"
-                          title="수정"
+                          title="Edit"
                         >
                           ✏️
                         </button>
@@ -449,7 +449,7 @@ export default function ContactLogComponent({
                           type="button"
                           onClick={() => onDeleteContact(log.id)}
                           className="text-xs text-gray-400 hover:text-red-600"
-                          title="삭제"
+                          title="Delete"
                           disabled={loading}
                         >
                           🗑️

@@ -45,7 +45,7 @@ export default function FollowUpButton({
           onClick={() => handleFollowUp(7)}
           disabled={loading}
           className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded transition"
-          title="7일 후 Follow-up"
+          title="Follow-up in 7 days"
         >
           7d
         </button>
@@ -54,7 +54,7 @@ export default function FollowUpButton({
           onClick={() => handleFollowUp(30)}
           disabled={loading}
           className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded transition"
-          title="30일 후 Follow-up"
+          title="Follow-up in 30 days"
         >
           30d
         </button>
@@ -63,7 +63,7 @@ export default function FollowUpButton({
           onClick={() => handleFollowUp(90)}
           disabled={loading}
           className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded transition"
-          title="90일 후 Follow-up"
+          title="Follow-up in 90 days"
         >
           90d
         </button>
@@ -82,7 +82,7 @@ export default function FollowUpButton({
         disabled={loading}
         className="text-xs"
       >
-        7일 후
+        In 7 days
       </Button>
       <Button
         type="button"
@@ -92,7 +92,7 @@ export default function FollowUpButton({
         disabled={loading}
         className="text-xs"
       >
-        30일 후
+        In 30 days
       </Button>
       <Button
         type="button"
@@ -102,7 +102,7 @@ export default function FollowUpButton({
         disabled={loading}
         className="text-xs"
       >
-        90일 후
+        In 90 days
       </Button>
     </div>
   );

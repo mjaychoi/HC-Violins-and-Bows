@@ -152,7 +152,7 @@ export default function TodayFollowUps() {
 
         // Refresh the list
         await fetchTodayFollowUps();
-        showSuccess(`Follow-up를 ${days}일 후로 미뤘습니다.`);
+        showSuccess(`Follow-up postponed by ${days} days.`);
       } catch (error) {
         handleError(error, 'Postpone follow-up');
       } finally {
@@ -292,7 +292,7 @@ export default function TodayFollowUps() {
                       </span>
                     ) : (
                       <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                        오늘
+                        Today
                       </span>
                     )}
                   </div>
@@ -376,7 +376,7 @@ export default function TodayFollowUps() {
                       }}
                       disabled={processingIds.has(primaryLog.id)}
                       className="px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 hover:border-amber-300 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Follow-up 미루기"
+                      title="Postpone Follow-up"
                     >
                       ⏱️
                     </button>
@@ -392,7 +392,7 @@ export default function TodayFollowUps() {
                           disabled={processingIds.has(primaryLog.id)}
                           className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 first:rounded-t-md disabled:opacity-50"
                         >
-                          7일 후
+                          In 7 days
                         </button>
                         <button
                           type="button"
@@ -416,7 +416,7 @@ export default function TodayFollowUps() {
                           disabled={processingIds.has(primaryLog.id)}
                           className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 last:rounded-b-md disabled:opacity-50"
                         >
-                          90일 후
+                          In 90 days
                         </button>
                       </div>
                     )}

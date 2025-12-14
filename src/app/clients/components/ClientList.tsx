@@ -290,22 +290,22 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
               <div className="text-xs font-medium text-gray-500 mb-1">
-                최근 연락
+                Recent Contact
               </div>
               <div className="text-sm font-semibold text-gray-900">
                 {info?.lastContactDateDisplay || (
-                  <span className="text-gray-400">없음</span>
+                  <span className="text-gray-400">None</span>
                 )}
                 {info && info.daysSinceLastContact !== null && (
                   <span className="ml-2 text-xs font-normal text-gray-500">
-                    ({info.daysSinceLastContact}일 전)
+                    ({info.daysSinceLastContact} days ago)
                   </span>
                 )}
               </div>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
               <div className="text-xs font-medium text-gray-500 mb-1">
-                다음 Follow-up
+                Next Follow-up
               </div>
               <div className="text-sm font-semibold text-gray-900">
                 {info?.nextFollowUpDateDisplay ? (
@@ -325,10 +325,10 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
                         <span className="ml-2 text-xs font-normal text-gray-500">
                           (
                           {info.daysUntilFollowUp < 0
-                            ? `${Math.abs(info.daysUntilFollowUp)}일 지남`
+                            ? `${Math.abs(info.daysUntilFollowUp)} days overdue`
                             : info.daysUntilFollowUp === 0
-                              ? '오늘'
-                              : `${info.daysUntilFollowUp}일 후`}
+                              ? 'Today'
+                              : `${info.daysUntilFollowUp} days later`}
                           )
                         </span>
                       )}
@@ -340,7 +340,7 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
                     </span>
                   )
                 ) : (
-                  <span className="text-gray-400">없음</span>
+                  <span className="text-gray-400">None</span>
                 )}
               </div>
             </div>
@@ -534,8 +534,8 @@ const ClientList = memo(function ClientList({
   if (clients.length === 0) {
     return (
       <EmptyState
-        title="등록된 고객이 없습니다"
-        description="검색어나 필터를 조정하거나 첫 번째 고객을 추가해 보세요."
+        title="No clients found"
+        description="Adjust your search or filters, or add your first client."
       />
     );
   }
@@ -634,12 +634,12 @@ const ClientList = memo(function ClientList({
                   </th>
                   <th className={classNames.tableHeaderCell}>
                     <span className="inline-flex items-center gap-1">
-                      최근 연락
+                      Recent Contact
                     </span>
                   </th>
                   <th className={classNames.tableHeaderCell}>
                     <span className="inline-flex items-center gap-1">
-                      다음 Follow-up
+                      Next Follow-up
                     </span>
                   </th>
                 </tr>
@@ -960,7 +960,7 @@ const ClientList = memo(function ClientList({
                                 const info = getContactInfo(client.id);
                                 if (!info?.lastContactDateDisplay) {
                                   return (
-                                    <span className="text-gray-400">없음</span>
+                                    <span className="text-gray-400">None</span>
                                   );
                                 }
                                 return (
@@ -968,7 +968,7 @@ const ClientList = memo(function ClientList({
                                     <span>{info.lastContactDateDisplay}</span>
                                     {info.daysSinceLastContact !== null && (
                                       <span className="text-xs text-gray-500">
-                                        {info.daysSinceLastContact}일 전
+                                        {info.daysSinceLastContact} days ago
                                       </span>
                                     )}
                                   </div>
@@ -986,7 +986,7 @@ const ClientList = memo(function ClientList({
                                 const info = getContactInfo(client.id);
                                 if (!info?.nextFollowUpDateDisplay) {
                                   return (
-                                    <span className="text-gray-400">없음</span>
+                                    <span className="text-gray-400">None</span>
                                   );
                                 }
                                 return (

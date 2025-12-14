@@ -443,10 +443,10 @@ export default function ClientForm({
                 onChange={handleInputChange}
                 disabled
                 className={classNames.input + ' bg-gray-100 cursor-not-allowed'}
-                placeholder="자동 생성됨"
+                placeholder="Auto-generated"
               />
               <p className="mt-1 text-sm text-gray-500">
-                클라이언트 추가 시 자동으로 생성됩니다
+                Will be automatically generated when adding a client
               </p>
             </div>
 
