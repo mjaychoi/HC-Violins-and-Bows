@@ -4,7 +4,15 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 // Note: useRef is only used in useUnifiedData (Single Source of Truth for fetching)
 import {
-  useDataContext,
+  useClientsContext,
+} from '@/contexts/ClientsContext';
+import {
+  useInstrumentsContext,
+} from '@/contexts/InstrumentsContext';
+import {
+  useConnectionsContext,
+} from '@/contexts/ConnectionsContext';
+import {
   useClients,
   useInstruments,
   useConnections,
@@ -38,7 +46,72 @@ export function useUnifiedData() {
     console.log('[useUnifiedData] Hook called');
   }
 
-  const { state, actions } = useDataContext();
+  // Use individual contexts for better performance
+  const clientsContext = useClientsContext();
+  const instrumentsContext = useInstrumentsContext();
+  const connectionsContext = useConnectionsContext();
+
+  // Combine states for unified interface
+  const state = useMemo(
+    () => ({
+      clients: clientsContext.state.clients,
+      instruments: instrumentsContext.state.instruments,
+      connections: connectionsContext.state.connections,
+      loading: {
+        clients: clientsContext.state.loading,
+        instruments: instrumentsContext.state.loading,
+        connections: connectionsContext.state.loading,
+      },
+      submitting: {
+        clients: clientsContext.state.submitting,
+        instruments: instrumentsContext.state.submitting,
+        connections: connectionsContext.state.submitting,
+      },
+      lastUpdated: {
+        clients: clientsContext.state.lastUpdated,
+        instruments: instrumentsContext.state.lastUpdated,
+        connections: connectionsContext.state.lastUpdated,
+      },
+    }),
+    [
+      clientsContext.state,
+      instrumentsContext.state,
+      connectionsContext.state,
+    ]
+  );
+
+  // Combine actions for unified interface
+  const actions = useMemo(
+    () => ({
+      fetchClients: clientsContext.actions.fetchClients,
+      createClient: clientsContext.actions.createClient,
+      updateClient: clientsContext.actions.updateClient,
+      deleteClient: clientsContext.actions.deleteClient,
+      fetchInstruments: instrumentsContext.actions.fetchInstruments,
+      createInstrument: instrumentsContext.actions.createInstrument,
+      updateInstrument: instrumentsContext.actions.updateInstrument,
+      deleteInstrument: instrumentsContext.actions.deleteInstrument,
+      fetchConnections: connectionsContext.actions.fetchConnections,
+      createConnection: connectionsContext.actions.createConnection,
+      updateConnection: connectionsContext.actions.updateConnection,
+      deleteConnection: connectionsContext.actions.deleteConnection,
+      invalidateCache: (dataType: 'clients' | 'instruments' | 'connections') => {
+        if (dataType === 'clients') {
+          clientsContext.actions.invalidateCache();
+        } else if (dataType === 'instruments') {
+          instrumentsContext.actions.invalidateCache();
+        } else {
+          connectionsContext.actions.invalidateCache();
+        }
+      },
+      resetState: () => {
+        clientsContext.actions.resetState();
+        instrumentsContext.actions.resetState();
+        connectionsContext.actions.resetState();
+      },
+    }),
+    [clientsContext.actions, instrumentsContext.actions, connectionsContext.actions]
+  );
 
   // FIXED: Store actions and state in refs to avoid dependency issues
   const actionsRef = useRef(actions);
@@ -287,7 +360,64 @@ export function useUnifiedConnections() {
 // FIXED: Removed fetch - useUnifiedData is the Single Source of Truth for fetching
 // This hook only calculates relationships from state
 export function useUnifiedDashboard() {
-  const { state, actions } = useDataContext();
+  const clientsContext = useClientsContext();
+  const instrumentsContext = useInstrumentsContext();
+  const connectionsContext = useConnectionsContext();
+
+  const state = useMemo(
+    () => ({
+      clients: clientsContext.state.clients,
+      instruments: instrumentsContext.state.instruments,
+      connections: connectionsContext.state.connections,
+      loading: {
+        clients: clientsContext.state.loading,
+        instruments: instrumentsContext.state.loading,
+        connections: connectionsContext.state.loading,
+      },
+      submitting: {
+        clients: clientsContext.state.submitting,
+        instruments: instrumentsContext.state.submitting,
+        connections: connectionsContext.state.submitting,
+      },
+    }),
+    [
+      clientsContext.state,
+      instrumentsContext.state,
+      connectionsContext.state,
+    ]
+  );
+
+  const actions = useMemo(
+    () => ({
+      fetchClients: clientsContext.actions.fetchClients,
+      createClient: clientsContext.actions.createClient,
+      updateClient: clientsContext.actions.updateClient,
+      deleteClient: clientsContext.actions.deleteClient,
+      fetchInstruments: instrumentsContext.actions.fetchInstruments,
+      createInstrument: instrumentsContext.actions.createInstrument,
+      updateInstrument: instrumentsContext.actions.updateInstrument,
+      deleteInstrument: instrumentsContext.actions.deleteInstrument,
+      fetchConnections: connectionsContext.actions.fetchConnections,
+      createConnection: connectionsContext.actions.createConnection,
+      updateConnection: connectionsContext.actions.updateConnection,
+      deleteConnection: connectionsContext.actions.deleteConnection,
+      invalidateCache: (dataType: 'clients' | 'instruments' | 'connections') => {
+        if (dataType === 'clients') {
+          clientsContext.actions.invalidateCache();
+        } else if (dataType === 'instruments') {
+          instrumentsContext.actions.invalidateCache();
+        } else {
+          connectionsContext.actions.invalidateCache();
+        }
+      },
+      resetState: () => {
+        clientsContext.actions.resetState();
+        instrumentsContext.actions.resetState();
+        connectionsContext.actions.resetState();
+      },
+    }),
+    [clientsContext.actions, instrumentsContext.actions, connectionsContext.actions]
+  );
 
   // FIXED: No fetch here - data is fetched by useUnifiedData or manually via actions
   // This hook only calculates relationships from existing state
@@ -378,7 +508,30 @@ export function useUnifiedDashboard() {
 // This hook provides clients, instruments, connections data and CRUD operations
 // Renamed from useUnifiedConnectionForm for clarity - this is not just a form hook
 export function useConnectedClientsData() {
-  const { state, actions } = useDataContext();
+  const clientsContext = useClientsContext();
+  const instrumentsContext = useInstrumentsContext();
+  const connectionsContext = useConnectionsContext();
+
+  const state = useMemo(
+    () => ({
+      clients: clientsContext.state.clients,
+      instruments: instrumentsContext.state.instruments,
+      connections: connectionsContext.state.connections,
+      loading: {
+        clients: clientsContext.state.loading,
+        instruments: instrumentsContext.state.loading,
+        connections: connectionsContext.state.loading,
+      },
+      submitting: {
+        connections: connectionsContext.state.submitting,
+      },
+    }),
+    [
+      clientsContext.state,
+      instrumentsContext.state,
+      connectionsContext.state,
+    ]
+  );
   // state is used below in return statement (state.clients, state.instruments, etc.)
 
   // FIXED: No fetch here - data is fetched by useUnifiedData or manually via actions
@@ -392,14 +545,14 @@ export function useConnectedClientsData() {
       relationshipType: RelationshipType,
       notes: string
     ) => {
-      return await actions.createConnection({
+      return await connectionsContext.actions.createConnection({
         client_id: clientId,
         instrument_id: instrumentId,
         relationship_type: relationshipType,
         notes: notes || null,
       });
     },
-    [actions]
+    [connectionsContext.actions]
   );
 
   // update connection
@@ -408,12 +561,12 @@ export function useConnectedClientsData() {
       connectionId: string,
       updates: { relationshipType: RelationshipType; notes: string }
     ) => {
-      return await actions.updateConnection(connectionId, {
+      return await connectionsContext.actions.updateConnection(connectionId, {
         relationship_type: updates.relationshipType,
         notes: updates.notes || null,
       });
     },
-    [actions]
+    [connectionsContext.actions]
   );
 
   return {
@@ -449,82 +602,98 @@ export function useConnectedClientsData() {
     // actions
     createConnection,
     updateConnection,
-    deleteConnection: actions.deleteConnection,
-    fetchConnections: actions.fetchConnections,
+    deleteConnection: connectionsContext.actions.deleteConnection,
+    fetchConnections: connectionsContext.actions.fetchConnections,
   };
 }
 
 // search-specific hook (replace existing useSearch)
 export function useUnifiedSearch() {
-  const { state } = useDataContext();
+  const clientsContext = useClientsContext();
+  const instrumentsContext = useInstrumentsContext();
+  const connectionsContext = useConnectionsContext();
+
+  const clients = clientsContext.state.clients;
+  const instruments = instrumentsContext.state.instruments;
+  const connections = connectionsContext.state.connections;
 
   // unified search
   const searchAll = useCallback(
     (query: string) => {
       const lowerQuery = query.toLowerCase();
 
-      const clients = state.clients.filter(
-        client =>
+      const filteredClients = clients.filter(
+        (client: Client) =>
           (client.first_name || '').toLowerCase().includes(lowerQuery) ||
           (client.last_name || '').toLowerCase().includes(lowerQuery) ||
           (client.email || '').toLowerCase().includes(lowerQuery) ||
           (client.client_number || '').toLowerCase().includes(lowerQuery)
       );
 
-      const instruments = state.instruments.filter(
-        instrument =>
+      const filteredInstruments = instruments.filter(
+        (instrument: Instrument) =>
           (instrument.maker || '').toLowerCase().includes(lowerQuery) ||
           (instrument.type || '').toLowerCase().includes(lowerQuery) ||
           (instrument.serial_number || '').toLowerCase().includes(lowerQuery)
       );
 
-      const connections = state.connections.filter(
-        connection =>
+      const filteredConnections = connections.filter(
+        (connection: ClientInstrument) =>
           connection.notes?.toLowerCase().includes(lowerQuery) ||
           connection.relationship_type.toLowerCase().includes(lowerQuery)
       );
 
       return {
-        clients,
-        instruments,
-        connections,
-        total: clients.length + instruments.length + connections.length,
+        clients: filteredClients,
+        instruments: filteredInstruments,
+        connections: filteredConnections,
+        total: filteredClients.length + filteredInstruments.length + filteredConnections.length,
       };
     },
-    [state.clients, state.instruments, state.connections]
+    [clients, instruments, connections]
   );
 
   return {
     searchAll,
-    clients: state.clients,
-    instruments: state.instruments,
-    connections: state.connections,
+    clients,
+    instruments,
+    connections,
   };
 }
 
 // cache management hook
 export function useUnifiedCache() {
-  const { actions } = useDataContext();
+  const clientsContext = useClientsContext();
+  const instrumentsContext = useInstrumentsContext();
+  const connectionsContext = useConnectionsContext();
 
   // invalidate specific data type cache
   const invalidate = useCallback(
     (dataType: 'clients' | 'instruments' | 'connections') => {
-      actions.invalidateCache(dataType);
+      if (dataType === 'clients') {
+        clientsContext.actions.invalidateCache();
+      } else if (dataType === 'instruments') {
+        instrumentsContext.actions.invalidateCache();
+      } else {
+        connectionsContext.actions.invalidateCache();
+      }
     },
-    [actions]
+    [clientsContext.actions, instrumentsContext.actions, connectionsContext.actions]
   );
 
   // invalidate all cache
   const invalidateAll = useCallback(() => {
-    actions.invalidateCache('clients');
-    actions.invalidateCache('instruments');
-    actions.invalidateCache('connections');
-  }, [actions]);
+    clientsContext.actions.invalidateCache();
+    instrumentsContext.actions.invalidateCache();
+    connectionsContext.actions.invalidateCache();
+  }, [clientsContext.actions, instrumentsContext.actions, connectionsContext.actions]);
 
   // reset state
   const reset = useCallback(() => {
-    actions.resetState();
-  }, [actions]);
+    clientsContext.actions.resetState();
+    instrumentsContext.actions.resetState();
+    connectionsContext.actions.resetState();
+  }, [clientsContext.actions, instrumentsContext.actions, connectionsContext.actions]);
 
   return {
     invalidate,
