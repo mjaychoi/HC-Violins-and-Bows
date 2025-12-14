@@ -443,7 +443,10 @@ export default function ClientsPage() {
               clients={clients}
               clientsWithInstruments={clientsWithInstruments}
               instrumentRelationships={instrumentRelationships}
-              loading={loading}
+              loading={{
+                ...loading,
+                hasAnyLoading: loading.any,
+              }}
               onClientClick={handleRowClick}
               onUpdateClient={async (clientId, updates) => {
                 try {

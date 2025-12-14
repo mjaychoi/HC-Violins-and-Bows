@@ -15,7 +15,9 @@ interface ClientsListContentProps {
   clientsWithInstruments: Set<string>;
   instrumentRelationships: ClientInstrument[];
   loading: {
+    // @deprecated Use hasAnyLoading instead
     any: boolean;
+    hasAnyLoading: boolean;
   };
   onClientClick: (client: Client) => void;
   onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;

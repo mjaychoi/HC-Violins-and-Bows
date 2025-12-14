@@ -17,7 +17,9 @@ interface DashboardContentProps {
   clientRelationships: ClientInstrument[];
   clientsLoading: boolean;
   loading: {
+    // @deprecated Use hasAnyLoading instead
     any: boolean;
+    hasAnyLoading: boolean;
   };
   onDeleteClick: (item: Instrument) => void;
   onUpdateItemInline: (

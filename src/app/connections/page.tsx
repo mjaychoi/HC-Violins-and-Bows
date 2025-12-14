@@ -8,11 +8,11 @@ import {
   ConnectionModal,
   FilterBar,
   ConnectionsList,
-  EmptyState,
   LoadingState,
   EditConnectionModal,
   ConnectionSearch,
 } from './components';
+import EmptyState from '@/components/common/EmptyState';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useFilterSort } from '@/hooks/useFilterSort';
@@ -282,7 +282,28 @@ export default function ConnectedClientsPage() {
             if (!hasAnyConnections) {
               return (
                 <EmptyState
-                  onCreateConnection={() => setShowConnectionModal(true)}
+                  title="No connections"
+                  description="Get started by creating your first client-item connection."
+                  actionButton={{
+                    label: 'Create Connection',
+                    onClick: () => setShowConnectionModal(true),
+                    icon: (
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                        />
+                      </svg>
+                    ),
+                  }}
                 />
               );
             }

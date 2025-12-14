@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import type { MaintenanceTask } from '@/types';
 import { parseYMDLocal } from '@/utils/dateParsing';
-import { EmptyTaskState } from '@/components/tasks/EmptyTaskState';
+import EmptyState from '@/components/common/EmptyState';
 import DateGroupHeader from './DateGroupHeader';
 import TaskRowCollapsed from './TaskRowCollapsed';
 import TaskRowExpanded from './TaskRowExpanded';
@@ -122,7 +122,12 @@ export default function GroupedTaskList({
   };
 
   if (tasks.length === 0) {
-    return <EmptyTaskState />;
+    return (
+      <EmptyState
+        title="No tasks found"
+        description="Get started by creating your first task."
+      />
+    );
   }
 
   return (

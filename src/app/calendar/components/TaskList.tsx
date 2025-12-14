@@ -9,7 +9,7 @@ import {
   getStatusDotClasses,
   getDateStatus,
 } from '@/utils/tasks/style';
-import { EmptyTaskState } from '@/components/tasks/EmptyTaskState';
+import EmptyState from '@/components/common/EmptyState';
 
 interface TaskListProps {
   tasks: MaintenanceTask[];
@@ -34,7 +34,12 @@ export default function TaskList({
   onTaskDelete,
 }: TaskListProps) {
   if (tasks.length === 0) {
-    return <EmptyTaskState />;
+    return (
+      <EmptyState
+        title="No tasks found"
+        description="Get started by creating your first task."
+      />
+    );
   }
 
   return (

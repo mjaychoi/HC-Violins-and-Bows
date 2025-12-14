@@ -196,7 +196,12 @@ export function useUnifiedData() {
       clients: state.loading.clients,
       instruments: state.loading.instruments,
       connections: state.loading.connections,
+      // @deprecated Use hasAnyLoading instead
       any:
+        state.loading.clients ||
+        state.loading.instruments ||
+        state.loading.connections,
+      hasAnyLoading:
         state.loading.clients ||
         state.loading.instruments ||
         state.loading.connections,
@@ -207,7 +212,12 @@ export function useUnifiedData() {
       clients: state.submitting.clients,
       instruments: state.submitting.instruments,
       connections: state.submitting.connections,
+      // @deprecated Use hasAnySubmitting instead
       any:
+        state.submitting.clients ||
+        state.submitting.instruments ||
+        state.submitting.connections,
+      hasAnySubmitting:
         state.submitting.clients ||
         state.submitting.instruments ||
         state.submitting.connections,
@@ -240,7 +250,9 @@ export function useUnifiedClients() {
     },
     submitting: {
       clients: clientsHook.submitting,
+      // @deprecated Use hasAnySubmitting instead
       any: clientsHook.submitting,
+      hasAnySubmitting: clientsHook.submitting,
     },
   };
 }
@@ -321,7 +333,12 @@ export function useUnifiedDashboard() {
       instruments: state.loading.instruments,
       clients: state.loading.clients,
       connections: state.loading.connections,
+      // @deprecated Use hasAnyLoading instead
       any:
+        state.loading.instruments ||
+        state.loading.clients ||
+        state.loading.connections,
+      hasAnyLoading:
         state.loading.instruments ||
         state.loading.clients ||
         state.loading.connections,
@@ -331,7 +348,9 @@ export function useUnifiedDashboard() {
     submitting: {
       instruments: state.submitting.instruments,
       connections: state.submitting.connections,
+      // @deprecated Use hasAnySubmitting instead
       any: state.submitting.instruments || state.submitting.connections,
+      hasAnySubmitting: state.submitting.instruments || state.submitting.connections,
     },
 
     // actions - explicitly list to avoid webpack issues with spread operator
@@ -406,7 +425,12 @@ export function useConnectedClientsData() {
       clients: state.loading.clients,
       instruments: state.loading.instruments,
       connections: state.loading.connections,
+      // @deprecated Use hasAnyLoading instead
       any:
+        state.loading.clients ||
+        state.loading.instruments ||
+        state.loading.connections,
+      hasAnyLoading:
         state.loading.clients ||
         state.loading.instruments ||
         state.loading.connections,
@@ -415,7 +439,9 @@ export function useConnectedClientsData() {
     // submitting state
     submitting: {
       connections: state.submitting.connections,
+      // @deprecated Use hasAnySubmitting instead
       any: state.submitting.connections,
+      hasAnySubmitting: state.submitting.connections,
     },
 
     // actions
