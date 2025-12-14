@@ -8,12 +8,14 @@ import {
   /* formatClientContact, getClientInitials */ getInterestColor,
 } from '../utils';
 import { useClientSalesData } from '../hooks/useClientKPIs';
+import { useClientsContactInfo } from '../hooks/useClientsContactInfo';
 import React, {
   useState,
   memo,
   useCallback,
   Fragment,
   forwardRef,
+  useMemo,
 } from 'react';
 // Removed dynamic import for react-window (no longer needed)
 import ClientTagSelector from './ClientTagSelector';
@@ -221,11 +223,14 @@ RowActions.displayName = 'RowActions';
 // Client Expanded Row Component (with sales data)
 const ClientExpandedRow = memo(function ClientExpandedRow({
   client,
+  contactInfo,
 }: {
   client: Client;
+  contactInfo: ReturnType<typeof useClientsContactInfo>['getContactInfo'];
 }) {
   const { totalSpend, purchaseCount, lastPurchaseDate, loading } =
     useClientSalesData(client.id);
+  const info = contactInfo(client.id);
 
   const formatAmount = (amount: number) =>
     new Intl.NumberFormat('en-US', {
@@ -237,7 +242,7 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
   return (
     <tr className="bg-gray-50">
       <td
-        colSpan={7}
+        colSpan={9}
         className={cn(classNames.tableCell, 'text-sm text-gray-700 px-6 py-4')}
       >
         <div className="space-y-4">
@@ -276,6 +281,66 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
                   <span className="text-gray-400">Loading...</span>
                 ) : (
                   lastPurchaseDate
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Contact Info Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-1">
+                최근 연락
+              </div>
+              <div className="text-sm font-semibold text-gray-900">
+                {info?.lastContactDateDisplay || (
+                  <span className="text-gray-400">없음</span>
+                )}
+                {info && info.daysSinceLastContact !== null && (
+                  <span className="ml-2 text-xs font-normal text-gray-500">
+                    ({info.daysSinceLastContact}일 전)
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-1">
+                다음 Follow-up
+              </div>
+              <div className="text-sm font-semibold text-gray-900">
+                {info?.nextFollowUpDateDisplay ? (
+                  info && (
+                    <span
+                      className={
+                        info.isOverdue
+                          ? 'text-red-600'
+                          : info.daysUntilFollowUp !== null &&
+                              info.daysUntilFollowUp <= 3
+                            ? 'text-amber-600'
+                            : ''
+                      }
+                    >
+                      {info.nextFollowUpDateDisplay}
+                      {info.daysUntilFollowUp !== null && (
+                        <span className="ml-2 text-xs font-normal text-gray-500">
+                          (
+                          {info.daysUntilFollowUp < 0
+                            ? `${Math.abs(info.daysUntilFollowUp)}일 지남`
+                            : info.daysUntilFollowUp === 0
+                              ? '오늘'
+                              : `${info.daysUntilFollowUp}일 후`}
+                          )
+                        </span>
+                      )}
+                      {info.isOverdue && (
+                        <span className="ml-2 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                          지남
+                        </span>
+                      )}
+                    </span>
+                  )
+                ) : (
+                  <span className="text-gray-400">없음</span>
                 )}
               </div>
             </div>
@@ -373,6 +438,15 @@ const ClientList = memo(function ClientList({
   const [editData, setEditData] = useState<Partial<Client>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+
+  // Fetch contact info for all clients
+  const clientIds = useMemo(() => clients.map(c => c.id), [clients]);
+  const { getContactInfo, loading: contactInfoLoading } = useClientsContactInfo(
+    {
+      clientIds,
+      enabled: clients.length > 0,
+    }
+  );
   // Dead code: instrument dropdown 관련 코드 제거 (현재 사용되지 않음)
   // const [showInstrumentDropdown, setShowInstrumentDropdown] = useState<
   //   string | null
@@ -556,6 +630,16 @@ const ClientList = memo(function ClientList({
                       >
                         <SortIcon arrow={getSortArrow('client_number')} />
                       </span>
+                    </span>
+                  </th>
+                  <th className={classNames.tableHeaderCell}>
+                    <span className="inline-flex items-center gap-1">
+                      최근 연락
+                    </span>
+                  </th>
+                  <th className={classNames.tableHeaderCell}>
+                    <span className="inline-flex items-center gap-1">
+                      다음 Follow-up
                     </span>
                   </th>
                 </tr>
@@ -841,9 +925,7 @@ const ClientList = memo(function ClientList({
                                   {client.interest}
                                 </span>
                               ) : (
-                                <span className="text-gray-400">
-                                  No interest
-                                </span>
+                                <span className="text-gray-400">—</span>
                               )}
                             </div>
                           )}
@@ -869,9 +951,86 @@ const ClientList = memo(function ClientList({
                             </div>
                           )}
                         </td>
+                        <td className={classNames.tableCell}>
+                          {contactInfoLoading ? (
+                            <div className="text-sm text-gray-400">...</div>
+                          ) : (
+                            <div className="text-sm text-gray-900 min-w-[120px]">
+                              {(() => {
+                                const info = getContactInfo(client.id);
+                                if (!info?.lastContactDateDisplay) {
+                                  return (
+                                    <span className="text-gray-400">없음</span>
+                                  );
+                                }
+                                return (
+                                  <div className="flex flex-col">
+                                    <span>{info.lastContactDateDisplay}</span>
+                                    {info.daysSinceLastContact !== null && (
+                                      <span className="text-xs text-gray-500">
+                                        {info.daysSinceLastContact}일 전
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </td>
+                        <td className={classNames.tableCell}>
+                          {contactInfoLoading ? (
+                            <div className="text-sm text-gray-400">...</div>
+                          ) : (
+                            <div className="text-sm text-gray-900 min-w-[140px]">
+                              {(() => {
+                                const info = getContactInfo(client.id);
+                                if (!info?.nextFollowUpDateDisplay) {
+                                  return (
+                                    <span className="text-gray-400">없음</span>
+                                  );
+                                }
+                                return (
+                                  <div className="flex flex-col gap-1">
+                                    <span
+                                      className={
+                                        info.isOverdue
+                                          ? 'text-red-600 font-medium'
+                                          : info.daysUntilFollowUp !== null &&
+                                              info.daysUntilFollowUp <= 3
+                                            ? 'text-amber-600 font-medium'
+                                            : ''
+                                      }
+                                    >
+                                      {info.nextFollowUpDateDisplay}
+                                    </span>
+                                    {info.daysUntilFollowUp !== null && (
+                                      <span className="text-xs text-gray-500">
+                                        {info.daysUntilFollowUp < 0
+                                          ? `${Math.abs(info.daysUntilFollowUp)}일 지남`
+                                          : info.daysUntilFollowUp === 0
+                                            ? '오늘'
+                                            : `${info.daysUntilFollowUp}일 후`}
+                                      </span>
+                                    )}
+                                    {info.isOverdue && (
+                                      <span className="inline-flex items-center text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded-full w-fit">
+                                        지남
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </td>
                       </tr>
                       {/* ✅ Expanded row - only render when expanded */}
-                      {isExpanded && <ClientExpandedRow client={client} />}
+                      {isExpanded && (
+                        <ClientExpandedRow
+                          client={client}
+                          contactInfo={getContactInfo}
+                        />
+                      )}
                     </Fragment>
                   );
                 })}

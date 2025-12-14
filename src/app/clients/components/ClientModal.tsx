@@ -12,6 +12,10 @@ import { useOutsideClose } from '@/hooks/useOutsideClose';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
 import { ClientRelationshipType, ClientViewFormData } from '../types';
+import ContactLog from './ContactLog';
+import FollowUpButton from './FollowUpButton';
+import { useContactLogs } from '../hooks/useContactLogs';
+import { useClientsContactInfo } from '../hooks/useClientsContactInfo';
 
 interface ClientModalProps {
   isOpen: boolean;
@@ -83,6 +87,27 @@ export default function ClientModal({
       ),
     [instrumentRelationships, client?.id]
   );
+
+  // Contact logs hook
+  const {
+    contactLogs,
+    submitting: contactLogsSubmitting,
+    addContact,
+    updateContact,
+    deleteContact,
+    setFollowUp,
+  } = useContactLogs({
+    clientId: client?.id,
+    autoFetch: isOpen && !!client?.id,
+  });
+
+  // Contact info for summary
+  const { getContactInfo } = useClientsContactInfo({
+    clientIds: client?.id ? [client.id] : [],
+    enabled: isOpen && !!client?.id,
+  });
+
+  const contactInfo = client?.id ? getContactInfo(client.id) : null;
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -403,6 +428,101 @@ export default function ClientModal({
                   </div>
                 )}
               </div>
+
+              {/* Contact Summary */}
+              {client && contactInfo && (
+                <div className="pt-4 border-t border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                    연락 요약
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3">
+                      <div className="text-xs font-medium text-gray-500 mb-1">
+                        최근 연락
+                      </div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {contactInfo.lastContactDateDisplay ? (
+                          <>
+                            {contactInfo.lastContactDateDisplay}
+                            {contactInfo.daysSinceLastContact !== null && (
+                              <span className="ml-2 text-xs font-normal text-gray-500">
+                                ({contactInfo.daysSinceLastContact}일 전)
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-gray-400">없음</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3">
+                      <div className="text-xs font-medium text-gray-500 mb-1">
+                        다음 연락
+                      </div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {contactInfo.nextFollowUpDateDisplay ? (
+                          <span
+                            className={
+                              contactInfo.isOverdue
+                                ? 'text-red-600'
+                                : contactInfo.daysUntilFollowUp !== null &&
+                                    contactInfo.daysUntilFollowUp <= 3
+                                  ? 'text-amber-600'
+                                  : ''
+                            }
+                          >
+                            {contactInfo.nextFollowUpDateDisplay}
+                            {contactInfo.daysUntilFollowUp !== null && (
+                              <span className="ml-2 text-xs font-normal text-gray-500">
+                                (
+                                {contactInfo.daysUntilFollowUp < 0
+                                  ? `${Math.abs(contactInfo.daysUntilFollowUp)}일 지남`
+                                  : contactInfo.daysUntilFollowUp === 0
+                                    ? '오늘'
+                                    : `${contactInfo.daysUntilFollowUp}일 후`}
+                                )
+                              </span>
+                            )}
+                            {contactInfo.isOverdue && (
+                              <span className="ml-2 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                                지남
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">없음</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Follow-up Quick Actions */}
+              {client && (
+                <div className="pt-4 border-t border-gray-200">
+                  <FollowUpButton
+                    clientId={client.id}
+                    onSetFollowUp={setFollowUp}
+                    loading={contactLogsSubmitting}
+                    variant="default"
+                  />
+                </div>
+              )}
+
+              {/* Contact Logs */}
+              {client && (
+                <div className="pt-4 border-t border-gray-200">
+                  <ContactLog
+                    clientId={client.id}
+                    contactLogs={contactLogs}
+                    onAddContact={addContact}
+                    onUpdateContact={updateContact}
+                    onDeleteContact={deleteContact}
+                    loading={contactLogsSubmitting}
+                  />
+                </div>
+              )}
 
               {/* Instrument Connections */}
               <div>

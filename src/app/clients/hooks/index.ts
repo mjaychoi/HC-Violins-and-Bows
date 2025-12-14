@@ -7,3 +7,5 @@ export * from './useFilters';
 export * from './useClientView';
 export * from './useInstrumentSearch';
 export * from './useOwnedItems';
+export * from './useContactLogs';
+export * from './useClientsContactInfo';
