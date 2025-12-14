@@ -271,13 +271,13 @@ describe('useCustomers', () => {
     expect(result.current.customers[0].tags).toContain('VIP');
   });
 
-  it('should select first customer by default', () => {
+  it('should not select customer by default (user must explicitly select)', () => {
     const { result } = renderHook(() => useCustomers());
 
-    expect(result.current.selectedCustomer).not.toBeNull();
-    expect(result.current.selectedCustomerId).toBe(
-      result.current.customers[0].id
-    );
+    // Initially, no customer should be selected
+    // This allows showing aggregate stats until user explicitly selects a customer
+    expect(result.current.selectedCustomer).toBeNull();
+    expect(result.current.selectedCustomerId).toBeNull();
   });
 
   it('should update selectedCustomerId', () => {
