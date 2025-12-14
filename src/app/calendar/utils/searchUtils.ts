@@ -98,7 +98,7 @@ export function searchTasks(
  *
  * @remarks
  * When sorting by 'date', uses the following priority order for date selection:
- * 1. scheduled_date (if available)
+ * 1. due_date (if available)
  * 2. personal_due_date (if due_date is not available)
  * 3. scheduled_date (if neither due_date nor personal_due_date is available)
  * 4. received_date (as fallback)
