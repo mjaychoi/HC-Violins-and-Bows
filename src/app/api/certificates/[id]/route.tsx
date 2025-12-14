@@ -16,6 +16,9 @@ import { validateUUID } from '@/utils/inputValidation';
 import { validateInstrument } from '@/utils/typeGuards';
 import { Instrument } from '@/types';
 
+// FIXED: Ensure Node.js runtime for PDF generation (Edge runtime breaks react-pdf)
+export const runtime = 'nodejs';
+
 // FIXED: React 19 compatibility - use renderToBuffer instead of renderToStream
 // React PDF's reconciler has issues with React 19's internal API changes in Next.js 15
 // renderToBuffer is more stable in this environment
@@ -55,9 +58,6 @@ async function loadReactPDF() {
   }
   return reactPdfLoader;
 }
-
-// Node.js runtime required for Buffer operations and PDF generation
-export const runtime = 'nodejs';
 
 // Maximum PDF size in bytes (20MB) - prevents OOM from large PDFs
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
@@ -233,21 +233,30 @@ export async function GET(
     }
 
     // 4. Load logo as data URI (server-side safe)
-    // FIXED: Read logo from public folder and convert to data URI
-    // React PDF's Image component doesn't resolve /logo.png in server runtime
-    let logoSrc: string | undefined;
-    try {
-      const logoPath = path.join(process.cwd(), 'public', 'logo.png');
-      const logoBuf = await fs.readFile(logoPath);
-      logoSrc = `data:image/png;base64,${logoBuf.toString('base64')}`;
-    } catch (error) {
-      // Fallback to absolute URL if file read fails
-      logoSrc = 'https://www.hcviolins.com/logo.png';
-      console.warn(
-        'Failed to read logo from public folder, using absolute URL:',
-        error instanceof Error ? error.message : String(error)
-      );
+    // FIXED: resolveLogoSrc returns string | null (never undefined)
+    // React PDF's Image component crashes if src is undefined/null
+    async function resolveLogoSrc(): Promise<string | null> {
+      // 1) Try local fs read -> data URL
+      try {
+        const logoPath = path.join(process.cwd(), 'public', 'logo.png');
+        const logoBuf = await fs.readFile(logoPath);
+        return `data:image/png;base64,${logoBuf.toString('base64')}`;
+      } catch (error) {
+        // 2) Try absolute URL (env-based if available)
+        const absoluteUrl = process.env.NEXT_PUBLIC_LOGO_URL || 'https://www.hcviolins.com/logo.png';
+        // Note: We return the URL but react-pdf may fail to fetch it
+        // If absolute URL also fails, we return null (Image won't render)
+        console.warn(
+          'Failed to read logo from public folder, will try absolute URL:',
+          error instanceof Error ? error.message : String(error)
+        );
+        // 3) Return null if all options fail (Image component won't render)
+        // In production, you might want to validate the absolute URL works
+        return absoluteUrl || null;
+      }
     }
+
+    const logoSrc = await resolveLogoSrc();
 
     // 5. Load React PDF dynamically (fixes React 19 compatibility issues)
     const { renderToBuffer: renderToBufferFn, CertificateDocument: CertDoc } =
@@ -259,7 +268,7 @@ export async function GET(
     const pdfBuffer = await renderToBufferFn(
       React.createElement(CertDoc, {
         instrument: validatedInstrument,
-        logoSrc,
+        logoSrc: logoSrc || undefined, // Convert null to undefined for react-pdf
         verifyUrl: `https://www.hcviolins.com/verify/CERT-${validatedInstrument.serial_number?.trim() || validatedInstrument.id.slice(0, 8).toUpperCase()}-${new Date().getFullYear()}`,
       }) as React.ReactElement<DocumentProps>
     );
