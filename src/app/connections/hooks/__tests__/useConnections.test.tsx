@@ -1,5 +1,5 @@
 import { renderHook } from '@/test-utils/render';
-import { useConnections } from '../useConnections';
+import { useConnections } from '@/contexts/DataContext';
 
 // Mock DataContext
 const mockFetchConnections = jest.fn();

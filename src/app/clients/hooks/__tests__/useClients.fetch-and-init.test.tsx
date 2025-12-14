@@ -1,6 +1,6 @@
 // src/app/clients/hooks/__tests__/useClients.fetch-and-init.test.tsx
 import { renderHook, act } from '@/test-utils/render';
-import { useClients } from '../useClients';
+import { useUnifiedClients as useClients } from '@/hooks/useUnifiedData';
 import { Client } from '@/types';
 import { flushPromises } from '../../../../../tests/utils/flushPromises';
 

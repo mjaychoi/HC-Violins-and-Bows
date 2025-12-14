@@ -1,7 +1,7 @@
 // src/app/clients/hooks/__tests__/useClients.mutations.test.tsx
 import React from 'react';
 import { renderHook, act, waitFor } from '@/test-utils/render';
-import { useClients } from '../useClients';
+import { useUnifiedClients as useClients } from '@/hooks/useUnifiedData';
 import { Client } from '@/types';
 
 // ✅ FIXED: ToastProvider도 export하도록 mock 수정
