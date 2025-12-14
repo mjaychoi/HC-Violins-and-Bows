@@ -250,12 +250,15 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
   }, [customers, searchTerm, tagFilter, sortBy]);
 
   useEffect(() => {
-    if (!selectedCustomerId && filteredCustomers.length) {
+    // Only auto-select first customer if no customer is explicitly selected
+    // Don't auto-select if user has explicitly cleared selection (selectedCustomerId === null)
+    if (selectedCustomerId === undefined && filteredCustomers.length) {
       setSelectedCustomerId(filteredCustomers[0].id);
     } else if (
       selectedCustomerId &&
       !filteredCustomers.find(c => c.id === selectedCustomerId)
     ) {
+      // If selected customer is not in filtered list, select first or clear
       setSelectedCustomerId(filteredCustomers[0]?.id ?? null);
     }
   }, [filteredCustomers, selectedCustomerId]);
@@ -266,10 +269,11 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
     return Array.from(tagSet);
   }, [customers]);
 
-  const selectedCustomer =
-    filteredCustomers.find(c => c.id === selectedCustomerId) ||
-    filteredCustomers[0] ||
-    null;
+  // Only return selected customer if selectedCustomerId is explicitly set
+  // Don't fallback to first customer - this causes stats to always show first customer's data
+  const selectedCustomer = selectedCustomerId
+    ? filteredCustomers.find(c => c.id === selectedCustomerId) || null
+    : null;
 
   return {
     customers: filteredCustomers,
