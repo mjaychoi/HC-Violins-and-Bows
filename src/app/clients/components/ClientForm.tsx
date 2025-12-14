@@ -434,7 +434,7 @@ export default function ClientForm({
             <div>
               <label className={classNames.formLabel}>
                 Client Number
-                <span className="ml-2 text-xs text-gray-500">(자동 생성)</span>
+                <span className="ml-2 text-xs text-gray-500">(Auto-generated)</span>
               </label>
               <input
                 type="text"

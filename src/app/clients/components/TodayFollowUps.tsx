@@ -110,7 +110,7 @@ export default function TodayFollowUps() {
 
         // Refresh the list
         await fetchTodayFollowUps();
-        showSuccess('연락 완료 처리되었습니다.');
+        showSuccess('Follow-up completed.');
       } catch (error) {
         handleError(error, 'Complete follow-up');
       } finally {
@@ -169,7 +169,7 @@ export default function TodayFollowUps() {
   const handleEmail = useCallback(
     (client: ContactLog['client']) => {
       if (!client?.email) {
-        handleError(new Error('이메일 주소가 없습니다.'), 'Send email');
+        handleError(new Error('No email address available.'), 'Send email');
         return;
       }
 
@@ -178,7 +178,7 @@ export default function TodayFollowUps() {
         client.email;
       const subject = encodeURIComponent(`Follow-up: ${clientName}`);
       const body = encodeURIComponent(
-        `안녕하세요 ${clientName}님,\n\n연락드립니다.\n\n감사합니다.`
+        `Hello ${clientName},\n\nFollowing up with you.\n\nThank you.`
       );
 
       window.location.href = `mailto:${client.email}?subject=${subject}&body=${body}`;
@@ -234,7 +234,7 @@ export default function TodayFollowUps() {
         <div className="flex items-center gap-2">
           <span className="text-amber-600">⏰</span>
           <h3 className="text-sm font-semibold text-amber-900">
-            연락해야 할 사람
+            People to contact today
           </h3>
           <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
             {Object.keys(followUpsByClient).length}
@@ -288,7 +288,7 @@ export default function TodayFollowUps() {
                     </Link>
                     {isOverdue ? (
                       <span className="text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
-                        지남
+                        days overdue
                       </span>
                     ) : (
                       <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
@@ -306,7 +306,7 @@ export default function TodayFollowUps() {
                   )}
                   {relatedContactLog.contact_date && (
                     <p className="text-xs text-gray-500 mt-1">
-                      관련 기록:{' '}
+                      Related record:{' '}
                       {formatDisplayDate(relatedContactLog.contact_date)}
                     </p>
                   )}
@@ -326,7 +326,7 @@ export default function TodayFollowUps() {
                       type="button"
                       onClick={() => handleEmail(client)}
                       className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition"
-                      title="이메일 보내기"
+                      title="Send email"
                     >
                       <svg
                         className="w-4 h-4"
@@ -350,9 +350,9 @@ export default function TodayFollowUps() {
                     onClick={() => handleComplete(primaryLog.id)}
                     disabled={processingIds.has(primaryLog.id)}
                     className="px-2 py-1 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 hover:border-green-300 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="연락 완료"
+                    title="Complete follow-up"
                   >
-                    {processingIds.has(primaryLog.id) ? '처리중...' : '✓ 완료'}
+                    {processingIds.has(primaryLog.id) ? 'Processing...' : '✓ Complete'}
                   </button>
 
                   {/* 미루기 버튼 (드롭다운) */}

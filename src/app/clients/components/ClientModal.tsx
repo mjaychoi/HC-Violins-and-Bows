@@ -485,7 +485,7 @@ export default function ClientModal({
                             )}
                             {contactInfo.isOverdue && (
                               <span className="ml-2 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                                지남
+                                overdue
                               </span>
                             )}
                           </span>

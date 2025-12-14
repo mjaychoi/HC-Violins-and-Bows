@@ -334,7 +334,7 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
                       )}
                       {info.isOverdue && (
                         <span className="ml-2 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                          지남
+                          overdue
                         </span>
                       )}
                     </span>
@@ -657,8 +657,8 @@ const ClientList = memo(function ClientList({
                   );
                   const emailGreeting =
                     fullName !== 'N/A'
-                      ? `안녕하세요 ${fullName},`
-                      : '안녕하세요,';
+                      ? `Hello ${fullName},`
+                      : 'Hello,';
                   const emailBody = encodeURIComponent(`${emailGreeting}\n\n`);
                   const mailtoHref = hasEmail
                     ? `mailto:${normalizedEmail}?subject=${emailSubject}&body=${emailBody}`
@@ -1006,15 +1006,15 @@ const ClientList = memo(function ClientList({
                                     {info.daysUntilFollowUp !== null && (
                                       <span className="text-xs text-gray-500">
                                         {info.daysUntilFollowUp < 0
-                                          ? `${Math.abs(info.daysUntilFollowUp)}일 지남`
+                                          ? `${Math.abs(info.daysUntilFollowUp)} days overdue`
                                           : info.daysUntilFollowUp === 0
-                                            ? '오늘'
-                                            : `${info.daysUntilFollowUp}일 후`}
+                                            ? 'Today'
+                                            : `${info.daysUntilFollowUp} days later`}
                                       </span>
                                     )}
                                     {info.isOverdue && (
                                       <span className="inline-flex items-center text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded-full w-fit">
-                                        지남
+                                        overdue
                                       </span>
                                     )}
                                   </div>

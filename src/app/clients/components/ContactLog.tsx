@@ -25,20 +25,20 @@ interface ContactLogProps {
 }
 
 const contactTypeLabels: Record<ContactType, string> = {
-  email: '📧 이메일',
-  phone: '📞 전화',
-  meeting: '🤝 미팅',
-  note: '📝 메모',
+  email: '📧 Email',
+  phone: '📞 Phone',
+  meeting: '🤝 Meeting',
+  note: '📝 Note',
   follow_up: '⏰ Follow-up',
 };
 
 const purposeLabels: Record<ContactPurpose, string> = {
-  quote: '견적',
+  quote: 'Quote',
   follow_up: 'Follow-up',
-  maintenance: '유지보수',
-  sale: '판매',
-  inquiry: '문의',
-  other: '기타',
+  maintenance: 'Maintenance',
+  sale: 'Sale',
+  inquiry: 'Inquiry',
+  other: 'Other',
 };
 
 export default function ContactLogComponent({
@@ -150,7 +150,7 @@ export default function ContactLogComponent({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                연락 유형
+                Contact Type
               </label>
               <select
                 value={formData.contact_type}
@@ -183,7 +183,7 @@ export default function ContactLogComponent({
                 }
                 className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5"
               >
-                <option value="">선택 안 함</option>
+                <option value="">None</option>
                 {Object.entries(purposeLabels).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
@@ -197,7 +197,7 @@ export default function ContactLogComponent({
             formData.contact_type === 'meeting') && (
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                제목
+                Subject
               </label>
               <input
                 type="text"
@@ -206,14 +206,14 @@ export default function ContactLogComponent({
                   setFormData({ ...formData, subject: e.target.value })
                 }
                 className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5"
-                placeholder="이메일 제목 또는 미팅 주제"
+                placeholder="Email subject or meeting topic"
               />
             </div>
           )}
 
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">
-              내용 *
+              Content *
             </label>
             <textarea
               value={formData.content}
@@ -222,7 +222,7 @@ export default function ContactLogComponent({
               }
               rows={3}
               className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5"
-              placeholder="연락 내용을 입력하세요"
+              placeholder="Enter contact details"
             />
           </div>
 
@@ -294,7 +294,7 @@ export default function ContactLogComponent({
       <div className="space-y-2">
         {sortedLogs.length === 0 ? (
           <p className="text-sm text-gray-500 text-center py-4">
-            연락 기록이 없습니다
+            No contact records
           </p>
         ) : (
           sortedLogs.map(log => {
@@ -310,7 +310,7 @@ export default function ContactLogComponent({
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">
-                          제목
+                          Subject
                         </label>
                         <input
                           type="text"
@@ -343,7 +343,7 @@ export default function ContactLogComponent({
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">
-                        내용
+                        Content
                       </label>
                       <textarea
                         value={formData.content}

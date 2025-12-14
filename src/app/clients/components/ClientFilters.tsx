@@ -100,7 +100,7 @@ export default function ClientFilters({
               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
               aria-label="All clients"
             />
-            <span className="text-sm text-gray-700">전체</span>
+            <span className="text-sm text-gray-700">All</span>
           </label>
           <label className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-gray-50 cursor-pointer transition-colors">
             <input
@@ -114,7 +114,7 @@ export default function ClientFilters({
               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
               aria-label="Filter clients with instruments"
             />
-            <span className="text-sm text-gray-700">악기 보유</span>
+            <span className="text-sm text-gray-700">Has Instruments</span>
           </label>
           <label className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-gray-50 cursor-pointer transition-colors">
             <input
@@ -128,7 +128,7 @@ export default function ClientFilters({
               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
               aria-label="Filter clients without instruments"
             />
-            <span className="text-sm text-gray-700">악기 미보유</span>
+            <span className="text-sm text-gray-700">No Instruments</span>
           </label>
         </div>
       </div>

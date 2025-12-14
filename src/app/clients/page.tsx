@@ -317,7 +317,7 @@ export default function ClientsPage() {
       if (selectedClient) {
         await fetchInstrumentRelationships(selectedClient.id);
       }
-      showSuccess('악기 연결이 제거되었습니다.');
+      showSuccess('Instrument connection removed.');
     } catch (error) {
       handleError(error, 'Failed to remove instrument relationship');
     }
