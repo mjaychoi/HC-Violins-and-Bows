@@ -29,6 +29,13 @@ const baseConfig: NextConfig = {
     // Turbopack HMR 안정성 개선
     // Note: @swc/helpers 모듈 HMR 오류가 발생하면 dev:webpack 스크립트 사용 권장
   },
+  // serverComponentsExternalPackages has been moved from experimental to top-level
+  // @react-pdf/renderer is only used in server components (API routes), not in client components
+  serverExternalPackages: [
+    '@react-pdf/renderer',
+    '@react-pdf/reconciler',
+    '@react-pdf/render',
+  ],
   // Webpack config applies to both dev and production when using Webpack (not Turbopack)
   webpack: (config, { isServer, dev }) => {
     // Optimize bundle size: prevent client-side bundling of server-only dependencies
