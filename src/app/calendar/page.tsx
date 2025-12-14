@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { useMaintenanceTasks } from '@/hooks/useMaintenanceTasks';
 import {
   useUnifiedInstruments,
@@ -14,9 +15,8 @@ import {
   ErrorBoundary,
   ConfirmDialog,
   NotificationBadge,
+  TableSkeleton,
 } from '@/components/common';
-import { TaskModal } from './components';
-import CalendarContent from './components/CalendarContent';
 import Button from '@/components/common/Button';
 import type { MaintenanceTask, ContactLog } from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
@@ -26,6 +26,20 @@ import {
   CALENDAR_ERROR_MESSAGES,
   CALENDAR_CONFIRM_MESSAGES,
 } from './constants';
+
+// Dynamic imports for large components to reduce initial bundle size
+const CalendarContent = dynamic(() => import('./components/CalendarContent'), {
+  loading: () => (
+    <div className="p-6">
+      <TableSkeleton rows={8} columns={7} />
+    </div>
+  ),
+  ssr: false,
+});
+
+const TaskModal = dynamic(() => import('./components/TaskModal'), {
+  ssr: false,
+});
 
 export default function CalendarPage() {
   const { handleError, showSuccess } = useAppFeedback();

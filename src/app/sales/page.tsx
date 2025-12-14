@@ -20,16 +20,9 @@ import {
   useSalesSort,
   useEnrichedSales,
 } from './hooks';
-import {
-  SalesSummary,
-  SalesFilters,
-  SalesTable,
-  SalesInsights,
-  SalesAlerts,
-} from './components';
 import dynamic from 'next/dynamic';
 
-// Dynamic import for SalesCharts to reduce initial bundle size (recharts is large)
+// Dynamic imports for large components to reduce initial bundle size
 const SalesCharts = dynamic(() => import('./components/SalesCharts'), {
   ssr: false,
   loading: () => (
@@ -38,16 +31,71 @@ const SalesCharts = dynamic(() => import('./components/SalesCharts'), {
     </div>
   ),
 });
+
+const SalesInsights = dynamic(() => import('./components/SalesInsights'), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-lg bg-white p-4 shadow-sm border border-gray-200">
+      <CardSkeleton count={1} />
+    </div>
+  ),
+});
+
+const SalesAlerts = dynamic(() => import('./components/SalesAlerts'), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-lg bg-white p-4 shadow-sm border border-gray-200">
+      <CardSkeleton count={1} />
+    </div>
+  ),
+});
+
+// Dynamic import for SalesTable (264 lines) - loaded when table is visible
+const SalesTable = dynamic(() => import('./components/SalesTable'), {
+  ssr: false,
+  loading: () => (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+      <TableSkeleton rows={10} columns={7} />
+    </div>
+  ),
+});
+
+// Dynamic import for SaleForm (451 lines) - modal, loaded when needed
+const SaleForm = dynamic(() => import('./components/SaleForm'), {
+  ssr: false,
+});
+
+// Dynamic import for SalesSummary (215 lines) - KPI cards, can be lazy loaded
+const SalesSummary = dynamic(() => import('./components/SalesSummary'), {
+  ssr: false,
+  loading: () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      {[1, 2, 3, 4].map(i => (
+        <div key={i} className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+          <div className="animate-pulse">
+            <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+            <div className="h-8 bg-gray-200 rounded w-3/4"></div>
+          </div>
+        </div>
+      ))}
+    </div>
+  ),
+});
+
+// Dynamic import for SalesFilters (251 lines) - loaded when filters are shown
+const SalesFilters = dynamic(() => import('./components/SalesFilters'), {
+  ssr: false,
+});
 import { Pagination } from '@/components/common';
 import {
   calculateTotals,
   formatPeriodInfo,
-  generateCSV,
-  generateReceiptEmail,
   createMaps,
   enrichSales,
   sortByClientName,
 } from './utils/salesUtils';
+// Large utility functions loaded on demand
+// generateCSV and generateReceiptEmail are imported dynamically when needed
 import { currency, dateFormat } from './utils/salesFormatters';
 import { SaleStatus } from './types';
 
@@ -179,7 +227,7 @@ export default function SalesPage() {
   const periodInfo = useMemo(() => formatPeriodInfo(from, to), [from, to]);
 
   const handleSendReceipt = useCallback(
-    (sale: EnrichedSale) => {
+    async (sale: EnrichedSale) => {
       const email = sale.client?.email;
       if (!email) {
         handleError(
@@ -189,13 +237,19 @@ export default function SalesPage() {
         return;
       }
 
-      const { subject, body } = generateReceiptEmail(
-        sale,
-        dateFormat,
-        currency
-      );
-      window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
-      showSuccess('Receipt email opened in your email client.');
+      try {
+        // Dynamic import for large utility function
+        const { generateReceiptEmail } = await import('./utils/salesUtils');
+        const { subject, body } = generateReceiptEmail(
+          sale,
+          dateFormat,
+          currency
+        );
+        window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+        showSuccess('Receipt email opened in your email client.');
+      } catch (error) {
+        handleError(error, 'Send Receipt');
+      }
     },
     [handleError, showSuccess]
     // dateFormat and currency are constants, not dependencies
@@ -336,7 +390,8 @@ export default function SalesPage() {
         enrichedAllSales = sortByClientName(enrichedAllSales, sortDirection);
       }
 
-      // Generate CSV
+      // Generate CSV - dynamic import for large function
+      const { generateCSV } = await import('./utils/salesUtils');
       const csvContent = generateCSV(enrichedAllSales, dateFormat, currency);
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');

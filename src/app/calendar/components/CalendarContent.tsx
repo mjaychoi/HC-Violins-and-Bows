@@ -14,11 +14,18 @@ import {
   GroupedTaskList,
 } from './';
 import { getViewRangeLabel } from '../utils/viewUtils';
-import CalendarView from './CalendarView';
+import dynamic from 'next/dynamic';
+import { Suspense } from 'react';
 import { TableSkeleton, Pagination } from '@/components/common';
 import Button from '@/components/common/Button';
 import type { ExtendedView } from './CalendarView';
 import TodayFollowUps from '@/app/clients/components/TodayFollowUps';
+
+// Dynamic import for CalendarView (includes react-big-calendar and react-dnd)
+// This significantly reduces initial bundle size for calendar page
+const CalendarView = dynamic(() => import('./CalendarView'), {
+  ssr: false,
+});
 
 interface CalendarContentProps {
   tasks: MaintenanceTask[];
@@ -502,7 +509,14 @@ function CalendarContentInner({
           className="rounded-lg bg-white p-6 border border-gray-200"
           style={{ minHeight: '700px', overflow: 'visible' }}
         >
-          <CalendarView
+          <Suspense
+            fallback={
+              <div className="rounded-lg bg-white p-6 border border-gray-200" style={{ minHeight: '700px' }}>
+                <TableSkeleton rows={5} columns={1} />
+              </div>
+            }
+          >
+            <CalendarView
             tasks={filteredTasks}
             contactLogs={contactLogs}
             instruments={taskData.instrumentsMap}
@@ -516,6 +530,7 @@ function CalendarContentInner({
             currentView={navigation.calendarView}
             onViewChange={navigation.setCalendarView}
           />
+          </Suspense>
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
