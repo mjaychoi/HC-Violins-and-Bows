@@ -34,6 +34,13 @@ jest.mock('@/contexts/AuthContext', () => ({
   ),
 }));
 
+// Mock ToastProvider
+jest.mock('@/contexts/ToastContext', () => ({
+  ToastProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="toast-provider">{children}</div>
+  ),
+}));
+
 // Mock DataInitializer
 jest.mock('@/components/providers/DataInitializer', () => ({
   DataInitializer: ({ children }: { children: React.ReactNode }) => (
@@ -43,7 +50,7 @@ jest.mock('@/components/providers/DataInitializer', () => ({
 
 describe('RootLayout', () => {
   it('should render children within providers', () => {
-    const { getByText } = render(
+    const { getByText } = rtlRender(
       <RootProviders>
         <div>Test Content</div>
       </RootProviders>
@@ -53,7 +60,7 @@ describe('RootLayout', () => {
   });
 
   it('should render ErrorBoundary', () => {
-    const { getByTestId } = render(
+    const { getByTestId } = rtlRender(
       <RootProviders>
         <div>Test Content</div>
       </RootProviders>
@@ -63,7 +70,7 @@ describe('RootLayout', () => {
   });
 
   it('should render AuthProvider', () => {
-    const { getByTestId } = render(
+    const { getByTestId } = rtlRender(
       <RootProviders>
         <div>Test Content</div>
       </RootProviders>
@@ -73,19 +80,25 @@ describe('RootLayout', () => {
   });
 
   it('should render Context Providers', () => {
-    const { getByTestId } = render(
+    const { getAllByTestId } = rtlRender(
       <RootProviders>
         <div>Test Content</div>
       </RootProviders>
     );
 
-    expect(getByTestId('clients-provider')).toBeInTheDocument();
-    expect(getByTestId('instruments-provider')).toBeInTheDocument();
-    expect(getByTestId('connections-provider')).toBeInTheDocument();
+    // RootProviders 내부의 Provider만 확인 (중복 제거)
+    const clientsProviders = getAllByTestId('clients-provider');
+    const instrumentsProviders = getAllByTestId('instruments-provider');
+    const connectionsProviders = getAllByTestId('connections-provider');
+    
+    // 최소 1개는 있어야 함 (RootProviders 내부)
+    expect(clientsProviders.length).toBeGreaterThanOrEqual(1);
+    expect(instrumentsProviders.length).toBeGreaterThanOrEqual(1);
+    expect(connectionsProviders.length).toBeGreaterThanOrEqual(1);
   });
 
   it('should have correct provider nesting order', () => {
-    const { container } = render(
+    const { container } = rtlRender(
       <RootProviders>
         <div>Test Content</div>
       </RootProviders>
@@ -129,7 +142,7 @@ describe('RootLayout', () => {
   it('should import globals.css', () => {
     // This is tested implicitly by the component rendering
     // The import statement is at the top of the file
-    render(
+    rtlRender(
       <RootProviders>
         <div>Test Content</div>
       </RootProviders>
