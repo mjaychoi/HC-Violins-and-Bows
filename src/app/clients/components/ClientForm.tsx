@@ -298,7 +298,7 @@ export default function ClientForm({
       role="dialog"
       aria-modal="true"
       aria-labelledby="client-form-title"
-      onClick={(e) => {
+      onClick={e => {
         if (e.target === e.currentTarget) {
           onClose();
         }

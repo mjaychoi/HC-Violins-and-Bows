@@ -243,7 +243,9 @@ export async function GET(
         return `data:image/png;base64,${logoBuf.toString('base64')}`;
       } catch (error) {
         // 2) Try absolute URL (env-based if available)
-        const absoluteUrl = process.env.NEXT_PUBLIC_LOGO_URL || 'https://www.hcviolins.com/logo.png';
+        const absoluteUrl =
+          process.env.NEXT_PUBLIC_LOGO_URL ||
+          'https://www.hcviolins.com/logo.png';
         // Note: We return the URL but react-pdf may fail to fetch it
         // If absolute URL also fails, we return null (Image won't render)
         console.warn(

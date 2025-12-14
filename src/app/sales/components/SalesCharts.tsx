@@ -726,7 +726,7 @@ export default function SalesCharts({
                   if (name === 'Refund Rate') return `${value}%`;
                   return formatCurrency(value);
                 }}
-                labelFormatter={(label) => label}
+                labelFormatter={label => label}
                 content={({ active, payload }) => {
                   if (!active || !payload || payload.length === 0) return null;
                   const data = payload[0].payload;
@@ -735,23 +735,31 @@ export default function SalesCharts({
                       <p className="font-semibold text-sm mb-2">{data.month}</p>
                       <div className="space-y-1 text-xs">
                         <p>
-                          <span className="text-green-600 font-medium">Revenue:</span>{' '}
+                          <span className="text-green-600 font-medium">
+                            Revenue:
+                          </span>{' '}
                           {formatCurrency(data.revenue)}
                         </p>
                         {data.refunds > 0 && (
                           <p>
-                            <span className="text-red-600 font-medium">Refunds:</span>{' '}
+                            <span className="text-red-600 font-medium">
+                              Refunds:
+                            </span>{' '}
                             {formatCurrency(data.refunds)}
                           </p>
                         )}
                         {data.refundRate > 0 && (
                           <p>
-                            <span className="text-amber-600 font-medium">Refund Rate:</span>{' '}
+                            <span className="text-amber-600 font-medium">
+                              Refund Rate:
+                            </span>{' '}
                             {data.refundRate}%
                           </p>
                         )}
                         <p>
-                          <span className="text-gray-600 font-medium">Orders:</span>{' '}
+                          <span className="text-gray-600 font-medium">
+                            Orders:
+                          </span>{' '}
                           {data.count}
                         </p>
                       </div>

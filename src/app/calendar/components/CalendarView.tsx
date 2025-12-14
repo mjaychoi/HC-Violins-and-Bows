@@ -304,13 +304,19 @@ export default function CalendarView({
         const instrumentType = instrument?.type;
 
         // Get instrument color for visual distinction (no icon)
-        const getInstrumentColor = (type: string | null | undefined): string => {
+        const getInstrumentColor = (
+          type: string | null | undefined
+        ): string => {
           if (!type) return 'text-gray-600';
           const t = type.toLowerCase();
-          if (t.includes('violin') || t.includes('바이올린')) return 'text-blue-600';
-          if (t.includes('viola') || t.includes('비올라')) return 'text-purple-600';
-          if (t.includes('cello') || t.includes('첼로')) return 'text-green-600';
-          if (t.includes('bass') || t.includes('베이스')) return 'text-indigo-600';
+          if (t.includes('violin') || t.includes('바이올린'))
+            return 'text-blue-600';
+          if (t.includes('viola') || t.includes('비올라'))
+            return 'text-purple-600';
+          if (t.includes('cello') || t.includes('첼로'))
+            return 'text-green-600';
+          if (t.includes('bass') || t.includes('베이스'))
+            return 'text-indigo-600';
           if (t.includes('bow') || t.includes('활')) return 'text-amber-600';
           return 'text-gray-600';
         };
@@ -318,7 +324,7 @@ export default function CalendarView({
         // 2-line structure: Instrument (line 1) + Task Description (line 2)
         const instrumentColor = getInstrumentColor(instrumentType);
         const instrumentName = instrumentType || 'Unknown';
-        
+
         // Clean task title (remove common prefixes/suffixes)
         let taskDescription = task.title.trim();
         const taskTypePatterns = [
@@ -391,7 +397,7 @@ export default function CalendarView({
           title: `${eventData.instrument}\n${eventData.description}`,
           start: start,
           end: endDate,
-          resource: { 
+          resource: {
             type: 'follow_up',
             contactLog: log,
             clientName,
@@ -420,9 +426,14 @@ export default function CalendarView({
   const eventStyleGetter = useCallback(
     (event: Event) => {
       const resource = event.resource as EventResource | MaintenanceTask;
-      
+
       // Handle follow-up events
-      if (resource && typeof resource === 'object' && 'type' in resource && resource.type === 'follow_up') {
+      if (
+        resource &&
+        typeof resource === 'object' &&
+        'type' in resource &&
+        resource.type === 'follow_up'
+      ) {
         return {
           style: {
             backgroundColor: '#fef3c7', // Amber-100
@@ -441,7 +452,8 @@ export default function CalendarView({
       }
 
       // Handle task events
-      const task = 'task' in resource ? resource.task : (resource as MaintenanceTask);
+      const task =
+        'task' in resource ? resource.task : (resource as MaintenanceTask);
       if (!task) {
         // Fallback for invalid task
         return {
@@ -458,7 +470,7 @@ export default function CalendarView({
           className: 'rbc-event status-normal',
         };
       }
-      
+
       const dateStatus = getDateStatus(task);
       const isOverdue = dateStatus.status === 'overdue';
       const isToday = dateStatus.days === 0 && !isOverdue;
@@ -619,31 +631,39 @@ export default function CalendarView({
                   description: string;
                 };
               }
-              const resource = event.resource as EventResource | MaintenanceTask;
-              
+              const resource = event.resource as
+                | EventResource
+                | MaintenanceTask;
+
               // Handle follow-up events
-              if (resource && typeof resource === 'object' && 'type' in resource && resource.type === 'follow_up') {
+              if (
+                resource &&
+                typeof resource === 'object' &&
+                'type' in resource &&
+                resource.type === 'follow_up'
+              ) {
                 const clientName = resource.clientName || 'Unknown Client';
                 return (
                   <div className="rbc-event-content">
                     <div className="event-instrument text-amber-600">
                       ⏰ Follow-up
                     </div>
-                    <div className="event-description">
-                      {clientName}
-                    </div>
+                    <div className="event-description">{clientName}</div>
                   </div>
                 );
               }
 
               // Handle task events
-              const eventData = 'eventData' in resource ? resource.eventData : null;
-              
+              const eventData =
+                'eventData' in resource ? resource.eventData : null;
+
               if (eventData) {
                 // Use structured data for 2-line display
                 return (
                   <div className="rbc-event-content">
-                    <div className={`event-instrument ${eventData.instrumentColor}`}>
+                    <div
+                      className={`event-instrument ${eventData.instrumentColor}`}
+                    >
                       {eventData.instrument}
                     </div>
                     <div className="event-description">
@@ -652,27 +672,25 @@ export default function CalendarView({
                   </div>
                 );
               }
-              
+
               // Fallback: parse title (2-line format: "Instrument\nDescription")
               const title =
                 typeof event.title === 'string'
                   ? event.title
                   : String(event.title || '');
               const lines = title.split('\n');
-              
+
               if (lines.length >= 2) {
                 return (
                   <div className="rbc-event-content">
                     <div className="event-instrument text-gray-700">
                       {lines[0]}
                     </div>
-                    <div className="event-description">
-                      {lines[1]}
-                    </div>
+                    <div className="event-description">{lines[1]}</div>
                   </div>
                 );
               }
-              
+
               return <div className="rbc-event-content">{title}</div>;
             },
           }}

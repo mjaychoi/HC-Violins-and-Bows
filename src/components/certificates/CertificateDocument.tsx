@@ -344,7 +344,7 @@ function field(label: string, value?: React.ReactNode) {
     styles.field,
     { flexDirection: 'row' as const, alignItems: 'flex-start' as const },
   ].filter(Boolean);
-  
+
   return (
     <View style={fieldStyle}>
       <Text style={styles.fieldLabel}>{label}:</Text>

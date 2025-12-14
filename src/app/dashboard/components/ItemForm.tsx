@@ -267,7 +267,7 @@ export default function ItemForm({
   return (
     <div
       className={modalStyles.overlay}
-      onClick={(e) => {
+      onClick={e => {
         if (e.target === e.currentTarget) {
           onClose();
         }

@@ -6,7 +6,12 @@ import { modalStyles, modalIconPaths, ModalHeaderProps } from './modalStyles';
 /**
  * 모달 헤더 컴포넌트 (재사용 가능)
  */
-export function ModalHeader({ title, icon, onClose, titleId }: ModalHeaderProps) {
+export function ModalHeader({
+  title,
+  icon,
+  onClose,
+  titleId,
+}: ModalHeaderProps) {
   return (
     <div className={modalStyles.header}>
       <div className={modalStyles.headerContent}>

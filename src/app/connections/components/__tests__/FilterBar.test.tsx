@@ -118,7 +118,9 @@ describe('FilterBar', () => {
     );
 
     // FIXED: Use getByRole to find button containing "Interested" text
-    const interestedButton = screen.getByRole('button', { name: /Interested/i });
+    const interestedButton = screen.getByRole('button', {
+      name: /Interested/i,
+    });
     expect(interestedButton.className).toContain('border-yellow-600');
     expect(interestedButton.className).toContain('text-yellow-600');
   });
@@ -225,7 +227,9 @@ describe('FilterBar', () => {
     );
 
     // FIXED: Use getByRole to find button containing "Interested" text
-    const interestedButton = screen.getByRole('button', { name: /Interested/i });
+    const interestedButton = screen.getByRole('button', {
+      name: /Interested/i,
+    });
     expect(interestedButton).toHaveAttribute('title', 'Filter by Interested');
   });
 

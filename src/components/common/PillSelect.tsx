@@ -6,8 +6,10 @@ export interface PillSelectOption {
   label: string;
 }
 
-interface PillSelectProps
-  extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> {
+interface PillSelectProps extends Omit<
+  React.SelectHTMLAttributes<HTMLSelectElement>,
+  'onChange'
+> {
   value: string;
   onChange: (value: string) => void;
   options: PillSelectOption[];
