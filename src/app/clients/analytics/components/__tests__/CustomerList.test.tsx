@@ -123,7 +123,8 @@ describe('CustomerList', () => {
         onSelect={mockOnSelect}
       />
     );
-    // ✅ FIXED: 날짜가 "MMM d, yyyy" 형식으로 표시됨 (예: "May 11, 2024")
+    // ✅ FIXED: 날짜가 "MMM d, yyyy" 형식으로 표시됨
+    // 타임존 변환으로 인해 '2024-05-12'가 "May 11, 2024"로 표시될 수 있음
     expect(screen.getByText(/Last: May 11, 2024/i)).toBeInTheDocument();
   });
 
