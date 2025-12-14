@@ -53,6 +53,7 @@ export interface ClientInstrument {
   instrument_id: string;
   relationship_type: RelationshipType;
   notes: string | null;
+  display_order?: number; // Display order for drag & drop sorting
   created_at: string;
   client?: Client;
   instrument?: Instrument;

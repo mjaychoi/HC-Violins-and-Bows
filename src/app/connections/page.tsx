@@ -31,6 +31,7 @@ export default function ConnectedClientsPage() {
     createConnection,
     updateConnection,
     deleteConnection,
+    fetchConnections,
   } = useConnectedClientsData();
 
   // Loading states
@@ -192,15 +193,40 @@ export default function ConnectedClientsPage() {
     }
   };
 
-  // Handle connection reorder (local state only - visual reordering)
-  // Note: This doesn't persist to database as connections don't have an order field
+  // Handle connection reorder: persist to database
   const handleConnectionReorder = useCallback(
-    (_reorderedConnections: ClientInstrument[]) => {
-      // Note: This is visual-only reordering. To persist, we'd need an order field in the database.
-      // For now, we just accept the reorder but don't persist it.
-      // In the future, we could add an `order` field to the connections table.
+    async (reorderedConnections: ClientInstrument[]) => {
+      try {
+        await withSubmitting(async () => {
+          // Prepare batch update: assign display_order based on new position
+          const orders = reorderedConnections.map((conn, index) => ({
+            id: conn.id,
+            display_order: index + 1, // 1-based index
+          }));
+
+          // Call batch update API
+          const response = await fetch('/api/connections', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ orders }),
+          });
+
+          if (!response.ok) {
+            const result = await response.json();
+            throw new Error(result.error || 'Failed to update connection order');
+          }
+
+          // Refresh connections to get updated data
+          await fetchConnections();
+        });
+      } catch (error) {
+        handleError(error, 'Failed to save connection order');
+        // Optionally: rollback UI state here
+      }
     },
-    []
+    [withSubmitting, handleError]
   );
 
   return (

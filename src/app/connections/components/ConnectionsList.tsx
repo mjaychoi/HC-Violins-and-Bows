@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { ClientInstrument, RelationshipType } from '@/types';
 import {
   GroupedConnections,
@@ -15,6 +15,8 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverEvent,
+  useDndMonitor,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -47,17 +49,31 @@ export const ConnectionsList = memo(function ConnectionsList({
   onPageChange,
   loading = false,
 }: ConnectionsListProps) {
+  // Track drag over state for visual feedback
+  const [overId, setOverId] = useState<string | null>(null);
+
   // Drag and drop sensors
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px movement before drag starts
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
 
+  // Handle drag over for visual feedback
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    setOverId(over?.id as string | null || null);
+  };
+
   // Handle drag end
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    setOverId(null); // Clear over state
 
     if (!over || active.id === over.id) {
       return;
@@ -121,11 +137,13 @@ export const ConnectionsList = memo(function ConnectionsList({
   }, [connectionsToPaginate, currentPage, pageSize]);
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
-    >
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+        onDragOver={handleDragOver}
+        onDragCancel={() => setOverId(null)}
+      >
       <div className="space-y-4">
         {isAll ? (
           // All 탭: 섹션 없이 flat list로 표시 (각 카드에 배지로 type 표시)
@@ -140,6 +158,7 @@ export const ConnectionsList = memo(function ConnectionsList({
                   connection={connection}
                   onDelete={onDeleteConnection}
                   onEdit={onEditConnection}
+                  isOver={overId === connection.id}
                 />
               ))}
             </div>
@@ -164,6 +183,7 @@ export const ConnectionsList = memo(function ConnectionsList({
                         connection={connection}
                         onDelete={onDeleteConnection}
                         onEdit={onEditConnection}
+                        isOver={overId === connection.id}
                       />
                     ))}
                   </div>

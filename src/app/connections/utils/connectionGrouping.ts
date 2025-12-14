@@ -30,7 +30,10 @@ export type GroupedConnections = Partial<
 export const groupConnectionsByType = (
   connections: ClientInstrument[]
 ): GroupedConnections => {
-  return connections.reduce((acc, connection) => {
+  // Sort connections by display_order before grouping
+  const sortedConnections = sortConnectionsByOrder(connections);
+  
+  return sortedConnections.reduce((acc, connection) => {
     const type = connection.relationship_type;
     if (!acc[type]) {
       acc[type] = [];
@@ -38,6 +41,22 @@ export const groupConnectionsByType = (
     acc[type]?.push(connection);
     return acc;
   }, {} as GroupedConnections);
+};
+
+// Sort connections by display_order, then by created_at
+export const sortConnectionsByOrder = (
+  connections: ClientInstrument[]
+): ClientInstrument[] => {
+  return [...connections].sort((a, b) => {
+    // First sort by display_order (if available)
+    const orderA = a.display_order ?? Number.MAX_SAFE_INTEGER;
+    const orderB = b.display_order ?? Number.MAX_SAFE_INTEGER;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    // Fallback to created_at if display_order is the same
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
 };
 
 export const getRelationshipTypeCounts = (
@@ -69,29 +88,34 @@ export const sortConnectionsForAllTab = (
 ): ClientInstrument[] => {
   return [...connections].sort((a, b) => {
     // 1. Relationship type order
-    const orderA = RELATIONSHIP_TYPE_ORDER[a.relationship_type] ?? 999;
-    const orderB = RELATIONSHIP_TYPE_ORDER[b.relationship_type] ?? 999;
+    const typeOrderA = RELATIONSHIP_TYPE_ORDER[a.relationship_type] ?? 999;
+    const typeOrderB = RELATIONSHIP_TYPE_ORDER[b.relationship_type] ?? 999;
+    if (typeOrderA !== typeOrderB) return typeOrderA - typeOrderB;
+
+    // 2. Display order (within same relationship type)
+    const orderA = a.display_order ?? Number.MAX_SAFE_INTEGER;
+    const orderB = b.display_order ?? Number.MAX_SAFE_INTEGER;
     if (orderA !== orderB) return orderA - orderB;
 
-    // 2. Client last name
+    // 3. Client last name
     const lastNameA = a.client?.last_name ?? '';
     const lastNameB = b.client?.last_name ?? '';
     const lastNameCompare = lastNameA.localeCompare(lastNameB);
     if (lastNameCompare !== 0) return lastNameCompare;
 
-    // 3. Client first name
+    // 4. Client first name
     const firstNameA = a.client?.first_name ?? '';
     const firstNameB = b.client?.first_name ?? '';
     const firstNameCompare = firstNameA.localeCompare(firstNameB);
     if (firstNameCompare !== 0) return firstNameCompare;
 
-    // 4. Instrument maker
+    // 5. Instrument maker
     const makerA = a.instrument?.maker ?? '';
     const makerB = b.instrument?.maker ?? '';
     const makerCompare = makerA.localeCompare(makerB);
     if (makerCompare !== 0) return makerCompare;
 
-    // 5. Instrument type
+    // 6. Instrument type
     const typeA = a.instrument?.type ?? '';
     const typeB = b.instrument?.type ?? '';
     return typeA.localeCompare(typeB);

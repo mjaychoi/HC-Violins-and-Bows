@@ -66,7 +66,12 @@ export async function GET(request: NextRequest) {
       query = query.eq('instrument_id', instrumentId);
     }
 
-    query = query.order(orderBy, { ascending });
+    // Order by display_order first (if available), then by the specified orderBy
+    // This ensures custom ordering is preserved
+    query = query.order('display_order', { ascending: true, nullsFirst: false });
+    if (orderBy !== 'display_order') {
+      query = query.order(orderBy, { ascending });
+    }
 
     // Apply pagination if provided
     if (page && pageSize) {
@@ -424,6 +429,134 @@ export async function DELETE(request: NextRequest) {
       appError,
       'ConnectionsAPI.DELETE',
       { connectionId: id, duration, logMessage: logInfo.message },
+      ErrorSeverity.HIGH
+    );
+    const safeError = createSafeErrorResponse(appError, 500);
+    return NextResponse.json(safeError, { status: 500 });
+  }
+}
+
+// Batch update display_order for multiple connections
+export async function PUT(request: NextRequest) {
+  const startTime = performance.now();
+  try {
+    const body = await request.json();
+    const { orders } = body; // Array of { id: string, display_order: number }
+
+    if (!Array.isArray(orders)) {
+      return NextResponse.json(
+        { error: 'orders must be an array' },
+        { status: 400 }
+      );
+    }
+
+    if (orders.length === 0) {
+      return NextResponse.json({ data: [] });
+    }
+
+    // Validate all IDs and orders
+    for (const order of orders) {
+      if (!order.id || !validateUUID(order.id)) {
+        return NextResponse.json(
+          { error: `Invalid connection ID: ${order.id}` },
+          { status: 400 }
+        );
+      }
+      if (typeof order.display_order !== 'number') {
+        return NextResponse.json(
+          { error: `Invalid display_order for connection ${order.id}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    const supabase = getServerSupabase();
+
+    // Use a transaction-like approach: update all connections
+    // Since Supabase doesn't support transactions in JS client, we'll do sequential updates
+    // For better performance, we could use a stored procedure, but this is simpler
+    const updatePromises = orders.map(({ id, display_order }) =>
+      supabase
+        .from('client_instruments')
+        .update({ display_order })
+        .eq('id', id)
+    );
+
+    const results = await Promise.all(updatePromises);
+    
+    // Check for errors
+    const errors = results.filter(r => r.error);
+    if (errors.length > 0) {
+      const firstError = errors[0].error;
+      const appError = errorHandler.handleSupabaseError(
+        firstError,
+        'Batch update connection orders'
+      );
+      const logInfo = createLogErrorInfo(appError);
+      logApiRequest(
+        'PUT',
+        '/api/connections',
+        undefined,
+        Math.round(performance.now() - startTime),
+        'ConnectionsAPI',
+        {
+          orderCount: orders.length,
+          error: true,
+          errorCode: (appError as { code?: string })?.code,
+          logMessage: logInfo.message,
+        }
+      );
+      const safeError = createSafeErrorResponse(appError, 500);
+      return NextResponse.json(safeError, { status: 500 });
+    }
+
+    // Fetch updated connections
+    const ids = orders.map(o => o.id);
+    const { data, error: fetchError } = await supabase
+      .from('client_instruments')
+      .select(
+        `
+          *,
+          client:clients(*),
+          instrument:instruments(*)
+        `
+      )
+      .in('id', ids);
+
+    const duration = Math.round(performance.now() - startTime);
+
+    if (fetchError) {
+      const appError = errorHandler.handleSupabaseError(
+        fetchError,
+        'Fetch updated connections'
+      );
+      const safeError = createSafeErrorResponse(appError, 500);
+      return NextResponse.json(safeError, { status: 500 });
+    }
+
+    logApiRequest(
+      'PUT',
+      '/api/connections',
+      200,
+      duration,
+      'ConnectionsAPI',
+      {
+        orderCount: orders.length,
+      }
+    );
+
+    return NextResponse.json({ data: data || [] });
+  } catch (error) {
+    const duration = Math.round(performance.now() - startTime);
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      'Batch update connection orders'
+    );
+    const logInfo = createLogErrorInfo(appError);
+    captureException(
+      appError,
+      'ConnectionsAPI.PUT',
+      { duration, logMessage: logInfo.message },
       ErrorSeverity.HIGH
     );
     const safeError = createSafeErrorResponse(appError, 500);
