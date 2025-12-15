@@ -35,22 +35,22 @@
 
 ---
 
-### 2. 기능 중복 해결
+### 2. 기능 중복 해결 ✅ 완료
 
-**예상 시간**: 2-3일
+**예상 시간**: 2-3일 (실제: 완료)
 
 **작업 내용**:
 
-- [ ] Dashboard vs Instruments 명확한 차별화 또는 통합
-  - `/dashboard` (Items): 악기 재고 관리 및 전체 현황
-  - `/instruments`: 악기 상세 정보 및 클라이언트 연결
-- [ ] 각 페이지의 목적 명확히 정의
-- [ ] Clients 관련 페이지 통합 고려
-  - `/clients`: 기본 정보 관리
-  - `/clients/analytics`: 구매 이력 및 통계
-  - `/connections`: 클라이언트-악기 연결
+- [x] Dashboard vs Instruments 명확한 차별화 또는 통합
+  - ✅ `/dashboard` (Items): 악기 재고 관리 및 전체 현황 (모든 악기 관리 기능 제공)
+  - ✅ `/instruments`: 제거됨 (Dashboard로 통합)
+- [x] 각 페이지의 목적 명확히 정의
+- [x] Clients 관련 페이지 통합 고려
+  - `/clients`: 기본 정보 관리 (유지)
+  - `/connections`: 클라이언트-악기 연결 (유지)
+  - 각각 명확한 목적이 있어 통합 불필요
 
-**중요도**: ⭐⭐⭐⭐ (High)
+**중요도**: ⭐⭐⭐⭐ (High) - **완료**
 
 ---
 

@@ -22,20 +22,21 @@
 
 **문제점**:
 
-- 사이드바에 표시되는 메뉴와 실제 존재하는 페이지가 일치하지 않음
-- `/instruments` 페이지가 사이드바에 없어서 접근 불가능
-- 사장님이 필요한 기능을 찾기 어려움
+- 사이드바에 표시되는 메뉴와 실제 업무 플로우가 일치하지 않음
+- 이전에는 `/instruments` 페이지가 별도로 존재했지만 사이드바에 표시되지 않아 혼란이 있었음
+- 사장님이 필요한 악기 관리 기능을 어디서 찾아야 할지 헷갈림
 
 **해결 방법**:
 
-- ✅ `/instruments` 페이지를 사이드바에 추가
+- ✅ `/instruments` 라우트를 제거하고 Dashboard의 Items 화면에서 모든 악기 관리 기능을 제공
 - ✅ `/clients/analytics` 페이지도 사이드바에 추가
 - ✅ 경로 매칭 로직 개선 (하위 경로 인식)
 
 **현재 상태**:
 
-- **사이드바 메뉴**: Items, Clients, Connected Clients, Calendar, Sales, **Instruments**, **Client Analytics**
-- 모든 주요 페이지가 사이드바에서 접근 가능
+- **사이드바 메뉴**: Items, Clients, Connected Clients, Calendar, Sales, **Client Analytics**
+- Dashboard의 Items 뷰가 모든 악기 관련 워크플로우 중심이며, 별도 `/instruments`는 없음
+- 주요 페이지와 기능이 사이드바에서 직접 접근 가능해졌음
 
 **우선순위**: ⭐⭐⭐⭐⭐ (Critical) - **완료**
 
@@ -45,22 +46,20 @@
 
 **문제점**:
 
-#### 2.1 Dashboard vs Instruments 페이지
+#### 2.1 Dashboard vs Instruments 페이지 ✅ 해결 완료
 
-- `/dashboard` (Items): 악기 목록, 추가/수정/삭제
-- `/instruments`: 악기 목록, 클라이언트 연결
-- 두 페이지가 유사한 기능을 제공하지만 목적이 불명확
+- ✅ `/dashboard` (Items): 악기 목록, 추가/수정/삭제, 판매 기능
+- ❌ `/instruments`: 제거됨 (Dashboard로 통합)
 
-**사장님 관점에서의 혼란**:
+**해결 방법**:
 
-- "악기를 추가하려면 어느 페이지로 가야 하나?"
-- "악기와 클라이언트를 연결하려면 어느 페이지를 사용해야 하나?"
+- ✅ Instruments 페이지를 제거하고 Dashboard로 통합
+- ✅ 모든 악기 관리 기능을 Dashboard에서 제공
+- ✅ 사용자 혼란 제거
 
-**개선 제안**:
+**현재 상태**:
 
-- 두 페이지를 통합하거나
-- 각 페이지의 목적을 명확히 구분:
-  - **Dashboard**: 악기 재고 관리 및 전체 현황
+- **Dashboard (Items)**: 악기 재고 관리 및 전체 현황, 모든 악기 관리 기능 제공
   - **Instruments**: 악기 상세 정보 및 클라이언트 연결
 
 #### 2.2 Clients 관련 페이지

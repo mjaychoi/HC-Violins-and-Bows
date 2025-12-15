@@ -10,7 +10,7 @@
 6. [Calendar - 유지보수 캘린더](#calendar---유지보수-캘린더)
 7. [Customers - 고객 상세 정보](#customers---고객-상세-정보)
 8. [Sales - 판매 이력](#sales---판매-이력)
-9. [Instruments - 악기 목록](#instruments---악기-목록)
+9. [Instruments - 악기 관리 (Dashboard로 통합됨)](#instruments---악기-관리-dashboard로-통합됨)
 10. [자주 묻는 질문 (FAQ)](#자주-묻는-질문-faq)
 11. [변경 이력](#-변경-이력)
 
@@ -28,11 +28,12 @@
 
 - **사이드바**: 왼쪽에 위치한 네비게이션 메뉴
   - 접힘/펼침 가능 (아이콘만 표시 또는 전체 메뉴 표시)
-  - 주요 메뉴: Items, Clients, Connected Clients, Calendar, Sales, **Instruments**, **Client Analytics**
+  - 주요 메뉴: Items, Clients, Connected Clients, Calendar, Sales, **Client Analytics**
+    - 악기 관련 작업은 Dashboard의 Items 메뉴 안에서 모두 처리됩니다.
 - **헤더**: 상단에 위치한 제목 및 액션 버튼
 - **메인 콘텐츠**: 중앙에 위치한 페이지 내용
 
-> 💡 **팁**: 모든 주요 페이지는 사이드바에서 바로 접근할 수 있습니다. `/instruments` 페이지와 `/clients/analytics` 페이지도 사이드바에 추가되어 있어 더욱 편리하게 사용할 수 있습니다.
+> 💡 **팁**: 모든 주요 페이지는 사이드바에서 바로 접근할 수 있습니다. 악기 관련 작업은 **Dashboard (Items)** 안에서 처리되며 `/clients/analytics`도 사이드바에서 열 수 있습니다.
 
 ---
 
@@ -504,63 +505,34 @@ Sales 페이지는 모든 판매 이력을 관리하고 분석할 수 있는 페
 
 ---
 
-## Instruments - 악기 목록
+## Instruments - 악기 관리 (Dashboard로 통합됨)
 
 ### 개요
 
-Instruments 페이지는 악기 목록을 보는 별도 페이지입니다. Dashboard와 유사하지만 더 간단한 인터페이스를 제공합니다.
+> ⚠️ **변경 사항**: Instruments 페이지는 Dashboard로 통합되었습니다. 모든 악기 관리 기능은 **Dashboard (Items)** 페이지에서 사용할 수 있습니다.
 
 ### 접근 방법
 
-1. 사이드바에서 **"Instruments"** 메뉴를 클릭합니다.
-2. 또는 URL에 `/instruments`를 입력합니다.
-
-> 💡 **팁**: Instruments 페이지는 사이드바에 항상 표시되어 있어 쉽게 접근할 수 있습니다.
+1. 사이드바에서 **"Items"** (Dashboard) 메뉴를 클릭합니다.
+2. 또는 URL에 `/dashboard`를 입력합니다.
 
 ### 주요 기능
 
-#### 1. 악기 목록 보기
+Dashboard 페이지에서 다음 기능을 사용할 수 있습니다:
 
-- 모든 악기가 테이블 형태로 표시됩니다.
-- Dashboard와 동일한 정보를 표시합니다.
-- 각 악기는 다음 정보를 포함합니다:
-  - Serial Number (일련번호)
-  - Maker (제조사)
-  - Type (타입: Violin, Viola, Cello, Bow 등)
-  - Subtype (서브타입)
-  - Price (가격)
-  - Status (상태)
-  - Client (연결된 고객)
-
-#### 2. 악기 추가
-
-1. 페이지 상단의 **"Add Instrument"** 버튼을 클릭합니다.
-2. 악기 정보 입력 폼이 열립니다.
-3. 다음 정보를 입력합니다:
-   - **Maker**: 제조사명
-   - **Type**: 악기 타입 (필수)
-   - **Subtype**: 서브타입 (선택)
-   - **Serial Number**: 일련번호 (자동 생성 가능)
-   - **Price**: 가격
-   - **Status**: 상태 (기본값: Available)
-   - **Notes**: 메모
-4. **"Save"** 버튼을 클릭하여 저장합니다.
-
-#### 3. 악기 수정 및 삭제
-
-- 목록에서 악기를 클릭하면 상세 정보를 볼 수 있습니다.
-- 편집 및 삭제는 Dashboard 페이지에서 수행하는 것을 권장합니다.
-
-#### 4. 필터링 및 검색
-
-- Dashboard와 동일한 필터링 및 검색 기능을 제공합니다.
-- **검색**: Maker, Type, Serial Number, Notes 등에서 검색
-- **필터**: Type, Status, Price Range 등으로 필터링
+- **악기 목록 보기**: 모든 악기가 테이블 형태로 표시됩니다.
+- **악기 추가**: "Add Item" 버튼을 클릭하여 새 악기를 추가합니다.
+- **인라인 편집**: 각 행에서 직접 상태, 가격 등을 수정할 수 있습니다.
+- **악기 삭제**: 액션 메뉴에서 삭제할 수 있습니다.
+- **판매 기능**: "Sell" 버튼을 통해 원클릭 판매가 가능합니다.
+- **필터링 및 검색**: Maker, Type, Serial Number, Status 등으로 필터링 및 검색
 - **정렬**: 컬럼 헤더를 클릭하여 정렬
 
-### Dashboard vs Instruments 페이지
+자세한 내용은 [Dashboard - 재고 관리](#dashboard---재고-관리) 섹션을 참조하세요.
 
-**Dashboard (Items)**:
+### Dashboard (Items) - 악기 관리
+
+**Dashboard (Items)**는 모든 악기 관리 기능을 제공합니다:
 
 - 악기 재고 관리 및 전체 현황
 - 악기 추가/수정/삭제
@@ -681,8 +653,8 @@ Instruments 페이지는 악기 목록을 보는 별도 페이지입니다. Dash
 
 - ✅ 원클릭 판매 기능 추가 (Dashboard에서 "Sell" 버튼)
 - ✅ 네비게이션 구조 개선 (Instruments, Client Analytics 페이지 접근 가능)
-- ✅ Instruments 페이지 접근 방법 명시
-- ✅ Dashboard vs Instruments 페이지 차이점 설명 추가
+- ✅ Dashboard (Items) 페이지에서 모든 악기 관리 기능 제공
+- ✅ Instruments 페이지는 Dashboard로 통합됨
 
 ### v1.0 (2024-12)
 
