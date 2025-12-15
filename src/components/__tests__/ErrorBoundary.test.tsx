@@ -1,5 +1,5 @@
 import { render, screen } from '@/test-utils/render';
-import ErrorBoundary from '../common/ErrorBoundary';
+import ErrorBoundary from '../common/feedback/ErrorBoundary';
 import { AppError } from '@/types/errors';
 import { ErrorInfo } from 'react';
 
