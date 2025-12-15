@@ -188,7 +188,7 @@ describe('ConnectedClientsPage', () => {
     });
 
     render(<ConnectedClientsPage />);
-    expect(screen.getByTestId('loading-state')).toBeInTheDocument();
+    expect(screen.getByText('Loading connections...')).toBeInTheDocument();
   });
 
   it('should open connection modal when "Add Connection" button is clicked', () => {

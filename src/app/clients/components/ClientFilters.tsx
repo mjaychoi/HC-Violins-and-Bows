@@ -7,9 +7,10 @@ import {
   HAS_INSTRUMENTS_FILTER_OPTIONS,
   CLIENT_FILTER_LABELS,
 } from '../constants';
-import PageFilters, {
-  FilterGroupConfig,
-} from '@/components/common/PageFilters';
+import {
+  PageFilters,
+  type FilterGroupConfig,
+} from '@/components/common/layout';
 
 interface ClientFiltersProps {
   isOpen: boolean;

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import CalendarSearch from './CalendarSearch';
-import AdvancedSearch from '@/components/common/AdvancedSearch';
+import { AdvancedSearch, PillSelect } from '@/components/common/inputs';
 import type { TaskType, TaskStatus, TaskPriority } from '@/types';
 import type { DateRange, FilterOperator } from '@/types/search';
 import {
@@ -10,7 +10,6 @@ import {
   filterButtonClasses,
   pillSelectClasses,
 } from '@/utils/filterUI';
-import { PillSelect } from '@/components/common';
 import { formatStatus } from '@/utils/formatUtils';
 
 interface CalendarFiltersProps {

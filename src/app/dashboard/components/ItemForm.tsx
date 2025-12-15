@@ -5,16 +5,15 @@ import { Instrument } from '@/types';
 import { useDashboardForm } from '../hooks/useDashboardForm';
 import { validateInstrumentData } from '../utils/dashboardUtils';
 import { classNames } from '@/utils/classNames';
-import Button from '@/components/common/Button';
-import Input from '@/components/common/Input';
+import { Button, Input } from '@/components/common/inputs';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import {
   generateInstrumentSerialNumber,
   normalizeInstrumentSerial,
   validateInstrumentSerial,
 } from '@/utils/uniqueNumberGenerator';
-import { modalStyles } from '@/components/common/modalStyles';
-import { ModalHeader } from '@/components/common/ModalHeader';
+import { modalStyles } from '@/components/common/modals/modalStyles';
+import { ModalHeader } from '@/components/common/modals/ModalHeader';
 
 interface ItemFormProps {
   isOpen: boolean;
@@ -398,7 +397,6 @@ export default function ItemForm({
                 name="subtype"
                 value={formData.subtype}
                 onChange={handleInputChange}
-                required
                 placeholder="Enter subtype"
               />
 
@@ -495,7 +493,7 @@ export default function ItemForm({
                 }
               />
               {!isEditing && (
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-xs text-gray-500 italic">
                   타입 입력 시 자동으로 생성됩니다
                 </p>
               )}
@@ -556,7 +554,7 @@ export default function ItemForm({
                 className={classNames.input}
                 placeholder="Enter any additional notes"
               />
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-xs text-gray-500">
                 Any additional information about condition, history, or special
                 features
               </p>

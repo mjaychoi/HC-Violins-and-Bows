@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import SearchInput from '@/components/common/SearchInput';
+import { SearchInput } from '@/components/common/inputs';
+import { EmptyState } from '@/components/common';
 
 interface CustomerSearchProps {
   searchTerm: string;
@@ -167,8 +168,12 @@ export function CustomerSearch({
                         </button>
                       ))
                     ) : (
-                      <div className="px-3 py-2 text-sm text-gray-400">
-                        No tags found
+                      <div className="px-3 py-2">
+                        <EmptyState
+                          title="No tags found"
+                          description="Try a different keyword or clear the tag filter."
+                          className="shadow-none border-none text-left"
+                        />
                       </div>
                     )}
                   </div>

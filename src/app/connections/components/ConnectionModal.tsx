@@ -1,7 +1,10 @@
 'use client';
 
 import { Client, Instrument, ClientInstrument } from '@/types';
-import { formatClientName, formatInstrumentName } from '../utils';
+import {
+  formatClientName,
+  formatInstrumentName,
+} from '../utils/connectionUtils';
 import { classNames } from '@/utils/classNames';
 import { RELATIONSHIP_TYPES } from '../utils/connectionGrouping';
 

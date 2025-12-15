@@ -20,6 +20,7 @@ export default function TaskActionMenu({
 }: TaskActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = `task-menu-${task.id}`;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -28,12 +29,20 @@ export default function TaskActionMenu({
       }
     };
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
 
@@ -50,9 +59,11 @@ export default function TaskActionMenu({
           e.stopPropagation();
           setIsOpen(!isOpen);
         }}
-        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+        className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100"
         aria-label="Task actions"
         aria-expanded={isOpen}
+        aria-controls={menuId}
+        aria-haspopup="menu"
       >
         <svg
           className="w-5 h-5"
@@ -70,10 +81,16 @@ export default function TaskActionMenu({
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[100]">
+        <div
+          id={menuId}
+          role="menu"
+          aria-label="Task actions"
+          className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-100"
+        >
           {onViewDetails && (
             <button
               type="button"
+              role="menuitem"
               onClick={e => {
                 e.stopPropagation();
                 handleAction(() => onViewDetails(task));
@@ -86,6 +103,7 @@ export default function TaskActionMenu({
           {onMarkComplete && task.status !== 'completed' && (
             <button
               type="button"
+              role="menuitem"
               onClick={e => {
                 e.stopPropagation();
                 handleAction(() => onMarkComplete(task));
@@ -98,6 +116,7 @@ export default function TaskActionMenu({
           {onEdit && (
             <button
               type="button"
+              role="menuitem"
               onClick={e => {
                 e.stopPropagation();
                 handleAction(() => onEdit(task));
@@ -109,9 +128,10 @@ export default function TaskActionMenu({
           )}
           {onDelete && (
             <>
-              <div className="border-t border-gray-200 my-1" />
+              <div className="border-t border-gray-200 my-1" role="separator" />
               <button
                 type="button"
+                role="menuitem"
                 onClick={e => {
                   e.stopPropagation();
                   handleAction(() => onDelete(task));

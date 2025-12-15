@@ -75,7 +75,13 @@ describe('TaskList', () => {
       />
     );
 
-    expect(screen.getByText('No tasks found')).toBeInTheDocument();
+    // EmptyState 기본 카피에 맞게 업데이트
+    expect(screen.getByText('No tasks yet')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Create a maintenance task to start tracking your workflow.'
+      )
+    ).toBeInTheDocument();
   });
 
   it('should handle task click', async () => {

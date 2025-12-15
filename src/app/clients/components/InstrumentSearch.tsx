@@ -1,6 +1,7 @@
 'use client';
 // src/app/clients/components/InstrumentSearch.tsx
 import { Instrument } from '@/types';
+import { EmptyState } from '@/components/common';
 
 interface InstrumentSearchProps {
   isOpen: boolean;
@@ -88,13 +89,15 @@ export default function InstrumentSearch({
           )}
 
           {!isSearching && searchResults.length === 0 && searchTerm && (
-            <div className="text-center py-8">
-              <p className="text-gray-500">No instruments found</p>
-            </div>
+            <EmptyState
+              title="No instruments found"
+              description="Try refining your search terms or check the spelling."
+              className="shadow-none border-none"
+            />
           )}
 
           {!isSearching && searchResults.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-4">
               {searchResults.map(instrument => (
                 <div
                   key={instrument.id}
@@ -136,11 +139,11 @@ export default function InstrumentSearch({
           )}
 
           {!isSearching && !searchTerm && (
-            <div className="text-center py-8">
-              <p className="text-gray-500">
-                Start typing to search for instruments
-              </p>
-            </div>
+            <EmptyState
+              title="Search instruments"
+              description="Start typing to search by maker or name."
+              className="shadow-none border-none"
+            />
           )}
         </div>
 
@@ -150,7 +153,7 @@ export default function InstrumentSearch({
             <h4 className="text-sm font-medium text-gray-700 mb-3">
               Selected Instruments
             </h4>
-            <div className="space-y-2">
+            <div className="space-y-4">
               {selectedInstruments.map(item => (
                 <div
                   key={item.instrument.id}

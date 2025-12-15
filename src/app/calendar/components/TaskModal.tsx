@@ -10,12 +10,11 @@ import {
   TaskPriority,
 } from '@/types';
 import { classNames } from '@/utils/classNames';
-import Button from '@/components/common/Button';
-import Input from '@/components/common/Input';
+import { Button, Input } from '@/components/common/inputs';
 import { todayLocalYMD } from '@/utils/dateParsing';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
-import { modalStyles } from '@/components/common/modalStyles';
-import { ModalHeader } from '@/components/common/ModalHeader';
+import { modalStyles } from '@/components/common/modals/modalStyles';
+import { ModalHeader } from '@/components/common/modals/ModalHeader';
 
 interface TaskModalProps {
   isOpen: boolean;

@@ -31,6 +31,115 @@ body {
   min-height: 700px;
 }
 
+/* React Big Calendar event styles - professional card design */
+.rbc-event {
+  background: #ffffff !important;
+  border: 1px solid #e5e7eb !important;
+  border-left: 2px solid !important;
+  border-radius: 6px !important;
+  padding: 6px 8px !important;
+  margin: 1px 0 !important;
+  box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.04) !important;
+  color: #111827 !important;
+  font-size: 11px !important;
+  line-height: 1.3 !important;
+  transition: all 0.15s ease !important;
+  cursor: grab !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+.rbc-event:hover {
+  box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.08) !important;
+  border-color: #d1d5db !important;
+}
+.rbc-event:active {
+  cursor: grabbing !important;
+}
+.rbc-event-dragging {
+  cursor: grabbing !important;
+  z-index: 1000 !important;
+}
+/* Drag preview - original element becomes semi-transparent */
+.rbc-addons-dnd-dragging {
+  opacity: 0.3 !important;
+}
+/* Drag preview element - follows cursor */
+.rbc-addons-dnd-drag-preview {
+  opacity: 1 !important;
+  transform: scale(1.2) rotate(3deg) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4) !important;
+  z-index: 10000 !important;
+  border: 3px solid #3b82f6 !important;
+  border-radius: 8px !important;
+  pointer-events: none !important;
+  position: fixed !important;
+}
+.rbc-addons-dnd-drag-preview .rbc-event {
+  display: block !important;
+  opacity: 1 !important;
+  background-color: #ffffff !important;
+  box-shadow: none !important;
+}
+/* Droppable area highlight when dragging */
+.rbc-addons-dnd-drag-over {
+  background-color: #dbeafe !important;
+  border: 2px dashed #3b82f6 !important;
+}
+.rbc-day-bg.rbc-addons-dnd-over {
+  background-color: #dbeafe !important;
+  border: 2px dashed #3b82f6 !important;
+  transition: all 0.2s ease !important;
+}
+.rbc-time-slot.rbc-addons-dnd-over {
+  background-color: #dbeafe !important;
+  border-left: 3px solid #3b82f6 !important;
+  transition: all 0.2s ease !important;
+}
+/* Status-based accent colors: left border only */
+.rbc-event.status-overdue {
+  border-left-color: #ef4444 !important; /* Red-500 */
+  border-left-width: 4px !important; /* Thicker for priority */
+  background-color: #fef2f2 !important; /* Red-50 tint */
+}
+.rbc-event.status-due-soon {
+  border-left-color: #f59e0b !important; /* Amber-500 */
+  border-left-width: 4px !important; /* Thicker for priority */
+  background-color: #fffbeb !important; /* Amber-50 tint */
+}
+.rbc-event.status-today {
+  border-left-color: #10b981 !important; /* Green-500 */
+  border-left-width: 4px !important; /* Thicker for priority */
+  background-color: #f0fdf4 !important; /* Green-50 tint */
+}
+.rbc-event.status-normal {
+  border-left-color: #10b981 !important; /* Emerald-500 */
+  border-left-width: 2px !important; /* Normal thickness */
+}
+.rbc-event.status-completed {
+  border-left-color: #9ca3af !important; /* Gray-400 */
+  border-left-width: 2px !important;
+  opacity: 0.7 !important;
+}
+.rbc-event.status-followup {
+  border-left-color: #f59e0b !important; /* Amber-500 */
+  border-left-width: 4px !important;
+  background-color: #fffbeb !important; /* Amber-50 */
+}
+/* Fix for bottom row truncation in month view */
+.rbc-month-view {
+  overflow: visible !important;
+  padding-bottom: 1rem !important;
+}
+.rbc-month-row {
+  overflow: visible !important;
+}
+.rbc-day-bg {
+  overflow: visible !important;
+  padding-left: 2px !important; /* Prevent border-left from overflowing */
+}
+
 .calendar-container .rbc-calendar {
   font-family: inherit;
   height: 100%;

@@ -6,4 +6,5 @@ export * from './useClientView';
 export * from './useInstrumentSearch';
 export * from './useOwnedItems';
 export * from './useContactLogs';
-export * from './useClientsContactInfo';
+// Note: useClientsContactInfo is imported directly in components to avoid webpack issues
+// export * from './useClientsContactInfo';

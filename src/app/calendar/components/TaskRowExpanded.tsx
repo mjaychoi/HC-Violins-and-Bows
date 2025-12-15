@@ -4,7 +4,13 @@ import React from 'react';
 import type { MaintenanceTask } from '@/types';
 import { formatDate } from '@/utils/formatUtils';
 import { parseYMDLocal } from '@/utils/dateParsing';
-import { differenceInDays, isToday, isTomorrow, isYesterday } from 'date-fns';
+import {
+  differenceInCalendarDays,
+  startOfDay,
+  isToday,
+  isTomorrow,
+  isYesterday,
+} from 'date-fns';
 import StatusPill from './StatusPill';
 import PriorityPill from './PriorityPill';
 import { getDateStatus } from '@/utils/tasks/style';
@@ -44,8 +50,10 @@ const getRelativeDateDisplay = (date: string): string => {
   const dateObj = parseYMDLocal(date);
   if (!dateObj) return formatDate(date, 'short');
 
-  const now = new Date();
-  const daysDiff = differenceInDays(dateObj, now);
+  // Use calendar days for consistent date comparison (ignores time)
+  const today = startOfDay(new Date());
+  const dateStart = startOfDay(dateObj);
+  const daysDiff = differenceInCalendarDays(dateStart, today);
 
   if (isToday(dateObj)) return 'Today';
   if (isTomorrow(dateObj)) return 'Tomorrow';
@@ -64,11 +72,16 @@ export default function TaskRowExpanded({
   const dateStatus = getDateStatus(task);
   const isOverdue = dateStatus.status === 'overdue';
   const isUpcoming = dateStatus.status === 'upcoming';
+  const isCompleted = task.status === 'completed';
 
   const icon = getInstrumentIcon(instrument?.type);
 
   return (
-    <div className="bg-white border-b border-gray-200">
+    <div
+      className={`border-b border-gray-200 ${
+        isCompleted ? 'bg-gray-50/50 opacity-75' : 'bg-white'
+      }`}
+    >
       {/* Collapsed Header (same as TaskRowCollapsed) */}
       <div
         className="flex items-center gap-4 py-3 px-4 hover:bg-gray-50 transition-colors cursor-pointer pr-12 relative"
@@ -81,6 +94,7 @@ export default function TaskRowExpanded({
         }}
         role="button"
         tabIndex={0}
+        aria-label={`Open task ${task.title}`}
       >
         {/* Left: Icon + Title */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -93,16 +107,18 @@ export default function TaskRowExpanded({
                 {task.title}
               </h3>
             </div>
-            <div className="flex items-center gap-2 text-xs text-gray-600 mt-0.5">
+            <div className="flex items-center gap-1.5 text-xs mt-0.5">
               {instrument && (
-                <span className="truncate">
+                <span className="font-medium text-gray-700 truncate">
                   {instrument.maker || 'Unknown'}
                   {instrument.serial_number && ` (${instrument.serial_number})`}
                 </span>
               )}
-              {instrument && (client || instrument.ownership) && <span>·</span>}
+              {instrument && (client || instrument.ownership) && (
+                <span className="text-gray-400">·</span>
+              )}
               {(client || instrument?.ownership) && (
-                <span className="truncate">
+                <span className="text-blue-600 font-medium truncate">
                   {client
                     ? `${client.firstName} ${client.lastName}`
                     : instrument?.ownership}
@@ -112,35 +128,48 @@ export default function TaskRowExpanded({
           </div>
         </div>
 
-        {/* Center: Workload */}
-        <div className="text-xs text-gray-600 whitespace-nowrap shrink-0">
+        {/* Right: 2-line layout - Status/Priority (top) + Workload (bottom, subtle) */}
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {/* Top: Status + Priority (main badges) */}
+          <div className="flex items-center gap-2">
+            {task.status !== 'completed' && (
+              <StatusPill
+                task={task}
+                isOverdue={isOverdue}
+                isUpcoming={isUpcoming}
+              />
+            )}
+            {task.status === 'completed' && (
+              <span className="text-xs text-gray-500 font-normal">
+                Completed
+              </span>
+            )}
+            <PriorityPill priority={task.priority} />
+          </div>
+          {/* Bottom: Workload (subtle, smaller) */}
           {(() => {
             const parts: string[] = [];
             if (task.estimated_hours !== null || task.actual_hours !== null) {
               const est = task.estimated_hours ?? '?';
               const act = task.actual_hours ?? '?';
-              parts.push(`⏱ ${est}h → ${act}h`);
+              parts.push(`${est}→${act}h`);
             }
             if (task.cost !== null) {
-              parts.push(
-                `💲 $${task.cost.toLocaleString('en-US', {
-                  minimumFractionDigits: 0,
-                  maximumFractionDigits: 0,
-                })}`
-              );
+              const cost = task.cost;
+              const formatted =
+                cost >= 1000000
+                  ? `$${(cost / 1000000).toFixed(1)}M`
+                  : cost >= 1000
+                    ? `$${(cost / 1000).toFixed(0)}k`
+                    : `$${cost.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+              parts.push(formatted);
             }
-            return parts.join('  ');
+            return parts.length > 0 ? (
+              <div className="text-[10px] text-gray-500 font-normal">
+                {parts.join(' · ')}
+              </div>
+            ) : null;
           })()}
-        </div>
-
-        {/* Right: Status + Priority */}
-        <div className="flex items-center gap-2 shrink-0">
-          <StatusPill
-            task={task}
-            isOverdue={isOverdue}
-            isUpcoming={isUpcoming}
-          />
-          <PriorityPill priority={task.priority} />
         </div>
       </div>
 

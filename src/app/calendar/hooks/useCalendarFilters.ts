@@ -145,21 +145,41 @@ export const useCalendarFilters = ({
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   // FIXED: Reset to page 1 when filters change using stable filter key (avoids expensive JSON.stringify)
+  // Use individual filter fields as dependencies instead of entire filters object for better performance
+  // Extract filter fields to separate variables for static checking
+  const filters = baseFilters.filters as unknown as CalendarFilters;
+  const filterType = filters.type;
+  const filterPriority = filters.priority;
+  const filterStatus = filters.status;
+  const filterOwner = filters.owner;
+  const filterStatusValue = filters.filterStatus;
+  const filterOwnership = filters.filterOwnership;
+
   const filterKey = useMemo(() => {
-    const f = baseFilters.filters as unknown as CalendarFilters;
     return [
-      f.type,
-      f.priority,
-      f.status,
-      f.owner,
-      f.filterStatus,
-      f.filterOwnership,
+      filterType,
+      filterPriority,
+      filterStatus,
+      filterOwner,
+      filterStatusValue,
+      filterOwnership,
       baseFilters.searchTerm,
       dateRange?.from ?? '',
       dateRange?.to ?? '',
       filterOperator,
     ].join('|');
-  }, [baseFilters.filters, baseFilters.searchTerm, dateRange, filterOperator]);
+  }, [
+    filterType,
+    filterPriority,
+    filterStatus,
+    filterOwner,
+    filterStatusValue,
+    filterOwnership,
+    baseFilters.searchTerm,
+    dateRange?.from,
+    dateRange?.to,
+    filterOperator,
+  ]);
 
   useEffect(() => {
     if (currentPage > 1) setCurrentPage(1);

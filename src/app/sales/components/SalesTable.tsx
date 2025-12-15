@@ -5,7 +5,7 @@ import { currency } from '../utils/salesFormatters';
 import { SortColumn } from '../types';
 import { classNames } from '@/utils/classNames';
 import { TableSkeleton, EmptyState } from '@/components/common';
-import Button from '@/components/common/Button';
+import { Button } from '@/components/common/inputs';
 
 // FIXED: Helper to parse YYYY-MM-DD as UTC to avoid timezone shifts
 import { formatDisplayDate } from '@/utils/dateParsing';
@@ -28,7 +28,8 @@ import { getSalesStatusColor } from '@/utils/colorTokens';
 
 function StatusBadge({ status }: { status: SaleStatus }) {
   // ✅ FIXED: Use centralized color tokens
-  const className = getSalesStatusColor(status);
+  // 테이블 셀 안의 상태 칩이므로 muted variant 사용 (테이블 기본 규칙)
+  const className = getSalesStatusColor(status, 'muted');
 
   return (
     <span

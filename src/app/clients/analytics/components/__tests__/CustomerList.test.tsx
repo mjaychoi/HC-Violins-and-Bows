@@ -2,14 +2,19 @@ import { render, screen, fireEvent } from '@/test-utils/render';
 import { CustomerList } from '../CustomerList';
 import { CustomerWithPurchases } from '../../types';
 
-jest.mock('@/components/common', () => ({
-  EmptyState: ({ title, description }: any) => (
-    <div data-testid="empty-state">
-      <h3>{title}</h3>
-      <p>{description}</p>
-    </div>
-  ),
-}));
+jest.mock('@/components/common', () => {
+  const actual = jest.requireActual('@/components/common');
+  return {
+    __esModule: true,
+    ...actual,
+    EmptyState: ({ title, description }: any) => (
+      <div data-testid="empty-state">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+    ),
+  };
+});
 
 const mockCustomer1: CustomerWithPurchases = {
   id: 'c1',
@@ -67,7 +72,8 @@ describe('CustomerList', () => {
     render(
       <CustomerList customers={[]} selectedId={null} onSelect={mockOnSelect} />
     );
-    expect(screen.getByText('No customers found')).toBeInTheDocument();
+    // EmptyState 기본 타이틀은 "No customers yet"
+    expect(screen.getByText(/no customers yet/i)).toBeInTheDocument();
   });
 
   it('should render customer list', () => {

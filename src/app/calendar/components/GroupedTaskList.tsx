@@ -3,11 +3,19 @@
 import React, { useMemo, useState } from 'react';
 import type { MaintenanceTask } from '@/types';
 import { parseYMDLocal } from '@/utils/dateParsing';
-import EmptyState from '@/components/common/EmptyState';
+import { getDateStatus } from '@/utils/tasks/style';
+import EmptyState from '@/components/common/empty-state/EmptyState';
 import DateGroupHeader from './DateGroupHeader';
 import TaskRowCollapsed from './TaskRowCollapsed';
 import TaskRowExpanded from './TaskRowExpanded';
 import TaskActionMenu from './TaskActionMenu';
+
+// Normalize date string to YYYY-MM-DD format
+// Handles cases like "2025-12-14T00:00:00Z" -> "2025-12-14"
+function normalizeYMD(dateStr: string): string | null {
+  const match = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
+}
 
 interface GroupedTaskListProps {
   tasks: MaintenanceTask[];
@@ -33,6 +41,12 @@ interface GroupedTaskListProps {
   onTaskClick?: (task: MaintenanceTask) => void;
   onTaskDelete?: (task: MaintenanceTask) => void;
   onTaskEdit?: (task: MaintenanceTask) => void;
+  /** 필터 활성 여부 (빈 상태 문구/버튼 제어) */
+  hasActiveFilters?: boolean;
+  /** 필터 리셋 핸들러 */
+  onResetFilters?: () => void;
+  /** 작업 추가 CTA가 필요할 때 */
+  onAddTask?: () => void;
 }
 interface GroupedTasks {
   date: string;
@@ -47,6 +61,9 @@ export default function GroupedTaskList({
   onTaskClick,
   onTaskDelete,
   onTaskEdit,
+  hasActiveFilters = false,
+  onResetFilters,
+  onAddTask,
 }: GroupedTaskListProps) {
   // onTaskEdit is optional, default to onTaskClick if not provided
   const handleTaskEdit = onTaskEdit || onTaskClick;
@@ -59,11 +76,15 @@ export default function GroupedTaskList({
 
     tasks.forEach(task => {
       // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
-      const dateKey =
+      const rawKey =
         task.due_date ||
         task.personal_due_date ||
         task.scheduled_date ||
         task.received_date;
+      if (!rawKey) return;
+
+      // Normalize date string to YYYY-MM-DD format
+      const dateKey = normalizeYMD(rawKey);
       if (!dateKey) return;
 
       if (!groups.has(dateKey)) {
@@ -98,11 +119,27 @@ export default function GroupedTaskList({
         };
       })
       .filter((group): group is GroupedTasks => group !== null)
-      // FIXED: Sort by Date.getTime() for reliability
+      // FIXED: Sort with overdue first, then by date (ascending)
       .sort((a, b) => {
         const dateA = parseYMDLocal(a.date);
         const dateB = parseYMDLocal(b.date);
         if (!dateA || !dateB) return 0;
+
+        // Check if either group has overdue tasks
+        const aHasOverdue = a.tasks.some(task => {
+          const dateStatus = getDateStatus(task);
+          return dateStatus.status === 'overdue';
+        });
+        const bHasOverdue = b.tasks.some(task => {
+          const dateStatus = getDateStatus(task);
+          return dateStatus.status === 'overdue';
+        });
+
+        // Overdue groups come first
+        if (aHasOverdue && !bHasOverdue) return -1;
+        if (!aHasOverdue && bHasOverdue) return 1;
+
+        // Within same category (overdue or not), sort by date ascending
         return dateA.getTime() - dateB.getTime();
       });
 
@@ -124,8 +161,23 @@ export default function GroupedTaskList({
   if (tasks.length === 0) {
     return (
       <EmptyState
-        title="No tasks found"
-        description="Get started by creating your first task."
+        title={
+          hasActiveFilters
+            ? 'No tasks found matching your filters'
+            : 'No tasks yet'
+        }
+        description={
+          hasActiveFilters
+            ? 'Try adjusting your filters or clearing them to see all tasks.'
+            : 'Create a maintenance task to start tracking your workflow.'
+        }
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={hasActiveFilters ? onResetFilters : undefined}
+        actionButton={
+          !hasActiveFilters && onAddTask
+            ? { label: 'Add task', onClick: onAddTask }
+            : undefined
+        }
       />
     );
   }
@@ -137,13 +189,13 @@ export default function GroupedTaskList({
         if (!dateObj) return null;
 
         return (
-          <div key={group.date} className="space-y-0">
-            {/* Date Header */}
+          <div key={group.date} className="space-y-0 mb-6">
+            {/* Date Header - Section bar style */}
             <DateGroupHeader date={group.date} tasks={group.tasks} />
 
             {/* Tasks */}
             {/* ✅ FIXED: overflow-hidden 제거하여 드롭다운 메뉴가 잘리지 않도록 수정 */}
-            <div className="bg-white rounded-lg border border-gray-200">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm divide-y divide-gray-100">
               {group.tasks.map((task: MaintenanceTask) => {
                 const instrument = task.instrument_id
                   ? instruments?.get(task.instrument_id)
@@ -152,6 +204,8 @@ export default function GroupedTaskList({
                   ? clients?.get(task.client_id)
                   : undefined;
                 const isExpanded = expandedTasks.has(task.id);
+                // Show menu if at least one action is available
+                const hasMenu = Boolean(handleTaskEdit || onTaskDelete);
 
                 return (
                   <div key={task.id} data-testid={`task-${task.id}`}>
@@ -163,7 +217,7 @@ export default function GroupedTaskList({
                           client={client}
                           onTaskClick={() => toggleTaskExpanded(task.id)}
                         />
-                        {onTaskDelete && (
+                        {hasMenu && (
                           <div className="absolute right-4 top-3 z-20">
                             <TaskActionMenu
                               task={task}
@@ -184,7 +238,7 @@ export default function GroupedTaskList({
                           client={client}
                           onTaskClick={() => toggleTaskExpanded(task.id)}
                         />
-                        {onTaskDelete && (
+                        {hasMenu && (
                           <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20">
                             <TaskActionMenu
                               task={task}

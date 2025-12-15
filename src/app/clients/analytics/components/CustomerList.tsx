@@ -1,15 +1,19 @@
 import { useEffect, useRef } from 'react';
 import { CustomerWithPurchases } from '../types';
 import { format } from 'date-fns';
-import { EmptyState } from '@/components/common';
+import { EmptyState, TagBadge, InterestBadge } from '@/components/common';
 import { parseYMDUTC } from '@/utils/dateParsing';
-// ✅ FIXED: Use centralized color tokens
-import { getInterestColor } from '@/utils/colorTokens';
 
 interface CustomerListProps {
   customers: CustomerWithPurchases[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** 필터/검색 활성 여부 (빈 상태 카피/버튼 제어) */
+  hasActiveFilters?: boolean;
+  /** 필터/검색 리셋 핸들러 */
+  onResetFilters?: () => void;
+  /** 새 고객 추가 CTA가 필요할 때 */
+  onAddCustomer?: () => void;
 }
 
 const formatAmount = (amount: number) =>
@@ -23,6 +27,9 @@ export function CustomerList({
   customers,
   selectedId,
   onSelect,
+  hasActiveFilters = false,
+  onResetFilters,
+  onAddCustomer,
 }: CustomerListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -76,8 +83,23 @@ export function CustomerList({
   if (!customers.length) {
     return (
       <EmptyState
-        title="No customers found"
-        description="Try adjusting your search or filters, or add your first customer."
+        title={
+          hasActiveFilters
+            ? 'No customers found matching your filters'
+            : 'No customers yet'
+        }
+        description={
+          hasActiveFilters
+            ? 'Try adjusting your filters or clearing them to see all customers.'
+            : 'Add your first customer to start tracking relationships.'
+        }
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={hasActiveFilters ? onResetFilters : undefined}
+        actionButton={
+          !hasActiveFilters && onAddCustomer
+            ? { label: 'Add customer', onClick: onAddCustomer }
+            : undefined
+        }
       />
     );
   }
@@ -142,13 +164,7 @@ export function CustomerList({
                 {tags.length > 0 && (
                   <div className="flex items-center gap-1 flex-wrap">
                     {tags.slice(0, 2).map((tag, i) => (
-                      // FIXED: Add index to key to prevent collisions if tags repeat
-                      <span
-                        key={`${tag}-${i}`}
-                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
-                      >
-                        {tag}
-                      </span>
+                      <TagBadge key={`${tag}-${i}`} tag={tag} context="table" />
                     ))}
                     {tags.length > 2 && (
                       <span className="text-xs text-gray-400">
@@ -158,15 +174,11 @@ export function CustomerList({
                   </div>
                 )}
                 {customer.interest && (
-                  <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getInterestColor(customer.interest)}`}
-                  >
-                    {customer.interest}
-                  </span>
+                  <InterestBadge interest={customer.interest} context="table" />
                 )}
               </div>
             </div>
-            <div className="text-right ml-4 flex-shrink-0">
+            <div className="text-right ml-4 shrink-0">
               <div className="text-xs text-gray-500 uppercase tracking-wide mb-0.5">
                 Total
               </div>

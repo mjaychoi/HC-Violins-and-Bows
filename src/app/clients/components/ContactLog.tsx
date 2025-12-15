@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { ContactLog, ContactType, ContactPurpose } from '@/types';
 import { formatDisplayDate } from '@/utils/dateParsing';
 import { todayLocalYMD } from '@/utils/dateParsing';
-import Button from '@/components/common/Button';
+import { Button } from '@/components/common/inputs';
 
 interface ContactLogProps {
   clientId: string;
@@ -348,11 +348,13 @@ export default function ContactLogComponent({
                           className="w-full text-xs border border-gray-300 rounded-md px-2 py-1"
                         >
                           <option value="">None</option>
-                          {Object.entries(purposeLabels).map(([value, label]) => (
-                            <option key={value} value={value}>
-                              {label}
-                            </option>
-                          ))}
+                          {Object.entries(purposeLabels).map(
+                            ([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            )
+                          )}
                         </select>
                       </div>
                     </div>

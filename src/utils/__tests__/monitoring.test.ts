@@ -21,7 +21,11 @@ describe('monitoring helpers', () => {
       'Captured exception',
       error,
       'Test',
-      { foo: 'bar' }
+      {
+        foo: 'bar',
+        errorType: 'Error',
+        errorMessage: 'boom',
+      }
     );
   });
 

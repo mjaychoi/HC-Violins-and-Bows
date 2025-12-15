@@ -15,9 +15,8 @@ import {
 } from './';
 import { getViewRangeLabel } from '../utils/viewUtils';
 import dynamic from 'next/dynamic';
-import { Suspense } from 'react';
 import { TableSkeleton, Pagination } from '@/components/common';
-import Button from '@/components/common/Button';
+import { Button } from '@/components/common/inputs';
 import type { ExtendedView } from './CalendarView';
 import TodayFollowUps from '@/app/clients/components/TodayFollowUps';
 
@@ -25,6 +24,14 @@ import TodayFollowUps from '@/app/clients/components/TodayFollowUps';
 // This significantly reduces initial bundle size for calendar page
 const CalendarView = dynamic(() => import('./CalendarView'), {
   ssr: false,
+  loading: () => (
+    <div
+      className="rounded-lg bg-white p-6 border border-gray-200"
+      style={{ minHeight: '700px' }}
+    >
+      <TableSkeleton rows={5} columns={1} />
+    </div>
+  ),
 });
 
 interface CalendarContentProps {
@@ -55,13 +62,13 @@ interface CalendarContentProps {
   onSelectEvent: (task: MaintenanceTask) => void;
   onSelectSlot: (slotInfo: { start: Date; end: Date }) => void;
   onEventDrop?: (data: {
-    event: { resource?: MaintenanceTask | { type: string; contactLog?: ContactLog } };
+    event: { resource?: unknown };
     start: Date;
     end: Date;
     isAllDay?: boolean;
   }) => Promise<void> | void;
   onEventResize?: (data: {
-    event: { resource?: MaintenanceTask | { type: string; contactLog?: ContactLog } };
+    event: { resource?: unknown };
     start: Date;
     end: Date;
   }) => Promise<void> | void;
@@ -144,14 +151,13 @@ function CalendarContentInner({
   }, [tasks]);
 
   // Determine active filter preset based on current filter state
+  // Simplified: only check dateRange + filterStatus (not hasActiveFilters)
   const activePreset = useMemo(():
     | 'all'
     | 'overdue'
     | 'today'
     | 'upcoming'
     | null => {
-    if (!dateRange) return 'all';
-
     const today = parseYMDLocal(todayLocalYMD())!;
     const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
     const todayStr = fmt(today);
@@ -159,10 +165,10 @@ function CalendarContentInner({
     const tomorrowStr = fmt(addDays(today, 1));
     const nextWeekStr = fmt(addDays(today, 7));
 
-    // Check if "all" (no filters)
+    // Check if "all" (no dateRange or both from/to are null, and no filterStatus)
     if (
-      !hasActiveFilters ||
-      (!dateRange.from && !dateRange.to && !filterStatus)
+      !dateRange ||
+      (!dateRange.from && !dateRange.to && filterStatus === 'all')
     ) {
       return 'all';
     }
@@ -171,7 +177,7 @@ function CalendarContentInner({
     if (
       dateRange.from === todayStr &&
       dateRange.to === todayStr &&
-      !filterStatus
+      filterStatus === 'all'
     ) {
       return 'today';
     }
@@ -189,50 +195,48 @@ function CalendarContentInner({
     if (
       dateRange.from === tomorrowStr &&
       dateRange.to === nextWeekStr &&
-      !filterStatus
+      filterStatus === 'all'
     ) {
       return 'upcoming';
     }
 
     return null; // Custom filter active
-  }, [dateRange, filterStatus, hasActiveFilters]);
+  }, [dateRange, filterStatus]);
 
   const resetFiltersAndUpdate = useCallback(() => {
     resetFilters();
     navigation.setSelectedDate(null);
   }, [resetFilters, navigation]);
 
-  // Apply preset filter - optimized to batch state updates
+  // Apply preset filter - reset once, then set specific values
   const applyPreset = useCallback(
     (preset: 'all' | 'overdue' | 'today' | 'upcoming') => {
       const today = parseYMDLocal(todayLocalYMD())!;
       const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
 
+      // Reset filters once at the start
+      resetFilters();
+      navigation.setSelectedDate(null);
+
+      // Then set preset-specific values
       if (preset === 'all') {
-        // Reset all filters in one batch
-        resetFilters();
-        navigation.setSelectedDate(null);
+        // Already reset, nothing more to do
         return;
       }
 
-      // Batch all state updates together
       if (preset === 'overdue') {
-        resetFilters();
-        navigation.setSelectedDate(null);
         setDateRange({ from: null, to: fmt(subDays(today, 1)) });
         setFilterStatus('pending');
         return;
       }
+
       if (preset === 'today') {
         const t = fmt(today);
-        resetFilters();
-        navigation.setSelectedDate(null);
         setDateRange({ from: t, to: t });
         return;
       }
+
       // upcoming
-      resetFilters();
-      navigation.setSelectedDate(null);
       setDateRange({
         from: fmt(addDays(today, 1)),
         to: fmt(addDays(today, 7)),
@@ -256,6 +260,80 @@ function CalendarContentInner({
     <div className="p-6">
       {/* Today Follow-ups */}
       <TodayFollowUps />
+
+      {/* Sticky Mini Toolbar - always visible for list view */}
+      {view === 'list' && (
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 mb-4 -mx-6 px-6 py-3 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 flex-1">
+              <h2 className="text-lg font-semibold text-gray-900">
+                All Tasks
+                {hasActiveFilters && (
+                  <span className="ml-2 text-sm font-normal text-gray-500">
+                    ({filteredTasks.length} of {tasks.length})
+                  </span>
+                )}
+                {!hasActiveFilters && (
+                  <span className="ml-2 text-sm font-normal text-gray-500">
+                    ({tasks.length})
+                  </span>
+                )}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Quick filter pills */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => applyPreset('overdue')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                    activePreset === 'overdue'
+                      ? 'bg-red-100 text-red-700 border border-red-300'
+                      : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Overdue
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('today')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                    activePreset === 'today'
+                      ? 'bg-green-100 text-green-700 border border-green-300'
+                      : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('upcoming')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                    activePreset === 'upcoming'
+                      ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                      : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Next 7d
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterStatus('completed');
+                  }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                    filterStatus === 'completed'
+                      ? 'bg-gray-100 text-gray-700 border border-gray-300'
+                      : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Completed
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Compressed Header: Navigation + Summary Pills in one line */}
       <div className="mb-4">
@@ -505,33 +583,20 @@ function CalendarContentInner({
           onOpenNewTask={onOpenNewTask}
         />
       ) : view === 'calendar' ? (
-        <div
-          className="rounded-lg bg-white p-6 border border-gray-200"
-          style={{ minHeight: '700px', overflow: 'visible' }}
-        >
-          <Suspense
-            fallback={
-              <div className="rounded-lg bg-white p-6 border border-gray-200" style={{ minHeight: '700px' }}>
-                <TableSkeleton rows={5} columns={1} />
-              </div>
-            }
-          >
-            <CalendarView
-            tasks={filteredTasks}
-            contactLogs={contactLogs}
-            instruments={taskData.instrumentsMap}
-            onSelectEvent={onSelectEvent}
-            onSelectSlot={onSelectSlot}
-            onEventDrop={onEventDrop}
-            onEventResize={onEventResize}
-            draggingEventId={draggingEventId}
-            currentDate={navigation.currentDate}
-            onNavigate={navigation.setCurrentDate}
-            currentView={navigation.calendarView}
-            onViewChange={navigation.setCalendarView}
-          />
-          </Suspense>
-        </div>
+        <CalendarView
+          tasks={filteredTasks}
+          contactLogs={contactLogs}
+          instruments={taskData.instrumentsMap}
+          onSelectEvent={onSelectEvent}
+          onSelectSlot={onSelectSlot}
+          onEventDrop={onEventDrop}
+          onEventResize={onEventResize}
+          draggingEventId={draggingEventId}
+          currentDate={navigation.currentDate}
+          onNavigate={navigation.setCurrentDate}
+          currentView={navigation.calendarView}
+          onViewChange={navigation.setCalendarView}
+        />
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
           <div className="border-b border-gray-100 p-6">

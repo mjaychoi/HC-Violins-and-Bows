@@ -3,19 +3,19 @@ import userEvent from '@testing-library/user-event';
 import CalendarSearch from '../CalendarSearch';
 
 // Mock SearchInput component
-jest.mock('@/components/common/SearchInput', () => {
-  return function MockSearchInput({
-    value,
-    onChange,
-    placeholder,
-    ...props
-  }: {
-    value: string;
-    onChange: (value: string) => void;
-    placeholder?: string;
-    debounceMs?: number;
-  }) {
-    return (
+jest.mock('@/components/common/inputs', () => {
+  return {
+    SearchInput: ({
+      value,
+      onChange,
+      placeholder,
+      ...props
+    }: {
+      value: string;
+      onChange: (value: string) => void;
+      placeholder?: string;
+      debounceMs?: number;
+    }) => (
       <div>
         <input
           data-testid="search-input"
@@ -34,7 +34,7 @@ jest.mock('@/components/common/SearchInput', () => {
           </button>
         )}
       </div>
-    );
+    ),
   };
 });
 

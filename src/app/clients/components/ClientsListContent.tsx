@@ -158,6 +158,8 @@ function ClientsListContentInner({
         pageSize={pageSize}
         onPageChange={setPage}
         loading={loading.hasAnyLoading}
+        hasActiveFilters={getActiveFiltersCount() > 0 || !!searchTerm}
+        onResetFilters={clearAllFilters}
       />
     </div>
   );

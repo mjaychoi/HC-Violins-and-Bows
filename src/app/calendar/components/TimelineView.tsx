@@ -42,11 +42,12 @@ export default function TimelineView({
   const [weekOffset, setWeekOffset] = useState(0);
 
   const weekRange = useMemo(() => {
+    // Explicitly set weekStartsOn to 0 (Sunday) for consistency
     const weekStart = startOfWeek(addWeeks(currentDate, weekOffset), {
-      locale: ko,
+      weekStartsOn: 0,
     });
     const weekEnd = endOfWeek(addWeeks(currentDate, weekOffset), {
-      locale: ko,
+      weekStartsOn: 0,
     });
     return { weekStart, weekEnd };
   }, [currentDate, weekOffset]);

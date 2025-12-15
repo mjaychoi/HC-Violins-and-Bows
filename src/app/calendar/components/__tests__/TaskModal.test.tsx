@@ -5,19 +5,14 @@ import TaskModal from '../TaskModal';
 import { MaintenanceTask, Instrument } from '@/types';
 
 // Mock Button and Input components
-jest.mock('@/components/common/Button', () => {
-  return function Button({ children, onClick, disabled, ...props }: any) {
-    return (
+jest.mock('@/components/common/inputs', () => {
+  return {
+    Button: ({ children, onClick, disabled, ...props }: any) => (
       <button onClick={onClick} disabled={disabled} {...props}>
         {children}
       </button>
-    );
-  };
-});
-
-jest.mock('@/components/common/Input', () => {
-  return function Input({ label, value, onChange, type, ...props }: any) {
-    return (
+    ),
+    Input: ({ label, value, onChange, type, ...props }: any) => (
       <div>
         {label && <label>{label}</label>}
         <input
@@ -27,7 +22,7 @@ jest.mock('@/components/common/Input', () => {
           {...props}
         />
       </div>
-    );
+    ),
   };
 });
 

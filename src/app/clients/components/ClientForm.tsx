@@ -10,15 +10,14 @@ import { classNames } from '@/utils/classNames';
 import { clientValidation, validateForm } from '@/utils/validationUtils';
 import { generateClientNumber } from '@/utils/uniqueNumberGenerator';
 import { useUnifiedClients } from '@/hooks/useUnifiedData';
-import Button from '@/components/common/Button';
-import Input from '@/components/common/Input';
+import { Button, Input } from '@/components/common/inputs';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { shouldShowInterestDropdown } from '@/policies/interest';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
 import { ClientRelationshipType } from '../types';
-import { modalStyles } from '@/components/common/modalStyles';
-import { ModalHeader } from '@/components/common/ModalHeader';
+import { modalStyles } from '@/components/common/modals/modalStyles';
+import { ModalHeader } from '@/components/common/modals/ModalHeader';
 
 interface ClientFormProps {
   isOpen: boolean;
@@ -362,7 +361,7 @@ export default function ClientForm({
 
           <form
             onSubmit={handleSubmit}
-            className="space-y-4"
+            className="space-y-5"
             style={{ display: success ? 'none' : 'block' }}
           >
             <Input
@@ -424,7 +423,7 @@ export default function ClientForm({
                   name="interest"
                   id="interest"
                 />
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-xs text-gray-500">
                   Appears when certain tags are selected. Shows client&apos;s
                   primary interest area
                 </p>
@@ -434,7 +433,9 @@ export default function ClientForm({
             <div>
               <label className={classNames.formLabel}>
                 Client Number
-                <span className="ml-2 text-xs text-gray-500">(Auto-generated)</span>
+                <span className="ml-2 text-xs text-gray-500">
+                  (Auto-generated)
+                </span>
               </label>
               <input
                 type="text"
@@ -445,7 +446,7 @@ export default function ClientForm({
                 className={classNames.input + ' bg-gray-100 cursor-not-allowed'}
                 placeholder="Auto-generated"
               />
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-xs text-gray-500">
                 Will be automatically generated when adding a client
               </p>
             </div>
@@ -467,11 +468,11 @@ export default function ClientForm({
               <label className={classNames.formLabel}>
                 Connect Instruments (Optional)
               </label>
-              <p className="mb-2 text-sm text-gray-500">
+              <p className="mb-2 text-xs text-gray-500">
                 Link instruments to this client (e.g., owned, interested, or
                 booked items)
               </p>
-              <div className="space-y-2">
+              <div className="space-y-4">
                 <button
                   type="button"
                   onClick={() =>
@@ -485,7 +486,7 @@ export default function ClientForm({
                 </button>
 
                 {showInstrumentSearchForNew && (
-                  <div className="space-y-2">
+                  <div className="space-y-4">
                     <input
                       type="text"
                       placeholder="Search instruments..."
@@ -533,7 +534,7 @@ export default function ClientForm({
                     )}
 
                     {selectedInstrumentsForNew.length > 0 && (
-                      <div className="space-y-1">
+                      <div className="space-y-4">
                         <div className="text-xs font-medium text-gray-700">
                           Selected Instruments:
                         </div>

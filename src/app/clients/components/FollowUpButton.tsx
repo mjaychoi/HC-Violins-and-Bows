@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import Button from '@/components/common/Button';
+import { Button } from '@/components/common/inputs';
 
 interface FollowUpButtonProps {
   clientId: string;

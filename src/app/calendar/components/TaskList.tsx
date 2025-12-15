@@ -9,7 +9,7 @@ import {
   getStatusDotClasses,
   getDateStatus,
 } from '@/utils/tasks/style';
-import EmptyState from '@/components/common/EmptyState';
+import EmptyState from '@/components/common/empty-state/EmptyState';
 
 interface TaskListProps {
   tasks: MaintenanceTask[];
@@ -25,6 +25,12 @@ interface TaskListProps {
   >;
   onTaskClick?: (task: MaintenanceTask) => void;
   onTaskDelete?: (task: MaintenanceTask) => void;
+  /** 필터가 활성화되어 있는지 여부 (빈 상태 문구/버튼 제어) */
+  hasActiveFilters?: boolean;
+  /** 필터 리셋 핸들러 (필터 활성 시에만 사용) */
+  onResetFilters?: () => void;
+  /** 작업 추가 CTA가 필요할 때 */
+  onAddTask?: () => void;
 }
 
 export default function TaskList({
@@ -32,12 +38,30 @@ export default function TaskList({
   instruments,
   onTaskClick,
   onTaskDelete,
+  hasActiveFilters = false,
+  onResetFilters,
+  onAddTask,
 }: TaskListProps) {
   if (tasks.length === 0) {
     return (
       <EmptyState
-        title="No tasks found"
-        description="Get started by creating your first task."
+        title={
+          hasActiveFilters
+            ? 'No tasks found matching your filters'
+            : 'No tasks yet'
+        }
+        description={
+          hasActiveFilters
+            ? 'Try adjusting your filters or clearing them to see all tasks.'
+            : 'Create a maintenance task to start tracking your workflow.'
+        }
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={hasActiveFilters ? onResetFilters : undefined}
+        actionButton={
+          !hasActiveFilters && onAddTask
+            ? { label: 'Add task', onClick: onAddTask }
+            : undefined
+        }
       />
     );
   }
@@ -52,8 +76,17 @@ export default function TaskList({
         return (
           <div
             key={task.id}
-            className="group bg-white border border-slate-100 rounded-lg p-4 hover:border-blue-200 hover:shadow-sm transition-all duration-200 cursor-pointer"
+            role="button"
+            tabIndex={0}
+            className="group bg-white border border-slate-100 rounded-lg p-4 hover:border-blue-200 hover:shadow-sm transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             onClick={() => onTaskClick?.(task)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onTaskClick?.(task);
+              }
+            }}
+            aria-label={`Task: ${task.title}`}
           >
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
@@ -283,6 +316,7 @@ export default function TaskList({
               {/* Actions */}
               {onTaskDelete && (
                 <button
+                  type="button"
                   onClick={e => {
                     e.stopPropagation();
                     onTaskDelete(task);

@@ -2,24 +2,24 @@ import { render, screen, fireEvent } from '@/test-utils/render';
 import { CustomerSearch } from '../CustomerSearch';
 
 // Mock SearchInput
-jest.mock('@/components/common/SearchInput', () => {
-  return function MockSearchInput({
-    value,
-    onChange,
-    placeholder,
-  }: {
-    value: string;
-    onChange: (value: string) => void;
-    placeholder: string;
-  }) {
-    return (
+jest.mock('@/components/common/inputs', () => {
+  return {
+    SearchInput: ({
+      value,
+      onChange,
+      placeholder,
+    }: {
+      value: string;
+      onChange: (value: string) => void;
+      placeholder: string;
+    }) => (
       <input
         data-testid="search-input"
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
       />
-    );
+    ),
   };
 });
 

@@ -4,15 +4,20 @@ import '@testing-library/jest-dom';
 import ClientList from '../ClientList';
 import { Client } from '@/types';
 
-jest.mock('@/components/common', () => ({
-  EmptyState: ({ title, description }: any) => (
-    <div data-testid="empty-state">
-      <h3>{title}</h3>
-      <p>{description}</p>
-    </div>
-  ),
-  Pagination: () => null,
-}));
+jest.mock('@/components/common', () => {
+  const actual = jest.requireActual('@/components/common');
+  return {
+    __esModule: true,
+    ...actual,
+    EmptyState: ({ title, description }: any) => (
+      <div data-testid="empty-state">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+    ),
+    Pagination: () => null,
+  };
+});
 
 jest.mock('next/dynamic', () => {
   return () => {
@@ -130,8 +135,11 @@ describe('ClientList', () => {
   it('handles empty client list', () => {
     render(<ClientList {...mockProps} clients={[]} />);
 
+    // 공통 EmptyState 패턴: 필터 없음일 때 "No clients yet" 사용
     expect(
-      screen.getByText(/등록된 고객이 없습니다|No clients found/i)
+      screen.getByText(
+        /등록된 고객이 없습니다|No clients found|No clients yet/i
+      )
     ).toBeInTheDocument();
   });
 

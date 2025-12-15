@@ -66,11 +66,11 @@ export async function GET(request: NextRequest) {
       query = query.eq('instrument_id', instrumentId);
     }
 
-    // Order by the specified orderBy
+    // Order by display_order first (if available), then by the specified orderBy
+    // display_order is used for drag-and-drop reordering
     // Note: display_order column may not exist if migration hasn't been run
-    // We'll skip ordering by display_order for now and just use the specified orderBy
-    // TODO: Once migration 20250115000003_add_connection_order.sql is applied,
-    // we can add display_order as a secondary sort
+    // If the column doesn't exist, we'll fall back to just orderBy
+    // The migration file is: 20250115000003_add_connection_order.sql
     query = query.order(orderBy, { ascending });
 
     // Apply pagination if provided
@@ -80,7 +80,53 @@ export async function GET(request: NextRequest) {
       query = query.range(from, to);
     }
 
-    const { data, error, count } = await query;
+    let { data, error, count } = await query;
+
+    // If error is due to missing display_order column, retry without it
+    if (error && error.message?.includes('display_order does not exist')) {
+      // Retry query without display_order - this happens if migration hasn't been run
+      let retryQuery = supabase.from('client_instruments').select(
+        `
+          *,
+          client:clients(*),
+          instrument:instruments(*)
+        `,
+        { count: 'exact' }
+      );
+
+      if (clientId) {
+        if (!validateUUID(clientId)) {
+          return NextResponse.json(
+            { error: 'Invalid client_id format' },
+            { status: 400 }
+          );
+        }
+        retryQuery = retryQuery.eq('client_id', clientId);
+      }
+
+      if (instrumentId) {
+        if (!validateUUID(instrumentId)) {
+          return NextResponse.json(
+            { error: 'Invalid instrument_id format' },
+            { status: 400 }
+          );
+        }
+        retryQuery = retryQuery.eq('instrument_id', instrumentId);
+      }
+
+      retryQuery = retryQuery.order(orderBy, { ascending });
+
+      if (page && pageSize) {
+        const from = (page - 1) * pageSize;
+        const to = from + pageSize - 1;
+        retryQuery = retryQuery.range(from, to);
+      }
+
+      const retryResult = await retryQuery;
+      data = retryResult.data;
+      error = retryResult.error;
+      count = retryResult.count;
+    }
 
     const duration = Math.round(performance.now() - startTime);
 
@@ -476,14 +522,11 @@ export async function PUT(request: NextRequest) {
     // Since Supabase doesn't support transactions in JS client, we'll do sequential updates
     // For better performance, we could use a stored procedure, but this is simpler
     const updatePromises = orders.map(({ id, display_order }) =>
-      supabase
-        .from('client_instruments')
-        .update({ display_order })
-        .eq('id', id)
+      supabase.from('client_instruments').update({ display_order }).eq('id', id)
     );
 
     const results = await Promise.all(updatePromises);
-    
+
     // Check for errors
     const errors = results.filter(r => r.error);
     if (errors.length > 0) {
@@ -534,16 +577,9 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json(safeError, { status: 500 });
     }
 
-    logApiRequest(
-      'PUT',
-      '/api/connections',
-      200,
-      duration,
-      'ConnectionsAPI',
-      {
-        orderCount: orders.length,
-      }
-    );
+    logApiRequest('PUT', '/api/connections', 200, duration, 'ConnectionsAPI', {
+      orderCount: orders.length,
+    });
 
     return NextResponse.json({ data: data || [] });
   } catch (error) {

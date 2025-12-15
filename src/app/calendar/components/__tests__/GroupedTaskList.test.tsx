@@ -148,9 +148,12 @@ describe('GroupedTaskList', () => {
   it('should render empty state when no tasks', () => {
     render(<GroupedTaskList tasks={[]} />);
 
-    expect(screen.getByText(/no tasks found/i)).toBeInTheDocument();
+    // EmptyState 기본 카피에 맞게 업데이트
+    expect(screen.getByText(/no tasks yet/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/get started by creating your first task/i)
+      screen.getByText(
+        /create a maintenance task to start tracking your workflow\./i
+      )
     ).toBeInTheDocument();
   });
 
@@ -191,8 +194,17 @@ describe('GroupedTaskList', () => {
     );
 
     // Priority is displayed as-is (lowercase in test data)
+    // Note: "urgent" may appear in both header and priority pill, so use getAllByText
     expect(screen.getByText(/high/i)).toBeInTheDocument();
-    expect(screen.getByText(/urgent/i)).toBeInTheDocument();
+    const urgentElements = screen.getAllByText(/urgent/i);
+    expect(urgentElements.length).toBeGreaterThan(0);
+    // Verify at least one urgent priority pill exists (check for pill styling)
+    const urgentPill = urgentElements.find(
+      el =>
+        el.classList.contains('bg-red-50') ||
+        el.classList.contains('border-red-200')
+    );
+    expect(urgentPill).toBeDefined();
   });
 
   it('should display task statuses', () => {
@@ -456,7 +468,16 @@ describe('GroupedTaskList', () => {
     // Should have both tasks
     expect(taskElements.length).toBeGreaterThanOrEqual(2);
     // Urgent task should appear first (check by priority badge - priority is displayed as-is)
-    expect(screen.getByText(/urgent/i)).toBeInTheDocument();
+    // Note: "urgent" may appear in both header and priority pill, so verify urgent priority pill exists
+    const urgentElements = screen.getAllByText(/urgent/i);
+    expect(urgentElements.length).toBeGreaterThan(0);
+    // Verify urgent priority pill exists (has red styling)
+    const urgentPill = urgentElements.find(
+      el =>
+        el.classList.contains('bg-red-50') ||
+        el.classList.contains('border-red-200')
+    );
+    expect(urgentPill).toBeDefined();
   });
 
   it('should display date headers', () => {

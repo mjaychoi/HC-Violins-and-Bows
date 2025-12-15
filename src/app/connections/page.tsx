@@ -8,16 +8,29 @@ import {
   ConnectionModal,
   FilterBar,
   ConnectionsList,
-  LoadingState,
   EditConnectionModal,
   ConnectionSearch,
+  ConnectionCard,
 } from './components';
-import EmptyState from '@/components/common/EmptyState';
+import EmptyState from '@/components/common/empty-state/EmptyState';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useFilterSort } from '@/hooks/useFilterSort';
 import { AppLayout } from '@/components/layout';
 import { ErrorBoundary } from '@/components/common';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragOverEvent,
+  DragStartEvent,
+  DragOverlay,
+} from '@dnd-kit/core';
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 
 export default function ConnectedClientsPage() {
   // Error handling
@@ -193,41 +206,111 @@ export default function ConnectedClientsPage() {
     }
   };
 
-  // Handle connection reorder: persist to database
-  const handleConnectionReorder = useCallback(
-    async (reorderedConnections: ClientInstrument[]) => {
+  // Handle connection type change: update relationship_type when dragged to different section or tab
+  const handleConnectionTypeChange = useCallback(
+    async (connectionId: string, newType: RelationshipType | 'all') => {
       try {
         await withSubmitting(async () => {
-          // Prepare batch update: assign display_order based on new position
-          const orders = reorderedConnections.map((conn, index) => ({
-            id: conn.id,
-            display_order: index + 1, // 1-based index
-          }));
-
-          // Call batch update API
-          const response = await fetch('/api/connections', {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ orders }),
-          });
-
-          if (!response.ok) {
-            const result = await response.json();
-            throw new Error(result.error || 'Failed to update connection order');
+          // Find the connection to preserve existing notes
+          const connection = connections.find(c => c.id === connectionId);
+          if (!connection) {
+            throw new Error('Connection not found');
           }
 
-          // Refresh connections to get updated data
+          // If dropped on "All" tab, don't change type (just filter view)
+          if (newType === 'all') {
+            return;
+          }
+
+          // Use updateConnection with relationshipType (it will convert to relationship_type internally)
+          await updateConnection(connectionId, {
+            relationshipType: newType,
+            notes: connection.notes || '', // Preserve existing notes
+          });
           await fetchConnections();
         });
       } catch (error) {
-        handleError(error, 'Failed to save connection order');
-        // Optionally: rollback UI state here
+        handleError(error, 'Failed to update connection type');
       }
     },
-    [withSubmitting, handleError, fetchConnections]
+    [
+      withSubmitting,
+      handleError,
+      updateConnection,
+      fetchConnections,
+      connections,
+    ]
   );
+
+  // Drag and drop state
+  const [overTabType, setOverTabType] = useState<
+    RelationshipType | 'all' | null
+  >(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px movement before drag starts
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Handle drag start
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  }, []);
+
+  // Handle drag over for visual feedback
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const { over } = event;
+    if (!over) {
+      setOverTabType(null);
+      return;
+    }
+
+    // Check if over a tab button
+    if (typeof over.id === 'string' && over.id.startsWith('tab-')) {
+      const tabType = over.id.replace('tab-', '') as RelationshipType | 'all';
+      setOverTabType(tabType);
+    } else {
+      setOverTabType(null);
+    }
+  }, []);
+
+  // Handle drag end
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      setOverTabType(null);
+      setActiveId(null);
+
+      if (!over) {
+        return;
+      }
+
+      // If dropped on a tab button, change relationship type
+      if (typeof over.id === 'string' && over.id.startsWith('tab-')) {
+        const newType = over.id.replace('tab-', '') as RelationshipType | 'all';
+        const connectionId = active.id as string;
+
+        if (newType !== 'all') {
+          handleConnectionTypeChange(connectionId, newType);
+        }
+      }
+    },
+    [handleConnectionTypeChange]
+  );
+
+  // Find active connection for DragOverlay
+  const activeConnection = useMemo(() => {
+    if (!activeId) return null;
+    return connections.find(c => c.id === activeId) || null;
+  }, [activeId, connections]);
 
   return (
     <ErrorBoundary>
@@ -264,131 +347,164 @@ export default function ConnectedClientsPage() {
             />
           </div>
 
-          {/* Filter Bar */}
-          <FilterBar
-            selectedFilter={selectedFilter}
-            onFilterChange={handleFilterChange}
-            relationshipTypeCounts={relationshipTypeCounts}
-            totalConnections={filteredConnections.length}
-          />
-
-          {/* Connection Modal */}
-          <ConnectionModal
-            isOpen={showConnectionModal}
-            onClose={() => {
-              setShowConnectionModal(false);
-              resetConnectionForm();
+          {/* Drag and Drop Context - wraps FilterBar and ConnectionsList */}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            onDragCancel={() => {
+              setOverTabType(null);
+              setActiveId(null);
             }}
-            onSubmit={handleCreateConnection}
-            submitting={submitting}
-            clients={filteredClients}
-            items={filteredItems}
-            clientSearchTerm={clientSearchTerm}
-            instrumentSearchTerm={instrumentSearchTerm}
-            onClientSearchChange={setClientSearchTerm}
-            onInstrumentSearchChange={setInstrumentSearchTerm}
-            selectedClient={selectedClientId}
-            selectedInstrument={selectedInstrumentId}
-            relationshipType={relationshipType}
-            connectionNotes={connectionNotes}
-            onClientChange={setSelectedClientId}
-            onInstrumentChange={setSelectedInstrumentId}
-            onRelationshipTypeChange={setRelationshipType}
-            onNotesChange={setConnectionNotes}
-          />
+          >
+            {/* Filter Bar */}
+            <FilterBar
+              selectedFilter={selectedFilter}
+              onFilterChange={handleFilterChange}
+              relationshipTypeCounts={relationshipTypeCounts}
+              totalConnections={filteredConnections.length}
+              overTabType={overTabType}
+            />
 
-          {/* Edit Connection Modal */}
-          <EditConnectionModal
-            isOpen={showEditModal}
-            onClose={closeEditModal}
-            onSave={handleUpdateConnection}
-            connection={editingConnection}
-            clients={filteredClients}
-            items={filteredItems}
-          />
+            {/* Connection Modal */}
+            <ConnectionModal
+              isOpen={showConnectionModal}
+              onClose={() => {
+                setShowConnectionModal(false);
+                resetConnectionForm();
+              }}
+              onSubmit={handleCreateConnection}
+              submitting={submitting}
+              clients={filteredClients}
+              items={filteredItems}
+              clientSearchTerm={clientSearchTerm}
+              instrumentSearchTerm={instrumentSearchTerm}
+              onClientSearchChange={setClientSearchTerm}
+              onInstrumentSearchChange={setInstrumentSearchTerm}
+              selectedClient={selectedClientId}
+              selectedInstrument={selectedInstrumentId}
+              relationshipType={relationshipType}
+              connectionNotes={connectionNotes}
+              onClientChange={setSelectedClientId}
+              onInstrumentChange={setSelectedInstrumentId}
+              onRelationshipTypeChange={setRelationshipType}
+              onNotesChange={setConnectionNotes}
+            />
 
-          {/* Main Content */}
-          {(() => {
-            const hasAnyConnections = connections.length > 0;
-            const hasResults = filteredConnections.length > 0;
+            {/* Edit Connection Modal */}
+            <EditConnectionModal
+              isOpen={showEditModal}
+              onClose={closeEditModal}
+              onSave={handleUpdateConnection}
+              connection={editingConnection}
+              clients={filteredClients}
+              items={filteredItems}
+            />
 
-            if (isLoading) {
-              return <LoadingState />;
-            }
+            {/* Main Content */}
+            {(() => {
+              const hasAnyConnections = connections.length > 0;
+              const hasResults = filteredConnections.length > 0;
 
-            if (!hasAnyConnections) {
-              return (
-                <EmptyState
-                  title="No connections"
-                  description="Get started by creating your first client-item connection."
-                  actionButton={{
-                    label: 'Create Connection',
-                    onClick: () => setShowConnectionModal(true),
-                    icon: (
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
+              if (isLoading) {
+                return (
+                  <div className="flex justify-center items-center py-12">
+                    <div className="text-gray-500">Loading connections...</div>
+                  </div>
+                );
+              }
+
+              if (!hasAnyConnections) {
+                return (
+                  <EmptyState
+                    title="No connections"
+                    description="Get started by creating your first client-item connection."
+                    actionButton={{
+                      label: 'Create Connection',
+                      onClick: () => setShowConnectionModal(true),
+                      icon: (
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                          />
+                        </svg>
+                      ),
+                    }}
+                  />
+                );
+              }
+
+              if (!hasResults) {
+                return (
+                  <div className="py-10 text-center">
+                    <div className="text-gray-400 text-5xl mb-3">🔎</div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      No results
+                    </h3>
+                    <p className="text-gray-500 mt-1">
+                      Try clearing filters or searching with different keywords.
+                    </p>
+                    <div className="mt-5 flex justify-center gap-2">
+                      <button
+                        type="button"
+                        className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+                        onClick={handleClearFilters}
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                        />
-                      </svg>
-                    ),
-                  }}
+                        Clear filters
+                      </button>
+                      <button
+                        type="button"
+                        className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                        onClick={() => setShowConnectionModal(true)}
+                      >
+                        Add connection
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <ConnectionsList
+                  groupedConnections={groupedConnections}
+                  selectedFilter={selectedFilter}
+                  onEditConnection={openEditModal}
+                  onDeleteConnection={handleDeleteConnection}
+                  currentPage={currentPage}
+                  pageSize={pageSize}
+                  onPageChange={setCurrentPage}
+                  loading={isLoading}
                 />
               );
-            }
+            })()}
 
-            if (!hasResults) {
-              return (
-                <div className="py-10 text-center">
-                  <div className="text-gray-400 text-5xl mb-3">🔎</div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    No results
-                  </h3>
-                  <p className="text-gray-500 mt-1">
-                    Try clearing filters or searching with different keywords.
-                  </p>
-                  <div className="mt-5 flex justify-center gap-2">
-                    <button
-                      type="button"
-                      className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
-                      onClick={handleClearFilters}
-                    >
-                      Clear filters
-                    </button>
-                    <button
-                      type="button"
-                      className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-                      onClick={() => setShowConnectionModal(true)}
-                    >
-                      Add connection
-                    </button>
-                  </div>
+            {/* Drag Overlay - shows dragged element following cursor */}
+            <DragOverlay>
+              {activeConnection ? (
+                <div
+                  className="rotate-3 opacity-90 shadow-2xl"
+                  style={{ width: '100%', maxWidth: '500px' }}
+                >
+                  <ConnectionCard
+                    connection={activeConnection}
+                    onDelete={() => {}}
+                    onEdit={() => {}}
+                  />
                 </div>
-              );
-            }
-
-            return (
-              <ConnectionsList
-                groupedConnections={groupedConnections}
-                selectedFilter={selectedFilter}
-                onEditConnection={openEditModal}
-                onDeleteConnection={handleDeleteConnection}
-                onConnectionReorder={handleConnectionReorder}
-                currentPage={currentPage}
-                pageSize={pageSize}
-                onPageChange={setCurrentPage}
-                loading={isLoading}
-              />
-            );
-          })()}
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         </div>
       </AppLayout>
     </ErrorBoundary>

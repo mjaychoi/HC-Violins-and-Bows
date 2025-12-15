@@ -16,6 +16,12 @@ import ContactLog from './ContactLog';
 import FollowUpButton from './FollowUpButton';
 import { useContactLogs } from '../hooks/useContactLogs';
 import { useClientsContactInfo } from '../hooks/useClientsContactInfo';
+import dynamic from 'next/dynamic';
+
+const MessageComposer = dynamic(
+  () => import('@/components/messages/MessageComposer'),
+  { ssr: false }
+);
 
 interface ClientModalProps {
   isOpen: boolean;
@@ -162,8 +168,8 @@ export default function ClientModal({
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           {isEditing ? (
-            <form onSubmit={handleSave} className="p-6 space-y-4 text-gray-900">
-              <div className="space-y-4">
+            <form onSubmit={handleSave} className="p-6 space-y-5 text-gray-900">
+              <div className="space-y-5">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Last Name
@@ -280,7 +286,7 @@ export default function ClientModal({
                 </div>
 
                 {showInstrumentSearch && (
-                  <div className="mb-4 space-y-2">
+                  <div className="mb-4 space-y-4">
                     <input
                       type="text"
                       placeholder="Search instruments..."
@@ -331,7 +337,7 @@ export default function ClientModal({
                 )}
 
                 {filteredInstrumentRelationships.length > 0 ? (
-                  <div className="space-y-2">
+                  <div className="space-y-4">
                     {filteredInstrumentRelationships.map(relationship => (
                       <div
                         key={relationship.id}
@@ -397,6 +403,21 @@ export default function ClientModal({
                   <h4 className="text-sm font-medium text-gray-500">Contact</h4>
                   <p className="text-gray-900">{formatClientContact(client)}</p>
                 </div>
+
+                {/* Message Composer - Moved to top for visibility */}
+                {client && (
+                  <div className="pt-4 border-t border-gray-200">
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                      Send Message
+                    </h4>
+                    <MessageComposer
+                      client={client}
+                      instrument={
+                        filteredInstrumentRelationships[0]?.instrument || null
+                      }
+                    />
+                  </div>
+                )}
 
                 <div>
                   <h4 className="text-sm font-medium text-gray-500">Tags</h4>
@@ -539,7 +560,7 @@ export default function ClientModal({
                 </div>
 
                 {showInstrumentSearch && (
-                  <div className="mb-4 space-y-2">
+                  <div className="mb-4 space-y-4">
                     <input
                       type="text"
                       placeholder="Search instruments..."
@@ -589,7 +610,7 @@ export default function ClientModal({
                 )}
 
                 {filteredInstrumentRelationships.length > 0 ? (
-                  <div className="space-y-2">
+                  <div className="space-y-4">
                     {filteredInstrumentRelationships.map(relationship => (
                       <div
                         key={relationship.id}

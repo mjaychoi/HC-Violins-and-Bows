@@ -3,6 +3,8 @@
 import React, { useMemo, useCallback } from 'react';
 import { Calendar, dateFnsLocalizer, Event, View } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
+// Note: react-dnd v16 exports DndProvider from dist/core path
+// This is the stable import path for react-big-calendar compatibility
 import { DndProvider } from 'react-dnd/dist/core';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
@@ -17,219 +19,20 @@ import { getDateStatus } from '@/utils/tasks/style';
 import { parseYMDLocal } from '@/utils/dateParsing';
 import { parseISO, isValid } from 'date-fns';
 
-// Custom styles for calendar events - professional card design
-const calendarEventStyles = `
-  /* Professional card design: white background with left accent bar (2px default, 4px for priority) */
-  .rbc-event {
-    background: #ffffff !important;
-    border: 1px solid #e5e7eb !important;
-    border-left: 2px solid !important;
-    border-radius: 6px !important;
-    padding: 6px 8px !important;
-    margin: 1px 0 !important;
-    box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.04) !important;
-    color: #111827 !important;
-    font-size: 11px !important;
-    line-height: 1.3 !important;
-    transition: all 0.15s ease !important;
-    cursor: grab !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    overflow: hidden !important;
-    box-sizing: border-box !important;
-  }
-  .rbc-event:hover {
-    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.08) !important;
-    border-color: #d1d5db !important;
-  }
-  .rbc-event:active {
-    cursor: grabbing !important;
-  }
-  .rbc-event-dragging {
-    cursor: grabbing !important;
-    z-index: 1000 !important;
-  }
-  /* Status-based accent colors: left border only (3px) */
-  .rbc-event.status-overdue {
-    border-left-color: #ef4444 !important; /* Red-500 */
-    border-left-width: 4px !important; /* Thicker for priority */
-    background-color: #fef2f2 !important; /* Red-50 tint */
-  }
-  .rbc-event.status-due-soon {
-    border-left-color: #f59e0b !important; /* Amber-500 */
-    border-left-width: 4px !important; /* Thicker for priority */
-    background-color: #fffbeb !important; /* Amber-50 tint */
-  }
-  .rbc-event.status-today {
-    border-left-color: #10b981 !important; /* Green-500 */
-    border-left-width: 4px !important; /* Thicker for priority */
-    background-color: #f0fdf4 !important; /* Green-50 tint */
-  }
-  .rbc-event.status-normal {
-    border-left-color: #10b981 !important; /* Emerald-500 */
-    border-left-width: 2px !important; /* Normal thickness */
-  }
-  .rbc-event.status-completed {
-    border-left-color: #9ca3af !important; /* Gray-400 */
-    border-left-width: 2px !important;
-    opacity: 0.7 !important;
-  }
-  /* Remove old styles */
-  .calendar-event-overdue::before {
-    display: none !important;
-  }
-  .calendar-event-upcoming {
-    border-style: solid !important;
-  }
-  .calendar-event-completed {
-    opacity: 0.7 !important;
-  }
-  /* Fix for bottom row truncation in month view */
-  .rbc-month-view {
-    overflow: visible !important;
-    padding-bottom: 1rem !important;
-  }
-  .rbc-month-row {
-    overflow: visible !important;
-  }
-  .rbc-day-bg {
-    overflow: visible !important;
-    padding-left: 2px !important; /* Prevent border-left from overflowing */
-  }
-  .rbc-date-cell {
-    overflow: visible !important;
-  }
-  .rbc-row-content {
-    overflow: visible !important;
-    padding-left: 2px !important; /* Prevent border-left from overflowing */
-  }
-  .rbc-row-segment {
-    overflow: visible !important;
-    padding-left: 2px !important; /* Prevent border-left from overflowing */
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-  /* Prevent event text from overflowing */
-  .rbc-event-label {
-    width: 100% !important;
-    min-width: 0 !important;
-    overflow: hidden !important;
-  }
-  /* Month cell styling: date in top-right, reduced padding */
-  .rbc-date-cell {
-    padding: 4px 6px !important;
-    text-align: right !important;
-  }
-  .rbc-date-cell > a {
-    color: #9ca3af !important;
-    font-size: 11px !important;
-    font-weight: 500 !important;
-  }
-  /* Today column: enhanced highlight with stronger blue background */
-  .rbc-today {
-    background-color: #EFF6FF !important; /* Slightly stronger blue-50 */
-  }
-  .rbc-today .rbc-date-cell > a {
-    color: #1D4ED8 !important; /* Deeper blue-700 */
-    font-weight: 700 !important;
-  }
-  .rbc-today .rbc-day-bg {
-    background-color: #EFF6FF !important; /* Slightly stronger blue-50 */
-  }
-  /* Today column border for extra emphasis */
-  .rbc-today .rbc-day-bg {
-    border-left: 2px solid #3B82F6 !important; /* Blue-500 accent */
-  }
-  /* Weekend: stronger background distinction */
-  .rbc-day-bg.rbc-sat,
-  .rbc-day-bg.rbc-sun {
-    background-color: #f9fafb !important; /* Neutral-50 */
-  }
-  .rbc-sat .rbc-date-cell > a,
-  .rbc-sun .rbc-date-cell > a {
-    color: #9ca3af !important; /* Muted for weekend */
-  }
-  /* Previous/next month dates: lower opacity */
-  .rbc-off-range-bg {
-    background-color: #fafafa !important;
-    opacity: 0.5 !important;
-  }
-  .rbc-off-range .rbc-date-cell > a {
-    color: #d1d5db !important;
-    opacity: 0.6 !important;
-  }
-  /* Event content: 2-line structure */
-  .rbc-event-content {
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 2px !important;
-    line-height: 1.2 !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    overflow: hidden !important;
-  }
-  .rbc-event-content .event-instrument {
-    font-weight: 500 !important;
-    font-size: 11px !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-  }
-  .rbc-event-content .event-description {
-    font-size: 10px !important;
-    color: #6b7280 !important;
-    opacity: 0.9 !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-  }
-  /* Target emoji icon (first character) - note: CSS can't directly style emoji opacity,
-     so we rely on the emoji being in the title string itself */
-  /* Limit month row height to naturally trigger "+N more" */
-  .rbc-month-row {
-    min-height: 100px !important;
-  }
-  .rbc-row-content {
-    height: 100px !important; /* Fixed height triggers show more */
-    overflow: visible !important;
-  }
-  /* Reduced event spacing */
-  .rbc-event {
-    margin: 1px 0 !important;
-  }
-  /* Style for "+X more" pill */
-  .rbc-show-more {
-    background: #f3f4f6 !important;
-    color: #6b7280 !important;
-    font-size: 10px !important;
-    padding: 3px 8px !important;
-    border-radius: 12px !important;
-    margin-top: 2px !important;
-    border: 1px solid #e5e7eb !important;
-    font-weight: 500 !important;
-  }
-  .rbc-show-more:hover {
-    background: #e5e7eb !important;
-    color: #374151 !important;
-  }
-`;
+// Calendar styles are now in globals.css to avoid duplication and hydration issues
 
 const locales = {
   ko: ko,
 };
 
-// FIXED: startOfWeek now respects Korean locale (Monday start)
+// FIXED: Explicitly set weekStartsOn to 0 (Sunday) for consistency
+// Note: Korean locale may not guarantee Monday start, so we explicitly set it
 const localizer = dateFnsLocalizer({
   format: (date: Date, fmt: string, options?: { locale?: typeof ko }) =>
     format(date, fmt, { locale: ko, ...options }),
   parse: (value: string, fmt: string) =>
     parse(value, fmt, new Date(), { locale: ko }),
-  startOfWeek: (date: Date) => startOfWeek(date, { locale: ko }),
+  startOfWeek: (date: Date) => startOfWeek(date, { weekStartsOn: 0 }), // Explicitly Sunday start
   getDay,
   locales,
 });
@@ -237,6 +40,21 @@ const localizer = dateFnsLocalizer({
 // Extended view type to include custom views
 // Only allow specific views we support
 export type ExtendedView = 'month' | 'week' | 'agenda' | 'year' | 'timeline';
+
+// Unified calendar resource types
+export interface EventData {
+  instrument: string;
+  instrumentColor: string;
+  description: string;
+}
+
+export type CalendarResource =
+  | { kind: 'task'; task: MaintenanceTask; eventData: EventData }
+  | { kind: 'follow_up'; contactLog: ContactLog; clientName: string };
+
+export type CalendarEvent = Omit<Event, 'resource'> & {
+  resource: CalendarResource;
+};
 
 interface CalendarViewProps {
   tasks: MaintenanceTask[];
@@ -252,6 +70,7 @@ interface CalendarViewProps {
     }
   >;
   onSelectEvent?: (task: MaintenanceTask) => void;
+  onSelectFollowUpEvent?: (log: ContactLog) => void;
   onSelectSlot?: (slotInfo: { start: Date; end: Date }) => void;
   onEventDrop?: (data: {
     event: Event;
@@ -291,13 +110,16 @@ type DragAndDropCalendarProps = CalendarProps & {
 };
 
 // Use type assertion to handle react-big-calendar's drag and drop types
-const DragAndDropCalendar = withDragAndDrop(Calendar) as React.ComponentType<DragAndDropCalendarProps>;
+const DragAndDropCalendar = withDragAndDrop(
+  Calendar
+) as React.ComponentType<DragAndDropCalendarProps>;
 
 export default function CalendarView({
   tasks,
   contactLogs = [],
   instruments,
   onSelectEvent,
+  onSelectFollowUpEvent,
   onSelectSlot,
   onEventDrop,
   onEventResize,
@@ -326,13 +148,6 @@ export default function CalendarView({
     }
   };
 
-  // EventData interface for structured event data
-  interface EventData {
-    instrument: string;
-    instrumentColor: string;
-    description: string;
-  }
-
   // Convert tasks and follow-ups to calendar events
   const events: Event[] = useMemo(() => {
     // Task events
@@ -346,14 +161,13 @@ export default function CalendarView({
           task.due_date || task.personal_due_date || task.scheduled_date;
         if (!raw) return null;
 
-        // FIXED: Use parseYMDLocal for consistent date parsing strategy
-        // This handles both YYYY-MM-DD (as local) and ISO timestamps correctly
+        // FIXED: Safe date parsing - check format first
+        const isYMD = /^\d{4}-\d{2}-\d{2}$/.test(raw);
         let date: Date | null = null;
         try {
-          // Try parseYMDLocal first (handles YYYY-MM-DD as local)
-          date = parseYMDLocal(raw);
-          // If that fails, try parseISO for timestamps
-          if (!date) {
+          if (isYMD) {
+            date = parseYMDLocal(raw);
+          } else {
             const isoDate = parseISO(raw);
             date = isValid(isoDate) ? isoDate : null;
           }
@@ -430,10 +244,10 @@ export default function CalendarView({
         };
 
         const event: Event = {
-          title: `${eventData.instrument}\n${eventData.description}`, // 2-line format
+          title: `${eventData.instrument} – ${eventData.description}`, // Single line for accessibility
           start: start,
           end: endDate,
-          resource: { task, eventData }, // Store structured data
+          resource: { kind: 'task', task, eventData } as CalendarResource,
         };
 
         return event;
@@ -471,10 +285,10 @@ export default function CalendarView({
           start: start,
           end: endDate,
           resource: {
-            type: 'follow_up',
+            kind: 'follow_up',
             contactLog: log,
             clientName,
-          },
+          } as CalendarResource,
         };
 
         return event;
@@ -484,67 +298,29 @@ export default function CalendarView({
     return [...taskEvents, ...followUpEvents];
   }, [tasks, contactLogs, instruments]);
 
-  // FIXED: Lightweight event style - white background with left color bar
-  interface EventResource {
-    task?: MaintenanceTask;
-    type?: 'follow_up';
-    contactLog?: ContactLog;
-    clientName?: string;
-    eventData?: {
-      instrument: string;
-      instrumentColor: string;
-      description: string;
-    };
-  }
   const eventStyleGetter = useCallback(
     (event: Event) => {
-      const resource = event.resource as EventResource | MaintenanceTask;
-      const task = 'task' in resource && resource.task ? resource.task : (resource as MaintenanceTask);
-      const isDragging = draggingEventId && task && task.id === draggingEventId;
+      const r = event.resource as CalendarResource | undefined;
 
-      // Handle follow-up events
-      if (
-        resource &&
-        typeof resource === 'object' &&
-        'type' in resource &&
-        resource.type === 'follow_up'
-      ) {
+      // Handle follow-up events first - early return (not draggable, so no dragging styles)
+      if (r?.kind === 'follow_up') {
         return {
-          style: {
-            backgroundColor: '#fef3c7', // Amber-100
-            color: '#92400e', // Amber-800
-            border: '1px solid #fbbf24', // Amber-400
-            borderLeft: '4px solid #f59e0b', // Amber-500
-            borderRadius: '6px',
-            padding: '6px 8px',
-            fontSize: '11px',
-            fontWeight: '500',
-            boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.04)',
-            cursor: 'pointer',
-            opacity: isDragging ? 0.5 : 1,
-          },
-          className: 'rbc-event status-today',
+          style: {},
+          className: 'rbc-event status-followup',
         };
       }
 
       // Handle task events
+      const task = r?.kind === 'task' ? r.task : undefined;
       if (!task) {
         // Fallback for invalid task
         return {
-          style: {
-            backgroundColor: '#ffffff',
-            color: '#111827',
-            border: '1px solid #e5e7eb',
-            borderLeft: '2px solid #9ca3af',
-            borderRadius: '6px',
-            padding: '6px 8px',
-            fontSize: '11px',
-            cursor: 'pointer',
-            opacity: isDragging ? 0.5 : 1,
-          },
+          style: {},
           className: 'rbc-event status-normal',
         };
       }
+
+      const isDragging = draggingEventId && task.id === draggingEventId;
 
       const dateStatus = getDateStatus(task);
       const isOverdue = dateStatus.status === 'overdue';
@@ -565,25 +341,14 @@ export default function CalendarView({
         statusClass = 'status-due-soon';
       }
 
-      // Professional card style: white background with border
-      // Enhanced visual feedback for dragging
+      // Dynamic styles only (CSS handles layout/basic card)
       const style: React.CSSProperties = {
-        backgroundColor: '#ffffff',
-        color: '#111827', // Gray-900
-        border: '1px solid #e5e7eb',
-        borderRadius: '6px',
-        padding: '6px 8px',
-        fontSize: '11px',
-        fontWeight: '400',
-        boxShadow: isDragging
-          ? '0px 4px 8px rgba(0, 0, 0, 0.15)'
-          : '0px 1px 2px rgba(0, 0, 0, 0.04)',
-        cursor: isDragging ? 'grabbing' : 'grab',
         opacity: isDragging ? 0.6 : isCompleted ? 0.7 : 1,
         textDecoration: isCompleted ? 'line-through' : 'none',
-        transform: isDragging ? 'scale(1.02)' : 'scale(1)',
-        transition: isDragging ? 'none' : 'all 0.2s ease',
-        zIndex: isDragging ? 1000 : 'auto',
+        boxShadow: isDragging ? '0px 4px 8px rgba(0, 0, 0, 0.15)' : undefined,
+        transform: isDragging ? 'scale(1.02)' : undefined,
+        transition: isDragging ? 'none' : undefined,
+        zIndex: isDragging ? 1000 : undefined,
       };
 
       return {
@@ -652,7 +417,6 @@ export default function CalendarView({
   // Render standard react-big-calendar views
   return (
     <>
-      <style>{calendarEventStyles}</style>
       <DndProvider backend={HTML5Backend}>
         <div
           className="w-full calendar-container"
@@ -673,8 +437,20 @@ export default function CalendarView({
               style: { height: '100%', minHeight: '750px' },
               eventPropGetter: eventStyleGetter,
               onSelectEvent: (event: Event) => {
-                if (onSelectEvent && event.resource) {
-                  onSelectEvent(event.resource as MaintenanceTask);
+                const r = event.resource as CalendarResource | undefined;
+                if (!r) return;
+
+                // Follow-up 클릭 처리
+                if (r.kind === 'follow_up') {
+                  if (onSelectFollowUpEvent) {
+                    onSelectFollowUpEvent(r.contactLog);
+                  }
+                  return;
+                }
+
+                // Task 이벤트 처리
+                if (r.kind === 'task' && onSelectEvent) {
+                  onSelectEvent(r.task);
                 }
               },
               onSelectSlot,
@@ -682,29 +458,13 @@ export default function CalendarView({
               ...(onEventResize && { onEventResize }),
               draggableAccessor: (event: Event) => {
                 // Only allow dragging task events, not follow-up events
-                const resource = event.resource as EventResource | MaintenanceTask;
-                if (
-                  resource &&
-                  typeof resource === 'object' &&
-                  'type' in resource &&
-                  resource.type === 'follow_up'
-                ) {
-                  return false; // Follow-ups are not draggable
-                }
-                return true; // Tasks are draggable
+                const resource = event.resource as CalendarResource | undefined;
+                return resource?.kind === 'task';
               },
               resizableAccessor: (event: Event) => {
                 // Only allow resizing task events, not follow-up events
-                const resource = event.resource as EventResource | MaintenanceTask;
-                if (
-                  resource &&
-                  typeof resource === 'object' &&
-                  'type' in resource &&
-                  resource.type === 'follow_up'
-                ) {
-                  return false; // Follow-ups are not resizable
-                }
-                return true; // Tasks are resizable
+                const resource = event.resource as CalendarResource | undefined;
+                return resource?.kind === 'task';
               },
               selectable: true,
               resizable: true,
@@ -729,84 +489,65 @@ export default function CalendarView({
               timeslots: 1,
               culture: 'ko',
             } as unknown as DragAndDropCalendarProps)}
-          components={{
-            event: ({ event }: { event: Event }) => {
-              // Custom event component with 2-line structure
-              interface EventResource {
-                task?: MaintenanceTask;
-                type?: 'follow_up';
-                contactLog?: ContactLog;
-                clientName?: string;
-                eventData?: {
-                  instrument: string;
-                  instrumentColor: string;
-                  description: string;
-                };
-              }
-              const resource = event.resource as
-                | EventResource
-                | MaintenanceTask;
+            components={{
+              event: ({ event }: { event: Event }) => {
+                const resource = event.resource as CalendarResource | undefined;
 
-              // Handle follow-up events
-              if (
-                resource &&
-                typeof resource === 'object' &&
-                'type' in resource &&
-                resource.type === 'follow_up'
-              ) {
-                const clientName = resource.clientName || 'Unknown Client';
-                return (
-                  <div className="rbc-event-content">
-                    <div className="event-instrument text-amber-600">
-                      ⏰ Follow-up
+                // Handle follow-up events
+                if (resource?.kind === 'follow_up') {
+                  const clientName = resource.clientName || 'Unknown Client';
+                  return (
+                    <div className="rbc-event-content">
+                      <div className="event-instrument text-amber-600">
+                        ⏰ Follow-up
+                      </div>
+                      <div className="event-description">{clientName}</div>
                     </div>
-                    <div className="event-description">{clientName}</div>
-                  </div>
-                );
-              }
+                  );
+                }
 
-              // Handle task events
-              const eventData =
-                'eventData' in resource ? resource.eventData : null;
+                // Handle task events
+                const eventData =
+                  resource?.kind === 'task' ? resource.eventData : null;
 
-              if (eventData) {
-                // Use structured data for 2-line display
-                return (
-                  <div className="rbc-event-content">
-                    <div
-                      className={`event-instrument ${eventData.instrumentColor}`}
-                    >
-                      {eventData.instrument}
+                if (eventData) {
+                  // Use structured data for 2-line display
+                  return (
+                    <div className="rbc-event-content">
+                      <div
+                        className={`event-instrument ${eventData.instrumentColor}`}
+                      >
+                        {eventData.instrument}
+                      </div>
+                      <div className="event-description">
+                        {eventData.description}
+                      </div>
                     </div>
-                    <div className="event-description">
-                      {eventData.description}
+                  );
+                }
+
+                // Fallback: parse title (2-line format: "Instrument\nDescription")
+                const title =
+                  typeof event.title === 'string'
+                    ? event.title
+                    : String(event.title || '');
+                const lines = title.split('\n');
+
+                if (lines.length >= 2) {
+                  return (
+                    <div className="rbc-event-content">
+                      <div className="event-instrument text-gray-700">
+                        {lines[0]}
+                      </div>
+                      <div className="event-description">{lines[1]}</div>
                     </div>
-                  </div>
-                );
-              }
+                  );
+                }
 
-              // Fallback: parse title (2-line format: "Instrument\nDescription")
-              const title =
-                typeof event.title === 'string'
-                  ? event.title
-                  : String(event.title || '');
-              const lines = title.split('\n');
-
-              if (lines.length >= 2) {
-                return (
-                  <div className="rbc-event-content">
-                    <div className="event-instrument text-gray-700">
-                      {lines[0]}
-                    </div>
-                    <div className="event-description">{lines[1]}</div>
-                  </div>
-                );
-              }
-
-              return <div className="rbc-event-content">{title}</div>;
-            },
-          }}
-        />
+                return <div className="rbc-event-content">{title}</div>;
+              },
+            }}
+          />
         </div>
       </DndProvider>
     </>

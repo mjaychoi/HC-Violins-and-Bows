@@ -9,8 +9,8 @@ import {
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import { logInfo } from '@/utils/logger';
 import { todayLocalYMD } from '@/utils/dateParsing';
-import { modalStyles } from '@/components/common/modalStyles';
-import { ModalHeader } from '@/components/common/ModalHeader';
+import { modalStyles } from '@/components/common/modals/modalStyles';
+import { ModalHeader } from '@/components/common/modals/ModalHeader';
 
 interface SaleFormProps {
   isOpen: boolean;
@@ -22,6 +22,13 @@ interface SaleFormProps {
   initialClient?: Client | null;
   // 판매 후 악기 상태 자동 업데이트 여부
   autoUpdateInstrumentStatus?: boolean;
+  /**
+   * 최근 거래한 클라이언트 id 리스트 (0번이 가장 최근).
+   * 부모에서 SalesHistory 기반으로 계산해 전달하면,
+   * 이 순서를 기준으로 클라이언트 셀렉트 옵션을 정렬합니다.
+   * 전달되지 않으면 기존처럼 이름 순으로만 정렬합니다.
+   */
+  recentClientIds?: string[];
 }
 
 export default function SaleForm({
@@ -32,6 +39,7 @@ export default function SaleForm({
   initialInstrument,
   initialClient,
   autoUpdateInstrumentStatus = false,
+  recentClientIds,
 }: SaleFormProps) {
   const { clients } = useUnifiedClients();
   const { instruments } = useUnifiedInstruments();
@@ -43,16 +51,38 @@ export default function SaleForm({
 
   // 최근 거래한 클라이언트 우선 표시 (판매 기록이 있는 클라이언트)
   const sortedClients = useMemo(() => {
-    // TODO: 실제로는 판매 기록을 가져와서 최근 거래한 클라이언트를 우선 표시
-    // 현재는 단순히 이름 순으로 정렬
+    // recentClientIds를 순위 매핑으로 변환 (0이 가장 최근)
+    const recentOrder = new Map<string, number>();
+    recentClientIds?.forEach((id, index) => {
+      if (id) {
+        recentOrder.set(id, index);
+      }
+    });
+
+    const getDisplayName = (c: Client) =>
+      `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || '';
+
     return [...clients].sort((a, b) => {
-      const nameA =
-        `${a.first_name || ''} ${a.last_name || ''}`.trim() || a.email || '';
-      const nameB =
-        `${b.first_name || ''} ${b.last_name || ''}`.trim() || b.email || '';
+      const rankA =
+        (a.id && recentOrder.has(a.id)
+          ? recentOrder.get(a.id)
+          : Number.POSITIVE_INFINITY) ?? Number.POSITIVE_INFINITY;
+      const rankB =
+        (b.id && recentOrder.has(b.id)
+          ? recentOrder.get(b.id)
+          : Number.POSITIVE_INFINITY) ?? Number.POSITIVE_INFINITY;
+
+      // 1순위: 최근 거래 순 (순위가 낮을수록 앞)
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+
+      // 2순위: 이름 알파벳 순 (기존 동작 유지)
+      const nameA = getDisplayName(a);
+      const nameB = getDisplayName(b);
       return nameA.localeCompare(nameB);
     });
-  }, [clients]);
+  }, [clients, recentClientIds]);
 
   // 초기값 설정
   const getInitialFormData = useCallback(() => {

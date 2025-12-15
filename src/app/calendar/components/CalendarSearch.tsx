@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import SearchInput from '@/components/common/SearchInput';
+import { SearchInput } from '@/components/common/inputs';
 
 interface CalendarSearchProps {
   searchTerm: string;

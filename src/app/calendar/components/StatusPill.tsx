@@ -15,6 +15,18 @@ export default function StatusPill({
   isOverdue,
   isUpcoming,
 }: StatusPillProps) {
+  // Don't show pill for completed tasks (shown as text instead)
+  if (task.status === 'completed') {
+    return null;
+  }
+
+  // Only show prominent pills for action-required statuses
+  const showPill = isOverdue || isUpcoming || task.status === 'in_progress';
+
+  if (!showPill) {
+    return null;
+  }
+
   const statusText = task.status.replace('_', ' ');
 
   return (

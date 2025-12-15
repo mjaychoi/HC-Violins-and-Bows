@@ -1,12 +1,7 @@
 'use client';
 // src/app/clients/components/ClientList.tsx
 import { Client, ClientInstrument } from '@/types';
-import {
-  getTagColor,
-  getTagTextColor,
-  sortTags,
-  /* formatClientContact, getClientInitials */ getInterestColor,
-} from '../utils';
+import { getTagTextColor, sortTags } from '../utils';
 import { useClientSalesData } from '../hooks/useClientKPIs';
 import { useClientsContactInfo } from '../hooks/useClientsContactInfo';
 import React, {
@@ -20,7 +15,18 @@ import React, {
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
 import { classNames, cn } from '@/utils/classNames';
-import { Pagination, EmptyState } from '@/components/common';
+import {
+  Pagination,
+  EmptyState,
+  TagBadge,
+  InterestBadge,
+} from '@/components/common';
+import dynamic from 'next/dynamic';
+
+const MessageComposer = dynamic(
+  () => import('@/components/messages/MessageComposer'),
+  { ssr: false }
+);
 
 // SortIcon - dynamic import 위에 정의하여 promise로 감싸지지 않도록 함
 const SortIcon = React.memo(({ arrow }: { arrow: string }) => (
@@ -48,17 +54,7 @@ TbodyInnerElement.displayName = 'TbodyInnerElement';
 // ✅ FIXED: RowActions moved to file top to prevent recreation on every render
 // Row Actions Component (Dropdown menu like Dashboard)
 const RowActions = memo(
-  ({
-    onView,
-    onEdit,
-    onEmail,
-    onDelete,
-  }: {
-    onView: () => void;
-    onEdit: () => void;
-    onEmail?: () => void;
-    onDelete?: () => void;
-  }) => {
+  ({ onEdit, onDelete }: { onEdit: () => void; onDelete?: () => void }) => {
     // ✅ RowActions state - safe now that virtualization is removed
     const [isOpen, setIsOpen] = useState(false);
 
@@ -111,35 +107,6 @@ const RowActions = memo(
               <button
                 onClick={e => {
                   e.stopPropagation();
-                  onView();
-                  setIsOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                  />
-                </svg>
-                View
-              </button>
-              <button
-                onClick={e => {
-                  e.stopPropagation();
                   onEdit();
                   setIsOpen(false);
                 }}
@@ -160,31 +127,6 @@ const RowActions = memo(
                 </svg>
                 Edit
               </button>
-              {onEmail && (
-                <button
-                  onClick={e => {
-                    e.stopPropagation();
-                    onEmail();
-                    setIsOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                    />
-                  </svg>
-                  Email
-                </button>
-              )}
               {onDelete && (
                 <button
                   onClick={e => {
@@ -223,9 +165,11 @@ RowActions.displayName = 'RowActions';
 const ClientExpandedRow = memo(function ClientExpandedRow({
   client,
   contactInfo,
+  instrument,
 }: {
   client: Client;
   contactInfo: ReturnType<typeof useClientsContactInfo>['getContactInfo'];
+  instrument?: ClientInstrument['instrument'];
 }) {
   const { totalSpend, purchaseCount, lastPurchaseDate, loading } =
     useClientSalesData(client.id);
@@ -368,12 +312,7 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
               <div className="flex flex-wrap gap-1 mt-1">
                 {client.tags?.length ? (
                   sortTags([...client.tags]).map(tag => (
-                    <span
-                      key={tag}
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
-                    >
-                      {tag}
-                    </span>
+                    <TagBadge key={tag} tag={tag} context="table" />
                   ))
                 ) : (
                   <span className="text-gray-400">No tags</span>
@@ -386,6 +325,14 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
                 {client.note || '—'}
               </div>
             </div>
+          </div>
+
+          {/* Message Composer */}
+          <div className="pt-4 border-t border-gray-200">
+            <h4 className="text-sm font-semibold text-gray-900 mb-3">
+              Send Message
+            </h4>
+            <MessageComposer client={client} instrument={instrument || null} />
           </div>
         </div>
       </td>
@@ -418,7 +365,7 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
 interface ClientListProps {
   clients: Client[];
   clientInstruments: ClientInstrument[];
-  onClientClick: (client: Client) => void;
+  onClientClick: (client: Client) => void; // Kept for interface compatibility but not used (handles expand instead)
   onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
   onDeleteClient?: (client: Client) => void;
   onColumnSort: (column: keyof Client) => void;
@@ -432,13 +379,19 @@ interface ClientListProps {
   pageSize?: number;
   onPageChange?: (page: number) => void;
   loading?: boolean;
+  /** 필터/검색이 활성화되어 있는지 여부 (빈 상태 메시지/버튼 제어) */
+  hasActiveFilters?: boolean;
+  /** 모든 필터/검색 리셋 핸들러 */
+  onResetFilters?: () => void;
+  /** 새 클라이언트 추가 CTA가 필요할 때 */
+  onAddClient?: () => void;
 }
 
 const ClientList = memo(function ClientList({
   clients,
+  clientInstruments,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  clientInstruments: _clientInstruments, // ✅ FIXED: 사용하지 않음
-  onClientClick,
+  onClientClick: _onClientClick, // Prefixed with _ to indicate intentionally unused
   onUpdateClient,
   onDeleteClient,
   onColumnSort,
@@ -451,6 +404,9 @@ const ClientList = memo(function ClientList({
   pageSize,
   onPageChange,
   loading = false,
+  hasActiveFilters = false,
+  onResetFilters,
+  onAddClient,
 }: ClientListProps) {
   const [editingClient, setEditingClient] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Client>>({});
@@ -554,8 +510,23 @@ const ClientList = memo(function ClientList({
   if (clients.length === 0) {
     return (
       <EmptyState
-        title="No clients found"
-        description="Adjust your search or filters, or add your first client."
+        title={
+          hasActiveFilters
+            ? 'No clients found matching your filters'
+            : 'No clients yet'
+        }
+        description={
+          hasActiveFilters
+            ? 'Try adjusting your filters or clearing them to see all clients.'
+            : 'Add your first client to start tracking relationships and instruments.'
+        }
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={hasActiveFilters ? onResetFilters : undefined}
+        actionButton={
+          !hasActiveFilters && onAddClient
+            ? { label: 'Add client', onClick: onAddClient }
+            : undefined
+        }
       />
     );
   }
@@ -569,23 +540,7 @@ const ClientList = memo(function ClientList({
               <thead className={classNames.tableHeader}>
                 <tr>
                   <th className={`${classNames.tableHeaderCell} text-right`}>
-                    <div className="inline-flex items-center gap-1.5">
-                      <svg
-                        className="w-4 h-4 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-                        />
-                      </svg>
-                      <span>Actions</span>
-                    </div>
+                    <span>Actions</span>
                   </th>
                   <th
                     className={cn(classNames.tableHeaderCellSortable, 'group')}
@@ -670,19 +625,6 @@ const ClientList = memo(function ClientList({
                   const fullName =
                     `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
                     'N/A';
-                  const normalizedEmail = client.email?.trim();
-                  const hasEmail = Boolean(normalizedEmail);
-                  const emailSubject = encodeURIComponent(
-                    `Message to ${fullName !== 'N/A' ? fullName : 'client'}`
-                  );
-                  const emailGreeting =
-                    fullName !== 'N/A'
-                      ? `Hello ${fullName},`
-                      : 'Hello,';
-                  const emailBody = encodeURIComponent(`${emailGreeting}\n\n`);
-                  const mailtoHref = hasEmail
-                    ? `mailto:${normalizedEmail}?subject=${emailSubject}&body=${emailBody}`
-                    : '';
 
                   const isExpanded = expandedClientId === client.id;
 
@@ -790,15 +732,7 @@ const ClientList = memo(function ClientList({
                             </div>
                           ) : (
                             <RowActions
-                              onView={() => onClientClick(client)}
                               onEdit={() => startEditing(client)}
-                              onEmail={
-                                hasEmail && mailtoHref
-                                  ? () => {
-                                      window.location.href = mailtoHref;
-                                    }
-                                  : undefined
-                              }
                               onDelete={
                                 onDeleteClient
                                   ? () => onDeleteClient(client)
@@ -913,12 +847,7 @@ const ClientList = memo(function ClientList({
                           ) : (
                             <div className="flex flex-wrap gap-1 min-w-[120px]">
                               {sortTags([...(client.tags ?? [])]).map(tag => (
-                                <span
-                                  key={tag}
-                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
-                                >
-                                  {tag}
-                                </span>
+                                <TagBadge key={tag} tag={tag} context="table" />
                               ))}
                             </div>
                           )}
@@ -939,11 +868,10 @@ const ClientList = memo(function ClientList({
                           ) : (
                             <div className="text-sm min-w-[100px]">
                               {client.interest ? (
-                                <span
-                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getInterestColor(client.interest)}`}
-                                >
-                                  {client.interest}
-                                </span>
+                                <InterestBadge
+                                  interest={client.interest}
+                                  context="table"
+                                />
                               ) : (
                                 <span className="text-gray-400">—</span>
                               )}
@@ -1049,6 +977,14 @@ const ClientList = memo(function ClientList({
                         <ClientExpandedRow
                           client={client}
                           contactInfo={getContactInfo}
+                          instrument={
+                            clientInstruments
+                              .filter(ci => ci.client_id === client.id)
+                              .map(ci => ci.instrument)
+                              .find(
+                                instr => instr !== null && instr !== undefined
+                              ) || undefined
+                          }
                         />
                       )}
                     </Fragment>

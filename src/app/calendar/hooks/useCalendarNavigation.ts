@@ -43,7 +43,7 @@ export const useCalendarNavigation = ({
     return getDateRangeForView(calendarView, currentDate);
   }, [calendarView, currentDate]);
 
-  // Refetch current range
+  // Refetch current range (reuse memoized currentRange for consistency)
   const refetchCurrentRange = useCallback(async () => {
     try {
       await fetchRef.current(currentRange.startDate, currentRange.endDate);

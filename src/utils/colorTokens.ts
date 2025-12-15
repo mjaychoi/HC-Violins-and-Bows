@@ -5,7 +5,7 @@
  * 원칙:
  * 1. 의미 기반 색상 매핑 (semantic color tokens)
  * 2. 상태별 색상 일관성 유지
- * 3. Variant 기반 확장 가능한 구조
+ * 3. Variant 기반 확장 가능한 구조 (화면 타입별 기본값 명확화)
  * 4. 중복 제거 - 메인 팔레트에서 파생
  * 5. 타입 안정성 - union 타입으로 컴파일 타임 검증
  */
@@ -35,6 +35,24 @@ export type ColorToken = {
  * - 보라: "예약 확정/관계형 상태" → Booked
  * - 블루: "진행/작업" → Maintenance, InProgress
  * - 그린(soft): "가능/정상/완료" → Available, Paid(soft), Completed(soft)
+ *
+ * 화면 타입별 기본 Variant 규칙:
+ * - 테이블(Row 안의 뱃지/칩):
+ *   - 기본 variant: muted
+ *   - 예시: Clients 테이블의 Interest, Tags / Sales 테이블의 Status
+ * - 카드·KPI(요약 카드, 대시보드 KPI, 상세 패널 헤더 뱃지 등):
+ *   - 기본 variant: solid
+ *   - 예시: Dashboard의 Status/Certificate 뱃지, Clients 확장 행의 강조 상태 뱃지
+ * - 필터/폼 내부(폼 필드 옆 상태 표시, 필터 바 선택된 상태 등):
+ *   - 기본 variant: soft 또는 outline
+ *   - 예시: 필터 바에서 선택된 상태/태그, 폼 내 helper 뱃지
+ *
+ * 구현 원칙:
+ * - 공용 헬퍼 기본값은 "가장 많이 쓰이는 컨텍스트" 기준으로 설정
+ *   - getStatusBadgeColor / getInterestColor: muted (테이블/리스트 기본)
+ *   - getTagColor: soft (역할/타입 태그는 컨텍스트에 따라 variant를 넘겨서 사용)
+ *   - getTaskStatusColor: solid (캘린더/타임라인 상의 강조 Pill)
+ * - 개별 화면에서 컨텍스트가 다르면 variant 인자를 명시적으로 넘겨서 사용
  */
 
 // ============================================================================
@@ -250,9 +268,17 @@ export const INTEREST_TOKENS: Record<InterestKey, ColorToken> = {
 
 /**
  * Tags 색상 토큰 (Clients 전용)
- * 주의: Active/Passive/Inactive는 "태그"가 아니라 "상태"로 읽힐 수 있음
- * 가능하면 역할/유형(role/type)으로만 제한 권장
- * (데이터가 이미 그렇게 들어오면 UI에서 "Status tag" 섹션으로 시각적 분리)
+ *
+ * 의미 축 가이드:
+ * - Tags: 역할/유형(role/type) 중심 (Owner, Musician, Dealer, Collector, Other 등)
+ * - Interest: 관심도 축 (Active, Passive, Inactive 등)
+ * - Client.status: 영업 상태 축 (Active, Browsing, In Negotiation, Inactive 등)
+ *
+ * ⚠️ 주의:
+ * - Active / Passive / Inactive 같은 단어는 "상태"로 읽히므로
+ *   새 태그를 정의할 때는 가급적 사용하지 않는 것을 권장
+ * - 아래 Active/Passive/Inactive Tag 토큰은 과거 데이터 호환을 위한 것으로,
+ *   UI 에서는 getTagDisplayLabel()을 통해 'Active Client' 등으로 표기
  */
 export const TAG_TOKENS: Record<string, ColorToken> = {
   Owner: {
@@ -429,6 +455,7 @@ export const RELATIONSHIP_TOKENS: Record<RelationshipKey, ColorToken> = {
     solid: 'bg-amber-500 text-white',
     outline: 'border-amber-300 text-amber-700 bg-white',
     muted: 'bg-amber-50 text-amber-700 ring-1 ring-amber-100',
+    accent: 'border-l-amber-200',
     dot: 'bg-amber-500',
   },
   Booked: {
@@ -436,6 +463,7 @@ export const RELATIONSHIP_TOKENS: Record<RelationshipKey, ColorToken> = {
     solid: 'bg-purple-500 text-white',
     outline: 'border-purple-300 text-purple-700 bg-white',
     muted: 'bg-purple-50 text-purple-700 ring-1 ring-purple-100',
+    accent: 'border-l-purple-200',
     dot: 'bg-purple-500',
   },
   Sold: {
@@ -443,6 +471,7 @@ export const RELATIONSHIP_TOKENS: Record<RelationshipKey, ColorToken> = {
     solid: 'bg-green-500 text-white',
     outline: 'border-green-300 text-green-700 bg-white',
     muted: 'bg-green-50 text-green-600 ring-1 ring-green-100',
+    accent: 'border-l-green-200',
     dot: 'bg-green-500',
   },
   Owned: {
@@ -450,6 +479,7 @@ export const RELATIONSHIP_TOKENS: Record<RelationshipKey, ColorToken> = {
     solid: 'bg-indigo-500 text-white',
     outline: 'border-indigo-300 text-indigo-700 bg-white',
     muted: 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100',
+    accent: 'border-l-indigo-200',
     dot: 'bg-indigo-500',
   },
   Default: {
@@ -457,6 +487,7 @@ export const RELATIONSHIP_TOKENS: Record<RelationshipKey, ColorToken> = {
     solid: 'bg-gray-500 text-white',
     outline: 'border-gray-300 text-gray-700 bg-white',
     muted: 'bg-gray-50 text-gray-700 ring-1 ring-gray-100',
+    accent: 'border-l-gray-300',
     dot: 'bg-gray-400',
   },
 } as const;
@@ -763,6 +794,18 @@ export const getRelationshipColor = (
   const normalized = relationshipType.trim() as RelationshipKey;
   const token = getToken(RELATIONSHIP_TOKENS, normalized, 'Default');
   return getTokenClass(token, variant);
+};
+
+/**
+ * Relationship Type Row Accent 색상 가져오기
+ * - Connections 카드 등에서 사용
+ */
+export const getRelationshipAccentColor = (
+  relationshipType: string
+): string => {
+  const normalized = relationshipType.trim() as RelationshipKey;
+  const token = getToken(RELATIONSHIP_TOKENS, normalized, 'Default');
+  return getTokenAccent(token);
 };
 
 /**

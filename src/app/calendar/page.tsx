@@ -8,8 +8,9 @@ import {
   useUnifiedClients,
 } from '@/hooks/useUnifiedData';
 import { useModalState } from '@/hooks/useModalState';
-import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { usePageNotifications } from '@/hooks/usePageNotifications';
+// Import useAppFeedback after other hooks to avoid webpack module loading issues
+import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { AppLayout } from '@/components/layout';
 import {
   ErrorBoundary,
@@ -17,7 +18,7 @@ import {
   NotificationBadge,
   TableSkeleton,
 } from '@/components/common';
-import Button from '@/components/common/Button';
+import { Button } from '@/components/common/inputs';
 import type { MaintenanceTask, ContactLog } from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
 import { useCalendarNavigation, useCalendarView } from './hooks';
@@ -53,11 +54,6 @@ export default function CalendarPage() {
     useState<MaintenanceTask | null>(null);
   const [modalDefaultDate, setModalDefaultDate] = useState<string>('');
   const [draggingEventId, setDraggingEventId] = useState<string | null>(null);
-  const [dragBackup, setDragBackup] = useState<{
-    taskId: string;
-    originalDate: string;
-    dateField: 'due_date' | 'personal_due_date' | 'scheduled_date';
-  } | null>(null);
 
   // Calendar data hooks
   const {
@@ -228,32 +224,33 @@ export default function CalendarPage() {
   // Handle drag & drop: update task date when event is dropped
   const handleEventDrop = useCallback(
     async (data: {
-      event: { resource?: MaintenanceTask | { type: string; contactLog?: ContactLog } };
+      event: { resource?: unknown };
       start: Date;
       end: Date;
       isAllDay?: boolean;
     }) => {
-      const { event, start, isAllDay } = data;
-      const resource = event.resource;
+      const { event, start } = data;
+      const resource = event.resource as
+        | { kind: 'task'; task: MaintenanceTask }
+        | { kind: 'follow_up'; contactLog: ContactLog }
+        | undefined;
 
       // Only handle task events (not follow-up events)
-      if (!resource || (typeof resource === 'object' && 'type' in resource && resource.type === 'follow_up')) {
+      if (!resource || resource.kind !== 'task') {
         setDraggingEventId(null);
-        setDragBackup(null);
         return;
       }
 
-      const task = resource as MaintenanceTask;
+      const task = resource.task;
       if (!task || !task.id) {
         setDraggingEventId(null);
-        setDragBackup(null);
         return;
       }
 
-      // Store original date for rollback
+      // Store original date for rollback (use local variable to avoid stale state)
       let originalDate: string;
       let dateField: 'due_date' | 'personal_due_date' | 'scheduled_date';
-      
+
       if (task.due_date) {
         originalDate = task.due_date;
         dateField = 'due_date';
@@ -265,28 +262,25 @@ export default function CalendarPage() {
         dateField = 'scheduled_date';
       } else {
         setDraggingEventId(null);
-        setDragBackup(null);
         return;
       }
 
-      setDragBackup({
+      // Store backup in local variable to avoid stale state issues
+      const backup = {
         taskId: task.id,
         originalDate,
         dateField,
-      });
+      };
       setDraggingEventId(task.id);
 
       try {
-        // Convert Date to YYYY-MM-DD format
-        // If isAllDay is true, use only date part; otherwise preserve time
-        const newDate = isAllDay 
-          ? toLocalYMD(start.toISOString())
-          : toLocalYMD(start.toISOString());
-        
+        // Convert Date to YYYY-MM-DD format (date-only, no time preserved)
+        const newDate = toLocalYMD(start.toISOString());
+
         // Determine which date field to update based on task's current date priority
         // Priority: due_date > personal_due_date > scheduled_date
         const updateData: Partial<MaintenanceTask> = {};
-        
+
         if (task.due_date) {
           updateData.due_date = newDate;
         } else if (task.personal_due_date) {
@@ -299,43 +293,39 @@ export default function CalendarPage() {
         await navigation.refetchCurrentRange();
         showSuccess('Task date updated successfully.');
       } catch (error) {
-        // Rollback on error
-        if (dragBackup && dragBackup.taskId === task.id) {
-          try {
-            const rollbackData: Partial<MaintenanceTask> = {
-              [dragBackup.dateField]: dragBackup.originalDate,
-            };
-            await updateTask(task.id, rollbackData);
-            await navigation.refetchCurrentRange();
-          } catch (rollbackError) {
-            console.error('Failed to rollback task date:', rollbackError);
-          }
+        // Rollback on error using local backup variable
+        try {
+          const rollbackData: Partial<MaintenanceTask> = {
+            [backup.dateField]: backup.originalDate,
+          };
+          await updateTask(task.id, rollbackData);
+          await navigation.refetchCurrentRange();
+        } catch (rollbackError) {
+          console.error('Failed to rollback task date:', rollbackError);
         }
         handleError(error, 'Failed to update task date');
       } finally {
         setDraggingEventId(null);
-        setDragBackup(null);
       }
     },
-    [updateTask, navigation, showSuccess, handleError, dragBackup]
+    [updateTask, navigation, showSuccess, handleError]
   );
 
   // Handle event resize: update task end time
   const handleEventResize = useCallback(
-    async (data: {
-      event: { resource?: MaintenanceTask | { type: string; contactLog?: ContactLog } };
-      start: Date;
-      end: Date;
-    }) => {
+    async (data: { event: { resource?: unknown }; start: Date; end: Date }) => {
       const { event, start } = data;
-      const resource = event.resource;
+      const resource = event.resource as
+        | { kind: 'task'; task: MaintenanceTask }
+        | { kind: 'follow_up'; contactLog: ContactLog }
+        | undefined;
 
       // Only handle task events (not follow-up events)
-      if (!resource || (typeof resource === 'object' && 'type' in resource && resource.type === 'follow_up')) {
+      if (!resource || resource.kind !== 'task') {
         return;
       }
 
-      const task = resource as MaintenanceTask;
+      const task = resource.task;
       if (!task || !task.id) {
         return;
       }
@@ -345,9 +335,9 @@ export default function CalendarPage() {
       try {
         // For resize, we update the date based on the start time
         const newDate = toLocalYMD(start.toISOString());
-        
+
         const updateData: Partial<MaintenanceTask> = {};
-        
+
         if (task.due_date) {
           updateData.due_date = newDate;
         } else if (task.personal_due_date) {

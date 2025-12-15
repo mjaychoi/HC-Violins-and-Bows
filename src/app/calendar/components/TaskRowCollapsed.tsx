@@ -58,26 +58,36 @@ export default function TaskRowCollapsed({
     ? `${client.firstName} ${client.lastName}`
     : instrument?.ownership || null;
 
-  // Workload summary: Estimated → Actual, Cost
-  const workloadParts: string[] = [];
-  if (task.estimated_hours !== null || task.actual_hours !== null) {
-    const est = task.estimated_hours ?? '?';
-    const act = task.actual_hours ?? '?';
-    workloadParts.push(`⏱ ${est}h → ${act}h`);
-  }
-  if (task.cost !== null) {
-    workloadParts.push(
-      `💲 $${task.cost.toLocaleString('en-US', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      })}`
-    );
-  }
-  const workloadText = workloadParts.join('  ');
+  const isCompleted = task.status === 'completed';
+  const isOverdueStatus = isOverdue;
+  const isDueSoon = isUpcoming;
+
+  // Format cost for display (compact)
+  const formatCost = (cost: number): string => {
+    if (cost >= 1000000) return `$${(cost / 1000000).toFixed(1)}M`;
+    if (cost >= 1000) return `$${(cost / 1000).toFixed(0)}k`;
+    return `$${cost.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  };
+
+  // Workload summary (compact format)
+  const workloadInfo = (() => {
+    const parts: string[] = [];
+    if (task.estimated_hours !== null || task.actual_hours !== null) {
+      const est = task.estimated_hours ?? '?';
+      const act = task.actual_hours ?? '?';
+      parts.push(`${est}→${act}h`);
+    }
+    if (task.cost !== null) {
+      parts.push(formatCost(task.cost));
+    }
+    return parts.length > 0 ? parts.join(' · ') : null;
+  })();
 
   return (
     <div
-      className="flex items-center gap-4 py-3 px-4 bg-white border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer pr-12"
+      className={`flex items-center gap-4 py-3 px-4 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer pr-12 group ${
+        isCompleted ? 'bg-gray-50/50 opacity-75' : 'bg-white'
+      }`}
       onClick={() => onTaskClick?.(task)}
       onKeyDown={e => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -87,6 +97,7 @@ export default function TaskRowCollapsed({
       }}
       role="button"
       tabIndex={0}
+      aria-label={`Open task ${task.title}`}
     >
       {/* Left: Icon + Title */}
       <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -99,27 +110,46 @@ export default function TaskRowCollapsed({
               {task.title}
             </h3>
           </div>
-          <div className="flex items-center gap-2 text-xs text-gray-600 mt-0.5">
+          <div className="flex items-center gap-1.5 text-xs mt-0.5">
             {instrumentLabel && (
-              <span className="truncate">{instrumentLabel}</span>
+              <span className="font-medium text-gray-700 truncate">
+                {instrumentLabel}
+              </span>
             )}
-            {instrumentLabel && clientLabel && <span>·</span>}
-            {clientLabel && <span className="truncate">{clientLabel}</span>}
+            {instrumentLabel && clientLabel && (
+              <span className="text-gray-400">·</span>
+            )}
+            {clientLabel && (
+              <span className="text-blue-600 font-medium truncate">
+                {clientLabel}
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Center: Workload */}
-      {workloadText && (
-        <div className="text-xs text-gray-600 whitespace-nowrap shrink-0">
-          {workloadText}
+      {/* Right: 2-line layout - Status/Priority (top) + Workload (bottom, subtle) */}
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        {/* Top: Status + Priority (main badges) */}
+        <div className="flex items-center gap-2">
+          {!isCompleted && (
+            <StatusPill
+              task={task}
+              isOverdue={isOverdueStatus}
+              isUpcoming={isDueSoon}
+            />
+          )}
+          {isCompleted && (
+            <span className="text-xs text-gray-500 font-normal">Completed</span>
+          )}
+          <PriorityPill priority={task.priority} />
         </div>
-      )}
-
-      {/* Right: Status + Priority */}
-      <div className="flex items-center gap-2 shrink-0">
-        <StatusPill task={task} isOverdue={isOverdue} isUpcoming={isUpcoming} />
-        <PriorityPill priority={task.priority} />
+        {/* Bottom: Workload (subtle, smaller) */}
+        {workloadInfo && (
+          <div className="text-[10px] text-gray-500 font-normal">
+            {workloadInfo}
+          </div>
+        )}
       </div>
     </div>
   );

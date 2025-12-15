@@ -22,90 +22,13 @@ const ClientModal = dynamic(() => import('./components/ClientModal'), {
     </div>
   ),
 });
-// Analytics components - use named imports
-const CustomerList = dynamic(
-  () =>
-    import('./analytics/components/CustomerList').then(mod => ({
-      default: mod.CustomerList,
-    })),
-  {
-    ssr: false,
-    loading: () => <TableSkeleton rows={8} columns={4} />,
-  }
-);
-const CustomerDetail = dynamic(
-  () =>
-    import('./analytics/components/CustomerDetail').then(mod => ({
-      default: mod.CustomerDetail,
-    })),
-  {
-    ssr: false,
-    loading: () => <CardSkeleton count={1} />,
-  }
-);
-const PurchaseHistory = dynamic(
-  () =>
-    import('./analytics/components/PurchaseHistory').then(mod => ({
-      default: mod.PurchaseHistory,
-    })),
-  {
-    ssr: false,
-    loading: () => <TableSkeleton rows={5} columns={5} />,
-  }
-);
-const CustomerStats = dynamic(
-  () =>
-    import('./analytics/components/CustomerStats').then(mod => ({
-      default: mod.CustomerStats,
-    })),
-  {
-    ssr: false,
-    loading: () => <CardSkeleton count={2} />,
-  }
-);
-const CustomerSearch = dynamic(
-  () =>
-    import('./analytics/components/CustomerSearch').then(mod => ({
-      default: mod.CustomerSearch,
-    })),
-  {
-    ssr: false,
-    loading: () => <CardSkeleton count={1} />,
-  }
-);
-import { useCustomers } from './analytics/hooks/useCustomers';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { useModalState } from '@/hooks/useModalState';
 import { AppLayout } from '@/components/layout';
-import { ErrorBoundary, ConfirmDialog, Pagination } from '@/components/common';
-import { useRouter } from 'next/navigation';
-import React, { useState, useMemo, useEffect } from 'react';
-
-type ViewMode = 'list' | 'analytics';
+import { ErrorBoundary, ConfirmDialog } from '@/components/common';
+import React, { useState } from 'react';
 
 export default function ClientsPage() {
-  const router = useRouter();
-
-  // ✅ Initialize viewMode from URL to prevent flicker
-  // Use null initially to detect if we need to read from URL
-  const [viewMode, setViewMode] = useState<ViewMode | null>(null);
-
-  // ✅ Update view mode from URL on mount (prevents flicker)
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const tab = params.get('tab');
-      setViewMode(tab === 'analytics' ? 'analytics' : 'list');
-    }
-  }, []);
-
-  // Update URL when view mode changes
-  const handleViewModeChange = (mode: ViewMode) => {
-    setViewMode(mode);
-    const url = mode === 'analytics' ? '/clients?tab=analytics' : '/clients';
-    router.replace(url, { scroll: false });
-  };
-
   // Error/Success handling
   const { handleError, showSuccess } = useAppFeedback();
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
@@ -309,230 +232,60 @@ export default function ClientsPage() {
     }
   };
 
-  // ✅ Analytics hooks (only when in analytics view) - prevent unnecessary fetch
-  const analyticsData = useCustomers({ enabled: viewMode === 'analytics' });
-  const [purchaseStatusFilter, setPurchaseStatusFilter] = useState<
-    'All' | 'Completed' | 'Pending' | 'Refunded'
-  >('All');
-  const [analyticsCurrentPage, setAnalyticsCurrentPage] = useState(1);
-  const analyticsPageSize = 20;
-
-  const paginatedAnalyticsCustomers = useMemo(() => {
-    if (viewMode !== 'analytics') return [];
-    const start = (analyticsCurrentPage - 1) * analyticsPageSize;
-    const end = start + analyticsPageSize;
-    return analyticsData.customers.slice(start, end);
-  }, [
-    analyticsData.customers,
-    analyticsCurrentPage,
-    analyticsPageSize,
-    viewMode,
-  ]);
-
-  const analyticsTotalPages = Math.max(
-    1,
-    Math.ceil(analyticsData.customers.length / analyticsPageSize)
-  );
-
-  useEffect(() => {
-    if (viewMode === 'analytics') {
-      if (
-        analyticsCurrentPage > analyticsTotalPages &&
-        analyticsTotalPages > 0
-      ) {
-        setAnalyticsCurrentPage(1);
-      }
-    }
-  }, [
-    analyticsData.customers.length,
-    analyticsTotalPages,
-    analyticsCurrentPage,
-    viewMode,
-  ]);
-
-  useEffect(() => {
-    if (viewMode === 'analytics') {
-      setAnalyticsCurrentPage(1);
-    }
-  }, [
-    analyticsData.searchTerm,
-    analyticsData.tagFilter,
-    analyticsData.sortBy,
-    viewMode,
-  ]);
-
   return (
     <ErrorBoundary>
       <AppLayout
         title="Clients"
-        actionButton={
-          viewMode === 'list'
-            ? {
-                label: 'Add Client',
-                onClick: openModal,
-                icon: (
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    focusable="false"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
-                ),
-              }
-            : undefined
-        }
-      >
-        {/* Tabs */}
-        <div className="border-b border-gray-200 bg-white">
-          <div className="px-6">
-            <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-              <button
-                onClick={() => handleViewModeChange('list')}
-                className={`
-                  py-4 px-1 border-b-2 font-medium text-sm transition-colors
-                  ${
-                    viewMode === 'list'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }
-                `}
-              >
-                List
-              </button>
-              <button
-                onClick={() => handleViewModeChange('analytics')}
-                className={`
-                  py-4 px-1 border-b-2 font-medium text-sm transition-colors
-                  ${
-                    viewMode === 'analytics'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }
-                `}
-              >
-                Analytics
-              </button>
-            </nav>
-          </div>
-        </div>
-
-        {/* ✅ Show loading state while determining viewMode from URL */}
-        {viewMode === null ? (
-          <div className="p-6">
-            <div className="animate-pulse space-y-4">
-              <div className="h-8 bg-gray-200 rounded w-1/4"></div>
-              <div className="h-64 bg-gray-100 rounded"></div>
-            </div>
-          </div>
-        ) : viewMode === 'list' ? (
-          loading.hasAnyLoading ? (
-            <div className="p-6">
-              <TableSkeleton rows={8} columns={7} />
-            </div>
-          ) : (
-            <ClientsListContent
-              clients={clients}
-              clientsWithInstruments={clientsWithInstruments}
-              instrumentRelationships={instrumentRelationships}
-              loading={loading}
-              onClientClick={handleRowClick}
-              onUpdateClient={async (clientId, updates) => {
-                try {
-                  const result = await updateClient(clientId, updates);
-                  if (!result) {
-                    // updateClient returns null on error
-                    throw new Error('Failed to update client');
-                  }
-                  showSuccess('Client information updated successfully.');
-                } catch (error) {
-                  handleError(error, 'Failed to update client');
-                  throw error; // Re-throw to prevent saveEditing from closing editing mode
-                }
-              }}
-              onDeleteClient={(client: Client) => {
-                setConfirmDelete(client);
-              }}
-            />
-          )
-        ) : (
-          // Analytics View
-          <div className="p-6">
-            {/* Search */}
-            <div className="mb-6">
-              <CustomerSearch
-                searchTerm={analyticsData.searchTerm}
-                onSearchChange={analyticsData.setSearchTerm}
-                tagFilter={analyticsData.tagFilter}
-                onTagFilterChange={analyticsData.setTagFilter}
-                sortBy={analyticsData.sortBy}
-                onSortChange={analyticsData.setSortBy}
-                availableTags={analyticsData.availableTags}
+        actionButton={{
+          label: 'Add Client',
+          onClick: openModal,
+          icon: (
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
               />
-            </div>
-
-            {/* Customer Stats */}
-            {analyticsData.customers.length > 0 && (
-              <div className="mb-6">
-                <CustomerStats
-                  customers={
-                    analyticsData.selectedCustomerId && analyticsData.selectedCustomer
-                      ? [analyticsData.selectedCustomer]
-                      : analyticsData.customers
-                  }
-                  hasActiveFilters={
-                    Boolean(analyticsData.searchTerm) ||
-                    analyticsData.tagFilter !== 'all' ||
-                    analyticsData.sortBy !== 'name'
-                  }
-                  totalCustomers={
-                    analyticsData.allCustomersCount ||
-                    analyticsData.customers.length
-                  }
-                />
-              </div>
-            )}
-
-            {/* Main Content: List + Detail */}
-            <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-1 order-2 lg:order-1">
-                <CustomerList
-                  customers={paginatedAnalyticsCustomers}
-                  onSelect={analyticsData.setSelectedCustomerId}
-                  selectedId={analyticsData.selectedCustomerId}
-                />
-                {/* Pagination */}
-                {analyticsTotalPages > 1 && (
-                  <div className="mt-4 border-t border-gray-200 pt-4">
-                    <Pagination
-                      currentPage={analyticsCurrentPage}
-                      totalPages={analyticsTotalPages}
-                      onPageChange={setAnalyticsCurrentPage}
-                      totalCount={analyticsData.customers.length}
-                      pageSize={analyticsPageSize}
-                      loading={Boolean(analyticsData.loading)}
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="lg:col-span-2 space-y-4 order-1 lg:order-2">
-                <CustomerDetail customer={analyticsData.selectedCustomer} />
-                <PurchaseHistory
-                  purchases={analyticsData.selectedCustomer?.purchases ?? []}
-                  statusFilter={purchaseStatusFilter}
-                  onStatusFilterChange={setPurchaseStatusFilter}
-                />
-              </div>
-            </div>
+            </svg>
+          ),
+        }}
+      >
+        {loading.hasAnyLoading ? (
+          <div className="p-6">
+            <TableSkeleton rows={8} columns={7} />
           </div>
+        ) : (
+          <ClientsListContent
+            clients={clients}
+            clientsWithInstruments={clientsWithInstruments}
+            instrumentRelationships={instrumentRelationships}
+            loading={loading}
+            onClientClick={handleRowClick}
+            onUpdateClient={async (clientId, updates) => {
+              try {
+                const result = await updateClient(clientId, updates);
+                if (!result) {
+                  // updateClient returns null on error
+                  throw new Error('Failed to update client');
+                }
+                showSuccess('Client information updated successfully.');
+              } catch (error) {
+                handleError(error, 'Failed to update client');
+                throw error; // Re-throw to prevent saveEditing from closing editing mode
+              }
+            }}
+            onDeleteClient={(client: Client) => {
+              setConfirmDelete(client);
+            }}
+          />
         )}
 
         {/* Add Client Form */}

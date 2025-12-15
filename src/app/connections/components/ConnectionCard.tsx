@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react';
-import { ClientInstrument, RelationshipType } from '@/types';
+import { ClientInstrument } from '@/types';
 import { getRelationshipTypeStyle } from '../utils/relationshipStyles';
+import { getRelationshipAccentColor } from '@/utils/colorTokens';
 
 interface ConnectionCardProps {
   connection: ClientInstrument;
@@ -24,19 +25,6 @@ function formatTags(tags?: string[]): string {
     .join(', ');
 }
 
-/**
- * Get accent border color for relationship type (A안: 세로 accent bar)
- */
-function getAccentBorderColor(type: RelationshipType): string {
-  const accentMap: Record<RelationshipType, string> = {
-    Interested: 'border-l-yellow-400',
-    Booked: 'border-l-purple-400',
-    Sold: 'border-l-green-500',
-    Owned: 'border-l-indigo-400',
-  };
-  return accentMap[type] || 'border-l-gray-300';
-}
-
 export const ConnectionCard = memo(function ConnectionCard({
   connection,
   onDelete,
@@ -49,7 +37,7 @@ export const ConnectionCard = memo(function ConnectionCard({
   );
 
   const accentColor = useMemo(
-    () => getAccentBorderColor(connection.relationship_type),
+    () => getRelationshipAccentColor(connection.relationship_type),
     [connection.relationship_type]
   );
 

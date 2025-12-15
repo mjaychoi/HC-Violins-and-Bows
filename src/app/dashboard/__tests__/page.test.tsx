@@ -12,6 +12,17 @@ jest.mock('@/hooks/useUnifiedData', () => ({
     // In tests, we don't need actual fetching
   }),
   useUnifiedDashboard: jest.fn(),
+  // Provide simple stubs for SaleForm dependencies
+  useUnifiedClients: jest.fn(() => ({
+    clients: [],
+    loading: { clients: false, any: false, hasAnyLoading: false },
+    submitting: { clients: false, any: false, hasAnySubmitting: false },
+  })),
+  useUnifiedInstruments: jest.fn(() => ({
+    instruments: [],
+    loading: { instruments: false, any: false, hasAnyLoading: false },
+    submitting: { instruments: false, any: false, hasAnySubmitting: false },
+  })),
 }));
 jest.mock('../hooks', () => ({
   useDashboardFilters: jest.fn(),

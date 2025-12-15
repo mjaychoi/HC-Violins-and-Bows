@@ -11,8 +11,9 @@ export const getViewRangeLabel = (
   currentDate: Date
 ): string => {
   if (view === 'week') {
-    return `${format(startOfWeek(currentDate, { locale: ko }), 'MMM d', { locale: ko })} - ${format(
-      endOfWeek(currentDate, { locale: ko }),
+    // Explicitly set weekStartsOn to 0 (Sunday) for consistency
+    return `${format(startOfWeek(currentDate, { weekStartsOn: 0 }), 'MMM d', { locale: ko })} - ${format(
+      endOfWeek(currentDate, { weekStartsOn: 0 }),
       'MMM d, yyyy',
       { locale: ko }
     )}`;

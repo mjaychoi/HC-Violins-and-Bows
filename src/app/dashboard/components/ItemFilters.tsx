@@ -4,9 +4,10 @@ import React, { useMemo, useCallback } from 'react';
 import { Instrument, ClientInstrument } from '@/types';
 import { getPriceRange } from '../utils/dashboardUtils';
 import { DateRange } from '@/types/search';
-import PageFilters, {
-  FilterGroupConfig,
-} from '@/components/common/PageFilters';
+import {
+  PageFilters,
+  type FilterGroupConfig,
+} from '@/components/common/layout';
 import { DashboardFilters, DashboardArrayFilterKeys } from '../types';
 import {
   DASHBOARD_FILTER_LABELS,
@@ -252,7 +253,8 @@ export default function ItemFilters({
         title: DASHBOARD_FILTER_LABELS.status,
         options: filterOptions.status,
         selectedValues: filters.status,
-        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.STATUS, value),
+        onToggle: (value: string) =>
+          onFilterChange(DASHBOARD_FILTER_KEYS.STATUS, value),
         searchable: filterOptions.status.length > 10,
         defaultCollapsed: false,
         variant: 'card',
@@ -263,7 +265,8 @@ export default function ItemFilters({
         title: DASHBOARD_FILTER_LABELS.maker,
         options: filterOptions.maker,
         selectedValues: filters.maker,
-        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.MAKER, value),
+        onToggle: (value: string) =>
+          onFilterChange(DASHBOARD_FILTER_KEYS.MAKER, value),
         searchable: true,
         defaultCollapsed: false,
         variant: 'card',
@@ -274,7 +277,8 @@ export default function ItemFilters({
         title: DASHBOARD_FILTER_LABELS.type,
         options: filterOptions.type,
         selectedValues: filters.type,
-        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.TYPE, value),
+        onToggle: (value: string) =>
+          onFilterChange(DASHBOARD_FILTER_KEYS.TYPE, value),
         searchable: filterOptions.type.length > 10,
         defaultCollapsed: false,
         variant: 'card',
@@ -285,7 +289,8 @@ export default function ItemFilters({
         title: DASHBOARD_FILTER_LABELS.subtype,
         options: filterOptions.subtype,
         selectedValues: filters.subtype,
-        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.SUBTYPE, value),
+        onToggle: (value: string) =>
+          onFilterChange(DASHBOARD_FILTER_KEYS.SUBTYPE, value),
         searchable: filterOptions.subtype.length > 10,
         defaultCollapsed: false,
         variant: 'card',
@@ -296,7 +301,7 @@ export default function ItemFilters({
         title: DASHBOARD_FILTER_LABELS.ownership,
         options: filterOptions.ownership,
         selectedValues: filters.ownership,
-        onToggle: value =>
+        onToggle: (value: string) =>
           onFilterChange(DASHBOARD_FILTER_KEYS.OWNERSHIP, value),
         searchable: true,
         defaultCollapsed: false,

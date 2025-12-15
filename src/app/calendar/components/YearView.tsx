@@ -153,21 +153,23 @@ export default function YearView({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {year.map(({ month, days, tasks: monthTasks, dayMap }) => (
-          <button
+          <div
             key={month.toISOString()}
-            type="button"
-            className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer text-left w-full"
-            onClick={() => onNavigate?.(month)}
-            aria-label={`View ${format(month, 'MMMM yyyy', { locale: ko })}`}
+            className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow text-left w-full"
           >
-            <div className="mb-3">
+            <button
+              type="button"
+              className="w-full text-left mb-3"
+              onClick={() => onNavigate?.(month)}
+              aria-label={`View ${format(month, 'MMMM yyyy', { locale: ko })}`}
+            >
               <h3 className="text-base font-semibold text-gray-900">
                 {format(month, 'MMMM', { locale: ko })}
               </h3>
               <p className="text-xs text-gray-500 mt-1">
                 {monthTasks.length} {monthTasks.length === 1 ? 'task' : 'tasks'}
               </p>
-            </div>
+            </button>
             <div className="grid grid-cols-7 gap-1 mb-2">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
                 <div
@@ -209,14 +211,22 @@ export default function YearView({
                     {dayTasks.length > 0 && (
                       <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-0.5 pb-0.5 pointer-events-none">
                         {dayTasks.slice(0, 3).map(task => (
-                          <button
+                          <span
                             key={task.id}
-                            type="button"
+                            role="button"
+                            tabIndex={0}
                             className={`w-1.5 h-1.5 rounded-full ${getTaskColor(task)} pointer-events-auto cursor-pointer`}
                             title={task.title}
                             onClick={e => {
                               e.stopPropagation();
                               onSelectEvent?.(task);
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onSelectEvent?.(task);
+                              }
                             }}
                             aria-label={`Task: ${task.title}`}
                           />
@@ -232,7 +242,7 @@ export default function YearView({
                 );
               })}
             </div>
-          </button>
+          </div>
         ))}
       </div>
     </div>

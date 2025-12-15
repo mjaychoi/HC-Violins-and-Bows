@@ -5,6 +5,5 @@ export { FilterBar } from './FilterBar';
 export { RelationshipSectionHeader } from './RelationshipSectionHeader';
 export { ConnectionCard } from './ConnectionCard';
 export { ConnectionsList } from './ConnectionsList';
-export { EmptyState } from './EmptyState';
-export { LoadingState } from './LoadingState';
 export { EditConnectionModal } from './EditConnectionModal';
+// Note: EmptyState and LoadingState are imported directly from @/components/common in page.tsx

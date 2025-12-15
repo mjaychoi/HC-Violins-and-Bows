@@ -194,3 +194,6 @@ export interface ContactLog {
 
 // Re-export sort types
 export * from './sort';
+
+// Re-export message template types
+export * from './messageTemplates';

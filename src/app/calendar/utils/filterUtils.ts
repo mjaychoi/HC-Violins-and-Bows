@@ -29,24 +29,33 @@ const checkDateInRange = (dateStr: string, dateRange: DateRange): boolean => {
 export const filterByDateRange = (
   tasks: MaintenanceTask[],
   dateRange: DateRange | null,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _operator: FilterOperator // 향후 구현 예정 (현재는 사용하지 않음)
+  operator: FilterOperator
 ): MaintenanceTask[] => {
   // Early return if no date range provided
   if (!dateRange?.from && !dateRange?.to) {
     return tasks;
   }
 
+  // Get all date fields for a task
+  const dateFields = (t: MaintenanceTask): string[] =>
+    [
+      t.received_date,
+      t.due_date,
+      t.personal_due_date,
+      t.scheduled_date,
+      t.completed_date,
+    ].filter(Boolean) as string[];
+
   return tasks.filter(task => {
-    // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
-    // This matches the priority used in getTaskDueDate and classifyNotification
-    const dateStr =
-      task.due_date || task.personal_due_date || task.scheduled_date;
+    const dates = dateFields(task);
+    if (dates.length === 0) return false;
 
-    if (!dateStr) return false;
-
-    // Check if the primary date field is in range
-    return checkDateInRange(dateStr, dateRange);
+    if (operator === 'AND') {
+      // All date fields must be within range
+      return dates.every(d => checkDateInRange(d, dateRange));
+    }
+    // OR (default): At least one date field must be within range
+    return dates.some(d => checkDateInRange(d, dateRange));
   });
 };
 
