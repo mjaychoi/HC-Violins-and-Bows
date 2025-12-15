@@ -1,12 +1,12 @@
 import { render, screen } from '@/test-utils/render';
 import {
-  TableRowSkeleton,
   ListSkeleton,
   CardSkeleton,
-  SpinnerLoading,
   TableSkeleton,
-  default as SkeletonComponents,
-} from '../Skeleton';
+  TableRowSkeleton,
+  SpinnerLoading,
+} from '@/components/common/layout';
+import SkeletonComponents from '@/components/common/layout/Skeleton';
 
 describe('Skeleton Components', () => {
   describe('TableRowSkeleton', () => {

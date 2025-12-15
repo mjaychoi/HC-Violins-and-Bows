@@ -4,7 +4,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { ToastProvider } from '@/contexts/ToastContext';
 
 // Mock SuccessToast component
-jest.mock('@/components/common/SuccessToast', () => {
+jest.mock('@/components/common/feedback/SuccessToast', () => {
   return function SuccessToast({
     message,
   }: {
@@ -20,7 +20,7 @@ jest.mock('@/components/common/SuccessToast', () => {
 });
 
 // Mock SuccessToasts component to return a predictable structure with toast IDs
-jest.mock('@/components/common/SuccessToasts', () => {
+jest.mock('@/components/common/feedback/SuccessToasts', () => {
   return function SuccessToasts({
     toasts,
   }: {

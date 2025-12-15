@@ -1,6 +1,6 @@
 import { render, screen } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
-import Sidebar from '../Sidebar';
+import { Sidebar } from '@/components/common/layout';
 
 describe('Sidebar', () => {
   const mockOnToggle = jest.fn();

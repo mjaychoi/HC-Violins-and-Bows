@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom';
 import React from 'react';
 import { render, screen, fireEvent, act } from '@/test-utils/render';
-import AdvancedSearch from '../AdvancedSearch';
+import { AdvancedSearch } from '@/components/common/inputs';
 
 describe('AdvancedSearch', () => {
   const baseProps = {

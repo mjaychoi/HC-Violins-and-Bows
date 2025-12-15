@@ -1,10 +1,11 @@
 import { render, screen, waitFor, act } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
-import SearchInput, {
+import {
+  SearchInput,
   ClientSearchInput,
   InstrumentSearchInput,
   ConnectionSearchInput,
-} from '../SearchInput';
+} from '@/components/common/inputs';
 
 // Mock useDebounce
 jest.mock('@/hooks/useDebounce', () => ({

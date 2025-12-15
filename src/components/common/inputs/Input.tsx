@@ -18,7 +18,7 @@ export default function Input({
   ...props
 }: InputProps) {
   const inputClasses = error ? classNames.inputError : classNames.input;
-  
+
   // Fix controlled/uncontrolled input warning: convert undefined to empty string
   const controlledValue = value === undefined || value === null ? '' : value;
 
@@ -31,16 +31,16 @@ export default function Input({
         </label>
       )}
 
-      <input 
-        className={`${inputClasses} ${className}`} 
+      <input
+        className={`${inputClasses} ${className}`}
         value={controlledValue}
-        {...props} 
+        {...props}
       />
 
       {error && <p className={classNames.formError}>{error}</p>}
 
       {helperText && !error && (
-        <p className="text-sm text-gray-500">{helperText}</p>
+        <p className="text-xs text-gray-500">{helperText}</p>
       )}
     </div>
   );

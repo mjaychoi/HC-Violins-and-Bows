@@ -102,7 +102,9 @@ export default function FilterGroup({
               className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer hover:opacity-80"
               type="button"
               aria-expanded={isExpanded}
-              aria-controls={`filter-group-${title.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`}
+              aria-controls={`filter-group-${title
+                .replace(/[^a-zA-Z0-9]/g, '-')
+                .toLowerCase()}`}
             >
               <h4 className="text-sm font-semibold text-gray-900 truncate">
                 {title}
@@ -192,7 +194,6 @@ export default function FilterGroup({
           ) : (
             filteredOptions.map(option => {
               const displayLabel = getLabel ? getLabel(option) : option;
-              // ✅ FIXED: 렌더 중 console.log 제거 (성능/노이즈 폭탄 방지)
               return (
                 <label
                   key={option}

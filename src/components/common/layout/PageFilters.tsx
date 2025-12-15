@@ -8,7 +8,7 @@
 import React from 'react';
 import FilterPanel from './FilterPanel';
 import FilterGroup from './FilterGroup';
-import AdvancedSearch from './AdvancedSearch';
+import { AdvancedSearch } from '@/components/common/inputs';
 import { filterPanelClasses } from '@/utils/filterUI';
 import type { DateRange, FilterOperator } from '@/types/search';
 

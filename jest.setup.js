@@ -1,324 +1,10 @@
-import '@testing-library/jest-dom';
-// Polyfill Request for Next.js server modules in tests
-try {
-  // Use Next.js bundled fetch primitives to align with NextRequest/NextResponse requirements
-  const {
-    Response,
-    Headers,
-    ReadableStream,
-  } = require('next/dist/compiled/@edge-runtime/primitives');
-  // Provide a minimal Request wrapper to ensure headers exist for NextRequest tests
-  if (typeof global.Request === 'undefined') {
-    class SimpleRequest {
-      constructor(input, init = {}) {
-        this.url =
-          typeof input === 'string' ? input : input?.toString?.() || '';
-        this.method = init.method || 'GET';
-        this.headers = new Headers(init.headers || {});
-        this.body = init.body;
-      }
-      clone() {
-        return new SimpleRequest(this.url, {
-          method: this.method,
-          headers: this.headers,
-          body: this.body,
-        });
-      }
-    }
-    global.Request = SimpleRequest;
-  }
-  if (typeof global.Response === 'undefined') {
-    global.Response = Response;
-  }
-  if (typeof global.Headers === 'undefined') {
-    global.Headers = Headers;
-  }
-  if (typeof global.ReadableStream === 'undefined') {
-    global.ReadableStream = ReadableStream;
-  }
-} catch {
-  // Fallback no-op classes to avoid crashes in environments without the primitives
-  // @ts-ignore
-  global.Request = global.Request || class {};
-  // @ts-ignore
-  global.Response = global.Response || class {};
-}
+// Global Jest setup (CommonJS)
+// NOTE: This file is loaded via setupFilesAfterEnv in jest.config.js
 
-// jsdom에서 WebSocket/polyfill
-if (typeof global.WebSocket === 'undefined') {
-  class DummyWS {
-    close() {}
-    send() {}
-    addEventListener() {}
-    removeEventListener() {}
-  }
-  // @ts-ignore
-  global.WebSocket = DummyWS;
-}
+const React = require('react');
+require('@testing-library/jest-dom');
 
-// Mock Next.js router
-jest.mock('next/router', () => ({
-  useRouter() {
-    return {
-      route: '/',
-      pathname: '/',
-      query: {},
-      asPath: '/',
-      push: jest.fn(),
-      pop: jest.fn(),
-      reload: jest.fn(),
-      back: jest.fn(),
-      prefetch: jest.fn().mockResolvedValue(undefined),
-      beforePopState: jest.fn(),
-      events: {
-        on: jest.fn(),
-        off: jest.fn(),
-        emit: jest.fn(),
-      },
-      isFallback: false,
-    };
-  },
-}));
-
-// Mock Next.js Link component
-jest.mock('next/link', () => ({
-  __esModule: true,
-  default: ({ children, href }) => <a href={href}>{children}</a>,
-}));
-
-// Mock next/navigation hooks used across components
-jest.mock('next/navigation', () => ({
-  __esModule: true,
-  useRouter: () => ({
-    push: jest.fn(),
-    replace: jest.fn(),
-    back: jest.fn(),
-    prefetch: jest.fn(),
-  }),
-  usePathname: () => '/',
-}));
-
-// Mock useURLState to avoid browser API issues in tests
-jest.mock('@/hooks/useURLState', () => ({
-  __esModule: true,
-  useURLState: jest.fn(() => ({
-    urlState: {},
-    updateURLState: jest.fn(),
-    clearURLState: jest.fn(),
-  })),
-}));
-
-// Mock NextRequest to avoid full Next.js runtime dependencies in API route tests
-jest.mock('next/server', () => {
-  class MockNextRequest {
-    constructor(url, init = {}) {
-      this.url = url;
-      this.method = init.method || 'GET';
-      this.headers = new Headers(init.headers || {});
-      this.body = init.body;
-      this.nextUrl = new URL(url);
-    }
-    async json() {
-      if (!this.body) return {};
-      if (typeof this.body === 'string') return JSON.parse(this.body);
-      return this.body;
-    }
-  }
-  return {
-    NextResponse: {
-      json: (body, init = {}) => ({
-        status: init.status ?? 200,
-        json: async () => body,
-      }),
-    },
-    NextRequest: MockNextRequest,
-  };
-});
-
-// Mock next/dynamic to return the wrapped component directly
-jest.mock('next/dynamic', () => {
-  return {
-    __esModule: true,
-    default: importer => {
-      const mod = importer();
-      // Handle promise or direct
-      if (mod && typeof mod.then === 'function') {
-        // Not awaiting; return a placeholder that renders nothing until resolved
-        // For unit tests, it's fine to render empty div
-        return () => <div data-testid="dynamic" />;
-      }
-      const Comp = mod.default || mod;
-      return Comp || (() => null);
-    },
-  };
-});
-
-// Mock ErrorBoundary to render children directly in tests
-jest.mock('@/components/common', () => {
-  return {
-    __esModule: true,
-    ErrorBoundary: ({ children }) => children,
-  };
-});
-
-// Mock App Layout components to simple containers
-jest.mock('@/components/layout', () => {
-  return {
-    __esModule: true,
-    AppLayout: ({ title, actionButton, children }) => (
-      <div data-testid="app-layout">
-        {title ? <h1>{title}</h1> : null}
-        {actionButton ? (
-          <button className="bg-blue-600" onClick={actionButton.onClick}>
-            {actionButton.icon}
-            {actionButton.label}
-          </button>
-        ) : null}
-        {children}
-      </div>
-    ),
-    AppHeader: () => <div data-testid="app-header" />,
-    AppSidebar: () => <div data-testid="app-sidebar" />,
-  };
-});
-
-// ✅ FIXED: Toast 컴포넌트 mock (테스트 안정성 향상)
-// ToastProvider의 disableHost와 함께 사용하여 테스트 환경에서 안정적으로 동작
-// React 컴포넌트로 반환하여 모듈 로딩 문제 방지
-jest.mock('@/components/ErrorToast', () => {
-  const MockErrorToast = function MockErrorToast() {
-    return null;
-  };
-  MockErrorToast.displayName = 'MockErrorToast';
-  return {
-    __esModule: true,
-    default: MockErrorToast,
-  };
-});
-
-jest.mock('@/components/common/SuccessToasts', () => {
-  const MockSuccessToasts = function MockSuccessToasts() {
-    return null;
-  };
-  MockSuccessToasts.displayName = 'MockSuccessToasts';
-  return {
-    __esModule: true,
-    default: MockSuccessToasts,
-  };
-});
-
-// ✅ FIXED: ToastContext를 부분적으로 mock하여 ToastProvider는 항상 사용 가능하도록
-// 각 테스트 파일의 mock이 ToastProvider를 포함하지 않을 수 있으므로, 전역적으로 보장
-jest.mock('@/contexts/ToastContext', () => {
-  const actual = jest.requireActual('@/contexts/ToastContext');
-  return {
-    ...actual,
-    // useErrorHandler와 useToast는 각 테스트에서 필요에 따라 override 가능
-    // ToastProvider는 항상 실제 구현 사용
-  };
-});
-
-// Mock DataContext hooks to avoid provider requirement in unit tests
-jest.mock('@/contexts/DataContext', () => {
-  const empty = [];
-  const noop = async () => {};
-  const mockState = {
-    clients: empty,
-    instruments: empty,
-    connections: empty,
-    loading: {
-      clients: false,
-      instruments: false,
-      connections: false,
-    },
-    submitting: {
-      clients: false,
-      instruments: false,
-      connections: false,
-    },
-    lastUpdated: {
-      clients: null,
-      instruments: null,
-      connections: null,
-    },
-  };
-  const mockActions = {
-    fetchClients: noop,
-    createClient: async () => null,
-    updateClient: async () => null,
-    deleteClient: async () => true,
-    fetchInstruments: noop,
-    createInstrument: async () => null,
-    updateInstrument: async () => null,
-    deleteInstrument: async () => true,
-    fetchConnections: noop,
-    createConnection: async () => null,
-    updateConnection: async () => null,
-    deleteConnection: async () => true,
-    invalidateCache: noop,
-    resetState: noop,
-  };
-  return {
-    __esModule: true,
-    useDataContext: () => ({
-      state: mockState,
-      actions: mockActions,
-      dispatch: noop,
-    }),
-    useClients: () => ({
-      clients: empty,
-      loading: false,
-      submitting: false,
-      fetchClients: noop,
-      createClient: async () => null,
-      updateClient: async () => null,
-      deleteClient: async () => true,
-    }),
-    useInstruments: () => ({
-      instruments: empty,
-      loading: false,
-      submitting: false,
-      fetchInstruments: noop,
-      createInstrument: async () => null,
-      updateInstrument: async () => null,
-      deleteInstrument: async () => true,
-    }),
-    useConnections: () => ({
-      connections: empty,
-      loading: false,
-      submitting: false,
-      fetchConnections: noop,
-      createConnection: async () => null,
-      updateConnection: async () => null,
-      deleteConnection: async () => true,
-    }),
-  };
-});
-
-// Mock window.matchMedia
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: jest.fn().mockImplementation(query => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: jest.fn(),
-    removeListener: jest.fn(),
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn(),
-    dispatchEvent: jest.fn(),
-  })),
-});
-
-// Mock IntersectionObserver
-global.IntersectionObserver = class IntersectionObserver {
-  constructor() {}
-  disconnect() {}
-  observe() {}
-  unobserve() {}
-};
-
-// Mock performance.now() for Node.js environment
+// Polyfill performance.now in Node test env
 if (typeof global.performance === 'undefined') {
   global.performance = {
     now: jest.fn(() => Date.now()),
@@ -327,86 +13,142 @@ if (typeof global.performance === 'undefined') {
   global.performance.now = jest.fn(() => Date.now());
 }
 
-// Mock Supabase to avoid ESM issues
-jest.mock('@/lib/supabase', () => ({
-  supabase: {
-    from: jest.fn(() => ({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: [],
-          error: null,
-        })),
-        or: jest.fn(() => ({
-          limit: jest.fn(() => ({
-            data: [],
-            error: null,
-          })),
-        })),
-      })),
-      insert: jest.fn(() => ({
-        select: jest.fn(() => ({
-          single: jest.fn(() => ({
-            data: null,
-            error: null,
-          })),
-        })),
-      })),
-      update: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: null,
-          error: null,
-        })),
-      })),
-      delete: jest.fn(() => ({
-        eq: jest.fn(() => ({
-          data: null,
-          error: null,
-        })),
-      })),
-    })),
-  },
-}));
+// Polyfill window.matchMedia for components using responsive hooks (e.g. AppLayout)
+if (typeof window !== 'undefined' && !window.matchMedia) {
+  window.matchMedia = function matchMedia(query) {
+    return {
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      addListener: jest.fn(), // deprecated but included for safety
+      removeListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    };
+  };
+}
 
-// Note: Supabase helpers are mocked per-test where needed
+// Mock Next.js app router hooks so hooks using next/navigation
+// (e.g. useURLState/usePageFilters/useFilters) can run in tests
+jest.mock('next/navigation', () => {
+  const createSearchParams = urlString => {
+    try {
+      const url = new URL(urlString || 'http://localhost/');
+      return url.searchParams;
+    } catch {
+      return new URL('http://localhost/').searchParams;
+    }
+  };
 
-// Suppress React act() warnings for known async state updates in tests
-const originalError = console.error;
-beforeAll(() => {
-  console.error = (...args) => {
-    const first = args[0];
-    const hasDebounceWarning = args.some(
-      arg =>
-        (typeof arg === 'string' && arg.includes('debounceMs')) ||
-        (arg &&
-          typeof arg === 'object' &&
-          'message' in arg &&
-          String(arg.message).includes('debounceMs'))
-    );
-    if (typeof first === 'string') {
-      if (
-        first.includes('Warning: An update to') ||
-        first.includes('was not wrapped in act') ||
-        first.includes('Not implemented: navigation') ||
-        hasDebounceWarning
-      ) {
-        return;
-      }
-    }
-    if (
-      (first instanceof Error &&
-        first.message.includes('Not implemented: navigation')) ||
-      (first &&
-        typeof first === 'object' &&
-        'message' in first &&
-        (String(first.message ?? '').includes('Not implemented: navigation') ||
-          hasDebounceWarning))
-    ) {
-      return;
-    }
-    originalError.call(console, ...args);
+  const mockRouter = {
+    push: jest.fn(),
+    replace: jest.fn(),
+    refresh: jest.fn(),
+    back: jest.fn(),
+    forward: jest.fn(),
+    prefetch: jest.fn(),
+  };
+
+  return {
+    __esModule: true,
+    useRouter: () => mockRouter,
+    usePathname: () => '/test-path',
+    useSearchParams: () => createSearchParams('http://localhost/test-path'),
   };
 });
 
-afterAll(() => {
-  console.error = originalError;
+// Mock next/server for API route tests so that NextRequest/NextResponse
+// work in the Node/Jest environment without relying on the real Web API
+jest.mock('next/server', () => {
+  class NextRequest {
+    constructor(input, init = {}) {
+      this.url = input;
+      this.method = init.method || 'GET';
+      this._body = init.body;
+      this.nextUrl = new URL(input);
+    }
+
+    get headers() {
+      return new Map();
+    }
+
+    async json() {
+      if (this._body == null) return null;
+      if (typeof this._body === 'string') {
+        try {
+          return JSON.parse(this._body);
+        } catch {
+          // 테스트에서는 파싱 실패도 허용하고 원본을 그대로 반환
+          return this._body;
+        }
+      }
+      return this._body;
+    }
+  }
+
+  const NextResponse = {
+    json(body, init = {}) {
+      const status = init.status ?? 200;
+      return {
+        status,
+        ok: status >= 200 && status < 300,
+        json: async () => body,
+      };
+    },
+  };
+
+  return {
+    __esModule: true,
+    NextRequest,
+    NextResponse,
+  };
+});
+
+// Mock ErrorToast / SuccessToasts to keep tests stable
+jest.mock('@/components/ErrorToast', () => ({
+  __esModule: true,
+  default: jest.fn(() => null),
+}));
+
+jest.mock('@/components/common/feedback/SuccessToasts', () => ({
+  __esModule: true,
+  default: jest.fn(() => null),
+}));
+
+// Make ErrorBoundary render children directly to avoid wrapping error UI in tests
+jest.mock('@/components/common', () => {
+  const actual = jest.requireActual('@/components/common');
+  return {
+    __esModule: true,
+    ...actual,
+    ErrorBoundary: ({ children }) =>
+      React.createElement(React.Fragment, null, children),
+  };
+});
+
+// Mock AppLayout to avoid requiring AuthProvider/useAuth in page tests
+jest.mock('@/components/layout', () => {
+  return {
+    __esModule: true,
+    AppLayout: ({ title, actionButton, children }) =>
+      React.createElement(
+        'div',
+        { 'data-testid': 'app-layout' },
+        title ? React.createElement('h1', null, title) : null,
+        actionButton
+          ? React.createElement(
+              'button',
+              { className: 'bg-blue-600', onClick: actionButton.onClick },
+              actionButton.icon,
+              actionButton.label
+            )
+          : null,
+        children
+      ),
+    AppHeader: () =>
+      React.createElement('div', { 'data-testid': 'app-header' }),
+    AppSidebar: () =>
+      React.createElement('div', { 'data-testid': 'app-sidebar' }),
+  };
 });

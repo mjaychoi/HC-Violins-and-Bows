@@ -14,7 +14,7 @@ import { captureException } from '@/utils/monitoring';
 // ✅ FIXED: ToastHost에서만 사용 (disableHost일 때는 렌더링되지 않음)
 // jest.setup.js에서 mock되지만, disableHost일 때는 사용되지 않음
 import ErrorToast from '@/components/ErrorToast';
-import SuccessToastsComponent from '@/components/common/SuccessToasts';
+import SuccessToastsComponent from '@/components/common/feedback/SuccessToasts';
 
 // Extended error type with stable toast ID and dedup metadata
 type ToastError = AppError & {

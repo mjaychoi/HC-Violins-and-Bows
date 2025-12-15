@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
-import FormWrapper, { SimpleFormWrapper } from '../FormWrapper';
+import { FormWrapper, SimpleFormWrapper } from '@/components/common/layout';
 import { useFormState } from '@/hooks/useFormState';
 import { logError } from '@/utils/logger';
 

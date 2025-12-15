@@ -142,8 +142,6 @@ export default function AdvancedSearch({
                 </div>
               </div>
 
-              {/* Operator selection removed - only date range filter is used */}
-
               {/* Apply/Reset buttons */}
               <div className="flex gap-2 pt-2 border-t border-gray-200">
                 {onReset && (

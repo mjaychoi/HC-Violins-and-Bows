@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@/test-utils/render';
 import '@testing-library/jest-dom';
-import ConfirmDialog from '../ConfirmDialog';
+import ConfirmDialog from '../modals/ConfirmDialog';
 
 describe('ConfirmDialog', () => {
   const defaultProps = {
