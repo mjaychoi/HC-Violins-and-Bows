@@ -1,8 +1,8 @@
 // Client 관련 상수 정의
 
 /**
- * 클라이언트 태그 옵션
- * ClientForm, ClientModal, ClientList 등에서 공통 사용
+ * Client tag options
+ * Used in ClientForm, ClientModal, ClientList, etc.
  */
 export const CLIENT_TAG_OPTIONS = [
   'Owner',
@@ -15,14 +15,14 @@ export const CLIENT_TAG_OPTIONS = [
 export type ClientTag = (typeof CLIENT_TAG_OPTIONS)[number];
 
 /**
- * Interest 레벨 옵션
+ * Interest level options
  */
 export const INTEREST_LEVELS = ['Active', 'Passive', 'Inactive'] as const;
 
 export type InterestLevel = (typeof INTEREST_LEVELS)[number];
 
 /**
- * Instrument Connection 필터 옵션
+ * Instrument Connection filter options
  */
 export const HAS_INSTRUMENTS_FILTER_OPTIONS = {
   HAS: 'Has Instruments',
@@ -30,16 +30,17 @@ export const HAS_INSTRUMENTS_FILTER_OPTIONS = {
 } as const;
 
 /**
- * Client 필터 라벨 상수
+ * Client filter label constants
  */
 export const CLIENT_FILTER_LABELS = {
-  LAST_NAME: '성',
-  FIRST_NAME: '이름',
-  CONTACT_NUMBER: '연락처',
-  EMAIL: '이메일',
-  TAGS: '태그',
-  INTEREST: '관심도',
-  HAS_INSTRUMENTS: '악기 연결',
-  FILTER_OPTIONS: '필터 옵션',
-  ACTIVE_FILTERS: (count: number) => `검색/필터 ${count}개 적용 중`,
+  LAST_NAME: 'Last Name',
+  FIRST_NAME: 'First Name',
+  CONTACT_NUMBER: 'Contact Number',
+  EMAIL: 'Email',
+  TAGS: 'Tags',
+  INTEREST: 'Interest',
+  HAS_INSTRUMENTS: 'Has Instruments',
+  FILTER_OPTIONS: 'Filter Options',
+  ACTIVE_FILTERS: (count: number) =>
+    `${count} search/filter${count > 1 ? 's' : ''} active`,
 } as const;

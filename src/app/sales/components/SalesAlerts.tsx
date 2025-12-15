@@ -2,27 +2,10 @@
 
 import { useMemo } from 'react';
 import { EnrichedSale } from '@/types';
-import { subDays, isBefore, isWithinInterval, startOfDay } from 'date-fns';
+import { subDays, isBefore, isWithinInterval } from 'date-fns';
+import { parseYMDLocal, startOfDay } from '@/utils/dateParsing';
 
 import { currency } from '../utils/salesFormatters';
-
-// FIXED: Date parsing helper to handle timezone issues (parse date-only strings as UTC)
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-function parseSaleDay(s: string): Date | null {
-  if (!s) return null;
-  if (DATE_ONLY_PATTERN.test(s)) {
-    // Date-only string: parse as UTC date (avoid timezone shift)
-    const [y, m, d] = s.split('-').map(Number);
-    return startOfDay(new Date(Date.UTC(y, m - 1, d)));
-  }
-  // For timestamps with time/timezone, use Date constructor (will parse ISO strings)
-  try {
-    const t = new Date(s);
-    return Number.isFinite(t.getTime()) ? startOfDay(t) : null;
-  } catch {
-    return null;
-  }
-}
 
 interface SalesAlertsProps {
   sales: EnrichedSale[];
@@ -45,10 +28,10 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     const today = startOfDay(new Date());
     const sevenDaysAgo = startOfDay(subDays(today, 7));
 
-    // FIXED: Use parseSaleDay to handle timezone issues
+    // FIXED: Use parseYMDLocal to handle timezone issues (local day-of-week)
     const recentSales = sales
       .filter(s => {
-        const saleDay = parseSaleDay(s.sale_date);
+        const saleDay = parseYMDLocal(s.sale_date);
         if (!saleDay) return false;
         // sevenDaysAgo 이후 또는 같은 날 (경계값 포함)
         return !isBefore(saleDay, sevenDaysAgo);
@@ -57,7 +40,7 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
 
     const recentRefunds = sales
       .filter(s => {
-        const saleDay = parseSaleDay(s.sale_date);
+        const saleDay = parseYMDLocal(s.sale_date);
         if (!saleDay) return false;
         // sevenDaysAgo 이후 또는 같은 날 (경계값 포함)
         return !isBefore(saleDay, sevenDaysAgo);
@@ -73,13 +56,13 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     };
 
     const previousSales = sales.filter(s => {
-      const saleDay = parseSaleDay(s.sale_date);
+      const saleDay = parseYMDLocal(s.sale_date);
       if (!saleDay) return false;
       return isWithinInterval(saleDay, previousInterval) && s.sale_price > 0;
     });
 
     const previousRefunds = sales.filter(s => {
-      const saleDay = parseSaleDay(s.sale_date);
+      const saleDay = parseYMDLocal(s.sale_date);
       if (!saleDay) return false;
       return isWithinInterval(saleDay, previousInterval) && s.sale_price < 0;
     });
@@ -194,20 +177,20 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     // 4. 특정 요일 Orders 급락
     const weekdayMap = new Map<number, { recent: number; previous: number }>();
     recentSales.forEach(sale => {
-      // FIXED: Use parseSaleDay instead of parseISO
-      const saleDay = parseSaleDay(sale.sale_date);
+      // FIXED: Use parseYMDLocal and getDay() for local day-of-week
+      const saleDay = parseYMDLocal(sale.sale_date);
       if (!saleDay) return;
-      const dayOfWeek = saleDay.getUTCDay();
+      const dayOfWeek = saleDay.getDay(); // Local day of week (0 = Sunday, 6 = Saturday)
       if (!weekdayMap.has(dayOfWeek)) {
         weekdayMap.set(dayOfWeek, { recent: 0, previous: 0 });
       }
       weekdayMap.get(dayOfWeek)!.recent += 1;
     });
     previousSales.forEach(sale => {
-      // FIXED: Use parseSaleDay instead of parseISO
-      const saleDay = parseSaleDay(sale.sale_date);
+      // FIXED: Use parseYMDLocal and getDay() for local day-of-week
+      const saleDay = parseYMDLocal(sale.sale_date);
       if (!saleDay) return;
-      const dayOfWeek = saleDay.getUTCDay();
+      const dayOfWeek = saleDay.getDay(); // Local day of week
       if (!weekdayMap.has(dayOfWeek)) {
         weekdayMap.set(dayOfWeek, { recent: 0, previous: 0 });
       }
@@ -226,12 +209,13 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     weekdayMap.forEach((data, dayOfWeek) => {
       if (data.previous > 0) {
         const drop = ((data.previous - data.recent) / data.previous) * 100;
-        if (drop > 50) {
+        // Only show if significant drop AND absolute numbers matter (not just noise)
+        if (drop > 50 && data.previous >= 2) {
           result.push({
             type: 'warning',
-            title: `${dayNames[dayOfWeek]} 주문 급락`,
-            message: `${dayNames[dayOfWeek]}의 주문 수가 이전 7일 대비 ${Math.round(drop)}% 감소했습니다. (${data.recent}건 vs ${data.previous}건)`,
-            severity: 'medium',
+            title: `${dayNames[dayOfWeek]} orders dropped`,
+            message: `${data.recent} vs ${data.previous} last week`,
+            severity: 'low', // Tone down severity
           });
         }
       }
@@ -245,32 +229,32 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {/* FIXED: Use stable key instead of index to prevent incorrect DOM reuse */}
-      {alerts.map((alert, index) => (
+      {alerts.map(alert => (
         <div
-          key={`${alert.type}:${alert.title}:${index}`}
-          className={`border rounded-lg p-4 ${
+          key={`${alert.type}:${alert.title}:${alert.message}`}
+          className={`border rounded-lg p-3 ${
             alert.type === 'error'
               ? 'bg-red-50 border-red-200'
               : alert.type === 'warning'
-                ? 'bg-yellow-50 border-yellow-200'
+                ? 'bg-amber-50 border-amber-200'
                 : 'bg-blue-50 border-blue-200'
           }`}
         >
-          <div className="flex items-start gap-3">
+          <div className="flex items-center gap-2">
             <div
               className={`shrink-0 ${
                 alert.type === 'error'
                   ? 'text-red-600'
                   : alert.type === 'warning'
-                    ? 'text-yellow-600'
+                    ? 'text-amber-600'
                     : 'text-blue-600'
               }`}
             >
               {alert.type === 'error' && (
                 <svg
-                  className="w-5 h-5"
+                  className="w-4 h-4"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -285,7 +269,7 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
               )}
               {alert.type === 'warning' && (
                 <svg
-                  className="w-5 h-5"
+                  className="w-4 h-4"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -300,7 +284,7 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
               )}
               {alert.type === 'info' && (
                 <svg
-                  className="w-5 h-5"
+                  className="w-4 h-4"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -314,33 +298,25 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
                 </svg>
               )}
             </div>
-            <div className="flex-1">
-              <h4
-                className={`font-semibold text-sm mb-1 ${
-                  alert.type === 'error'
-                    ? 'text-red-900'
-                    : alert.type === 'warning'
-                      ? 'text-yellow-900'
-                      : 'text-blue-900'
-                }`}
-              >
-                {alert.title}
-              </h4>
+            <div className="flex-1 min-w-0">
               <p
                 className={`text-sm ${
                   alert.type === 'error'
                     ? 'text-red-700'
                     : alert.type === 'warning'
-                      ? 'text-yellow-700'
+                      ? 'text-amber-700'
                       : 'text-blue-700'
                 }`}
               >
-                {alert.message}
+                <span className="font-medium">{alert.title}</span>
+                {alert.message && (
+                  <span className="ml-1 text-gray-600">{alert.message}</span>
+                )}
               </p>
             </div>
             {alert.severity === 'high' && (
-              <span className="shrink-0 px-2 py-1 text-xs font-semibold bg-red-100 text-red-800 rounded">
-                주의(표본 적음)
+              <span className="shrink-0 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded">
+                Low sample
               </span>
             )}
           </div>

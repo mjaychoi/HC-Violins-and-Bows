@@ -1,10 +1,11 @@
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
-import SearchInput, {
+import {
+  SearchInput,
   ClientSearchInput,
   InstrumentSearchInput,
   ConnectionSearchInput,
-} from '../SearchInput';
+} from '@/components/common/inputs';
 
 // Mock useDebounce
 jest.mock('@/hooks/useDebounce', () => ({
@@ -60,7 +61,7 @@ describe('SearchInput', () => {
     });
 
     it('should call onChange when input changes', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(<SearchInput value="" onChange={mockOnChange} />);
 
       const input = screen.getByPlaceholderText('Search...');
@@ -110,7 +111,7 @@ describe('SearchInput', () => {
     });
 
     it('should call onChange and onClear when clear button is clicked', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(
         <SearchInput
           value="test"
@@ -201,7 +202,7 @@ describe('SearchInput', () => {
 
   describe('focus and blur', () => {
     it('should call onFocus when input is focused', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(
         <SearchInput value="" onChange={mockOnChange} onFocus={mockOnFocus} />
       );
@@ -213,7 +214,7 @@ describe('SearchInput', () => {
     });
 
     it('should call onBlur when input loses focus', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(
         <SearchInput value="" onChange={mockOnChange} onBlur={mockOnBlur} />
       );
@@ -239,7 +240,7 @@ describe('SearchInput', () => {
     const suggestions = ['Apple', 'Banana', 'Cherry', 'Date', 'Elderberry'];
 
     it('should show suggestions when focused and showSuggestions is true', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(
         <SearchInput
           value=""
@@ -258,7 +259,7 @@ describe('SearchInput', () => {
     });
 
     it('should filter suggestions based on input value', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       const { rerender } = render(
         <SearchInput
           value=""
@@ -289,7 +290,7 @@ describe('SearchInput', () => {
     });
 
     it('should limit suggestions to maxSuggestions', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(
         <SearchInput
           value=""
@@ -311,7 +312,7 @@ describe('SearchInput', () => {
     });
 
     it('should select suggestion with keyboard arrow down', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(
         <SearchInput
           value=""
@@ -332,7 +333,7 @@ describe('SearchInput', () => {
     });
 
     it('should select suggestion with keyboard arrow up', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(
         <SearchInput
           value=""
@@ -353,7 +354,7 @@ describe('SearchInput', () => {
     });
 
     it('should select suggestion with Enter key', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(
         <SearchInput
           value=""
@@ -373,7 +374,7 @@ describe('SearchInput', () => {
     });
 
     it('should close suggestions with Escape key', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(
         <SearchInput
           value=""
@@ -393,7 +394,7 @@ describe('SearchInput', () => {
     });
 
     it('should call onSuggestionSelect when suggestion is clicked', async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup({ delay: undefined });
       render(
         <SearchInput
           value=""

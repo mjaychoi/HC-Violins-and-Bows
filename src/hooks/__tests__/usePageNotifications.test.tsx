@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { renderHook } from '@/test-utils/render';
 import { usePageNotifications } from '../usePageNotifications';
 import { formatNotificationMessage } from '@/policies/notifications';
 

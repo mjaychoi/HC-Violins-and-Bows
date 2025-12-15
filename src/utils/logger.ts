@@ -188,7 +188,23 @@ class Logger {
           console.warn(prefix, log.message, log.data || '');
           break;
         case LogLevel.ERROR:
-          console.error(prefix, log.message, log.error || log.data || '');
+          if (log.error) {
+            // Format error for better console display
+            const errorMessage = log.error.message || 'Unknown error';
+            const errorDetails = log.error.stack
+              ? `\nStack: ${log.error.stack}`
+              : log.error.code
+                ? `\nCode: ${log.error.code}`
+                : '';
+            console.error(
+              prefix,
+              log.message,
+              errorMessage + errorDetails,
+              log.metadata || ''
+            );
+          } else {
+            console.error(prefix, log.message, log.data || '');
+          }
           break;
       }
     } else {

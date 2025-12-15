@@ -1,6 +1,5 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Instrument, ClientInstrument } from '@/types';
-import { FilterOperator } from '@/types/search';
 import {
   DashboardFilters,
   DashboardFilterOptions,
@@ -15,26 +14,36 @@ import {
 } from '../utils/filterUtils';
 
 // FIXED: Accept enriched items (Instrument with clients array) for HAS_CLIENTS filter
+// FIXED: Use explicit ClientInstrument[] type (not optional, always present even if empty)
 type EnrichedInstrument = Instrument & {
-  clients?: ClientInstrument[];
+  clients: ClientInstrument[];
 };
 
 export function useDashboardFilters(
   items: EnrichedInstrument[] | Instrument[]
 ) {
   const [dateRange, setDateRange] = useState<DateRange | null>(null);
-  // TODO: filterOperator is currently unused - implement AND/OR logic for multiple filter combinations
-  // When implementing, update filterDashboardItems to accept FilterOperator parameter
-  const [filterOperator, setFilterOperator] = useState<FilterOperator>('AND');
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20; // Items per page
 
+  // FIXED: Normalize items to ensure all have clients array (even if empty)
+  // This prevents runtime issues when filterDashboardItems expects clients for HAS_CLIENTS logic
+  const normalizedItems = useMemo<EnrichedInstrument[]>(
+    () =>
+      (items as Array<Instrument | EnrichedInstrument>).map(it => ({
+        ...it,
+        clients: (it as EnrichedInstrument).clients ?? [],
+      })),
+    [items]
+  );
+
   // 기본 필터/검색/정렬은 공용 훅을 사용한다.
   // dateRange를 customFieldFilter에서 직접 사용하도록 개선
-  const baseFilters = usePageFilters<Instrument>({
-    items,
+  // FIXED: Type the hook to accept EnrichedInstrument for better type safety
+  const baseFilters = usePageFilters<EnrichedInstrument>({
+    items: normalizedItems,
     filterOptionsConfig: {
       status: 'simple',
       maker: 'simple',
@@ -49,18 +58,16 @@ export function useDashboardFilters(
     initialFilters: EMPTY_DASHBOARD_FILTERS,
     resetFilters: () => EMPTY_DASHBOARD_FILTERS,
     enableDateRange: false, // 직접 관리
-    enableFilterOperator: false, // 직접 관리
     syncWithURL: true, // URL 쿼리 파라미터와 상태 동기화
     urlParamMapping: {
       searchTerm: 'search',
     },
     // FIXED: Don't rely on customFieldFilter closure for dateRange - apply it outside
     customFieldFilter: (items, filters) => {
-      const instruments = items as EnrichedInstrument[];
       const dashboardFilters = filters as DashboardFilters;
       // Apply filters except dateRange (dateRange applied outside)
       return filterDashboardItems(
-        instruments as Instrument[],
+        items as Instrument[],
         dashboardFilters,
         null // dateRange is applied outside customFieldFilter
       ) as EnrichedInstrument[];
@@ -84,7 +91,7 @@ export function useDashboardFilters(
       return baseFilters.filteredItems;
     }
     return filterDashboardItems(
-      baseFilters.filteredItems as EnrichedInstrument[] as Instrument[],
+      baseFilters.filteredItems as Instrument[],
       baseFilters.filters as DashboardFilters,
       dateRange
     ) as EnrichedInstrument[];
@@ -95,7 +102,7 @@ export function useDashboardFilters(
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   // Reset to page 1 when filters change
-  React.useEffect(() => {
+  useEffect(() => {
     setCurrentPage(1);
   }, [baseFilters.searchTerm, baseFilters.filters, dateRange]);
 
@@ -259,11 +266,9 @@ export function useDashboardFilters(
     handleSort: handleSortProxy,
     getSortArrow: getSortArrowProxy,
     getActiveFiltersCount,
-    // 고급 검색
+    // 고급 검색 (날짜 범위만)
     dateRange,
     setDateRange,
-    filterOperator,
-    setFilterOperator,
     // Pagination
     currentPage,
     totalPages,

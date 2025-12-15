@@ -1,7 +1,8 @@
 // src/hooks/__tests__/useErrorHandler.test.tsx
-import { renderHook, act } from '@testing-library/react';
-import { useErrorHandler } from '../useErrorHandler';
+import { renderHook, act } from '@/test-utils/render';
+import { useErrorHandler } from '@/contexts/ToastContext';
 import { ErrorCodes, ErrorSeverity } from '@/types/errors';
+import { ToastProvider } from '@/contexts/ToastContext';
 
 // Mock the errorHandler
 jest.mock('@/utils/errorHandler', () => ({
@@ -18,18 +19,18 @@ jest.mock('@/utils/errorHandler', () => ({
     createError: jest.fn((code, message, stack, context) => ({
       code,
       message,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       context,
     })),
     handleNetworkError: jest.fn(() => ({
       code: 'NETWORK_ERROR' as any,
       message: 'Network error',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     })),
     handleSupabaseError: jest.fn(() => ({
       code: 'DATABASE_ERROR' as any,
       message: 'Database error',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     })),
   },
 }));
@@ -40,18 +41,22 @@ describe('useErrorHandler', () => {
   });
 
   it('should initialize with empty errors', () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
 
     expect(result.current.errors).toEqual([]);
     // FIXED: errorStats is no longer in state (removed, getters use global errorHandler)
   });
 
   it('should add error correctly', () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
     const mockError = {
       code: ErrorCodes.NETWORK_ERROR,
       message: 'Network failed',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       context: { endpoint: '/api/test' },
     };
 
@@ -67,16 +72,18 @@ describe('useErrorHandler', () => {
   });
 
   it('should remove error by toast ID', () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
     const mockError1 = {
       code: ErrorCodes.NETWORK_ERROR,
       message: 'Network failed 1',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
     const mockError2 = {
       code: ErrorCodes.NETWORK_ERROR,
       message: 'Network failed 2',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
 
     act(() => {
@@ -97,16 +104,18 @@ describe('useErrorHandler', () => {
   });
 
   it('should clear all errors', () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
     const mockError1 = {
       code: ErrorCodes.NETWORK_ERROR,
       message: 'Network failed 1',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
     const mockError2 = {
       code: ErrorCodes.DATABASE_ERROR,
       message: 'Database failed',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
 
     act(() => {
@@ -124,7 +133,9 @@ describe('useErrorHandler', () => {
   });
 
   it('should handle error with context', () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
     const mockError = new Error('Test error');
 
     act(() => {
@@ -136,7 +147,9 @@ describe('useErrorHandler', () => {
   });
 
   it('should handle error with severity', () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
     const mockError = new Error('Test error');
 
     act(() => {
@@ -147,25 +160,31 @@ describe('useErrorHandler', () => {
   });
 
   it('should provide error statistics', () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
 
     const stats = result.current.getErrorStats();
     expect(stats).toBeInstanceOf(Map);
   });
 
   it('should provide error count by code', () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
 
     const count = result.current.getErrorCount(ErrorCodes.NETWORK_ERROR);
     expect(count).toBe(0);
   });
 
   it('should provide recovery suggestions', () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
     const mockError = {
       code: ErrorCodes.NETWORK_ERROR,
       message: 'Network failed',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
 
     const suggestions = result.current.getRecoverySuggestions(mockError);
@@ -173,7 +192,9 @@ describe('useErrorHandler', () => {
   });
 
   it('should handle error with retry logic', async () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
     const mockOperation = jest
       .fn()
       .mockRejectedValue(new Error('Network error'));
@@ -193,7 +214,9 @@ describe('useErrorHandler', () => {
   }, 10000);
 
   it('should render ErrorToasts component', () => {
-    const { result } = renderHook(() => useErrorHandler());
+    const { result } = renderHook(() => useErrorHandler(), {
+      wrapper: ToastProvider,
+    });
 
     // ErrorToasts is a function that returns JSX, so we check if it's defined
     expect(result.current.ErrorToasts).toBeDefined();

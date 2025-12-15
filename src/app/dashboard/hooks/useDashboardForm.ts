@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 // import { Item } from '@/types'
 import { useFormState } from '@/hooks/useFormState';
 
@@ -21,17 +21,15 @@ export function useDashboardForm() {
   const { formData, updateField, updateFields, resetForm } =
     useFormState(initialFormData);
 
+  // FIXED: priceInput is the single source of truth for price input
+  // formData.price is derived at submit time, not stored separately
+  // This avoids the drift issue where formData.price and priceInput can get out of sync
   const [priceInput, setPriceInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
-  // FIXED: Handle price.toString() safely - normalize null/undefined/0 to empty string
-  useEffect(() => {
-    setPriceInput(formData.price ? String(formData.price) : '');
-  }, [formData.price]);
-
   const handlePriceChange = (value: string) => {
     setPriceInput(value);
-    updateField('price', value);
+    // Don't update formData.price - it will be derived at submit time
   };
 
   const handleFileChange = (files: FileList | null) => {

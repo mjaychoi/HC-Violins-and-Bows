@@ -1,14 +1,19 @@
 // src/app/clients/hooks/__tests__/useClients.mutations.test.tsx
 import React from 'react';
-import { renderHook, act, waitFor } from '@testing-library/react';
-import { useClients } from '../useClients';
+import { renderHook, act, waitFor } from '@/test-utils/render';
+import { useUnifiedClients as useClients } from '@/hooks/useUnifiedData';
 import { Client } from '@/types';
 
-jest.mock('@/hooks/useErrorHandler', () => ({
-  useErrorHandler: () => ({
-    handleError: jest.fn(),
-  }),
-}));
+// ✅ FIXED: ToastProvider도 export하도록 mock 수정
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    useErrorHandler: () => ({
+      handleError: jest.fn(),
+    }),
+  };
+});
 
 jest.mock('@/hooks/useUnifiedData', () => {
   const { SupabaseHelpers } = require('@/utils/supabaseHelpers');

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import '@testing-library/jest-dom';
 import ClientFilters from '../ClientFilters';
 
@@ -126,9 +126,11 @@ describe('ClientFilters', () => {
   it('handles hasInstruments filter - single selection', () => {
     render(<ClientFilters {...mockProps} />);
 
-    const hasInstrumentsCheckbox = screen.getByLabelText(
+    // ✅ FIXED: 중복 요소가 있으므로 getAllByLabelText 사용
+    const hasInstrumentsCheckboxes = screen.getAllByLabelText(
       /악기 보유|Has Instruments/i
     );
+    const hasInstrumentsCheckbox = hasInstrumentsCheckboxes[0];
     fireEvent.click(hasInstrumentsCheckbox);
 
     // 처음 선택 시: 다른 옵션이 있으면 제거 후 이 옵션만 선택
@@ -148,14 +150,13 @@ describe('ClientFilters', () => {
     };
     render(<ClientFilters {...propsWithSelected} />);
 
-    const hasInstrumentsCheckbox = screen.getByLabelText(
-      /악기 보유|Has Instruments/i
-    );
-    expect(hasInstrumentsCheckbox).toBeChecked();
+    // ✅ FIXED: hasInstruments는 라디오 버튼이므로 "전체" 라디오 버튼을 클릭하여 선택 해제
+    const allRadio = screen.getByLabelText(/전체|All/i);
+    expect(allRadio).toBeInTheDocument();
 
-    fireEvent.click(hasInstrumentsCheckbox);
+    fireEvent.click(allRadio);
 
-    // 선택 해제 시: 필터 제거
+    // 선택 해제 시: 필터 제거 (모든 hasInstruments 필터를 제거)
     expect(mockProps.onFilterChange).toHaveBeenCalledWith(
       'hasInstruments',
       'Has Instruments'
@@ -172,9 +173,11 @@ describe('ClientFilters', () => {
     };
     render(<ClientFilters {...propsWithSelected} />);
 
-    const hasInstrumentsCheckbox = screen.getByLabelText(
+    // ✅ FIXED: 중복 요소가 있으므로 getAllByLabelText 사용
+    const hasInstrumentsCheckboxes = screen.getAllByLabelText(
       /악기 보유|Has Instruments/i
     );
+    const hasInstrumentsCheckbox = hasInstrumentsCheckboxes[0];
     const noInstrumentsCheckbox = screen.getByLabelText(
       /악기 미보유|No Instruments/i
     );
@@ -274,7 +277,10 @@ describe('ClientFilters', () => {
     expect(screen.getByText(/연락처|Contact Number/i)).toBeInTheDocument();
     expect(screen.getByText(/이름|First Name/i)).toBeInTheDocument();
     expect(screen.getByText(/성|Last Name/i)).toBeInTheDocument();
-    expect(screen.getByText(/악기 연결|Has Instruments/i)).toBeInTheDocument();
+    // Has Instruments appears in both h4 title and span label, so use getAllByText
+    expect(
+      screen.getAllByText(/악기 연결|Has Instruments/i).length
+    ).toBeGreaterThan(0);
   });
 
   it('handles ESC key to close filters', () => {

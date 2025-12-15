@@ -1,9 +1,19 @@
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@/test-utils/render';
 import { useSalesHistory } from '../../app/sales/hooks/useSalesHistory';
-import { useErrorHandler } from '../useErrorHandler';
+import { useErrorHandler } from '@/contexts/ToastContext';
 import { SalesHistory } from '@/types';
 
-jest.mock('../useErrorHandler');
+// ✅ FIXED: jest.setup.js에서 이미 ToastContext를 부분적으로 mock했으므로,
+// 여기서는 useErrorHandler만 override
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    useErrorHandler: jest.fn(() => ({
+      handleError: jest.fn(),
+    })),
+  };
+});
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
     push: jest.fn(),

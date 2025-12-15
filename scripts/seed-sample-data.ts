@@ -7,6 +7,7 @@
  * - 클라이언트-악기 관계 (150개)
  * - 유지보수 작업 (200개)
  * - 판매 이력 (30개)
+ * - 연락 기록 (100개)
  *
  * 실행: npm run seed:data
  */
@@ -986,7 +987,116 @@ async function seedSampleData() {
     }
     logInfo(`✅ ${salesCount}개의 판매 이력 생성 완료\n`, 'seedSampleData');
 
-    // 7. 최종 통계
+    // 9. 연락 기록 생성
+    logInfo('📞 연락 기록 생성 중...', 'seedSampleData');
+    const contactTypes = [
+      'email',
+      'phone',
+      'meeting',
+      'note',
+      'follow_up',
+    ] as const;
+    const purposes = [
+      'quote',
+      'follow_up',
+      'maintenance',
+      'sale',
+      'inquiry',
+      'other',
+      null,
+    ] as const;
+    const contactSubjects = [
+      '바이올린 견적 문의',
+      '악기 상태 확인',
+      '유지보수 일정 조율',
+      '판매 상담',
+      'Follow-up 연락',
+      '일반 문의',
+      '악기 점검 요청',
+      '가격 협상',
+      '배송 일정 확인',
+      '인증서 관련 문의',
+    ];
+    const contactContents = [
+      '안녕하세요, 바이올린 견적을 받고 싶습니다.',
+      '악기 상태가 어떤지 확인하고 싶습니다.',
+      '유지보수 일정을 조율하고 싶습니다.',
+      '판매에 대해 상담하고 싶습니다.',
+      '이전에 논의했던 내용에 대해 Follow-up 연락드립니다.',
+      '일반적인 문의사항이 있습니다.',
+      '악기 점검을 요청드립니다.',
+      '가격에 대해 협상하고 싶습니다.',
+      '배송 일정을 확인하고 싶습니다.',
+      '인증서 관련해서 문의드립니다.',
+    ];
+
+    let contactLogCount = 0;
+    const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+    const oneMonthLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    // 더 많은 연락 기록 생성 (약 100개)
+    for (let i = 0; i < 100; i++) {
+      const clientId = getRandomElement(clientIds);
+      const instrumentId =
+        Math.random() > 0.5 ? getRandomElement(instrumentIds) : null; // 50% 확률로 악기 연결
+      const contactType = getRandomElement([...contactTypes]);
+      const purpose = getRandomElement([...purposes]);
+      const contactDate = getRandomDate(sixMonthsAgo, now);
+
+      // subject는 email이나 meeting일 때만 설정
+      const subject =
+        contactType === 'email' || contactType === 'meeting'
+          ? getRandomElement(contactSubjects)
+          : null;
+
+      const content = getRandomElement(contactContents);
+
+      // next_follow_up_date는 30% 확률로 설정 (follow_up 타입이거나 랜덤)
+      const hasFollowUp = contactType === 'follow_up' || Math.random() < 0.3;
+      const nextFollowUpDate = hasFollowUp
+        ? getRandomDate(now, oneMonthLater)
+        : null;
+
+      // follow_up_completed_at은 next_follow_up_date가 있고, 50% 확률로 완료 처리
+      const followUpCompletedAt =
+        nextFollowUpDate && Math.random() < 0.5
+          ? new Date(
+              new Date(contactDate).getTime() +
+                Math.random() *
+                  (now.getTime() - new Date(contactDate).getTime())
+            ).toISOString()
+          : null;
+
+      await client.query(
+        `INSERT INTO contact_logs (
+          client_id, instrument_id, contact_type, subject, content,
+          contact_date, next_follow_up_date, follow_up_completed_at, purpose
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          clientId,
+          instrumentId,
+          contactType,
+          subject,
+          content,
+          contactDate,
+          nextFollowUpDate,
+          followUpCompletedAt,
+          purpose,
+        ]
+      );
+      contactLogCount++;
+
+      if (i % 20 === 0) {
+        logInfo(`  ✓ ${contactLogCount}개 생성 중...`, 'seedSampleData');
+      }
+    }
+    logInfo(
+      `✅ ${contactLogCount}개의 연락 기록 생성 완료\n`,
+      'seedSampleData'
+    );
+
+    // 10. 최종 통계
     logInfo(
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       'seedSampleData'
@@ -1005,6 +1115,7 @@ async function seedSampleData() {
     );
     logInfo(`  • 유지보수 작업: ${taskCount}개`, 'seedSampleData');
     logInfo(`  • 판매 이력: ${salesCount}개`, 'seedSampleData');
+    logInfo(`  • 연락 기록: ${contactLogCount}개`, 'seedSampleData');
     logInfo(
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n',
       'seedSampleData'

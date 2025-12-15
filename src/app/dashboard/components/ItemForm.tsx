@@ -1,18 +1,19 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { Instrument } from '@/types';
 import { useDashboardForm } from '../hooks/useDashboardForm';
 import { validateInstrumentData } from '../utils/dashboardUtils';
 import { classNames } from '@/utils/classNames';
-import Button from '@/components/common/Button';
-import Input from '@/components/common/Input';
+import { Button, Input } from '@/components/common/inputs';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import {
   generateInstrumentSerialNumber,
   normalizeInstrumentSerial,
   validateInstrumentSerial,
 } from '@/utils/uniqueNumberGenerator';
+import { modalStyles } from '@/components/common/modals/modalStyles';
+import { ModalHeader } from '@/components/common/modals/ModalHeader';
 
 interface ItemFormProps {
   isOpen: boolean;
@@ -43,12 +44,26 @@ export default function ItemForm({
     handleFileChange,
     removeFile,
   } = useDashboardForm();
-  const [errors, setErrors] = React.useState<string[]>([]);
-  const [success, setSuccess] = React.useState(false);
-  const lastInitializedItemId = React.useRef<string | null>(null);
-  const hasInitializedCreate = React.useRef(false);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [success, setSuccess] = useState(false);
+  const lastInitializedItemId = useRef<string | null>(null);
+  const hasInitializedCreate = useRef(false);
+  const lastAutoSerialRef = useRef<string>('');
+  const lastSerialsKeyRef = useRef<string>('');
+  const formDataRef = useRef(formData);
 
-  React.useEffect(() => {
+  // Keep formDataRef in sync with formData
+  useEffect(() => {
+    formDataRef.current = formData;
+  }, [formData]);
+
+  // FIXED: Derive stable key for existingSerialNumbers to avoid unnecessary re-runs
+  const serialsKey = useMemo(
+    () => existingSerialNumbers.slice().sort().join('|'),
+    [existingSerialNumbers]
+  );
+
+  useEffect(() => {
     if (!isOpen) return;
 
     if (selectedItem && isEditing) {
@@ -62,32 +77,59 @@ export default function ItemForm({
       updateField('type', selectedItem.type || '');
       updateField('subtype', selectedItem.subtype || '');
       updateField('year', selectedItem.year?.toString() || '');
-      updateField('price', selectedItem.price?.toString() || '');
+      // FIXED: Don't update formData.price - use priceInput directly
+      // priceInput will be set via handlePriceChange
+      handlePriceChange(selectedItem.price?.toString() || '');
       updateField('certificate', selectedItem.certificate ?? false);
       updateField('size', selectedItem.size || '');
       updateField('weight', selectedItem.weight || '');
       updateField('ownership', selectedItem.ownership || '');
       updateField('note', selectedItem.note || '');
       updateField('serial_number', selectedItem.serial_number || '');
-    } else if (!isEditing && !selectedItem && !hasInitializedCreate.current) {
-      // Reset form when closing modal or switching to create mode
-      lastInitializedItemId.current = null;
-      resetForm();
-      // 새 악기 추가 시 serial number 자동 생성
-      const autoSerialNumber = generateInstrumentSerialNumber(
-        null,
-        existingSerialNumbers
-      );
-      updateField('serial_number', autoSerialNumber);
-      hasInitializedCreate.current = true;
+    } else if (!isEditing && !selectedItem) {
+      // FIXED: Create mode - handle initialization and serial regeneration
+      if (!hasInitializedCreate.current) {
+        // First time opening create form
+        lastInitializedItemId.current = null;
+        resetForm();
+        const autoSerialNumber = generateInstrumentSerialNumber(
+          null,
+          existingSerialNumbers
+        );
+        lastAutoSerialRef.current = autoSerialNumber;
+        lastSerialsKeyRef.current = serialsKey;
+        updateField('serial_number', autoSerialNumber);
+        hasInitializedCreate.current = true;
+      } else {
+        // Modal already initialized, but serial list changed
+        // Regenerate ONLY if user didn't manually edit serial
+        const current = formDataRef.current.serial_number?.trim();
+        const shouldAuto = !current || current === lastAutoSerialRef.current;
+        const serialsChanged = lastSerialsKeyRef.current !== serialsKey;
+
+        // Only regenerate if serials list changed (and serial was auto-generated)
+        if (shouldAuto && serialsChanged) {
+          const autoSerialNumber = generateInstrumentSerialNumber(
+            formDataRef.current.type?.trim() || null,
+            existingSerialNumbers
+          );
+          lastAutoSerialRef.current = autoSerialNumber;
+          lastSerialsKeyRef.current = serialsKey;
+          updateField('serial_number', autoSerialNumber);
+        }
+      }
     }
+    // FIXED: Remove formData.serial_number and formData.type from deps to prevent infinite loop
+    // Use formDataRef to access latest values without causing re-renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedItem,
     isEditing,
     resetForm,
     updateField,
     isOpen,
-    existingSerialNumbers,
+    serialsKey,
+    handlePriceChange,
   ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -112,9 +154,13 @@ export default function ItemForm({
         );
       }
 
-      const normalizedSerial = normalizeInstrumentSerial(serialNumber);
+      // FIXED: Normalize only if we have a string (null check)
+      const serialRaw = serialNumber?.trim() || '';
+      const normalizedSerial = serialRaw
+        ? normalizeInstrumentSerial(serialRaw)
+        : '';
       const serialValidation = validateInstrumentSerial(
-        normalizedSerial,
+        normalizedSerial || null,
         existingSerialNumbers,
         isEditing ? (selectedItem?.serial_number ?? null) : undefined
       );
@@ -140,11 +186,13 @@ export default function ItemForm({
           const yearNum = parseInt(yearStr, 10);
           return isNaN(yearNum) ? null : yearNum;
         })(),
+        // FIXED: Derive price from priceInput (single source of truth) at submit time
+        // Normalize price: remove commas, handle empty strings, validate number
         price: (() => {
-          const priceStr = formData.price?.toString().trim();
-          if (!priceStr) return null;
-          const priceNum = parseFloat(priceStr);
-          return isNaN(priceNum) ? null : priceNum;
+          const normalizedPrice = priceInput.trim().replace(/,/g, '');
+          if (normalizedPrice === '') return null;
+          const priceNum = Number(normalizedPrice);
+          return Number.isFinite(priceNum) ? priceNum : null;
         })(),
         certificate: formData.certificate,
         size: formData.size?.trim() || null,
@@ -189,17 +237,24 @@ export default function ItemForm({
       updateField(name as keyof typeof formData, value as string);
 
       // 타입이 변경되면 serial number 자동 재생성 (새 악기 추가 시에만)
+      // FIXED: Only auto-generate when serial was auto-generated (or empty) to avoid clobbering user edits
       if (name === 'type' && !isEditing) {
-        const newSerialNumber = generateInstrumentSerialNumber(
-          value || null,
-          existingSerialNumbers
-        );
-        updateField('serial_number', newSerialNumber);
+        const current = formData.serial_number?.trim();
+        const shouldAuto = !current || current === lastAutoSerialRef.current;
+        if (shouldAuto) {
+          const newSerialNumber = generateInstrumentSerialNumber(
+            value || null,
+            existingSerialNumbers
+          );
+          lastAutoSerialRef.current = newSerialNumber;
+          updateField('serial_number', newSerialNumber);
+        }
       }
     }
   };
 
   // Close modal with ESC key and outside click
+  // FIXED: Use only useOutsideClose to avoid double close handling
   const modalRef = useRef<HTMLDivElement>(null);
   useOutsideClose(modalRef, {
     isOpen,
@@ -210,7 +265,7 @@ export default function ItemForm({
 
   return (
     <div
-      className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center"
+      className={modalStyles.overlay}
       onClick={e => {
         if (e.target === e.currentTarget) {
           onClose();
@@ -219,33 +274,18 @@ export default function ItemForm({
     >
       <div
         ref={modalRef}
-        className="relative mx-auto p-5 border w-96 shadow-lg rounded-md bg-white"
+        className={modalStyles.container}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="item-form-title"
       >
-        <div className="mt-3">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-medium text-gray-900">
-              {isEditing ? 'Edit Item' : 'Add New Item'}
-            </h3>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-
+        <ModalHeader
+          title={isEditing ? 'Edit Item' : 'Add New Item'}
+          icon="item"
+          onClose={onClose}
+          titleId="item-form-title"
+        />
+        <div className={modalStyles.body}>
           {/* UX: Success message with action buttons */}
           {success && !isEditing && (
             <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -275,6 +315,8 @@ export default function ItemForm({
                     <Button
                       type="button"
                       onClick={() => {
+                        // FIXED: Clear errors when switching back to create form
+                        setErrors([]);
                         setSuccess(false);
                         resetForm();
                         // Auto-generate new serial for next item
@@ -282,7 +324,9 @@ export default function ItemForm({
                           null,
                           existingSerialNumbers
                         );
+                        lastAutoSerialRef.current = autoSerialNumber;
                         updateField('serial_number', autoSerialNumber);
+                        hasInitializedCreate.current = true;
                       }}
                       variant="success"
                       size="sm"
@@ -293,8 +337,10 @@ export default function ItemForm({
                     <Button
                       type="button"
                       onClick={() => {
-                        resetForm();
+                        // FIXED: Clear errors on Done
+                        setErrors([]);
                         setSuccess(false);
+                        resetForm();
                         onClose();
                       }}
                       variant="success"
@@ -351,7 +397,6 @@ export default function ItemForm({
                 name="subtype"
                 value={formData.subtype}
                 onChange={handleInputChange}
-                required
                 placeholder="Enter subtype"
               />
 
@@ -367,9 +412,7 @@ export default function ItemForm({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
+                <label className={classNames.formLabel}>Status</label>
                 <select
                   name="status"
                   value={formData.status}
@@ -387,11 +430,12 @@ export default function ItemForm({
               <Input
                 label="Price"
                 name="price"
-                type="number"
+                type="text"
+                inputMode="decimal"
                 value={priceInput}
                 onChange={e => handlePriceChange(e.target.value)}
                 placeholder="Enter price"
-                helperText="Selling price in your currency (optional)"
+                helperText="Selling price (optional)"
               />
             </div>
 
@@ -422,7 +466,7 @@ export default function ItemForm({
             />
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className={classNames.formLabel}>
                 Serial Number
                 {!isEditing && (
                   <span className="ml-2 text-xs text-gray-500">
@@ -449,16 +493,14 @@ export default function ItemForm({
                 }
               />
               {!isEditing && (
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-gray-500 italic">
                   타입 입력 시 자동으로 생성됩니다
                 </p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Images
-              </label>
+              <label className={classNames.formLabel}>Images</label>
               <input
                 type="file"
                 multiple
@@ -503,9 +545,7 @@ export default function ItemForm({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Note
-              </label>
+              <label className={classNames.formLabel}>Note</label>
               <textarea
                 name="note"
                 value={formData.note}
@@ -520,7 +560,7 @@ export default function ItemForm({
               </p>
             </div>
 
-            <div className="flex justify-end space-x-3 pt-4">
+            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
               <Button type="button" variant="secondary" onClick={onClose}>
                 Cancel
               </Button>

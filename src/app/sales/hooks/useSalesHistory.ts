@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { SalesHistory } from '@/types';
-import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { useErrorHandler } from '@/contexts/ToastContext';
 
 const PAGE_SIZE = 10;
 

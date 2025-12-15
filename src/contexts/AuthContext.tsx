@@ -10,7 +10,10 @@ import React, {
 import { useRouter } from 'next/navigation';
 import type { User, Session, AuthError } from '@supabase/supabase-js';
 import { logError, logInfo, logApiRequest } from '@/utils/logger';
-import { getSupabaseClient } from '@/lib/supabase-client';
+import {
+  getSupabaseClient,
+  getSupabaseClientSync,
+} from '@/lib/supabase-client';
 
 interface AuthContextType {
   user: User | null;
@@ -42,7 +45,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const loadInitialSession = async () => {
       try {
-        const supabase = await getSupabaseClient();
+        // Try to get client synchronously first (faster, avoids webpack issues)
+        let supabase = getSupabaseClientSync();
+        if (!supabase) {
+          // Fallback to async if sync fails
+          supabase = await getSupabaseClient();
+        }
+
+        if (!supabase) {
+          throw new Error('Failed to initialize Supabase client');
+        }
+
         const {
           data: { session },
           error,
@@ -58,7 +71,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               'Invalid refresh token detected, clearing session',
               'AuthContext'
             );
-            const supabase = await getSupabaseClient();
+            let supabase = getSupabaseClientSync();
+            if (!supabase) {
+              supabase = await getSupabaseClient();
+            }
             await supabase.auth.signOut().catch(() => {
               // Ignore - already logged out or token missing
             });
@@ -78,10 +94,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
       } catch (error) {
         if (isCancelled) return;
-        logError('Failed to get initial session', error, 'AuthContext');
 
         const message = error instanceof Error ? error.message : String(error);
+
+        // Handle network errors gracefully
         if (
+          message.includes('Failed to fetch') ||
+          message.includes('NetworkError') ||
+          message.includes('Network request failed')
+        ) {
+          logError(
+            'Network error while loading session. This may be due to: 1) No internet connection, 2) Supabase service unavailable, 3) Incorrect Supabase URL. Continuing without session.',
+            error,
+            'AuthContext'
+          );
+          // Continue without session - app can work in offline mode
+          setSession(null);
+          setUser(null);
+        } else if (
           message.includes('Invalid Refresh Token') ||
           message.includes('Refresh Token Not Found')
         ) {
@@ -93,7 +123,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await supabase.auth.signOut().catch(() => undefined);
           setSession(null);
           setUser(null);
-          router.push('/');
+          // ✅ FIXED: redirect는 AppLayout에서 처리 (상태만 관리)
+        } else {
+          logError('Failed to get initial session', error, 'AuthContext');
+          // Continue without session on other errors
+          setSession(null);
+          setUser(null);
         }
       } finally {
         if (!isCancelled) {
@@ -107,7 +142,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen for auth changes
     let subscription: { unsubscribe: () => void } | null = null;
     (async () => {
-      const supabase = await getSupabaseClient();
+      let supabase = getSupabaseClientSync();
+      if (!supabase) {
+        supabase = await getSupabaseClient();
+      }
       const {
         data: { subscription: sub },
       } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -121,21 +159,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         setLoading(false);
 
-        // Redirect to login if signed out or token error
+        // ✅ FIXED: redirect는 AppLayout에서 처리 (상태만 관리)
+        // 토큰 오류나 로그아웃 시 상태만 업데이트
         if (
           !session &&
           (_event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED')
         ) {
-          // TOKEN_REFRESHED 이벤트에서 session이 null이면 토큰 오류
           if (_event === 'TOKEN_REFRESHED' && !session) {
-            logInfo(
-              'Token refresh failed, redirecting to login',
-              'AuthContext'
-            );
-            router.push('/');
-          } else if (_event === 'SIGNED_OUT') {
-            router.push('/');
+            logInfo('Token refresh failed, clearing session', 'AuthContext');
           }
+          // 상태만 업데이트, redirect는 AppLayout에서 처리
         }
       });
       subscription = sub;
@@ -200,7 +233,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const startTime = performance.now();
 
     try {
-      const supabase = await getSupabaseClient();
+      let supabase = getSupabaseClientSync();
+      if (!supabase) {
+        supabase = await getSupabaseClient();
+      }
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -227,7 +263,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.session) {
         setSession(data.session);
         setUser(data.user);
-        router.push('/dashboard');
+        // ✅ FIXED: redirect는 AppLayout에서 처리 (상태만 관리)
+        // 로그인 성공 시 AppLayout이 자동으로 리다이렉트 처리
         logApiRequest('POST', 'auth/signin', 200, duration, 'AuthContext', {
           operation: 'signIn',
           userId: data.user?.id,
@@ -278,7 +315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setSession(null);
       setUser(null);
-      router.push('/');
+      // ✅ FIXED: redirect는 AppLayout에서 처리 (상태만 관리)
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
       logError('Sign out exception', error, 'AuthContext', {
@@ -287,7 +324,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       setSession(null);
       setUser(null);
-      router.push('/');
+      // ✅ FIXED: redirect는 AppLayout에서 처리 (상태만 관리)
     }
   };
 
@@ -295,7 +332,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const startTime = performance.now();
 
     try {
-      const supabase = await getSupabaseClient();
+      let supabase = getSupabaseClientSync();
+      if (!supabase) {
+        supabase = await getSupabaseClient();
+      }
       const { data, error } = await supabase.auth.refreshSession();
       const duration = Math.round(performance.now() - startTime);
 
@@ -346,7 +386,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logInfo('No session after refresh, clearing auth state', 'AuthContext');
         setSession(null);
         setUser(null);
-        router.push('/');
+        // ✅ FIXED: redirect는 AppLayout에서 처리 (상태만 관리)
       }
     } catch (error) {
       const duration = Math.round(performance.now() - startTime);
@@ -361,7 +401,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ) {
         setSession(null);
         setUser(null);
-        router.push('/');
+        // ✅ FIXED: redirect는 AppLayout에서 처리 (상태만 관리)
       }
     }
   };

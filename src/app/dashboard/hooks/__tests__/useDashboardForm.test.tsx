@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '@/test-utils/render';
 import { useDashboardForm } from '../useDashboardForm';
 
 describe('useDashboardForm', () => {
@@ -46,8 +46,10 @@ describe('useDashboardForm', () => {
       result.current.handlePriceChange('10000');
     });
 
+    // FIXED: priceInput is the single source of truth, formData.price is derived at submit time
     expect(result.current.priceInput).toBe('10000');
-    expect(result.current.formData.price).toBe('10000');
+    // formData.price is not updated immediately - it remains at initial value (empty string)
+    expect(result.current.formData.price).toBe('');
   });
 
   it('should handle file change', () => {
@@ -121,15 +123,19 @@ describe('useDashboardForm', () => {
     expect(result.current.selectedFiles).toHaveLength(0);
   });
 
-  it('should sync price input with form data', () => {
+  it('should not sync price input with form data (priceInput is single source of truth)', () => {
     const { result } = renderHook(() => useDashboardForm());
 
     act(() => {
+      // FIXED: formData.price is string type, so use string value
       result.current.updateField('price', '5000');
     });
 
-    // useEffect should sync priceInput
-    expect(result.current.priceInput).toBe('5000');
+    // FIXED: priceInput is the single source of truth and is not synced from formData.price
+    // formData.price can be set directly, but priceInput remains independent
+    // This test verifies that priceInput is not automatically synced from formData.price
+    expect(result.current.formData.price).toBe('5000');
+    expect(result.current.priceInput).toBe(''); // priceInput is not synced from formData
   });
 
   it('should support all form fields', () => {

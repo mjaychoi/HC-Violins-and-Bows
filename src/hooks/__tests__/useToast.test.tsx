@@ -1,9 +1,10 @@
 import React from 'react';
-import { renderHook, act, render } from '@testing-library/react';
-import { useToast } from '../useToast';
+import { renderHook, act } from '@/test-utils/render';
+import { useToast } from '@/contexts/ToastContext';
+import { ToastProvider } from '@/contexts/ToastContext';
 
 // Mock SuccessToast component
-jest.mock('@/components/common/SuccessToast', () => {
+jest.mock('@/components/common/feedback/SuccessToast', () => {
   return function SuccessToast({
     message,
   }: {
@@ -19,7 +20,7 @@ jest.mock('@/components/common/SuccessToast', () => {
 });
 
 // Mock SuccessToasts component to return a predictable structure with toast IDs
-jest.mock('@/components/common/SuccessToasts', () => {
+jest.mock('@/components/common/feedback/SuccessToasts', () => {
   return function SuccessToasts({
     toasts,
   }: {
@@ -50,8 +51,10 @@ describe('useToast', () => {
   });
 
   it('should initialize with empty toasts', () => {
-    const { result } = renderHook(() => useToast());
-    expect(result.current.SuccessToasts).toBeDefined();
+    const { result } = renderHook(() => useToast(), {
+      wrapper: ToastProvider,
+    });
+    expect(result.current.toasts).toEqual([]);
   });
 
   it('should show success toast', () => {
@@ -61,11 +64,9 @@ describe('useToast', () => {
       result.current.showSuccess('Test message');
     });
 
-    // Render the SuccessToasts component to verify it contains the toast
-    const { container } = render(result.current.SuccessToasts());
-    const toasts = container.querySelectorAll('[data-testid="success-toast"]');
-    expect(toasts.length).toBe(1);
-    expect(toasts[0]?.textContent).toBe('Test message');
+    // ✅ FIXED: ToastHost가 자동 렌더링되므로 toasts 배열 확인
+    expect(result.current.toasts.length).toBe(1);
+    expect(result.current.toasts[0]?.message).toBe('Test message');
   });
 
   it('should show multiple toasts', () => {
@@ -77,9 +78,11 @@ describe('useToast', () => {
       result.current.showSuccess('Message 3');
     });
 
-    const { container } = render(result.current.SuccessToasts());
-    const toasts = container.querySelectorAll('[data-testid="success-toast"]');
-    expect(toasts.length).toBe(3);
+    // ✅ FIXED: SuccessToasts는 ToastHost에서 자동 렌더링되므로 toasts 배열 확인
+    expect(result.current.toasts.length).toBe(3);
+    expect(result.current.toasts[0]?.message).toBe('Message 1');
+    expect(result.current.toasts[1]?.message).toBe('Message 2');
+    expect(result.current.toasts[2]?.message).toBe('Message 3');
   });
 
   it('should remove toast', () => {
@@ -90,12 +93,10 @@ describe('useToast', () => {
       result.current.showSuccess('Message 2');
     });
 
-    let { container } = render(result.current.SuccessToasts());
-    let toasts = container.querySelectorAll('[data-testid="success-toast"]');
-    expect(toasts.length).toBe(2);
+    expect(result.current.toasts.length).toBe(2);
 
-    // Get the first toast ID from data attribute
-    const firstToastId = toasts[0]?.getAttribute('data-toast-id');
+    // Get the first toast ID
+    const firstToastId = result.current.toasts[0]?.id;
     expect(firstToastId).toBeTruthy();
 
     act(() => {
@@ -104,10 +105,7 @@ describe('useToast', () => {
       }
     });
 
-    // Re-render to get updated state
-    ({ container } = render(result.current.SuccessToasts()));
-    toasts = container.querySelectorAll('[data-testid="success-toast"]');
-    expect(toasts.length).toBe(1);
+    expect(result.current.toasts.length).toBe(1);
   });
 
   it('should generate unique toast IDs', () => {
@@ -118,12 +116,7 @@ describe('useToast', () => {
       result.current.showSuccess('Message 2');
     });
 
-    const { container } = render(result.current.SuccessToasts());
-    const toasts = container.querySelectorAll('[data-testid="success-toast"]');
-    const ids = Array.from(toasts)
-      .map(toast => toast.getAttribute('data-toast-id'))
-      .filter((id): id is string => id !== null);
-
+    const ids = result.current.toasts.map(toast => toast.id);
     expect(ids.length).toBe(2);
     expect(new Set(ids).size).toBe(2); // All IDs should be unique
   });

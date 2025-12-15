@@ -1,8 +1,8 @@
-import { addDays, isBefore, isSameDay, startOfDay } from 'date-fns';
+import { addDays, isBefore, isSameDay } from 'date-fns';
 import type { MaintenanceTask } from '@/types';
 import type { DateRange, FilterOperator } from '@/types/search';
 import type { TaskType, TaskStatus, TaskPriority } from '@/types';
-import { toLocalYMD, parseTaskDateLocal } from '@/utils/dateParsing';
+import { toLocalYMD, parseYMDLocal, todayLocalYMD } from '@/utils/dateParsing';
 
 /**
  * Check if a date string is within the date range
@@ -36,25 +36,26 @@ export const filterByDateRange = (
     return tasks;
   }
 
-  return tasks.filter(task => {
-    const dateFields = [
-      task.received_date,
-      task.due_date,
-      task.personal_due_date,
-      task.scheduled_date,
-      task.completed_date,
+  // Get all date fields for a task
+  const dateFields = (t: MaintenanceTask): string[] =>
+    [
+      t.received_date,
+      t.due_date,
+      t.personal_due_date,
+      t.scheduled_date,
+      t.completed_date,
     ].filter(Boolean) as string[];
 
-    if (dateFields.length === 0) return false;
+  return tasks.filter(task => {
+    const dates = dateFields(task);
+    if (dates.length === 0) return false;
 
-    // OR condition: at least one date must be in range
-    if (operator === 'OR') {
-      return dateFields.some(date => checkDateInRange(date, dateRange));
+    if (operator === 'AND') {
+      // All date fields must be within range
+      return dates.every(d => checkDateInRange(d, dateRange));
     }
-    // AND condition: all dates must be in range
-    // Note: This is more restrictive - all date fields must be within the range.
-    // Tasks with some dates in range and others outside will be excluded.
-    return dateFields.every(date => checkDateInRange(date, dateRange));
+    // OR (default): At least one date field must be within range
+    return dates.some(d => checkDateInRange(d, dateRange));
   });
 };
 
@@ -141,7 +142,7 @@ export const filterBySearchFilters = (
 
 /**
  * Calculate summary statistics for tasks
- * FIXED: Use parseTaskDateLocal to handle date-only strings correctly (avoid timezone shifts)
+ * FIXED: Use parseYMDLocal for consistent date parsing strategy
  */
 export const calculateSummaryStats = (
   tasks: MaintenanceTask[]
@@ -151,21 +152,24 @@ export const calculateSummaryStats = (
   upcoming: number;
   total: number;
 } => {
-  const today = startOfDay(new Date());
+  // Use standardized "today" source for consistency
+  const todayYMD = todayLocalYMD();
+  const today = parseYMDLocal(todayYMD)!;
   let overdue = 0;
   let todayCount = 0;
   let upcoming = 0;
 
   tasks.forEach(task => {
     const dateStr =
-      task.scheduled_date || task.due_date || task.personal_due_date;
+      task.due_date || task.personal_due_date || task.scheduled_date;
     if (!dateStr) return;
 
     if (task.status === 'completed' || task.status === 'cancelled') return;
 
     try {
-      // FIXED: Use parseTaskDateLocal to handle date-only strings correctly
-      const taskDate = startOfDay(parseTaskDateLocal(dateStr));
+      // FIXED: Use parseYMDLocal for consistent date parsing strategy
+      const taskDate = parseYMDLocal(dateStr);
+      if (!taskDate) return;
 
       if (isBefore(taskDate, today)) {
         overdue += 1;

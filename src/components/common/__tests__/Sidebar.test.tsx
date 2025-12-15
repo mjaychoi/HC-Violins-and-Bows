@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
-import Sidebar from '../Sidebar';
+import { Sidebar } from '@/components/common/layout';
 
 describe('Sidebar', () => {
   const mockOnToggle = jest.fn();
@@ -30,8 +30,8 @@ describe('Sidebar', () => {
 
     const sidebar = container.firstChild as HTMLElement;
     expect(sidebar.className).toContain('w-16');
-    // Content is hidden with CSS class 'hidden', but still in DOM
-    const contentDiv = container.querySelector('.hidden');
+    // ✅ FIXED: Sidebar는 opacity-0 pointer-events-none을 사용 (hidden 클래스 아님)
+    const contentDiv = container.querySelector('.opacity-0');
     expect(contentDiv).toBeInTheDocument();
   });
 
@@ -56,7 +56,8 @@ describe('Sidebar', () => {
       </Sidebar>
     );
 
-    const contentDiv = container.querySelector('.block');
+    // ✅ FIXED: Sidebar는 opacity-100을 사용 (block 클래스 아님)
+    const contentDiv = container.querySelector('.opacity-100');
     expect(contentDiv).toBeInTheDocument();
     expect(screen.getByText('Sidebar Content')).toBeInTheDocument();
   });
@@ -68,7 +69,8 @@ describe('Sidebar', () => {
       </Sidebar>
     );
 
-    const contentDiv = container.querySelector('.hidden');
+    // ✅ FIXED: Sidebar는 opacity-0 pointer-events-none을 사용 (hidden 클래스 아님)
+    const contentDiv = container.querySelector('.opacity-0');
     expect(contentDiv).toBeInTheDocument();
     // Content is hidden with CSS but still exists in DOM
     expect(contentDiv?.textContent).toBe('Sidebar Content');

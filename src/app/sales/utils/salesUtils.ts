@@ -2,7 +2,12 @@
 import { differenceInMonths, differenceInCalendarDays } from 'date-fns';
 import { EnrichedSale, Client, Instrument, SalesHistory } from '@/types';
 import { SalesTotals, DataQuality, DatePreset } from '../types';
-import { parseYMDUTC } from './salesFormatters';
+import {
+  parseYMDUTC,
+  formatDisplayDate,
+  formatCompactDate,
+  formatMonth,
+} from '@/utils/dateParsing';
 
 /**
  * 클라이언트와 악기 맵을 생성합니다.
@@ -109,8 +114,17 @@ export function calculateTotals(sales: EnrichedSale[]): SalesTotals {
 /**
  * 기간 정보를 포맷팅합니다.
  * FIXED: Use parseYMDUTC to avoid timezone issues
+ * @param from - 시작일 (필터)
+ * @param to - 종료일 (필터)
+ * @param actualFromDate - 실제 데이터의 시작일 (optional, all 기간일 때 사용)
+ * @param actualToDate - 실제 데이터의 종료일 (optional, all 기간일 때 사용)
  */
-export function formatPeriodInfo(from: string, to: string): string {
+export function formatPeriodInfo(
+  from: string,
+  to: string,
+  actualFromDate?: string,
+  actualToDate?: string
+): string {
   if (from && to) {
     try {
       // FIXED: Use parseYMDUTC instead of parseISO to avoid timezone shifts
@@ -119,18 +133,13 @@ export function formatPeriodInfo(from: string, to: string): string {
       const days = differenceInCalendarDays(toDate, fromDate) + 1;
       const months = differenceInMonths(toDate, fromDate);
 
-      // Format with UTC timezone to ensure correct day display
+      // FIXED: Use unified date formatters for consistency
       if (days <= 1) {
-        return fromDate.toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-          timeZone: 'UTC',
-        });
+        return formatDisplayDate(from);
       } else if (days <= 7) {
         return `${days} days`;
       } else if (months < 1) {
-        return `${fromDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} - ${toDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`;
+        return `${formatCompactDate(from)} - ${formatDisplayDate(to)}`;
       } else if (
         months === 1 &&
         fromDate.getUTCDate() === 1 &&
@@ -139,34 +148,37 @@ export function formatPeriodInfo(from: string, to: string): string {
             Date.UTC(toDate.getUTCFullYear(), toDate.getUTCMonth() + 1, 0)
           ).getUTCDate()
       ) {
-        return fromDate.toLocaleDateString('en-US', {
-          month: 'long',
-          year: 'numeric',
-          timeZone: 'UTC',
-        });
+        // Full month: use formatMonth for month name
+        return formatMonth(from);
       } else {
-        return `${fromDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })} - ${toDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`;
+        return `${formatDisplayDate(from)} - ${formatDisplayDate(to)}`;
       }
     } catch {
       return 'Selected period';
     }
   } else if (from) {
     try {
-      // FIXED: Use parseYMDUTC and format with UTC
-      const fromDate = parseYMDUTC(from);
-      return `Since ${fromDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`;
+      // FIXED: Use unified date formatter for consistency
+      return `Since ${formatDisplayDate(from)}`;
     } catch {
       return 'Since selected date';
     }
   } else if (to) {
     try {
-      // FIXED: Use parseYMDUTC and format with UTC
-      const toDate = parseYMDUTC(to);
-      return `Until ${toDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`;
+      // FIXED: Use unified date formatter for consistency
+      return `Until ${formatDisplayDate(to)}`;
     } catch {
       return 'Until selected date';
     }
   } else {
+    // All time: show actual data date range if available
+    if (actualFromDate && actualToDate) {
+      try {
+        return `${formatDisplayDate(actualFromDate)} - ${formatDisplayDate(actualToDate)}`;
+      } catch {
+        return 'All time';
+      }
+    }
     return 'All time';
   }
 }

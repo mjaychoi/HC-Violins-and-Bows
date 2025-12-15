@@ -37,9 +37,9 @@ export const classNames = {
   tableHeader:
     'sticky top-0 bg-white/80 backdrop-blur border-b border-gray-200',
   tableHeaderRow: '',
-  tableHeaderCell: 'px-6 py-3 text-left text-xs font-semibold text-gray-500',
+  tableHeaderCell: 'px-6 py-3 text-left text-xs font-medium text-[#6B7280]',
   tableHeaderCellSortable:
-    'px-6 py-3 text-left text-xs font-semibold text-gray-500 cursor-pointer group select-none',
+    'px-6 py-3 text-left text-xs font-medium text-[#6B7280] cursor-pointer group select-none',
   tableBody: 'bg-white divide-y divide-gray-200',
   tableRow: 'hover:bg-gray-50 transition-colors',
   tableCell: 'px-6 py-4 text-sm text-gray-900',

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   format,
   startOfWeek,
@@ -9,9 +9,10 @@ import {
   isSameDay,
   addWeeks,
 } from 'date-fns';
-import { enUS } from 'date-fns/locale';
+import { ko } from 'date-fns/locale';
 import { MaintenanceTask } from '@/types';
-import { parseTaskDateLocal, taskDayKey } from '@/utils/dateParsing';
+import { parseYMDLocal, taskDayKey } from '@/utils/dateParsing';
+import { parseISO, isValid } from 'date-fns';
 import { getDateStatus } from '@/utils/tasks/style';
 
 interface TimelineViewProps {
@@ -41,11 +42,12 @@ export default function TimelineView({
   const [weekOffset, setWeekOffset] = useState(0);
 
   const weekRange = useMemo(() => {
+    // Explicitly set weekStartsOn to 0 (Sunday) for consistency
     const weekStart = startOfWeek(addWeeks(currentDate, weekOffset), {
-      locale: enUS,
+      weekStartsOn: 0,
     });
     const weekEnd = endOfWeek(addWeeks(currentDate, weekOffset), {
-      locale: enUS,
+      weekStartsOn: 0,
     });
     return { weekStart, weekEnd };
   }, [currentDate, weekOffset]);
@@ -57,37 +59,81 @@ export default function TimelineView({
     });
   }, [weekRange]);
 
-  // FIXED: Build dayKey → tasks map once (O(N) instead of O(7 * N))
-  // FIXED: Use parseTaskDateLocal to avoid timezone shifts
-  const tasksByDay = useMemo(() => {
-    const map = new Map<string, MaintenanceTask[]>();
+  // FIXED: Only extract time if task date has time component (timestamp)
+  // For date-only strings, use default 9:00 AM for visibility
+  // Note: This function is used in useMemo, so it must be defined before useMemo
+  const getTaskTime = useCallback(
+    (task: MaintenanceTask): { hour: number; minute: number } => {
+      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
+      const taskDate =
+        task.due_date || task.personal_due_date || task.scheduled_date;
+      if (!taskDate) return { hour: 9, minute: 0 };
 
-    // Build map of all tasks by day key
+      // Check if date string includes time component
+      const hasTime = taskDate.includes('T');
+      if (!hasTime) {
+        // Date-only: use default time
+        return { hour: 9, minute: 0 };
+      }
+
+      try {
+        // Has time: extract from parsed date
+        let date: Date | null = parseYMDLocal(taskDate);
+        if (!date) {
+          const isoDate = parseISO(taskDate);
+          date = isValid(isoDate) ? isoDate : null;
+        }
+        if (!date) return { hour: 9, minute: 0 };
+        return { hour: date.getHours(), minute: date.getMinutes() };
+      } catch {
+        return { hour: 9, minute: 0 };
+      }
+    },
+    []
+  );
+
+  // FIXED: Build dayKey → hour → tasks map for O(1) hour lookup
+  // FIXED: Use parseYMDLocal for consistent date parsing strategy
+  const tasksByDayHour = useMemo(() => {
+    const map = new Map<string, Map<number, MaintenanceTask[]>>();
+
+    // Build map of all tasks by day key and hour
     for (const task of tasks) {
+      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
       const raw =
-        task.scheduled_date || task.due_date || task.personal_due_date;
+        task.due_date || task.personal_due_date || task.scheduled_date;
       if (!raw) continue;
 
-      const key = taskDayKey(raw);
-      const arr = map.get(key) ?? [];
-      arr.push(task);
-      map.set(key, arr);
+      const dayKey = taskDayKey(raw);
+      const { hour } = getTaskTime(task);
+
+      let dayMap = map.get(dayKey);
+      if (!dayMap) {
+        dayMap = new Map<number, MaintenanceTask[]>();
+        map.set(dayKey, dayMap);
+      }
+
+      const hourTasks = dayMap.get(hour) ?? [];
+      hourTasks.push(task);
+      dayMap.set(hour, hourTasks);
     }
 
     // Keep only visible week days (optional optimization)
-    const visibleKeys = new Set(days.map(d => format(d, 'yyyy-MM-dd')));
+    const visibleKeys = new Set(
+      days.map(d => taskDayKey(format(d, 'yyyy-MM-dd')))
+    );
     for (const k of Array.from(map.keys())) {
       if (!visibleKeys.has(k)) map.delete(k);
     }
 
     return map;
-  }, [tasks, days]);
+  }, [tasks, days, getTaskTime]);
 
   const hours = useMemo(() => {
     return Array.from({ length: 24 }, (_, i) => i);
   }, []);
 
-  const getTaskColor = (task: MaintenanceTask): string => {
+  const getTaskColor = useCallback((task: MaintenanceTask): string => {
     const dateStatus = getDateStatus(task);
     const isOverdue = dateStatus.status === 'overdue';
     const status = (task.status ?? '').toLowerCase();
@@ -109,35 +155,10 @@ export default function TimelineView({
 
     // Scheduled/Pending: Green
     return 'bg-emerald-500';
-  };
-
-  // FIXED: Only extract time if task date has time component (timestamp)
-  // For date-only strings, use default 9:00 AM for visibility
-  const getTaskTime = (
-    task: MaintenanceTask
-  ): { hour: number; minute: number } => {
-    const taskDate =
-      task.scheduled_date || task.due_date || task.personal_due_date;
-    if (!taskDate) return { hour: 9, minute: 0 };
-
-    // Check if date string includes time component
-    const hasTime = taskDate.includes('T');
-    if (!hasTime) {
-      // Date-only: use default time
-      return { hour: 9, minute: 0 };
-    }
-
-    try {
-      // Has time: extract from parsed date
-      const date = parseTaskDateLocal(taskDate);
-      return { hour: date.getHours(), minute: date.getMinutes() };
-    } catch {
-      return { hour: 9, minute: 0 };
-    }
-  };
+  }, []);
 
   return (
-    <div className="timeline-view p-4">
+    <div className="timeline-view p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
@@ -184,9 +205,9 @@ export default function TimelineView({
                       isToday ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
                     }`}
                   >
-                    <div>{format(day, 'EEE', { locale: enUS })}</div>
+                    <div>{format(day, 'EEE', { locale: ko })}</div>
                     <div className="text-xs mt-1">
-                      {format(day, 'M/d', { locale: enUS })}
+                      {format(day, 'M/d', { locale: ko })}
                     </div>
                   </div>
                 );
@@ -201,12 +222,11 @@ export default function TimelineView({
                     {hour.toString().padStart(2, '0')}:00
                   </div>
                   {days.map(day => {
-                    const dayKey = format(day, 'yyyy-MM-dd');
-                    const dayTasks = tasksByDay.get(dayKey) || [];
-                    const hourTasks = dayTasks.filter(task => {
-                      const { hour: taskHour } = getTaskTime(task);
-                      return taskHour === hour;
-                    });
+                    // Use taskDayKey for consistent key generation
+                    const dayKey = taskDayKey(format(day, 'yyyy-MM-dd'));
+                    // O(1) lookup: get hour bucket directly
+                    const hourTasks =
+                      tasksByDayHour.get(dayKey)?.get(hour) ?? [];
                     const isToday = isSameDay(day, new Date());
 
                     return (

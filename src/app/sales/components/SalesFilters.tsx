@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { DatePreset } from '../types';
 import { getDateRangeFromPreset } from '../utils/salesUtils';
 
@@ -33,8 +34,8 @@ export default function SalesFilters({
   const hasActiveFilters = !!(search || from || to);
   const filtersPanelId = 'sales-filters-panel';
 
-  // 현재 선택된 프리셋 확인
-  const getActivePreset = (): DatePreset | 'all' | null => {
+  // FIXED: Memoize preset calculation to avoid re-computing on every render
+  const activePreset = useMemo((): DatePreset | 'all' | null => {
     if (!from && !to) return 'all';
 
     const presets: DatePreset[] = [
@@ -51,9 +52,7 @@ export default function SalesFilters({
       }
     }
     return null;
-  };
-
-  const activePreset = getActivePreset();
+  }, [from, to]);
 
   return (
     <div className="mb-6">

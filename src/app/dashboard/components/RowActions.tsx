@@ -1,18 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface RowActionsProps {
   onEdit: () => void;
   onDelete: () => void;
   onDownloadCertificate?: () => void;
-  hasCertificate?: boolean;
+  hasCertificate?: boolean | null;
   // Context actions
   onBook?: () => void;
   onSendToMaintenance?: () => void;
   onAttachCertificate?: () => void;
+  onSell?: () => void; // 원클릭 판매
   currentStatus?: string;
   hasCertificateField?: boolean;
+  // Optional stable ID for menu (for accessibility)
+  itemId?: string;
 }
 
 export default function RowActions({
@@ -23,32 +26,69 @@ export default function RowActions({
   onBook,
   onSendToMaintenance,
   onAttachCertificate,
+  onSell,
   currentStatus,
   hasCertificateField = false,
+  itemId,
 }: RowActionsProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const firstItemRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuId = `row-actions-${itemId || 'menu'}`;
 
-  // FIXED: Close menu on Escape key press
+  // Handle null/undefined certificate value
+  const certificateValue = hasCertificate ?? false;
+
+  // FIXED: Status-based action filtering - only show relevant actions
+  const showBook =
+    currentStatus !== 'Booked' && currentStatus !== 'Sold' && !!onBook;
+  const showMaint =
+    currentStatus !== 'Maintenance' &&
+    currentStatus !== 'Sold' &&
+    !!onSendToMaintenance;
+  const showAttach =
+    hasCertificateField &&
+    !certificateValue &&
+    currentStatus !== 'Sold' &&
+    !!onAttachCertificate;
+  const showSell = currentStatus !== 'Sold' && !!onSell;
+
+  // Status-specific actions
+  const showChangeToAvailable = currentStatus === 'Booked' && !!onBook;
+
+  const hasContextActions =
+    showBook || showMaint || showAttach || showSell || showChangeToAvailable;
+
+  // FIXED: Close menu on Escape key press and focus management
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      // Return focus to trigger when menu closes
+      triggerRef.current?.focus();
+      return;
+    }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
+    // Focus first menu item when menu opens
+    firstItemRef.current?.focus();
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isOpen]);
 
   return (
-    <div className="relative flex justify-end">
+    <div className="relative flex justify-end" style={{ position: 'relative' }}>
       <button
+        ref={triggerRef}
         onClick={e => {
           e.stopPropagation();
           setIsOpen(!isOpen);
         }}
         className="p-2 rounded-md hover:bg-gray-50 transition-colors duration-200"
         aria-label="More actions"
+        aria-haspopup="menu"
+        aria-controls={menuId}
         aria-expanded={isOpen}
       >
         <svg
@@ -72,10 +112,28 @@ export default function RowActions({
             className="fixed inset-0 z-10"
             onClick={() => setIsOpen(false)}
           />
-          <div className="absolute left-0 z-20 mt-2 w-48 rounded-md border border-gray-200 bg-white shadow-lg">
+          <div
+            id={menuId}
+            role="menu"
+            className="absolute left-0 z-20 mt-2 w-56 rounded-md border border-gray-200 bg-white shadow-lg origin-top-left"
+          >
+            {/* Current Status Header */}
+            {currentStatus && (
+              <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
+                <div className="text-xs font-medium text-gray-500 mb-1">
+                  Current Status
+                </div>
+                <div className="text-sm font-semibold text-gray-900">
+                  {currentStatus}
+                </div>
+              </div>
+            )}
+
             {/* Context Actions */}
-            {currentStatus !== 'Booked' && onBook && (
+            {showBook && (
               <button
+                ref={hasContextActions ? firstItemRef : undefined}
+                role="menuitem"
                 onClick={e => {
                   e.stopPropagation();
                   onBook();
@@ -99,8 +157,38 @@ export default function RowActions({
                 Book this
               </button>
             )}
-            {currentStatus !== 'Maintenance' && onSendToMaintenance && (
+            {showChangeToAvailable && (
               <button
+                ref={hasContextActions ? firstItemRef : undefined}
+                role="menuitem"
+                onClick={e => {
+                  e.stopPropagation();
+                  // Change status to Available (using onBook as a status change handler)
+                  onBook();
+                  setIsOpen(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-green-600 hover:bg-green-50 transition-colors duration-200"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                Change Status → Available
+              </button>
+            )}
+            {showMaint && (
+              <button
+                ref={!showBook && hasContextActions ? firstItemRef : undefined}
+                role="menuitem"
                 onClick={e => {
                   e.stopPropagation();
                   onSendToMaintenance();
@@ -118,20 +206,20 @@ export default function RowActions({
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                    d="M21.75 6.75a4.5 4.5 0 01-4.884 4.484c-1.076-.091-2.264.071-2.95.904l-7.152 8.025a4.5 4.5 0 01-3.742 3.757c-.805.092-1.623-.1-2.95-.904l-7.152-8.025a4.5 4.5 0 013.742-3.757c.805-.092 1.623.1 2.95.904l7.152 8.025c.091.1.19.19.29.28"
                   />
                 </svg>
                 Send to maintenance
               </button>
             )}
-            {hasCertificateField && !hasCertificate && onAttachCertificate && (
+            {showAttach && (
               <button
+                ref={
+                  !showBook && !showMaint && hasContextActions
+                    ? firstItemRef
+                    : undefined
+                }
+                role="menuitem"
                 onClick={e => {
                   e.stopPropagation();
                   onAttachCertificate();
@@ -156,12 +244,47 @@ export default function RowActions({
               </button>
             )}
 
-            {/* Divider */}
-            {(onBook || onSendToMaintenance || onAttachCertificate) && (
+            {/* 원클릭 판매 버튼 */}
+            {showSell && (
+              <button
+                ref={
+                  !showBook && !showMaint && !showAttach && hasContextActions
+                    ? firstItemRef
+                    : undefined
+                }
+                role="menuitem"
+                onClick={e => {
+                  e.stopPropagation();
+                  onSell();
+                  setIsOpen(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-green-600 hover:bg-green-50 transition-colors duration-200"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                Sell
+              </button>
+            )}
+
+            {/* Divider - only show if context actions are actually rendered */}
+            {hasContextActions && (
               <div className="border-t border-gray-200 my-1" />
             )}
 
             <button
+              ref={!hasContextActions ? firstItemRef : undefined}
+              role="menuitem"
               onClick={() => {
                 onEdit();
                 setIsOpen(false);
@@ -183,8 +306,9 @@ export default function RowActions({
               </svg>
               Edit
             </button>
-            {hasCertificate && onDownloadCertificate && (
+            {certificateValue && onDownloadCertificate && (
               <button
+                role="menuitem"
                 onClick={e => {
                   e.stopPropagation();
                   onDownloadCertificate();
@@ -209,6 +333,7 @@ export default function RowActions({
               </button>
             )}
             <button
+              role="menuitem"
               onClick={e => {
                 e.stopPropagation();
                 onDelete();

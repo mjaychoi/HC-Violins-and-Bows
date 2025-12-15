@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@/test-utils/render';
 import ItemFilters from '../ItemFilters';
 import { Instrument } from '@/types';
 
@@ -42,7 +42,6 @@ describe('ItemFilters', () => {
     showFilters: true,
     onToggleFilters: jest.fn(),
     activeFiltersCount: 0,
-    filterOperator: 'AND' as const,
   };
 
   it('renders filter panel', () => {

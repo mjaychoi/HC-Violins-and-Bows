@@ -13,18 +13,14 @@ export default function AppSidebar({
   isExpanded,
   currentPath,
 }: AppSidebarProps) {
-  // Use local state to avoid hydration mismatch
-  // Start with false (collapsed) on both server and client
+  // ✅ FIXED: hydration mismatch 해결 방식 단순화 - mounted 이후에만 isExpanded 반영
   const [mounted, setMounted] = useState(false);
-  const [localExpanded, setLocalExpanded] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    setLocalExpanded(isExpanded);
-  }, [isExpanded]);
+  }, []);
 
-  // Use localExpanded after mount, isExpanded before mount (for SSR)
-  const expanded = mounted ? localExpanded : false;
+  const expanded = mounted ? isExpanded : false;
   const navigationItems = [
     {
       href: '/dashboard',
@@ -155,7 +151,14 @@ export default function AppSidebar({
 
         <nav className="space-y-1">
           {navigationItems.map(item => {
-            const isActive = currentPath === item.href;
+            // Check if current path matches the href exactly
+            // For sub-routes, we need exact match to avoid multiple active states
+            // Exception: /clients should be active for /clients/analytics and /clients?tab=analytics
+            const isActive =
+              currentPath === item.href ||
+              (item.href === '/clients' &&
+                (currentPath.startsWith('/clients/') ||
+                  currentPath.startsWith('/clients?')));
             return (
               <Link
                 key={item.href}

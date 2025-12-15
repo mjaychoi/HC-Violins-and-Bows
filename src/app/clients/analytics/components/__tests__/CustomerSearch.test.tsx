@@ -1,25 +1,25 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import { CustomerSearch } from '../CustomerSearch';
 
 // Mock SearchInput
-jest.mock('@/components/common/SearchInput', () => {
-  return function MockSearchInput({
-    value,
-    onChange,
-    placeholder,
-  }: {
-    value: string;
-    onChange: (value: string) => void;
-    placeholder: string;
-  }) {
-    return (
+jest.mock('@/components/common/inputs', () => {
+  return {
+    SearchInput: ({
+      value,
+      onChange,
+      placeholder,
+    }: {
+      value: string;
+      onChange: (value: string) => void;
+      placeholder: string;
+    }) => (
       <input
         data-testid="search-input"
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
       />
-    );
+    ),
   };
 });
 
@@ -61,13 +61,15 @@ describe('CustomerSearch', () => {
   it('should highlight "All" button when tagFilter is null', () => {
     render(<CustomerSearch {...mockProps} tagFilter={null} />);
     const allButton = screen.getByText('All');
-    expect(allButton).toHaveClass('bg-blue-100', 'text-blue-700');
+    // ✅ FIXED: 버튼 스타일이 bg-blue-600 text-white로 변경됨
+    expect(allButton).toHaveClass('bg-blue-600', 'text-white');
   });
 
   it('should highlight selected tag button', () => {
     render(<CustomerSearch {...mockProps} tagFilter="VIP" />);
     const vipButton = screen.getByText('VIP');
-    expect(vipButton).toHaveClass('bg-blue-100', 'text-blue-700');
+    // ✅ FIXED: 버튼 스타일이 bg-blue-600 text-white로 변경됨
+    expect(vipButton).toHaveClass('bg-blue-600', 'text-white');
   });
 
   it('should call onTagFilterChange when "All" button is clicked', () => {
@@ -120,7 +122,8 @@ describe('CustomerSearch', () => {
 
   it('should handle empty availableTags array', () => {
     render(<CustomerSearch {...mockProps} availableTags={[]} />);
-    expect(screen.getByText('All')).toBeInTheDocument();
+    // ✅ FIXED: availableTags가 빈 배열이면 topTags도 빈 배열이 되어 "All" 버튼이 렌더링되지 않음
+    expect(screen.queryByText('All')).not.toBeInTheDocument();
     expect(screen.queryByText('VIP')).not.toBeInTheDocument();
   });
 

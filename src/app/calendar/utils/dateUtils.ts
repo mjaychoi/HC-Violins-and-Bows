@@ -25,16 +25,18 @@ export const getDateRangeForView = (
       endDate: format(yearEnd, 'yyyy-MM-dd'),
     };
   } else if (view === 'timeline') {
-    const weekStart = startOfWeek(date);
+    // Explicitly set weekStartsOn to 0 (Sunday) for consistency
+    const weekStart = startOfWeek(date, { weekStartsOn: 0 });
     const weekBefore = addWeeks(weekStart, -2);
     const weekAfter = addWeeks(weekStart, 2);
     return {
       startDate: format(weekBefore, 'yyyy-MM-dd'),
-      endDate: format(endOfWeek(weekAfter), 'yyyy-MM-dd'),
+      endDate: format(endOfWeek(weekAfter, { weekStartsOn: 0 }), 'yyyy-MM-dd'),
     };
   } else if (view === 'week') {
-    const weekStart = startOfWeek(date);
-    const weekEnd = endOfWeek(date);
+    // Explicitly set weekStartsOn to 0 (Sunday) for consistency
+    const weekStart = startOfWeek(date, { weekStartsOn: 0 });
+    const weekEnd = endOfWeek(date, { weekStartsOn: 0 });
     return {
       startDate: format(weekStart, 'yyyy-MM-dd'),
       endDate: format(weekEnd, 'yyyy-MM-dd'),

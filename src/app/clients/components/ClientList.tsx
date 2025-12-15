@@ -1,25 +1,32 @@
 'use client';
 // src/app/clients/components/ClientList.tsx
 import { Client, ClientInstrument } from '@/types';
-import {
-  getTagColor,
-  getTagTextColor,
-  sortTags,
-  /* formatClientContact, getClientInitials */ getInterestColor,
-} from '../utils';
+import { getTagTextColor, sortTags } from '../utils';
+import { useClientSalesData } from '../hooks/useClientKPIs';
+import { useClientsContactInfo } from '../hooks/useClientsContactInfo';
 import React, {
   useState,
   memo,
   useCallback,
   Fragment,
-  useMemo,
   forwardRef,
+  useMemo,
 } from 'react';
-import dynamic from 'next/dynamic';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
 import { classNames, cn } from '@/utils/classNames';
-import { Pagination, EmptyState } from '@/components/common';
+import {
+  Pagination,
+  EmptyState,
+  TagBadge,
+  InterestBadge,
+} from '@/components/common';
+import dynamic from 'next/dynamic';
+
+const MessageComposer = dynamic(
+  () => import('@/components/messages/MessageComposer'),
+  { ssr: false }
+);
 
 // SortIcon - dynamic import 위에 정의하여 promise로 감싸지지 않도록 함
 const SortIcon = React.memo(({ arrow }: { arrow: string }) => (
@@ -29,75 +36,336 @@ const SortIcon = React.memo(({ arrow }: { arrow: string }) => (
 ));
 SortIcon.displayName = 'SortIcon';
 
-// react-window를 dynamic import로 로드 (SSR 문제 방지)
-// react-window v2 uses List component (FixedSizeList is removed in v2)
-// Note: react-window v2 API is different - using rowComponent prop instead of children
-type FixedSizeListProps = {
-  height: number;
-  itemCount: number;
-  itemSize: number;
-  overscanCount?: number;
-  className?: string;
-  outerElementType?: React.ElementType;
-  innerElementType?: React.ElementType;
-  children: (props: {
-    index: number;
-    style: React.CSSProperties;
-  }) => React.ReactNode;
-};
+// ✅ FIXED: Table elements moved to file top to prevent recreation on every render
+const TableOuterElement = forwardRef<
+  HTMLTableElement,
+  React.HTMLAttributes<HTMLTableElement>
+>((props, ref) => <table ref={ref} {...props} className="w-full" />);
+TableOuterElement.displayName = 'TableOuterElement';
 
-// react-window를 dynamic import로 로드 (SSR 문제 방지)
-// react-window v2 uses List component (FixedSizeList is removed in v2)
-// Using v1 API compatibility for FixedSizeList
-type FixedSizeListComponent = React.ComponentType<{
-  height: number;
-  itemCount: number;
-  itemSize: number;
-  overscanCount?: number;
-  className?: string;
-  outerElementType?: React.ElementType;
-  innerElementType?: React.ElementType;
-  children: (props: {
-    index: number;
-    style: React.CSSProperties;
-  }) => React.ReactNode;
-}>;
+const TbodyInnerElement = forwardRef<
+  HTMLTableSectionElement,
+  React.HTMLAttributes<HTMLTableSectionElement>
+>((props, ref) => (
+  <tbody ref={ref} {...props} className={classNames.tableBody} />
+));
+TbodyInnerElement.displayName = 'TbodyInnerElement';
 
-const FixedSizeList = dynamic(
-  () =>
-    import('react-window').then((mod: typeof import('react-window')) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const FixedSizeListComponent = (mod as any).FixedSizeList;
-      if (!FixedSizeListComponent) {
-        // Fallback if FixedSizeList is not available (v2)
-        console.warn('FixedSizeList not found in react-window, using fallback');
-        return ((props: FixedSizeListProps) => {
-          return (
-            <div style={{ height: props.height }}>
-              {Array.from({ length: props.itemCount }, (_, index) => {
-                const style: React.CSSProperties = {
-                  height: props.itemSize,
-                  position: 'relative',
-                };
-                return (
-                  <div key={index} style={style}>
-                    {props.children({ index, style })}
-                  </div>
-                );
-              })}
+// ✅ FIXED: RowActions moved to file top to prevent recreation on every render
+// Row Actions Component (Dropdown menu like Dashboard)
+const RowActions = memo(
+  ({ onEdit, onDelete }: { onEdit: () => void; onDelete?: () => void }) => {
+    // ✅ RowActions state - safe now that virtualization is removed
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+      <div className="relative flex justify-start">
+        {onDelete && (
+          <button
+            type="button"
+            aria-label="Delete client"
+            className="sr-only"
+            onClick={e => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            Delete
+          </button>
+        )}
+        <button
+          onClick={e => {
+            e.stopPropagation();
+            setIsOpen(!isOpen);
+          }}
+          className="p-1.5 rounded-md hover:bg-gray-50 transition-colors duration-200"
+          aria-label="More actions"
+          aria-expanded={isOpen}
+        >
+          <svg
+            className="w-4 h-4 text-gray-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+            />
+          </svg>
+        </button>
+
+        {isOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-10"
+              onClick={() => setIsOpen(false)}
+            />
+            <div className="absolute left-0 z-20 mt-2 w-32 rounded-md border border-gray-200 bg-white shadow-lg">
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  onEdit();
+                  setIsOpen(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                  />
+                </svg>
+                Edit
+              </button>
+              {onDelete && (
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    onDelete();
+                    setIsOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-200"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                  Delete
+                </button>
+              )}
             </div>
-          );
-        }) as FixedSizeListComponent;
-      }
-      return FixedSizeListComponent as FixedSizeListComponent;
-    }),
-  { ssr: false }
-) as FixedSizeListComponent;
+          </>
+        )}
+      </div>
+    );
+  }
+);
+RowActions.displayName = 'RowActions';
+
+// Client Expanded Row Component (with sales data)
+const ClientExpandedRow = memo(function ClientExpandedRow({
+  client,
+  contactInfo,
+  instrument,
+}: {
+  client: Client;
+  contactInfo: ReturnType<typeof useClientsContactInfo>['getContactInfo'];
+  instrument?: ClientInstrument['instrument'];
+}) {
+  const { totalSpend, purchaseCount, lastPurchaseDate, loading } =
+    useClientSalesData(client.id);
+  const info = contactInfo(client.id);
+
+  const formatAmount = (amount: number) =>
+    new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    }).format(amount);
+
+  return (
+    <tr className="bg-gray-50">
+      <td
+        colSpan={9}
+        className={cn(classNames.tableCell, 'text-sm text-gray-700 px-6 py-4')}
+      >
+        <div className="space-y-4">
+          {/* Sales Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-1">
+                Total Spend
+              </div>
+              <div className="text-lg font-semibold text-gray-900">
+                {loading ? (
+                  <span className="text-gray-400">Loading...</span>
+                ) : (
+                  formatAmount(totalSpend)
+                )}
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-1">
+                Purchase Count
+              </div>
+              <div className="text-lg font-semibold text-gray-900">
+                {loading ? (
+                  <span className="text-gray-400">Loading...</span>
+                ) : (
+                  purchaseCount
+                )}
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-1">
+                Last Purchase
+              </div>
+              <div className="text-lg font-semibold text-gray-900">
+                {loading ? (
+                  <span className="text-gray-400">Loading...</span>
+                ) : (
+                  lastPurchaseDate
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Contact Info Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-1">
+                Recent Contact
+              </div>
+              <div className="text-sm font-semibold text-gray-900">
+                {info?.lastContactDateDisplay || (
+                  <span className="text-gray-400">None</span>
+                )}
+                {info && info.daysSinceLastContact !== null && (
+                  <span className="ml-2 text-xs font-normal text-gray-500">
+                    ({info.daysSinceLastContact} days ago)
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-1">
+                Next Follow-up
+              </div>
+              <div className="text-sm font-semibold text-gray-900">
+                {info?.nextFollowUpDateDisplay ? (
+                  info && (
+                    <span
+                      className={
+                        info.isOverdue
+                          ? 'text-red-600'
+                          : info.daysUntilFollowUp !== null &&
+                              info.daysUntilFollowUp <= 3
+                            ? 'text-amber-600'
+                            : ''
+                      }
+                    >
+                      {info.nextFollowUpDateDisplay}
+                      {info.daysUntilFollowUp !== null && (
+                        <span className="ml-2 text-xs font-normal text-gray-500">
+                          (
+                          {info.daysUntilFollowUp < 0
+                            ? `${Math.abs(info.daysUntilFollowUp)} days overdue`
+                            : info.daysUntilFollowUp === 0
+                              ? 'Today'
+                              : `${info.daysUntilFollowUp} days later`}
+                          )
+                        </span>
+                      )}
+                      {info.isOverdue && (
+                        <span className="ml-2 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                          overdue
+                        </span>
+                      )}
+                    </span>
+                  )
+                ) : (
+                  <span className="text-gray-400">None</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Client Details */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <div className="text-xs text-gray-500">Email</div>
+              <div className="font-medium">{client.email || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Contact</div>
+              <div className="font-medium">{client.contact_number || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Interest</div>
+              <div className="font-medium">{client.interest || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Client #</div>
+              <div className="font-mono">{client.client_number || '—'}</div>
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-xs text-gray-500">Tags</div>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {client.tags?.length ? (
+                  sortTags([...client.tags]).map(tag => (
+                    <TagBadge key={tag} tag={tag} context="table" />
+                  ))
+                ) : (
+                  <span className="text-gray-400">No tags</span>
+                )}
+              </div>
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-xs text-gray-500">Note</div>
+              <div className="mt-1 whitespace-pre-wrap">
+                {client.note || '—'}
+              </div>
+            </div>
+          </div>
+
+          {/* Message Composer */}
+          <div className="pt-4 border-t border-gray-200">
+            <h4 className="text-sm font-semibold text-gray-900 mb-3">
+              Send Message
+            </h4>
+            <MessageComposer client={client} instrument={instrument || null} />
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+});
+
+// TODO: Virtualization will be implemented when needed for 200+ clients
+// Currently using pagination (20 items per page) which is sufficient
+// When implementing, uncomment the following code:
+// type VariableSizeListProps = {
+//   height: number;
+//   itemCount: number;
+//   itemSize: (index: number) => number;
+//   overscanCount?: number;
+//   className?: string;
+//   children: (props: {
+//     index: number;
+//     style: React.CSSProperties;
+//   }) => React.ReactNode;
+//   onItemsRendered?: (props: {
+//     overscanStartIndex: number;
+//     overscanStopIndex: number;
+//     visibleStartIndex: number;
+//     visibleStopIndex: number;
+//   }) => void;
+// };
+// const VariableSizeList = dynamic(...);
 
 interface ClientListProps {
   clients: Client[];
   clientInstruments: ClientInstrument[];
-  onClientClick: (client: Client) => void;
+  onClientClick: (client: Client) => void; // Kept for interface compatibility but not used (handles expand instead)
   onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
   onDeleteClient?: (client: Client) => void;
   onColumnSort: (column: keyof Client) => void;
@@ -111,12 +379,19 @@ interface ClientListProps {
   pageSize?: number;
   onPageChange?: (page: number) => void;
   loading?: boolean;
+  /** 필터/검색이 활성화되어 있는지 여부 (빈 상태 메시지/버튼 제어) */
+  hasActiveFilters?: boolean;
+  /** 모든 필터/검색 리셋 핸들러 */
+  onResetFilters?: () => void;
+  /** 새 클라이언트 추가 CTA가 필요할 때 */
+  onAddClient?: () => void;
 }
 
 const ClientList = memo(function ClientList({
   clients,
   clientInstruments,
-  onClientClick,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onClientClick: _onClientClick, // Prefixed with _ to indicate intentionally unused
   onUpdateClient,
   onDeleteClient,
   onColumnSort,
@@ -129,11 +404,23 @@ const ClientList = memo(function ClientList({
   pageSize,
   onPageChange,
   loading = false,
+  hasActiveFilters = false,
+  onResetFilters,
+  onAddClient,
 }: ClientListProps) {
   const [editingClient, setEditingClient] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Client>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+
+  // Fetch contact info for all clients
+  const clientIds = useMemo(() => clients.map(c => c.id), [clients]);
+  const { getContactInfo, loading: contactInfoLoading } = useClientsContactInfo(
+    {
+      clientIds,
+      enabled: clients.length > 0,
+    }
+  );
   // Dead code: instrument dropdown 관련 코드 제거 (현재 사용되지 않음)
   // const [showInstrumentDropdown, setShowInstrumentDropdown] = useState<
   //   string | null
@@ -141,74 +428,7 @@ const ClientList = memo(function ClientList({
   // const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
   // const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // UX: Calculate instrument count per client and last activity
-  const clientInstrumentCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    clientInstruments.forEach(rel => {
-      if (rel.client_id) {
-        counts.set(rel.client_id, (counts.get(rel.client_id) || 0) + 1);
-      }
-    });
-    return counts;
-  }, [clientInstruments]);
-
-  // UX: Calculate last activity date (using created_at as fallback since updated_at may not exist)
-  const clientLastActivity = useMemo(() => {
-    const activityMap = new Map<string, Date>();
-
-    // Use client's created_at as baseline (updated_at might not exist in type)
-    // Type-safe access to optional updated_at property
-    type ClientWithOptionalUpdatedAt = Client & { updated_at?: string };
-    type RelationshipWithOptionalUpdatedAt = ClientInstrument & {
-      updated_at?: string;
-    };
-
-    clients.forEach(client => {
-      const clientWithUpdated = client as ClientWithOptionalUpdatedAt;
-      if (clientWithUpdated.updated_at) {
-        activityMap.set(client.id, new Date(clientWithUpdated.updated_at));
-      } else if (client.created_at) {
-        activityMap.set(client.id, new Date(client.created_at));
-      }
-    });
-
-    // Update with most recent instrument relationship update
-    clientInstruments.forEach(rel => {
-      if (rel.client_id) {
-        const relWithUpdated = rel as RelationshipWithOptionalUpdatedAt;
-        const relDate = relWithUpdated.updated_at
-          ? new Date(relWithUpdated.updated_at)
-          : rel.created_at
-            ? new Date(rel.created_at)
-            : null;
-        if (relDate) {
-          const existing = activityMap.get(rel.client_id);
-          if (!existing || relDate > existing) {
-            activityMap.set(rel.client_id, relDate);
-          }
-        }
-      }
-    });
-
-    return activityMap;
-  }, [clients, clientInstruments]);
-
-  // UX: Format relative time (e.g., "3 days ago")
-  const formatRelativeTime = useCallback((date: Date): string => {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) {
-      const weeks = Math.floor(diffDays / 7);
-      return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
-    }
-    const months = Math.floor(diffDays / 30);
-    return `${months} ${months === 1 ? 'month' : 'months'} ago`;
-  }, []);
+  // ✅ Removed unused: clientInstrumentCounts, clientLastActivity, formatRelativeTime
 
   const startEditing = useCallback((client: Client) => {
     setEditingClient(client.id);
@@ -279,35 +499,34 @@ const ClientList = memo(function ClientList({
     }
   }, []);
 
-  // 가상화 적용: 50개 이상일 때만 가상화 사용 (성능 최적화)
-  const shouldVirtualize = clients.length > 50;
-  const itemHeight = 72; // py-4 + border height (대략, 확장된 행 포함)
-  const listHeight = useMemo(() => {
-    if (!shouldVirtualize) return null;
-    // 최대 600px, 최소 400px, 또는 전체 높이의 70%
-    return Math.min(600, Math.max(400, clients.length * itemHeight * 0.3));
-  }, [shouldVirtualize, clients.length, itemHeight]);
-
-  // 테이블 구조를 유지하기 위한 커스텀 엘리먼트 타입
-  const TableOuterElement = forwardRef<
-    HTMLTableElement,
-    React.HTMLAttributes<HTMLTableElement>
-  >((props, ref) => <table ref={ref} {...props} className="w-full" />);
-  TableOuterElement.displayName = 'TableOuterElement';
-
-  const TbodyInnerElement = forwardRef<
-    HTMLTableSectionElement,
-    React.HTMLAttributes<HTMLTableSectionElement>
-  >((props, ref) => (
-    <tbody ref={ref} {...props} className={classNames.tableBody} />
-  ));
-  TbodyInnerElement.displayName = 'TbodyInnerElement';
+  // TODO: Virtualization will be implemented when needed for 200+ clients
+  // Currently using pagination (20 items per page) which is sufficient
+  // const shouldVirtualize = clients.length >= 50;
+  // const rowHeightRef = useRef<Map<number, number>>(new Map());
+  // const listRef = useRef<{ resetAfterIndex: (index: number) => void } | null>(null);
+  // const getRowHeight = useCallback(...);
+  // const listHeight = useMemo(...);
 
   if (clients.length === 0) {
     return (
       <EmptyState
-        title="등록된 고객이 없습니다"
-        description="검색어나 필터를 조정하거나 첫 번째 고객을 추가해 보세요."
+        title={
+          hasActiveFilters
+            ? 'No clients found matching your filters'
+            : 'No clients yet'
+        }
+        description={
+          hasActiveFilters
+            ? 'Try adjusting your filters or clearing them to see all clients.'
+            : 'Add your first client to start tracking relationships and instruments.'
+        }
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={hasActiveFilters ? onResetFilters : undefined}
+        actionButton={
+          !hasActiveFilters && onAddClient
+            ? { label: 'Add client', onClick: onAddClient }
+            : undefined
+        }
       />
     );
   }
@@ -321,10 +540,10 @@ const ClientList = memo(function ClientList({
               <thead className={classNames.tableHeader}>
                 <tr>
                   <th className={`${classNames.tableHeaderCell} text-right`}>
-                    Actions
+                    <span>Actions</span>
                   </th>
                   <th
-                    className={classNames.tableHeaderCellSortable}
+                    className={cn(classNames.tableHeaderCellSortable, 'group')}
                     onClick={() => onColumnSort('first_name')}
                   >
                     <span className="inline-flex items-center gap-1">
@@ -337,7 +556,7 @@ const ClientList = memo(function ClientList({
                     </span>
                   </th>
                   <th
-                    className={classNames.tableHeaderCellSortable}
+                    className={cn(classNames.tableHeaderCellSortable, 'group')}
                     onClick={() => onColumnSort('contact_number')}
                   >
                     <span className="inline-flex items-center gap-1">
@@ -350,7 +569,7 @@ const ClientList = memo(function ClientList({
                     </span>
                   </th>
                   <th
-                    className={classNames.tableHeaderCellSortable}
+                    className={cn(classNames.tableHeaderCellSortable, 'group')}
                     onClick={() => onColumnSort('tags')}
                   >
                     <span className="inline-flex items-center gap-1">
@@ -363,7 +582,7 @@ const ClientList = memo(function ClientList({
                     </span>
                   </th>
                   <th
-                    className={classNames.tableHeaderCellSortable}
+                    className={cn(classNames.tableHeaderCellSortable, 'group')}
                     onClick={() => onColumnSort('interest')}
                   >
                     <span className="inline-flex items-center gap-1">
@@ -376,7 +595,7 @@ const ClientList = memo(function ClientList({
                     </span>
                   </th>
                   <th
-                    className={classNames.tableHeaderCellSortable}
+                    className={cn(classNames.tableHeaderCellSortable, 'group')}
                     onClick={() => onColumnSort('client_number')}
                   >
                     <span className="inline-flex items-center gap-1">
@@ -388,60 +607,42 @@ const ClientList = memo(function ClientList({
                       </span>
                     </span>
                   </th>
+                  <th className={classNames.tableHeaderCell}>
+                    <span className="inline-flex items-center gap-1">
+                      Recent Contact
+                    </span>
+                  </th>
+                  <th className={classNames.tableHeaderCell}>
+                    <span className="inline-flex items-center gap-1">
+                      Next Follow-up
+                    </span>
+                  </th>
                 </tr>
               </thead>
-              {shouldVirtualize && listHeight && FixedSizeList ? (
-                <FixedSizeList
-                  height={listHeight}
-                  itemCount={clients.length}
-                  itemSize={itemHeight}
-                  overscanCount={5}
-                  outerElementType={TableOuterElement}
-                  innerElementType={TbodyInnerElement}
-                  className="virtualized-client-list"
-                >
-                  {({
-                    index,
-                    style,
-                  }: {
-                    index: number;
-                    style: React.CSSProperties;
-                  }) => {
-                    const client = clients[index];
-                    const fullName =
-                      `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
-                      'N/A';
-                    const normalizedEmail = client.email?.trim();
-                    const hasEmail = Boolean(normalizedEmail);
-                    const emailSubject = encodeURIComponent(
-                      `Message to ${fullName !== 'N/A' ? fullName : 'client'}`
-                    );
-                    const emailGreeting =
-                      fullName !== 'N/A'
-                        ? `안녕하세요 ${fullName},`
-                        : '안녕하세요,';
-                    const emailBody = encodeURIComponent(
-                      `${emailGreeting}\n\n`
-                    );
-                    const mailtoHref = hasEmail
-                      ? `mailto:${normalizedEmail}?subject=${emailSubject}&body=${emailBody}`
-                      : '';
+              {/* ✅ FIXED: Removed virtualization - pagination handles large lists */}
+              <tbody className={classNames.tableBody}>
+                {clients.map(client => {
+                  const fullName =
+                    `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+                    'N/A';
 
-                    return (
+                  const isExpanded = expandedClientId === client.id;
+
+                  return (
+                    <Fragment key={client.id}>
                       <tr
-                        key={client.id}
-                        style={style}
                         onClick={() => {
+                          // ✅ FIXED: Only handle expand, not onClientClick (UX improvement)
                           if (editingClient === client.id) return;
                           setExpandedClientId(prev =>
                             prev === client.id ? null : client.id
                           );
-                          onClientClick(client);
                         }}
                         className={cn(
                           classNames.tableRow,
-                          'cursor-pointer',
-                          editingClient === client.id ? 'bg-blue-50' : ''
+                          'cursor-pointer group',
+                          editingClient === client.id ? 'bg-blue-50' : '',
+                          'hover:bg-blue-50/30 transition-colors'
                         )}
                         role="button"
                         tabIndex={0}
@@ -449,11 +650,14 @@ const ClientList = memo(function ClientList({
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
                             if (editingClient !== client.id) {
-                              onClientClick(client);
+                              setExpandedClientId(prev =>
+                                prev === client.id ? null : client.id
+                              );
                             }
                           }
                         }}
-                        aria-label={`View details for ${fullName}`}
+                        aria-label={`Toggle details for ${fullName}`}
+                        aria-expanded={isExpanded}
                       >
                         <td
                           className={cn(
@@ -528,15 +732,7 @@ const ClientList = memo(function ClientList({
                             </div>
                           ) : (
                             <RowActions
-                              onView={() => onClientClick(client)}
                               onEdit={() => startEditing(client)}
-                              onEmail={
-                                hasEmail && mailtoHref
-                                  ? () => {
-                                      window.location.href = mailtoHref;
-                                    }
-                                  : undefined
-                              }
                               onDelete={
                                 onDeleteClient
                                   ? () => onDeleteClient(client)
@@ -582,16 +778,10 @@ const ClientList = memo(function ClientList({
                               aria-expanded={expandedClientId === client.id}
                               aria-controls={`client-details-${client.id}`}
                             >
-                              <div className="flex items-center justify-between">
+                              <div className="flex items-center">
                                 <div className="text-sm font-medium text-gray-900">
                                   {fullName}
                                 </div>
-                                <span
-                                  className="text-gray-400 text-xs"
-                                  aria-hidden
-                                >
-                                  {expandedClientId === client.id ? '▲' : '▼'}
-                                </span>
                               </div>
                               {client.email && (
                                 <div className="text-xs text-gray-500 mt-1">
@@ -657,12 +847,7 @@ const ClientList = memo(function ClientList({
                           ) : (
                             <div className="flex flex-wrap gap-1 min-w-[120px]">
                               {sortTags([...(client.tags ?? [])]).map(tag => (
-                                <span
-                                  key={tag}
-                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
-                                >
-                                  {tag}
-                                </span>
+                                <TagBadge key={tag} tag={tag} context="table" />
                               ))}
                             </div>
                           )}
@@ -683,15 +868,12 @@ const ClientList = memo(function ClientList({
                           ) : (
                             <div className="text-sm min-w-[100px]">
                               {client.interest ? (
-                                <span
-                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getInterestColor(client.interest)}`}
-                                >
-                                  {client.interest}
-                                </span>
+                                <InterestBadge
+                                  interest={client.interest}
+                                  context="table"
+                                />
                               ) : (
-                                <span className="text-gray-400">
-                                  No interest
-                                </span>
+                                <span className="text-gray-400">—</span>
                               )}
                             </div>
                           )}
@@ -712,452 +894,107 @@ const ClientList = memo(function ClientList({
                               placeholder="Client #"
                             />
                           ) : (
-                            <div className="text-sm text-gray-900 font-mono">
+                            <div className="text-sm text-gray-400 font-mono">
                               {client.client_number || '—'}
                             </div>
                           )}
                         </td>
-                      </tr>
-                    );
-                  }}
-                </FixedSizeList>
-              ) : (
-                <tbody className={classNames.tableBody}>
-                  {clients.map(client => {
-                    const fullName =
-                      `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
-                      'N/A';
-                    const normalizedEmail = client.email?.trim();
-                    const hasEmail = Boolean(normalizedEmail);
-                    const emailSubject = encodeURIComponent(
-                      `Message to ${fullName !== 'N/A' ? fullName : 'client'}`
-                    );
-                    const emailGreeting =
-                      fullName !== 'N/A'
-                        ? `안녕하세요 ${fullName},`
-                        : '안녕하세요,';
-                    const emailBody = encodeURIComponent(
-                      `${emailGreeting}\n\n`
-                    );
-                    const mailtoHref = hasEmail
-                      ? `mailto:${normalizedEmail}?subject=${emailSubject}&body=${emailBody}`
-                      : '';
-
-                    const isExpanded = expandedClientId === client.id;
-
-                    return (
-                      <Fragment key={client.id}>
-                        <tr
-                          onClick={() => {
-                            if (editingClient === client.id) return;
-                            setExpandedClientId(prev =>
-                              prev === client.id ? null : client.id
-                            );
-                            onClientClick(client);
-                          }}
-                          className={cn(
-                            classNames.tableRow,
-                            'cursor-pointer',
-                            editingClient === client.id ? 'bg-blue-50' : ''
-                          )}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              if (editingClient !== client.id) {
-                                onClientClick(client);
-                              }
-                            }
-                          }}
-                          aria-label={`View details for ${fullName}`}
-                        >
-                          <td
-                            className={cn(
-                              classNames.tableCell,
-                              'text-left relative'
-                            )}
-                          >
-                            {editingClient === client.id ? (
-                              <div className="flex items-center justify-end gap-0.5 relative z-10">
-                                <button
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    saveEditing();
-                                  }}
-                                  disabled={isSaving}
-                                  className="text-green-600 hover:text-green-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-green-50"
-                                  title="Save changes"
-                                >
-                                  {isSaving ? (
-                                    <svg
-                                      className="w-4 h-4 animate-spin"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth="2"
-                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                                      />
-                                    </svg>
-                                  ) : (
-                                    <svg
-                                      className="w-4 h-4"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth="2"
-                                        d="M5 13l4 4L19 7"
-                                      />
-                                    </svg>
-                                  )}
-                                </button>
-                                <button
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    cancelEditing();
-                                  }}
-                                  disabled={isSaving}
-                                  className="text-red-600 hover:text-red-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-red-50"
-                                  title="Cancel editing"
-                                >
-                                  <svg
-                                    className="w-4 h-4"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth="2"
-                                      d="M6 18L18 6M6 6l12 12"
-                                    />
-                                  </svg>
-                                </button>
-                              </div>
-                            ) : (
-                              <RowActions
-                                onView={() => onClientClick(client)}
-                                onEdit={() => startEditing(client)}
-                                onEmail={
-                                  hasEmail && mailtoHref
-                                    ? () => {
-                                        window.location.href = mailtoHref;
-                                      }
-                                    : undefined
-                                }
-                                onDelete={
-                                  onDeleteClient
-                                    ? () => onDeleteClient(client)
-                                    : undefined
-                                }
-                              />
-                            )}
-                          </td>
-                          <td className={classNames.tableCell}>
-                            {editingClient === client.id ? (
-                              <div className="min-w-[200px] space-y-2">
-                                <input
-                                  type="text"
-                                  value={`${editData.first_name || ''} ${editData.last_name || ''}`.trim()}
-                                  onChange={e =>
-                                    handleFullNameChange(e.target.value)
-                                  }
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  onClick={e => e.stopPropagation()}
-                                  placeholder="Full name"
-                                />
-                                <input
-                                  type="email"
-                                  value={editData.email || ''}
-                                  onChange={e =>
-                                    handleEditFieldChange(
-                                      'email',
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  onClick={e => e.stopPropagation()}
-                                  placeholder="Email"
-                                />
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  setExpandedClientId(prev =>
-                                    prev === client.id ? null : client.id
+                        <td className={classNames.tableCell}>
+                          {contactInfoLoading ? (
+                            <div className="text-sm text-gray-400">...</div>
+                          ) : (
+                            <div className="text-sm text-gray-900 min-w-[120px]">
+                              {(() => {
+                                const info = getContactInfo(client.id);
+                                if (!info?.lastContactDateDisplay) {
+                                  return (
+                                    <span className="text-gray-400">None</span>
                                   );
-                                }}
-                                className="w-full text-left min-w-[150px] focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm"
-                                aria-expanded={isExpanded}
-                                aria-controls={`client-details-${client.id}`}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="text-sm font-medium text-gray-900">
-                                    {fullName}
-                                  </div>
-                                  <span
-                                    className="text-gray-400 text-xs"
-                                    aria-hidden
-                                  >
-                                    {isExpanded ? '▲' : '▼'}
-                                  </span>
-                                </div>
-                                {client.email && (
-                                  <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                                    <span aria-hidden="true">📧</span>
-                                    {client.email}
-                                  </div>
-                                )}
-                                {/* UX: Display instrument count and recent activity */}
-                                <div className="flex items-center gap-3 mt-2 text-xs text-gray-600">
-                                  {(() => {
-                                    const instrumentCount =
-                                      clientInstrumentCounts.get(client.id) ||
-                                      0;
-                                    const lastActivity = clientLastActivity.get(
-                                      client.id
-                                    );
-                                    return (
-                                      <>
-                                        {instrumentCount > 0 && (
-                                          <div className="flex items-center gap-1">
-                                            <span aria-hidden="true">🎻</span>
-                                            <span>
-                                              Instruments: {instrumentCount}
-                                            </span>
-                                          </div>
-                                        )}
-                                        {lastActivity && (
-                                          <div className="flex items-center gap-1">
-                                            <span aria-hidden="true">🕒</span>
-                                            <span>
-                                              Last activity:{' '}
-                                              {formatRelativeTime(lastActivity)}
-                                            </span>
-                                          </div>
-                                        )}
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                                {client.note && (
-                                  <div className="text-xs text-gray-500 mt-1 line-clamp-2">
-                                    {client.note}
-                                  </div>
-                                )}
-                              </button>
-                            )}
-                          </td>
-                          <td className={classNames.tableCell}>
-                            {editingClient === client.id ? (
-                              <div className="min-w-[150px]">
-                                <input
-                                  type="tel"
-                                  value={editData.contact_number || ''}
-                                  onChange={e =>
-                                    handleEditFieldChange(
-                                      'contact_number',
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  onClick={e => e.stopPropagation()}
-                                  placeholder="Phone number"
-                                />
-                              </div>
-                            ) : (
-                              <div className="text-sm text-gray-900 min-w-[120px]">
-                                {client.contact_number ? (
-                                  <span>{client.contact_number}</span>
-                                ) : (
-                                  <span className="text-gray-400">
-                                    No contact
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className={classNames.tableCell}>
-                            {editingClient === client.id ? (
-                              <div className="min-w-[150px]">
-                                <ClientTagSelector
-                                  selectedTags={editData.tags || []}
-                                  onChange={next =>
-                                    handleEditFieldChange(
-                                      'tags',
-                                      next as string[]
-                                    )
-                                  }
-                                  className="space-y-1.5"
-                                  optionClassName="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
-                                  checkboxClassName="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                                  labelClassName="ml-2 text-xs font-medium"
-                                  getLabelClassName={tag =>
-                                    getTagTextColor(tag)
-                                  }
-                                  stopPropagation
-                                />
-                              </div>
-                            ) : (
-                              <div className="flex flex-wrap gap-1 min-w-[120px]">
-                                {sortTags([...(client.tags ?? [])]).map(tag => (
-                                  <span
-                                    key={tag}
-                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
-                                  >
-                                    {tag}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </td>
-                          <td className={classNames.tableCell}>
-                            {editingClient === client.id ? (
-                              <div className="min-w-[120px]">
-                                <InterestSelector
-                                  value={editData.interest || ''}
-                                  onChange={value =>
-                                    handleEditFieldChange('interest', value)
-                                  }
-                                  selectClassName="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  placeholder="Select interest"
-                                  stopPropagation
-                                />
-                              </div>
-                            ) : (
-                              <div className="text-sm min-w-[100px]">
-                                {client.interest ? (
-                                  <span
-                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getInterestColor(client.interest)}`}
-                                  >
-                                    {client.interest}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-400">
-                                    No interest
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className={classNames.tableCell}>
-                            {editingClient === client.id ? (
-                              <input
-                                type="text"
-                                value={editData.client_number || ''}
-                                onChange={e =>
-                                  handleEditFieldChange(
-                                    'client_number',
-                                    e.target.value
-                                  )
                                 }
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                onClick={e => e.stopPropagation()}
-                                placeholder="Client #"
-                              />
-                            ) : (
-                              <div className="text-sm text-gray-900 font-mono">
-                                {client.client_number || '—'}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr className="bg-gray-50">
-                            <td
-                              colSpan={6}
-                              className={cn(
-                                classNames.tableCell,
-                                'text-sm text-gray-700'
-                              )}
-                            >
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div>
-                                  <div className="text-xs text-gray-500">
-                                    Email
-                                  </div>
-                                  <div className="font-medium">
-                                    {client.email || '—'}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className="text-xs text-gray-500">
-                                    Contact
-                                  </div>
-                                  <div className="font-medium">
-                                    {client.contact_number || '—'}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className="text-xs text-gray-500">
-                                    Interest
-                                  </div>
-                                  <div className="font-medium">
-                                    {client.interest || '—'}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className="text-xs text-gray-500">
-                                    Client #
-                                  </div>
-                                  <div className="font-mono">
-                                    {client.client_number || '—'}
-                                  </div>
-                                </div>
-                                <div className="md:col-span-2">
-                                  <div className="text-xs text-gray-500">
-                                    Tags
-                                  </div>
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {client.tags?.length ? (
-                                      sortTags([...client.tags]).map(tag => (
-                                        <span
-                                          key={tag}
-                                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
-                                        >
-                                          {tag}
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="text-gray-400">
-                                        No tags
+                                return (
+                                  <div className="flex flex-col">
+                                    <span>{info.lastContactDateDisplay}</span>
+                                    {info.daysSinceLastContact !== null && (
+                                      <span className="text-xs text-gray-500">
+                                        {info.daysSinceLastContact} days ago
                                       </span>
                                     )}
                                   </div>
-                                </div>
-                                <div className="md:col-span-2">
-                                  <div className="text-xs text-gray-500">
-                                    Note
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </td>
+                        <td className={classNames.tableCell}>
+                          {contactInfoLoading ? (
+                            <div className="text-sm text-gray-400">...</div>
+                          ) : (
+                            <div className="text-sm text-gray-900 min-w-[140px]">
+                              {(() => {
+                                const info = getContactInfo(client.id);
+                                if (!info?.nextFollowUpDateDisplay) {
+                                  return (
+                                    <span className="text-gray-400">None</span>
+                                  );
+                                }
+                                return (
+                                  <div className="flex flex-col gap-1">
+                                    <span
+                                      className={
+                                        info.isOverdue
+                                          ? 'text-red-600 font-medium'
+                                          : info.daysUntilFollowUp !== null &&
+                                              info.daysUntilFollowUp <= 3
+                                            ? 'text-amber-600 font-medium'
+                                            : ''
+                                      }
+                                    >
+                                      {info.nextFollowUpDateDisplay}
+                                    </span>
+                                    {info.daysUntilFollowUp !== null && (
+                                      <span className="text-xs text-gray-500">
+                                        {info.daysUntilFollowUp < 0
+                                          ? `${Math.abs(info.daysUntilFollowUp)} days overdue`
+                                          : info.daysUntilFollowUp === 0
+                                            ? 'Today'
+                                            : `${info.daysUntilFollowUp} days later`}
+                                      </span>
+                                    )}
+                                    {info.isOverdue && (
+                                      <span className="inline-flex items-center text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded-full w-fit">
+                                        overdue
+                                      </span>
+                                    )}
                                   </div>
-                                  <div className="mt-1 whitespace-pre-wrap">
-                                    {client.note || '—'}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              )}
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                      {/* ✅ Expanded row - only render when expanded */}
+                      {isExpanded && (
+                        <ClientExpandedRow
+                          client={client}
+                          contactInfo={getContactInfo}
+                          instrument={
+                            clientInstruments
+                              .filter(ci => ci.client_id === client.id)
+                              .map(ci => ci.instrument)
+                              .find(
+                                instr => instr !== null && instr !== undefined
+                              ) || undefined
+                          }
+                        />
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
             </table>
           </div>
         </div>
       </div>
-
       {/* Pagination */}
       {totalPages !== undefined && totalPages > 1 && (
         <div className="border-t border-gray-200 px-6 py-4">
@@ -1174,174 +1011,5 @@ const ClientList = memo(function ClientList({
     </div>
   );
 });
-
-// Row Actions Component (Dropdown menu like Dashboard)
-const RowActions = ({
-  onView,
-  onEdit,
-  onEmail,
-  onDelete,
-}: {
-  onView: () => void;
-  onEdit: () => void;
-  onEmail?: () => void;
-  onDelete?: () => void;
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div className="relative flex justify-start">
-      {onDelete && (
-        <button
-          type="button"
-          aria-label="Delete client"
-          className="sr-only"
-          onClick={e => {
-            e.stopPropagation();
-            onDelete();
-          }}
-        >
-          Delete
-        </button>
-      )}
-      <button
-        onClick={e => {
-          e.stopPropagation();
-          setIsOpen(!isOpen);
-        }}
-        className="p-1.5 rounded-md hover:bg-gray-50 transition-colors duration-200"
-        aria-label="More actions"
-        aria-expanded={isOpen}
-      >
-        <svg
-          className="w-4 h-4 text-gray-500"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-          />
-        </svg>
-      </button>
-
-      {isOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setIsOpen(false)}
-          />
-          <div className="absolute left-0 z-20 mt-2 w-32 rounded-md border border-gray-200 bg-white shadow-lg">
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                onView();
-                setIsOpen(false);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                />
-              </svg>
-              View
-            </button>
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                onEdit();
-                setIsOpen(false);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                />
-              </svg>
-              Edit
-            </button>
-            {onEmail && (
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  onEmail();
-                  setIsOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                  />
-                </svg>
-                Email
-              </button>
-            )}
-            {onDelete && (
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  onDelete();
-                  setIsOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-200"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
-                Delete
-              </button>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
 
 export default ClientList;

@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useMemo, useCallback } from 'react';
-import { Instrument } from '@/types';
+import { Instrument, ClientInstrument } from '@/types';
 import { getPriceRange } from '../utils/dashboardUtils';
-import { DateRange, FilterOperator } from '@/types/search';
-import PageFilters, {
-  FilterGroupConfig,
-} from '@/components/common/PageFilters';
+import { DateRange } from '@/types/search';
+import {
+  PageFilters,
+  type FilterGroupConfig,
+} from '@/components/common/layout';
 import { DashboardFilters, DashboardArrayFilterKeys } from '../types';
 import {
   DASHBOARD_FILTER_LABELS,
@@ -16,8 +17,13 @@ import {
   buildDashboardFilterOptions,
 } from '../constants';
 
+// Enriched items type (Instrument with optional clients array)
+type EnrichedInstrument = Instrument & {
+  clients?: ClientInstrument[];
+};
+
 interface ItemFiltersProps {
-  items: Instrument[];
+  items: Instrument[] | EnrichedInstrument[];
   searchTerm: string;
   onSearchChange: (term: string) => void;
   filters: DashboardFilters;
@@ -30,11 +36,16 @@ interface ItemFiltersProps {
   showFilters: boolean;
   onToggleFilters: () => void;
   activeFiltersCount: number;
-  // 고급 검색
+  // 고급 검색 (날짜 범위만)
   dateRange?: DateRange | null;
   onDateRangeChange?: (range: DateRange | null) => void;
-  filterOperator: FilterOperator; // Required - managed by parent hook
-  onOperatorChange?: (operator: FilterOperator) => void;
+  // 클라이언트 데이터 (ownership 필터에서 UUID를 이름으로 변환하기 위해)
+  clients?: Array<{
+    id: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+  }>;
 }
 
 export default function ItemFilters({
@@ -50,14 +61,52 @@ export default function ItemFilters({
   activeFiltersCount,
   dateRange,
   onDateRangeChange,
-  filterOperator,
-  onOperatorChange,
+  clients = [],
 }: ItemFiltersProps) {
-  // filterOperator is managed by parent (useDashboardFilters) to avoid default value duplication
   // FIXED: Memoize buildDashboardFilterOptions to avoid recomputing on every render
+  // buildDashboardFilterOptions only needs Instrument fields, not clients array
   const filterOptions = useMemo(
-    () => buildDashboardFilterOptions(items),
+    () => buildDashboardFilterOptions(items as Instrument[]),
     [items]
+  );
+
+  // 클라이언트 ID → 이름 매핑 생성 (ownership 필터에서 사용)
+  const clientsMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (clients && clients.length > 0) {
+      clients.forEach(client => {
+        if (client && client.id) {
+          const name =
+            `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+            client.email ||
+            client.id;
+          map.set(client.id, name);
+        }
+      });
+    }
+    return map;
+  }, [clients]);
+
+  // UUID를 클라이언트 이름으로 변환하는 함수
+  const getOwnershipLabel = useCallback(
+    (uuid: string): string => {
+      if (!uuid) return uuid;
+
+      // UUID 형식인지 확인
+      const uuidPattern =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidPattern.test(uuid)) {
+        const clientName = clientsMap.get(uuid);
+        if (clientName && clientName !== uuid) {
+          return clientName;
+        }
+        // 클라이언트를 찾을 수 없으면 UUID 반환
+        return uuid;
+      }
+      // UUID가 아니면 그대로 반환 (문자열 ownership)
+      return uuid;
+    },
+    [clientsMap]
   );
   const priceRange = getPriceRange(items);
   const hasActiveFilters =
@@ -91,7 +140,7 @@ export default function ItemFilters({
       })),
       ...filters.ownership.map(value => ({
         key: `${DASHBOARD_FILTER_KEYS.OWNERSHIP}-${value}`,
-        label: `${DASHBOARD_FILTER_LABELS.ownership}: ${value}`,
+        label: `${DASHBOARD_FILTER_LABELS.ownership}: ${getOwnershipLabel(value)}`,
         remove: () => onFilterChange(DASHBOARD_FILTER_KEYS.OWNERSHIP, value),
       })),
     ];
@@ -132,6 +181,7 @@ export default function ItemFilters({
     onPriceRangeChange,
     onSearchChange,
     onDateRangeChange,
+    getOwnershipLabel,
   ]);
 
   // Price Range 커스텀 렌더링
@@ -203,56 +253,61 @@ export default function ItemFilters({
         title: DASHBOARD_FILTER_LABELS.status,
         options: filterOptions.status,
         selectedValues: filters.status,
-        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.STATUS, value),
+        onToggle: (value: string) =>
+          onFilterChange(DASHBOARD_FILTER_KEYS.STATUS, value),
         searchable: filterOptions.status.length > 10,
         defaultCollapsed: false,
         variant: 'card',
-        maxHeight: 'max-h-48',
+        maxHeight: 'max-h-[160px]', // 5개 항목 높이 (약 32px * 5)
       },
       {
         key: DASHBOARD_FILTER_KEYS.MAKER,
         title: DASHBOARD_FILTER_LABELS.maker,
         options: filterOptions.maker,
         selectedValues: filters.maker,
-        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.MAKER, value),
+        onToggle: (value: string) =>
+          onFilterChange(DASHBOARD_FILTER_KEYS.MAKER, value),
         searchable: true,
         defaultCollapsed: false,
         variant: 'card',
-        maxHeight: 'max-h-48',
+        maxHeight: 'max-h-[160px]', // 5개 항목 높이 (약 32px * 5)
       },
       {
         key: DASHBOARD_FILTER_KEYS.TYPE,
         title: DASHBOARD_FILTER_LABELS.type,
         options: filterOptions.type,
         selectedValues: filters.type,
-        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.TYPE, value),
+        onToggle: (value: string) =>
+          onFilterChange(DASHBOARD_FILTER_KEYS.TYPE, value),
         searchable: filterOptions.type.length > 10,
         defaultCollapsed: false,
         variant: 'card',
-        maxHeight: 'max-h-48',
+        maxHeight: 'max-h-[160px]', // 5개 항목 높이 (약 32px * 5)
       },
       {
         key: DASHBOARD_FILTER_KEYS.SUBTYPE,
         title: DASHBOARD_FILTER_LABELS.subtype,
         options: filterOptions.subtype,
         selectedValues: filters.subtype,
-        onToggle: value => onFilterChange(DASHBOARD_FILTER_KEYS.SUBTYPE, value),
+        onToggle: (value: string) =>
+          onFilterChange(DASHBOARD_FILTER_KEYS.SUBTYPE, value),
         searchable: filterOptions.subtype.length > 10,
         defaultCollapsed: false,
         variant: 'card',
-        maxHeight: 'max-h-48',
+        maxHeight: 'max-h-[160px]', // 5개 항목 높이 (약 32px * 5)
       },
       {
         key: DASHBOARD_FILTER_KEYS.OWNERSHIP,
         title: DASHBOARD_FILTER_LABELS.ownership,
         options: filterOptions.ownership,
         selectedValues: filters.ownership,
-        onToggle: value =>
+        onToggle: (value: string) =>
           onFilterChange(DASHBOARD_FILTER_KEYS.OWNERSHIP, value),
         searchable: true,
         defaultCollapsed: false,
         variant: 'card',
-        maxHeight: 'max-h-48',
+        maxHeight: 'max-h-[160px]', // 5개 항목 높이 (약 32px * 5)
+        getLabel: getOwnershipLabel, // UUID를 클라이언트 이름으로 변환
       },
       {
         key: DASHBOARD_FILTER_KEYS.PRICE_RANGE,
@@ -263,7 +318,13 @@ export default function ItemFilters({
         customRender: renderPriceRange,
       },
     ],
-    [filterOptions, filters, onFilterChange, renderPriceRange]
+    [
+      filterOptions,
+      filters,
+      onFilterChange,
+      renderPriceRange,
+      getOwnershipLabel,
+    ]
   );
 
   // FIXED: Change "Apply" to "Done" since filters apply immediately (live update)
@@ -281,8 +342,7 @@ export default function ItemFilters({
           ? {
               dateRange: dateRange || null,
               onDateRangeChange,
-              operator: filterOperator,
-              onOperatorChange: onOperatorChange || undefined,
+              // 날짜 범위 필터만 사용 (operator 제거)
               dateFields: [
                 {
                   field: 'created_at',

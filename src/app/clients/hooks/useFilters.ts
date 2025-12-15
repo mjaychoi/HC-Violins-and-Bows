@@ -46,8 +46,12 @@ export const useFilters = (
     urlParamMapping: {
       searchTerm: 'search',
     },
+    // ✅ FIXED: customFieldFilter는 필터만 담당, searchTerm은 usePageFilters.customFilter가 처리
+    // searchTerm을 빈 문자열로 전달하는 이유: 검색은 customFilter에서 처리되므로
+    // filterClients는 필터 조건만 적용하면 됨
     customFieldFilter: (items, filters) => {
       const clients = items as unknown as Client[];
+      // searchTerm은 usePageFilters.customFilter가 처리하므로 여기서는 빈 문자열
       const result = filterClients(clients, '', filters as FilterState, {
         clientsWithInstruments,
       });
@@ -118,10 +122,17 @@ export const useFilters = (
   const totalCount = baseFilters.filteredItems.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
+  // ✅ FIXED: pagination reset effect 개선 - filters 참조 안정성 보장
+  // baseFilters.filters가 매 렌더마다 새 객체면 페이지가 계속 1로 튈 수 있음
+  const filtersKey = useMemo(
+    () => JSON.stringify(baseFilters.filters),
+    [baseFilters.filters]
+  );
+
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [baseFilters.searchTerm, baseFilters.filters]);
+  }, [baseFilters.searchTerm, filtersKey]);
 
   // Paginated clients
   const paginatedClients = useMemo(() => {

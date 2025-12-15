@@ -166,7 +166,7 @@ export function useBrowserNotifications(
 
   const isSupported = isNotificationSupported();
   const notifiedTasksRef = useRef<Set<string>>(getNotifiedTaskIds());
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastCheckRef = useRef<Date>(new Date());
 
   /**
@@ -290,18 +290,24 @@ export function useBrowserNotifications(
 
   /**
    * 권한 상태 동기화
+   * ✅ FIXED: 10초 polling 대신 visibilitychange/focus 이벤트 사용 (더 가벼움)
    */
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const updatePermission = () => {
-      setPermission(getNotificationPermission());
+    const sync = () => setPermission(getNotificationPermission());
+
+    // 초기 체크
+    sync();
+
+    // 탭이 다시 활성화될 때만 체크
+    window.addEventListener('focus', sync);
+    document.addEventListener('visibilitychange', sync);
+
+    return () => {
+      window.removeEventListener('focus', sync);
+      document.removeEventListener('visibilitychange', sync);
     };
-
-    // 권한이 변경될 수 있으므로 주기적으로 확인
-    const interval = setInterval(updatePermission, 10000); // 10초마다
-
-    return () => clearInterval(interval);
   }, []);
 
   return {

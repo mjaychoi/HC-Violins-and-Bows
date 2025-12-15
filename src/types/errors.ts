@@ -1,9 +1,10 @@
 // Error Types
+// ✅ FIXED: timestamp를 ISO string으로 통일 (직렬화/로그/스토리지 안전)
 export interface AppError {
   code: string;
   message: string;
   details?: string;
-  timestamp: Date;
+  timestamp: string; // ISO string (예: new Date().toISOString())
   context?: Record<string, unknown>;
 }
 

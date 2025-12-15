@@ -22,9 +22,8 @@ const items: Item[] = [
 describe('filters utils', () => {
   it('buildFilterOptions extracts unique values with extractor', () => {
     const result = buildFilterOptions(items, {
-      status: { field: 'status' },
+      status: { extractor: (item: Item) => item.status },
       tags: {
-        field: 'tags' as any,
         extractor: (item: Item) => item.tags,
       },
     });
@@ -35,8 +34,8 @@ describe('filters utils', () => {
   it('buildFilterOptions honors custom sortFn', () => {
     const result = buildFilterOptions(items, {
       status: {
-        field: 'status',
-        sortFn: (a, b) => (a as string).length - (b as string).length,
+        extractor: (item: Item) => item.status,
+        sortFn: (a, b) => a.length - b.length,
       },
     });
     expect(result.status).toEqual(['Low', 'High']);

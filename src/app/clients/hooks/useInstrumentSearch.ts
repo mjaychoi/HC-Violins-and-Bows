@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useDeferredValue } from 'react';
 import { Instrument } from '@/types';
 import { useUnifiedInstruments } from '@/hooks/useUnifiedData';
 
@@ -8,21 +8,29 @@ export function useInstrumentSearch() {
 
   const { instruments } = useUnifiedInstruments();
 
+  // ✅ FIXED: useDeferredValue로 입력을 늦춰서 UI 끊김 완화
+  const deferred = useDeferredValue(instrumentSearchTerm);
+
+  // ✅ FIXED: 사전 계산된 검색 가능한 문자열로 성능 개선
+  const instrumentsWithSearchableString = useMemo(() => {
+    return instruments.map(instrument => ({
+      instrument,
+      searchable:
+        `${instrument.maker ?? ''} ${instrument.type ?? ''} ${instrument.subtype ?? ''} ${instrument.serial_number ?? ''}`.toLowerCase(),
+    }));
+  }, [instruments]);
+
   // Client-side search using useMemo for performance
   const searchResults = useMemo<Instrument[]>(() => {
-    if (instrumentSearchTerm.length < 2) {
+    if (deferred.length < 2) {
       return [];
     }
 
-    const searchLower = instrumentSearchTerm.toLowerCase();
-    return instruments.filter(
-      instrument =>
-        (instrument.maker || '').toLowerCase().includes(searchLower) ||
-        (instrument.type || '').toLowerCase().includes(searchLower) ||
-        (instrument.subtype || '').toLowerCase().includes(searchLower) ||
-        (instrument.serial_number || '').toLowerCase().includes(searchLower)
-    );
-  }, [instruments, instrumentSearchTerm]);
+    const q = deferred.toLowerCase();
+    return instrumentsWithSearchableString
+      .filter(({ searchable }) => searchable.includes(q))
+      .map(({ instrument }) => instrument);
+  }, [instrumentsWithSearchableString, deferred]);
 
   const openInstrumentSearch = useCallback(() => {
     setShowInstrumentSearch(true);

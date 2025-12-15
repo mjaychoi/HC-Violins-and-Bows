@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useMaintenanceTasks } from '@/hooks/useMaintenanceTasks';
 import {
@@ -8,58 +8,42 @@ import {
   useUnifiedClients,
 } from '@/hooks/useUnifiedData';
 import { useModalState } from '@/hooks/useModalState';
-import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { usePageNotifications } from '@/hooks/usePageNotifications';
+// Import useAppFeedback after other hooks to avoid webpack module loading issues
+import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { AppLayout } from '@/components/layout';
 import {
   ErrorBoundary,
-  TableSkeleton,
   ConfirmDialog,
   NotificationBadge,
-  Pagination,
+  TableSkeleton,
 } from '@/components/common';
-import {
-  CalendarHeader,
-  CalendarFilters,
-  CalendarSummary,
-  CalendarEmptyState,
-  TaskModal,
-  GroupedTaskList,
-} from './components';
-import Button from '@/components/common/Button';
-import type { MaintenanceTask } from '@/types';
-import {
-  useCalendarFilters,
-  useCalendarNavigation,
-  useCalendarView,
-  useCalendarTasks,
-} from './hooks';
-import { format, startOfDay, subDays, addDays } from 'date-fns';
-import { getDateRangeForView } from './utils';
-import { calculateSummaryStats } from './utils/filterUtils';
+import { Button } from '@/components/common/inputs';
+import type { MaintenanceTask, ContactLog } from '@/types';
+import { toLocalYMD } from '@/utils/dateParsing';
+import { useCalendarNavigation, useCalendarView } from './hooks';
 import {
   CALENDAR_MESSAGES,
   CALENDAR_ERROR_MESSAGES,
   CALENDAR_CONFIRM_MESSAGES,
 } from './constants';
 
-// Dynamic import for CalendarView to reduce initial bundle size
-const CalendarView = dynamic(
-  () =>
-    import('./components/CalendarView').then(mod => ({ default: mod.default })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="rounded-lg bg-white p-4 shadow-sm md:p-6 border border-gray-200">
-        <TableSkeleton rows={5} columns={4} />
-      </div>
-    ),
-  }
-);
+// Dynamic imports for large components to reduce initial bundle size
+const CalendarContent = dynamic(() => import('./components/CalendarContent'), {
+  loading: () => (
+    <div className="p-6">
+      <TableSkeleton rows={8} columns={7} />
+    </div>
+  ),
+  ssr: false,
+});
+
+const TaskModal = dynamic(() => import('./components/TaskModal'), {
+  ssr: false,
+});
 
 export default function CalendarPage() {
-  const { ErrorToasts, SuccessToasts, handleError, showSuccess } =
-    useAppFeedback();
+  const { handleError, showSuccess } = useAppFeedback();
 
   // FIXED: useUnifiedData is now called at root layout level
   // Use specific hooks to read data (they don't trigger fetches)
@@ -69,6 +53,7 @@ export default function CalendarPage() {
   const [confirmDeleteTask, setConfirmDeleteTask] =
     useState<MaintenanceTask | null>(null);
   const [modalDefaultDate, setModalDefaultDate] = useState<string>('');
+  const [draggingEventId, setDraggingEventId] = useState<string | null>(null);
 
   // Calendar data hooks
   const {
@@ -79,17 +64,6 @@ export default function CalendarPage() {
     deleteTask,
     fetchTasksByDateRange,
   } = useMaintenanceTasks();
-
-  // Page notifications (badge with click handler)
-  // For calendar page, clicking badge should navigate to today
-  // FIXED: Now passes tasks to prevent duplicate fetch
-  const { notificationBadge } = usePageNotifications({
-    tasks, // Use tasks from useMaintenanceTasks to avoid duplicate fetch
-    navigateTo: '', // Don't navigate, use custom handler instead
-    showToastOnClick: true,
-    showSuccess,
-    // Uses default formatter from policies/notifications.ts
-  });
 
   const {
     isOpen: showModal,
@@ -121,117 +95,53 @@ export default function CalendarPage() {
     onError: handleTableError,
   });
 
-  // Override onClick to go to today instead of navigating
-  // Note: notificationBadge is a data object with { overdue, upcoming, today, onClick } structure
-  // as defined by usePageNotifications hook (not a ReactNode)
-  const handleNotificationBadgeClick = () => {
-    const hasNotifications =
-      notificationBadge.overdue +
-        notificationBadge.upcoming +
-        notificationBadge.today >
-      0;
-    if (hasNotifications) {
-      notificationBadge.onClick();
+  // Page notifications (badge with click handler)
+  // For calendar page, clicking badge should navigate to today
+  // FIXED: Now passes tasks to prevent duplicate fetch
+  // FIXED: Use customClickHandler to avoid double navigation
+  const { notificationBadge } = usePageNotifications({
+    tasks, // Use tasks from useMaintenanceTasks to avoid duplicate fetch
+    navigateTo: '', // Don't navigate, use custom handler instead
+    showToastOnClick: true,
+    showSuccess,
+    customClickHandler: () => {
+      // Custom handler: navigate to today (toast is handled by default onClick)
       navigation.handleGoToToday();
-    }
-  };
+    },
+    // Uses default formatter from policies/notifications.ts
+  });
 
   // Calendar view (calendar/list toggle)
   const { view, setView } = useCalendarView();
 
-  // Calendar tasks (maps, filter options)
-  const taskData = useCalendarTasks({
-    tasks,
-    instruments,
-    clients,
-  });
+  // Fetch contact logs for follow-ups
+  const [contactLogs, setContactLogs] = useState<ContactLog[]>([]);
 
-  // Calendar filters
-  const {
-    filteredTasks,
-    paginatedTasks,
-    currentPage,
-    totalPages,
-    totalCount,
-    pageSize,
-    ...filterState
-  } = useCalendarFilters({
-    tasks,
-    instrumentsMap: taskData.instrumentsMap,
-    filterOptions: taskData.filterOptions,
-  });
+  const fetchContactLogs = useCallback(async () => {
+    try {
+      // Fetch all follow-ups (past, today, and future) for calendar display
+      // hasFollowUp=true gets all logs with next_follow_up_date set (regardless of date)
+      const response = await fetch(`/api/contacts?hasFollowUp=true`);
+      const result = await response.json();
 
-  // Calculate summary stats with filtered tasks
-  const summaryStats = useMemo(() => {
-    return calculateSummaryStats(filteredTasks);
-  }, [filteredTasks]);
-
-  // Alias for cleaner code
-  const {
-    filterStatus,
-    filterOwnership,
-    searchTerm,
-    searchFilters,
-    sortBy,
-    sortOrder,
-    dateRange,
-    filterOperator,
-    hasActiveFilters,
-    setFilterStatus,
-    setFilterOwnership,
-    setSearchTerm,
-    setSearchFilters,
-    setSortBy,
-    setSortOrder,
-    setDateRange,
-    setFilterOperator,
-    resetFilters,
-    setPage,
-  } = filterState;
-
-  const resetFiltersAndUpdate = useCallback(() => {
-    resetFilters();
-    navigation.setSelectedDate(null);
-  }, [resetFilters, navigation]);
-
-  // Handle summary card clicks to apply filters
-  const handleSummaryCardClick = useCallback(
-    (status: 'all' | 'overdue' | 'today' | 'upcoming') => {
-      const today = startOfDay(new Date());
-
-      switch (status) {
-        case 'all':
-          // Reset all filters
-          resetFiltersAndUpdate();
-          break;
-        case 'overdue':
-          // Filter to overdue tasks (before today)
-          setDateRange({
-            from: null, // No start date
-            to: format(subDays(today, 1), 'yyyy-MM-dd'), // Yesterday
-          });
-          // Also set status filter to exclude completed/cancelled
-          setFilterStatus('pending');
-          break;
-        case 'today':
-          // Filter to tasks due today
-          const todayStr = format(today, 'yyyy-MM-dd');
-          setDateRange({
-            from: todayStr,
-            to: todayStr,
-          });
-          break;
-        case 'upcoming':
-          // Filter to upcoming tasks (next 7 days)
-          setDateRange({
-            from: format(addDays(today, 1), 'yyyy-MM-dd'), // Tomorrow
-            to: format(addDays(today, 7), 'yyyy-MM-dd'), // 7 days from now
-          });
-          break;
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to fetch contact logs');
       }
-    },
-    [resetFiltersAndUpdate, setDateRange, setFilterStatus]
-  );
+
+      // Filter to only include incomplete follow-ups (not completed)
+      const incompleteFollowUps = (result.data || []).filter(
+        (log: ContactLog) => !log.follow_up_completed_at
+      );
+
+      setContactLogs(incompleteFollowUps);
+    } catch (error) {
+      handleError(error, 'Fetch follow-ups');
+    }
+  }, [handleError]);
+
+  useEffect(() => {
+    fetchContactLogs();
+  }, [fetchContactLogs]);
 
   const handleOpenNewTask = useCallback(() => {
     setModalDefaultDate('');
@@ -248,25 +158,14 @@ export default function CalendarPage() {
       try {
         await createTask(taskData);
         closeModal();
-        const { startDate, endDate } = getDateRangeForView(
-          navigation.calendarView,
-          navigation.currentDate
-        );
-        await fetchTasksByDateRange(startDate, endDate);
+        // Use navigation's refetchCurrentRange instead of manual range calculation
+        await navigation.refetchCurrentRange();
         showSuccess(CALENDAR_MESSAGES.TASK_CREATED);
       } catch (error) {
         handleError(error, CALENDAR_ERROR_MESSAGES.CREATE_TASK);
       }
     },
-    [
-      createTask,
-      closeModal,
-      navigation.calendarView,
-      navigation.currentDate,
-      fetchTasksByDateRange,
-      showSuccess,
-      handleError,
-    ]
+    [createTask, closeModal, navigation, showSuccess, handleError]
   );
 
   const handleUpdateTask = useCallback(
@@ -280,26 +179,14 @@ export default function CalendarPage() {
       try {
         await updateTask(selectedTask.id, taskData);
         closeModal();
-        const { startDate, endDate } = getDateRangeForView(
-          navigation.calendarView,
-          navigation.currentDate
-        );
-        await fetchTasksByDateRange(startDate, endDate);
+        // Use navigation's refetchCurrentRange instead of manual range calculation
+        await navigation.refetchCurrentRange();
         showSuccess(CALENDAR_MESSAGES.TASK_UPDATED);
       } catch (error) {
         handleError(error, CALENDAR_ERROR_MESSAGES.UPDATE_TASK);
       }
     },
-    [
-      selectedTask,
-      updateTask,
-      closeModal,
-      navigation.calendarView,
-      navigation.currentDate,
-      fetchTasksByDateRange,
-      showSuccess,
-      handleError,
-    ]
+    [selectedTask, updateTask, closeModal, navigation, showSuccess, handleError]
   );
 
   const handleDeleteTaskRequest = useCallback((task: MaintenanceTask) => {
@@ -311,42 +198,169 @@ export default function CalendarPage() {
 
     try {
       await deleteTask(confirmDeleteTask.id);
-      const { startDate, endDate } = getDateRangeForView(
-        navigation.calendarView,
-        navigation.currentDate
-      );
-      await fetchTasksByDateRange(startDate, endDate);
+      // Use navigation's refetchCurrentRange instead of manual range calculation
+      await navigation.refetchCurrentRange();
       showSuccess(CALENDAR_MESSAGES.TASK_DELETED);
       setConfirmDeleteTask(null);
     } catch (error) {
       handleError(error, CALENDAR_ERROR_MESSAGES.DELETE_TASK);
     }
-  }, [
-    confirmDeleteTask,
-    deleteTask,
-    navigation.calendarView,
-    navigation.currentDate,
-    fetchTasksByDateRange,
-    showSuccess,
-    handleError,
-  ]);
+  }, [confirmDeleteTask, deleteTask, navigation, showSuccess, handleError]);
 
   const handleSelectEvent = (task: MaintenanceTask) => {
     openEditModal(task);
   };
 
-  const handleSelectSlot = (slotInfo: { start: Date; end: Date }) => {
-    navigation.setSelectedDate(slotInfo.start);
-    setModalDefaultDate(format(slotInfo.start, 'yyyy-MM-dd'));
-    openModal();
-  };
+  const handleSelectSlot = useCallback(
+    (slotInfo: { start: Date; end: Date }) => {
+      navigation.setSelectedDate(slotInfo.start);
+      // FIXED: Use toLocalYMD utility to convert Date to YYYY-MM-DD (single source of truth)
+      setModalDefaultDate(toLocalYMD(slotInfo.start.toISOString()));
+      openModal();
+    },
+    [navigation, openModal]
+  );
+
+  // Handle drag & drop: update task date when event is dropped
+  const handleEventDrop = useCallback(
+    async (data: {
+      event: { resource?: unknown };
+      start: Date;
+      end: Date;
+      isAllDay?: boolean;
+    }) => {
+      const { event, start } = data;
+      const resource = event.resource as
+        | { kind: 'task'; task: MaintenanceTask }
+        | { kind: 'follow_up'; contactLog: ContactLog }
+        | undefined;
+
+      // Only handle task events (not follow-up events)
+      if (!resource || resource.kind !== 'task') {
+        setDraggingEventId(null);
+        return;
+      }
+
+      const task = resource.task;
+      if (!task || !task.id) {
+        setDraggingEventId(null);
+        return;
+      }
+
+      // Store original date for rollback (use local variable to avoid stale state)
+      let originalDate: string;
+      let dateField: 'due_date' | 'personal_due_date' | 'scheduled_date';
+
+      if (task.due_date) {
+        originalDate = task.due_date;
+        dateField = 'due_date';
+      } else if (task.personal_due_date) {
+        originalDate = task.personal_due_date;
+        dateField = 'personal_due_date';
+      } else if (task.scheduled_date) {
+        originalDate = task.scheduled_date;
+        dateField = 'scheduled_date';
+      } else {
+        setDraggingEventId(null);
+        return;
+      }
+
+      // Store backup in local variable to avoid stale state issues
+      const backup = {
+        taskId: task.id,
+        originalDate,
+        dateField,
+      };
+      setDraggingEventId(task.id);
+
+      try {
+        // Convert Date to YYYY-MM-DD format (date-only, no time preserved)
+        const newDate = toLocalYMD(start.toISOString());
+
+        // Determine which date field to update based on task's current date priority
+        // Priority: due_date > personal_due_date > scheduled_date
+        const updateData: Partial<MaintenanceTask> = {};
+
+        if (task.due_date) {
+          updateData.due_date = newDate;
+        } else if (task.personal_due_date) {
+          updateData.personal_due_date = newDate;
+        } else {
+          updateData.scheduled_date = newDate;
+        }
+
+        await updateTask(task.id, updateData);
+        await navigation.refetchCurrentRange();
+        showSuccess('Task date updated successfully.');
+      } catch (error) {
+        // Rollback on error using local backup variable
+        try {
+          const rollbackData: Partial<MaintenanceTask> = {
+            [backup.dateField]: backup.originalDate,
+          };
+          await updateTask(task.id, rollbackData);
+          await navigation.refetchCurrentRange();
+        } catch (rollbackError) {
+          console.error('Failed to rollback task date:', rollbackError);
+        }
+        handleError(error, 'Failed to update task date');
+      } finally {
+        setDraggingEventId(null);
+      }
+    },
+    [updateTask, navigation, showSuccess, handleError]
+  );
+
+  // Handle event resize: update task end time
+  const handleEventResize = useCallback(
+    async (data: { event: { resource?: unknown }; start: Date; end: Date }) => {
+      const { event, start } = data;
+      const resource = event.resource as
+        | { kind: 'task'; task: MaintenanceTask }
+        | { kind: 'follow_up'; contactLog: ContactLog }
+        | undefined;
+
+      // Only handle task events (not follow-up events)
+      if (!resource || resource.kind !== 'task') {
+        return;
+      }
+
+      const task = resource.task;
+      if (!task || !task.id) {
+        return;
+      }
+
+      setDraggingEventId(task.id);
+
+      try {
+        // For resize, we update the date based on the start time
+        const newDate = toLocalYMD(start.toISOString());
+
+        const updateData: Partial<MaintenanceTask> = {};
+
+        if (task.due_date) {
+          updateData.due_date = newDate;
+        } else if (task.personal_due_date) {
+          updateData.personal_due_date = newDate;
+        } else {
+          updateData.scheduled_date = newDate;
+        }
+
+        await updateTask(task.id, updateData);
+        await navigation.refetchCurrentRange();
+        showSuccess('Task time updated successfully.');
+      } catch (error) {
+        handleError(error, 'Failed to update task time');
+      } finally {
+        setDraggingEventId(null);
+      }
+    },
+    [updateTask, navigation, showSuccess, handleError]
+  );
 
   const handleTaskClick = (task: MaintenanceTask) => {
     openEditModal(task);
   };
-
-  const isEmptyState = !loading && filteredTasks.length === 0;
-  const showPagination = totalPages > 1 && view === 'list';
 
   // 테이블이 없을 때 표시할 메시지
   if (hasTableError) {
@@ -397,8 +411,6 @@ export default function CalendarPage() {
             </div>
           </div>
         </AppLayout>
-        <ErrorToasts />
-        <SuccessToasts />
       </ErrorBoundary>
     );
   }
@@ -416,183 +428,56 @@ export default function CalendarPage() {
               overdue={notificationBadge.overdue}
               upcoming={notificationBadge.upcoming}
               today={notificationBadge.today}
-              onClick={handleNotificationBadgeClick}
+              onClick={notificationBadge.onClick}
             />
           ) : null
         }
       >
-        <div className="p-6">
-          {/* Header with Navigation */}
-          <div className="mb-4">
-            <CalendarHeader
-              currentDate={navigation.currentDate}
-              calendarView={navigation.calendarView}
-              view={view}
-              onPrevious={navigation.handlePrevious}
-              onNext={navigation.handleNext}
-              onGoToToday={navigation.handleGoToToday}
-              onViewChange={setView}
-              onOpenNewTask={handleOpenNewTask}
-            />
-          </div>
+        <CalendarContent
+          tasks={tasks}
+          contactLogs={contactLogs}
+          instruments={instruments}
+          clients={clients}
+          loading={loading}
+          navigation={navigation}
+          view={view}
+          setView={setView}
+          onTaskClick={handleTaskClick}
+          onTaskDelete={handleDeleteTaskRequest}
+          onTaskEdit={handleTaskClick}
+          onSelectEvent={handleSelectEvent}
+          onSelectSlot={handleSelectSlot}
+          onEventDrop={handleEventDrop}
+          onEventResize={handleEventResize}
+          draggingEventId={draggingEventId}
+          onOpenNewTask={handleOpenNewTask}
+        />
 
-          {/* Filters */}
-          <div className="mb-4">
-            <CalendarFilters
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-              searchFilters={searchFilters}
-              onFilterChange={setSearchFilters}
-              filterOptions={taskData.filterOptions}
-              filterStatus={filterStatus}
-              onStatusChange={setFilterStatus}
-              filterOwnership={filterOwnership}
-              onOwnershipChange={setFilterOwnership}
-              ownershipOptions={taskData.ownershipOptions}
-              sortBy={sortBy}
-              onSortByChange={setSortBy}
-              sortOrder={sortOrder}
-              onSortOrderChange={setSortOrder}
-              dateRange={dateRange}
-              onDateRangeChange={setDateRange}
-              filterOperator={filterOperator}
-              onFilterOperatorChange={setFilterOperator}
-              taskCount={filteredTasks.length}
-              hasActiveFilters={hasActiveFilters}
-              onResetFilters={resetFiltersAndUpdate}
-            />
-          </div>
+        {/* Task Modal */}
+        <TaskModal
+          isOpen={showModal}
+          onClose={() => {
+            closeModal();
+            setModalDefaultDate('');
+          }}
+          onSubmit={isEditing ? handleUpdateTask : handleCreateTask}
+          submitting={loading.mutate}
+          selectedTask={selectedTask}
+          isEditing={isEditing}
+          instruments={instruments}
+          clients={clients}
+          defaultScheduledDate={modalDefaultDate}
+        />
 
-          {/* Summary Cards */}
-          <div className="mb-4">
-            <CalendarSummary
-              total={summaryStats.total}
-              overdue={summaryStats.overdue}
-              today={summaryStats.today}
-              upcoming={summaryStats.upcoming}
-              onFilterByStatus={handleSummaryCardClick}
-            />
-          </div>
-
-          {/* Calendar or List View */}
-          {loading.fetch ? (
-            <div className="rounded-lg bg-white p-4 shadow-sm md:p-6 border border-gray-200">
-              <TableSkeleton rows={8} columns={4} />
-            </div>
-          ) : isEmptyState ? (
-            <CalendarEmptyState
-              hasActiveFilters={hasActiveFilters}
-              onResetFilters={resetFiltersAndUpdate}
-              onOpenNewTask={handleOpenNewTask}
-            />
-          ) : view === 'calendar' ? (
-            <div
-              className="rounded-lg bg-white overflow-hidden p-4 shadow-sm md:p-6 border border-gray-200"
-              style={{ minHeight: '700px' }}
-            >
-              <CalendarView
-                tasks={filteredTasks}
-                instruments={taskData.instrumentsMap}
-                onSelectEvent={handleSelectEvent}
-                onSelectSlot={handleSelectSlot}
-                currentDate={navigation.currentDate}
-                onNavigate={navigation.setCurrentDate}
-                currentView={navigation.calendarView}
-                onViewChange={navigation.setCalendarView}
-              />
-            </div>
-          ) : (
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-              <div className="border-b border-gray-100 p-4 md:p-6">
-                {navigation.selectedDate ? (
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-base md:text-lg font-semibold text-gray-900">
-                        {format(navigation.selectedDate, 'MMMM d, yyyy')} Tasks
-                      </h2>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {format(navigation.selectedDate, 'EEEE')}
-                      </p>
-                    </div>
-                    <Button
-                      onClick={() => navigation.setSelectedDate(null)}
-                      variant="primary"
-                      size="sm"
-                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 bg-transparent border-0 shadow-none"
-                      aria-label="View all tasks"
-                    >
-                      View All Tasks
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-base md:text-lg font-semibold text-gray-900">
-                      All Tasks
-                    </h2>
-                    {filteredTasks.length > 0 && (
-                      <span className="text-xs text-gray-500">
-                        {filteredTasks.length} tasks
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="p-4 md:p-6">
-                <GroupedTaskList
-                  tasks={paginatedTasks}
-                  instruments={taskData.instrumentsMap}
-                  clients={taskData.clientsMap}
-                  onTaskClick={handleTaskClick}
-                  onTaskDelete={handleDeleteTaskRequest}
-                  searchTerm={searchTerm}
-                />
-                {showPagination && (
-                  <div className="mt-6 border-t border-gray-200 pt-4">
-                    <Pagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      onPageChange={setPage}
-                      totalCount={totalCount}
-                      pageSize={pageSize}
-                      loading={loading.fetch}
-                      data-testid="calendar-pagination"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Task Modal */}
-          <TaskModal
-            isOpen={showModal}
-            onClose={() => {
-              closeModal();
-              setModalDefaultDate('');
-            }}
-            onSubmit={isEditing ? handleUpdateTask : handleCreateTask}
-            submitting={loading.mutate}
-            selectedTask={selectedTask}
-            isEditing={isEditing}
-            instruments={instruments}
-            clients={clients}
-            defaultScheduledDate={modalDefaultDate}
-          />
-
-          {/* Error Toasts */}
-          <ErrorToasts />
-          {/* Success Toasts */}
-          <SuccessToasts />
-          <ConfirmDialog
-            isOpen={Boolean(confirmDeleteTask)}
-            title={CALENDAR_CONFIRM_MESSAGES.DELETE_TASK_TITLE}
-            message={CALENDAR_CONFIRM_MESSAGES.DELETE_TASK_MESSAGE}
-            confirmLabel={CALENDAR_CONFIRM_MESSAGES.DELETE_CONFIRM_LABEL}
-            cancelLabel={CALENDAR_CONFIRM_MESSAGES.DELETE_CANCEL_LABEL}
-            onConfirm={handleConfirmDeleteTask}
-            onCancel={() => setConfirmDeleteTask(null)}
-          />
-        </div>
+        <ConfirmDialog
+          isOpen={Boolean(confirmDeleteTask)}
+          title={CALENDAR_CONFIRM_MESSAGES.DELETE_TASK_TITLE}
+          message={CALENDAR_CONFIRM_MESSAGES.DELETE_TASK_MESSAGE}
+          confirmLabel={CALENDAR_CONFIRM_MESSAGES.DELETE_CONFIRM_LABEL}
+          cancelLabel={CALENDAR_CONFIRM_MESSAGES.DELETE_CANCEL_LABEL}
+          onConfirm={handleConfirmDeleteTask}
+          onCancel={() => setConfirmDeleteTask(null)}
+        />
       </AppLayout>
     </ErrorBoundary>
   );

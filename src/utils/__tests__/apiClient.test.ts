@@ -16,8 +16,8 @@ const mockSupabaseClient = {
   })),
 };
 
-jest.mock('@/lib/supabase', () => ({
-  getSupabase: jest.fn(() => mockSupabaseClient),
+jest.mock('@/lib/supabase-client', () => ({
+  getSupabaseClient: jest.fn(() => Promise.resolve(mockSupabaseClient)),
 }));
 
 jest.mock('../errorHandler', () => ({
@@ -25,7 +25,7 @@ jest.mock('../errorHandler', () => ({
     handleSupabaseError: jest.fn(() => ({
       code: 'ERROR',
       message: 'Test error',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     })),
   },
 }));

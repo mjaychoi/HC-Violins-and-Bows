@@ -1,4 +1,8 @@
 import { Purchase } from '../types';
+import { format, parseISO } from 'date-fns';
+import { parseYMDUTC } from '@/utils/dateParsing';
+// ✅ FIXED: Use centralized color tokens
+import { getPurchaseStatusColor } from '@/utils/colorTokens';
 
 interface PurchaseHistoryProps {
   purchases: Purchase[];
@@ -12,6 +16,23 @@ const formatAmount = (amount: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
     amount
   );
+
+// ✅ Format date for display (consistent date formatting)
+const formatDateForDisplay = (dateStr: string): string => {
+  try {
+    // Try parsing as YYYY-MM-DD first
+    const date = parseYMDUTC(dateStr);
+    return format(date, 'MMM d, yyyy');
+  } catch {
+    // Fallback to ISO parsing
+    try {
+      const date = parseISO(dateStr);
+      return format(date, 'MMM d, yyyy');
+    } catch {
+      return dateStr; // Fallback to raw string
+    }
+  }
+};
 
 export function PurchaseHistory({
   purchases,
@@ -48,8 +69,27 @@ export function PurchaseHistory({
         </div>
       </div>
       {visible.length === 0 ? (
-        <div className="p-4 text-center text-gray-500 text-sm">
-          No purchases
+        <div className="p-12 text-center">
+          <svg
+            className="mx-auto h-12 w-12 text-gray-300"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
+            />
+          </svg>
+          <h3 className="mt-4 text-sm font-medium text-gray-900">
+            No purchases
+          </h3>
+          <p className="mt-2 text-sm text-gray-500">
+            This client has no purchase history yet.
+          </p>
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -77,20 +117,55 @@ export function PurchaseHistory({
                     {p.item}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                    {p.date}
+                    {formatDateForDisplay(p.date)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        p.status === 'Completed'
-                          ? 'bg-green-100 text-green-700'
-                          : p.status === 'Pending'
-                            ? 'bg-yellow-100 text-yellow-700'
-                            : p.status === 'Refunded'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-gray-100 text-gray-700'
-                      }`}
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${getPurchaseStatusColor(p.status)}`}
+                      aria-label={`Status: ${p.status}`}
                     >
+                      {p.status === 'Completed' && (
+                        <svg
+                          className="h-3 w-3"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                          aria-hidden="true"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      )}
+                      {p.status === 'Pending' && (
+                        <svg
+                          className="h-3 w-3"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                          aria-hidden="true"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      )}
+                      {p.status === 'Refunded' && (
+                        <svg
+                          className="h-3 w-3"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                          aria-hidden="true"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      )}
                       {p.status}
                     </span>
                   </td>

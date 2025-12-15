@@ -1,9 +1,8 @@
 'use client';
 
-import { useDashboardFilters } from './hooks';
 import { useDashboardModal } from './hooks/useDashboardModal';
 import { useDashboardData } from './hooks/useDashboardData';
-import { ItemForm, ItemList, ItemFilters } from './components';
+import { ItemForm, DashboardContent } from './components';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { AppLayout } from '@/components/layout';
 import {
@@ -12,11 +11,28 @@ import {
   NotificationBadge,
 } from '@/components/common';
 import { usePageNotifications } from '@/hooks/usePageNotifications';
-import React, { useCallback, useMemo, useEffect } from 'react';
-import { Instrument } from '@/types';
+import React, { useCallback, useMemo, useEffect, useState } from 'react';
+import { Instrument, SalesHistory, Client, ClientInstrument } from '@/types';
+import dynamic from 'next/dynamic';
+import { useSalesHistory } from '@/app/sales/hooks/useSalesHistory';
+
+// Dynamic import for SaleForm to reduce initial bundle size
+const SaleForm = dynamic(() => import('@/app/sales/components/SaleForm'), {
+  ssr: false,
+});
 
 export default function DashboardPage() {
-  const { ErrorToasts, SuccessToasts, showSuccess } = useAppFeedback();
+  const { showSuccess, handleError } = useAppFeedback();
+
+  // 판매 모달 상태
+  const [showSaleModal, setShowSaleModal] = useState(false);
+  const [selectedInstrumentForSale, setSelectedInstrumentForSale] =
+    useState<Instrument | null>(null);
+  const [selectedClientForSale, setSelectedClientForSale] =
+    useState<Client | null>(null);
+
+  // 판매 기록 생성
+  const { createSale } = useSalesHistory();
 
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched
@@ -44,22 +60,19 @@ export default function DashboardPage() {
     handleDeleteItem,
   } = useDashboardData();
 
-  // Track clients loading state separately
-  const clientsLoading = useMemo(() => {
-    // Check if clients array is empty but we're still loading
-    return clients.length === 0 && loading.any;
-  }, [clients.length, loading.any]);
+  // FIXED: Use clients loading directly from useUnifiedDashboard
+  const clientsLoading = loading.clients;
 
   // FIXED: Enrich items with clients array for HAS_CLIENTS filter
   // This ensures filterDashboardItems can properly check hasClients without type casting
+  // FIXED: Use explicit ClientInstrument[] type instead of typeof clientRelationships
   type EnrichedInstrument = Instrument & {
-    clients: typeof clientRelationships;
+    clients: ClientInstrument[];
   };
   const enrichedItems = useMemo<EnrichedInstrument[]>(() => {
     // Group relationships by instrument_id for O(1) lookup
-    type RelationshipType = (typeof clientRelationships)[number];
-    const relationshipsByInstrument = new Map<string, RelationshipType[]>();
-    clientRelationships.forEach((rel: RelationshipType) => {
+    const relationshipsByInstrument = new Map<string, ClientInstrument[]>();
+    clientRelationships.forEach((rel: ClientInstrument) => {
       if (rel.instrument_id) {
         const existing = relationshipsByInstrument.get(rel.instrument_id) || [];
         existing.push(rel);
@@ -82,7 +95,7 @@ export default function DashboardPage() {
     ) {
       console.log('[Dashboard] Clients state:', {
         clientsCount: clients?.length ?? 0,
-        loading: loading.any,
+        loading: loading.hasAnyLoading,
         sampleClientIds:
           clients?.slice(0, 3).map((c: { id: string }) => c.id) ?? [],
         clientRelationshipsCount: clientRelationships?.length ?? 0,
@@ -105,36 +118,13 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     clients?.length,
-    loading.any,
+    loading.hasAnyLoading,
     clientRelationships?.length,
     enrichedItems.length,
   ]);
 
-  // Dashboard filters - use enrichedItems instead of instruments
-  const {
-    searchTerm,
-    setSearchTerm,
-    showFilters,
-    setShowFilters,
-    filters,
-    paginatedItems,
-    handleFilterChange,
-    handlePriceRangeChange,
-    clearAllFilters,
-    handleSort,
-    getSortArrow,
-    getActiveFiltersCount,
-    dateRange,
-    setDateRange,
-    filterOperator,
-    setFilterOperator,
-    // Pagination
-    currentPage,
-    totalPages,
-    totalCount,
-    pageSize,
-    setPage,
-  } = useDashboardFilters(enrichedItems);
+  // Note: Dashboard filters are now handled in DashboardContent component
+  // to support Suspense boundary for useSearchParams()
 
   // Dashboard modal state
   const {
@@ -149,17 +139,21 @@ export default function DashboardPage() {
     handleCancelDelete,
   } = useDashboardModal();
 
-  // Calculate existing serial numbers for ItemForm validation
+  // FIXED: Calculate existing serial numbers as Set for O(1) lookup performance
   // This avoids duplicate data fetching in ItemForm (DashboardPage already has instruments)
-  const existingSerialNumbers = useMemo(
-    () =>
+  const existingSerialNumbersSet = useMemo(() => {
+    return new Set(
       instruments
         .map((i: Instrument) => i.serial_number)
-        .filter(
-          (num: string | null | undefined): num is string =>
-            num !== null && num !== undefined
-        ),
-    [instruments]
+        .filter((n): n is string => !!n)
+    );
+  }, [instruments]);
+
+  // Also provide as array for backwards compatibility (ItemForm/ItemList still use array)
+  // TODO: Update validateInstrumentSerial to accept Set<string> for better performance
+  const existingSerialNumbers = useMemo(
+    () => Array.from(existingSerialNumbersSet),
+    [existingSerialNumbersSet]
   );
 
   // Handle confirmed deletion
@@ -173,13 +167,63 @@ export default function DashboardPage() {
     }
   }, [confirmItem, handleDeleteItem, handleCancelDelete]);
 
+  // 원클릭 판매 핸들러
+  const handleSellClick = useCallback(
+    (item: Instrument) => {
+      // 연결된 클라이언트 중 'Sold' 관계가 있는 클라이언트 찾기
+      const soldClient = clientRelationships.find(
+        rel => rel.instrument_id === item.id && rel.relationship_type === 'Sold'
+      )?.client;
+
+      setSelectedInstrumentForSale(item);
+      setSelectedClientForSale(soldClient || null);
+      setShowSaleModal(true);
+    },
+    [clientRelationships]
+  );
+
+  // 판매 기록 저장 핸들러
+  const handleSaleSubmit = useCallback(
+    async (payload: Omit<SalesHistory, 'id' | 'created_at'>) => {
+      try {
+        const result = await createSale(payload);
+        if (result) {
+          showSuccess('판매 기록이 성공적으로 생성되었습니다.');
+          setShowSaleModal(false);
+          setSelectedInstrumentForSale(null);
+          setSelectedClientForSale(null);
+        }
+      } catch (error) {
+        handleError(error, '판매 기록 생성 실패');
+      }
+    },
+    [createSale, showSuccess, handleError]
+  );
+
   return (
     <ErrorBoundary>
       <AppLayout
-        title="Items"
+        title="Dashboard"
         actionButton={{
           label: 'Add Item',
           onClick: handleAddItem,
+          icon: (
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+          ),
         }}
         headerActions={
           <NotificationBadge
@@ -190,144 +234,18 @@ export default function DashboardPage() {
           />
         }
       >
-        <div className="p-6 space-y-4">
-          {/* UX: Quick Filters - Always visible for common use cases */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex-1 min-w-[200px]">
-              <input
-                type="text"
-                placeholder="Search items by maker, type, serial..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="w-full h-10 px-4 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                aria-label="Search items"
-              />
-            </div>
-
-            {/* UX: Quick Filter Pills - Common use cases */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* UX: Quick filter for "Has Clients" - toggle boolean filter */}
-              <button
-                onClick={() => {
-                  // handleFilterChange toggles the value, so just call it
-                  handleFilterChange('hasClients', true);
-                }}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  filters.hasClients.includes(true)
-                    ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                aria-pressed={filters.hasClients.includes(true)}
-                type="button"
-              >
-                Has Clients
-              </button>
-              {/* UX: Quick filter for "No Clients" - toggle boolean filter */}
-              <button
-                onClick={() => {
-                  // handleFilterChange toggles the value, so just call it
-                  handleFilterChange('hasClients', false);
-                }}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  filters.hasClients.includes(false)
-                    ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                aria-pressed={filters.hasClients.includes(false)}
-                type="button"
-              >
-                No Clients
-              </button>
-
-              {/* More Filters Button - Secondary action */}
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors flex items-center gap-2 ${
-                  showFilters || getActiveFiltersCount() > 0
-                    ? 'border-blue-500 text-blue-600 bg-blue-50'
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-                  />
-                </svg>
-                More Filters
-                {getActiveFiltersCount() > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium text-white bg-blue-600 rounded-full">
-                    {getActiveFiltersCount()}
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Advanced Filters Panel - Collapsible */}
-          {showFilters && (
-            <ItemFilters
-              items={instruments}
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-              filters={filters}
-              onFilterChange={(filterType, value) =>
-                handleFilterChange(filterType, value)
-              }
-              onPriceRangeChange={handlePriceRangeChange}
-              onClearFilters={clearAllFilters}
-              showFilters={showFilters}
-              onToggleFilters={() => setShowFilters(!showFilters)}
-              activeFiltersCount={getActiveFiltersCount()}
-              dateRange={dateRange}
-              onDateRangeChange={setDateRange}
-              filterOperator={filterOperator}
-              onOperatorChange={setFilterOperator}
-            />
-          )}
-
-          {/* Items List */}
-          <ItemList
-            items={paginatedItems}
-            loading={loading.any}
-            onDeleteClick={handleRequestDelete}
-            onUpdateItem={handleUpdateItemInline}
-            clientRelationships={clientRelationships}
-            allClients={clients}
-            clientsLoading={clientsLoading}
-            getSortArrow={getSortArrow}
-            onSort={handleSort}
-            onAddClick={handleAddItem}
-            emptyState={{
-              hasActiveFilters:
-                getActiveFiltersCount() > 0 ||
-                Boolean(searchTerm) ||
-                Boolean(dateRange?.from) ||
-                Boolean(dateRange?.to),
-              message:
-                getActiveFiltersCount() > 0 ||
-                Boolean(searchTerm) ||
-                Boolean(dateRange?.from) ||
-                Boolean(dateRange?.to)
-                  ? 'No items found matching your filters'
-                  : undefined,
-            }}
-            // Pagination props
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalCount={totalCount}
-            pageSize={pageSize}
-            onPageChange={setPage}
-          />
-        </div>
+        <DashboardContent
+          enrichedItems={enrichedItems}
+          clients={clients}
+          clientRelationships={clientRelationships}
+          clientsLoading={clientsLoading}
+          loading={loading}
+          onDeleteClick={handleRequestDelete}
+          onUpdateItemInline={handleUpdateItemInline}
+          onAddClick={handleAddItem}
+          onSellClick={handleSellClick}
+          existingSerialNumbers={existingSerialNumbers}
+        />
 
         {/* Item Form Modal - Show when editing or creating */}
         {/* Note: Form state management is handled internally by ItemForm via useDashboardForm.
@@ -342,16 +260,12 @@ export default function DashboardPage() {
                 }
               : handleCreateItem
           }
-          submitting={submitting.any}
+          submitting={submitting.hasAnySubmitting}
           selectedItem={selectedItem}
           isEditing={isEditing}
           existingSerialNumbers={existingSerialNumbers}
         />
 
-        {/* Error Toasts */}
-        <ErrorToasts />
-        {/* Success Toasts */}
-        <SuccessToasts />
         <ConfirmDialog
           isOpen={isConfirmDialogOpen}
           title="Delete item?"
@@ -360,6 +274,21 @@ export default function DashboardPage() {
           cancelLabel="Cancel"
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
+        />
+
+        {/* Sale Form Modal - 원클릭 판매 */}
+        <SaleForm
+          isOpen={showSaleModal}
+          onClose={() => {
+            setShowSaleModal(false);
+            setSelectedInstrumentForSale(null);
+            setSelectedClientForSale(null);
+          }}
+          onSubmit={handleSaleSubmit}
+          submitting={submitting.hasAnySubmitting}
+          initialInstrument={selectedInstrumentForSale}
+          initialClient={selectedClientForSale}
+          autoUpdateInstrumentStatus={true}
         />
       </AppLayout>
     </ErrorBoundary>

@@ -1,10 +1,10 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import DashboardPage from '../page';
 import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
 import { useDashboardFilters, useDashboardForm } from '../hooks';
 import { useModalState } from '@/hooks/useModalState';
 import { useLoadingState } from '@/hooks/useLoadingState';
-import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { useErrorHandler } from '@/contexts/ToastContext';
 
 jest.mock('@/hooks/useUnifiedData', () => ({
   useUnifiedData: jest.fn(() => {
@@ -12,6 +12,17 @@ jest.mock('@/hooks/useUnifiedData', () => ({
     // In tests, we don't need actual fetching
   }),
   useUnifiedDashboard: jest.fn(),
+  // Provide simple stubs for SaleForm dependencies
+  useUnifiedClients: jest.fn(() => ({
+    clients: [],
+    loading: { clients: false, any: false, hasAnyLoading: false },
+    submitting: { clients: false, any: false, hasAnySubmitting: false },
+  })),
+  useUnifiedInstruments: jest.fn(() => ({
+    instruments: [],
+    loading: { instruments: false, any: false, hasAnyLoading: false },
+    submitting: { instruments: false, any: false, hasAnySubmitting: false },
+  })),
 }));
 jest.mock('../hooks', () => ({
   useDashboardFilters: jest.fn(),
@@ -23,9 +34,16 @@ jest.mock('@/hooks/useModalState', () => ({
 jest.mock('@/hooks/useLoadingState', () => ({
   useLoadingState: jest.fn(),
 }));
-jest.mock('@/hooks/useErrorHandler', () => ({
-  useErrorHandler: jest.fn(),
-}));
+// ✅ FIXED: ToastProvider도 export하도록 mock 수정
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    useErrorHandler: jest.fn(() => ({
+      handleError: jest.fn(),
+    })),
+  };
+});
 jest.mock('@/components/layout', () => ({
   AppLayout: ({ children }: any) => (
     <div data-testid="app-layout">{children}</div>
@@ -70,6 +88,15 @@ jest.mock('../components', () => ({
         <button onClick={() => onSubmit({ maker: 'M' })}>submit-form</button>
       </div>
     ) : null,
+  DashboardContent: ({ onDeleteClick, onUpdateItemInline, onSort }: any) => (
+    <div data-testid="dashboard-content">
+      <button onClick={() => onDeleteClick({ id: '1' })}>delete</button>
+      <button onClick={() => onUpdateItemInline('1', { maker: 'Updated' })}>
+        update
+      </button>
+      <button onClick={() => onSort('maker')}>sort</button>
+    </div>
+  ),
 }));
 
 const mockInstrument = {

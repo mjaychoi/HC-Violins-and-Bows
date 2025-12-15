@@ -128,10 +128,10 @@ describe('filterUtils', () => {
       interest: [],
       hasInstruments: [],
     });
-    // clearAllFilters returns the same constant (optimization)
+    // clearAllFilters returns a new object with same values (spread operator creates new object)
     expect(clearAllFilters()).toEqual(EMPTY_FILTER_STATE);
-    // Same reference is returned for performance (immutability handled by usage, not reference)
-    expect(clearAllFilters()).toBe(EMPTY_FILTER_STATE);
+    // ✅ FIXED: 스프레드 연산자로 새 객체를 만들므로 참조는 다름
+    expect(clearAllFilters()).not.toBe(EMPTY_FILTER_STATE);
   });
 
   it('handleFilterChange works with all filter categories', () => {

@@ -1,5 +1,5 @@
 // src/app/calendar/components/__tests__/TaskList.test.tsx
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import TaskList from '../TaskList';
 import { MaintenanceTask } from '@/types';
@@ -75,7 +75,13 @@ describe('TaskList', () => {
       />
     );
 
-    expect(screen.getByText('No tasks found')).toBeInTheDocument();
+    // EmptyState 기본 카피에 맞게 업데이트
+    expect(screen.getByText('No tasks yet')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Create a maintenance task to start tracking your workflow.'
+      )
+    ).toBeInTheDocument();
   });
 
   it('should handle task click', async () => {

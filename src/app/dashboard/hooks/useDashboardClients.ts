@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Client } from '@/types';
 import { useDataState } from '@/hooks/useDataState';
 import { logError } from '@/utils/logger';
@@ -24,10 +24,17 @@ export function useDashboardClients() {
   const { data: ownershipSearchResults, setItems: setOwnershipSearchResults } =
     useDataState<Client>(item => item.id, []);
 
-  // FIXED: Make search functions accept term parameter to use passed searchTerm arg
+  // FIXED: Use requestIdRef to prevent race conditions from out-of-order responses
+  const requestIdRef = useRef(0);
+  const clientSearchRequestIdRef = useRef(0);
+  const ownershipSearchRequestIdRef = useRef(0);
+
+  // FIXED: Single shared search function to avoid duplication
   // Use API route instead of direct Supabase client to reduce bundle size
-  const searchClientsFunction = useCallback(async (term: string) => {
+  const searchClients = useCallback(async (term: string) => {
     if (term.length < 2) return [];
+
+    const reqId = ++requestIdRef.current;
 
     try {
       const params = new URLSearchParams({
@@ -39,40 +46,19 @@ export function useDashboardClients() {
         throw new Error(`Failed to search clients: ${response.statusText}`);
       }
       const result = await response.json();
+
+      // Ignore stale responses
+      if (reqId !== requestIdRef.current) return [];
+
       return result.data || [];
     } catch (error) {
-      logError('Error searching clients', error, 'useDashboardClients', {
-        searchTerm: term,
-        action: 'searchClientsFunction',
-      });
-      return [];
-    }
-  }, []);
-
-  const searchOwnershipClientsFunction = useCallback(async (term: string) => {
-    if (term.length < 2) return [];
-
-    try {
-      const params = new URLSearchParams({
-        search: term,
-        limit: '10',
-      });
-      const response = await fetch(`/api/clients?${params.toString()}`);
-      if (!response.ok) {
-        throw new Error(`Failed to search clients: ${response.statusText}`);
-      }
-      const result = await response.json();
-      return result.data || [];
-    } catch (error) {
-      logError(
-        'Error searching ownership clients',
-        error,
-        'useDashboardClients',
-        {
+      // Only log error if this is still the latest request
+      if (reqId === requestIdRef.current) {
+        logError('Error searching clients', error, 'useDashboardClients', {
           searchTerm: term,
-          action: 'searchOwnershipClientsFunction',
-        }
-      );
+          action: 'searchClients',
+        });
+      }
       return [];
     }
   }, []);
@@ -80,49 +66,65 @@ export function useDashboardClients() {
   const handleClientSearch = async (searchTerm: string) => {
     if (searchTerm.length < 2) {
       setSearchResults([]);
+      setIsSearchingClients(false);
       return;
     }
 
+    const reqId = ++clientSearchRequestIdRef.current;
     setIsSearchingClients(true);
+
     try {
-      // FIXED: Pass searchTerm directly to function instead of relying on closure
-      const results = await searchClientsFunction(searchTerm);
-      setSearchResults(results);
+      const results = await searchClients(searchTerm);
+      // Only update if this is still the latest request
+      if (reqId === clientSearchRequestIdRef.current) {
+        setSearchResults(results);
+        setIsSearchingClients(false);
+      }
     } catch (error) {
-      logError('Error searching clients', error, 'useDashboardClients', {
-        searchTerm,
-        operation: 'searchClients',
-      });
-      setSearchResults([]);
-    } finally {
-      setIsSearchingClients(false);
+      // Only update if this is still the latest request
+      if (reqId === clientSearchRequestIdRef.current) {
+        logError('Error searching clients', error, 'useDashboardClients', {
+          searchTerm,
+          operation: 'searchClients',
+        });
+        setSearchResults([]);
+        setIsSearchingClients(false);
+      }
     }
   };
 
   const handleOwnershipSearch = async (searchTerm: string) => {
     if (searchTerm.length < 2) {
       setOwnershipSearchResults([]);
+      setIsSearchingOwnership(false);
       return;
     }
 
+    const reqId = ++ownershipSearchRequestIdRef.current;
     setIsSearchingOwnership(true);
+
     try {
-      // FIXED: Pass searchTerm directly to function instead of relying on closure
-      const results = await searchOwnershipClientsFunction(searchTerm);
-      setOwnershipSearchResults(results);
+      const results = await searchClients(searchTerm);
+      // Only update if this is still the latest request
+      if (reqId === ownershipSearchRequestIdRef.current) {
+        setOwnershipSearchResults(results);
+        setIsSearchingOwnership(false);
+      }
     } catch (error) {
-      logError(
-        'Error searching ownership clients',
-        error,
-        'useDashboardClients',
-        {
-          searchTerm,
-          operation: 'searchOwnershipClients',
-        }
-      );
-      setOwnershipSearchResults([]);
-    } finally {
-      setIsSearchingOwnership(false);
+      // Only update if this is still the latest request
+      if (reqId === ownershipSearchRequestIdRef.current) {
+        logError(
+          'Error searching ownership clients',
+          error,
+          'useDashboardClients',
+          {
+            searchTerm,
+            operation: 'searchOwnershipClients',
+          }
+        );
+        setOwnershipSearchResults([]);
+        setIsSearchingOwnership(false);
+      }
     }
   };
 

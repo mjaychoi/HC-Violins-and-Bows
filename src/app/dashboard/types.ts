@@ -33,6 +33,11 @@ export type DashboardFilterOptionKey = keyof DashboardFilterOptions;
 
 export type DashboardFilterLabelMap = Record<DashboardFilterOptionKey, string>;
 
-export type DashboardFilterKeys = keyof DashboardFilters;
+// FIXED: Clear naming - DashboardFilterKey is the key of DashboardFilters (object keys)
+export type DashboardFilterKey = keyof DashboardFilters;
+
+// Deprecated: Use DashboardFilterKey instead
+/** @deprecated Use DashboardFilterKey instead */
+export type DashboardFilterKeys = DashboardFilterKey;
 
 export type DashboardInstrument = Instrument;

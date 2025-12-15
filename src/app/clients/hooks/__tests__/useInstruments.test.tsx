@@ -1,5 +1,5 @@
-import { renderHook } from '@testing-library/react';
-import { useInstruments } from '../useInstruments';
+import { renderHook } from '@/test-utils/render';
+import { useUnifiedInstruments as useInstruments } from '@/hooks/useUnifiedData';
 
 // Mock DataContext
 const mockFetchInstruments = jest.fn();

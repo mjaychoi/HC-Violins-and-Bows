@@ -5,8 +5,8 @@
 
 'use client';
 
-import { useEffect, useCallback, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useEffect, useCallback, useState, useRef } from 'react';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 
 export interface URLStateConfig {
   /**
@@ -73,70 +73,117 @@ export function useURLState(config: URLStateConfig) {
   } = config;
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   // 클라이언트에서만 URL 파라미터 읽기 (SSR 안전)
   const [urlState, setUrlState] = useState<
     Record<string, string | string[] | null>
   >({});
 
-  // URL에서 상태 읽기 (클라이언트에서만)
+  // 업데이트 중인지 추적하여 무한 루프 방지
+  const isUpdatingRef = useRef(false);
+
+  // URL에서 상태 읽기 (searchParams 변경 시에만)
   useEffect(() => {
-    if (!enabled || typeof window === 'undefined') {
-      setUrlState({});
+    if (!enabled || isUpdatingRef.current) {
       return;
     }
 
-    const params = new URLSearchParams(window.location.search);
     const state: Record<string, string | string[] | null> = {};
 
     keys.forEach(key => {
       const paramName = paramMapping[key] || key;
-      const value = params.get(paramName);
+      const value = searchParams.get(paramName);
 
       if (value === null) {
         state[key] = null;
-      } else if (value.includes(arraySeparator)) {
+      } else if (typeof value === 'string' && value.includes(arraySeparator)) {
         // 배열 타입 (구분자로 분리)
         state[key] = value.split(arraySeparator).filter(Boolean);
-      } else {
+      } else if (typeof value === 'string') {
         // 단일 값
         state[key] = value;
+      } else {
+        state[key] = null;
       }
     });
 
-    setUrlState(state);
-  }, [enabled, keys, paramMapping, arraySeparator]);
+    // 이전 상태와 비교하여 변경된 경우에만 업데이트
+    setUrlState(prevState => {
+      const hasChanged = keys.some(key => {
+        const prevValue = prevState[key];
+        const newValue = state[key];
+        return JSON.stringify(prevValue) !== JSON.stringify(newValue);
+      });
+
+      return hasChanged ? state : prevState;
+    });
+  }, [enabled, keys, paramMapping, arraySeparator, searchParams]);
 
   // URL 상태 업데이트
   const updateURLState = useCallback(
     (updates: Record<string, string | string[] | null | undefined>) => {
       if (!enabled || typeof window === 'undefined') return;
 
-      const params = new URLSearchParams(window.location.search);
+      // 현재 URL 파라미터와 비교하여 변경이 없는 경우 스킵
+      const currentParams = new URLSearchParams(searchParams.toString());
+      let hasChanges = false;
 
       Object.entries(updates).forEach(([key, value]) => {
         const paramName = paramMapping[key] || key;
+        const currentValue = currentParams.get(paramName);
 
         if (value === null || value === undefined || value === '') {
           // 빈 값이면 파라미터 제거
-          params.delete(paramName);
+          if (currentValue !== null) {
+            currentParams.delete(paramName);
+            hasChanges = true;
+          }
         } else if (Array.isArray(value)) {
           // 배열 타입: 구분자로 연결
           if (value.length > 0) {
-            params.set(paramName, value.join(arraySeparator));
+            const newValue = value.join(arraySeparator);
+            if (newValue !== currentValue) {
+              currentParams.set(paramName, newValue);
+              hasChanges = true;
+            }
           } else {
-            params.delete(paramName);
+            // 빈 배열이면 파라미터 제거
+            if (currentValue !== null) {
+              currentParams.delete(paramName);
+              hasChanges = true;
+            }
           }
         } else {
           // 단일 값
-          params.set(paramName, String(value));
+          const newValue = String(value);
+          if (newValue !== currentValue) {
+            currentParams.set(paramName, newValue);
+            hasChanges = true;
+          }
         }
       });
 
-      const newUrl = `${pathname}${params.toString() ? `?${params.toString()}` : ''}`;
-      router.replace(newUrl, { scroll });
+      // 변경사항이 있을 때만 URL 업데이트
+      if (hasChanges) {
+        isUpdatingRef.current = true;
+        const newUrl = `${pathname}${currentParams.toString() ? `?${currentParams.toString()}` : ''}`;
+        router.replace(newUrl, { scroll });
+        // 다음 렌더 사이클에서 플래그 리셋
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 0);
+      }
     },
-    [enabled, paramMapping, arraySeparator, pathname, router, scroll]
+    [
+      enabled,
+      paramMapping,
+      arraySeparator,
+      pathname,
+      router,
+      scroll,
+      searchParams,
+    ]
   );
 
   // URL 상태 초기화

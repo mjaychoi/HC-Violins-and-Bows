@@ -50,6 +50,12 @@ export interface UsePageNotificationsOptions {
   showSuccess?: (message: string) => void;
 
   /**
+   * Custom click handler (overrides default navigate/toast behavior)
+   * If provided, onClick will call this instead of default behavior
+   */
+  customClickHandler?: () => void;
+
+  /**
    * Enable browser notifications (Phase 2)
    * @default true
    */
@@ -112,6 +118,7 @@ export function usePageNotifications(
     showSuccess,
     enableBrowserNotifications = true,
     browserNotificationInterval,
+    customClickHandler,
   } = options;
 
   // Get notifications (now uses canonical date utils)
@@ -132,7 +139,7 @@ export function usePageNotifications(
   const handleBadgeClick = () => {
     if (notifications.length === 0) return;
 
-    // Show toast if enabled
+    // Show toast if enabled (before custom handler, so toast always shows)
     if (showToastOnClick && showSuccess) {
       const nextTask = notifications[0];
       const message = formatToastMessage
@@ -143,6 +150,12 @@ export function usePageNotifications(
             nextTask.daysUntil
           );
       showSuccess(message);
+    }
+
+    // Use custom handler if provided (overrides navigation)
+    if (customClickHandler) {
+      customClickHandler();
+      return;
     }
 
     // Navigate to calendar or specified route (skip if empty string)

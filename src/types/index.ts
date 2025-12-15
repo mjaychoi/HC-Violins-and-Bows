@@ -53,6 +53,7 @@ export interface ClientInstrument {
   instrument_id: string;
   relationship_type: RelationshipType;
   notes: string | null;
+  display_order?: number; // Display order for drag & drop sorting
   created_at: string;
   client?: Client;
   instrument?: Instrument;
@@ -163,5 +164,36 @@ export interface TaskFilters {
   search?: string;
 }
 
+// Contact Log Types
+export type ContactType = 'email' | 'phone' | 'meeting' | 'note' | 'follow_up';
+
+export type ContactPurpose =
+  | 'quote' // 견적
+  | 'follow_up' // Follow-up
+  | 'maintenance' // 유지보수
+  | 'sale' // 판매
+  | 'inquiry' // 문의
+  | 'other'; // 기타
+
+export interface ContactLog {
+  id: string;
+  client_id: string;
+  instrument_id: string | null;
+  contact_type: ContactType;
+  subject: string | null;
+  content: string;
+  contact_date: string; // YYYY-MM-DD
+  next_follow_up_date: string | null; // YYYY-MM-DD
+  follow_up_completed_at: string | null; // ISO timestamp
+  purpose: ContactPurpose | null;
+  created_at: string;
+  updated_at: string;
+  client?: Client;
+  instrument?: Instrument;
+}
+
 // Re-export sort types
 export * from './sort';
+
+// Re-export message template types
+export * from './messageTemplates';

@@ -1,18 +1,20 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook as rtlRenderHook, waitFor } from '@testing-library/react';
+import React from 'react';
 import {
   useUnifiedData,
   useUnifiedClients,
   useUnifiedInstruments,
   useUnifiedConnections,
   useUnifiedDashboard,
-  useUnifiedConnectionForm,
+  useConnectedClientsData,
   useUnifiedSearch,
   useUnifiedCache,
 } from '../useUnifiedData';
 import { Client, Instrument, ClientInstrument } from '@/types';
 
 // Mock DataContext
-const mockState = {
+// Export for use in jest.mock factory functions
+export const mockState = {
   clients: [] as Client[],
   instruments: [] as Instrument[],
   connections: [] as ClientInstrument[],
@@ -50,43 +52,48 @@ const mockActions = {
   resetState: jest.fn(),
 };
 
-jest.mock('@/contexts/DataContext', () => ({
-  useDataContext: jest.fn(() => ({
-    state: mockState,
-    actions: mockActions,
-  })),
-  useClients: jest.fn(() => ({
-    clients: mockState.clients,
-    loading: mockState.loading.clients,
-    submitting: mockState.submitting.clients,
-    fetchClients: mockActions.fetchClients,
-    createClient: mockActions.createClient,
-    updateClient: mockActions.updateClient,
-    deleteClient: mockActions.deleteClient,
-  })),
-  useInstruments: jest.fn(() => ({
-    instruments: mockState.instruments,
-    loading: mockState.loading.instruments,
-    submitting: mockState.submitting.instruments,
-    fetchInstruments: mockActions.fetchInstruments,
-    createInstrument: mockActions.createInstrument,
-    updateInstrument: mockActions.updateInstrument,
-    deleteInstrument: mockActions.deleteInstrument,
-  })),
-  useConnections: jest.fn(() => ({
-    connections: mockState.connections,
-    loading: mockState.loading.connections,
-    submitting: mockState.submitting.connections,
-    fetchConnections: mockActions.fetchConnections,
-    createConnection: mockActions.createConnection,
-    updateConnection: mockActions.updateConnection,
-    deleteConnection: mockActions.deleteConnection,
-  })),
+// Mock individual Contexts (replaced DataContext mock)
+// Mock with default implementations that read from mockState
+jest.mock('@/contexts/ClientsContext', () => ({
+  useClientsContext: jest.fn(),
+  useClients: jest.fn(),
+}));
+
+jest.mock('@/contexts/InstrumentsContext', () => ({
+  useInstrumentsContext: jest.fn(),
+  useInstruments: jest.fn(),
+}));
+
+jest.mock('@/contexts/ConnectionsContext', () => ({
+  useConnectionsContext: jest.fn(),
+  useConnections: jest.fn(),
 }));
 
 describe('useUnifiedData', () => {
+  // Get mock implementations to update them
+  // Use require inside beforeEach to ensure mocks are available
+  let mockUseClientsContext: jest.MockedFunction<any>;
+  let mockUseInstrumentsContext: jest.MockedFunction<any>;
+  let mockUseConnectionsContext: jest.MockedFunction<any>;
+  let mockUseClients: jest.MockedFunction<any>;
+  let mockUseInstruments: jest.MockedFunction<any>;
+  let mockUseConnections: jest.MockedFunction<any>;
+
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Get mocked functions after jest.mock has run
+    const clientsContextModule = require('@/contexts/ClientsContext');
+    const instrumentsContextModule = require('@/contexts/InstrumentsContext');
+    const connectionsContextModule = require('@/contexts/ConnectionsContext');
+
+    mockUseClientsContext = clientsContextModule.useClientsContext;
+    mockUseInstrumentsContext = instrumentsContextModule.useInstrumentsContext;
+    mockUseConnectionsContext = connectionsContextModule.useConnectionsContext;
+    mockUseClients = clientsContextModule.useClients;
+    mockUseInstruments = instrumentsContextModule.useInstruments;
+    mockUseConnections = connectionsContextModule.useConnections;
+
     mockState.clients = [];
     mockState.instruments = [];
     mockState.connections = [];
@@ -100,11 +107,106 @@ describe('useUnifiedData', () => {
       instruments: false,
       connections: false,
     };
+    mockState.lastUpdated = {
+      clients: null,
+      instruments: null,
+      connections: null,
+    };
+
+    // Update mock implementations to return current mockState using mockImplementation
+    // Use arrow functions that read mockState at call time, not definition time
+    mockUseClientsContext.mockImplementation(() => ({
+      state: {
+        clients: mockState.clients,
+        loading: mockState.loading.clients,
+        submitting: mockState.submitting.clients,
+        lastUpdated: mockState.lastUpdated.clients,
+      },
+      actions: {
+        fetchClients: mockActions.fetchClients,
+        createClient: mockActions.createClient,
+        updateClient: mockActions.updateClient,
+        deleteClient: mockActions.deleteClient,
+        invalidateCache: jest.fn(),
+        resetState: jest.fn(),
+      },
+    }));
+    mockUseInstrumentsContext.mockImplementation(() => ({
+      state: {
+        instruments: mockState.instruments,
+        loading: mockState.loading.instruments,
+        submitting: mockState.submitting.instruments,
+        lastUpdated: mockState.lastUpdated.instruments,
+      },
+      actions: {
+        fetchInstruments: mockActions.fetchInstruments,
+        createInstrument: mockActions.createInstrument,
+        updateInstrument: mockActions.updateInstrument,
+        deleteInstrument: mockActions.deleteInstrument,
+        invalidateCache: jest.fn(),
+        resetState: jest.fn(),
+      },
+    }));
+    mockUseConnectionsContext.mockImplementation(() => ({
+      state: {
+        connections: mockState.connections,
+        loading: mockState.loading.connections,
+        submitting: mockState.submitting.connections,
+        lastUpdated: mockState.lastUpdated.connections,
+      },
+      actions: {
+        fetchConnections: mockActions.fetchConnections,
+        createConnection: mockActions.createConnection,
+        updateConnection: mockActions.updateConnection,
+        deleteConnection: mockActions.deleteConnection,
+        invalidateCache: jest.fn(),
+        resetState: jest.fn(),
+      },
+    }));
+
+    mockUseClients.mockImplementation(() => ({
+      clients: mockState.clients,
+      loading: mockState.loading.clients,
+      submitting: mockState.submitting.clients,
+      lastUpdated: mockState.lastUpdated.clients,
+      fetchClients: mockActions.fetchClients,
+      createClient: mockActions.createClient,
+      updateClient: mockActions.updateClient,
+      deleteClient: mockActions.deleteClient,
+      invalidateCache: jest.fn(),
+      resetState: jest.fn(),
+    }));
+    mockUseInstruments.mockImplementation(() => ({
+      instruments: mockState.instruments,
+      loading: mockState.loading.instruments,
+      submitting: mockState.submitting.instruments,
+      lastUpdated: mockState.lastUpdated.instruments,
+      fetchInstruments: mockActions.fetchInstruments,
+      createInstrument: mockActions.createInstrument,
+      updateInstrument: mockActions.updateInstrument,
+      deleteInstrument: mockActions.deleteInstrument,
+      invalidateCache: jest.fn(),
+      resetState: jest.fn(),
+    }));
+    mockUseConnections.mockImplementation(() => ({
+      connections: mockState.connections,
+      loading: mockState.loading.connections,
+      submitting: mockState.submitting.connections,
+      lastUpdated: mockState.lastUpdated.connections,
+      fetchConnections: mockActions.fetchConnections,
+      createConnection: mockActions.createConnection,
+      updateConnection: mockActions.updateConnection,
+      deleteConnection: mockActions.deleteConnection,
+      invalidateCache: jest.fn(),
+      resetState: jest.fn(),
+    }));
   });
 
   describe('useUnifiedData', () => {
     it('should return initial state with empty arrays', () => {
-      const { result } = renderHook(() => useUnifiedData());
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.clients).toEqual([]);
       expect(result.current.instruments).toEqual([]);
@@ -113,7 +215,9 @@ describe('useUnifiedData', () => {
 
     it('should return loading states', () => {
       mockState.loading.clients = true;
-      const { result } = renderHook(() => useUnifiedData());
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.loading.clients).toBe(true);
       expect(result.current.loading.instruments).toBe(false);
@@ -123,7 +227,10 @@ describe('useUnifiedData', () => {
 
     it('should return submitting states', () => {
       mockState.submitting.instruments = true;
-      const { result } = renderHook(() => useUnifiedData());
+
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.submitting.instruments).toBe(true);
       expect(result.current.submitting.any).toBe(true);
@@ -137,7 +244,9 @@ describe('useUnifiedData', () => {
       // to prevent duplicate fetches across component remounts (React Strict Mode).
       // In test environment, these refs persist across tests, making this unit test unreliable.
       // The fetch behavior is verified through integration tests and actual usage.
-      renderHook(() => useUnifiedData());
+      rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       await waitFor(() => {
         expect(mockActions.fetchClients).toHaveBeenCalled();
@@ -163,7 +272,9 @@ describe('useUnifiedData', () => {
         } as ClientInstrument,
       ];
 
-      renderHook(() => useUnifiedData());
+      rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       // Wait for initial render and any useEffect to complete
       await waitFor(
@@ -178,7 +289,9 @@ describe('useUnifiedData', () => {
     });
 
     it('should return all actions', () => {
-      const { result } = renderHook(() => useUnifiedData());
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.fetchClients).toBeDefined();
       expect(result.current.fetchInstruments).toBeDefined();
@@ -192,7 +305,9 @@ describe('useUnifiedData', () => {
       const now = new Date();
       mockState.lastUpdated.clients = now;
 
-      const { result } = renderHook(() => useUnifiedData());
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.lastUpdated.clients).toBe(now);
       expect(result.current.lastUpdated.instruments).toBeNull();
@@ -202,10 +317,16 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedClients', () => {
     it('should return clients hook data', () => {
-      const { result } = renderHook(() => useUnifiedClients());
+      const { result } = rtlRenderHook(() => useUnifiedClients(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.clients).toEqual([]);
-      expect(result.current.loading).toEqual({ clients: false, any: false });
+      expect(result.current.loading).toEqual({
+        clients: false,
+        any: false,
+        hasAnyLoading: false,
+      });
       expect(result.current.fetchClients).toBeDefined();
     });
 
@@ -221,7 +342,9 @@ describe('useUnifiedData', () => {
         { id: '1', first_name: 'Test', last_name: 'Client' } as Client,
       ];
 
-      renderHook(() => useUnifiedClients());
+      rtlRenderHook(() => useUnifiedClients(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       // useUnifiedClients only reads from state, doesn't fetch
       expect(mockActions.fetchClients).not.toHaveBeenCalled();
@@ -230,7 +353,9 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedInstruments', () => {
     it('should return instruments hook data', () => {
-      const { result } = renderHook(() => useUnifiedInstruments());
+      const { result } = rtlRenderHook(() => useUnifiedInstruments(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.instruments).toEqual([]);
       expect(result.current.loading).toBe(false);
@@ -246,7 +371,9 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedConnections', () => {
     it('should return connections hook data', () => {
-      const { result } = renderHook(() => useUnifiedConnections());
+      const { result } = rtlRenderHook(() => useUnifiedConnections(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.connections).toEqual([]);
       expect(result.current.loading).toBe(false);
@@ -262,7 +389,9 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedDashboard', () => {
     it('should return dashboard data', () => {
-      const { result } = renderHook(() => useUnifiedDashboard());
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.instruments).toEqual([]);
       expect(result.current.connections).toEqual([]);
@@ -293,7 +422,9 @@ describe('useUnifiedData', () => {
       mockState.instruments = [instrument];
       mockState.connections = [connection];
 
-      const { result } = renderHook(() => useUnifiedDashboard());
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.clientRelationships).toHaveLength(1);
       expect(result.current.clientRelationships[0].client).toEqual(client);
@@ -316,7 +447,9 @@ describe('useUnifiedData', () => {
       mockState.instruments = [];
       mockState.connections = [connection];
 
-      const { result } = renderHook(() => useUnifiedDashboard());
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.clientRelationships).toHaveLength(0);
     });
@@ -345,7 +478,9 @@ describe('useUnifiedData', () => {
       mockState.instruments = [instrument];
       mockState.connections = [connection];
 
-      const { result } = renderHook(() => useUnifiedDashboard());
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.instrumentRelationships).toEqual(
         result.current.clientRelationships
@@ -364,7 +499,9 @@ describe('useUnifiedData', () => {
         { id: '1', client_id: '1', instrument_id: '1' } as ClientInstrument,
       ];
 
-      renderHook(() => useUnifiedDashboard());
+      rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       // useUnifiedDashboard only calculates relationships from existing state, doesn't fetch
       expect(mockActions.fetchInstruments).not.toHaveBeenCalled();
@@ -372,9 +509,11 @@ describe('useUnifiedData', () => {
     });
   });
 
-  describe('useUnifiedConnectionForm', () => {
+  describe('useConnectedClientsData', () => {
     it('should return form data', () => {
-      const { result } = renderHook(() => useUnifiedConnectionForm());
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.clients).toEqual([]);
       expect(result.current.instruments).toEqual([]);
@@ -382,7 +521,9 @@ describe('useUnifiedData', () => {
     });
 
     it('should provide createConnection function', async () => {
-      const { result } = renderHook(() => useUnifiedConnectionForm());
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       await result.current.createConnection(
         'client-1',
@@ -400,7 +541,9 @@ describe('useUnifiedData', () => {
     });
 
     it('should handle null notes in createConnection', async () => {
-      const { result } = renderHook(() => useUnifiedConnectionForm());
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       await result.current.createConnection(
         'client-1',
@@ -418,7 +561,9 @@ describe('useUnifiedData', () => {
     });
 
     it('should provide updateConnection function', async () => {
-      const { result } = renderHook(() => useUnifiedConnectionForm());
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       await result.current.updateConnection('connection-1', {
         relationshipType: 'Interested',
@@ -435,7 +580,9 @@ describe('useUnifiedData', () => {
     });
 
     it('should handle null notes in updateConnection', async () => {
-      const { result } = renderHook(() => useUnifiedConnectionForm());
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       await result.current.updateConnection('connection-1', {
         relationshipType: 'Interested',
@@ -455,13 +602,15 @@ describe('useUnifiedData', () => {
     it.skip('should fetch form data when empty', async () => {
       // This test is skipped because useUnifiedConnectionForm no longer performs fetching
       // Fetching is now handled by useUnifiedData (Single Source of Truth)
-      // useUnifiedConnectionForm only provides CRUD operations
+      // useConnectedClientsData only provides CRUD operations
     });
   });
 
   describe('useUnifiedSearch', () => {
     it('should return search function and data', () => {
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       expect(result.current.searchAll).toBeDefined();
       expect(result.current.clients).toEqual([]);
@@ -478,7 +627,9 @@ describe('useUnifiedData', () => {
       } as Client;
       mockState.clients = [client];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('John');
 
       expect(searchResult.clients).toHaveLength(1);
@@ -493,7 +644,9 @@ describe('useUnifiedData', () => {
       } as Client;
       mockState.clients = [client];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('Doe');
 
       expect(searchResult.clients).toHaveLength(1);
@@ -508,7 +661,9 @@ describe('useUnifiedData', () => {
       } as Client;
       mockState.clients = [client];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('john@example.com');
 
       expect(searchResult.clients).toHaveLength(1);
@@ -523,7 +678,9 @@ describe('useUnifiedData', () => {
       } as Client;
       mockState.clients = [client];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('CL001');
 
       expect(searchResult.clients).toHaveLength(1);
@@ -537,7 +694,9 @@ describe('useUnifiedData', () => {
       } as Instrument;
       mockState.instruments = [instrument];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('Stradivarius');
 
       expect(searchResult.instruments).toHaveLength(1);
@@ -551,7 +710,9 @@ describe('useUnifiedData', () => {
       } as Instrument;
       mockState.instruments = [instrument];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('Violin');
 
       expect(searchResult.instruments).toHaveLength(1);
@@ -565,7 +726,9 @@ describe('useUnifiedData', () => {
       } as Instrument;
       mockState.instruments = [instrument];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('VI001');
 
       expect(searchResult.instruments).toHaveLength(1);
@@ -580,7 +743,9 @@ describe('useUnifiedData', () => {
       } as ClientInstrument;
       mockState.connections = [connection];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('Test notes');
 
       expect(searchResult.connections).toHaveLength(1);
@@ -597,7 +762,9 @@ describe('useUnifiedData', () => {
       } as ClientInstrument;
       mockState.connections = [connection];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('Owned');
 
       expect(searchResult.connections).toHaveLength(1);
@@ -609,7 +776,9 @@ describe('useUnifiedData', () => {
       mockState.clients = [client];
       mockState.instruments = [instrument];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('John');
 
       expect(searchResult.total).toBe(1);
@@ -619,7 +788,9 @@ describe('useUnifiedData', () => {
       const client: Client = { id: '1', first_name: 'John' } as Client;
       mockState.clients = [client];
 
-      const { result } = renderHook(() => useUnifiedSearch());
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
       const searchResult = result.current.searchAll('JOHN');
 
       expect(searchResult.clients).toHaveLength(1);
@@ -628,29 +799,128 @@ describe('useUnifiedData', () => {
 
   describe('useUnifiedCache', () => {
     it('should provide invalidate function', () => {
-      const { result } = renderHook(() => useUnifiedCache());
+      const mockInvalidateCache = jest.fn();
+      mockUseClientsContext.mockReturnValueOnce({
+        state: {
+          clients: [],
+          loading: false,
+          submitting: false,
+          lastUpdated: null,
+        },
+        actions: { invalidateCache: mockInvalidateCache },
+      });
+      mockUseInstrumentsContext.mockReturnValueOnce({
+        state: {
+          instruments: [],
+          loading: false,
+          submitting: false,
+          lastUpdated: null,
+        },
+        actions: { invalidateCache: jest.fn() },
+      });
+      mockUseConnectionsContext.mockReturnValueOnce({
+        state: {
+          connections: [],
+          loading: false,
+          submitting: false,
+          lastUpdated: null,
+        },
+        actions: { invalidateCache: jest.fn() },
+      });
+
+      const { result } = rtlRenderHook(() => useUnifiedCache(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       result.current.invalidate('clients');
 
-      expect(mockActions.invalidateCache).toHaveBeenCalledWith('clients');
+      expect(mockInvalidateCache).toHaveBeenCalled();
     });
 
     it('should provide invalidateAll function', () => {
-      const { result } = renderHook(() => useUnifiedCache());
+      const mockInvalidateClients = jest.fn();
+      const mockInvalidateInstruments = jest.fn();
+      const mockInvalidateConnections = jest.fn();
+      mockUseClientsContext.mockReturnValueOnce({
+        state: {
+          clients: [],
+          loading: false,
+          submitting: false,
+          lastUpdated: null,
+        },
+        actions: { invalidateCache: mockInvalidateClients },
+      });
+      mockUseInstrumentsContext.mockReturnValueOnce({
+        state: {
+          instruments: [],
+          loading: false,
+          submitting: false,
+          lastUpdated: null,
+        },
+        actions: { invalidateCache: mockInvalidateInstruments },
+      });
+      mockUseConnectionsContext.mockReturnValueOnce({
+        state: {
+          connections: [],
+          loading: false,
+          submitting: false,
+          lastUpdated: null,
+        },
+        actions: { invalidateCache: mockInvalidateConnections },
+      });
+
+      const { result } = rtlRenderHook(() => useUnifiedCache(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       result.current.invalidateAll();
 
-      expect(mockActions.invalidateCache).toHaveBeenCalledWith('clients');
-      expect(mockActions.invalidateCache).toHaveBeenCalledWith('instruments');
-      expect(mockActions.invalidateCache).toHaveBeenCalledWith('connections');
+      expect(mockInvalidateClients).toHaveBeenCalled();
+      expect(mockInvalidateInstruments).toHaveBeenCalled();
+      expect(mockInvalidateConnections).toHaveBeenCalled();
     });
 
     it('should provide reset function', () => {
-      const { result } = renderHook(() => useUnifiedCache());
+      const mockResetClients = jest.fn();
+      const mockResetInstruments = jest.fn();
+      const mockResetConnections = jest.fn();
+      mockUseClientsContext.mockReturnValueOnce({
+        state: {
+          clients: [],
+          loading: false,
+          submitting: false,
+          lastUpdated: null,
+        },
+        actions: { resetState: mockResetClients },
+      });
+      mockUseInstrumentsContext.mockReturnValueOnce({
+        state: {
+          instruments: [],
+          loading: false,
+          submitting: false,
+          lastUpdated: null,
+        },
+        actions: { resetState: mockResetInstruments },
+      });
+      mockUseConnectionsContext.mockReturnValueOnce({
+        state: {
+          connections: [],
+          loading: false,
+          submitting: false,
+          lastUpdated: null,
+        },
+        actions: { resetState: mockResetConnections },
+      });
+
+      const { result } = rtlRenderHook(() => useUnifiedCache(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
 
       result.current.reset();
 
-      expect(mockActions.resetState).toHaveBeenCalled();
+      expect(mockResetClients).toHaveBeenCalled();
+      expect(mockResetInstruments).toHaveBeenCalled();
+      expect(mockResetConnections).toHaveBeenCalled();
     });
   });
 });

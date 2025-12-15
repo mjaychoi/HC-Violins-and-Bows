@@ -1,15 +1,64 @@
 import type { TaskPriority, TaskStatus, MaintenanceTask } from '@/types';
 import {
-  parseISO,
   differenceInCalendarDays,
   isBefore,
   endOfDay,
+  startOfDay,
+  isValid,
+  parseISO,
 } from 'date-fns';
+import { parseYMDLocal } from '@/utils/dateParsing';
+// ✅ FIXED: Use centralized color tokens
+import { getTaskStatusColor, getTaskStatusDotColor } from '@/utils/colorTokens';
 
 export interface StatusColorOptions {
   isOverdue?: boolean;
   isUpcoming?: boolean;
   task?: MaintenanceTask;
+}
+
+/**
+ * Normalize task status to a valid TaskStatus value
+ * Uses whitelist approach for type safety
+ */
+function normalizeStatus(input: unknown): TaskStatus {
+  const s = String(input ?? '').toLowerCase();
+  if (
+    s === 'pending' ||
+    s === 'in_progress' ||
+    s === 'completed' ||
+    s === 'cancelled'
+  ) {
+    return s as TaskStatus;
+  }
+  // Safe default: pending
+  return 'pending';
+}
+
+/**
+ * Parse task date string safely, handling both YYYY-MM-DD and ISO timestamps
+ * YYYY-MM-DD strings are parsed as local midnight to avoid UTC timezone issues
+ * FIXED: Use parseYMDLocal from dateParsing for consistency
+ */
+function parseTaskDateLocal(raw: unknown): Date | null {
+  if (!raw) return null;
+
+  // Date object: validate and return
+  if (raw instanceof Date && isValid(raw)) return raw;
+
+  const s = String(raw);
+
+  // Use parseYMDLocal for date-only strings (handles YYYY-MM-DD as local)
+  const parsed = parseYMDLocal(s);
+  if (parsed) return parsed;
+
+  // Fallback for ISO timestamps or other formats
+  try {
+    const d = parseISO(s);
+    return isValid(d) ? d : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -32,36 +81,16 @@ export function getPriorityPillClasses(priority: TaskPriority): string {
 
 /**
  * Get Tailwind CSS classes for status pill styling
- * FIXED: Color based on status only (Overdue=Red, In Progress=Blue, Scheduled=Green, Completed=Gray)
+ * ✅ FIXED: Use centralized color tokens
  */
 export function getStatusPillClasses(
   status: TaskStatus,
   options?: StatusColorOptions
 ): string {
-  const normalized = status.toLowerCase() as TaskStatus;
-
-  // Completed/Cancelled tasks are always gray
-  if (normalized === 'completed' || normalized === 'cancelled') {
-    return 'bg-gray-300 text-gray-800';
-  }
-
-  // Overdue tasks are red
-  if (options?.isOverdue) {
-    return 'bg-red-500 text-white';
-  }
-
-  // In Progress tasks are blue
-  if (normalized === 'in_progress') {
-    return 'bg-blue-500 text-white';
-  }
-
-  // Scheduled/Pending tasks are green
-  if (normalized === 'pending' || options?.isUpcoming) {
-    return 'bg-emerald-500 text-white';
-  }
-
-  // Default: scheduled state (green)
-  return 'bg-emerald-500 text-white';
+  return getTaskStatusColor(status, {
+    isOverdue: options?.isOverdue,
+    isUpcoming: options?.isUpcoming,
+  });
 }
 
 /**
@@ -77,53 +106,59 @@ export function getStatusColorClasses(
 }
 
 /**
+ * Get status dot color class (for small indicators)
+ * ✅ FIXED: Use centralized color tokens
+ */
+export function getStatusDotClasses(
+  status: TaskStatus,
+  options?: StatusColorOptions
+): string {
+  return getTaskStatusDotColor(status, {
+    isOverdue: options?.isOverdue,
+    isUpcoming: options?.isUpcoming,
+  });
+}
+
+/**
  * Calculate date status for a task to determine if it's overdue/upcoming
- * Uses precise timestamp comparison for overdue check and calendar days for "within 3 days"
+ * FIXED: Uses local day parsing to avoid UTC timezone issues
+ * FIXED: Uses startOfDay for stable calendar day calculations
  */
 export function getDateStatus(task: MaintenanceTask): {
   status: 'overdue' | 'upcoming' | 'normal';
   days: number;
 } {
-  const dueDate =
-    task.due_date || task.personal_due_date || task.scheduled_date;
-  if (!dueDate) {
+  const raw = task.due_date || task.personal_due_date || task.scheduled_date;
+  if (!raw) {
     return { status: 'normal', days: 0 };
   }
 
-  try {
-    // Handle different date types: string, Date, or already parsed
-    let dueDateObj: Date;
-    if (typeof dueDate === 'string') {
-      dueDateObj = parseISO(dueDate);
-    } else if (
-      dueDate &&
-      typeof dueDate === 'object' &&
-      'getTime' in dueDate &&
-      typeof (dueDate as { getTime?: () => number }).getTime === 'function'
-    ) {
-      dueDateObj = dueDate as Date;
-    } else {
-      dueDateObj = parseISO(String(dueDate));
-    }
-
-    const now = new Date();
-
-    // Use endOfDay for overdue check to treat tasks due today as not overdue until end of day
-    const dueDateEndOfDay = endOfDay(dueDateObj);
-    const isOverdue = isBefore(dueDateEndOfDay, now);
-
-    // Use calendar days for "within 3 days" calculation
-    const days = differenceInCalendarDays(dueDateObj, now);
-
-    if (isOverdue) {
-      return { status: 'overdue', days: Math.abs(days) };
-    } else if (days > 0 && days <= 3) {
-      return { status: 'upcoming', days };
-    } else {
-      return { status: 'normal', days };
-    }
-  } catch {
+  const due = parseTaskDateLocal(raw);
+  if (!due) {
     return { status: 'normal', days: 0 };
+  }
+
+  const now = new Date();
+
+  // FIXED: Use startOfDay for stable calendar day calculations
+  // This ensures days calculation is not affected by time of day
+  const dueStart = startOfDay(due);
+  const nowStart = startOfDay(now);
+
+  // Overdue check: end of due date must be before now
+  const dueEndOfDay = endOfDay(due);
+  const isOverdue = isBefore(dueEndOfDay, now);
+
+  // FIXED: Calculate days using startOfDay to avoid off-by-one errors
+  // Positive = future, negative = past, 0 = today
+  const days = differenceInCalendarDays(dueStart, nowStart);
+
+  if (isOverdue) {
+    return { status: 'overdue', days: Math.abs(days) };
+  } else if (days > 0 && days <= 3) {
+    return { status: 'upcoming', days };
+  } else {
+    return { status: 'normal', days };
   }
 }
 
@@ -150,10 +185,10 @@ export function getDateColorClasses(
  * Get calendar event style (backgroundColor, borderColor, opacity, etc.)
  * for react-big-calendar Event components
  *
- * FIXED: Color based on status only
- * - Overdue/Urgent: Red
+ * FIXED: Color based on status only (not scheduled_date presence)
+ * - Overdue: Red
  * - In Progress: Blue
- * - Scheduled/Pending: Green
+ * - Scheduled/Pending/Upcoming: Green
  * - Completed: Gray
  */
 export function getCalendarEventStyle(task: MaintenanceTask): {
@@ -164,17 +199,26 @@ export function getCalendarEventStyle(task: MaintenanceTask): {
   color?: string;
   border?: string;
 } {
-  // Normalize status to handle case-sensitivity
-  const status = (task.status ?? '').toLowerCase() as TaskStatus;
-
+  // ✅ FIXED: Use centralized color tokens
+  const status = normalizeStatus(task.status);
   const dateStatus = getDateStatus(task);
   const isOverdue = dateStatus.status === 'overdue';
+  const isUpcoming = dateStatus.status === 'upcoming';
+
+  // Color mapping from tokens to hex values for react-big-calendar
+  const colorMap: Record<string, { bg: string; border: string }> = {
+    overdue: { bg: '#ef4444', border: '#dc2626' }, // Red-500, Red-600
+    inProgress: { bg: '#3b82f6', border: '#2563eb' }, // Blue-500, Blue-600
+    pending: { bg: '#10b981', border: '#059669' }, // Emerald-500, Emerald-600
+    completed: { bg: '#9ca3af', border: '#6b7280' }, // Gray-400, Gray-500
+  };
 
   // 1. Completed/Cancelled: Gray
   if (status === 'completed') {
+    const colors = colorMap.completed;
     return {
-      backgroundColor: '#9ca3af', // Gray-400
-      borderColor: '#6b7280', // Gray-500
+      backgroundColor: colors.bg,
+      borderColor: colors.border,
       opacity: 0.7,
       textDecoration: 'line-through',
       color: '#ffffff',
@@ -182,9 +226,10 @@ export function getCalendarEventStyle(task: MaintenanceTask): {
   }
 
   if (status === 'cancelled') {
+    const colors = colorMap.completed;
     return {
-      backgroundColor: '#9ca3af', // Gray-400
-      borderColor: '#6b7280', // Gray-500
+      backgroundColor: colors.bg,
+      borderColor: colors.border,
       opacity: 0.6,
       color: '#ffffff',
     };
@@ -192,39 +237,43 @@ export function getCalendarEventStyle(task: MaintenanceTask): {
 
   // 2. Overdue: Red
   if (isOverdue) {
+    const colors = colorMap.overdue;
     return {
-      backgroundColor: '#ef4444', // Red-500
-      borderColor: '#dc2626', // Red-600
+      backgroundColor: colors.bg,
+      borderColor: colors.border,
       opacity: 1,
       color: '#ffffff',
-      border: '2px solid #dc2626',
+      border: `2px solid ${colors.border}`,
     };
   }
 
   // 3. In Progress: Blue
   if (status === 'in_progress') {
+    const colors = colorMap.inProgress;
     return {
-      backgroundColor: '#3b82f6', // Blue-500
-      borderColor: '#2563eb', // Blue-600
+      backgroundColor: colors.bg,
+      borderColor: colors.border,
       opacity: 1,
       color: '#ffffff',
     };
   }
 
-  // 4. Scheduled/Pending: Green
-  if (status === 'pending' || task.scheduled_date) {
+  // 4. Scheduled/Pending/Upcoming: Emerald
+  if (status === 'pending' || isUpcoming) {
+    const colors = colorMap.pending;
     return {
-      backgroundColor: '#10b981', // Emerald-500
-      borderColor: '#059669', // Emerald-600
+      backgroundColor: colors.bg,
+      borderColor: colors.border,
       opacity: 1,
       color: '#ffffff',
     };
   }
 
-  // Default: Scheduled (green)
+  // Default: Scheduled (emerald)
+  const colors = colorMap.pending;
   return {
-    backgroundColor: '#10b981', // Emerald-500
-    borderColor: '#059669', // Emerald-600
+    backgroundColor: colors.bg,
+    borderColor: colors.border,
     opacity: 1,
     color: '#ffffff',
   };

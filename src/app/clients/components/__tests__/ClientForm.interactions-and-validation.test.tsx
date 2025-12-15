@@ -1,6 +1,6 @@
 // src/app/clients/components/__tests__/ClientForm.interactions-and-validation.test.tsx
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import '@testing-library/jest-dom';
 import ClientForm from '../ClientForm';
 
@@ -39,11 +39,16 @@ jest.mock('@/hooks/useFormState', () => ({
   })),
 }));
 
-jest.mock('@/hooks/useErrorHandler', () => ({
-  useErrorHandler: jest.fn(() => ({
-    handleError: jest.fn(),
-  })),
-}));
+// ✅ FIXED: ToastProvider도 export하도록 mock 수정
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    useErrorHandler: jest.fn(() => ({
+      handleError: jest.fn(),
+    })),
+  };
+});
 
 jest.mock('@/hooks/useUnifiedData', () => ({
   useUnifiedClients: jest.fn(() => ({
@@ -117,7 +122,8 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
 
   it('submitting=true 로딩 상태', () => {
     render(<ClientForm {...baseProps} submitting={true} />);
-    const submitButton = screen.getByRole('button', { name: 'Loading...' });
+    // ✅ FIXED: Button 컴포넌트는 loading일 때 "Loading"만 sr-only로 표시 (showLoadingText=false)
+    const submitButton = screen.getByRole('button', { name: 'Loading' });
     expect(submitButton).toBeDisabled();
   });
 

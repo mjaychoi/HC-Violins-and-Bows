@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import ConnectedClientsPage from '../page';
 
 // Mock all dependencies
@@ -8,7 +8,7 @@ jest.mock('@/hooks/useUnifiedData', () => ({
     // Empty function - Single Source of Truth fetcher
     // In tests, we don't need actual fetching
   }),
-  useUnifiedConnectionForm: jest.fn(() => ({
+  useConnectedClientsData: jest.fn(() => ({
     clients: [],
     instruments: [],
     connections: [],
@@ -28,13 +28,17 @@ jest.mock('@/hooks/useUnifiedData', () => ({
   })),
 }));
 
-jest.mock('@/hooks/useErrorHandler', () => ({
-  __esModule: true,
-  useErrorHandler: jest.fn(() => ({
-    ErrorToasts: () => null,
-    handleError: jest.fn(),
-  })),
-}));
+// ✅ FIXED: ToastProvider도 export하도록 mock 수정
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    __esModule: true,
+    useErrorHandler: jest.fn(() => ({
+      handleError: jest.fn(),
+    })),
+  };
+});
 
 jest.mock('@/hooks/useLoadingState', () => ({
   __esModule: true,
@@ -91,6 +95,13 @@ jest.mock('../components', () => ({
     <div data-testid="loading-state">Loading...</div>
   )),
   EditConnectionModal: jest.fn(() => null),
+  ConnectionSearch: jest.fn(({ searchTerm, onSearchChange }) => (
+    <input
+      data-testid="connection-search"
+      value={searchTerm}
+      onChange={e => onSearchChange(e.target.value)}
+    />
+  )),
 }));
 
 jest.mock('@/components/layout', () => ({
@@ -144,8 +155,8 @@ describe('ConnectedClientsPage', () => {
   });
 
   it('should render ConnectionsList when connections exist', () => {
-    const { useUnifiedConnectionForm } = require('@/hooks/useUnifiedData');
-    useUnifiedConnectionForm.mockReturnValue({
+    const { useConnectedClientsData } = require('@/hooks/useUnifiedData');
+    useConnectedClientsData.mockReturnValue({
       clients: [],
       instruments: [],
       connections: [{ id: '1' }],
@@ -177,7 +188,7 @@ describe('ConnectedClientsPage', () => {
     });
 
     render(<ConnectedClientsPage />);
-    expect(screen.getByTestId('loading-state')).toBeInTheDocument();
+    expect(screen.getByText('Loading connections...')).toBeInTheDocument();
   });
 
   it('should open connection modal when "Add Connection" button is clicked', () => {
@@ -188,9 +199,9 @@ describe('ConnectedClientsPage', () => {
   });
 
   it('should handle connection creation', async () => {
-    const { useUnifiedConnectionForm } = require('@/hooks/useUnifiedData');
+    const { useConnectedClientsData } = require('@/hooks/useUnifiedData');
     const mockCreateConnection = jest.fn().mockResolvedValue(undefined);
-    useUnifiedConnectionForm.mockReturnValue({
+    useConnectedClientsData.mockReturnValue({
       clients: [{ id: 'c1', first_name: 'John', last_name: 'Doe' }],
       instruments: [{ id: 'i1', maker: 'Stradivari', type: 'Violin' }],
       connections: [],

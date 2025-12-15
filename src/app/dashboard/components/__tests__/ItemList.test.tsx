@@ -1,12 +1,30 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import ItemList from '../ItemList';
 import { Instrument, ClientInstrument } from '@/types';
 
 jest.mock('@/components/common', () => ({
   ListSkeleton: () => <div>Loading...</div>,
+  EmptyState: ({
+    title,
+    description,
+  }: {
+    title?: string;
+    description?: string;
+  }) => (
+    <div data-testid="empty-state">
+      {title && <h3>{title}</h3>}
+      {description && <p>{description}</p>}
+    </div>
+  ),
+  Pagination: () => null,
 }));
 
-const instrument: Instrument = {
+// FIXED: ItemList now expects EnrichedInstrument (Instrument with clients array)
+type EnrichedInstrument = Instrument & {
+  clients: ClientInstrument[];
+};
+
+const instrument: EnrichedInstrument = {
   id: '1',
   maker: 'Strad',
   type: 'Violin',
@@ -21,6 +39,7 @@ const instrument: Instrument = {
   serial_number: 'VI0000001',
   status: 'Available',
   created_at: '2024-01-01',
+  clients: [], // FIXED: Add clients array to match EnrichedInstrument type
 };
 
 const relationships: ClientInstrument[] = [

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   LineChart,
   Line,
@@ -12,10 +12,15 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  ComposedChart,
 } from 'recharts';
 import { EnrichedSale } from '@/types';
 import { currency } from '../utils/salesFormatters';
+import {
+  toDateOnly,
+  parseYMDLocal,
+  formatCompactDate,
+  formatMonth,
+} from '@/utils/dateParsing';
 
 interface SalesChartsProps {
   sales: EnrichedSale[];
@@ -36,15 +41,23 @@ export default function SalesCharts({
   onClientFilter,
   onInstrumentFilter,
 }: SalesChartsProps) {
+  // Toggle state for Daily Sales Trend chart
+  const [showRefunds, setShowRefunds] = useState(false);
+  const [showNetSales, setShowNetSales] = useState(false);
   // 날짜 필터 적용된 데이터
-  // Note: 문자열 비교 사용 - sale_date, fromDate, toDate는 모두 'YYYY-MM-DD' 형식이 보장되므로
-  // lexicographical order로 안전하게 비교 가능. API에서 이 형식을 강제하므로 string 비교 사용.
+  // FIXED: Normalize date strings to date-only format (YYYY-MM-DD) to handle ISO timestamps
+  // This prevents issues when sale_date comes as ISO timestamp (e.g., 2025-12-13T00:00:00Z)
   const filteredSales = useMemo(() => {
-    if (!fromDate && !toDate) return sales;
+    const from = toDateOnly(fromDate);
+    const to = toDateOnly(toDate);
+
+    if (!from && !to) return sales;
+
     return sales.filter(sale => {
-      const saleDate = sale.sale_date;
-      if (fromDate && saleDate < fromDate) return false;
-      if (toDate && saleDate > toDate) return false;
+      const saleDate = toDateOnly(sale.sale_date);
+      if (!saleDate) return false;
+      if (from && saleDate < from) return false;
+      if (to && saleDate > to) return false;
       return true;
     });
   }, [sales, fromDate, toDate]);
@@ -57,7 +70,8 @@ export default function SalesCharts({
     >();
 
     filteredSales.forEach(sale => {
-      const date = sale.sale_date; // YYYY-MM-DD 형식
+      // FIXED: Normalize to date-only to prevent grouping issues with timestamps
+      const date = toDateOnly(sale.sale_date); // YYYY-MM-DD 형식
       if (!dailyMap.has(date)) {
         dailyMap.set(date, { revenue: 0, refunds: 0, count: 0 });
       }
@@ -73,15 +87,8 @@ export default function SalesCharts({
 
     return Array.from(dailyMap.entries())
       .map(([dateStr, data]) => {
-        // YYYY-MM-DD 형식에서 날짜 파싱 (타임존 이슈 방지를 위해 UTC 사용)
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const date = new Date(Date.UTC(year, month - 1, day));
-        // FIXED: Force UTC timezone for formatting to prevent day shift in negative UTC offsets
-        const formattedDate = date.toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          timeZone: 'UTC',
-        });
+        // FIXED: Use unified date formatter for consistency
+        const formattedDate = formatCompactDate(dateStr);
 
         return {
           date: formattedDate,
@@ -103,9 +110,10 @@ export default function SalesCharts({
     >();
 
     filteredSales.forEach(sale => {
-      const [year, month, day] = sale.sale_date.split('-').map(Number);
-      const date = new Date(Date.UTC(year, month - 1, day));
-      const dayOfWeek = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
+      // FIXED: Use parseYMDLocal for day-of-week calculations (local timezone)
+      const saleDay = parseYMDLocal(sale.sale_date);
+      if (!saleDay) return;
+      const dayOfWeek = saleDay.getDay(); // Local day of week (0 = Sunday, 6 = Saturday)
 
       if (!weekdayMap.has(dayOfWeek)) {
         weekdayMap.set(dayOfWeek, { revenue: 0, refunds: 0, count: 0 });
@@ -141,8 +149,10 @@ export default function SalesCharts({
     >();
 
     filteredSales.forEach(sale => {
+      // FIXED: Normalize to date-only first to handle timestamps
       // YYYY-MM-DD 형식에서 월 키 추출 (타임존 이슈 방지)
-      const [year, month] = sale.sale_date.split('-');
+      const dateOnly = toDateOnly(sale.sale_date);
+      const [year, month] = dateOnly.split('-');
       const monthKey = `${year}-${month}`;
 
       if (!monthlyMap.has(monthKey)) {
@@ -160,17 +170,8 @@ export default function SalesCharts({
 
     return Array.from(monthlyMap.entries())
       .map(([key, data]) => {
-        // YYYY-MM 형식에서 날짜 생성 (타임존 이슈 방지를 위해 UTC 사용)
-        const [year, month] = key.split('-');
-        const date = new Date(
-          Date.UTC(parseInt(year, 10), parseInt(month, 10) - 1, 1)
-        );
-        // FIXED: Force UTC timezone for formatting to prevent day shift in negative UTC offsets
-        const monthLabel = date.toLocaleDateString('en-US', {
-          month: 'short',
-          year: 'numeric',
-          timeZone: 'UTC',
-        });
+        // FIXED: Use unified date formatter for consistency
+        const monthLabel = formatMonth(`${key}-01`);
 
         // FIXED: Refund rate should be refunds relative to revenue (not total flow)
         const refundRate =
@@ -213,6 +214,11 @@ export default function SalesCharts({
       }
     });
 
+    const totalRevenue = Array.from(typeMap.values()).reduce(
+      (sum, data) => sum + data.revenue,
+      0
+    );
+
     return Array.from(typeMap.entries())
       .map(([type, data]) => ({
         type,
@@ -224,6 +230,11 @@ export default function SalesCharts({
         refundRate:
           data.revenue > 0
             ? Math.round((data.refunds / data.revenue) * 100 * 10) / 10
+            : 0,
+        // Calculate percentage of total revenue
+        percentage:
+          totalRevenue > 0
+            ? Math.round((data.revenue / totalRevenue) * 100)
             : 0,
       }))
       .sort((a, b) => b.revenue - a.revenue)
@@ -272,8 +283,13 @@ export default function SalesCharts({
 
   // Custom formatters
   // YAxis용 compact formatter (차트 축 라벨) - $28M 형식
+  // FIXED: For small amounts, use integer format to avoid clutter
   const formatCurrencyCompact = (value: number) => {
     if (value === 0) return '$0';
+    // For small amounts (< $1000), show as integer to reduce clutter
+    if (Math.abs(value) < 1000) {
+      return `$${Math.round(value)}`;
+    }
     const absValue = Math.abs(value);
 
     // For amounts >= 1M, use M notation
@@ -301,22 +317,7 @@ export default function SalesCharts({
     return value.toLocaleString('en-US');
   };
 
-  // 전체 환불율 계산 (성능 최적화: 한 번의 reduce로 계산)
-  // FIXED: Refund rate should be refunds relative to revenue (not total flow)
-  const overallRefundRate = useMemo(() => {
-    const { revenue, refunds } = filteredSales.reduce(
-      (acc, sale) => {
-        if (sale.sale_price > 0) {
-          acc.revenue += sale.sale_price;
-        } else {
-          acc.refunds += Math.abs(sale.sale_price);
-        }
-        return acc;
-      },
-      { revenue: 0, refunds: 0 }
-    );
-    return revenue > 0 ? Math.round((refunds / revenue) * 100 * 10) / 10 : 0;
-  }, [filteredSales]);
+  // 전체 환불율 계산 제거 - Monthly Sales Comparison 차트에서 더 이상 사용하지 않음
 
   // Refund 원인 분석: 고객별 환불 데이터
   const refundByClient = useMemo(() => {
@@ -350,7 +351,12 @@ export default function SalesCharts({
         refunds: data.refunds,
         count: data.count,
       }))
-      .sort((a, b) => b.refunds - a.refunds)
+      .sort((a, b) => {
+        // FIXED: Sort Unknown to bottom for better UX
+        if (a.clientId === 'unknown') return 1;
+        if (b.clientId === 'unknown') return -1;
+        return b.refunds - a.refunds;
+      })
       .slice(0, 10);
   }, [filteredSales]);
 
@@ -389,32 +395,48 @@ export default function SalesCharts({
         refunds: data.refunds,
         count: data.count,
       }))
-      .sort((a, b) => b.refunds - a.refunds)
+      .sort((a, b) => {
+        // FIXED: Sort Unknown to bottom for better UX
+        if (a.instrumentId === 'unknown') return 1;
+        if (b.instrumentId === 'unknown') return -1;
+        return b.refunds - a.refunds;
+      })
       .slice(0, 10);
   }, [filteredSales]);
 
-  // 차트 클릭 핸들러 (Drill-down)
-  // FIXED: Improved click handler - guard against empty/stale activePayload
-  const handleChartClick = (data: unknown, chartType: 'daily' | 'monthly') => {
+  // FIXED: Helper to safely extract payload from Recharts click event
+  function getFirstPayload<T extends { fullDate?: string; monthKey?: string }>(
+    e: unknown
+  ): T | null {
     const payload = (
-      data as {
+      e as {
         activePayload?: Array<{
-          payload?: { fullDate?: string; monthKey?: string };
+          payload?: T;
         }>;
         activeLabel?: string;
       }
     )?.activePayload;
-    // FIXED: Guard against empty/stale payload
-    if (!payload || payload.length === 0 || !payload[0]?.payload) return;
-    if (!onDateFilter) return;
+    if (!payload || payload.length === 0 || !payload[0]?.payload) return null;
+    return payload[0].payload as T;
+  }
 
-    if (chartType === 'daily' && payload[0].payload.fullDate) {
+  // 차트 클릭 핸들러 (Drill-down)
+  // FIXED: Improved click handler - guard against empty/stale activePayload
+  const handleChartClick = (data: unknown, chartType: 'daily' | 'monthly') => {
+    const payload = getFirstPayload<{ fullDate?: string; monthKey?: string }>(
+      data
+    );
+    if (!payload || !onDateFilter) return;
+
+    if (chartType === 'daily' && payload.fullDate) {
       // 일별 차트 클릭 시 해당 날짜로 필터링
-      const fullDate = payload[0].payload.fullDate;
+      // FIXED: toDate is inclusive (matches filteredSales comparison logic)
+      const fullDate = payload.fullDate;
       onDateFilter(fullDate, fullDate);
-    } else if (chartType === 'monthly' && payload[0].payload.monthKey) {
+    } else if (chartType === 'monthly' && payload.monthKey) {
       // 월별 차트 클릭 시 해당 월로 필터링
-      const monthKey = payload[0].payload.monthKey;
+      // FIXED: toDate is inclusive (matches filteredSales comparison logic)
+      const monthKey = payload.monthKey;
       const [year, month] = monthKey.split('-');
       const from = `${year}-${month}-01`;
       // FIXED: Use UTC for lastDay calculation to avoid timezone issues (consistent with rest of file)
@@ -444,16 +466,41 @@ export default function SalesCharts({
       {/* {dataQuality.isLowQuality && (
         <DataQualityWarning dataQuality={dataQuality} />
       )} */}
-      {/* 일별 매출 추이 (라인 차트) - 변동 감지용 */}
+      {/* 일별 매출 추이 (라인 차트) - 기본: Revenue + Orders만 */}
       {dailyData.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">
               Daily Sales Trend
             </h3>
-            <span className="text-xs text-gray-500">
-              Click to filter by date
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">
+                Click to filter by date
+              </span>
+              {/* Toggle buttons for optional metrics */}
+              <div className="flex items-center gap-2 ml-4">
+                <button
+                  onClick={() => setShowRefunds(!showRefunds)}
+                  className={`px-2 py-1 text-xs rounded border transition ${
+                    showRefunds
+                      ? 'bg-red-50 border-red-300 text-red-700'
+                      : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Refunds
+                </button>
+                <button
+                  onClick={() => setShowNetSales(!showNetSales)}
+                  className={`px-2 py-1 text-xs rounded border transition ${
+                    showNetSales
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Net Sales
+                </button>
+              </div>
+            </div>
           </div>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart
@@ -496,6 +543,7 @@ export default function SalesCharts({
                 }}
               />
               <Legend />
+              {/* Always show: Revenue (green) */}
               <Line
                 yAxisId="left"
                 type="monotone"
@@ -506,27 +554,7 @@ export default function SalesCharts({
                 dot={{ r: 4 }}
                 activeDot={{ r: 6 }}
               />
-              <Line
-                yAxisId="left"
-                type="monotone"
-                dataKey="refunds"
-                stroke="#ef4444"
-                strokeWidth={2}
-                name="Refunds"
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
-              <Line
-                yAxisId="left"
-                type="monotone"
-                dataKey="net"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                name="Net Sales"
-                strokeDasharray="5 5"
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
+              {/* Always show: Orders (gray, secondary axis) */}
               <Line
                 yAxisId="right"
                 type="monotone"
@@ -537,6 +565,33 @@ export default function SalesCharts({
                 dot={{ r: 3 }}
                 activeDot={{ r: 5 }}
               />
+              {/* Optional: Refunds (red) */}
+              {showRefunds && (
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="refunds"
+                  stroke="#ef4444"
+                  strokeWidth={2}
+                  name="Refunds"
+                  dot={{ r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              )}
+              {/* Optional: Net Sales (blue, dashed) */}
+              {showNetSales && (
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="net"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  name="Net Sales"
+                  strokeDasharray="5 5"
+                  dot={{ r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -627,26 +682,19 @@ export default function SalesCharts({
         </div>
       )}
 
-      {/* 월별 매출 비교 (바 차트 + 주문 수 + 환불율) - 성장률/추세 분석용 */}
+      {/* 월별 매출 비교 (Revenue bar only, refund rate in tooltip) */}
       {monthlyData.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">
-                Monthly Sales Comparison
-              </h3>
-            </div>
-            {overallRefundRate > 0 && (
-              <div className="text-sm text-gray-600">
-                Overall Refund Rate:{' '}
-                <span className="font-semibold text-red-600">
-                  {overallRefundRate}%
-                </span>
-              </div>
-            )}
+            <h3 className="text-lg font-semibold text-gray-900">
+              Monthly Sales Comparison
+            </h3>
+            <span className="text-xs text-gray-500">
+              Click to filter by month
+            </span>
           </div>
           <ResponsiveContainer width="100%" height={350}>
-            <ComposedChart
+            <BarChart
               data={monthlyData}
               margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
               onClick={data => handleChartClick(data, 'monthly')}
@@ -663,104 +711,71 @@ export default function SalesCharts({
                 height={80}
               />
               <YAxis
-                yAxisId="left"
                 stroke="#6b7280"
                 style={{ fontSize: '12px' }}
                 tickFormatter={formatCurrencyCompact}
                 label={{
-                  value: 'Amount ($)',
+                  value: 'Revenue ($)',
                   angle: -90,
                   position: 'insideLeft',
                   style: { textAnchor: 'middle', fontSize: '12px' },
                 }}
               />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                stroke="#6b7280"
-                style={{ fontSize: '12px' }}
-                tickFormatter={formatNumber}
-                label={{
-                  value: 'Orders',
-                  angle: -90,
-                  position: 'insideRight',
-                  style: { textAnchor: 'middle', fontSize: '12px' },
-                }}
-              />
-              {/* FIXED: Add 3rd Y-axis for refund rate to avoid confusing same-axis mixing */}
-              <YAxis
-                yAxisId="rate"
-                orientation="right"
-                stroke="#f59e0b"
-                style={{ fontSize: '12px' }}
-                tickFormatter={(value: number) => `${value}%`}
-                domain={[0, 'auto']}
-                label={{
-                  value: 'Refund Rate (%)',
-                  angle: -90,
-                  position: 'insideRight',
-                  offset: 50,
-                  style: { textAnchor: 'middle', fontSize: '11px' },
-                }}
-              />
               <Tooltip
                 formatter={(value: number, name: string) => {
-                  if (name === 'Orders') return value;
-                  if (name === 'Refund Rate (%)') return `${value}%`;
+                  if (name === 'Refund Rate') return `${value}%`;
                   return formatCurrency(value);
                 }}
-                contentStyle={{
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  padding: '8px',
+                labelFormatter={label => label}
+                content={({ active, payload }) => {
+                  if (!active || !payload || payload.length === 0) return null;
+                  const data = payload[0].payload;
+                  return (
+                    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+                      <p className="font-semibold text-sm mb-2">{data.month}</p>
+                      <div className="space-y-1 text-xs">
+                        <p>
+                          <span className="text-green-600 font-medium">
+                            Revenue:
+                          </span>{' '}
+                          {formatCurrency(data.revenue)}
+                        </p>
+                        {data.refunds > 0 && (
+                          <p>
+                            <span className="text-red-600 font-medium">
+                              Refunds:
+                            </span>{' '}
+                            {formatCurrency(data.refunds)}
+                          </p>
+                        )}
+                        {data.refundRate > 0 && (
+                          <p>
+                            <span className="text-amber-600 font-medium">
+                              Refund Rate:
+                            </span>{' '}
+                            {data.refundRate}%
+                          </p>
+                        )}
+                        <p>
+                          <span className="text-gray-600 font-medium">
+                            Orders:
+                          </span>{' '}
+                          {data.count}
+                        </p>
+                      </div>
+                    </div>
+                  );
                 }}
               />
               <Legend />
+              {/* Revenue bar only (green) */}
               <Bar
-                yAxisId="left"
                 dataKey="revenue"
                 fill="#10b981"
                 name="Revenue"
                 radius={[4, 4, 0, 0]}
               />
-              <Bar
-                yAxisId="left"
-                dataKey="refunds"
-                fill="#ef4444"
-                name="Refunds"
-                radius={[4, 4, 0, 0]}
-              />
-              <Bar
-                yAxisId="left"
-                dataKey="net"
-                fill="#3b82f6"
-                name="Net Sales"
-                radius={[4, 4, 0, 0]}
-              />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="count"
-                stroke="#6b7280"
-                strokeWidth={2}
-                name="Orders"
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
-              {/* FIXED: Use separate yAxisId="rate" for refund rate */}
-              <Line
-                yAxisId="rate"
-                type="monotone"
-                dataKey="refundRate"
-                stroke="#f59e0b"
-                strokeWidth={2}
-                strokeDasharray="3 3"
-                name="Refund Rate (%)"
-                dot={{ r: 3 }}
-                activeDot={{ r: 5 }}
-              />
-            </ComposedChart>
+            </BarChart>
           </ResponsiveContainer>
         </div>
       )}
@@ -946,7 +961,11 @@ export default function SalesCharts({
                     d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-10">
+                {/* FIXED: Add title attribute for accessibility (mobile/touch devices) */}
+                <div
+                  className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-10"
+                  title="Net Sales = Revenue – Refunds (absolute $)"
+                >
                   Net Sales = Revenue – Refunds (absolute $)
                 </div>
               </div>
@@ -1030,6 +1049,42 @@ export default function SalesCharts({
                 fill="#10b981"
                 name="Revenue"
                 radius={[0, 4, 4, 0]}
+                onClick={(data: unknown) => {
+                  const payload = (data as { payload?: { type?: string } })
+                    ?.payload;
+                  if (onInstrumentFilter && payload?.type) {
+                    // Filter by instrument type
+                    // Note: This requires instrument type filtering in parent component
+                    // For now, we'll just log it - parent should handle the filter
+                    console.log('Filter by instrument type:', payload.type);
+                  }
+                }}
+                label={(props: {
+                  payload?: { percentage?: number };
+                  x?: number | string;
+                  y?: number | string;
+                  width?: number | string;
+                }) => {
+                  if (
+                    !props?.payload ||
+                    typeof props.x !== 'number' ||
+                    typeof props.y !== 'number' ||
+                    typeof props.width !== 'number'
+                  )
+                    return null;
+                  const percentage = props.payload.percentage || 0;
+                  return (
+                    <text
+                      x={props.x + props.width + 5}
+                      y={props.y + 15}
+                      fill="#6b7280"
+                      fontSize={12}
+                      fontWeight={500}
+                    >
+                      {percentage}%
+                    </text>
+                  );
+                }}
               />
             </BarChart>
           </ResponsiveContainer>
@@ -1059,7 +1114,11 @@ export default function SalesCharts({
                     d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-10">
+                {/* FIXED: Add title attribute for accessibility (mobile/touch devices) */}
+                <div
+                  className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-10"
+                  title="Net Sales = Revenue – Refunds (absolute $)"
+                >
                   Net Sales = Revenue – Refunds (absolute $)
                 </div>
               </div>

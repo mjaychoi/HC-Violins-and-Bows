@@ -13,10 +13,10 @@ export function highlightText(
   const regex = new RegExp(`(${escapeRegex(searchTerm)})`, 'gi');
   const parts = text.split(regex);
 
+  const lowerSearch = searchTerm.toLowerCase();
   return parts.map((part, index) => {
-    const isMatch = regex.test(part);
-    // Reset regex lastIndex for next test
-    regex.lastIndex = 0;
+    // Simplified: use case-insensitive string comparison instead of regex.test
+    const isMatch = part.toLowerCase() === lowerSearch;
     return isMatch
       ? React.createElement(
           'mark',
@@ -98,9 +98,9 @@ export function searchTasks(
  *
  * @remarks
  * When sorting by 'date', uses the following priority order for date selection:
- * 1. scheduled_date (if available)
- * 2. due_date (if scheduled_date is not available)
- * 3. personal_due_date (if neither scheduled_date nor due_date is available)
+ * 1. due_date (if available)
+ * 2. personal_due_date (if due_date is not available)
+ * 3. scheduled_date (if neither due_date nor personal_due_date is available)
  * 4. received_date (as fallback)
  *
  * This matches the date priority used throughout the application for displaying
@@ -118,17 +118,17 @@ export function sortTasks(
 
     switch (sortBy) {
       case 'date':
-        // Date priority: scheduled_date > due_date > personal_due_date > received_date
+        // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date > received_date
         const aDate =
-          a.scheduled_date ||
           a.due_date ||
           a.personal_due_date ||
+          a.scheduled_date ||
           a.received_date ||
           '';
         const bDate =
-          b.scheduled_date ||
           b.due_date ||
           b.personal_due_date ||
+          b.scheduled_date ||
           b.received_date ||
           '';
         comparison = aDate.localeCompare(bDate);
@@ -154,7 +154,8 @@ export function sortTasks(
         break;
 
       case 'type':
-        comparison = a.task_type.localeCompare(b.task_type);
+        // Null-safe comparison
+        comparison = (a.task_type ?? '').localeCompare(b.task_type ?? '');
         break;
 
       default:

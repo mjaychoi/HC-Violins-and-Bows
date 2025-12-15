@@ -1,5 +1,5 @@
 // src/app/clients/hooks/__tests__/useFilters.basic-and-options.test.tsx
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@/test-utils/render';
 import { useFilters } from '../useFilters';
 import { Client } from '@/types';
 

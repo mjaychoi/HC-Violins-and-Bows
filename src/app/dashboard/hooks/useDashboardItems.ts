@@ -5,7 +5,7 @@
  * All production code should use `useDashboardData` → `useUnifiedDashboard`.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase-client';
 import { Instrument, InstrumentImage, ClientInstrument, Client } from '@/types';
 
 // FIXED: Define explicit type for joined client_instruments query
@@ -46,6 +46,7 @@ export function useDashboardItems() {
 
   const fetchItemsWithClients = useCallback(async () => {
     try {
+      const supabase = await getSupabaseClient();
       const { data, error } = await supabase.from('client_instruments').select(`
           *,
           client:clients(*),
@@ -69,6 +70,7 @@ export function useDashboardItems() {
     const startTime = performance.now();
 
     try {
+      const supabase = await getSupabaseClient();
       const { data, error } = await supabase
         .from('instruments')
         .select('*')
@@ -125,6 +127,7 @@ export function useDashboardItems() {
       const startTime = performance.now();
 
       try {
+        const supabase = await getSupabaseClient();
         const { data, error } = await supabase
           .from('instruments')
           .insert([itemData])
@@ -181,6 +184,7 @@ export function useDashboardItems() {
       const startTime = performance.now();
 
       try {
+        const supabase = await getSupabaseClient();
         const { data, error } = await supabase
           .from('instruments')
           .update(itemData)
@@ -238,6 +242,7 @@ export function useDashboardItems() {
     const startTime = performance.now();
 
     try {
+      const supabase = await getSupabaseClient();
       const { error } = await supabase
         .from('instruments')
         .delete()

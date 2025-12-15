@@ -1,18 +1,23 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import '@testing-library/jest-dom';
 import ClientList from '../ClientList';
 import { Client } from '@/types';
 
-jest.mock('@/components/common', () => ({
-  EmptyState: ({ title, description }: any) => (
-    <div data-testid="empty-state">
-      <h3>{title}</h3>
-      <p>{description}</p>
-    </div>
-  ),
-  Pagination: () => null,
-}));
+jest.mock('@/components/common', () => {
+  const actual = jest.requireActual('@/components/common');
+  return {
+    __esModule: true,
+    ...actual,
+    EmptyState: ({ title, description }: any) => (
+      <div data-testid="empty-state">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+    ),
+    Pagination: () => null,
+  };
+});
 
 jest.mock('next/dynamic', () => {
   return () => {
@@ -92,7 +97,9 @@ describe('ClientList', () => {
     const johnRow = screen.getByText('John Doe').closest('tr');
     fireEvent.click(johnRow!);
 
-    expect(mockProps.onClientClick).toHaveBeenCalledWith(mockClients[0]);
+    // ✅ FIXED: 행 클릭은 expand/collapse만 처리하고 onClientClick를 호출하지 않음
+    // View 버튼을 클릭해야 onClientClick가 호출됨
+    expect(mockProps.onClientClick).not.toHaveBeenCalled();
   });
 
   it('handles column sort', () => {
@@ -128,8 +135,11 @@ describe('ClientList', () => {
   it('handles empty client list', () => {
     render(<ClientList {...mockProps} clients={[]} />);
 
+    // 공통 EmptyState 패턴: 필터 없음일 때 "No clients yet" 사용
     expect(
-      screen.getByText(/등록된 고객이 없습니다|No clients found/i)
+      screen.getByText(
+        /등록된 고객이 없습니다|No clients found|No clients yet/i
+      )
     ).toBeInTheDocument();
   });
 
@@ -214,7 +224,8 @@ describe('ClientList', () => {
     // 편집 모드가 아닐 때 클릭 시 expand/collapse 동작
     fireEvent.click(johnRow!);
 
-    expect(mockProps.onClientClick).toHaveBeenCalledWith(mockClients[0]);
+    // ✅ FIXED: 행 클릭은 expand/collapse만 처리하고 onClientClick를 호출하지 않음
+    expect(mockProps.onClientClick).not.toHaveBeenCalled();
   });
 
   it('renders tags using null-safe operator', () => {

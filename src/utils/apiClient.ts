@@ -1,13 +1,12 @@
 import { errorHandler } from './errorHandler';
-import { getSupabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase-client';
 import { logApiRequest, logError } from './logger';
 import { captureException } from './monitoring';
 import { ErrorSeverity } from '@/types/errors';
 import { validateSortColumn, ALLOWED_SORT_COLUMNS } from './inputValidation';
 
-// Lazy load Supabase client to prevent dependency leakage
-// Only load when actually used, not at module initialization time
-const getSupabaseClient = () => getSupabase();
+// FIXED: Use unified getSupabaseClient() to ensure single instance
+// This prevents Multiple GoTrueClient instances warning
 
 // Safe timing helper that works in both browser and Node.js/SSR
 const nowMs = (): number => {
@@ -41,7 +40,7 @@ export class ApiClient {
     const url = `supabase://${table}`;
 
     try {
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       let query = supabase.from(table).select(options?.select || '*');
 
       if (options?.eq) {
@@ -123,7 +122,7 @@ export class ApiClient {
     const url = `supabase://${table}`;
 
     try {
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       const { data: result, error } = await supabase
         .from(table)
         .insert([data])
@@ -189,7 +188,7 @@ export class ApiClient {
     const url = `supabase://${table}/${id}`;
 
     try {
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       const { data: result, error } = await supabase
         .from(table)
         .update(data)
@@ -257,7 +256,7 @@ export class ApiClient {
     const url = `supabase://${table}/${id}`;
 
     try {
-      const supabase = getSupabaseClient();
+      const supabase = await getSupabaseClient();
       const { error } = await supabase.from(table).delete().eq('id', id);
       const duration = Math.round(nowMs() - startTime);
 

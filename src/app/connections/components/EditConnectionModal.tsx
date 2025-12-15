@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
-import { ClientInstrument, Client, Instrument } from '@/types';
+import {
+  ClientInstrument,
+  Client,
+  Instrument,
+  RelationshipType,
+} from '@/types';
+import { RELATIONSHIP_TYPES } from '../utils/connectionGrouping';
 
 interface EditConnectionModalProps {
   isOpen: boolean;
@@ -7,7 +13,7 @@ interface EditConnectionModalProps {
   onSave: (
     connectionId: string,
     updates: {
-      relationshipType: 'Booked' | 'Sold' | 'Interested' | 'Owned';
+      relationshipType: RelationshipType;
       notes: string;
     }
   ) => Promise<void>;
@@ -22,22 +28,16 @@ export const EditConnectionModal = ({
   onSave,
   connection,
 }: EditConnectionModalProps) => {
-  const [relationshipType, setRelationshipType] = useState<
-    'Booked' | 'Sold' | 'Interested' | 'Owned'
-  >('Interested');
+  // FIXED: Use RelationshipType instead of hardcoded union
+  const [relationshipType, setRelationshipType] =
+    useState<RelationshipType>('Interested');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // Initialize form when connection changes
   useEffect(() => {
     if (connection) {
-      setRelationshipType(
-        connection.relationship_type as
-          | 'Booked'
-          | 'Sold'
-          | 'Interested'
-          | 'Owned'
-      );
+      setRelationshipType(connection.relationship_type);
       setNotes(connection.notes || '');
     }
   }, [connection]);
@@ -122,16 +122,15 @@ export const EditConnectionModal = ({
               <select
                 value={relationshipType}
                 onChange={e =>
-                  setRelationshipType(
-                    e.target.value as 'Booked' | 'Sold' | 'Interested' | 'Owned'
-                  )
+                  setRelationshipType(e.target.value as RelationshipType)
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="Interested">Interested</option>
-                <option value="Booked">Booked</option>
-                <option value="Sold">Sold</option>
-                <option value="Owned">Owned</option>
+                {RELATIONSHIP_TYPES.map(type => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
               </select>
             </div>
 

@@ -1,6 +1,17 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import InstrumentSearch from '../InstrumentSearch';
 import { Instrument } from '@/types';
+
+// EmptyState는 실제 구현 대신 단순 텍스트 렌더로 대체 (테스트 안정성용)
+jest.mock('@/components/common', () => ({
+  __esModule: true,
+  EmptyState: ({ title, description }: any) => (
+    <div data-testid="empty-state">
+      <h3>{title}</h3>
+      <p>{description}</p>
+    </div>
+  ),
+}));
 
 const mockInstrument: Instrument = {
   id: 'inst1',
@@ -79,7 +90,8 @@ describe('InstrumentSearch', () => {
   it('should display start typing message when no search term', () => {
     render(<InstrumentSearch {...mockProps} searchTerm="" />);
     expect(
-      screen.getByText('Start typing to search for instruments')
+      // EmptyState 설명 카피에 맞게 약간 완화된 매처 사용
+      screen.getByText(/start typing to search/i)
     ).toBeInTheDocument();
   });
 

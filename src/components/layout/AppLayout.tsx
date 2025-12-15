@@ -29,27 +29,28 @@ export default function AppLayout({
   const pathname = usePathname();
   const { user, loading } = useAuth();
   const router = useRouter();
+
+  // ✅ FIXED: matchMedia 훅으로 변경 (리렌더/이벤트 줄이기)
   const [isMobile, setIsMobile] = useState(false);
 
-  // Detect mobile screen size
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768); // md breakpoint
-    };
-
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    const mq = window.matchMedia('(max-width: 767px)');
+    const handler = () => setIsMobile(mq.matches);
+    handler(); // 초기값 설정
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
   }, []);
 
-  // Close sidebar when route changes on mobile
+  // 모바일에서도 사이드바가 닫힌 상태로 항상 보이도록 설정 (사라지지 않게)
+  // 사이드바는 닫힌 상태(isExpanded=false)로 유지되지만 항상 표시됨
   useEffect(() => {
     if (isMobile && isExpanded) {
-      collapseSidebar();
+      collapseSidebar(); // 모바일에서 사이드바를 닫힌 상태로 유지
     }
-  }, [pathname, isMobile, isExpanded, collapseSidebar]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile]);
 
-  // Protect routes - redirect to login if not authenticated
+  // ✅ FIXED: redirect는 AppLayout에서만 처리 (AuthProvider는 상태만 관리)
   useEffect(() => {
     if (!loading && !user) {
       router.push('/');
@@ -81,36 +82,13 @@ export default function AppLayout({
       />
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Mobile Overlay */}
-        {isMobile && isExpanded && (
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-            onClick={collapseSidebar}
-            aria-hidden="true"
-          />
-        )}
-
-        {/* Sidebar */}
-        <div
-          className={`flex-shrink-0 transition-all duration-300 ease-in-out z-50 ${
-            isMobile
-              ? `fixed inset-y-0 left-0 ${
-                  isExpanded ? 'translate-x-0' : '-translate-x-full'
-                }`
-              : ''
-          }`}
-        >
+        {/* Sidebar - 모바일에서도 닫힌 상태로 항상 표시 (사라지지 않게) */}
+        <div className="flex-shrink-0 transition-all duration-300 ease-in-out z-50">
           <AppSidebar isExpanded={isExpanded} currentPath={pathname} />
         </div>
 
         {/* Main Content */}
-        <div
-          className={`flex-1 overflow-auto transition-all duration-300 ease-in-out ${
-            isMobile && isExpanded ? 'lg:ml-0' : ''
-          }`}
-        >
-          {children}
-        </div>
+        <div className="flex-1 overflow-auto">{children}</div>
       </div>
     </div>
   );

@@ -1,12 +1,14 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@/test-utils/render';
 import { useDashboardItems } from '../useDashboardItems';
 import { Instrument, InstrumentImage, ClientInstrument } from '@/types';
 
 // Mock dependencies
-jest.mock('@/lib/supabase', () => ({
-  supabase: {
-    from: jest.fn(),
-  },
+const mockSupabaseClient = {
+  from: jest.fn(),
+};
+
+jest.mock('@/lib/supabase-client', () => ({
+  getSupabaseClient: jest.fn(() => Promise.resolve(mockSupabaseClient)),
 }));
 
 jest.mock('@/utils/logger', () => ({
@@ -37,7 +39,6 @@ describe('useDashboardItems', () => {
   });
 
   it('should initialize with default values', async () => {
-    const { supabase } = require('@/lib/supabase');
     const mockSelect = jest.fn().mockReturnValue({
       order: jest.fn().mockResolvedValue({
         data: [],
@@ -48,7 +49,7 @@ describe('useDashboardItems', () => {
       data: [],
       error: null,
     });
-    supabase.from.mockImplementation((table: string) => {
+    mockSupabaseClient.from.mockImplementation((table: string) => {
       if (table === 'instruments') {
         return { select: mockSelect };
       }
@@ -76,7 +77,6 @@ describe('useDashboardItems', () => {
   });
 
   it('should fetch items on mount', async () => {
-    const { supabase } = require('@/lib/supabase');
     const mockSelect = jest.fn().mockReturnValue({
       order: jest.fn().mockResolvedValue({
         data: [mockInstrument],
@@ -87,7 +87,7 @@ describe('useDashboardItems', () => {
       data: [],
       error: null,
     });
-    supabase.from.mockImplementation((table: string) => {
+    mockSupabaseClient.from.mockImplementation((table: string) => {
       if (table === 'instruments') {
         return { select: mockSelect };
       }
@@ -108,14 +108,13 @@ describe('useDashboardItems', () => {
   });
 
   it('should handle fetch items error', async () => {
-    const { supabase } = require('@/lib/supabase');
     const mockSelect = jest.fn().mockReturnValue({
       order: jest.fn().mockResolvedValue({
         data: null,
         error: new Error('Fetch failed'),
       }),
     });
-    supabase.from.mockReturnValue({ select: mockSelect });
+    mockSupabaseClient.from.mockReturnValue({ select: mockSelect });
 
     const { result } = renderHook(() => useDashboardItems());
 
@@ -127,7 +126,6 @@ describe('useDashboardItems', () => {
   });
 
   it('should create item', async () => {
-    const { supabase } = require('@/lib/supabase');
     const newInstrument = { ...mockInstrument, id: 'inst2' };
     const mockInsert = jest.fn().mockReturnValue({
       select: jest.fn().mockReturnValue({
@@ -147,7 +145,7 @@ describe('useDashboardItems', () => {
       data: [],
       error: null,
     });
-    supabase.from.mockImplementation((table: string) => {
+    mockSupabaseClient.from.mockImplementation((table: string) => {
       if (table === 'instruments') {
         return {
           select: mockSelect,
@@ -189,7 +187,6 @@ describe('useDashboardItems', () => {
   });
 
   it('should update item', async () => {
-    const { supabase } = require('@/lib/supabase');
     const updatedInstrument = { ...mockInstrument, price: 150000 };
     const mockUpdate = jest.fn().mockReturnValue({
       eq: jest.fn().mockReturnValue({
@@ -211,7 +208,7 @@ describe('useDashboardItems', () => {
       data: [],
       error: null,
     });
-    supabase.from.mockImplementation((table: string) => {
+    mockSupabaseClient.from.mockImplementation((table: string) => {
       if (table === 'instruments') {
         return {
           select: mockSelect,
@@ -242,7 +239,6 @@ describe('useDashboardItems', () => {
   });
 
   it('should delete item', async () => {
-    const { supabase } = require('@/lib/supabase');
     const mockDelete = jest.fn().mockReturnValue({
       eq: jest.fn().mockResolvedValue({
         error: null,
@@ -258,7 +254,7 @@ describe('useDashboardItems', () => {
       data: [],
       error: null,
     });
-    supabase.from.mockImplementation((table: string) => {
+    mockSupabaseClient.from.mockImplementation((table: string) => {
       if (table === 'instruments') {
         return {
           select: mockSelect,

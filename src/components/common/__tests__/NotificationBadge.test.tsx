@@ -1,7 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import '@testing-library/jest-dom';
-import NotificationBadge from '../NotificationBadge';
+import NotificationBadge from '../feedback/NotificationBadge';
 
 describe('NotificationBadge', () => {
   const mockOnClick = jest.fn();

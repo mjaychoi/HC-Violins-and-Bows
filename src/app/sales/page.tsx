@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useCallback, useState } from 'react';
+import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { AppLayout } from '@/components/layout';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import {
@@ -20,16 +20,9 @@ import {
   useSalesSort,
   useEnrichedSales,
 } from './hooks';
-import {
-  SalesSummary,
-  SalesFilters,
-  SalesTable,
-  SalesInsights,
-  SalesAlerts,
-} from './components';
 import dynamic from 'next/dynamic';
 
-// Dynamic import for SalesCharts to reduce initial bundle size (recharts is large)
+// Dynamic imports for large components to reduce initial bundle size
 const SalesCharts = dynamic(() => import('./components/SalesCharts'), {
   ssr: false,
   loading: () => (
@@ -38,16 +31,75 @@ const SalesCharts = dynamic(() => import('./components/SalesCharts'), {
     </div>
   ),
 });
+
+const SalesInsights = dynamic(() => import('./components/SalesInsights'), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-lg bg-white p-4 shadow-sm border border-gray-200">
+      <CardSkeleton count={1} />
+    </div>
+  ),
+});
+
+const SalesAlerts = dynamic(() => import('./components/SalesAlerts'), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-lg bg-white p-4 shadow-sm border border-gray-200">
+      <CardSkeleton count={1} />
+    </div>
+  ),
+});
+
+// Dynamic import for SalesTable (264 lines) - loaded when table is visible
+const SalesTable = dynamic(() => import('./components/SalesTable'), {
+  ssr: false,
+  loading: () => (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+      <TableSkeleton rows={10} columns={7} />
+    </div>
+  ),
+});
+
+// Dynamic import for SaleForm (451 lines) - modal, loaded when needed
+// TODO: SaleForm is currently unused but may be needed for future sale creation functionality
+// const SaleForm = dynamic(() => import('./components/SaleForm'), {
+//   ssr: false,
+// });
+
+// Dynamic import for SalesSummary (215 lines) - KPI cards, can be lazy loaded
+const SalesSummary = dynamic(() => import('./components/SalesSummary'), {
+  ssr: false,
+  loading: () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      {[1, 2, 3, 4].map(i => (
+        <div
+          key={i}
+          className="bg-white border border-gray-200 rounded-lg shadow-sm p-4"
+        >
+          <div className="animate-pulse">
+            <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+            <div className="h-8 bg-gray-200 rounded w-3/4"></div>
+          </div>
+        </div>
+      ))}
+    </div>
+  ),
+});
+
+// Dynamic import for SalesFilters (251 lines) - loaded when filters are shown
+const SalesFilters = dynamic(() => import('./components/SalesFilters'), {
+  ssr: false,
+});
 import { Pagination } from '@/components/common';
 import {
   calculateTotals,
   formatPeriodInfo,
-  generateCSV,
-  generateReceiptEmail,
   createMaps,
   enrichSales,
   sortByClientName,
 } from './utils/salesUtils';
+// Large utility functions loaded on demand
+// generateCSV and generateReceiptEmail are imported dynamically when needed
 import { currency, dateFormat } from './utils/salesFormatters';
 import { SaleStatus } from './types';
 
@@ -64,8 +116,7 @@ export default function SalesPage() {
     refundSale,
     undoRefund,
   } = useSalesHistory();
-  const { ErrorToasts, SuccessToasts, showSuccess, handleError } =
-    useAppFeedback();
+  const { showSuccess, handleError } = useAppFeedback();
 
   // Confirmation dialog state
   const [confirmRefundSale, setConfirmRefundSale] =
@@ -114,17 +165,44 @@ export default function SalesPage() {
     sortDirection
   );
 
-  // FIXED: Reset page to 1 when filters change to avoid empty pages
+  // 필터 변경 시 page를 1로 리셋 (API 호출은 하지 않음)
+  const prevFiltersRef = useRef({
+    from,
+    to,
+    search,
+    hasClient,
+    sortColumn,
+    sortDirection,
+  });
   useEffect(() => {
-    setPage(1);
-  }, [from, to, search, hasClient, sortColumn, sortDirection, setPage]);
+    const prevFilters = prevFiltersRef.current;
+    const filtersChanged =
+      prevFilters.from !== from ||
+      prevFilters.to !== to ||
+      prevFilters.search !== search ||
+      prevFilters.hasClient !== hasClient ||
+      prevFilters.sortColumn !== sortColumn ||
+      prevFilters.sortDirection !== sortDirection;
+
+    if (filtersChanged && page !== 1) {
+      setPage(1);
+    }
+    prevFiltersRef.current = {
+      from,
+      to,
+      search,
+      hasClient,
+      sortColumn,
+      sortDirection,
+    };
+  }, [from, to, search, hasClient, sortColumn, sortDirection, page, setPage]);
 
   // 초기 로드 및 필터/페이지/정렬 변경 시 API 호출
   useEffect(() => {
     fetchSales({
       fromDate: from || undefined,
       toDate: to || undefined,
-      page, // FIXED: page is now required in FetchOptions
+      page,
       search: search || undefined,
       hasClient: hasClient !== null ? hasClient : undefined,
       sortColumn: sortColumn === 'client_name' ? undefined : sortColumn, // client_name은 클라이언트에서만 처리
@@ -164,10 +242,24 @@ export default function SalesPage() {
     }
     return calculateTotals(enrichedSales);
   }, [apiTotals, enrichedSales]);
-  const periodInfo = useMemo(() => formatPeriodInfo(from, to), [from, to]);
+
+  // Calculate actual date range from sales data (for "All time" display)
+  const actualDateRange = useMemo(() => {
+    if (enrichedSales.length === 0) return { from: undefined, to: undefined };
+    const dates = enrichedSales.map(sale => sale.sale_date).sort();
+    return {
+      from: dates[0],
+      to: dates[dates.length - 1],
+    };
+  }, [enrichedSales]);
+
+  const periodInfo = useMemo(
+    () => formatPeriodInfo(from, to, actualDateRange.from, actualDateRange.to),
+    [from, to, actualDateRange.from, actualDateRange.to]
+  );
 
   const handleSendReceipt = useCallback(
-    (sale: EnrichedSale) => {
+    async (sale: EnrichedSale) => {
       const email = sale.client?.email;
       if (!email) {
         handleError(
@@ -177,13 +269,19 @@ export default function SalesPage() {
         return;
       }
 
-      const { subject, body } = generateReceiptEmail(
-        sale,
-        dateFormat,
-        currency
-      );
-      window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
-      showSuccess('Receipt email opened in your email client.');
+      try {
+        // Dynamic import for large utility function
+        const { generateReceiptEmail } = await import('./utils/salesUtils');
+        const { subject, body } = generateReceiptEmail(
+          sale,
+          dateFormat,
+          currency
+        );
+        window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+        showSuccess('Receipt email opened in your email client.');
+      } catch (error) {
+        handleError(error, 'Send Receipt');
+      }
     },
     [handleError, showSuccess]
     // dateFormat and currency are constants, not dependencies
@@ -324,16 +422,31 @@ export default function SalesPage() {
         enrichedAllSales = sortByClientName(enrichedAllSales, sortDirection);
       }
 
-      // Generate CSV
+      // Generate CSV - dynamic import for large function
+      const { generateCSV } = await import('./utils/salesUtils');
       const csvContent = generateCSV(enrichedAllSales, dateFormat, currency);
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
-      link.setAttribute(
-        'download',
-        `sales-history-${new Date().toISOString().split('T')[0]}.csv`
-      );
+      // FIXED: Include date range in filename if filters are applied
+      const { todayLocalYMD } = await import('@/utils/dateParsing');
+      let filename = 'sales-history';
+      if (from && to) {
+        // Format dates for filename (remove dashes for cleaner filename)
+        const fromDate = from.replace(/-/g, '');
+        const toDate = to.replace(/-/g, '');
+        filename = `sales-history-${fromDate}-${toDate}`;
+      } else if (from) {
+        const fromDate = from.replace(/-/g, '');
+        filename = `sales-history-${fromDate}`;
+      } else if (to) {
+        const toDate = to.replace(/-/g, '');
+        filename = `sales-history-${toDate}`;
+      } else {
+        filename = `sales-history-${todayLocalYMD().replace(/-/g, '')}`;
+      }
+      link.setAttribute('download', `${filename}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -369,9 +482,7 @@ export default function SalesPage() {
             {/* DataQualityWarning 주석 처리 - Limited Data Available 경고 비활성화 */}
             {/* <DataQualityWarning dataQuality={dataQuality} /> */}
 
-            <SalesSummary totals={totals} period={periodInfo} />
-
-            {/* Filters & Search - KPI 아래로 이동 */}
+            {/* Filters & Search - KPI 위로 이동 */}
             <SalesFilters
               showFilters={showFilters}
               onToggleFilters={() => setShowFilters(!showFilters)}
@@ -386,6 +497,8 @@ export default function SalesPage() {
               onExportCSV={handleExportCSV}
               hasData={enrichedSales.length > 0}
             />
+
+            <SalesSummary totals={totals} period={periodInfo} />
 
             {/* Sales Alerts */}
             {!loading && <SalesAlerts sales={enrichedSales} />}
@@ -463,7 +576,7 @@ export default function SalesPage() {
                 filteredCount={totalCount}
                 pageSize={10}
                 loading={loading}
-                hasFilters={!!(search || from || to)}
+                hasFilters={!!(search || from || to || hasClient !== null)}
                 onPageChange={setPage}
                 compact={false}
               />
@@ -471,16 +584,31 @@ export default function SalesPage() {
           </div>
         )}
 
-        {/* Error Toasts */}
-        <ErrorToasts />
-        {/* Success Toasts */}
-        <SuccessToasts />
-
         {/* Refund Confirmation Dialog */}
         <ConfirmDialog
           isOpen={Boolean(confirmRefundSale)}
           title="Issue Refund?"
-          message={`Are you sure you want to issue a refund for this sale? This action will mark the sale as refunded and cannot be easily undone.`}
+          message={
+            confirmRefundSale ? (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-700">
+                  Are you sure you want to issue a refund for this sale? This
+                  action will mark the sale as refunded and cannot be easily
+                  undone.
+                </p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-xs font-medium text-red-800 mb-1">
+                    Refund Amount:
+                  </p>
+                  <p className="text-lg font-bold text-red-900">
+                    {currency.format(Math.abs(confirmRefundSale.sale_price))}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              ''
+            )
+          }
           confirmLabel="Issue Refund"
           cancelLabel="Cancel"
           onConfirm={handleConfirmRefund}

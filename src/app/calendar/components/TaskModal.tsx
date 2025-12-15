@@ -10,10 +10,11 @@ import {
   TaskPriority,
 } from '@/types';
 import { classNames } from '@/utils/classNames';
-import Button from '@/components/common/Button';
-import Input from '@/components/common/Input';
+import { Button, Input } from '@/components/common/inputs';
 import { todayLocalYMD } from '@/utils/dateParsing';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
+import { modalStyles } from '@/components/common/modals/modalStyles';
+import { ModalHeader } from '@/components/common/modals/ModalHeader';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -190,7 +191,16 @@ export default function TaskModal({
       notes: formData.notes.trim() || null,
     };
 
-    await onSubmit(taskData);
+    try {
+      await onSubmit(taskData);
+    } catch (error) {
+      // Show error in modal for better UX
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Failed to save task. Please try again.';
+      setErrors([errorMessage]);
+    }
   };
 
   // Close modal with ESC key and outside click
@@ -221,7 +231,7 @@ export default function TaskModal({
 
   return (
     <div
-      className="fixed inset-0 bg-gray-900 bg-opacity-20 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200"
+      className={modalStyles.overlay}
       onClick={e => {
         if (e.target === e.currentTarget) {
           onClose();
@@ -230,65 +240,20 @@ export default function TaskModal({
     >
       <div
         ref={modalRef}
-        className="bg-white rounded-xl shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200"
+        className={`${modalStyles.container} max-w-3xl`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="task-modal-title"
       >
-        {/* Header */}
-        <div className="p-6 border-b border-gray-100 bg-blue-50">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <svg
-                  className="w-6 h-6 text-blue-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                  />
-                </svg>
-              </div>
-              <h3
-                id="task-modal-title"
-                className="text-xl font-semibold text-gray-900"
-              >
-                {isEditing ? 'Edit Task' : 'Add New Task'}
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-white rounded-lg transition-colors duration-200"
-              aria-label="Close modal"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
+        <ModalHeader
+          title={isEditing ? 'Edit Task' : 'Add New Task'}
+          icon="task"
+          onClose={onClose}
+          titleId="task-modal-title"
+        />
 
-        {/* Form */}
-        <form
-          onSubmit={handleSubmit}
-          className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]"
-        >
+        {/* Form - Scrollable */}
+        <form onSubmit={handleSubmit} className={modalStyles.formBody}>
           {errors.length > 0 && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
               <ul className="list-disc list-inside text-sm text-red-600">
@@ -537,7 +502,7 @@ export default function TaskModal({
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-gray-100 bg-gray-50 -mx-6 -mb-6 px-6 py-4">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
             <Button
               type="button"
               variant="secondary"

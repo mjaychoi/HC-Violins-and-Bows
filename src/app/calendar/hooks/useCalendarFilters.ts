@@ -61,25 +61,14 @@ export const useCalendarFilters = ({
     urlParamMapping: {
       searchTerm: 'search',
     },
-    customFieldFilter: (items, filters) => {
-      const calendarFilters = filters as unknown as CalendarFilters;
-      // Apply filters (but not search term - that's handled separately below)
-      return filterCalendarTasks(
-        items,
-        calendarFilters,
-        dateRange,
-        filterOperator,
-        instrumentsMap,
-        '' // No search term here
-      );
-    },
+    // Remove customFieldFilter - filtering is done in filteredTasks useMemo below
     customFilter: () => true,
   });
 
   // Synchronize status filter between searchFilters.status and filterStatus
   const handleStatusFilterChange = useCallback(
     (status: string) => {
-      baseFilters.setFilters(prev => {
+      baseFilters.setFilters((prev: Record<string, unknown>) => {
         const filters = prev as unknown as CalendarFilters;
         return {
           ...filters,
@@ -94,7 +83,7 @@ export const useCalendarFilters = ({
   // Handle quick filter changes (type, priority, status, owner)
   const handleSearchFilterChange = useCallback(
     (filter: 'type' | 'priority' | 'status' | 'owner', value: string) => {
-      baseFilters.setFilters(prev => {
+      baseFilters.setFilters((prev: Record<string, unknown>) => {
         const filters = prev as unknown as CalendarFilters;
         const updated = {
           ...filters,
@@ -156,21 +145,41 @@ export const useCalendarFilters = ({
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   // FIXED: Reset to page 1 when filters change using stable filter key (avoids expensive JSON.stringify)
+  // Use individual filter fields as dependencies instead of entire filters object for better performance
+  // Extract filter fields to separate variables for static checking
+  const filters = baseFilters.filters as unknown as CalendarFilters;
+  const filterType = filters.type;
+  const filterPriority = filters.priority;
+  const filterStatus = filters.status;
+  const filterOwner = filters.owner;
+  const filterStatusValue = filters.filterStatus;
+  const filterOwnership = filters.filterOwnership;
+
   const filterKey = useMemo(() => {
-    const f = baseFilters.filters as unknown as CalendarFilters;
     return [
-      f.type,
-      f.priority,
-      f.status,
-      f.owner,
-      f.filterStatus,
-      f.filterOwnership,
+      filterType,
+      filterPriority,
+      filterStatus,
+      filterOwner,
+      filterStatusValue,
+      filterOwnership,
       baseFilters.searchTerm,
       dateRange?.from ?? '',
       dateRange?.to ?? '',
       filterOperator,
     ].join('|');
-  }, [baseFilters.filters, baseFilters.searchTerm, dateRange, filterOperator]);
+  }, [
+    filterType,
+    filterPriority,
+    filterStatus,
+    filterOwner,
+    filterStatusValue,
+    filterOwnership,
+    baseFilters.searchTerm,
+    dateRange?.from,
+    dateRange?.to,
+    filterOperator,
+  ]);
 
   useEffect(() => {
     if (currentPage > 1) setCurrentPage(1);
@@ -251,7 +260,7 @@ export const useCalendarFilters = ({
     // Actions
     setFilterStatus: handleStatusFilterChange,
     setFilterOwnership: (ownership: string) => {
-      baseFilters.setFilters(prev => {
+      baseFilters.setFilters((prev: Record<string, unknown>) => {
         const filters = prev as unknown as CalendarFilters;
         return {
           ...filters,

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import SaleForm from '../SaleForm';
 import {

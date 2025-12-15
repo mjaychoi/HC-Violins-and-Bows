@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { MaintenanceTask } from '@/types';
 import { classifyNotification } from '@/utils/tasks/dateUtils';
-import { startOfDay } from 'date-fns';
+import { startOfDay } from '@/utils/dateParsing';
 
 export interface NotificationCounts {
   overdue: number;

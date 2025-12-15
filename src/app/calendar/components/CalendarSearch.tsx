@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import SearchInput from '@/components/common/SearchInput';
+import { SearchInput } from '@/components/common/inputs';
 
 interface CalendarSearchProps {
   searchTerm: string;
@@ -22,7 +22,7 @@ export default function CalendarSearch({
     <SearchInput
       value={searchTerm}
       onChange={onSearchChange}
-      placeholder="Search by item name, serial number, type, owner..."
+      placeholder="Search tasks, instruments, owners..."
       debounceMs={debounceMs}
       variant="filled"
       size="md"

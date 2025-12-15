@@ -1,6 +1,6 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '@/test-utils/render';
 import { useCustomers } from '../useCustomers';
-import { waitFor } from '@testing-library/react';
+import { waitFor } from '@/test-utils/render';
 
 const mockClients = [
   {
@@ -85,11 +85,16 @@ jest.mock('@/hooks/useUnifiedData', () => ({
   }),
 }));
 
-jest.mock('@/hooks/useErrorHandler', () => ({
-  useErrorHandler: () => ({
-    handleError: jest.fn(),
-  }),
-}));
+// ✅ FIXED: ToastProvider도 export하도록 mock 수정
+jest.mock('@/contexts/ToastContext', () => {
+  const actual = jest.requireActual('@/contexts/ToastContext');
+  return {
+    ...actual,
+    useErrorHandler: () => ({
+      handleError: jest.fn(),
+    }),
+  };
+});
 
 beforeEach(() => {
   // FIXED: Use mockResolvedValue instead of mockResolvedValueOnce to reset for each test
@@ -266,13 +271,13 @@ describe('useCustomers', () => {
     expect(result.current.customers[0].tags).toContain('VIP');
   });
 
-  it('should select first customer by default', () => {
+  it('should not select customer by default (user must explicitly select)', () => {
     const { result } = renderHook(() => useCustomers());
 
-    expect(result.current.selectedCustomer).not.toBeNull();
-    expect(result.current.selectedCustomerId).toBe(
-      result.current.customers[0].id
-    );
+    // Initially, no customer should be selected
+    // This allows showing aggregate stats until user explicitly selects a customer
+    expect(result.current.selectedCustomer).toBeNull();
+    expect(result.current.selectedCustomerId).toBeNull();
   });
 
   it('should update selectedCustomerId', () => {

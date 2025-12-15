@@ -1,7 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import '@testing-library/jest-dom';
-import FilterGroup from '../FilterGroup';
+import { FilterGroup } from '@/components/common/layout';
 
 describe('FilterGroup', () => {
   const mockOptions = [
@@ -301,7 +301,17 @@ describe('FilterGroup', () => {
     );
 
     const filterGroup = container.firstChild as HTMLElement;
-    expect(filterGroup).toHaveClass('border-b', 'pb-3');
+    // ✅ FIXED: 새로운 card variant 스타일 (bg-gray-50/30, px-3 py-3 rounded-md 등)
+    expect(filterGroup).toHaveClass(
+      'border-b',
+      'border-gray-100',
+      'pb-4',
+      'mb-4',
+      'bg-gray-50/30',
+      'px-3',
+      'py-3',
+      'rounded-md'
+    );
   });
 
   it('shows "검색 결과가 없습니다" when search yields no results', async () => {

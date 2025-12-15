@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import '@testing-library/jest-dom';
 import ClientModal from '../ClientModal';
 import { Client, ClientInstrument, Instrument } from '@/types';

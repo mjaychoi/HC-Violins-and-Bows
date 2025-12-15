@@ -1,21 +1,21 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import CalendarSearch from '../CalendarSearch';
 
 // Mock SearchInput component
-jest.mock('@/components/common/SearchInput', () => {
-  return function MockSearchInput({
-    value,
-    onChange,
-    placeholder,
-    ...props
-  }: {
-    value: string;
-    onChange: (value: string) => void;
-    placeholder?: string;
-    debounceMs?: number;
-  }) {
-    return (
+jest.mock('@/components/common/inputs', () => {
+  return {
+    SearchInput: ({
+      value,
+      onChange,
+      placeholder,
+      ...props
+    }: {
+      value: string;
+      onChange: (value: string) => void;
+      placeholder?: string;
+      debounceMs?: number;
+    }) => (
       <div>
         <input
           data-testid="search-input"
@@ -34,7 +34,7 @@ jest.mock('@/components/common/SearchInput', () => {
           </button>
         )}
       </div>
-    );
+    ),
   };
 });
 
@@ -55,7 +55,7 @@ describe('CalendarSearch', () => {
     expect(searchInput).toBeInTheDocument();
     expect(searchInput).toHaveAttribute(
       'placeholder',
-      'Search by item name, serial number, type, owner...'
+      'Search tasks, instruments, owners...'
     );
   });
 

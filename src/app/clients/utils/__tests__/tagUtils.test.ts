@@ -10,14 +10,16 @@ describe('tagUtils', () => {
   it('returns mapped colors for known tags and falls back to default', () => {
     expect(getTagColor('Owner')).toContain('emerald');
     expect(getTagColor('Collector')).toContain('cyan');
+    // ✅ FIXED: Unknown tag는 Default 토큰 사용 (text-gray-700)
     expect(getTagColor('Unknown Tag')).toBe(
-      'bg-gray-100 text-gray-700 border border-gray-300 ring-1 ring-gray-200'
+      'bg-gray-100 text-gray-700 border-gray-300 ring-1 ring-gray-200'
     );
   });
 
   it('returns matching text colors for known tags with default fallback', () => {
     expect(getTagTextColor('Musician')).toBe('text-indigo-800');
     expect(getTagTextColor('Other')).toBe('text-slate-800');
+    // ✅ FIXED: Unknown tag는 Default 토큰 사용 (text-gray-700)
     expect(getTagTextColor('SomethingElse')).toBe('text-gray-700');
   });
 
@@ -28,25 +30,41 @@ describe('tagUtils', () => {
   });
 
   it('returns status colors with a neutral default', () => {
-    expect(getStatusColor('Available')).toBe('bg-green-100 text-green-800');
-    expect(getStatusColor('Booked')).toBe('bg-yellow-100 text-yellow-800');
-    expect(getStatusColor('Sold')).toBe('bg-red-100 text-red-800');
-    expect(getStatusColor('Unknown')).toBe('bg-gray-100 text-gray-800');
+    expect(getStatusColor('Available')).toBe(
+      'bg-green-100 text-green-800 border-green-200'
+    );
+    expect(getStatusColor('Booked')).toBe(
+      'bg-purple-100 text-purple-800 border-purple-200'
+    ); // ✅ FIXED: purple
+    expect(getStatusColor('Sold')).toBe(
+      'bg-green-100 text-green-800 border-green-200'
+    );
+    expect(getStatusColor('Unknown')).toBe(
+      'bg-gray-100 text-gray-800 border-gray-200'
+    );
   });
 
   it('maps interest values to intensity-based colors', () => {
-    expect(getInterestColor(null)).toBe('bg-gray-100 text-gray-600');
-    expect(getInterestColor('Active buyer')).toBe('bg-green-500 text-white');
+    expect(getInterestColor(null)).toBe(
+      'bg-gray-100 text-gray-500 ring-1 ring-gray-200'
+    ); // ✅ FIXED: muted variant
+    expect(getInterestColor('Active buyer')).toBe(
+      'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+    ); // ✅ FIXED: muted variant
     expect(getInterestColor('Medium interest')).toBe(
-      'bg-green-300 text-green-800'
+      'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100' // ✅ FIXED: muted variant
     );
     expect(getInterestColor('Passive maybe')).toBe(
-      'bg-green-100 text-green-700'
+      'bg-gray-100 text-gray-500 ring-1 ring-gray-200' // ✅ FIXED: muted variant
     );
     expect(getInterestColor('Not interested')).toBe(
-      'bg-green-300 text-green-800'
+      'bg-gray-100 text-gray-500 ring-1 ring-gray-200' // ✅ FIXED: muted variant
     );
-    expect(getInterestColor('No interest')).toBe('bg-gray-200 text-gray-600');
-    expect(getInterestColor('Curious')).toBe('bg-blue-100 text-blue-700');
+    expect(getInterestColor('No interest')).toBe(
+      'bg-gray-100 text-gray-500 ring-1 ring-gray-200'
+    ); // ✅ FIXED: muted variant
+    expect(getInterestColor('Curious')).toBe(
+      'bg-blue-50 text-blue-600 ring-1 ring-blue-100'
+    ); // ✅ FIXED: muted variant
   });
 });

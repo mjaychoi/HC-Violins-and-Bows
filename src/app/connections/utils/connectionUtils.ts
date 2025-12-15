@@ -1,4 +1,6 @@
 import { Client, Instrument, ClientInstrument } from '@/types';
+// ✅ FIXED: Use centralized color tokens
+import { getRelationshipColor as getRelationshipColorFromTokens } from '@/utils/colorTokens';
 
 // Connection formatting utilities
 export const formatClientName = (client?: Client): string => {
@@ -21,6 +23,8 @@ export const formatConnectionName = (connection: ClientInstrument): string => {
 };
 
 // Connection filtering utilities
+// @deprecated These functions are deprecated. Use useFilterSort hook instead for consistent filtering.
+// Kept for backwards compatibility with tests only.
 export const filterClients = (
   clients: Client[],
   searchTerm: string
@@ -35,6 +39,7 @@ export const filterClients = (
   );
 };
 
+/** @deprecated Use useFilterSort hook instead */
 export const filterInstruments = (
   instruments: Instrument[],
   searchTerm: string
@@ -48,6 +53,7 @@ export const filterInstruments = (
   );
 };
 
+/** @deprecated Use useFilterSort hook instead */
 export const filterConnections = (
   connections: ClientInstrument[],
   searchTerm: string
@@ -68,29 +74,21 @@ export const filterConnections = (
 };
 
 // Connection status utilities
+// @deprecated Use getRelationshipTypeStyle from relationshipStyles.ts instead
+// These functions are kept for backward compatibility with tests only
 export const getRelationshipColor = (
   relationshipType: ClientInstrument['relationship_type']
 ): string => {
-  switch (relationshipType) {
-    case 'Interested':
-      return 'bg-yellow-100 text-yellow-800';
-    case 'Booked':
-      return 'bg-blue-100 text-blue-800';
-    case 'Sold':
-      return 'bg-green-100 text-green-800';
-    case 'Owned':
-      return 'bg-purple-100 text-purple-800';
-    default:
-      return 'bg-gray-100 text-gray-800';
-  }
+  return getRelationshipColorFromTokens(relationshipType);
 };
 
+// @deprecated Use getRelationshipTypeStyle from relationshipStyles.ts instead
 export const getRelationshipIcon = (
   relationshipType: ClientInstrument['relationship_type']
 ): string => {
   switch (relationshipType) {
     case 'Interested':
-      return '👀';
+      return '💡';
     case 'Booked':
       return '📅';
     case 'Sold':
@@ -98,6 +96,6 @@ export const getRelationshipIcon = (
     case 'Owned':
       return '🏠';
     default:
-      return '❓';
+      return '📋';
   }
 };

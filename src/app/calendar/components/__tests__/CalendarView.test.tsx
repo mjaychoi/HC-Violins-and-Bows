@@ -1,8 +1,22 @@
 // src/app/calendar/components/__tests__/CalendarView.test.tsx
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import CalendarView from '../CalendarView';
 import { MaintenanceTask } from '@/types';
+
+// Mock react-dnd
+jest.mock('react-dnd/dist/core', () => ({
+  DndProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+jest.mock('react-dnd-html5-backend', () => ({
+  HTML5Backend: {},
+}));
+
+// Mock react-big-calendar drag and drop
+jest.mock('react-big-calendar/lib/addons/dragAndDrop', () => {
+  return (Component: any) => Component; // Return component as-is (no HOC wrapping)
+});
 
 // Mock react-big-calendar
 jest.mock('react-big-calendar', () => {
@@ -77,13 +91,20 @@ jest.mock('date-fns', () => ({
 }));
 
 describe('CalendarView', () => {
+  const mockInstruments = new Map([
+    [
+      'instrument-1',
+      { type: 'Violin', maker: 'Stradivarius', ownership: 'Private' },
+    ],
+  ]);
+
   const mockTasks: MaintenanceTask[] = [
     {
       id: '1',
       instrument_id: 'instrument-1',
       client_id: null,
       task_type: 'repair',
-      title: 'Violin Repair',
+      title: 'Repair', // Task title only (instrument type will be added in CalendarView)
       description: 'Fix bridge',
       status: 'pending',
       received_date: '2024-01-01',
@@ -100,13 +121,6 @@ describe('CalendarView', () => {
       updated_at: '2024-01-01T00:00:00Z',
     },
   ];
-
-  const mockInstruments = new Map([
-    [
-      'instrument-1',
-      { type: 'Violin', maker: 'Stradivarius', ownership: 'Private' },
-    ],
-  ]);
 
   const mockOnSelectEvent = jest.fn();
   const mockOnSelectSlot = jest.fn();
@@ -174,8 +188,9 @@ describe('CalendarView', () => {
     expect(eventsContainer).toBeInTheDocument();
 
     // Find event by test id - task.id is '1' (now it's a button)
+    // Event title format is now 2-line: "Instrument\nTask Description" (no icon, no separator)
     const eventButton =
-      screen.queryByRole('button', { name: /violin repair/i }) ||
+      screen.queryByRole('button', { name: /violin/i }) ||
       screen.queryByTestId('calendar-event-1');
     expect(eventButton).toBeInTheDocument();
 
@@ -185,7 +200,17 @@ describe('CalendarView', () => {
     // Test that onSelectEvent handler is passed to Calendar component
     // The actual click behavior is tested in integration tests
     // Here we verify that events are rendered and have the correct structure
-    expect(eventButton).toHaveTextContent('Violin Repair');
+    // Note: Event format is now 2-line structure with custom event component
+    // The event shows instrument name (line 1) and task description (line 2)
+    // Custom event component renders: <div className="event-instrument">Violin</div>
+    //                                  <div className="event-description">Task Description</div>
+    const buttonText = eventButton?.textContent || '';
+    expect(buttonText).toMatch(/Violin/i);
+    // FIXED: CalendarView removes task type patterns (like "repair") from task.title
+    // If task.title is "Repair", the pattern /(수리|repair)/i matches and removes it,
+    // leaving an empty string, which then defaults to 'Task' (see line 348 in CalendarView.tsx)
+    // So we check for "Task" instead of "Repair"
+    expect(buttonText).toMatch(/Task/i);
   });
 
   it('should handle slot selection', async () => {

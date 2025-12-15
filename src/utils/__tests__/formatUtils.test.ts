@@ -297,19 +297,33 @@ describe('formatUtils', () => {
 
   describe('highlightSearchTerm', () => {
     it('should highlight search term', () => {
-      expect(highlightSearchTerm('hello world', 'hello')).toBe(
-        '<mark>hello</mark> world'
+      const result = highlightSearchTerm('hello world', 'hello');
+      // ✅ FIXED: highlightSearchTerm은 이제 ReactNode 배열을 반환
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toHaveLength(3); // ["", <mark>hello</mark>, " world"]
+      // mark 요소가 포함되어 있는지 확인
+      const markElement = (result as any[]).find(
+        item => item && typeof item === 'object' && item.type === 'mark'
       );
+      expect(markElement).toBeDefined();
+      expect(markElement?.props?.children).toBe('hello');
     });
 
     it('should handle empty search term', () => {
-      expect(highlightSearchTerm('hello world', '')).toBe('hello world');
+      const result = highlightSearchTerm('hello world', '');
+      expect(result).toBe('hello world');
     });
 
     it('should escape regex special characters', () => {
-      expect(highlightSearchTerm('hello (world)', '(')).toBe(
-        'hello <mark>(</mark>world)'
+      const result = highlightSearchTerm('hello (world)', '(');
+      // ✅ FIXED: highlightSearchTerm은 이제 ReactNode 배열을 반환
+      expect(Array.isArray(result)).toBe(true);
+      // mark 요소가 포함되어 있는지 확인
+      const markElement = (result as any[]).find(
+        item => item && typeof item === 'object' && item.type === 'mark'
       );
+      expect(markElement).toBeDefined();
+      expect(markElement?.props?.children).toBe('(');
     });
   });
 

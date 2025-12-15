@@ -50,19 +50,14 @@ export const formatInstrumentYear = (year: string | number | null): string => {
 };
 
 // Status utilities
+// ✅ FIXED: Use centralized color tokens to prevent conflicts with Clients page
+import {
+  getStatusColor as getStatusColorFromTokens,
+  getRelationshipColor as getRelationshipColorFromTokens,
+} from '@/utils/colorTokens';
+
 export const getStatusColor = (status: string): string => {
-  switch (status) {
-    case 'Available':
-      return 'bg-green-100 text-green-800';
-    case 'Sold':
-      return 'bg-red-100 text-red-800';
-    case 'Reserved':
-      return 'bg-yellow-100 text-yellow-800';
-    case 'Maintenance':
-      return 'bg-blue-100 text-blue-800';
-    default:
-      return 'bg-gray-100 text-gray-800';
-  }
+  return getStatusColorFromTokens(status);
 };
 
 export const getStatusIcon = (status: string): string => {
@@ -95,21 +90,11 @@ export const getClientInitials = (client: Client): string => {
 };
 
 // Relationship utilities
+// ✅ FIXED: Use centralized color tokens
 export const getRelationshipColor = (
   relationshipType: ClientInstrument['relationship_type']
 ): string => {
-  switch (relationshipType) {
-    case 'Interested':
-      return 'bg-yellow-100 text-yellow-800';
-    case 'Booked':
-      return 'bg-blue-100 text-blue-800';
-    case 'Sold':
-      return 'bg-green-100 text-green-800';
-    case 'Owned':
-      return 'bg-purple-100 text-purple-800';
-    default:
-      return 'bg-gray-100 text-gray-800';
-  }
+  return getRelationshipColorFromTokens(relationshipType);
 };
 
 export const getRelationshipIcon = (

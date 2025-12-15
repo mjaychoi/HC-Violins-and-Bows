@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
-import { render, screen, act, fireEvent } from '@testing-library/react';
-import SuccessToast from '../SuccessToast';
+import { render, screen, act, fireEvent } from '@/test-utils/render';
+import SuccessToast from '../feedback/SuccessToast';
 
 jest.useFakeTimers();
 

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '@/test-utils/render';
 import { CustomerDetail } from '../CustomerDetail';
 import { CustomerWithPurchases } from '../../types';
 
@@ -14,6 +14,7 @@ const mockCustomer: CustomerWithPurchases = {
   client_number: 'CL001',
   created_at: '2024-01-01',
   purchases: [],
+  lastPurchaseAt: null,
 };
 
 describe('CustomerDetail', () => {

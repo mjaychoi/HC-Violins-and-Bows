@@ -9,17 +9,29 @@ import {
   formatInstrumentPriceCompact,
 } from '../utils/dashboardUtils';
 import { validateUUID } from '@/utils/inputValidation';
+import {
+  normalizeInstrumentSerial,
+  validateInstrumentSerial,
+} from '@/utils/uniqueNumberGenerator';
 import Link from 'next/link';
 import { arrowToClass } from '@/utils/filterHelpers';
-import { ListSkeleton, Pagination } from '@/components/common';
-import Button from '@/components/common/Button';
+import { ListSkeleton, Pagination, EmptyState } from '@/components/common';
 import StatusBadge from './StatusBadge';
 import CertificateBadge from './CertificateBadge';
 import RowActions from './RowActions';
 import { classNames, cn } from '@/utils/classNames';
+// ✅ FIXED: Use centralized color tokens
+import { getRowAccentColor } from '@/utils/colorTokens';
+
+// FIXED: Use EnrichedInstrument type to avoid duplicate computation
+// Import from DashboardContent or define here - using explicit definition for clarity
+type EnrichedInstrument = Instrument & {
+  clients: ClientInstrument[];
+};
 
 interface ItemListProps {
-  items: Instrument[];
+  // FIXED: Accept EnrichedInstrument[] to avoid duplicate itemsWithClients computation
+  items: EnrichedInstrument[];
   loading: boolean;
   onDeleteClick: (item: Instrument) => void;
   onUpdateItem?: (
@@ -30,6 +42,7 @@ interface ItemListProps {
   getSortArrow: (field: string) => string;
   onSort: (field: string) => void;
   onAddClick?: () => void;
+  onSellClick?: (item: Instrument) => void; // 원클릭 판매
   allClients?: Array<{
     id: string;
     first_name?: string | null;
@@ -37,11 +50,14 @@ interface ItemListProps {
     email?: string | null;
   }>;
   clientsLoading?: boolean; // UX: Track if clients are still loading
+  // FIXED: Add existingSerialNumbers for inline editing serial validation
+  existingSerialNumbers?: string[]; // Serial numbers from existing instruments for validation
   // UX: Empty state customization
   emptyState?: {
     message?: string;
     actionLabel?: string;
     hasActiveFilters?: boolean;
+    onResetFilters?: () => void;
   };
   // Pagination
   currentPage?: number;
@@ -56,12 +72,13 @@ const ItemList = memo(function ItemList({
   loading,
   onDeleteClick,
   onUpdateItem,
-  clientRelationships,
   getSortArrow,
   onSort,
   onAddClick,
+  onSellClick,
   allClients = [],
   clientsLoading = false,
+  existingSerialNumbers = [],
   emptyState = {},
   currentPage,
   totalPages,
@@ -84,50 +101,8 @@ const ItemList = memo(function ItemList({
   const [isSaving, setIsSaving] = useState(false);
   const [savedItemId, setSavedItemId] = useState<string | null>(null);
 
-  // Optimized: Create a Map for O(1) lookups instead of filtering for each item
-  const itemsWithClients = useMemo(() => {
-    // Group relationships by instrument_id for O(1) lookup
-    const relationshipsByInstrument = new Map<string, ClientInstrument[]>();
-
-    clientRelationships.forEach(rel => {
-      if (rel.instrument_id) {
-        const existing = relationshipsByInstrument.get(rel.instrument_id) || [];
-        existing.push(rel);
-        relationshipsByInstrument.set(rel.instrument_id, existing);
-      }
-    });
-
-    // Map items with their clients
-    const result = items.map(item => ({
-      ...item,
-      clients: relationshipsByInstrument.get(item.id) || [],
-    }));
-
-    // Debug logging in development
-    if (
-      typeof window !== 'undefined' &&
-      process.env.NODE_ENV === 'development'
-    ) {
-      const itemsWithConnections = result.filter(
-        item => item.clients.length > 0
-      );
-      if (itemsWithConnections.length > 0) {
-        console.log('[ItemList] Items with connected clients:', {
-          totalItems: items.length,
-          itemsWithConnections: itemsWithConnections.length,
-          sampleItem: {
-            id: itemsWithConnections[0].id,
-            serialNumber: itemsWithConnections[0].serial_number,
-            connectedClientsCount: itemsWithConnections[0].clients.length,
-            clientIds: itemsWithConnections[0].clients.map(c => c.client_id),
-          },
-          totalRelationships: clientRelationships.length,
-        });
-      }
-    }
-
-    return result;
-  }, [items, clientRelationships]);
+  // FIXED: Remove duplicate itemsWithClients computation - items already come as EnrichedInstrument[]
+  // Items are already enriched with clients array from DashboardPage
 
   // Create a Map of all clients for O(1) lookup by ID (for ownership UUID resolution)
   const clientsMap = useMemo(
@@ -137,7 +112,7 @@ const ItemList = memo(function ItemList({
 
   // FIXED: Extract ownership cell rendering logic into useCallback to avoid re-running expensive operations on every render
   const renderOwnership = useCallback(
-    (item: (typeof itemsWithClients)[number]) => {
+    (item: EnrichedInstrument) => {
       // If ownership exists, display it
       if (item.ownership) {
         // Check if ownership is a UUID - if so, try to find the client
@@ -204,7 +179,7 @@ const ItemList = memo(function ItemList({
               sessionStorage.setItem(warningKey, 'true');
               console.warn('[ItemList] Client not found for ownership UUID:', {
                 ownership: item.ownership,
-                totalClients: allClients.length,
+                totalClients: clientsMap.size,
                 clientsMapSize: clientsMap.size,
                 clientsLoading,
                 instrumentId: item.id,
@@ -229,7 +204,7 @@ const ItemList = memo(function ItemList({
           return (
             <span
               className="text-gray-400 text-xs font-mono"
-              title={`클라이언트를 찾을 수 없습니다 (총 ${allClients.length}개 클라이언트 로드됨) | UUID: ${item.ownership}`}
+              title={`클라이언트를 찾을 수 없습니다 (총 ${clientsMap.size}개 클라이언트 로드됨) | UUID: ${item.ownership}`}
             >
               {item.ownership}
             </span>
@@ -247,15 +222,15 @@ const ItemList = memo(function ItemList({
         return (
           <div className="group relative">
             <div className="inline-flex items-center gap-1.5 text-sm text-gray-700">
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
-                {clientCount}
-              </span>
               <span className="text-gray-600">
-                {clientCount === 1 ? 'Client' : 'Clients'}
+                {clientCount === 1
+                  ? '1 Active Client'
+                  : `${clientCount} Active Clients`}
               </span>
             </div>
             {/* UX: Hover tooltip showing client details */}
-            <div className="absolute left-0 top-full mt-1 z-10 hidden group-hover:block w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+            {/* ✅ FIXED: popover를 왼쪽으로 표시 (right-0으로 부모 요소의 오른쪽에 정렬하여 왼쪽으로 확장) */}
+            <div className="absolute right-0 top-full mt-1 z-10 hidden group-hover:block w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
               <div className="text-xs font-semibold text-gray-900 mb-2">
                 Connected Clients ({clientCount})
               </div>
@@ -290,9 +265,10 @@ const ItemList = memo(function ItemList({
         );
       }
 
-      return <span className="text-gray-400">—</span>;
+      return <span className="text-gray-400 text-center">—</span>;
     },
-    [clientsMap, allClients.length, clientsLoading]
+    // FIXED: clientsMap already includes all clients data, so allClients dependency is unnecessary
+    [clientsMap, clientsLoading]
   );
 
   const startEditing = useCallback((item: Instrument) => {
@@ -320,6 +296,31 @@ const ItemList = memo(function ItemList({
 
     setIsSaving(true);
     try {
+      // FIXED: Validate serial number format and uniqueness (same as create form)
+      const serialNumber = editData.serial_number?.trim() || null;
+      if (serialNumber) {
+        // Get current item's serial number to exclude from uniqueness check
+        const currentItem = items.find(item => item.id === editingItem);
+        const currentSerialNumber = currentItem?.serial_number || null;
+
+        const normalizedSerial = normalizeInstrumentSerial(serialNumber);
+        const serialValidation = validateInstrumentSerial(
+          normalizedSerial,
+          existingSerialNumbers,
+          currentSerialNumber // Exclude current item from uniqueness check
+        );
+        if (!serialValidation.valid) {
+          // Show error but don't close editing mode
+          console.error(
+            'Serial number validation failed:',
+            serialValidation.error
+          );
+          // Could show a toast or inline error here
+          setIsSaving(false);
+          return;
+        }
+      }
+
       // Convert form data to proper types
       const updates: Partial<Instrument> = {
         maker: editData.maker?.trim() || null,
@@ -338,7 +339,9 @@ const ItemList = memo(function ItemList({
           return isNaN(priceNum) ? null : priceNum;
         })(),
         status: (editData.status as Instrument['status']) || 'Available',
-        serial_number: editData.serial_number?.trim() || null,
+        serial_number: serialNumber
+          ? normalizeInstrumentSerial(serialNumber)
+          : null,
         certificate: editData.certificate ?? false,
         ownership: editData.ownership?.trim() || null,
       };
@@ -356,7 +359,7 @@ const ItemList = memo(function ItemList({
     } finally {
       setIsSaving(false);
     }
-  }, [editingItem, editData, onUpdateItem]);
+  }, [editingItem, editData, onUpdateItem, existingSerialNumbers, items]);
 
   const handleEditFieldChange = useCallback(
     (
@@ -381,72 +384,31 @@ const ItemList = memo(function ItemList({
     return <ListSkeleton rows={5} columns={9} />;
   }
 
-  // UX: Improved empty state - distinguish between "no items" and "no results after filtering"
+  // UX: Improved empty state - use consistent EmptyState component
   if (items.length === 0) {
     const hasFilters = emptyState?.hasActiveFilters ?? false;
-    const message =
-      emptyState?.message ||
-      (hasFilters ? 'No items found matching your filters' : 'No items yet');
-    const subMessage = hasFilters
-      ? 'Try adjusting your filters or clearing them to see all items.'
-      : 'Add your first instrument to get started.';
-    const actionLabel = emptyState?.actionLabel || 'Add Item';
-
     return (
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
-        <div
-          className="text-center py-16 px-4"
-          role="status"
-          aria-live="polite"
-        >
-          <svg
-            className="mx-auto h-16 w-16 text-gray-300"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-            />
-          </svg>
-          <h3 className="mt-4 text-base font-semibold text-gray-900">
-            {message}
-          </h3>
-          <p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">
-            {subMessage}
-          </p>
-          {!hasFilters && onAddClick && (
-            <div className="mt-8">
-              <Button
-                onClick={onAddClick}
-                variant="primary"
-                size="md"
-                className="inline-flex items-center"
-              >
-                <svg
-                  className="w-5 h-5 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                  />
-                </svg>
-                {actionLabel}
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
+      <EmptyState
+        title={
+          emptyState?.message ||
+          (hasFilters ? 'No items found matching your filters' : 'No items yet')
+        }
+        description={
+          hasFilters
+            ? 'Try adjusting your filters or clearing them to see all items.'
+            : 'Add your first instrument to get started.'
+        }
+        hasActiveFilters={hasFilters}
+        onResetFilters={emptyState?.onResetFilters}
+        actionButton={
+          !hasFilters && onAddClick
+            ? {
+                label: emptyState?.actionLabel || 'Add Item',
+                onClick: onAddClick,
+              }
+            : undefined
+        }
+      />
     );
   }
 
@@ -458,7 +420,7 @@ const ItemList = memo(function ItemList({
             <tr>
               <th className={`${classNames.tableHeaderCell} text-right`}></th>
               <th
-                className={classNames.tableHeaderCellSortable}
+                className={cn(classNames.tableHeaderCellSortable, 'group')}
                 onClick={() => onSort('status')}
               >
                 <span className="inline-flex items-center gap-1">
@@ -479,7 +441,7 @@ const ItemList = memo(function ItemList({
                 </span>
               </th>
               <th
-                className={classNames.tableHeaderCellSortable}
+                className={cn(classNames.tableHeaderCellSortable, 'group')}
                 onClick={() => onSort('serial_number')}
               >
                 <span className="inline-flex items-center gap-1">
@@ -502,7 +464,7 @@ const ItemList = memo(function ItemList({
                 </span>
               </th>
               <th
-                className={classNames.tableHeaderCellSortable}
+                className={cn(classNames.tableHeaderCellSortable, 'group')}
                 onClick={() => onSort('maker')}
               >
                 <span className="inline-flex items-center gap-1">
@@ -519,7 +481,7 @@ const ItemList = memo(function ItemList({
                 </span>
               </th>
               <th
-                className={classNames.tableHeaderCellSortable}
+                className={cn(classNames.tableHeaderCellSortable, 'group')}
                 onClick={() => onSort('type')}
               >
                 <span className="inline-flex items-center gap-1">
@@ -540,7 +502,7 @@ const ItemList = memo(function ItemList({
                 </span>
               </th>
               <th
-                className={classNames.tableHeaderCellSortable}
+                className={cn(classNames.tableHeaderCellSortable, 'group')}
                 onClick={() => onSort('subtype')}
               >
                 <span className="inline-flex items-center gap-1">
@@ -557,7 +519,7 @@ const ItemList = memo(function ItemList({
                 </span>
               </th>
               <th
-                className={classNames.tableHeaderCellSortable}
+                className={cn(classNames.tableHeaderCellSortable, 'group')}
                 onClick={() => onSort('year')}
               >
                 <span className="inline-flex items-center gap-1">
@@ -578,7 +540,7 @@ const ItemList = memo(function ItemList({
                 </span>
               </th>
               <th
-                className={classNames.tableHeaderCellSortable}
+                className={cn(classNames.tableHeaderCellSortable, 'group')}
                 onClick={() => onSort('price')}
               >
                 <span className="inline-flex items-center gap-1">
@@ -595,26 +557,44 @@ const ItemList = memo(function ItemList({
                 </span>
               </th>
               <th className={classNames.tableHeaderCell}>Certificate</th>
-              <th className={classNames.tableHeaderCell}>Ownership</th>
+              <th className={classNames.tableHeaderCell}>
+                Client Relationship
+              </th>
             </tr>
           </thead>
           <tbody className={classNames.tableBody}>
-            {itemsWithClients.map(item => {
+            {items.map(item => {
               const isEditing = editingItem === item.id;
 
               const isSaved = savedItemId === item.id;
 
+              // ✅ FIXED: Use centralized color tokens for row styles
+              const getRowStyles = (status: Instrument['status']) => {
+                if (isEditing) return 'bg-blue-50 ring-2 ring-blue-200';
+                if (isSaved) return 'bg-green-50 ring-2 ring-green-200';
+
+                // Status-based row hierarchy with reduced saturation accent lines
+                const accentColor = getRowAccentColor(status);
+                switch (status) {
+                  case 'Sold':
+                    return 'bg-gray-50/50'; // Subtle tinted background (#F9FAFB)
+                  case 'Maintenance':
+                    return accentColor
+                      ? `bg-gray-50/50 border-l-[3px] ${accentColor}`
+                      : 'bg-gray-50/50';
+                  case 'Booked':
+                  case 'Reserved':
+                    return accentColor ? `border-l-[3px] ${accentColor}` : '';
+                  case 'Available':
+                  default:
+                    return ''; // Default white
+                }
+              };
+
               return (
                 <tr
                   key={item.id}
-                  className={cn(
-                    classNames.tableRow,
-                    isEditing
-                      ? 'bg-blue-50 ring-2 ring-blue-200'
-                      : isSaved
-                        ? 'bg-green-50 ring-2 ring-green-200'
-                        : ''
-                  )}
+                  className={cn(classNames.tableRow, getRowStyles(item.status))}
                 >
                   <td className={cn(classNames.tableCell, 'text-right')}>
                     {isEditing ? (
@@ -708,6 +688,7 @@ const ItemList = memo(function ItemList({
                           onDelete={() => onDeleteClick(item)}
                           currentStatus={item.status}
                           hasCertificateField={true}
+                          itemId={item.id}
                           onBook={async () => {
                             if (onUpdateItem) {
                               await onUpdateItem(item.id, { status: 'Booked' });
@@ -727,7 +708,10 @@ const ItemList = memo(function ItemList({
                               });
                             }
                           }}
-                          hasCertificate={Boolean(item.certificate)}
+                          onSell={
+                            onSellClick ? () => onSellClick(item) : undefined
+                          }
+                          hasCertificate={item.certificate ?? null}
                           onDownloadCertificate={async () => {
                             try {
                               const res = await fetch(
@@ -738,7 +722,19 @@ const ItemList = memo(function ItemList({
                               const url = URL.createObjectURL(blob);
                               const a = document.createElement('a');
                               a.href = url;
-                              a.download = `certificate-${item.serial_number || item.id}.pdf`;
+                              // FIXED: Sanitize filename to prevent issues with special characters
+                              // Reuse server sanitization logic (matches route.tsx)
+                              const rawFilename = item.serial_number || item.id;
+                              const safe = String(rawFilename)
+                                .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+                                .replace(/\s+/g, '_')
+                                .trim()
+                                .substring(0, 200);
+                              // FIXED: Let browser use Content-Disposition header if available
+                              // Only set download if we have a safe filename
+                              if (safe) {
+                                a.download = `certificate-${safe}.pdf`;
+                              }
                               document.body.appendChild(a);
                               a.click();
                               a.remove();
@@ -848,7 +844,7 @@ const ItemList = memo(function ItemList({
                         placeholder="Subtype"
                       />
                     ) : (
-                      <div className="text-sm text-gray-900">
+                      <div className="text-sm text-gray-900 text-center">
                         {item.subtype || '—'}
                       </div>
                     )}
@@ -937,7 +933,7 @@ const ItemList = memo(function ItemList({
                       />
                     ) : (
                       // FIXED: Use memoized renderOwnership callback instead of inline IIFE
-                      <div className="text-sm text-gray-900">
+                      <div className="text-sm text-gray-900 text-center">
                         {renderOwnership(item)}
                       </div>
                     )}

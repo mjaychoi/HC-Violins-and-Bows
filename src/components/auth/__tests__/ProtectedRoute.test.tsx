@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@/test-utils/render';
 import ProtectedRoute from '../ProtectedRoute';
 
 // Mock next/navigation
