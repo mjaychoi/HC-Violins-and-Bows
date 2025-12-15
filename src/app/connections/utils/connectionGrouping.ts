@@ -32,7 +32,7 @@ export const groupConnectionsByType = (
 ): GroupedConnections => {
   // Sort connections by display_order before grouping
   const sortedConnections = sortConnectionsByOrder(connections);
-  
+
   return sortedConnections.reduce((acc, connection) => {
     const type = connection.relationship_type;
     if (!acc[type]) {

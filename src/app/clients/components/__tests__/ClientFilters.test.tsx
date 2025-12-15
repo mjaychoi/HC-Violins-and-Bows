@@ -278,7 +278,9 @@ describe('ClientFilters', () => {
     expect(screen.getByText(/이름|First Name/i)).toBeInTheDocument();
     expect(screen.getByText(/성|Last Name/i)).toBeInTheDocument();
     // Has Instruments appears in both h4 title and span label, so use getAllByText
-    expect(screen.getAllByText(/악기 연결|Has Instruments/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/악기 연결|Has Instruments/i).length
+    ).toBeGreaterThan(0);
   });
 
   it('handles ESC key to close filters', () => {

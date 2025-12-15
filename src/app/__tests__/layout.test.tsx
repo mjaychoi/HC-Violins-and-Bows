@@ -91,7 +91,7 @@ describe('RootLayout', () => {
     const clientsProviders = getAllByTestId('clients-provider');
     const instrumentsProviders = getAllByTestId('instruments-provider');
     const connectionsProviders = getAllByTestId('connections-provider');
-    
+
     // 최소 1개는 있어야 함 (RootProviders 내부)
     expect(clientsProviders.length).toBeGreaterThanOrEqual(1);
     expect(instrumentsProviders.length).toBeGreaterThanOrEqual(1);
@@ -132,7 +132,7 @@ describe('RootLayout', () => {
       '[data-testid="toast-provider"]'
     );
     expect(toastProvider).toBeInTheDocument();
-    
+
     expect(errorBoundary?.contains(authProvider)).toBe(true);
     expect(authProvider?.contains(toastProvider)).toBe(true);
     expect(toastProvider?.contains(clientsProvider)).toBe(true);

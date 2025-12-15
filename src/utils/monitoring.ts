@@ -132,16 +132,22 @@ export function captureException(
   severity: ErrorSeverity = ErrorSeverity.MEDIUM
 ): void {
   // Log the exception with detailed information
-  const errorMessage = error instanceof Error 
-    ? error.message 
-    : (error && typeof error === 'object' && 'message' in error)
-    ? String((error as { message: unknown }).message)
-    : 'Unknown error';
-  Logger.error('Captured exception', error instanceof Error ? error : new Error(errorMessage), context, {
-    ...metadata,
-    errorType: error instanceof Error ? error.constructor.name : typeof error,
-    errorMessage,
-  });
+  const errorMessage =
+    error instanceof Error
+      ? error.message
+      : error && typeof error === 'object' && 'message' in error
+        ? String((error as { message: unknown }).message)
+        : 'Unknown error';
+  Logger.error(
+    'Captured exception',
+    error instanceof Error ? error : new Error(errorMessage),
+    context,
+    {
+      ...metadata,
+      errorType: error instanceof Error ? error.constructor.name : typeof error,
+      errorMessage,
+    }
+  );
 
   // Convert to AppError if needed
   let appError: AppError | Error;

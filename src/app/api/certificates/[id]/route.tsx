@@ -166,7 +166,11 @@ export async function GET(
     // Fetch owner client if ownership exists
     // instrument.ownership is a client_id (UUID), so fetch directly from clients table
     let ownerName: string | null = null;
-    if (instrument && instrument.ownership && validateUUID(instrument.ownership)) {
+    if (
+      instrument &&
+      instrument.ownership &&
+      validateUUID(instrument.ownership)
+    ) {
       try {
         const { data: ownerClient } = await supabase
           .from('clients')

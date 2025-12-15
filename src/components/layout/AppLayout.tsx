@@ -88,9 +88,7 @@ export default function AppLayout({
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-auto">
-          {children}
-        </div>
+        <div className="flex-1 overflow-auto">{children}</div>
       </div>
     </div>
   );

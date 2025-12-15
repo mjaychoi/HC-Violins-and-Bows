@@ -12,10 +12,7 @@ declare module '@testing-library/user-event' {
       options?: { delay?: number }
     ) => Promise<void>;
     clear: (element: Element | null) => Promise<void>;
-    keyboard: (
-      text: string,
-      options?: { delay?: number }
-    ) => Promise<void>;
+    keyboard: (text: string, options?: { delay?: number }) => Promise<void>;
     // Pointer methods
     hover: (element: Element | null) => Promise<void>;
     unhover: (element: Element | null) => Promise<void>;
@@ -40,7 +37,9 @@ declare module '@testing-library/user-event' {
     cut: (element: Element | null) => Promise<void>;
     copy: (element: Element | null) => Promise<void>;
     // Complex pointer interactions
-    pointer: (actions: Array<{ keys?: string; target?: Element }>) => Promise<void>;
+    pointer: (
+      actions: Array<{ keys?: string; target?: Element }>
+    ) => Promise<void>;
     // Fallback for any other methods not explicitly defined
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: ((...args: any[]) => Promise<void>) | any;

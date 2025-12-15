@@ -93,7 +93,7 @@ jest.mock('next/dynamic', () => {
     // Use a factory function that returns the appropriate mock based on the import
     // We'll use require to get the mocked component
     const importPath = importFn.toString();
-    
+
     if (importPath.includes('SalesCharts')) {
       const MockedSalesCharts = (props: any) => (
         <div data-testid="sales-charts">
@@ -103,32 +103,32 @@ jest.mock('next/dynamic', () => {
       MockedSalesCharts.displayName = 'MockedSalesCharts';
       return MockedSalesCharts;
     }
-    
+
     if (importPath.includes('SalesSummary')) {
       const { default: SalesSummary } = require('../components/SalesSummary');
       return SalesSummary;
     }
-    
+
     if (importPath.includes('SalesFilters')) {
       const { default: SalesFilters } = require('../components/SalesFilters');
       return SalesFilters;
     }
-    
+
     if (importPath.includes('SalesTable')) {
       const { default: SalesTable } = require('../components/SalesTable');
       return SalesTable;
     }
-    
+
     if (importPath.includes('SalesInsights')) {
       const { default: SalesInsights } = require('../components/SalesInsights');
       return SalesInsights;
     }
-    
+
     if (importPath.includes('SalesAlerts')) {
       const { default: SalesAlerts } = require('../components/SalesAlerts');
       return SalesAlerts;
     }
-    
+
     // Default fallback
     const DefaultMock = () => null;
     DefaultMock.displayName = 'DefaultMock';

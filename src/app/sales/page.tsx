@@ -72,7 +72,10 @@ const SalesSummary = dynamic(() => import('./components/SalesSummary'), {
   loading: () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       {[1, 2, 3, 4].map(i => (
-        <div key={i} className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+        <div
+          key={i}
+          className="bg-white border border-gray-200 rounded-lg shadow-sm p-4"
+        >
           <div className="animate-pulse">
             <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
             <div className="h-8 bg-gray-200 rounded w-3/4"></div>
@@ -163,7 +166,14 @@ export default function SalesPage() {
   );
 
   // 필터 변경 시 page를 1로 리셋 (API 호출은 하지 않음)
-  const prevFiltersRef = useRef({ from, to, search, hasClient, sortColumn, sortDirection });
+  const prevFiltersRef = useRef({
+    from,
+    to,
+    search,
+    hasClient,
+    sortColumn,
+    sortDirection,
+  });
   useEffect(() => {
     const prevFilters = prevFiltersRef.current;
     const filtersChanged =
@@ -177,7 +187,14 @@ export default function SalesPage() {
     if (filtersChanged && page !== 1) {
       setPage(1);
     }
-    prevFiltersRef.current = { from, to, search, hasClient, sortColumn, sortDirection };
+    prevFiltersRef.current = {
+      from,
+      to,
+      search,
+      hasClient,
+      sortColumn,
+      sortDirection,
+    };
   }, [from, to, search, hasClient, sortColumn, sortDirection, page, setPage]);
 
   // 초기 로드 및 필터/페이지/정렬 변경 시 API 호출
@@ -237,13 +254,7 @@ export default function SalesPage() {
   }, [enrichedSales]);
 
   const periodInfo = useMemo(
-    () =>
-      formatPeriodInfo(
-        from,
-        to,
-        actualDateRange.from,
-        actualDateRange.to
-      ),
+    () => formatPeriodInfo(from, to, actualDateRange.from, actualDateRange.to),
     [from, to, actualDateRange.from, actualDateRange.to]
   );
 

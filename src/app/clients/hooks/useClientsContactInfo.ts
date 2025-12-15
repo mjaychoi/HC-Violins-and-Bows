@@ -82,10 +82,7 @@ export function useClientsContactInfo({
               );
             }
           } catch (error) {
-            console.error(
-              `Failed to fetch contact logs for batch:`,
-              error
-            );
+            console.error(`Failed to fetch contact logs for batch:`, error);
           }
         }
 

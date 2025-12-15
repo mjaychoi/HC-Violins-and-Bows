@@ -3,15 +3,9 @@
 // unified data management hook - replace existing hooks
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 // Note: useRef is only used in useUnifiedData (Single Source of Truth for fetching)
-import {
-  useClientsContext,
-} from '@/contexts/ClientsContext';
-import {
-  useInstrumentsContext,
-} from '@/contexts/InstrumentsContext';
-import {
-  useConnectionsContext,
-} from '@/contexts/ConnectionsContext';
+import { useClientsContext } from '@/contexts/ClientsContext';
+import { useInstrumentsContext } from '@/contexts/InstrumentsContext';
+import { useConnectionsContext } from '@/contexts/ConnectionsContext';
 import {
   useClients,
   useInstruments,
@@ -73,11 +67,7 @@ export function useUnifiedData() {
         connections: connectionsContext.state.lastUpdated,
       },
     }),
-    [
-      clientsContext.state,
-      instrumentsContext.state,
-      connectionsContext.state,
-    ]
+    [clientsContext.state, instrumentsContext.state, connectionsContext.state]
   );
 
   // Combine actions for unified interface
@@ -95,7 +85,9 @@ export function useUnifiedData() {
       createConnection: connectionsContext.actions.createConnection,
       updateConnection: connectionsContext.actions.updateConnection,
       deleteConnection: connectionsContext.actions.deleteConnection,
-      invalidateCache: (dataType: 'clients' | 'instruments' | 'connections') => {
+      invalidateCache: (
+        dataType: 'clients' | 'instruments' | 'connections'
+      ) => {
         if (dataType === 'clients') {
           clientsContext.actions.invalidateCache();
         } else if (dataType === 'instruments') {
@@ -110,7 +102,11 @@ export function useUnifiedData() {
         connectionsContext.actions.resetState();
       },
     }),
-    [clientsContext.actions, instrumentsContext.actions, connectionsContext.actions]
+    [
+      clientsContext.actions,
+      instrumentsContext.actions,
+      connectionsContext.actions,
+    ]
   );
 
   // FIXED: Store actions and state in refs to avoid dependency issues
@@ -380,11 +376,7 @@ export function useUnifiedDashboard() {
         connections: connectionsContext.state.submitting,
       },
     }),
-    [
-      clientsContext.state,
-      instrumentsContext.state,
-      connectionsContext.state,
-    ]
+    [clientsContext.state, instrumentsContext.state, connectionsContext.state]
   );
 
   const actions = useMemo(
@@ -401,7 +393,9 @@ export function useUnifiedDashboard() {
       createConnection: connectionsContext.actions.createConnection,
       updateConnection: connectionsContext.actions.updateConnection,
       deleteConnection: connectionsContext.actions.deleteConnection,
-      invalidateCache: (dataType: 'clients' | 'instruments' | 'connections') => {
+      invalidateCache: (
+        dataType: 'clients' | 'instruments' | 'connections'
+      ) => {
         if (dataType === 'clients') {
           clientsContext.actions.invalidateCache();
         } else if (dataType === 'instruments') {
@@ -416,7 +410,11 @@ export function useUnifiedDashboard() {
         connectionsContext.actions.resetState();
       },
     }),
-    [clientsContext.actions, instrumentsContext.actions, connectionsContext.actions]
+    [
+      clientsContext.actions,
+      instrumentsContext.actions,
+      connectionsContext.actions,
+    ]
   );
 
   // FIXED: No fetch here - data is fetched by useUnifiedData or manually via actions
@@ -482,7 +480,8 @@ export function useUnifiedDashboard() {
       connections: state.submitting.connections,
       // @deprecated Use hasAnySubmitting instead
       any: state.submitting.instruments || state.submitting.connections,
-      hasAnySubmitting: state.submitting.instruments || state.submitting.connections,
+      hasAnySubmitting:
+        state.submitting.instruments || state.submitting.connections,
     },
 
     // actions - explicitly list to avoid webpack issues with spread operator
@@ -526,11 +525,7 @@ export function useConnectedClientsData() {
         connections: connectionsContext.state.submitting,
       },
     }),
-    [
-      clientsContext.state,
-      instrumentsContext.state,
-      connectionsContext.state,
-    ]
+    [clientsContext.state, instrumentsContext.state, connectionsContext.state]
   );
   // state is used below in return statement (state.clients, state.instruments, etc.)
 
@@ -647,7 +642,10 @@ export function useUnifiedSearch() {
         clients: filteredClients,
         instruments: filteredInstruments,
         connections: filteredConnections,
-        total: filteredClients.length + filteredInstruments.length + filteredConnections.length,
+        total:
+          filteredClients.length +
+          filteredInstruments.length +
+          filteredConnections.length,
       };
     },
     [clients, instruments, connections]
@@ -678,7 +676,11 @@ export function useUnifiedCache() {
         connectionsContext.actions.invalidateCache();
       }
     },
-    [clientsContext.actions, instrumentsContext.actions, connectionsContext.actions]
+    [
+      clientsContext.actions,
+      instrumentsContext.actions,
+      connectionsContext.actions,
+    ]
   );
 
   // invalidate all cache
@@ -686,14 +688,22 @@ export function useUnifiedCache() {
     clientsContext.actions.invalidateCache();
     instrumentsContext.actions.invalidateCache();
     connectionsContext.actions.invalidateCache();
-  }, [clientsContext.actions, instrumentsContext.actions, connectionsContext.actions]);
+  }, [
+    clientsContext.actions,
+    instrumentsContext.actions,
+    connectionsContext.actions,
+  ]);
 
   // reset state
   const reset = useCallback(() => {
     clientsContext.actions.resetState();
     instrumentsContext.actions.resetState();
     connectionsContext.actions.resetState();
-  }, [clientsContext.actions, instrumentsContext.actions, connectionsContext.actions]);
+  }, [
+    clientsContext.actions,
+    instrumentsContext.actions,
+    connectionsContext.actions,
+  ]);
 
   return {
     invalidate,

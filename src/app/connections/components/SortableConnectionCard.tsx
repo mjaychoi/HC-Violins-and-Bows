@@ -25,7 +25,7 @@ export function SortableConnectionCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ 
+  } = useSortable({
     id: connection.id,
     disabled: false, // Allow dragging
   });
@@ -38,8 +38,8 @@ export function SortableConnectionCard({
   };
 
   return (
-    <div 
-      ref={setNodeRef} 
+    <div
+      ref={setNodeRef}
       style={style}
       className={`
         relative
@@ -51,7 +51,7 @@ export function SortableConnectionCard({
       tabIndex={0}
       aria-label={`Connection: ${connection.client?.first_name || ''} ${connection.client?.last_name || ''} - ${connection.instrument?.maker || ''} ${connection.instrument?.type || ''}`}
       aria-describedby={`connection-${connection.id}-description`}
-      onKeyDown={(e) => {
+      onKeyDown={e => {
         // Keyboard navigation support
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -68,7 +68,7 @@ export function SortableConnectionCard({
         aria-label="Drag to reorder"
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => {
+        onKeyDown={e => {
           // Prevent card's onKeyDown from firing when handle is focused
           e.stopPropagation();
         }}
@@ -88,7 +88,7 @@ export function SortableConnectionCard({
           />
         </svg>
       </div>
-      
+
       {/* Card content with left padding for drag handle */}
       <div className="pl-8">
         <ConnectionCard
@@ -98,10 +98,10 @@ export function SortableConnectionCard({
           showCreatedAt={showCreatedAt}
         />
       </div>
-      
+
       {/* Screen reader description */}
       <div id={`connection-${connection.id}-description`} className="sr-only">
-        {connection.relationship_type} relationship. 
+        {connection.relationship_type} relationship.
         {connection.notes ? `Notes: ${connection.notes}` : 'No notes.'}
         Press Enter or Space to edit.
       </div>

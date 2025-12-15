@@ -136,11 +136,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(safeError, { status: 500 });
     }
 
-      logApiRequest('GET', '/api/contacts', undefined, duration, 'ContactsAPI', {
-        clientId,
-        clientIds: clientIds ? `${clientIds.split(',').length} clients` : undefined,
-        count: data?.length || 0,
-      });
+    logApiRequest('GET', '/api/contacts', undefined, duration, 'ContactsAPI', {
+      clientId,
+      clientIds: clientIds
+        ? `${clientIds.split(',').length} clients`
+        : undefined,
+      count: data?.length || 0,
+    });
 
     return NextResponse.json({
       data: data || [],

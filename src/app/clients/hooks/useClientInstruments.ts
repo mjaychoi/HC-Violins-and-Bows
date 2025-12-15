@@ -8,12 +8,12 @@ import {
 
 /**
  * Hook for managing client-instrument relationships.
- * 
+ *
  * Uses DataContext as the single source of truth:
  * - Connections are fetched and managed by DataContext
  * - No local state duplication
  * - Mutations update DataContext automatically
- * 
+ *
  * @returns Client-instrument relationship data and operations
  */
 export const useClientInstruments = () => {

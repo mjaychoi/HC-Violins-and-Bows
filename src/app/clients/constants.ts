@@ -41,5 +41,6 @@ export const CLIENT_FILTER_LABELS = {
   INTEREST: 'Interest',
   HAS_INSTRUMENTS: 'Has Instruments',
   FILTER_OPTIONS: 'Filter Options',
-  ACTIVE_FILTERS: (count: number) => `${count} search/filter${count > 1 ? 's' : ''} active`,
+  ACTIVE_FILTERS: (count: number) =>
+    `${count} search/filter${count > 1 ? 's' : ''} active`,
 } as const;

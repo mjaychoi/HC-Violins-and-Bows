@@ -51,7 +51,10 @@ type InstrumentsAction =
   | { type: 'SET_SUBMITTING'; payload: boolean }
   | { type: 'SET_INSTRUMENTS'; payload: Instrument[] }
   | { type: 'ADD_INSTRUMENT'; payload: Instrument }
-  | { type: 'UPDATE_INSTRUMENT'; payload: { id: string; instrument: Instrument } }
+  | {
+      type: 'UPDATE_INSTRUMENT';
+      payload: { id: string; instrument: Instrument };
+    }
   | { type: 'REMOVE_INSTRUMENT'; payload: string }
   | { type: 'INVALIDATE_CACHE' }
   | { type: 'RESET_STATE' };
@@ -86,7 +89,10 @@ function instrumentsReducer(
     case 'ADD_INSTRUMENT':
       return {
         ...state,
-        instruments: [parseInstrumentType(action.payload), ...state.instruments],
+        instruments: [
+          parseInstrumentType(action.payload),
+          ...state.instruments,
+        ],
         lastUpdated: new Date(),
       };
 

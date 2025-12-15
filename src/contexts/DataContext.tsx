@@ -75,7 +75,9 @@ export function useDataContext() {
       createConnection: connectionsContext.actions.createConnection,
       updateConnection: connectionsContext.actions.updateConnection,
       deleteConnection: connectionsContext.actions.deleteConnection,
-      invalidateCache: (dataType: 'clients' | 'instruments' | 'connections') => {
+      invalidateCache: (
+        dataType: 'clients' | 'instruments' | 'connections'
+      ) => {
         if (dataType === 'clients') {
           clientsContext.actions.invalidateCache();
         } else if (dataType === 'instruments') {

@@ -4,7 +4,13 @@ import { Instrument, ClientInstrument } from '@/types';
 
 jest.mock('@/components/common', () => ({
   ListSkeleton: () => <div>Loading...</div>,
-  EmptyState: ({ title, description }: { title?: string; description?: string }) => (
+  EmptyState: ({
+    title,
+    description,
+  }: {
+    title?: string;
+    description?: string;
+  }) => (
     <div data-testid="empty-state">
       {title && <h3>{title}</h3>}
       {description && <p>{description}</p>}

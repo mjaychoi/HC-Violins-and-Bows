@@ -264,12 +264,13 @@ export default function TodayFollowUps() {
           const isOverdue =
             primaryLog.next_follow_up_date &&
             primaryLog.next_follow_up_date < today;
-          const daysOverdue = isOverdue && primaryLog.next_follow_up_date
-            ? differenceInDays(
-                new Date(`${today}T00:00:00`),
-                new Date(`${primaryLog.next_follow_up_date}T00:00:00`)
-              )
-            : 0;
+          const daysOverdue =
+            isOverdue && primaryLog.next_follow_up_date
+              ? differenceInDays(
+                  new Date(`${today}T00:00:00`),
+                  new Date(`${primaryLog.next_follow_up_date}T00:00:00`)
+                )
+              : 0;
           const purpose = primaryLog.purpose
             ? primaryLog.purpose === 'follow_up'
               ? 'Follow-up'
@@ -294,7 +295,8 @@ export default function TodayFollowUps() {
                     </Link>
                     {isOverdue ? (
                       <span className="text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
-                        {daysOverdue} {daysOverdue === 1 ? 'day' : 'days'} overdue
+                        {daysOverdue} {daysOverdue === 1 ? 'day' : 'days'}{' '}
+                        overdue
                       </span>
                     ) : (
                       <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
@@ -358,7 +360,9 @@ export default function TodayFollowUps() {
                     className="px-2 py-1 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 hover:border-green-300 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Complete follow-up"
                   >
-                    {processingIds.has(primaryLog.id) ? 'Processing...' : '✓ Complete'}
+                    {processingIds.has(primaryLog.id)
+                      ? 'Processing...'
+                      : '✓ Complete'}
                   </button>
 
                   {/* 미루기 버튼 (드롭다운) */}

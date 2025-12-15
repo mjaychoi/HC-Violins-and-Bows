@@ -309,7 +309,14 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
       invalidateCache,
       resetState,
     }),
-    [fetchClients, createClient, updateClient, deleteClient, invalidateCache, resetState]
+    [
+      fetchClients,
+      createClient,
+      updateClient,
+      deleteClient,
+      invalidateCache,
+      resetState,
+    ]
   );
 
   return (
