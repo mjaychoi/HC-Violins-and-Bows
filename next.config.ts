@@ -80,68 +80,129 @@ const baseConfig: NextConfig = {
         tls: false,
       };
 
+      // ✅ FIXED: No alias needed - instrumentation files handle server/client separation
+      // Sentry initialization is now directly in instrumentation.ts and instrumentation-client.ts
+
       // 개발 모드에서도 코드 스플리팅 최적화 적용
+      const splitChunksConfig = {
+        chunks: 'all',
+        maxInitialRequests: 25,
+        minSize: 20000,
+        cacheGroups: {
+          default: false,
+          vendors: false,
+          // ✅ React 및 React-DOM 별도 청크 (공통 의존성)
+          react: {
+            test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+            name: 'react-vendor',
+            chunks: 'all',
+            priority: 100,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+          // ✅ Supabase SDK 별도 청크
+          supabase: {
+            test: /[\\/]node_modules[\\/](@supabase|tr46|whatwg-url)[\\/]/,
+            name: 'supabase',
+            chunks: 'all',
+            priority: 40,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+          // ✅ Sentry 별도 청크 (최우선 분리)
+          sentry: {
+            test: /[\\/]node_modules[\\/]@sentry[\\/]/,
+            name: 'sentry',
+            chunks: 'all',
+            priority: 60,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+          // ✅ React Big Calendar + React DnD (매우 큰 라이브러리, 함께 사용됨)
+          reactBigCalendar: {
+            test: /[\\/]node_modules[\\/](react-big-calendar|react-dnd|react-dnd-html5-backend)[\\/]/,
+            name: 'react-big-calendar',
+            chunks: 'all',
+            priority: 50,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+          // ✅ DnD Kit 별도 청크
+          dndKit: {
+            test: /[\\/]node_modules[\\/]@dnd-kit[\\/]/,
+            name: 'dnd-kit',
+            chunks: 'all',
+            priority: 45,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+          // ✅ Recharts 별도 청크 (큰 차트 라이브러리)
+          recharts: {
+            test: /[\\/]node_modules[\\/]recharts[\\/]/,
+            name: 'recharts',
+            chunks: 'all',
+            priority: 45,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+          // ✅ Date-fns 별도 청크 (많이 사용됨)
+          dateFns: {
+            test: /[\\/]node_modules[\\/]date-fns[\\/]/,
+            name: 'date-fns',
+            chunks: 'all',
+            priority: 35,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+          // ✅ React PDF 별도 청크
+          reactPdf: {
+            test: /[\\/]node_modules[\\/]@react-pdf[\\/]/,
+            name: 'react-pdf',
+            chunks: 'all',
+            priority: 40,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+          // ✅ React Window 별도 청크
+          reactWindow: {
+            test: /[\\/]node_modules[\\/]react-window[\\/]/,
+            name: 'react-window',
+            chunks: 'all',
+            priority: 35,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+          // ✅ Zod 별도 청크 (검증 라이브러리)
+          zod: {
+            test: /[\\/]node_modules[\\/]zod[\\/]/,
+            name: 'zod',
+            chunks: 'all',
+            priority: 30,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+          // ✅ 나머지 node_modules를 하나의 청크로 (작은 라이브러리들)
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name: 'vendor',
+            chunks: 'all',
+            priority: 10,
+            minChunks: 2,
+            reuseExistingChunk: true,
+          },
+        },
+      };
+
       if (dev) {
         config.optimization = {
           ...config.optimization,
-          splitChunks: {
-            ...config.optimization.splitChunks,
-            chunks: 'all',
-            cacheGroups: {
-              ...config.optimization.splitChunks?.cacheGroups,
-              // Supabase SDK 별도 청크
-              supabase: {
-                test: /[\\/]node_modules[\\/](@supabase|tr46|whatwg-url)[\\/]/,
-                name: 'supabase',
-                chunks: 'all',
-                priority: 30,
-                reuseExistingChunk: true,
-              },
-              // Recharts 별도 청크 (큰 라이브러리)
-              recharts: {
-                test: /[\\/]node_modules[\\/]recharts[\\/]/,
-                name: 'recharts',
-                chunks: 'all',
-                priority: 25,
-                reuseExistingChunk: true,
-              },
-              // React PDF 별도 청크
-              reactPdf: {
-                test: /[\\/]node_modules[\\/]@react-pdf[\\/]/,
-                name: 'react-pdf',
-                chunks: 'all',
-                priority: 25,
-                reuseExistingChunk: true,
-              },
-              // React Big Calendar 별도 청크
-              reactBigCalendar: {
-                test: /[\\/]node_modules[\\/]react-big-calendar[\\/]/,
-                name: 'react-big-calendar',
-                chunks: 'all',
-                priority: 25,
-                reuseExistingChunk: true,
-              },
-            },
-          },
+          splitChunks: splitChunksConfig,
         };
       } else {
         // Production 최적화
         config.optimization = {
           ...config.optimization,
-          splitChunks: {
-            ...config.optimization.splitChunks,
-            cacheGroups: {
-              ...config.optimization.splitChunks?.cacheGroups,
-              // Isolate Supabase SDK and its dependencies into separate chunk
-              supabase: {
-                test: /[\\/]node_modules[\\/](@supabase|tr46|whatwg-url)[\\/]/,
-                name: 'supabase',
-                chunks: 'all',
-                priority: 30,
-                reuseExistingChunk: true,
-              },
-            },
-          },
+          splitChunks: splitChunksConfig,
         };
       }
     }

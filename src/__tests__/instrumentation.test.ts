@@ -112,6 +112,32 @@ describe('instrumentation.ts', () => {
     const Sentry = require('@sentry/nextjs');
 
     expect(instrumentation.onRequestError).toBeDefined();
-    expect(instrumentation.onRequestError).toBe(Sentry.captureRequestError);
+    expect(typeof instrumentation.onRequestError).toBe('function');
+
+    // Test that it calls captureRequestError with correct arguments
+    const mockError = new Error('Test error');
+    const mockRequest = {
+      path: '/test',
+      method: 'GET',
+      headers: {},
+    };
+    const mockContext = {
+      routerKind: 'App Router',
+      routePath: '/test',
+      routeType: 'route',
+    };
+
+    process.env = {
+      ...process.env,
+      NEXT_RUNTIME: 'nodejs',
+    };
+
+    await instrumentation.onRequestError(mockError, mockRequest, mockContext);
+
+    expect(Sentry.captureRequestError).toHaveBeenCalledWith(
+      mockError,
+      mockRequest,
+      mockContext
+    );
   });
 });

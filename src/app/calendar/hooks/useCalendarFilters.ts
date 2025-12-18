@@ -25,6 +25,12 @@ interface UseCalendarFiltersOptions {
       clientName?: string | null;
     }
   >;
+  ownershipMap?: Map<
+    string,
+    {
+      ownership: string | null;
+    }
+  >;
   filterOptions: CalendarFilterOptions;
   pageSize?: number;
 }
@@ -32,6 +38,7 @@ interface UseCalendarFiltersOptions {
 export const useCalendarFilters = ({
   tasks,
   instrumentsMap,
+  ownershipMap,
   pageSize = DEFAULT_PAGE_SIZE,
 }: UseCalendarFiltersOptions) => {
   const [dateRange, setDateRange] = useState<DateRange | null>(null);
@@ -65,15 +72,27 @@ export const useCalendarFilters = ({
     customFilter: () => true,
   });
 
-  // Synchronize status filter between searchFilters.status and filterStatus
+  // Handle filter changes (single source of truth - no synchronization needed)
   const handleStatusFilterChange = useCallback(
     (status: string) => {
       baseFilters.setFilters((prev: Record<string, unknown>) => {
         const filters = prev as unknown as CalendarFilters;
         return {
           ...filters,
-          filterStatus: status as CalendarFilters['filterStatus'],
-          status: status as CalendarFilters['status'], // Sync quick filter too
+          status: status as CalendarFilters['status'],
+        } as unknown as Record<string, unknown>;
+      });
+    },
+    [baseFilters]
+  );
+
+  const handleOwnershipFilterChange = useCallback(
+    (ownership: string) => {
+      baseFilters.setFilters((prev: Record<string, unknown>) => {
+        const filters = prev as unknown as CalendarFilters;
+        return {
+          ...filters,
+          owner: ownership as CalendarFilters['owner'],
         } as unknown as Record<string, unknown>;
       });
     },
@@ -85,59 +104,75 @@ export const useCalendarFilters = ({
     (filter: 'type' | 'priority' | 'status' | 'owner', value: string) => {
       baseFilters.setFilters((prev: Record<string, unknown>) => {
         const filters = prev as unknown as CalendarFilters;
-        const updated = {
+        return {
           ...filters,
           [filter]: value,
-        } as CalendarFilters;
-
-        // Sync status filter if status changed
-        if (filter === 'status') {
-          updated.filterStatus = value as CalendarFilters['filterStatus'];
-        }
-        // Sync ownership filter if owner changed
-        if (filter === 'owner') {
-          updated.filterOwnership = value as CalendarFilters['filterOwnership'];
-        }
-
-        return updated as unknown as Record<string, unknown>;
+        } as unknown as Record<string, unknown>;
       });
     },
     [baseFilters]
   );
 
+  // Extract filter fields for optimized useMemo deps (avoid re-renders on unrelated changes)
+  const filters = baseFilters.filters as unknown as CalendarFilters;
+  const filterType = filters.type;
+  const filterPriority = filters.priority;
+  const filterStatus = filters.status;
+  const filterOwner = filters.owner;
+  const searchTerm = baseFilters.searchTerm;
+  const sortByValue = baseFilters.sortBy;
+  const sortOrderValue = baseFilters.sortOrder;
+
   // Apply all filters including search term
+  // Optimized: use individual filter fields instead of entire filters object
+  // Wrap resolvedOwnershipMap in useMemo to prevent dependency changes
+  const resolvedOwnershipMap = useMemo(
+    () => ownershipMap ?? new Map<string, { ownership: string | null }>(),
+    [ownershipMap]
+  );
+
   const filteredTasks = useMemo(() => {
-    const calendarFilters = baseFilters.filters as unknown as CalendarFilters;
+    const calendarFilters: CalendarFilters = {
+      type: filterType,
+      priority: filterPriority,
+      status: filterStatus,
+      owner: filterOwner,
+    };
     let filtered = filterCalendarTasks(
       tasks,
       calendarFilters,
       dateRange,
       filterOperator,
       instrumentsMap,
-      baseFilters.searchTerm
+      searchTerm,
+      resolvedOwnershipMap
     );
 
     // Apply sorting (use baseFilters sortBy/sortOrder, but map to calendar sort format)
     const sortBy =
-      baseFilters.sortBy === 'date' ||
-      baseFilters.sortBy === 'priority' ||
-      baseFilters.sortBy === 'status' ||
-      baseFilters.sortBy === 'type'
-        ? (baseFilters.sortBy as 'date' | 'priority' | 'status' | 'type')
+      sortByValue === 'date' ||
+      sortByValue === 'priority' ||
+      sortByValue === 'status' ||
+      sortByValue === 'type'
+        ? (sortByValue as 'date' | 'priority' | 'status' | 'type')
         : 'date';
 
-    filtered = sortTasks(filtered, sortBy, baseFilters.sortOrder);
+    filtered = sortTasks(filtered, sortBy, sortOrderValue);
 
     return filtered;
   }, [
     tasks,
-    baseFilters.filters,
+    filterType,
+    filterPriority,
+    filterStatus,
+    filterOwner,
     dateRange,
     filterOperator,
     instrumentsMap,
-    baseFilters.searchTerm,
-    baseFilters.sortBy,
-    baseFilters.sortOrder,
+    searchTerm,
+    resolvedOwnershipMap,
+    sortByValue,
+    sortOrderValue,
   ]);
 
   // Calculate pagination
@@ -146,24 +181,14 @@ export const useCalendarFilters = ({
 
   // FIXED: Reset to page 1 when filters change using stable filter key (avoids expensive JSON.stringify)
   // Use individual filter fields as dependencies instead of entire filters object for better performance
-  // Extract filter fields to separate variables for static checking
-  const filters = baseFilters.filters as unknown as CalendarFilters;
-  const filterType = filters.type;
-  const filterPriority = filters.priority;
-  const filterStatus = filters.status;
-  const filterOwner = filters.owner;
-  const filterStatusValue = filters.filterStatus;
-  const filterOwnership = filters.filterOwnership;
-
+  // Note: filterType, filterPriority, filterStatus, filterOwner are already extracted above
   const filterKey = useMemo(() => {
     return [
       filterType,
       filterPriority,
       filterStatus,
       filterOwner,
-      filterStatusValue,
-      filterOwnership,
-      baseFilters.searchTerm,
+      searchTerm,
       dateRange?.from ?? '',
       dateRange?.to ?? '',
       filterOperator,
@@ -173,9 +198,7 @@ export const useCalendarFilters = ({
     filterPriority,
     filterStatus,
     filterOwner,
-    filterStatusValue,
-    filterOwnership,
-    baseFilters.searchTerm,
+    searchTerm,
     dateRange?.from,
     dateRange?.to,
     filterOperator,
@@ -194,16 +217,25 @@ export const useCalendarFilters = ({
   }, [filteredTasks, currentPage, pageSize]);
 
   // Check if any filters are active
+  // Optimized: use individual filter fields instead of entire filters object
   const hasActiveFilters = useMemo(() => {
-    const calendarFilters = baseFilters.filters as unknown as CalendarFilters;
+    const calendarFilters: CalendarFilters = {
+      type: filterType,
+      priority: filterPriority,
+      status: filterStatus,
+      owner: filterOwner,
+    };
     return (
-      countActiveCalendarFilters(
-        calendarFilters,
-        dateRange,
-        baseFilters.searchTerm
-      ) > 0
+      countActiveCalendarFilters(calendarFilters, dateRange, searchTerm) > 0
     );
-  }, [baseFilters.filters, dateRange, baseFilters.searchTerm]);
+  }, [
+    filterType,
+    filterPriority,
+    filterStatus,
+    filterOwner,
+    dateRange,
+    searchTerm,
+  ]);
 
   // Reset all filters
   const resetFilters = useCallback(() => {
@@ -223,28 +255,26 @@ export const useCalendarFilters = ({
 
   // Map sortBy to calendar sort format
   const sortBy =
-    baseFilters.sortBy === 'date' ||
-    baseFilters.sortBy === 'priority' ||
-    baseFilters.sortBy === 'status' ||
-    baseFilters.sortBy === 'type'
-      ? (baseFilters.sortBy as 'date' | 'priority' | 'status' | 'type')
+    sortByValue === 'date' ||
+    sortByValue === 'priority' ||
+    sortByValue === 'status' ||
+    sortByValue === 'type'
+      ? (sortByValue as 'date' | 'priority' | 'status' | 'type')
       : 'date';
 
-  const calendarFilters = baseFilters.filters as unknown as CalendarFilters;
-
   return {
-    // State
-    filterStatus: calendarFilters.filterStatus,
-    filterOwnership: calendarFilters.filterOwnership,
-    searchTerm: baseFilters.searchTerm,
+    // State (single source of truth)
+    filterStatus: filterStatus,
+    filterOwnership: filterOwner,
+    searchTerm: searchTerm,
     searchFilters: {
-      type: calendarFilters.type,
-      priority: calendarFilters.priority,
-      status: calendarFilters.status,
-      owner: calendarFilters.owner,
+      type: filterType,
+      priority: filterPriority,
+      status: filterStatus,
+      owner: filterOwner,
     },
     sortBy,
-    sortOrder: baseFilters.sortOrder,
+    sortOrder: sortOrderValue,
     dateRange,
     filterOperator,
     hasActiveFilters,
@@ -257,18 +287,9 @@ export const useCalendarFilters = ({
     totalCount,
     pageSize,
 
-    // Actions
+    // Actions (single source of truth - no synchronization needed)
     setFilterStatus: handleStatusFilterChange,
-    setFilterOwnership: (ownership: string) => {
-      baseFilters.setFilters((prev: Record<string, unknown>) => {
-        const filters = prev as unknown as CalendarFilters;
-        return {
-          ...filters,
-          filterOwnership: ownership as CalendarFilters['filterOwnership'],
-          owner: ownership as CalendarFilters['owner'], // Sync quick filter
-        } as unknown as Record<string, unknown>;
-      });
-    },
+    setFilterOwnership: handleOwnershipFilterChange,
     setSearchTerm: baseFilters.setSearchTerm,
     setSearchFilters: handleSearchFilterChange,
     setSortBy: (sortBy: 'date' | 'priority' | 'status' | 'type') => {

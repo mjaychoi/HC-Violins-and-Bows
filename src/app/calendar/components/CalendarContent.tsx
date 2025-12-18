@@ -24,6 +24,7 @@ import dynamic from 'next/dynamic';
 import { TableSkeleton, Pagination } from '@/components/common';
 import { Button } from '@/components/common/inputs';
 import type { ExtendedView } from './CalendarView';
+import type { CalendarViewMode } from '../hooks/useCalendarView';
 import TodayFollowUps from '@/app/clients/components/TodayFollowUps';
 
 // Dynamic import for CalendarView (includes react-big-calendar and react-dnd)
@@ -60,8 +61,8 @@ interface CalendarContentProps {
     setCalendarView: (view: ExtendedView) => void;
     setSelectedDate: (date: Date | null) => void;
   };
-  view: 'calendar' | 'list';
-  setView: (view: 'calendar' | 'list') => void;
+  view: CalendarViewMode;
+  setView: (view: CalendarViewMode) => void;
   onTaskClick: (task: MaintenanceTask) => void;
   onTaskDelete: (task: MaintenanceTask) => void;
   onTaskEdit?: (task: MaintenanceTask) => void;
@@ -110,6 +111,11 @@ function CalendarContentInner({
   const handleTaskEdit = onTaskEdit || onTaskClick;
   // Filters drawer state for calendar view
   const [filtersOpen, setFiltersOpen] = React.useState(false);
+  // Refs for focus management
+  const filtersToggleRef = React.useRef<HTMLButtonElement>(null);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+  const isListView = view === 'list';
+  const isCalendarView = view !== 'list';
   // Calendar tasks (maps, filter options)
   const taskData = useCalendarTasks({
     tasks,
@@ -129,6 +135,7 @@ function CalendarContentInner({
   } = useCalendarFilters({
     tasks,
     instrumentsMap: taskData.instrumentsMap,
+    ownershipMap: taskData.ownershipMap,
     filterOptions: taskData.filterOptions,
   });
 
@@ -264,8 +271,19 @@ function CalendarContentInner({
     [applyPreset]
   );
 
+  // Focus management: when filters drawer opens, focus search input
+  React.useEffect(() => {
+    if (filtersOpen && isCalendarView && searchInputRef.current) {
+      // Small delay to ensure CalendarFilters is rendered
+      const timer = setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [filtersOpen, isCalendarView]);
+
   const isEmptyState = !loading.fetch && filteredTasks.length === 0;
-  const showPagination = totalPages > 1 && view === 'list';
+  const showPagination = totalPages > 1 && isListView;
 
   return (
     <div className="p-6">
@@ -273,7 +291,7 @@ function CalendarContentInner({
       <TodayFollowUps />
 
       {/* Sticky Mini Toolbar - always visible for list view */}
-      {view === 'list' && (
+      {isListView && (
         <div className="sticky top-0 z-10 bg-white border-b border-gray-200 mb-4 -mx-6 px-6 py-3 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-1">
@@ -293,7 +311,7 @@ function CalendarContentInner({
             </div>
             <div className="flex items-center gap-2">
               {/* Quick filter pills */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
                 <button
                   type="button"
                   onClick={() => applyPreset('overdue')}
@@ -411,9 +429,23 @@ function CalendarContentInner({
               today={summaryStats.today}
               upcoming={summaryStats.upcoming}
               onFilterByStatus={handleSummaryCardClick}
-              onOpenFilters={() => setFiltersOpen(v => !v)}
+              onOpenFilters={() => {
+                const newValue = !filtersOpen;
+                setFiltersOpen(newValue);
+                // Focus management: when opening, focus search input; when closing, return to toggle button
+                if (newValue && isCalendarView) {
+                  // Delay to ensure CalendarFilters is rendered
+                  setTimeout(() => {
+                    searchInputRef.current?.focus();
+                  }, 0);
+                } else if (!newValue && filtersToggleRef.current) {
+                  filtersToggleRef.current.focus();
+                }
+              }}
               hasActiveFilters={hasActiveFilters}
               activePreset={activePreset}
+              filtersOpen={filtersOpen}
+              toggleButtonRef={filtersToggleRef}
             />
           </div>
 
@@ -442,11 +474,17 @@ function CalendarContentInner({
               Today
             </button>
 
-            <div className="flex gap-1 rounded-lg bg-gray-100 p-1 border border-gray-200">
+            <div
+              role="tablist"
+              aria-label="Calendar view"
+              className="flex gap-1 rounded-lg bg-gray-100 p-1 border border-gray-200"
+            >
               <button
                 onClick={() => setView('calendar')}
+                role="tab"
+                aria-selected={isCalendarView}
                 className={`flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
-                  view === 'calendar'
+                  isCalendarView
                     ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-gray-600 hover:bg-white hover:text-gray-900'
                 }`}
@@ -471,8 +509,10 @@ function CalendarContentInner({
               </button>
               <button
                 onClick={() => setView('list')}
+                role="tab"
+                aria-selected={isListView}
                 className={`flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
-                  view === 'list'
+                  isListView
                     ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-gray-600 hover:bg-white hover:text-gray-900'
                 }`}
@@ -517,15 +557,15 @@ function CalendarContentInner({
                   d="M12 4v16m8-8H4"
                 />
               </svg>
-              Add New Task
+              Add maintenance task
             </button>
           </div>
         </div>
       </div>
 
       {/* Filters Drawer - hidden by default, shown when filtersOpen */}
-      {filtersOpen && view === 'calendar' && (
-        <div className="mb-4">
+      {filtersOpen && isCalendarView && (
+        <div className="mb-4" id="calendar-filters">
           <CalendarFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
@@ -549,13 +589,14 @@ function CalendarContentInner({
             hasActiveFilters={hasActiveFilters}
             onResetFilters={resetFiltersAndUpdate}
             showSort={false}
+            searchInputRef={searchInputRef}
           />
         </div>
       )}
 
       {/* Filters - always visible for list view */}
-      {view === 'list' && (
-        <div className="mb-4">
+      {isListView && (
+        <div className="mb-4" id="calendar-filters">
           <CalendarFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
@@ -578,6 +619,7 @@ function CalendarContentInner({
             taskCount={filteredTasks.length}
             hasActiveFilters={hasActiveFilters}
             onResetFilters={resetFiltersAndUpdate}
+            searchInputRef={undefined}
           />
         </div>
       )}
@@ -592,8 +634,15 @@ function CalendarContentInner({
           hasActiveFilters={hasActiveFilters}
           onResetFilters={resetFiltersAndUpdate}
           onOpenNewTask={onOpenNewTask}
+          resultCount={filteredTasks.length}
+          activeFilters={{
+            status: filterStatus,
+            owner: filterOwnership,
+            dateRange: dateRange,
+            searchTerm: searchTerm,
+          }}
         />
-      ) : view === 'calendar' ? (
+      ) : isCalendarView ? (
         <CalendarView
           tasks={filteredTasks}
           contactLogs={contactLogs}

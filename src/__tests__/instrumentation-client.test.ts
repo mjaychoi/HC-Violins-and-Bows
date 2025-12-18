@@ -44,15 +44,19 @@ describe('instrumentation-client.ts', () => {
     expect(Sentry.init).toHaveBeenCalled();
   });
 
-  it('should use production sample rate in production', async () => {
+  it('should disable tracing on client even in production (bundle optimization)', async () => {
     const Sentry = require('@sentry/nextjs');
     const instrumentation = await import('../instrumentation-client');
+
+    // Mock window for client-side test
+    const originalWindow = global.window;
+    delete (global as any).window;
+    global.window = {} as any;
 
     process.env = {
       ...process.env,
       NODE_ENV: 'production' as const,
       NEXT_PUBLIC_SENTRY_DSN: 'test-dsn',
-      NEXT_RUNTIME: 'nodejs',
       SENTRY_TRACES_SAMPLE_RATE: '0.05',
     } as typeof process.env;
 
@@ -60,60 +64,49 @@ describe('instrumentation-client.ts', () => {
 
     expect(Sentry.init).toHaveBeenCalledWith(
       expect.objectContaining({
-        tracesSampleRate: 0.05,
+        // Client-side always disables tracing for bundle size optimization
+        tracesSampleRate: 0,
       })
     );
+
+    // Restore window
+    global.window = originalWindow;
   });
 
-  it('should use default sample rate when SENTRY_TRACES_SAMPLE_RATE is not set', async () => {
+  it('should disable tracing on client (bundle size optimization)', async () => {
     const Sentry = require('@sentry/nextjs');
     const instrumentation = await import('../instrumentation-client');
 
-    const env: any = {
-      ...process.env,
-      NODE_ENV: 'production',
-      NEXT_PUBLIC_SENTRY_DSN: 'test-dsn',
-      NEXT_RUNTIME: 'nodejs',
-    };
-    delete env.SENTRY_TRACES_SAMPLE_RATE;
-    process.env = env;
-
-    await instrumentation.register();
-
-    expect(Sentry.init).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tracesSampleRate: 0.05, // Default value
-      })
-    );
-  });
-
-  it('should use full sample rate (1.0) in non-production', async () => {
-    const Sentry = require('@sentry/nextjs');
-    const instrumentation = await import('../instrumentation-client');
+    // Mock window for client-side test
+    const originalWindow = global.window;
+    delete (global as any).window;
+    global.window = {} as any;
 
     process.env = {
       ...process.env,
-      NODE_ENV: 'development',
+      NODE_ENV: 'production',
       NEXT_PUBLIC_SENTRY_DSN: 'test-dsn',
-      NEXT_RUNTIME: 'nodejs',
     } as any;
 
     await instrumentation.register();
 
     expect(Sentry.init).toHaveBeenCalledWith(
       expect.objectContaining({
-        tracesSampleRate: 1.0,
+        tracesSampleRate: 0, // Client: tracing disabled
+        replaysSessionSampleRate: 0,
+        replaysOnErrorSampleRate: 0,
       })
     );
+
+    // Restore window
+    global.window = originalWindow;
   });
 
   it('should export onRouterTransitionStart', async () => {
     const instrumentation = await import('../instrumentation-client');
-    const Sentry = require('@sentry/nextjs');
 
     expect(instrumentation.onRouterTransitionStart).toBeDefined();
-    expect(instrumentation.onRouterTransitionStart).toBe(
-      Sentry.captureRouterTransitionStart
-    );
+    // onRouterTransitionStart is now a wrapper function, not direct reference
+    expect(typeof instrumentation.onRouterTransitionStart).toBe('function');
   });
 });
