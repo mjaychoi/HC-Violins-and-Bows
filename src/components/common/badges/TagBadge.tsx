@@ -14,7 +14,7 @@ function TagBadge({ tag, context = 'table' }: TagBadgeProps) {
 
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className}`}
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className} max-w-[150px] truncate`}
       aria-label={`Tag: ${getTagDisplayLabel(tag)}`}
       title={getTagDisplayLabel(tag)}
     >

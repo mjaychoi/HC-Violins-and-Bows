@@ -4,9 +4,9 @@ import userEvent from '@testing-library/user-event';
 import TaskList from '../TaskList';
 import { MaintenanceTask } from '@/types';
 
-// Mock formatDate
+// Mock formatDateOnly
 jest.mock('@/utils/formatUtils', () => ({
-  formatDate: jest.fn((date: string) => {
+  formatDateOnly: jest.fn((date: string) => {
     return date; // Return date as-is for testing
   }),
 }));

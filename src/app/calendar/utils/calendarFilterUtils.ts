@@ -19,8 +19,13 @@ export interface InstrumentInfo {
   [key: string]: unknown;
 }
 
+export interface OwnershipMap {
+  ownership: string | null;
+}
+
 /**
  * Filter calendar tasks using CalendarFilters state
+ * @param ownershipMap - Pre-computed ownership map (reused to avoid recreating on each call)
  */
 export function filterCalendarTasks(
   tasks: MaintenanceTask[],
@@ -28,7 +33,8 @@ export function filterCalendarTasks(
   dateRange: DateRange | null,
   filterOperator: FilterOperator,
   instrumentsMap: Map<string, InstrumentInfo>,
-  searchTerm: string
+  searchTerm: string,
+  ownershipMap: Map<string, OwnershipMap>
 ): MaintenanceTask[] {
   let filtered = [...tasks];
 
@@ -37,62 +43,20 @@ export function filterCalendarTasks(
     filtered = filterByDateRange(filtered, dateRange, filterOperator);
   }
 
-  // Status filter - use main filterStatus or fallback to quick filter status
-  const effectiveStatusFilter =
-    filters.filterStatus !== 'all'
-      ? filters.filterStatus
-      : filters.status !== 'all'
-        ? filters.status
-        : 'all';
-
-  if (effectiveStatusFilter !== 'all') {
-    filtered = filterByStatus(filtered, effectiveStatusFilter);
+  // Status filter - single source of truth
+  if (filters.status !== 'all') {
+    filtered = filterByStatus(filtered, filters.status);
   }
 
-  // Ownership filter - use main filterOwnership or fallback to quick filter owner
-  const effectiveOwnershipFilter =
-    filters.filterOwnership !== 'all'
-      ? filters.filterOwnership
-      : filters.owner !== 'all'
-        ? filters.owner
-        : 'all';
-
-  if (effectiveOwnershipFilter !== 'all') {
-    // Convert InstrumentInfo map to the expected format
-    const ownershipMap = new Map<
-      string,
-      {
-        ownership: string | null;
-        [key: string]: unknown;
-      }
-    >();
-    instrumentsMap.forEach((value, key) => {
-      ownershipMap.set(key, {
-        ownership: value.ownership,
-      });
-    });
-    filtered = filterByOwnership(
-      filtered,
-      effectiveOwnershipFilter,
-      ownershipMap
-    );
+  // Ownership filter - single source of truth
+  if (filters.owner !== 'all') {
+    // Use pre-computed ownershipMap (no conversion needed)
+    filtered = filterByOwnership(filtered, filters.owner, ownershipMap);
   }
 
   // Quick filters (type, priority) - only if not 'all'
   if (filters.type !== 'all' || filters.priority !== 'all') {
-    // Convert InstrumentInfo map to the expected format
-    const searchMap = new Map<
-      string,
-      {
-        ownership: string | null;
-        [key: string]: unknown;
-      }
-    >();
-    instrumentsMap.forEach((value, key) => {
-      searchMap.set(key, {
-        ownership: value.ownership,
-      });
-    });
+    // Use pre-computed ownershipMap (no conversion needed)
     filtered = filterBySearchFilters(
       filtered,
       {
@@ -101,7 +65,7 @@ export function filterCalendarTasks(
         status: undefined, // Already handled above
         owner: undefined, // Already handled above
       },
-      searchMap
+      ownershipMap
     );
   }
 
@@ -115,6 +79,7 @@ export function filterCalendarTasks(
 
 /**
  * Count active calendar filters
+ * Simplified: no need to check for duplicates since we have single source of truth
  */
 export function countActiveCalendarFilters(
   filters: CalendarFilters,
@@ -123,20 +88,11 @@ export function countActiveCalendarFilters(
 ): number {
   let count = 0;
 
-  // Quick filters
+  // Filter fields (single source of truth)
   if (filters.type !== 'all') count++;
   if (filters.priority !== 'all') count++;
   if (filters.status !== 'all') count++;
   if (filters.owner !== 'all') count++;
-
-  // Main filters (only count if different from quick filters)
-  if (filters.filterStatus !== 'all' && filters.filterStatus !== filters.status)
-    count++;
-  if (
-    filters.filterOwnership !== 'all' &&
-    filters.filterOwnership !== filters.owner
-  )
-    count++;
 
   // Date range
   if (dateRange?.from || dateRange?.to) count++;

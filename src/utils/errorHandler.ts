@@ -8,13 +8,39 @@ import {
 } from '@/types/errors';
 import { logError as structuredLogError } from './logger';
 import { captureException } from './monitoring';
-import { getUserFriendlyErrorMessage } from './errorSanitization';
+import {
+  getUserFriendlyErrorMessage,
+  isDevelopment,
+} from './errorSanitization';
 
-// Error Handler Class
+/**
+ * Error Handler Class
+ *
+ * ⚠️ Structural Note: This class currently handles multiple responsibilities:
+ * - Error creation (createError, createApiError, createValidationError)
+ * - Error interpretation (handleSupabaseError, handleNetworkError)
+ * - Retry management (shouldRetry, recordRetryAttempt)
+ * - Error statistics (errorStats, getErrorCount)
+ * - External logging (sendToExternalLogger)
+ * - Recovery suggestions (getRecoverySuggestions)
+ * - Category classification (categorizeError)
+ *
+ * For long-term maintainability, consider splitting into:
+ * - errorFactory.ts: Error creation
+ * - errorInterpreter.ts: Supabase/Network parsing
+ * - errorRecovery.ts: Retry logic and suggestions
+ * - errorMetrics.ts: Statistics and counts
+ * - errorHandler.ts: Orchestration layer
+ */
 export class ErrorHandler {
   private static instance: ErrorHandler;
   private errorLog: AppError[] = [];
   private errorStats: Map<ErrorCodes, number> = new Map();
+  /**
+   * ⚠️ Important: operationId must be globally unique per request type
+   * Using the same operationId across different operations will share retry state,
+   * which can lead to incorrect retry behavior
+   */
   private retryAttempts: Map<string, number> = new Map();
   private maxRetries = 3;
 
@@ -84,7 +110,20 @@ export class ErrorHandler {
     let errorCode: string | undefined;
     let errorDetails: string | undefined;
 
-    if (error && typeof error === 'object') {
+    // Handle Error instances
+    if (error instanceof Error) {
+      errorMessage = error.message || 'Unknown error';
+      errorDetails = error.stack;
+
+      // Check if it's a Supabase error by checking the error name or message
+      if (error.name === 'PostgrestError' || error.message?.includes('PGRST')) {
+        // Try to extract code from message or other properties
+        const match = error.message.match(/PGRST\d+/);
+        if (match) {
+          errorCode = match[0];
+        }
+      }
+    } else if (error && typeof error === 'object') {
       const err = error as {
         code?: string;
         message?: string;
@@ -304,7 +343,7 @@ export class ErrorHandler {
   // Get user-friendly error message
   getUserFriendlyMessage(error: AppError): string {
     // 개발 환경에서는 원본 메시지 사용
-    if (process.env.NODE_ENV === 'development') {
+    if (isDevelopment()) {
       const messages: Record<string, string> = {
         [ErrorCodes.NETWORK_ERROR]: 'Please check your network connection.',
         [ErrorCodes.TIMEOUT_ERROR]: 'Request timeout. Please try again.',
@@ -438,7 +477,10 @@ export class ErrorHandler {
     return attempts < this.maxRetries;
   }
 
-  // Record retry attempt
+  /**
+   * Record retry attempt
+   * ⚠️ operationId must be globally unique per request type to avoid retry state conflicts
+   */
   recordRetryAttempt(operationId: string): void {
     const attempts = this.retryAttempts.get(operationId) || 0;
     this.retryAttempts.set(operationId, attempts + 1);

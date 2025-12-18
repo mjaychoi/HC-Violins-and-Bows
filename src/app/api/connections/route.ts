@@ -1,15 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
-import { logApiRequest } from '@/utils/logger';
-import { captureException } from '@/utils/monitoring';
-import { ErrorSeverity } from '@/types/errors';
+// captureException removed - withSentryRoute handles error reporting
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
-import {
-  createSafeErrorResponse,
-  createLogErrorInfo,
-} from '@/utils/errorSanitization';
+import { apiHandler } from '@/app/api/_utils/apiHandler';
 import {
   validateClientInstrument,
   validateCreateClientInstrument,
@@ -17,77 +12,56 @@ import {
   safeValidate,
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
+import type { User } from '@supabase/supabase-js';
 
-async function getHandler(request: NextRequest) {
-  const startTime = performance.now();
-  const searchParams = request.nextUrl.searchParams;
-  const clientId = searchParams.get('client_id') || undefined;
-  const instrumentId = searchParams.get('instrument_id') || undefined;
-  const orderBy = validateSortColumn(
-    'connections',
-    searchParams.get('orderBy')
-  );
-  const ascending = searchParams.get('ascending') !== 'false';
+async function getHandler(request: NextRequest, _user: User) {
+  void _user;
 
-  // Pagination parameters
-  const page = searchParams.get('page')
-    ? Math.max(1, parseInt(searchParams.get('page')!, 10))
-    : undefined;
-  const pageSize = searchParams.get('pageSize')
-    ? Math.max(1, Math.min(100, parseInt(searchParams.get('pageSize')!, 10)))
-    : undefined;
+  return apiHandler(
+    request,
+    {
+      method: 'GET',
+      path: 'ConnectionsAPI',
+      context: 'ConnectionsAPI',
+    },
+    async () => {
+      const searchParams = request.nextUrl.searchParams;
+      const clientId = searchParams.get('client_id') || undefined;
+      const instrumentId = searchParams.get('instrument_id') || undefined;
+      const orderBy = validateSortColumn(
+        'connections',
+        searchParams.get('orderBy')
+      );
+      const ascending = searchParams.get('ascending') !== 'false';
 
-  try {
-    const supabase = getServerSupabase();
-    let query = supabase.from('client_instruments').select(
-      `
-          *,
-          client:clients(*),
-          instrument:instruments(*)
-        `,
-      { count: 'exact' }
-    );
+      // Pagination parameters
+      const page = searchParams.get('page')
+        ? Math.max(1, parseInt(searchParams.get('page')!, 10))
+        : undefined;
+      const pageSize = searchParams.get('pageSize')
+        ? Math.max(
+            1,
+            Math.min(100, parseInt(searchParams.get('pageSize')!, 10))
+          )
+        : undefined;
 
-    if (clientId) {
-      if (!validateUUID(clientId)) {
-        return NextResponse.json(
-          { error: 'Invalid client_id format' },
-          { status: 400 }
-        );
+      // Validate UUIDs early
+      if (clientId && !validateUUID(clientId)) {
+        return {
+          payload: { error: 'Invalid client_id format' },
+          status: 400,
+        };
       }
-      query = query.eq('client_id', clientId);
-    }
 
-    if (instrumentId) {
-      if (!validateUUID(instrumentId)) {
-        return NextResponse.json(
-          { error: 'Invalid instrument_id format' },
-          { status: 400 }
-        );
+      if (instrumentId && !validateUUID(instrumentId)) {
+        return {
+          payload: { error: 'Invalid instrument_id format' },
+          status: 400,
+        };
       }
-      query = query.eq('instrument_id', instrumentId);
-    }
 
-    // Order by display_order first (if available), then by the specified orderBy
-    // display_order is used for drag-and-drop reordering
-    // Note: display_order column may not exist if migration hasn't been run
-    // If the column doesn't exist, we'll fall back to just orderBy
-    // The migration file is: 20250115000003_add_connection_order.sql
-    query = query.order(orderBy, { ascending });
-
-    // Apply pagination if provided
-    if (page && pageSize) {
-      const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
-      query = query.range(from, to);
-    }
-
-    let { data, error, count } = await query;
-
-    // If error is due to missing display_order column, retry without it
-    if (error && error.message?.includes('display_order does not exist')) {
-      // Retry query without display_order - this happens if migration hasn't been run
-      let retryQuery = supabase.from('client_instruments').select(
+      const supabase = getServerSupabase();
+      let query = supabase.from('client_instruments').select(
         `
           *,
           client:clients(*),
@@ -97,515 +71,388 @@ async function getHandler(request: NextRequest) {
       );
 
       if (clientId) {
-        if (!validateUUID(clientId)) {
-          return NextResponse.json(
-            { error: 'Invalid client_id format' },
-            { status: 400 }
-          );
-        }
-        retryQuery = retryQuery.eq('client_id', clientId);
+        query = query.eq('client_id', clientId);
       }
 
       if (instrumentId) {
-        if (!validateUUID(instrumentId)) {
-          return NextResponse.json(
-            { error: 'Invalid instrument_id format' },
-            { status: 400 }
-          );
-        }
-        retryQuery = retryQuery.eq('instrument_id', instrumentId);
+        query = query.eq('instrument_id', instrumentId);
       }
 
-      retryQuery = retryQuery.order(orderBy, { ascending });
+      // Order by display_order first (if available), then by the specified orderBy
+      // display_order is used for drag-and-drop reordering
+      // Note: display_order column may not exist if migration hasn't been run
+      // If the column doesn't exist, we'll fall back to just orderBy
+      // The migration file is: 20250115000003_add_connection_order.sql
+      query = query.order(orderBy, { ascending });
 
+      // Apply pagination if provided
       if (page && pageSize) {
         const from = (page - 1) * pageSize;
         const to = from + pageSize - 1;
-        retryQuery = retryQuery.range(from, to);
+        query = query.range(from, to);
       }
 
-      const retryResult = await retryQuery;
-      data = retryResult.data;
-      error = retryResult.error;
-      count = retryResult.count;
-    }
+      let { data, error, count } = await query;
 
-    const duration = Math.round(performance.now() - startTime);
+      // If error is due to missing display_order column, retry without it
+      if (error && error.message?.includes('display_order does not exist')) {
+        // Retry query without display_order - this happens if migration hasn't been run
+        let retryQuery = supabase.from('client_instruments').select(
+          `
+            *,
+            client:clients(*),
+            instrument:instruments(*)
+          `,
+          { count: 'exact' }
+        );
 
-    if (error) {
-      const appError = errorHandler.handleSupabaseError(
-        error,
-        'Fetch connections'
-      );
-      const logInfo = createLogErrorInfo(appError);
-      logApiRequest(
-        'GET',
-        '/api/connections',
-        undefined,
-        duration,
-        'ConnectionsAPI',
-        {
+        if (clientId) {
+          retryQuery = retryQuery.eq('client_id', clientId);
+        }
+
+        if (instrumentId) {
+          retryQuery = retryQuery.eq('instrument_id', instrumentId);
+        }
+
+        retryQuery = retryQuery.order(orderBy, { ascending });
+
+        if (page && pageSize) {
+          const from = (page - 1) * pageSize;
+          const to = from + pageSize - 1;
+          retryQuery = retryQuery.range(from, to);
+        }
+
+        const retryResult = await retryQuery;
+        data = retryResult.data;
+        error = retryResult.error;
+        count = retryResult.count;
+      }
+
+      if (error) {
+        throw errorHandler.handleSupabaseError(error, 'Fetch connections');
+      }
+
+      return {
+        payload: {
+          data: data || [],
+          count: count || 0,
+          page,
+          pageSize,
+          totalPages:
+            page && pageSize && count ? Math.ceil(count / pageSize) : undefined,
+        },
+        metadata: {
+          recordCount: data?.length || 0,
+          totalCount: count || 0,
+          page,
+          pageSize,
           clientId,
           instrumentId,
           orderBy,
           ascending,
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-          logMessage: logInfo.message,
-        }
-      );
-      captureException(
-        appError,
-        'ConnectionsAPI.GET',
-        { clientId, instrumentId, orderBy, ascending, duration },
-        ErrorSeverity.MEDIUM
-      );
-      const safeError = createSafeErrorResponse(appError, 500);
-      return NextResponse.json(safeError, { status: 500 });
+        },
+      };
     }
-
-    // Validate response data (optional validation for arrays with relations)
-    // Note: ClientInstrument with relations may need custom validation
-    logApiRequest('GET', '/api/connections', 200, duration, 'ConnectionsAPI', {
-      recordCount: data?.length || 0,
-      totalCount: count || 0,
-      page,
-      pageSize,
-    });
-
-    return NextResponse.json({
-      data: data || [],
-      count: count || 0,
-      page,
-      pageSize,
-      totalPages:
-        page && pageSize && count ? Math.ceil(count / pageSize) : undefined,
-    });
-  } catch (error) {
-    const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(
-      error,
-      'Fetch connections'
-    );
-    const logInfo = createLogErrorInfo(appError);
-    captureException(
-      appError,
-      'ConnectionsAPI.GET',
-      { duration, logMessage: logInfo.message },
-      ErrorSeverity.HIGH
-    );
-    const safeError = createSafeErrorResponse(appError, 500);
-    return NextResponse.json(safeError, { status: 500 });
-  }
+  );
 }
 
 export const GET = withSentryRoute(withAuthRoute(getHandler));
 
-async function postHandler(request: NextRequest) {
-  const startTime = performance.now();
-  try {
-    const body = await request.json();
+async function postHandler(request: NextRequest, _user: User) {
+  void _user;
 
-    // Validate request body using Zod schema
-    const validationResult = safeValidate(body, validateCreateClientInstrument);
-    if (!validationResult.success) {
-      return NextResponse.json(
-        { error: `Invalid connection data: ${validationResult.error}` },
-        { status: 400 }
+  return apiHandler(
+    request,
+    {
+      method: 'POST',
+      path: '/api/connections',
+      context: 'ConnectionsAPI',
+    },
+    async () => {
+      const body = await request.json();
+
+      // Validate request body using Zod schema
+      const validationResult = safeValidate(
+        body,
+        validateCreateClientInstrument
       );
-    }
+      if (!validationResult.success) {
+        return {
+          payload: {
+            error: `Invalid connection data: ${validationResult.error}`,
+          },
+          status: 400,
+        };
+      }
 
-    // Use validated data instead of raw body
-    const validatedInput = validationResult.data;
+      // Use validated data instead of raw body
+      const validatedInput = validationResult.data;
 
-    const supabase = getServerSupabase();
-    const { data, error } = await supabase
-      .from('client_instruments')
-      .insert(validatedInput)
-      .select(
-        `
+      const supabase = getServerSupabase();
+      const { data, error } = await supabase
+        .from('client_instruments')
+        .insert(validatedInput)
+        .select(
+          `
           *,
           client:clients(*),
           instrument:instruments(*)
         `
-      )
-      .single();
+        )
+        .single();
 
-    const duration = Math.round(performance.now() - startTime);
+      if (error) {
+        throw errorHandler.handleSupabaseError(error, 'Create connection');
+      }
 
-    if (error) {
-      const appError = errorHandler.handleSupabaseError(
-        error,
-        'Create connection'
-      );
-      const logInfo = createLogErrorInfo(appError);
-      logApiRequest(
-        'POST',
-        '/api/connections',
-        undefined,
-        duration,
-        'ConnectionsAPI',
-        {
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-          logMessage: logInfo.message,
-        }
-      );
-      captureException(
-        appError,
-        'ConnectionsAPI.POST',
-        { body: Object.keys(validatedInput), duration },
-        ErrorSeverity.MEDIUM
-      );
-      const safeError = createSafeErrorResponse(appError, 500);
-      return NextResponse.json(safeError, { status: 500 });
+      // Validate response data (with relations)
+      const validatedResponse = validateClientInstrument(data);
+
+      return {
+        payload: { data: validatedResponse },
+        status: 201,
+        metadata: { connectionId: validatedResponse.id },
+      };
     }
-
-    // Validate response data (with relations)
-    const validatedResponse = validateClientInstrument(data);
-
-    logApiRequest('POST', '/api/connections', 201, duration, 'ConnectionsAPI', {
-      connectionId: validatedResponse.id,
-    });
-
-    return NextResponse.json({ data: validatedResponse }, { status: 201 });
-  } catch (error) {
-    const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(
-      error,
-      'Create connection'
-    );
-    const logInfo = createLogErrorInfo(appError);
-    captureException(
-      appError,
-      'ConnectionsAPI.POST',
-      { duration, logMessage: logInfo.message },
-      ErrorSeverity.HIGH
-    );
-    const safeError = createSafeErrorResponse(appError, 500);
-    return NextResponse.json(safeError, { status: 500 });
-  }
+  );
 }
 
 export const POST = withSentryRoute(withAuthRoute(postHandler));
 
-async function patchHandler(request: NextRequest) {
-  const startTime = performance.now();
-  try {
-    const body = await request.json();
-    const { id, ...updates } = body;
+async function patchHandler(request: NextRequest, _user: User) {
+  void _user;
 
-    if (!id) {
-      return NextResponse.json(
-        { error: 'Connection ID is required' },
-        { status: 400 }
+  return apiHandler(
+    request,
+    {
+      method: 'PATCH',
+      path: 'ConnectionsAPI',
+      context: 'ConnectionsAPI',
+    },
+    async () => {
+      const body = await request.json();
+      const { id, ...updates } = body;
+
+      if (!id) {
+        return {
+          payload: { error: 'Connection ID is required' },
+          status: 400,
+        };
+      }
+
+      // Validate UUID format
+      if (!validateUUID(id)) {
+        return {
+          payload: { error: 'Invalid connection ID format' },
+          status: 400,
+        };
+      }
+
+      // Validate update data using partial schema
+      const validationResult = safeValidate(
+        updates,
+        validatePartialClientInstrument
       );
-    }
+      if (!validationResult.success) {
+        return {
+          payload: { error: `Invalid update data: ${validationResult.error}` },
+          status: 400,
+        };
+      }
 
-    // Validate UUID format
-    if (!validateUUID(id)) {
-      return NextResponse.json(
-        { error: 'Invalid connection ID format' },
-        { status: 400 }
-      );
-    }
-
-    // Validate update data using partial schema
-    const validationResult = safeValidate(
-      updates,
-      validatePartialClientInstrument
-    );
-    if (!validationResult.success) {
-      return NextResponse.json(
-        { error: `Invalid update data: ${validationResult.error}` },
-        { status: 400 }
-      );
-    }
-
-    const supabase = getServerSupabase();
-    const { data, error } = await supabase
-      .from('client_instruments')
-      .update(updates)
-      .eq('id', id)
-      .select(
-        `
+      const supabase = getServerSupabase();
+      const { data, error } = await supabase
+        .from('client_instruments')
+        .update(updates)
+        .eq('id', id)
+        .select(
+          `
           *,
           client:clients(*),
           instrument:instruments(*)
         `
-      )
-      .single();
+        )
+        .single();
 
-    const duration = Math.round(performance.now() - startTime);
-
-    if (error) {
-      const appError = errorHandler.handleSupabaseError(
-        error,
-        'Update connection'
-      );
-      const logInfo = createLogErrorInfo(appError);
-      logApiRequest(
-        'PATCH',
-        '/api/connections',
-        undefined,
-        duration,
-        'ConnectionsAPI',
-        {
-          connectionId: id,
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-          logMessage: logInfo.message,
-        }
-      );
-      captureException(
-        appError,
-        'ConnectionsAPI.PATCH',
-        { connectionId: id, updates: Object.keys(updates), duration },
-        ErrorSeverity.MEDIUM
-      );
-      const safeError = createSafeErrorResponse(appError, 500);
-      return NextResponse.json(safeError, { status: 500 });
-    }
-
-    // Validate response data (with relations)
-    const validatedData = validateClientInstrument(data);
-
-    logApiRequest(
-      'PATCH',
-      '/api/connections',
-      200,
-      duration,
-      'ConnectionsAPI',
-      {
-        connectionId: id,
+      if (error) {
+        throw errorHandler.handleSupabaseError(error, 'Update connection');
       }
-    );
 
-    return NextResponse.json({ data: validatedData });
-  } catch (error) {
-    const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(
-      error,
-      'Update connection'
-    );
-    const logInfo = createLogErrorInfo(appError);
-    captureException(
-      appError,
-      'ConnectionsAPI.PATCH',
-      { duration, logMessage: logInfo.message },
-      ErrorSeverity.HIGH
-    );
-    const safeError = createSafeErrorResponse(appError, 500);
-    return NextResponse.json(safeError, { status: 500 });
-  }
+      // Validate response data (with relations)
+      const validatedData = validateClientInstrument(data);
+
+      return {
+        payload: { data: validatedData },
+        metadata: { connectionId: id },
+      };
+    }
+  );
 }
 
 export const PATCH = withSentryRoute(withAuthRoute(patchHandler));
 
-async function deleteHandler(request: NextRequest) {
-  const startTime = performance.now();
+async function deleteHandler(request: NextRequest, _user: User) {
+  void _user;
+
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get('id');
 
   if (!id) {
-    return NextResponse.json(
-      { error: 'Connection ID is required' },
-      { status: 400 }
+    return apiHandler(
+      request,
+      {
+        method: 'DELETE',
+        path: 'ConnectionsAPI',
+        context: 'ConnectionsAPI',
+      },
+      async () => ({
+        payload: { error: 'Connection ID is required' },
+        status: 400,
+      })
     );
   }
 
   // Validate UUID format
   if (!validateUUID(id)) {
-    return NextResponse.json(
-      { error: 'Invalid connection ID format' },
-      { status: 400 }
-    );
-  }
-
-  try {
-    const supabase = getServerSupabase();
-    const { error } = await supabase
-      .from('client_instruments')
-      .delete()
-      .eq('id', id);
-
-    const duration = Math.round(performance.now() - startTime);
-
-    if (error) {
-      const appError = errorHandler.handleSupabaseError(
-        error,
-        'Delete connection'
-      );
-      const logInfo = createLogErrorInfo(appError);
-      logApiRequest(
-        'DELETE',
-        '/api/connections',
-        undefined,
-        duration,
-        'ConnectionsAPI',
-        {
-          connectionId: id,
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-          logMessage: logInfo.message,
-        }
-      );
-      captureException(
-        appError,
-        'ConnectionsAPI.DELETE',
-        { connectionId: id, duration },
-        ErrorSeverity.MEDIUM
-      );
-      const safeError = createSafeErrorResponse(appError, 500);
-      return NextResponse.json(safeError, { status: 500 });
-    }
-
-    logApiRequest(
-      'DELETE',
-      '/api/connections',
-      200,
-      duration,
-      'ConnectionsAPI',
+    return apiHandler(
+      request,
       {
-        connectionId: id,
-      }
+        method: 'DELETE',
+        path: 'ConnectionsAPI',
+        context: 'ConnectionsAPI',
+      },
+      async () => ({
+        payload: { error: 'Invalid connection ID format' },
+        status: 400,
+      })
     );
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(
-      error,
-      'Delete connection'
-    );
-    const logInfo = createLogErrorInfo(appError);
-    captureException(
-      appError,
-      'ConnectionsAPI.DELETE',
-      { connectionId: id, duration, logMessage: logInfo.message },
-      ErrorSeverity.HIGH
-    );
-    const safeError = createSafeErrorResponse(appError, 500);
-    return NextResponse.json(safeError, { status: 500 });
   }
+
+  return apiHandler(
+    request,
+    {
+      method: 'DELETE',
+      path: 'ConnectionsAPI',
+      context: 'ConnectionsAPI',
+      metadata: { connectionId: id },
+    },
+    async () => {
+      const supabase = getServerSupabase();
+      const { error } = await supabase
+        .from('client_instruments')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        throw errorHandler.handleSupabaseError(error, 'Delete connection');
+      }
+
+      return {
+        payload: { success: true },
+        metadata: { connectionId: id },
+      };
+    }
+  );
 }
 
 export const DELETE = withSentryRoute(withAuthRoute(deleteHandler));
 
 // Batch update display_order for multiple connections
-export const PUT = withAuthRoute(async function PUT(request: NextRequest) {
-  const startTime = performance.now();
-  try {
-    const body = await request.json();
-    const { orders } = body; // Array of { id: string, display_order: number }
+async function putHandler(request: NextRequest, _user: User) {
+  void _user;
 
-    if (!Array.isArray(orders)) {
-      return NextResponse.json(
-        { error: 'orders must be an array' },
-        { status: 400 }
-      );
-    }
+  return apiHandler(
+    request,
+    {
+      method: 'PUT',
+      path: 'ConnectionsAPI',
+      context: 'ConnectionsAPI',
+    },
+    async () => {
+      const body = await request.json();
+      const { orders } = body; // Array of { id: string, display_order: number }
 
-    if (orders.length === 0) {
-      return NextResponse.json({ data: [] });
-    }
-
-    // Validate all IDs and orders
-    for (const order of orders) {
-      if (!order.id || !validateUUID(order.id)) {
-        return NextResponse.json(
-          { error: `Invalid connection ID: ${order.id}` },
-          { status: 400 }
-        );
+      if (!Array.isArray(orders)) {
+        return {
+          payload: { error: 'orders must be an array' },
+          status: 400,
+        };
       }
-      if (typeof order.display_order !== 'number') {
-        return NextResponse.json(
-          { error: `Invalid display_order for connection ${order.id}` },
-          { status: 400 }
-        );
+
+      if (orders.length === 0) {
+        return {
+          payload: { data: [] },
+        };
       }
-    }
 
-    const supabase = getServerSupabase();
-
-    // Use a transaction-like approach: update all connections
-    // Since Supabase doesn't support transactions in JS client, we'll do sequential updates
-    // For better performance, we could use a stored procedure, but this is simpler
-    const updatePromises = orders.map(({ id, display_order }) =>
-      supabase.from('client_instruments').update({ display_order }).eq('id', id)
-    );
-
-    const results = await Promise.all(updatePromises);
-
-    // Check for errors
-    const errors = results.filter(r => r.error);
-    if (errors.length > 0) {
-      const firstError = errors[0].error;
-      const appError = errorHandler.handleSupabaseError(
-        firstError,
-        'Batch update connection orders'
-      );
-      const logInfo = createLogErrorInfo(appError);
-      logApiRequest(
-        'PUT',
-        '/api/connections',
-        undefined,
-        Math.round(performance.now() - startTime),
-        'ConnectionsAPI',
-        {
-          orderCount: orders.length,
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-          logMessage: logInfo.message,
+      // Validate all IDs and orders
+      for (const order of orders) {
+        if (!order.id || !validateUUID(order.id)) {
+          return {
+            payload: { error: `Invalid connection ID: ${order.id}` },
+            status: 400,
+          };
         }
+        if (typeof order.display_order !== 'number') {
+          return {
+            payload: {
+              error: `Invalid display_order for connection ${order.id}`,
+            },
+            status: 400,
+          };
+        }
+      }
+
+      const supabase = getServerSupabase();
+
+      // Use a transaction-like approach: update all connections
+      // Since Supabase doesn't support transactions in JS client, we'll do sequential updates
+      // For better performance, we could use a stored procedure, but this is simpler
+      const updatePromises = orders.map(({ id, display_order }) =>
+        supabase
+          .from('client_instruments')
+          .update({ display_order })
+          .eq('id', id)
       );
-      const safeError = createSafeErrorResponse(appError, 500);
-      return NextResponse.json(safeError, { status: 500 });
+
+      const results = await Promise.all(updatePromises);
+
+      // Check for errors
+      const errors = results.filter(r => r.error);
+      if (errors.length > 0) {
+        const firstError = errors[0].error;
+        throw errorHandler.handleSupabaseError(
+          firstError,
+          'Batch update connection orders'
+        );
+      }
+
+      // Fetch updated connections
+      const ids = orders.map(o => o.id);
+      const { data, error: fetchError } = await supabase
+        .from('client_instruments')
+        .select(
+          `
+            *,
+            client:clients(*),
+            instrument:instruments(*)
+          `
+        )
+        .in('id', ids);
+
+      if (fetchError) {
+        throw errorHandler.handleSupabaseError(
+          fetchError,
+          'Fetch updated connections'
+        );
+      }
+
+      return {
+        payload: { data: data || [] },
+        metadata: { orderCount: orders.length },
+      };
     }
+  );
+}
 
-    // Fetch updated connections
-    const ids = orders.map(o => o.id);
-    const { data, error: fetchError } = await supabase
-      .from('client_instruments')
-      .select(
-        `
-          *,
-          client:clients(*),
-          instrument:instruments(*)
-        `
-      )
-      .in('id', ids);
-
-    const duration = Math.round(performance.now() - startTime);
-
-    if (fetchError) {
-      const appError = errorHandler.handleSupabaseError(
-        fetchError,
-        'Fetch updated connections'
-      );
-      const safeError = createSafeErrorResponse(appError, 500);
-      return NextResponse.json(safeError, { status: 500 });
-    }
-
-    logApiRequest('PUT', '/api/connections', 200, duration, 'ConnectionsAPI', {
-      orderCount: orders.length,
-    });
-
-    return NextResponse.json({ data: data || [] });
-  } catch (error) {
-    const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(
-      error,
-      'Batch update connection orders'
-    );
-    const logInfo = createLogErrorInfo(appError);
-    captureException(
-      appError,
-      'ConnectionsAPI.PUT',
-      { duration, logMessage: logInfo.message },
-      ErrorSeverity.HIGH
-    );
-    const safeError = createSafeErrorResponse(appError, 500);
-    return NextResponse.json(safeError, { status: 500 });
-  }
-});
+export const PUT = withSentryRoute(withAuthRoute(putHandler));

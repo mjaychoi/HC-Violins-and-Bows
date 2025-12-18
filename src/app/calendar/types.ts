@@ -2,16 +2,14 @@ import type { TaskType, TaskStatus, TaskPriority } from '@/types';
 
 /**
  * Calendar filter state
+ * Single source of truth: status and owner are the only filter values
+ * UI components (quick filters vs main filters) are just entry points to set these values
  */
 export interface CalendarFilters {
-  // Quick filters (single selection, 'all' means no filter)
   type: TaskType | 'all';
   priority: TaskPriority | 'all';
-  status: TaskStatus | 'all';
-  owner: string | 'all';
-  // Main filters (separate from quick filters for UI separation)
-  filterStatus: TaskStatus | 'all';
-  filterOwnership: string | 'all';
+  status: TaskStatus | 'all'; // Single source of truth for status filter
+  owner: string | 'all'; // Single source of truth for ownership filter
 }
 
 /**
@@ -22,8 +20,6 @@ export const EMPTY_CALENDAR_FILTERS: CalendarFilters = {
   priority: 'all',
   status: 'all',
   owner: 'all',
-  filterStatus: 'all',
-  filterOwnership: 'all',
 };
 
 /**

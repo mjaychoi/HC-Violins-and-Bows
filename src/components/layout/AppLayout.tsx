@@ -50,12 +50,16 @@ export default function AppLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMobile]);
 
-  // ✅ FIXED: redirect는 AppLayout에서만 처리 (AuthProvider는 상태만 관리)
+  // ✅ FIXED: redirect는 AppLayout에서만 처리 (단일 책임 원칙)
+  // ProtectedRoute와 중복 방지: AppLayout이 모든 보호된 페이지의 인증 체크를 담당
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/');
+      // ✅ FIXED: Use replace() instead of push() to prevent history stack issues
+      // ✅ FIXED: Preserve destination page via next query parameter
+      const next = encodeURIComponent(pathname || '/');
+      router.replace(`/?next=${next}`);
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, pathname]);
 
   // Show loading state while checking auth
   if (loading) {
@@ -66,9 +70,13 @@ export default function AppLayout({
     );
   }
 
-  // Don't render if not authenticated
+  // ✅ FIXED: Show "Redirecting..." UI instead of null to prevent blank screen
   if (!user) {
-    return null;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">Redirecting...</div>
+      </div>
+    );
   }
 
   return (

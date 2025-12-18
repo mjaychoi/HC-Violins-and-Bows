@@ -1,5 +1,5 @@
 import { Instrument, Client, ClientInstrument } from '@/types';
-import { getUniqueValues as getUniqueValuesGeneric } from '@/utils/uniqueValues';
+import { getUniqueStringValues } from '@/utils/uniqueValues';
 
 // Instrument formatting utilities
 export const formatInstrumentName = (instrument: Instrument): string => {
@@ -118,7 +118,7 @@ export const getRelationshipIcon = (
 export const getUniqueValues = (
   instruments: Instrument[],
   field: keyof Instrument
-): string[] => getUniqueValuesGeneric(instruments, field);
+): string[] => getUniqueStringValues(instruments, field);
 
 export const getPriceRange = (
   instruments: Instrument[]

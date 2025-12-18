@@ -135,12 +135,15 @@ describe('responsive', () => {
   });
 
   describe('onResize', () => {
-    it('should add resize event listener', () => {
+    it('should add resize event listener', async () => {
       const mockCallback = jest.fn();
       const removeListener = onResize(mockCallback);
 
       // Simulate resize event
       window.dispatchEvent(new Event('resize'));
+
+      // Wait for requestAnimationFrame to execute
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       expect(mockCallback).toHaveBeenCalled();
 

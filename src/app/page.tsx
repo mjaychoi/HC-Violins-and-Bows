@@ -1,30 +1,41 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { ErrorBoundary } from '@/components/common';
 
-export default function LoginPage() {
+function LoginRedirect() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { user, loading: authLoading } = useAuth();
+
+  // ✅ FIXED: Redirect if already logged in, preserving next parameter
+  // ✅ FIXED: Use replace() to prevent history stack issues
+  useEffect(() => {
+    if (!authLoading && user) {
+      // ✅ FIXED: Check for next parameter to redirect to original destination
+      const next = searchParams.get('next');
+      const destination = next ? decodeURIComponent(next) : '/dashboard';
+      router.replace(destination);
+    }
+  }, [user, authLoading, router, searchParams]);
+
+  return null;
+}
+
+function LoginPageContent() {
   const appName =
     process.env.NEXT_PUBLIC_APP_NAME ?? 'Instrument Inventory App';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | undefined>();
-  const router = useRouter();
-  const { signIn, user, loading: authLoading } = useAuth();
+  const { signIn, loading: authLoading } = useAuth();
 
   // Loading states
   const { loading, withLoading } = useLoadingState();
-
-  // Redirect if already logged in
-  useEffect(() => {
-    if (!authLoading && user) {
-      router.push('/dashboard');
-    }
-  }, [user, authLoading, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,5 +179,20 @@ export default function LoginPage() {
         </div>
       </div>
     </ErrorBoundary>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-white flex items-center justify-center">
+          <div className="text-gray-600">Loading...</div>
+        </div>
+      }
+    >
+      <LoginRedirect />
+      <LoginPageContent />
+    </Suspense>
   );
 }

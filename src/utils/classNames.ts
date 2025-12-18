@@ -1,34 +1,45 @@
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-// common classNames utility
+/**
+ * ✅ FIXED: Common classNames utility - Layout/Spacing/Typography only
+ * Color/status/variant styles should use colorTokens-based functions instead
+ * This prevents conflicts with the centralized color token system
+ *
+ * Usage Policy:
+ * - classNames.*: Pre-defined style tokens (table, input, formLabel, etc.)
+ *   Use for: Consistent layout/spacing/typography across components
+ * - cn(): Dynamic class combination (conditional, merging, etc.)
+ *   Use for: Conditional classes, merging multiple classes, component-specific overrides
+ *
+ * For button colors, use: buttonPrimary, buttonSecondary, buttonDanger (or colorTokens)
+ * For status/badge colors, use: getStatusColor, getTagColor from colorTokens
+ */
 export const classNames = {
-  // Input styles
-  input:
-    'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500',
+  // Input styles (layout/spacing only, colors handled separately)
+  input: 'w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2',
   inputError:
-    'w-full px-3 py-2 border border-red-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500',
+    'w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2',
 
-  // Button styles
+  // Button base styles (layout/spacing only, colors handled separately)
+  buttonBase:
+    'px-4 py-2 rounded-md focus:outline-none focus:ring-2 transition-colors',
   buttonPrimary:
-    'bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500',
+    'px-4 py-2 rounded-md focus:outline-none focus:ring-2 transition-colors bg-blue-600 text-white hover:bg-blue-500',
   buttonSecondary:
-    'bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500',
+    'px-4 py-2 rounded-md focus:outline-none focus:ring-2 transition-colors bg-white text-gray-700 border border-gray-300 hover:bg-gray-50',
   buttonDanger:
-    'bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500',
-  buttonSuccess:
-    'bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500',
-  buttonWarning:
-    'bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500',
+    'px-4 py-2 rounded-md focus:outline-none focus:ring-2 transition-colors bg-red-600 text-white hover:bg-red-500',
+  // Note: Use colorTokens-based functions for button colors (e.g., btnVariant('primary'))
 
-  // Card styles
-  card: 'bg-white p-6 rounded-lg shadow border border-gray-200',
-  cardHeader: 'border-b border-gray-200 pb-4 mb-4',
+  // Card styles (layout/spacing only)
+  card: 'bg-white p-6 rounded-lg shadow border',
+  cardHeader: 'border-b pb-4 mb-4',
 
-  // Form styles
+  // Form styles (layout/spacing/typography only)
   formGroup: 'space-y-4',
-  formLabel: 'block text-sm font-medium text-gray-700 mb-1',
-  formError: 'text-red-600 text-sm mt-1',
+  formLabel: 'block text-sm font-medium mb-1',
+  formError: 'text-sm mt-1',
 
   // Table styles (통일된 테이블 스타일)
   tableWrapper: 'rounded-xl border border-gray-100 bg-white shadow-sm',

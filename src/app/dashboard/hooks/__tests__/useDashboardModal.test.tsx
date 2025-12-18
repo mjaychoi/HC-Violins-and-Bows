@@ -45,10 +45,10 @@ describe('useDashboardModal', () => {
   it('should provide initial state', () => {
     const { result } = renderHook(() => useDashboardModal());
 
-    expect(result.current.showModal).toBe(false);
+    expect(result.current.isModalOpen).toBe(false);
     expect(result.current.isEditing).toBe(false);
     expect(result.current.selectedItem).toBeNull();
-    expect(result.current.confirmItem).toBeNull();
+    expect(result.current.confirmItemId).toBeNull();
     expect(result.current.isConfirmDialogOpen).toBe(false);
   });
 
@@ -82,22 +82,22 @@ describe('useDashboardModal', () => {
     expect(mockOpenEditModal).toHaveBeenCalledWith(mockInstrument);
   });
 
-  it('should set confirm item when handleRequestDelete is called', () => {
+  it('should set confirm item id when handleRequestDelete is called', () => {
     const { result } = renderHook(() => useDashboardModal());
 
     act(() => {
-      result.current.handleRequestDelete(mockInstrument);
+      result.current.handleRequestDelete(mockInstrument.id);
     });
 
-    expect(result.current.confirmItem).toEqual(mockInstrument);
+    expect(result.current.confirmItemId).toBe(mockInstrument.id);
     expect(result.current.isConfirmDialogOpen).toBe(true);
   });
 
-  it('should clear confirm item when handleCancelDelete is called', () => {
+  it('should clear confirm item id when handleCancelDelete is called', () => {
     const { result } = renderHook(() => useDashboardModal());
 
     act(() => {
-      result.current.handleRequestDelete(mockInstrument);
+      result.current.handleRequestDelete(mockInstrument.id);
     });
 
     expect(result.current.isConfirmDialogOpen).toBe(true);
@@ -106,17 +106,17 @@ describe('useDashboardModal', () => {
       result.current.handleCancelDelete();
     });
 
-    expect(result.current.confirmItem).toBeNull();
+    expect(result.current.confirmItemId).toBeNull();
     expect(result.current.isConfirmDialogOpen).toBe(false);
   });
 
-  it('should update isConfirmDialogOpen based on confirmItem', () => {
+  it('should update isConfirmDialogOpen based on confirmItemId', () => {
     const { result } = renderHook(() => useDashboardModal());
 
     expect(result.current.isConfirmDialogOpen).toBe(false);
 
     act(() => {
-      result.current.handleRequestDelete(mockInstrument);
+      result.current.handleRequestDelete(mockInstrument.id);
     });
 
     expect(result.current.isConfirmDialogOpen).toBe(true);
@@ -131,21 +131,36 @@ describe('useDashboardModal', () => {
   it('should handle multiple delete requests', () => {
     const { result } = renderHook(() => useDashboardModal());
 
-    const instrument2: Instrument = {
-      ...mockInstrument,
-      id: 'inst-2',
-    };
+    const instrument2Id = 'inst-2';
 
     act(() => {
-      result.current.handleRequestDelete(mockInstrument);
+      result.current.handleRequestDelete(mockInstrument.id);
     });
 
-    expect(result.current.confirmItem).toEqual(mockInstrument);
+    expect(result.current.confirmItemId).toBe(mockInstrument.id);
 
     act(() => {
-      result.current.handleRequestDelete(instrument2);
+      result.current.handleRequestDelete(instrument2Id);
     });
 
-    expect(result.current.confirmItem).toEqual(instrument2);
+    expect(result.current.confirmItemId).toBe(instrument2Id);
+  });
+
+  it('should call onDelete when handleConfirmDelete is called', async () => {
+    const mockOnDelete = jest.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() =>
+      useDashboardModal({ onDelete: mockOnDelete })
+    );
+
+    act(() => {
+      result.current.handleRequestDelete(mockInstrument.id);
+    });
+
+    await act(async () => {
+      await result.current.handleConfirmDelete();
+    });
+
+    expect(mockOnDelete).toHaveBeenCalledWith(mockInstrument.id);
+    expect(result.current.confirmItemId).toBeNull();
   });
 });

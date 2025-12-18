@@ -35,7 +35,12 @@ export default function SuccessToast({
   if (!isVisible) return null;
 
   return (
-    <div className="max-w-sm w-full bg-white shadow-lg rounded-lg pointer-events-auto border-l-4 border-emerald-500 overflow-hidden animate-in slide-in-from-right">
+    <div
+      className="max-w-sm w-full bg-white shadow-lg rounded-lg pointer-events-auto border-l-4 border-emerald-500 overflow-hidden animate-in slide-in-from-right"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
       <div className="p-4 flex items-start">
         <div className="shrink-0">
           <svg

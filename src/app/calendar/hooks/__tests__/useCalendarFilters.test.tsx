@@ -165,10 +165,19 @@ describe('useCalendarFilters', () => {
   });
 
   it('should filter tasks by owner', () => {
+    // Create ownershipMap from instrumentsMap for filtering
+    const ownershipMap = new Map(
+      Array.from(mockInstrumentsMap.entries()).map(([id, info]) => [
+        id,
+        { ownership: info.ownership },
+      ])
+    );
+
     const { result } = renderHook(() =>
       useCalendarFilters({
         tasks: mockTasks,
         instrumentsMap: mockInstrumentsMap,
+        ownershipMap,
         filterOptions: mockFilterOptions,
       })
     );

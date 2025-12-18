@@ -30,9 +30,9 @@ interface CalendarFiltersProps {
     statuses: TaskStatus[];
     owners: string[];
   };
-  filterStatus: string; // Single source of truth for status filter
+  filterStatus: string; // Single source of truth for status filter (maps to CalendarFilters.status)
   onStatusChange: (status: string) => void;
-  filterOwnership: string; // Single source of truth for ownership filter
+  filterOwnership: string; // Single source of truth for ownership filter (maps to CalendarFilters.owner)
   onOwnershipChange: (ownership: string) => void;
   ownershipOptions: string[];
   sortBy: 'date' | 'priority' | 'status' | 'type';
@@ -47,9 +47,10 @@ interface CalendarFiltersProps {
   hasActiveFilters: boolean;
   onResetFilters: () => void;
   showSort?: boolean; // Hide sort in calendar view
+  searchInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
-export default function CalendarFilters({
+function CalendarFilters({
   searchTerm,
   onSearchChange,
   searchFilters,
@@ -72,6 +73,7 @@ export default function CalendarFilters({
   hasActiveFilters,
   onResetFilters,
   showSort = true, // Default to true for list view
+  searchInputRef,
 }: CalendarFiltersProps) {
   return (
     <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-4">
@@ -79,6 +81,7 @@ export default function CalendarFilters({
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[280px]">
           <CalendarSearch
+            ref={searchInputRef}
             searchTerm={searchTerm}
             onSearchChange={onSearchChange}
             debounceMs={300}
@@ -156,7 +159,7 @@ export default function CalendarFilters({
               <PillSelect
                 value={filterStatus}
                 onChange={value => {
-                  // Single source of truth: filterStatus only
+                  // Single source of truth: status filter (no synchronization needed)
                   onStatusChange(value);
                 }}
                 options={[
@@ -192,7 +195,7 @@ export default function CalendarFilters({
               <PillSelect
                 value={filterOwnership}
                 onChange={value => {
-                  // Single source of truth: filterOwnership only
+                  // Single source of truth: owner filter (no synchronization needed)
                   onOwnershipChange(value);
                 }}
                 options={[
@@ -274,3 +277,5 @@ export default function CalendarFilters({
     </div>
   );
 }
+
+export default React.memo(CalendarFilters);

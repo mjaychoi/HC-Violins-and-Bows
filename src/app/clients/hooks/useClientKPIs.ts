@@ -99,7 +99,7 @@ export function useClientKPIs(
 
     const avgSpendPerCustomer =
       totalCustomers > 0 ? totalSpend / totalCustomers : 0;
-    const mostRecentPurchase = getMostRecentDate(allPurchaseDates) || 'N/A';
+    const mostRecentPurchase = getMostRecentDate(allPurchaseDates) || '—';
 
     return {
       totalCustomers,
@@ -170,7 +170,7 @@ export function useClientSalesData(clientId: string | null) {
   return {
     totalSpend,
     purchaseCount,
-    lastPurchaseDate: lastPurchaseDate || 'N/A',
+    lastPurchaseDate: lastPurchaseDate || '—',
     loading,
   };
 }

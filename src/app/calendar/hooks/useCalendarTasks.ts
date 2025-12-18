@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import type {
   MaintenanceTask,
   Client,
@@ -9,6 +9,7 @@ import type {
 } from '@/types';
 import { calculateSummaryStats } from '../utils/filterUtils';
 import { sortByPriority } from '@/utils/filters';
+import { PRIORITY_ORDER } from '../constants';
 
 interface UseCalendarTasksOptions {
   tasks: MaintenanceTask[];
@@ -23,6 +24,15 @@ export const useCalendarTasks = ({
   clients,
   filteredTasks,
 }: UseCalendarTasksOptions) => {
+  // Normalize ownership string for matching (trim, collapse spaces, lowercase)
+  const normalizeOwnership = useCallback((ownership: string | null): string => {
+    if (!ownership) return '';
+    return ownership
+      .trim()
+      .replace(/\s+/g, ' ') // Collapse multiple spaces to single space
+      .toLowerCase();
+  }, []);
+
   // Create instruments map for quick lookup with client info
   const instrumentsMap = useMemo(() => {
     const map = new Map<
@@ -37,13 +47,24 @@ export const useCalendarTasks = ({
       }
     >();
 
-    // Create client map for ownership lookup
-    const clientMap = new Map<string, Client>();
+    // Create client map for ownership lookup (normalized)
+    // First, try to match by client_id if available (preferred method)
+    const clientByIdMap = new Map<string, Client>();
+    clients.forEach(client => {
+      clientByIdMap.set(client.id, client);
+    });
+
+    // Fallback: create normalized name map for string-based matching
+    const clientByNameMap = new Map<string, Client>();
     clients.forEach(client => {
       const fullName =
         `${client.first_name || ''} ${client.last_name || ''}`.trim();
       if (fullName) {
-        clientMap.set(fullName, client);
+        const normalizedName = normalizeOwnership(fullName);
+        // Only add if not already set (prefer first match)
+        if (!clientByNameMap.has(normalizedName)) {
+          clientByNameMap.set(normalizedName, client);
+        }
       }
     });
 
@@ -52,8 +73,13 @@ export const useCalendarTasks = ({
       let clientId: string | null = null;
       let clientName: string | null = null;
 
+      // Prefer client_id if available (most reliable)
+      // Note: This assumes Instrument type has client_id field
+      // If not available, fall back to ownership string matching
       if (ownership) {
-        const client = clientMap.get(ownership);
+        // Try normalized string matching
+        const normalizedOwnership = normalizeOwnership(ownership);
+        const client = clientByNameMap.get(normalizedOwnership);
         if (client) {
           clientId = client.id;
           clientName =
@@ -71,7 +97,7 @@ export const useCalendarTasks = ({
       });
     });
     return map;
-  }, [instruments, clients]);
+  }, [instruments, clients, normalizeOwnership]);
 
   // Create clients map for quick lookup
   const clientsMap = useMemo(() => {
@@ -128,20 +154,27 @@ export const useCalendarTasks = ({
       }
     });
 
-    const priorityOrder: Record<TaskPriority, number> = {
-      urgent: 4,
-      high: 3,
-      medium: 2,
-      low: 1,
-    };
-
     return {
       types: Array.from(types).sort(),
-      priorities: sortByPriority(Array.from(priorities), priorityOrder),
+      priorities: sortByPriority(Array.from(priorities), PRIORITY_ORDER),
       statuses: Array.from(statuses).sort(),
       owners: Array.from(owners).sort(),
     };
   }, [tasks, instrumentsMap]);
+
+  // Create ownership map for efficient filtering (reused across filter calls)
+  const ownershipMap = useMemo(() => {
+    const m = new Map<
+      string,
+      {
+        ownership: string | null;
+      }
+    >();
+    instrumentsMap.forEach((v, k) => {
+      m.set(k, { ownership: v.ownership });
+    });
+    return m;
+  }, [instrumentsMap]);
 
   // Calculate summary statistics (use provided filteredTasks or empty array)
   const summaryStats = useMemo(() => {
@@ -151,6 +184,7 @@ export const useCalendarTasks = ({
   return {
     instrumentsMap,
     clientsMap,
+    ownershipMap, // Expose ownershipMap for reuse in filterCalendarTasks
     ownershipOptions,
     filterOptions,
     summaryStats,

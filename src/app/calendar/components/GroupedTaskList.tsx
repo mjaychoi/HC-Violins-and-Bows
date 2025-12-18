@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import type { MaintenanceTask, MaintenanceTaskUpdatePayload } from '@/types';
 import { parseYMDLocal } from '@/utils/dateParsing';
 import { getDateStatus } from '@/utils/tasks/style';
+import { getTaskDateKey } from '@/utils/calendar';
 import EmptyState from '@/components/common/empty-state/EmptyState';
 import DateGroupHeader from './DateGroupHeader';
 import TaskRowCollapsed from './TaskRowCollapsed';
@@ -80,12 +81,8 @@ export default function GroupedTaskList({
     const groups = new Map<string, MaintenanceTask[]>();
 
     tasks.forEach(task => {
-      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
-      const rawKey =
-        task.due_date ||
-        task.personal_due_date ||
-        task.scheduled_date ||
-        task.received_date;
+      // Use centralized date key function for consistent priority
+      const rawKey = getTaskDateKey(task);
       if (!rawKey) return;
 
       // Normalize date string to YYYY-MM-DD format

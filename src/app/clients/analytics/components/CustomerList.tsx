@@ -123,7 +123,7 @@ export const CustomerListComponent = ({
       aria-label="Customer list"
       tabIndex={0}
     >
-      {customers.map(customer => {
+      {customers.map((customer, index) => {
         const fullName =
           `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
           'Unnamed';
@@ -135,7 +135,6 @@ export const CustomerListComponent = ({
         const recentDate = formatDateForDisplay(customer.lastPurchaseAt);
         // ✅ Tags are already normalized in useCustomers
         const tags = customer.tags;
-        const index = customers.indexOf(customer);
         return (
           <button
             key={customer.id}

@@ -166,22 +166,25 @@ export default function TimelineView({
             {format(weekRange.weekEnd, 'MMMM d, yyyy')}
           </h2>
         </div>
-        <div className="flex gap-2">
+        <div role="group" aria-label="Week navigation" className="flex gap-2">
           <button
             onClick={() => setWeekOffset(prev => prev - 1)}
             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            aria-label="Previous week"
           >
             Previous Week
           </button>
           <button
             onClick={() => setWeekOffset(0)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            aria-label="Go to current week"
           >
             Today
           </button>
           <button
             onClick={() => setWeekOffset(prev => prev + 1)}
             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            aria-label="Next week"
           >
             Next Week
           </button>
@@ -240,12 +243,32 @@ export default function TimelineView({
                           const instrument = task.instrument_id
                             ? instruments?.get(task.instrument_id)
                             : undefined;
+                          const dateStatus = getDateStatus(task);
+                          const statusLabel =
+                            task.status === 'completed'
+                              ? 'Completed'
+                              : task.status === 'cancelled'
+                                ? 'Cancelled'
+                                : dateStatus.status === 'overdue'
+                                  ? 'Overdue'
+                                  : task.status === 'in_progress'
+                                    ? 'In Progress'
+                                    : 'Scheduled';
                           return (
                             <div
                               key={task.id}
-                              className={`${getTaskColor(task)} text-white text-xs p-1.5 rounded mb-1 cursor-pointer hover:opacity-80 transition-opacity`}
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`Task ${task.title} at ${hour}:00, ${statusLabel}`}
+                              className={`${getTaskColor(task)} text-white text-xs p-1.5 rounded mb-1 cursor-pointer hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1`}
                               onClick={() => onSelectEvent?.(task)}
-                              title={`${task.title} - ${instrument?.type || 'Unknown'}`}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  onSelectEvent?.(task);
+                                }
+                              }}
+                              title={`${task.title} - ${statusLabel} - ${instrument?.type || 'Unknown'}`}
                             >
                               <div className="font-medium truncate">
                                 {task.title}

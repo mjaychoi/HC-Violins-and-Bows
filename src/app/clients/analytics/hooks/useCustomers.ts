@@ -136,6 +136,9 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
           );
         }
       }
+
+      // ✅ FIXED: Mark as fetched only after successful completion
+      hasFetchedRef.current = true;
     } catch (error) {
       console.error('[useCustomers] Error fetching sales history:', error);
       handleError(error, 'Failed to fetch sales history');

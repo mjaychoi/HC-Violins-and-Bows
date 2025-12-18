@@ -15,6 +15,7 @@ import { todayLocalYMD } from '@/utils/dateParsing';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import { modalStyles } from '@/components/common/modals/modalStyles';
 import { ModalHeader } from '@/components/common/modals/ModalHeader';
+import { getStatusLabel } from '@/utils/calendar';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -362,8 +363,7 @@ export default function TaskModal({
                 >
                   {taskStatuses.map(status => (
                     <option key={status} value={status}>
-                      {status.replace('_', ' ').charAt(0).toUpperCase() +
-                        status.replace('_', ' ').slice(1)}
+                      {getStatusLabel(status)}
                     </option>
                   ))}
                 </select>

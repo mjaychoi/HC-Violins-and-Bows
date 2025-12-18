@@ -16,6 +16,7 @@ import { Instrument, SalesHistory, Client, ClientInstrument } from '@/types';
 import dynamic from 'next/dynamic';
 import { useSalesHistory } from '@/app/sales/hooks/useSalesHistory';
 import { generateSampleInstruments } from './utils/sampleData';
+import TodayFollowUps from '@/app/clients/components/TodayFollowUps';
 
 // Dynamic import for SaleForm to reduce initial bundle size
 const SaleForm = dynamic(() => import('@/app/sales/components/SaleForm'), {
@@ -172,16 +173,18 @@ export default function DashboardPage() {
 
   // Dashboard modal state
   const {
-    showModal,
+    isModalOpen,
     isEditing,
     selectedItem,
     closeModal,
     handleAddItem,
-    confirmItem,
     isConfirmDialogOpen,
     handleRequestDelete,
     handleCancelDelete,
-  } = useDashboardModal();
+    handleConfirmDelete: handleConfirmDeleteFromHook,
+  } = useDashboardModal({
+    onDelete: handleDeleteItem,
+  });
 
   // Track newly created item for scroll/highlight feedback
   const [newlyCreatedItemId, setNewlyCreatedItemId] = useState<string | null>(
@@ -205,16 +208,8 @@ export default function DashboardPage() {
     [existingSerialNumbersSet]
   );
 
-  // Handle confirmed deletion
-  const handleConfirmDelete = useCallback(async () => {
-    if (!confirmItem) return;
-    try {
-      await handleDeleteItem(confirmItem.id);
-      handleCancelDelete();
-    } catch {
-      // Error already handled in handleDeleteItem
-    }
-  }, [confirmItem, handleDeleteItem, handleCancelDelete]);
+  // ✅ FIXED: handleConfirmDelete는 이제 훅에서 제공됨
+  const handleConfirmDelete = handleConfirmDeleteFromHook;
 
   // 원클릭 판매 핸들러
   const handleSellClick = useCallback(
@@ -334,13 +329,18 @@ export default function DashboardPage() {
           />
         }
       >
+        {/* 오늘/지연된 Follow-up 요약 카드 */}
+        <div className="px-6 pt-6">
+          <TodayFollowUps />
+        </div>
+
         <DashboardContent
           enrichedItems={enrichedItems}
           clients={clients}
           clientRelationships={clientRelationships}
           clientsLoading={clientsLoading}
           loading={loading}
-          onDeleteClick={handleRequestDelete}
+          onDeleteClick={item => handleRequestDelete(item.id)}
           onUpdateItemInline={handleUpdateItemInline}
           onAddClick={handleAddItem}
           onSellClick={handleSellClick}
@@ -354,7 +354,7 @@ export default function DashboardPage() {
         {/* Note: Form state management is handled internally by ItemForm via useDashboardForm.
             ItemForm handles form reset and modal close on successful submit. */}
         <ItemForm
-          isOpen={showModal}
+          isOpen={isModalOpen}
           onClose={closeModal}
           onSubmit={
             isEditing && selectedItem

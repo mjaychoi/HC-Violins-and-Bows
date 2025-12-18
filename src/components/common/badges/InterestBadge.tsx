@@ -21,7 +21,7 @@ function InterestBadge({ interest, context = 'table' }: InterestBadgeProps) {
 
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className}`}
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className} max-w-[150px] truncate`}
       aria-label={`Interest: ${interest}`}
       title={`Interest: ${interest}`}
     >

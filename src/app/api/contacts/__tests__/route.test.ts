@@ -271,7 +271,7 @@ describe('/api/contacts', () => {
       const response = await POST(request);
       const json = await response.json();
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(201);
       expect(json.data).toBeDefined();
       expect(json.success).toBe(true);
       expect(mockQuery.insert).toHaveBeenCalled();

@@ -4,10 +4,10 @@ import GroupedTaskList from '../GroupedTaskList';
 import { MaintenanceTask } from '@/types';
 // formatDate, isToday, isTomorrow, isYesterday, parseISO, differenceInDays are not used in tests
 
-// Mock formatDate
+// Mock formatDateOnly
 jest.mock('@/utils/formatUtils', () => ({
-  formatDate: jest.fn((date: string, format?: string) => {
-    if (format === 'long') {
+  formatDateOnly: jest.fn((date: string, style?: 'short' | 'long' | 'iso') => {
+    if (style === 'long') {
       return new Date(date).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',

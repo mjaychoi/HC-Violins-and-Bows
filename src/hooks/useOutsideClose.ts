@@ -35,9 +35,10 @@ export function useOutsideClose(
   useEffect(() => {
     if (!isOpen) return;
 
-    const toggleEl = ignoreSelector
-      ? (document.querySelector(ignoreSelector) as HTMLElement | null)
-      : null;
+    // ✅ FIXED: querySelectorAll로 여러 요소 지원 (토글 버튼이 여러 개일 수 있음)
+    const toggleElements = ignoreSelector
+      ? Array.from(document.querySelectorAll<HTMLElement>(ignoreSelector))
+      : [];
 
     // FIXED: Event name matches handler name
     // Use mousedown (not pointerdown) for consistent behavior
@@ -45,7 +46,8 @@ export function useOutsideClose(
     const onMouseDown = (event: MouseEvent) => {
       const path = (event.composedPath?.() ?? []) as Node[];
       if (ref.current && path.includes(ref.current)) return;
-      if (toggleEl && path.includes(toggleEl)) return;
+      // ✅ FIXED: 여러 toggle 요소 중 하나라도 path에 포함되면 무시
+      if (toggleElements.some(el => path.includes(el))) return;
       onClose();
     };
 

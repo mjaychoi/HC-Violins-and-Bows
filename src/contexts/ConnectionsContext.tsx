@@ -159,8 +159,16 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
           '/api/connections?orderBy=created_at&ascending=false'
         );
         if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to fetch connections');
+          let errorMessage = 'Failed to fetch connections';
+          try {
+            const errorData = await response.json();
+            errorMessage =
+              errorData.error?.message || errorData.error || errorMessage;
+          } catch {
+            // If response is not JSON, use status text
+            errorMessage = response.statusText || errorMessage;
+          }
+          throw new Error(errorMessage);
         }
         const result = await response.json();
         dispatch({ type: 'SET_CONNECTIONS', payload: result.data || [] });

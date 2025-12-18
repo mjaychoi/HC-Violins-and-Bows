@@ -41,12 +41,12 @@ describe('browserNotifications', () => {
 
   describe('getNotificationPermission', () => {
     it('should return denied when window is undefined', () => {
-      expect(getNotificationPermission()).toBe('denied');
+      expect(getNotificationPermission()).toBe('unsupported');
     });
 
     it('should return denied when Notification is not supported', () => {
       (global as { window?: unknown }).window = {};
-      expect(getNotificationPermission()).toBe('denied');
+      expect(getNotificationPermission()).toBe('unsupported');
     });
 
     it('should return current permission status', () => {
@@ -61,13 +61,13 @@ describe('browserNotifications', () => {
   describe('requestNotificationPermission', () => {
     it('should return denied when window is undefined', async () => {
       const result = await requestNotificationPermission();
-      expect(result).toBe('denied');
+      expect(result).toBe('unsupported');
     });
 
     it('should return denied when Notification is not supported', async () => {
       (global as { window?: unknown }).window = {};
       const result = await requestNotificationPermission();
-      expect(result).toBe('denied');
+      expect(result).toBe('unsupported');
     });
 
     it('should return granted when permission is already granted', async () => {

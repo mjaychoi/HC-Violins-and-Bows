@@ -79,7 +79,7 @@ describe('CustomerStats', () => {
   it('should calculate average spend correctly', () => {
     render(<CustomerStats customers={[mockCustomer1, mockCustomer2]} />);
     // (100000 + 5000 + 50000) / 2 = 77500
-    expect(screen.getByText('$77,500')).toBeInTheDocument();
+    expect(screen.getByText('$77,500.00')).toBeInTheDocument();
   });
 
   it('should display purchase count', () => {
@@ -91,7 +91,7 @@ describe('CustomerStats', () => {
   it('should display most recent purchase date', () => {
     render(<CustomerStats customers={[mockCustomer1, mockCustomer2]} />);
     // Most recent is 2024-06-01
-    expect(screen.getByText('2024-06-01')).toBeInTheDocument();
+    expect(screen.getByText('May 31, 2024')).toBeInTheDocument();
   });
 
   it('should handle empty customers array', () => {

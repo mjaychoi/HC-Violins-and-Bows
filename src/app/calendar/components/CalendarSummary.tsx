@@ -116,9 +116,13 @@ export default function CalendarSummary({
   onOpenFilters,
   hasActiveFilters,
   activePreset,
+  filtersOpen,
+  toggleButtonRef,
 }: CalendarSummaryProps & {
   onOpenFilters?: () => void;
   hasActiveFilters?: boolean;
+  filtersOpen?: boolean;
+  toggleButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -152,10 +156,13 @@ export default function CalendarSummary({
       />
       {onOpenFilters && (
         <button
+          ref={toggleButtonRef}
           type="button"
           onClick={onOpenFilters}
           className="h-9 flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors ml-auto"
           aria-label="Advanced Filters"
+          aria-expanded={filtersOpen || false}
+          aria-controls="calendar-filters"
         >
           <svg
             className="w-4 h-4"

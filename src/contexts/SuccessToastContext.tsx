@@ -5,6 +5,7 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useRef,
   ReactNode,
 } from 'react';
 
@@ -33,9 +34,12 @@ const SuccessToastContext = createContext<SuccessToastContextValue | undefined>(
 export function SuccessToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  // ✅ FIXED: useRef로 카운터를 관리하여 안정적인 ID 생성 (Math.random() 제거)
+  const toastIdCounterRef = useRef(0);
+
   const showSuccess = useCallback((message: string, links?: ToastLink[]) => {
     const toast: Toast = {
-      id: `${Date.now()}-${Math.random()}`,
+      id: `toast-${Date.now()}-${++toastIdCounterRef.current}`,
       message,
       timestamp: new Date(),
       links,

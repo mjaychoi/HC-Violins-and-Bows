@@ -2,13 +2,14 @@
 
 import React from 'react';
 import type { MaintenanceTask, TaskPriority, TaskStatus } from '@/types';
-import { formatDate } from '@/utils/formatUtils';
+import { formatDateOnly } from '@/utils/formatUtils';
 import {
   getPriorityPillClasses,
   getStatusColorClasses,
   getStatusDotClasses,
   getDateStatus,
 } from '@/utils/tasks/style';
+import { getStatusLabel } from '@/utils/calendar';
 import EmptyState from '@/components/common/empty-state/EmptyState';
 import { useInlineEdit } from '@/hooks/useInlineEdit';
 import {
@@ -244,7 +245,7 @@ export default function TaskList({
                                 }}
                                 title="Click to edit status"
                               >
-                                {task.status.replace('_', ' ')}
+                                {getStatusLabel(task.status)}
                               </span>
                             )}
                           </div>
@@ -341,9 +342,7 @@ export default function TaskList({
                                 />
                               </svg>
                               <span className="font-medium">Received:</span>
-                              <span>
-                                {formatDate(task.received_date, 'short')}
-                              </span>
+                              <span>{formatDateOnly(task.received_date)}</span>
                             </div>
                           )}
 
@@ -365,7 +364,7 @@ export default function TaskList({
                               <span className="font-medium">
                                 Due (Customer):
                               </span>
-                              <span>{formatDate(task.due_date, 'short')}</span>
+                              <span>{formatDateOnly(task.due_date)}</span>
                             </div>
                           )}
 
@@ -388,7 +387,7 @@ export default function TaskList({
                                 Personal Due:
                               </span>
                               <span className="text-slate-700 font-medium">
-                                {formatDate(task.personal_due_date, 'short')}
+                                {formatDateOnly(task.personal_due_date)}
                               </span>
                             </div>
                           )}
@@ -409,9 +408,7 @@ export default function TaskList({
                                 />
                               </svg>
                               <span className="font-medium">Scheduled:</span>
-                              <span>
-                                {formatDate(task.scheduled_date, 'short')}
-                              </span>
+                              <span>{formatDateOnly(task.scheduled_date)}</span>
                             </div>
                           )}
                         </div>

@@ -78,11 +78,10 @@ export const filterByStatus = (
 export const filterByOwnership = (
   tasks: MaintenanceTask[],
   ownership: string,
-  instrumentsMap: Map<
+  ownershipMap: Map<
     string,
     {
       ownership: string | null;
-      [key: string]: unknown;
     }
   >
 ): MaintenanceTask[] => {
@@ -91,7 +90,7 @@ export const filterByOwnership = (
   }
   return tasks.filter(task => {
     const instrument = task.instrument_id
-      ? instrumentsMap.get(task.instrument_id)
+      ? ownershipMap.get(task.instrument_id)
       : undefined;
     return instrument?.ownership === ownership;
   });
@@ -108,11 +107,10 @@ export const filterBySearchFilters = (
     status?: TaskStatus | 'all';
     owner?: string | 'all';
   },
-  instrumentsMap: Map<
+  ownershipMap: Map<
     string,
     {
       ownership: string | null;
-      [key: string]: unknown;
     }
   >
 ): MaintenanceTask[] => {
@@ -131,7 +129,7 @@ export const filterBySearchFilters = (
   if (searchFilters.owner && searchFilters.owner !== 'all') {
     filtered = filtered.filter(task => {
       const instrument = task.instrument_id
-        ? instrumentsMap.get(task.instrument_id)
+        ? ownershipMap.get(task.instrument_id)
         : undefined;
       return instrument?.ownership === searchFilters.owner;
     });

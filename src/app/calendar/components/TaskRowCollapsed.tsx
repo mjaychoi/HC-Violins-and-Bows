@@ -228,7 +228,12 @@ function TaskRowCollapsed({
             </>
           )}
           {isCompleted && (
-            <span className="text-xs text-gray-500 font-normal">Completed</span>
+            <span
+              className="text-xs text-gray-500 font-normal"
+              aria-label="Status: Completed"
+            >
+              Completed
+            </span>
           )}
           {inlineEditPriority.editingId === task.id ? (
             <div className="flex items-center gap-1">

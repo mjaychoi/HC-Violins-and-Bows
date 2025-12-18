@@ -8,7 +8,9 @@ interface PriorityPillProps {
 
 export default function PriorityPill({ priority }: PriorityPillProps) {
   // Priority color policy: urgent only gets red, others are gray
-  const isUrgent = priority.toLowerCase() === 'urgent';
+  // Safely handle null/undefined priority
+  const p = (priority ?? '').toString();
+  const isUrgent = p.toLowerCase() === 'urgent';
 
   return (
     <span
@@ -18,7 +20,7 @@ export default function PriorityPill({ priority }: PriorityPillProps) {
           : 'bg-gray-100 border border-gray-200 text-gray-600'
       }`}
     >
-      {priority}
+      {p || 'N/A'}
     </span>
   );
 }

@@ -19,8 +19,13 @@ export function useOwnedItems() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // ✅ FIXED: Use ownershipValue as cache key (matches actual API query)
+    // This ensures cache consistency when client name changes
+    const ownershipValue =
+      `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim();
+
     // 캐시 확인
-    const cacheKey = client.id;
+    const cacheKey = ownershipValue;
     const cached = cacheRef.current.get(cacheKey);
     if (cached) {
       setOwnedItems(cached);
@@ -30,8 +35,6 @@ export function useOwnedItems() {
     try {
       setLoadingOwnedItems(true);
       // Use API route instead of direct Supabase client to reduce bundle size
-      const ownershipValue =
-        `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim();
       const params = new URLSearchParams({
         ownership: ownershipValue,
         orderBy: 'created_at',

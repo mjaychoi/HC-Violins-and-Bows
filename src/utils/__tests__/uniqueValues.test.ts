@@ -1,4 +1,4 @@
-import { getUniqueValues, getUniqueArrayValues } from '../uniqueValues';
+import { getUniqueStringValues, getUniqueArrayValues } from '../uniqueValues';
 
 interface TestItem {
   id: string;
@@ -17,7 +17,7 @@ interface TestItemWithTags {
 }
 
 describe('uniqueValues', () => {
-  describe('getUniqueValues', () => {
+  describe('getUniqueStringValues', () => {
     it('should return unique string values from array', () => {
       const items: TestItem[] = [
         { id: '1', name: 'Alice' },
@@ -26,7 +26,7 @@ describe('uniqueValues', () => {
         { id: '4', name: 'Charlie' },
       ];
 
-      const result = getUniqueValues(items, 'name');
+      const result = getUniqueStringValues(items, 'name');
       expect(result).toEqual(['Alice', 'Bob', 'Charlie']);
       expect(result.length).toBe(3);
     });
@@ -39,7 +39,7 @@ describe('uniqueValues', () => {
         { id: '4', name: 'Bob' },
       ];
 
-      const result = getUniqueValues(items, 'name');
+      const result = getUniqueStringValues(items, 'name');
       expect(result).toEqual(['Alice', 'Bob']);
     });
 
@@ -49,13 +49,13 @@ describe('uniqueValues', () => {
         { id: '2', name: undefined as unknown as string },
       ];
 
-      const result = getUniqueValues(items, 'name');
+      const result = getUniqueStringValues(items, 'name');
       expect(result).toEqual([]);
     });
 
     it('should return empty array for empty input', () => {
       const items: TestItem[] = [];
-      const result = getUniqueValues(items, 'name');
+      const result = getUniqueStringValues(items, 'name');
       expect(result).toEqual([]);
     });
   });

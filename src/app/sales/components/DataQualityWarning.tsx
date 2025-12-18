@@ -15,23 +15,24 @@ export default function DataQualityWarning({
   }
   if (dataQuality.hasOutliers) {
     messages.push(
-      'Some transactions have unusually high values that may affect averages.'
+      'Some transactions have unusually high values that may skew averages.'
     );
   }
   if (dataQuality.hasSparseDates) {
     messages.push(
-      'Data is spread across many days, making daily patterns less consistent.'
+      'Data is spread across many days, making daily patterns less reliable.'
     );
   }
 
-  // Fallback message if isLowQuality is true but no specific flags are set
-  const displayMessages =
-    messages.length > 0 ? messages : ['Data quality is limited.'];
+  // Only show messages if there are specific issues
+  // If isLowQuality is true but no specific flags, don't show list
+  const displayMessages = messages.length > 0 ? messages : [];
 
   return (
     <div
       className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4"
-      role="note"
+      role="status"
+      aria-live="polite"
     >
       <div className="flex items-start gap-3">
         <svg

@@ -696,7 +696,7 @@ describe('CalendarPage - Core Logic', () => {
 
       await waitFor(() => {
         expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
-        expect(screen.getByText('Delete task?')).toBeInTheDocument();
+        expect(screen.getByText('Delete maintenance task')).toBeInTheDocument();
       });
     });
 

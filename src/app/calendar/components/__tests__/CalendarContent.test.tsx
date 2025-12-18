@@ -122,7 +122,7 @@ describe('CalendarContent', () => {
 
     expect(screen.getAllByText('No tasks yet').length).toBeGreaterThan(0);
 
-    const addTaskButtons = screen.getAllByText('Add New Task');
+    const addTaskButtons = screen.getAllByText('Add maintenance task');
     fireEvent.click(addTaskButtons[0]);
     expect(onOpenNewTask).toHaveBeenCalled();
   });
@@ -156,10 +156,15 @@ describe('CalendarContent', () => {
     expect(navigation.handleGoToToday).toHaveBeenCalled();
 
     // 뷰 토글 버튼 클릭 시 setView 호출
-    fireEvent.click(screen.getByRole('button', { name: /list view/i }));
+    // Note: Buttons are in a tablist, so we need to find them by role="tab"
+    const listViewButton = screen.getByRole('tab', { name: /list view/i });
+    fireEvent.click(listViewButton);
     expect(setView).toHaveBeenCalledWith('list');
 
-    fireEvent.click(screen.getByRole('button', { name: /calendar view/i }));
+    const calendarViewButton = screen.getByRole('tab', {
+      name: /calendar view/i,
+    });
+    fireEvent.click(calendarViewButton);
     expect(setView).toHaveBeenCalledWith('calendar');
 
     // 새 작업 버튼 클릭 시 onOpenNewTask 호출

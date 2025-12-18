@@ -47,7 +47,7 @@ describe('SalesPagination', () => {
     const summary = container.querySelector('div');
     expect(summary).toBeInTheDocument();
     expect(normalizeText(summary?.textContent)).toContain(
-      'Showing 15 of 50 records'
+      'Showing 15 records of 50'
     );
     expect(screen.getByText('(filtered)')).toBeInTheDocument();
   });

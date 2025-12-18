@@ -17,7 +17,16 @@ export interface FilterGroupConfig {
   title: string;
   options: string[];
   selectedValues: string[];
-  onToggle: (value: string) => void;
+  /**
+   * 단일 토글 (기존 API)
+   */
+  onToggle?: (value: string) => void;
+  /**
+   * 배치 업데이트 (전체 선택/해제 최적화)
+   * onToggle이 제공되면 onToggle 사용, 없으면 onChangeSelected 사용
+   * ✅ FIXED: onChangeSelected 추가로 배치 업데이트 지원
+   */
+  onChangeSelected?: (next: string[]) => void;
   searchable?: boolean;
   defaultCollapsed?: boolean;
   variant?: 'list' | 'card';
@@ -310,6 +319,7 @@ export default function PageFilters({
             }
 
             // 기본 FilterGroup 렌더링
+            // ✅ FIXED: onChangeSelected도 전달하여 배치 업데이트 지원
             return (
               <FilterGroup
                 key={group.key}
@@ -317,6 +327,7 @@ export default function PageFilters({
                 options={group.options}
                 selectedValues={group.selectedValues}
                 onToggle={group.onToggle}
+                onChangeSelected={group.onChangeSelected}
                 searchable={group.searchable ?? false}
                 defaultCollapsed={group.defaultCollapsed ?? false}
                 variant={group.variant ?? 'list'}

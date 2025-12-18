@@ -13,30 +13,30 @@ import { MaintenanceTask } from '@/types';
 export type NotificationKind = 'overdue' | 'today' | 'upcoming';
 
 /**
- * Maintenance task 알림 메시지를 포맷팅합니다.
+ * ✅ FIXED: Maintenance task 알림 메시지를 포맷팅합니다.
  *
  * @param task - Maintenance task 객체
  * @param type - 알림 종류 ('overdue' | 'today' | 'upcoming')
- * @param daysUntil - 마감일까지 남은 일수 (overdue인 경우 지난 일수)
+ * @param days - 날짜 차이 (overdue: 지난 일수, upcoming: 남은 일수, today: 0)
  * @returns 포맷팅된 알림 메시지 문자열
  *
  * @example
  * formatNotificationMessage(task, 'overdue', 3) // "작업명 · D+3"
- * formatNotificationMessage(task, 'today', 0) // "작업명 · Today"
+ * formatNotificationMessage(task, 'today', 0) // "작업명 · 오늘"
  * formatNotificationMessage(task, 'upcoming', 2) // "작업명 · D-2"
  */
 export const formatNotificationMessage = (
   task: MaintenanceTask,
   type: NotificationKind,
-  daysUntil: number
+  days: number
 ): string => {
   const taskTitle = task.title || '다음 작업';
   const dateInfo =
     type === 'overdue'
-      ? `D+${daysUntil}`
+      ? `D+${days}` // 지난 일수
       : type === 'today'
-        ? 'Today'
-        : `D-${daysUntil}`;
+        ? '오늘' // ✅ FIXED: 언어 통일 (한국어)
+        : `D-${days}`; // 남은 일수
 
   return `${taskTitle} · ${dateInfo}`;
 };

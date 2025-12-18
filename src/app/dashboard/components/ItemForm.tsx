@@ -57,8 +57,9 @@ export default function ItemForm({
     serial_number?: string;
   }>({});
   const [success, setSuccess] = useState(false);
-  // 이미지 미리보기 URL 생성
-  const [imagePreviews, setImagePreviews] = useState<Map<number, string>>(
+  // ✅ FIXED: 이미지 미리보기 URL 생성 - file.name + size 기반 키 사용 (reorder 대비)
+  // index 기반은 drag & drop reorder 시 깨질 수 있음
+  const [imagePreviews, setImagePreviews] = useState<Map<string, string>>(
     new Map()
   );
   const lastInitializedItemId = useRef<string | null>(null);
@@ -114,6 +115,9 @@ export default function ItemForm({
       // FIXED: Don't update formData.price - use priceInput directly
       // priceInput will be set via handlePriceChange
       handlePriceChange(selectedItem.price?.toString() || '');
+      // ✅ NOTE: certificate null → false 변환은 의도된 UX
+      // DB는 boolean | null이지만, 폼에서는 checkbox로 boolean만 다룸
+      // "Unknown" 상태는 폼에서 명시적으로 선택할 수 없음 (현재 UX 설계)
       updateField('certificate', selectedItem.certificate ?? false);
       updateField('size', selectedItem.size || '');
       updateField('weight', selectedItem.weight || '');
@@ -293,28 +297,45 @@ export default function ItemForm({
     }
   };
 
-  // 이미지 파일 선택 시 미리보기 생성
+  // ✅ FIXED: 이미지 파일 선택 시 미리보기 생성 - file.name + size 기반 키 사용
   useEffect(() => {
-    selectedFiles.forEach((file, index) => {
+    selectedFiles.forEach(file => {
       if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (reader.result) {
-            setImagePreviews(prev => {
-              const updated = new Map(prev);
-              updated.set(index, reader.result as string);
-              return updated;
-            });
-          }
-        };
-        reader.readAsDataURL(file);
+        // ✅ FIXED: file.name + size를 키로 사용하여 reorder 시에도 안정적
+        const fileKey = `${file.name}-${file.size}`;
+
+        // 이미 생성된 미리보기는 건너뛰기 (prev를 통해 확인)
+        setImagePreviews(prev => {
+          if (prev.has(fileKey)) return prev; // 이미 있으면 업데이트하지 않음
+
+          // 비동기로 미리보기 생성
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (reader.result) {
+              setImagePreviews(current => {
+                const updated = new Map(current);
+                updated.set(fileKey, reader.result as string);
+                return updated;
+              });
+            }
+          };
+          reader.readAsDataURL(file);
+
+          return prev; // 즉시 반환 (비동기 업데이트는 onloadend에서)
+        });
       }
     });
     // 선택 해제된 파일의 미리보기 제거
     setImagePreviews(prev => {
       const updated = new Map(prev);
-      for (let i = selectedFiles.length; i < updated.size; i++) {
-        updated.delete(i);
+      const currentFileKeys = new Set(
+        selectedFiles.map(f => `${f.name}-${f.size}`)
+      );
+      // 현재 선택된 파일이 아닌 미리보기 제거
+      for (const [key] of updated) {
+        if (!currentFileKeys.has(key)) {
+          updated.delete(key);
+        }
       }
       return updated;
     });
@@ -600,6 +621,8 @@ export default function ItemForm({
                 value={formData.serial_number}
                 onChange={handleInputChange}
                 disabled={!isEditing}
+                // ✅ NOTE: pattern은 UX 힌트용일 뿐, 실제 검증은 validateInstrumentSerial에서 수행
+                // 규칙이 변경되면 normalizeInstrumentSerial과 validateInstrumentSerial도 함께 업데이트 필요
                 pattern="[A-Za-z]{2}[0-9]{7}"
                 title="2 letters + 7 digits (e.g., VI0000123)"
                 className={
@@ -641,10 +664,12 @@ export default function ItemForm({
               {selectedFiles.length > 0 && (
                 <div className="mt-2 space-y-3">
                   {selectedFiles.map((file, index) => {
-                    const previewUrl = imagePreviews.get(index);
+                    // ✅ FIXED: file.name + size 기반 키로 lookup
+                    const fileKey = `${file.name}-${file.size}`;
+                    const previewUrl = imagePreviews.get(fileKey);
                     return (
                       <div
-                        key={index}
+                        key={fileKey}
                         className="flex items-start gap-3 p-2 border border-gray-200 rounded-lg"
                       >
                         {previewUrl && (
@@ -667,9 +692,10 @@ export default function ItemForm({
                               type="button"
                               onClick={() => {
                                 removeFile(index);
+                                // ✅ FIXED: fileKey 기반으로 미리보기 제거
                                 setImagePreviews(prev => {
                                   const updated = new Map(prev);
-                                  updated.delete(index);
+                                  updated.delete(fileKey);
                                   return updated;
                                 });
                               }}

@@ -109,6 +109,7 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
     ) => {
       let appError: AppError;
 
+      // Already an AppError
       if (
         error &&
         typeof error === 'object' &&
@@ -117,17 +118,82 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
         'timestamp' in error
       ) {
         appError = error as AppError;
-      } else if (error && typeof error === 'object' && 'response' in error) {
+      }
+      // Network error (has response property)
+      else if (error && typeof error === 'object' && 'response' in error) {
         appError = errorHandler.handleNetworkError(error);
-      } else if (error && typeof error === 'object' && 'code' in error) {
+      }
+      // Error instance - extract message and try to determine error type
+      else if (error instanceof Error) {
+        const errorMessage = error.message || 'An unexpected error occurred';
+
+        // Check if it's a fetch/network error
+        if (
+          errorMessage.includes('fetch') ||
+          errorMessage.includes('network') ||
+          errorMessage.includes('Failed to fetch')
+        ) {
+          appError = errorHandler.createError(
+            ErrorCodes.NETWORK_ERROR,
+            errorMessage,
+            error.stack,
+            { context, originalError: error }
+          );
+        }
+        // Check if it's an authentication error
+        else if (
+          errorMessage.includes('Unauthorized') ||
+          errorMessage.includes('401') ||
+          errorMessage.includes('Authentication')
+        ) {
+          appError = errorHandler.createError(
+            ErrorCodes.UNAUTHORIZED,
+            errorMessage,
+            error.stack,
+            { context, originalError: error }
+          );
+        }
+        // Check if it's a forbidden error
+        else if (
+          errorMessage.includes('Forbidden') ||
+          errorMessage.includes('403') ||
+          errorMessage.includes('Access denied')
+        ) {
+          appError = errorHandler.createError(
+            ErrorCodes.FORBIDDEN,
+            errorMessage,
+            error.stack,
+            { context, originalError: error }
+          );
+        }
+        // Try handleSupabaseError for Supabase-specific errors
+        else if (error && typeof error === 'object' && 'code' in error) {
+          appError = errorHandler.handleSupabaseError(error, context);
+        }
+        // Generic Error instance
+        else {
+          appError = errorHandler.createError(
+            ErrorCodes.UNKNOWN_ERROR,
+            errorMessage,
+            error.stack,
+            { context, originalError: error }
+          );
+        }
+      }
+      // Supabase error (has code property but not Error instance)
+      else if (error && typeof error === 'object' && 'code' in error) {
         appError = errorHandler.handleSupabaseError(error, context);
-      } else {
+      }
+      // Unknown error type
+      else {
         appError = errorHandler.createError(
           ErrorCodes.UNKNOWN_ERROR,
           error instanceof Error
             ? error.message
-            : 'An unexpected error occurred',
-          error instanceof Error ? error.stack : undefined,
+            : typeof error === 'string'
+              ? error
+              : 'An unexpected error occurred',
+          error instanceof Error ? error.stack : String(error),
           { context, originalError: error }
         );
       }

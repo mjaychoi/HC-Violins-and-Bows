@@ -6,25 +6,35 @@ interface CertificateBadgeProps {
   certificate?: boolean | null;
 }
 
+// ✅ FIXED: 3상태 매핑을 object로 묶어서 가독성 및 실수 방지
+const CERTIFICATE_META = {
+  true: { icon: '✓', text: 'Yes' },
+  false: { icon: '✗', text: 'No' },
+  null: { icon: '?', text: 'Unknown' },
+} as const;
+
 function CertificateBadge({ certificate }: CertificateBadgeProps) {
-  // FIXED: Handle null/undefined with explicit nullish coalescing
-  const value = certificate ?? null;
+  // ✅ FIXED: "이 값은 raw prop이 아니라 정규화된 값이다"가 바로 읽힘
+  const normalizedCertificate = certificate ?? null;
 
   // ✅ FIXED: Use centralized color tokens to prevent conflicts with Status colors
-  const className = getCertificateColor(value);
+  const className = getCertificateColor(normalizedCertificate);
 
-  const icon = value === true ? '✓' : value === false ? '✗' : '?';
-  const text = value === true ? 'Yes' : value === false ? 'No' : 'Unknown';
+  // ✅ FIXED: object lookup으로 더 명확하고 실수 방지
+  const meta =
+    CERTIFICATE_META[
+      String(normalizedCertificate) as 'true' | 'false' | 'null'
+    ];
 
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full font-medium ${className}`}
-      aria-label={`Certificate: ${text}`}
-      title={`Certificate: ${text}`}
+      aria-label={`Certificate: ${meta.text}`}
+      title={`Certificate: ${meta.text}`}
     >
       {/* FIXED: Mark icon as aria-hidden for better accessibility */}
-      <span aria-hidden="true">{icon}</span>
-      {text}
+      <span aria-hidden="true">{meta.icon}</span>
+      {meta.text}
     </span>
   );
 }

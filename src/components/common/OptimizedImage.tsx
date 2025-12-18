@@ -191,7 +191,6 @@ export default function OptimizedImage({
         className={cn(
           className,
           `object-${objectFit}`,
-          objectPosition !== 'center' && `object-${objectPosition}`,
           isLoading && 'opacity-0 transition-opacity duration-300',
           !isLoading && 'opacity-100'
         )}
@@ -228,7 +227,6 @@ export default function OptimizedImage({
       className={cn(
         className,
         `object-${objectFit}`,
-        objectPosition !== 'center' && `object-${objectPosition}`,
         isLoading && 'opacity-0 transition-opacity duration-300',
         !isLoading && 'opacity-100'
       )}

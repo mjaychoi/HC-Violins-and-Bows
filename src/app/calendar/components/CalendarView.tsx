@@ -347,6 +347,8 @@ export default function CalendarView({
         textDecoration: isCompleted ? 'line-through' : 'none',
         boxShadow: isDragging ? '0px 4px 8px rgba(0, 0, 0, 0.15)' : undefined,
         transform: isDragging ? 'scale(1.02)' : undefined,
+        // NOTE: Disable transition during drag to avoid jitter in react-big-calendar
+        // Transition animations conflict with drag position updates, causing visual glitches
         transition: isDragging ? 'none' : undefined,
         zIndex: isDragging ? 1000 : undefined,
       };
@@ -383,6 +385,8 @@ export default function CalendarView({
       return (
         <div
           className="w-full calendar-container"
+          role="region"
+          aria-label="Maintenance calendar"
           style={{ minHeight: '700px', padding: '1rem' }}
         >
           <YearView
@@ -400,6 +404,8 @@ export default function CalendarView({
       return (
         <div
           className="w-full calendar-container"
+          role="region"
+          aria-label="Maintenance calendar"
           style={{ minHeight: '700px', padding: '1rem' }}
         >
           <TimelineView
@@ -511,7 +517,10 @@ export default function CalendarView({
                   resource?.kind === 'task' ? resource.eventData : null;
 
                 if (eventData) {
-                  // Use structured data for 2-line display
+                  // NOTE: Visual rendering strategy (2-line structure)
+                  // - Line 1: Instrument name (with color coding)
+                  // - Line 2: Task description
+                  // This provides rich visual information while event.title remains single-line for accessibility
                   return (
                     <div className="rbc-event-content">
                       <div

@@ -123,7 +123,9 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
   it('submitting=true 로딩 상태', () => {
     render(<ClientForm {...baseProps} submitting={true} />);
     // ✅ FIXED: Button 컴포넌트는 loading일 때 "Loading"만 sr-only로 표시 (showLoadingText=false)
-    const submitButton = screen.getByRole('button', { name: 'Loading' });
+    const submitButton = screen.getByRole('button', {
+      name: 'Loading Add Client',
+    });
     expect(submitButton).toBeDisabled();
   });
 

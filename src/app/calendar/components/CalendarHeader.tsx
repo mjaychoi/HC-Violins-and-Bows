@@ -87,7 +87,11 @@ export default function CalendarHeader({
         {/* Right: Today / View Toggle / New Task Button */}
         <div className="flex flex-wrap items-center justify-end gap-2">
           {/* FIXED: Ensure notificationBadge has keyboard focus styles if interactive */}
-          {notificationBadge}
+          {notificationBadge && (
+            <div className="[&_*]:focus-visible:ring-2 [&_*]:focus-visible:ring-blue-500 [&_*]:focus-visible:outline-none">
+              {notificationBadge}
+            </div>
+          )}
           <button
             onClick={onGoToToday}
             className="flex h-9 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -112,9 +116,15 @@ export default function CalendarHeader({
             Today
           </button>
 
-          <div className="flex gap-1 rounded-lg bg-gray-100 p-1 border border-gray-200">
+          <div
+            role="tablist"
+            aria-label="Calendar view"
+            className="flex gap-1 rounded-lg bg-gray-100 p-1 border border-gray-200"
+          >
             <button
               onClick={() => onViewChange('calendar')}
+              role="tab"
+              aria-selected={view === 'calendar'}
               className={`flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
                 view === 'calendar'
                   ? 'bg-blue-600 text-white shadow-sm'
@@ -142,6 +152,8 @@ export default function CalendarHeader({
             </button>
             <button
               onClick={() => onViewChange('list')}
+              role="tab"
+              aria-selected={view === 'list'}
               className={`flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
                 view === 'list'
                   ? 'bg-blue-600 text-white shadow-sm'

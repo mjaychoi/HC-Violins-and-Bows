@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useId } from 'react';
 
 interface NotificationBadgeProps {
   overdue: number;
@@ -19,7 +19,8 @@ export default function NotificationBadge({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const total = overdue + upcoming + today;
-  const tooltipId = `notif-tip-${Math.random().toString(36).substr(2, 9)}`;
+  // ✅ FIXED: useId() for stable ID across renders (prevents SR confusion)
+  const tooltipId = useId();
 
   // ✅ FIXED: Escape로 tooltip 닫기
   useEffect(() => {
@@ -48,7 +49,11 @@ export default function NotificationBadge({
     <div className="relative">
       <button
         ref={buttonRef}
-        onClick={onClick}
+        onClick={() => {
+          // ✅ FIXED: Close tooltip first, then navigate (clearer UX)
+          setShowTooltip(false);
+          onClick?.();
+        }}
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
         onFocus={() => setShowTooltip(true)}

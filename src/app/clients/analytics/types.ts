@@ -5,7 +5,7 @@ export type Purchase = {
   item: string; // instrument name or notes
   amount: number;
   date: string;
-  status: 'Completed' | 'Pending' | 'Refunded';
+  status: 'Completed' | 'Refunded' | 'Unknown' | 'Pending';
 };
 
 export type CustomerWithPurchases = Client & {
@@ -26,21 +26,17 @@ export function salesHistoryToPurchase(
 
   // Determine status based on sale_price
   // Positive = Completed, Negative = Refunded, 0 = Unknown (shouldn't happen in normal flow)
-  const status: 'Completed' | 'Pending' | 'Refunded' =
+  const status: 'Completed' | 'Refunded' | 'Unknown' =
     sale.sale_price > 0
       ? 'Completed'
       : sale.sale_price < 0
         ? 'Refunded'
-        : 'Pending';
+        : 'Unknown';
 
-  // FIXED: Log unexpected sale_price === 0 for monitoring
-  if (
-    sale.sale_price === 0 &&
-    typeof window !== 'undefined' &&
-    process.env.NODE_ENV === 'development'
-  ) {
+  // Log unexpected sale_price === 0 for monitoring (dev only)
+  if (sale.sale_price === 0 && process.env.NODE_ENV === 'development') {
     console.warn(
-      '[salesHistoryToPurchase] Unexpected sale_price === 0 for sale:',
+      '[salesHistoryToPurchase] Unexpected sale_price === 0:',
       sale.id
     );
   }

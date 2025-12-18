@@ -1,12 +1,43 @@
-import { CustomerWithPurchases, Purchase } from '../types';
-import { getMostRecentDate } from '@/utils/dateParsing';
+import React, { useMemo } from 'react';
+import { format } from 'date-fns';
+import { parseISO } from 'date-fns';
+import { CustomerWithPurchases } from '../types';
+import { getMostRecentDate, parseYMDUTC } from '@/utils/dateParsing';
 
+// Format amount with 0 decimal places (for total spend)
 const formatAmount = (amount: number) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 0,
   }).format(amount);
+
+// Format amount with 2 decimal places (for average spend)
+const formatAmountWithDecimals = (amount: number) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  }).format(amount);
+
+// Format date for display (consistent with PurchaseHistory and CustomerList)
+const formatDateForDisplay = (dateStr?: string | null): string => {
+  if (!dateStr) return '—';
+  try {
+    // Try parsing as YYYY-MM-DD first
+    const date = parseYMDUTC(dateStr);
+    return format(date, 'MMM d, yyyy');
+  } catch {
+    // Fallback to ISO parsing
+    try {
+      const date = parseISO(dateStr);
+      return format(date, 'MMM d, yyyy');
+    } catch {
+      return dateStr; // Fallback to raw string
+    }
+  }
+};
 
 export function CustomerStats({
   customers,
@@ -17,31 +48,46 @@ export function CustomerStats({
   hasActiveFilters?: boolean;
   totalCustomers?: number;
 }) {
-  const filteredCount = customers.length;
-  const totalSpend = customers.reduce(
-    (sum: number, c: CustomerWithPurchases) =>
-      sum +
-      c.purchases.reduce((pSum: number, p: Purchase) => pSum + p.amount, 0),
-    0
-  );
-  const avgSpend = filteredCount ? totalSpend / filteredCount : 0;
-  const purchaseCount = customers.reduce(
-    (sum: number, c: CustomerWithPurchases) => sum + c.purchases.length,
-    0
-  );
-  // FIXED: Use getMostRecentDate instead of string sorting
-  const recentDate = getMostRecentDate(
-    customers.flatMap((c: CustomerWithPurchases) =>
-      c.purchases.map((p: Purchase) => p.date)
-    )
-  );
+  // Optimize calculations with useMemo
+  const {
+    filteredCount,
+    totalSpend,
+    avgSpend,
+    purchaseCount,
+    recentDateDisplay,
+  } = useMemo(() => {
+    const filteredCount = customers.length;
+
+    let totalSpend = 0;
+    let purchaseCount = 0;
+    const dates: string[] = [];
+
+    for (const c of customers) {
+      purchaseCount += c.purchases.length;
+      for (const p of c.purchases) {
+        totalSpend += p.amount;
+        if (p.date) dates.push(p.date);
+      }
+    }
+
+    const avgSpend = filteredCount ? totalSpend / filteredCount : 0;
+    const recentRaw = dates.length > 0 ? getMostRecentDate(dates) : null;
+
+    return {
+      filteredCount,
+      totalSpend,
+      avgSpend,
+      purchaseCount,
+      recentDateDisplay: formatDateForDisplay(recentRaw),
+    };
+  }, [customers]);
 
   const cards = [
     { label: 'Customers', value: filteredCount.toString() },
     { label: 'Total Spend', value: formatAmount(totalSpend) },
-    { label: 'Avg Spend/Customer', value: formatAmount(avgSpend) },
+    { label: 'Avg Spend/Customer', value: formatAmountWithDecimals(avgSpend) },
     { label: 'Purchases', value: purchaseCount.toString() },
-    { label: 'Most Recent Purchase', value: recentDate },
+    { label: 'Most Recent Purchase', value: recentDateDisplay },
   ];
 
   return (

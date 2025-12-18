@@ -108,6 +108,15 @@ export const useFilters = (
   const handleHasInstrumentsChange = (value: string) => {
     baseFilters.setFilters((prev: Record<string, unknown>) => {
       const prevFilters = prev as unknown as FilterState;
+
+      // ✅ FIXED: "clear" (empty string) always clears the filter
+      if (!value) {
+        return { ...prevFilters, hasInstruments: [] } as unknown as Record<
+          string,
+          unknown
+        >;
+      }
+
       const isCurrentlySelected = prevFilters.hasInstruments.includes(value);
       // If already selected, clear it; otherwise, set it (and clear the other)
       const updated: FilterState = {
@@ -152,6 +161,13 @@ export const useFilters = (
     [totalPages]
   );
 
+  // ✅ FIXED: getActiveFiltersCount - hasInstruments is already counted by baseFilters
+  // hasInstruments is in filters object, so countActiveFilters already counts it
+  // No need to add it separately
+  const getActiveFiltersCount = useCallback(() => {
+    return baseFilters.getActiveFiltersCount();
+  }, [baseFilters]);
+
   return {
     // State
     searchTerm: baseFilters.searchTerm,
@@ -174,7 +190,7 @@ export const useFilters = (
     clearAllFilters: baseFilters.clearAllFilters,
     handleColumnSort: baseFilters.handleColumnSort,
     getSortArrow: baseFilters.getSortArrow,
-    getActiveFiltersCount: baseFilters.getActiveFiltersCount,
+    getActiveFiltersCount,
 
     // Pagination
     currentPage,
