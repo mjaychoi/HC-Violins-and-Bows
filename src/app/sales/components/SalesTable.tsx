@@ -1,11 +1,21 @@
+'use client';
+
+import React from 'react';
 import Link from 'next/link';
 import { EnrichedSale, SalesHistory } from '@/types';
 import { SaleStatus } from '../types';
 import { currency } from '../utils/salesFormatters';
 import { SortColumn } from '../types';
-import { classNames } from '@/utils/classNames';
+import { classNames, cn } from '@/utils/classNames';
 import { TableSkeleton, EmptyState } from '@/components/common';
 import { Button } from '@/components/common/inputs';
+import { useInlineEdit } from '@/hooks/useInlineEdit';
+import {
+  InlineNumberField,
+  InlineSelectField,
+  InlineEditActions,
+  InlineEditButton,
+} from '@/components/common/InlineEditFields';
 
 // FIXED: Helper to parse YYYY-MM-DD as UTC to avoid timezone shifts
 import { formatDisplayDate } from '@/utils/dateParsing';
@@ -21,12 +31,17 @@ interface SalesTableProps {
   statusForSale: (sale: EnrichedSale) => SaleStatus;
   hasActiveFilters?: boolean;
   onResetFilters?: () => void;
+  onUpdateSale?: (id: string, data: { sale_price?: number }) => Promise<void>;
 }
 
 // ✅ FIXED: Use centralized color tokens
 import { getSalesStatusColor } from '@/utils/colorTokens';
 
-function StatusBadge({ status }: { status: SaleStatus }) {
+const StatusBadge = React.memo(function StatusBadge({
+  status,
+}: {
+  status: SaleStatus;
+}) {
   // ✅ FIXED: Use centralized color tokens
   // 테이블 셀 안의 상태 칩이므로 muted variant 사용 (테이블 기본 규칙)
   const className = getSalesStatusColor(status, 'muted');
@@ -38,9 +53,9 @@ function StatusBadge({ status }: { status: SaleStatus }) {
       {status}
     </span>
   );
-}
+});
 
-export default function SalesTable({
+function SalesTable({
   sales,
   loading,
   onSort,
@@ -51,7 +66,37 @@ export default function SalesTable({
   statusForSale,
   hasActiveFilters = false,
   onResetFilters,
+  onUpdateSale,
 }: SalesTableProps) {
+  // 인라인 편집 훅 (sale_price와 status)
+  const inlineEditPrice = useInlineEdit<SalesHistory>({
+    onSave: async (id, data) => {
+      if (onUpdateSale && data.sale_price !== undefined) {
+        await onUpdateSale(id, { sale_price: data.sale_price as number });
+      }
+    },
+    highlightDuration: 2000,
+  });
+
+  // 상태 편집용: status는 sale_price의 부호로 결정되므로 sale_price를 업데이트
+  const inlineEditStatus = useInlineEdit<
+    SalesHistory & { status?: SaleStatus }
+  >({
+    onSave: async (id, data) => {
+      if (onUpdateSale) {
+        // 상태 변경: Paid -> Refunded는 가격을 음수로, Refunded -> Paid는 가격을 양수로
+        const currentSale = sales.find(s => s.id === id);
+        if (currentSale && data.status) {
+          const newStatus = data.status as SaleStatus;
+          const currentPrice = Math.abs(currentSale.sale_price);
+          const newPrice =
+            newStatus === 'Refunded' ? -currentPrice : currentPrice;
+          await onUpdateSale(id, { sale_price: newPrice });
+        }
+      }
+    },
+    highlightDuration: 2000,
+  });
   // Show skeleton while loading
   if (loading) {
     return <TableSkeleton rows={8} columns={7} />;
@@ -163,11 +208,110 @@ export default function SalesTable({
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className={classNames.tableCell}>
-                    {currency.format(Math.abs(sale.sale_price))}
+                  <td
+                    className={cn(
+                      classNames.tableCell,
+                      inlineEditPrice.editingId === sale.id &&
+                        'ring-2 ring-blue-200 bg-blue-50',
+                      inlineEditPrice.savedId === sale.id &&
+                        'ring-2 ring-green-200 bg-green-50'
+                    )}
+                  >
+                    {inlineEditPrice.editingId === sale.id ? (
+                      <div className="space-y-2">
+                        <InlineNumberField
+                          isEditing={true}
+                          value={Math.abs(sale.sale_price)}
+                          onChange={value => {
+                            if (value !== null) {
+                              // 현재 상태에 따라 부호 유지
+                              const sign = sale.sale_price < 0 ? -1 : 1;
+                              inlineEditPrice.updateField(
+                                'sale_price',
+                                sign * value
+                              );
+                            }
+                          }}
+                          placeholder="Enter amount"
+                          min={0.01}
+                          step={0.01}
+                          format={val => currency.format(val || 0)}
+                          editingClassName="w-full"
+                          onEnter={inlineEditPrice.saveEditing}
+                          onEscape={inlineEditPrice.cancelEditing}
+                        />
+                        <InlineEditActions
+                          isSaving={inlineEditPrice.isSaving}
+                          onSave={inlineEditPrice.saveEditing}
+                          onCancel={inlineEditPrice.cancelEditing}
+                          className="justify-end"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-900 flex-1">
+                          {currency.format(Math.abs(sale.sale_price))}
+                        </span>
+                        <InlineEditButton
+                          onClick={() =>
+                            inlineEditPrice.startEditing(sale.id, {
+                              sale_price: sale.sale_price,
+                            })
+                          }
+                          aria-label="Edit sale price"
+                          size="sm"
+                        />
+                      </div>
+                    )}
                   </td>
-                  <td className={classNames.tableCell}>
-                    <StatusBadge status={status} />
+                  <td
+                    className={cn(
+                      classNames.tableCell,
+                      inlineEditStatus.editingId === sale.id &&
+                        'ring-2 ring-blue-200 bg-blue-50',
+                      inlineEditStatus.savedId === sale.id &&
+                        'ring-2 ring-green-200 bg-green-50'
+                    )}
+                  >
+                    {inlineEditStatus.editingId === sale.id ? (
+                      <div className="space-y-2">
+                        <InlineSelectField
+                          isEditing={true}
+                          value={status}
+                          onChange={value =>
+                            inlineEditStatus.updateField('status', value)
+                          }
+                          options={[
+                            { value: 'Paid', label: 'Paid' },
+                            { value: 'Refunded', label: 'Refunded' },
+                          ]}
+                          editingClassName="w-full"
+                          onEnter={inlineEditStatus.saveEditing}
+                          onEscape={inlineEditStatus.cancelEditing}
+                        />
+                        <InlineEditActions
+                          isSaving={inlineEditStatus.isSaving}
+                          onSave={inlineEditStatus.saveEditing}
+                          onCancel={inlineEditStatus.cancelEditing}
+                          className="justify-end"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <StatusBadge status={status} />
+                        </div>
+                        <InlineEditButton
+                          onClick={() =>
+                            inlineEditStatus.startEditing(sale.id, {
+                              status: status,
+                            })
+                          }
+                          aria-label="Edit sale status"
+                          size="sm"
+                        />
+                      </div>
+                    )}
                   </td>
                   <td className={classNames.tableCell}>
                     <div className="flex items-center gap-2">
@@ -263,3 +407,5 @@ export default function SalesTable({
     </div>
   );
 }
+
+export default React.memo(SalesTable);

@@ -1,6 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useCallback,
+  useState,
+  useRef,
+  Suspense,
+} from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AppLayout } from '@/components/layout';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import {
@@ -103,7 +111,11 @@ import {
 import { currency, dateFormat } from './utils/salesFormatters';
 import { SaleStatus } from './types';
 
-export default function SalesPage() {
+// Component that uses useSearchParams - must be wrapped in Suspense
+function SalesPageContent() {
+  const searchParams = useSearchParams();
+  const instrumentIdFromUrl = searchParams.get('instrumentId') || undefined;
+
   const {
     sales,
     page,
@@ -205,6 +217,7 @@ export default function SalesPage() {
       page,
       search: search || undefined,
       hasClient: hasClient !== null ? hasClient : undefined,
+      instrumentId: instrumentIdFromUrl,
       sortColumn: sortColumn === 'client_name' ? undefined : sortColumn, // client_name은 클라이언트에서만 처리
       sortDirection,
     });
@@ -214,6 +227,7 @@ export default function SalesPage() {
     page,
     search,
     hasClient,
+    instrumentIdFromUrl,
     sortColumn,
     sortDirection,
     fetchSales,
@@ -367,6 +381,56 @@ export default function SalesPage() {
     (sale: EnrichedSale): SaleStatus =>
       sale.sale_price < 0 ? 'Refunded' : 'Paid',
     []
+  );
+
+  // 인라인 편집용 sale 업데이트 핸들러
+  const handleUpdateSale = useCallback(
+    async (id: string, data: { sale_price?: number }) => {
+      try {
+        const response = await fetch('/api/sales', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id,
+            sale_price: data.sale_price,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to update sale');
+        }
+
+        showSuccess('Sale updated successfully.');
+        // 데이터 새로고침
+        await fetchSales({
+          fromDate: from || undefined,
+          toDate: to || undefined,
+          page,
+          search: search || undefined,
+          hasClient: hasClient !== null ? hasClient : undefined,
+          sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
+          sortDirection,
+        });
+      } catch (error) {
+        handleError(error, 'Update sale');
+        throw error; // 인라인 편집 훅에서 에러 처리하도록
+      }
+    },
+    [
+      showSuccess,
+      handleError,
+      fetchSales,
+      from,
+      to,
+      page,
+      search,
+      hasClient,
+      sortColumn,
+      sortDirection,
+    ]
   );
 
   const handleExportCSV = useCallback(async () => {
@@ -567,6 +631,7 @@ export default function SalesPage() {
                   !!(search || from || to || hasClient !== null)
                 }
                 onResetFilters={clearFilters}
+                onUpdateSale={handleUpdateSale}
               />
               {/* FIXED: filteredCount is now same as totalCount since server handles all filtering */}
               <Pagination
@@ -627,5 +692,24 @@ export default function SalesPage() {
         />
       </AppLayout>
     </ErrorBoundary>
+  );
+}
+
+// Main page component with Suspense boundary
+export default function SalesPage() {
+  return (
+    <Suspense
+      fallback={
+        <ErrorBoundary>
+          <AppLayout title="Sales">
+            <div className="p-6">
+              <TableSkeleton rows={8} columns={7} />
+            </div>
+          </AppLayout>
+        </ErrorBoundary>
+      }
+    >
+      <SalesPageContent />
+    </Suspense>
   );
 }

@@ -1,3 +1,4 @@
+import React from 'react';
 import { getTagColor } from '@/app/clients/utils';
 import { getTagDisplayLabel } from '@/app/clients/utils';
 
@@ -7,7 +8,7 @@ export interface TagBadgeProps {
   context?: 'table' | 'card';
 }
 
-export default function TagBadge({ tag, context = 'table' }: TagBadgeProps) {
+function TagBadge({ tag, context = 'table' }: TagBadgeProps) {
   const variant = context === 'table' ? 'muted' : 'soft';
   const className = getTagColor(tag, variant);
 
@@ -21,3 +22,5 @@ export default function TagBadge({ tag, context = 'table' }: TagBadgeProps) {
     </span>
   );
 }
+
+export default React.memo(TagBadge);

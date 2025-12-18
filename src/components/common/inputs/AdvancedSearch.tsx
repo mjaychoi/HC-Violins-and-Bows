@@ -16,22 +16,24 @@ interface AdvancedSearchProps {
 export default function AdvancedSearch({
   dateRange,
   onDateRangeChange,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   operator: _operator, // Unused - kept for backward compatibility
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onOperatorChange: _onOperatorChange, // Unused - kept for backward compatibility
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   dateFields: _dateFields = [], // Unused - kept for backward compatibility
   onApply,
   onReset,
 }: AdvancedSearchProps) {
+  // Keep backward-compatible props accounted for without using them.
+  void _operator;
+  void _onOperatorChange;
+  void _dateFields;
+
   const [isOpen, setIsOpen] = useState(false);
 
   const handleDateChange = useCallback(
     (field: 'from' | 'to', value: string) => {
       onDateRangeChange({
-        from: field === 'from' ? value : dateRange?.from || null,
-        to: field === 'to' ? value : dateRange?.to || null,
+        from: field === 'from' ? value : dateRange?.from,
+        to: field === 'to' ? value : dateRange?.to,
       });
     },
     [dateRange, onDateRangeChange]

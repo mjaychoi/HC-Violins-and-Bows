@@ -1,3 +1,4 @@
+import React from 'react';
 // FIXED: Accept boolean | null | undefined to handle DB nullable fields
 import { getCertificateColor } from '@/utils/colorTokens';
 
@@ -5,9 +6,7 @@ interface CertificateBadgeProps {
   certificate?: boolean | null;
 }
 
-export default function CertificateBadge({
-  certificate,
-}: CertificateBadgeProps) {
+function CertificateBadge({ certificate }: CertificateBadgeProps) {
   // FIXED: Handle null/undefined with explicit nullish coalescing
   const value = certificate ?? null;
 
@@ -29,3 +28,5 @@ export default function CertificateBadge({
     </span>
   );
 }
+
+export default React.memo(CertificateBadge);

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 
 interface RowActionsProps {
   onEdit: () => void;
@@ -16,9 +17,11 @@ interface RowActionsProps {
   hasCertificateField?: boolean;
   // Optional stable ID for menu (for accessibility)
   itemId?: string;
+  // Instrument ID for sales history link
+  instrumentId?: string;
 }
 
-export default function RowActions({
+function RowActions({
   onEdit,
   onDelete,
   onDownloadCertificate,
@@ -30,6 +33,7 @@ export default function RowActions({
   currentStatus,
   hasCertificateField = false,
   itemId,
+  instrumentId,
 }: RowActionsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
@@ -332,6 +336,33 @@ export default function RowActions({
                 Certificate
               </button>
             )}
+            {/* Sales History Link */}
+            {instrumentId && (
+              <Link
+                href={`/sales?instrumentId=${instrumentId}`}
+                onClick={e => {
+                  e.stopPropagation();
+                  setIsOpen(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 transition-colors duration-200"
+                role="menuitem"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
+                  />
+                </svg>
+                View Sales History
+              </Link>
+            )}
             <button
               role="menuitem"
               onClick={e => {
@@ -362,3 +393,5 @@ export default function RowActions({
     </div>
   );
 }
+
+export default React.memo(RowActions);

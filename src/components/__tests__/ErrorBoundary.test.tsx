@@ -1,5 +1,8 @@
-import { render, screen } from '@/test-utils/render';
-import ErrorBoundary from '../common/feedback/ErrorBoundary';
+import { render, screen, act } from '@/test-utils/render';
+import ErrorBoundary, {
+  withErrorBoundary,
+  useErrorBoundary,
+} from '../common/feedback/ErrorBoundary';
 import { AppError } from '@/types/errors';
 import { ErrorInfo } from 'react';
 
@@ -156,5 +159,48 @@ describe('ErrorBoundary', () => {
 
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
+  });
+});
+
+describe('ErrorBoundary helpers', () => {
+  it('withErrorBoundary HOC wraps component and renders children when no error', () => {
+    const BaseComponent = () => <div>Base Component</div>;
+    const Wrapped = withErrorBoundary(BaseComponent);
+
+    render(<Wrapped />);
+
+    expect(screen.getByText('Base Component')).toBeInTheDocument();
+  });
+
+  it('useErrorBoundary hook throws captured error and is handled by ErrorBoundary', () => {
+    const TestComponent = () => {
+      const { captureError } = useErrorBoundary();
+      return (
+        <button
+          type="button"
+          onClick={() => captureError(new Error('Hook error'))}
+        >
+          Trigger Error
+        </button>
+      );
+    };
+
+    render(
+      <ErrorBoundary>
+        <TestComponent />
+      </ErrorBoundary>
+    );
+
+    // 에러 발생 전에는 버튼이 보이고, 에러 UI는 안 보임
+    const button = screen.getByText('Trigger Error');
+    expect(button).toBeInTheDocument();
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+
+    // 클릭 → useErrorBoundary 가 render phase 에서 throw → ErrorBoundary 가 잡아서 fallback 렌더
+    act(() => {
+      button.click();
+    });
+
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
   });
 });

@@ -83,12 +83,13 @@ export function useNotifications({
 }
 
 /**
- * @deprecated Use useNotifications instead - this function has incorrect date priority
- * This function incorrectly prioritizes scheduled_date over due_date, causing bugs
- * where badge counts don't match notification lists
+ * @deprecated Use useNotifications().counts instead
  *
- * REMOVED: Use useNotifications().counts instead for consistent date priority
- * Priority should be: due_date > personal_due_date > scheduled_date
+ * This function is a wrapper around useNotifications and maintains correct date priority.
+ * The underlying bug (scheduled_date prioritized over due_date) has been fixed in useNotifications.
+ * Date priority: due_date > personal_due_date > scheduled_date
+ *
+ * This function is kept for backwards compatibility but should be replaced with useNotifications().counts
  */
 export function useNotificationCounts(
   tasks: MaintenanceTask[],

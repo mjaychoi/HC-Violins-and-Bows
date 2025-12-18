@@ -4,6 +4,8 @@ import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
+import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
+import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import {
   createSafeErrorResponse,
   createLogErrorInfo,
@@ -16,7 +18,7 @@ import {
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   const startTime = performance.now();
   const searchParams = request.nextUrl.searchParams;
   const clientId = searchParams.get('client_id') || undefined;
@@ -197,7 +199,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export const GET = withSentryRoute(withAuthRoute(getHandler));
+
+async function postHandler(request: NextRequest) {
   const startTime = performance.now();
   try {
     const body = await request.json();
@@ -283,7 +287,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+export const POST = withSentryRoute(withAuthRoute(postHandler));
+
+async function patchHandler(request: NextRequest) {
   const startTime = performance.now();
   try {
     const body = await request.json();
@@ -394,7 +400,9 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-export async function DELETE(request: NextRequest) {
+export const PATCH = withSentryRoute(withAuthRoute(patchHandler));
+
+async function deleteHandler(request: NextRequest) {
   const startTime = performance.now();
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get('id');
@@ -482,8 +490,10 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
+export const DELETE = withSentryRoute(withAuthRoute(deleteHandler));
+
 // Batch update display_order for multiple connections
-export async function PUT(request: NextRequest) {
+export const PUT = withAuthRoute(async function PUT(request: NextRequest) {
   const startTime = performance.now();
   try {
     const body = await request.json();
@@ -598,4 +608,4 @@ export async function PUT(request: NextRequest) {
     const safeError = createSafeErrorResponse(appError, 500);
     return NextResponse.json(safeError, { status: 500 });
   }
-}
+});

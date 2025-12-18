@@ -15,7 +15,10 @@ import { ModalHeader } from '@/components/common/modals/ModalHeader';
 interface SaleFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (payload: Omit<SalesHistory, 'id' | 'created_at'>) => Promise<void>;
+  onSubmit: (
+    payload: Omit<SalesHistory, 'id' | 'created_at'>,
+    options?: { instrumentStatusUpdated?: boolean; instrumentId?: string }
+  ) => Promise<void>;
   submitting: boolean;
   // 원클릭 판매를 위한 초기값
   initialInstrument?: Instrument | null;
@@ -170,7 +173,8 @@ export default function SaleForm({
     };
 
     try {
-      await onSubmit(payload);
+      let instrumentStatusUpdated = false;
+      let updatedInstrumentId: string | undefined;
 
       // 판매 기록 저장 후 악기 상태 자동 업데이트
       if (
@@ -190,7 +194,10 @@ export default function SaleForm({
             }),
           });
 
-          if (!response.ok) {
+          if (response.ok) {
+            instrumentStatusUpdated = true;
+            updatedInstrumentId = formData.instrument_id;
+          } else {
             console.warn('Failed to update instrument status to Sold');
           }
         } catch (error) {
@@ -198,6 +205,11 @@ export default function SaleForm({
           // 에러가 발생해도 판매 기록은 성공했으므로 계속 진행
         }
       }
+
+      await onSubmit(payload, {
+        instrumentStatusUpdated,
+        instrumentId: updatedInstrumentId,
+      });
 
       // UX: Show success state instead of immediately closing
       setSuccess(true);

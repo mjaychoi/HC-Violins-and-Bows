@@ -1,0 +1,25 @@
+{
+  "cookies": [
+    {
+      "name": "__next_hmr_refresh_hash__",
+      "value": "0820ac6a34b2182f8f9c50c9ad1d7714e46629e7842653c4",
+      "domain": "localhost",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://localhost:3000",
+      "localStorage": [
+        {
+          "name": "sb-dmilmlhquttcozxlpfxw-auth-token",
+          "value": "{\"access_token\":\"eyJhbGciOiJIUzI1NiIsImtpZCI6IkZoT0duUWJqWDZsYml2VFIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2RtaWxtbGhxdXR0Y296eGxwZnh3LnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJhOWExZmY3NS1iMjYyLTQ3NTQtOGYyNy1kYzgzNzUyYzY2ZGUiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzY2MDY1NjUwLCJpYXQiOjE3NjYwNjIwNTAsImVtYWlsIjoidGVzdEB0ZXN0LmNvbSIsInBob25lIjoiIiwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiZW1haWwiLCJwcm92aWRlcnMiOlsiZW1haWwiXX0sInVzZXJfbWV0YWRhdGEiOnsiZW1haWxfdmVyaWZpZWQiOnRydWV9LCJyb2xlIjoiYXV0aGVudGljYXRlZCIsImFhbCI6ImFhbDEiLCJhbXIiOlt7Im1ldGhvZCI6InBhc3N3b3JkIiwidGltZXN0YW1wIjoxNzY2MDYyMDUwfV0sInNlc3Npb25faWQiOiIxYWM2YmVlNS0wYjYyLTQ1MjAtYTQxNS05MzAzNDg1NDY5MDYiLCJpc19hbm9ueW1vdXMiOmZhbHNlfQ.gkNmWHp4hD9NWxYSyJPv2fAShKSJJ_Il1XCNz03NGUA\",\"token_type\":\"bearer\",\"expires_in\":3600,\"expires_at\":1766065650,\"refresh_token\":\"ygwog5nikr7l\",\"user\":{\"id\":\"a9a1ff75-b262-4754-8f27-dc83752c66de\",\"aud\":\"authenticated\",\"role\":\"authenticated\",\"email\":\"test@test.com\",\"email_confirmed_at\":\"2025-07-17T03:29:11.885001Z\",\"phone\":\"\",\"confirmed_at\":\"2025-07-17T03:29:11.885001Z\",\"last_sign_in_at\":\"2025-12-18T12:47:30.048944311Z\",\"app_metadata\":{\"provider\":\"email\",\"providers\":[\"email\"]},\"user_metadata\":{\"email_verified\":true},\"identities\":[{\"identity_id\":\"68d253fa-895f-47b7-bc98-aa9bae13fa4f\",\"id\":\"a9a1ff75-b262-4754-8f27-dc83752c66de\",\"user_id\":\"a9a1ff75-b262-4754-8f27-dc83752c66de\",\"identity_data\":{\"email\":\"test@test.com\",\"email_verified\":false,\"phone_verified\":false,\"sub\":\"a9a1ff75-b262-4754-8f27-dc83752c66de\"},\"provider\":\"email\",\"last_sign_in_at\":\"2025-07-17T03:29:11.880585Z\",\"created_at\":\"2025-07-17T03:29:11.88064Z\",\"updated_at\":\"2025-07-17T03:29:11.88064Z\",\"email\":\"test@test.com\"}],\"created_at\":\"2025-07-17T03:29:11.878305Z\",\"updated_at\":\"2025-12-18T12:47:30.141805Z\",\"is_anonymous\":false},\"weak_password\":{\"message\":\"Password should be at least 6 characters.\",\"reasons\":[\"length\"]}}"
+        }
+      ]
+    }
+  ]
+}

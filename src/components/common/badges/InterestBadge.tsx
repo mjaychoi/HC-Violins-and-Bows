@@ -1,3 +1,4 @@
+import React from 'react';
 import { getInterestColor } from '@/utils/colorTokens';
 
 export interface InterestBadgeProps {
@@ -6,10 +7,7 @@ export interface InterestBadgeProps {
   context?: 'table' | 'card';
 }
 
-export default function InterestBadge({
-  interest,
-  context = 'table',
-}: InterestBadgeProps) {
+function InterestBadge({ interest, context = 'table' }: InterestBadgeProps) {
   if (!interest) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-gray-400 bg-gray-50 border border-gray-100">
@@ -31,3 +29,5 @@ export default function InterestBadge({
     </span>
   );
 }
+
+export default React.memo(InterestBadge);

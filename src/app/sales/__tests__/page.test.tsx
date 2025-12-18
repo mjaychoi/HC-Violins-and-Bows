@@ -241,8 +241,21 @@ jest.mock('../components/SalesAlerts', () => ({
   default: () => <div data-testid="sales-alerts">Alerts</div>,
 }));
 
+const mockSearchParamsGet = jest.fn(() => null);
+const mockRouter = {
+  push: jest.fn(),
+  replace: jest.fn(),
+  refresh: jest.fn(),
+  prefetch: jest.fn(() => Promise.resolve()),
+  back: jest.fn(),
+};
+
 jest.mock('next/navigation', () => ({
+  useRouter: () => mockRouter,
   usePathname: jest.fn(() => '/sales'),
+  useSearchParams: () => ({
+    get: mockSearchParamsGet,
+  }),
 }));
 
 jest.mock('../utils/salesUtils', () => {
@@ -437,6 +450,7 @@ describe('SalesPage', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSearchParamsGet.mockReturnValue(null);
 
     mockUseSalesHistory.mockReturnValue({
       sales: [mockSale],

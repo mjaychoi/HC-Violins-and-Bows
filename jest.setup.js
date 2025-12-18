@@ -4,6 +4,11 @@
 const React = require('react');
 require('@testing-library/jest-dom');
 
+process.env.NEXT_PUBLIC_SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://example.com';
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'anon';
+
 // Polyfill performance.now in Node test env
 if (typeof global.performance === 'undefined') {
   global.performance = {

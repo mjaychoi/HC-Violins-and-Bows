@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import type { MaintenanceTask } from '@/types';
 import { formatDate } from '@/utils/formatUtils';
 import { parseYMDLocal } from '@/utils/dateParsing';
@@ -63,7 +63,7 @@ const getRelativeDateDisplay = (date: string): string => {
   return formatDate(date, 'short');
 };
 
-export default function TaskRowExpanded({
+function TaskRowExpanded({
   task,
   instrument,
   client,
@@ -350,3 +350,5 @@ export default function TaskRowExpanded({
     </div>
   );
 }
+
+export default memo(TaskRowExpanded);

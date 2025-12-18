@@ -105,7 +105,7 @@ describe('ErrorToast', () => {
   it('should show recovery suggestions when enabled', () => {
     render(<ErrorToast {...defaultProps} showRecoverySuggestions={true} />);
 
-    expect(screen.getByText('Solution methods:')).toBeInTheDocument();
+    expect(screen.getByText(/해결 방법:/)).toBeInTheDocument();
     expect(screen.getByText('Check your connection')).toBeInTheDocument();
     expect(screen.getByText('Try again later')).toBeInTheDocument();
   });
@@ -143,12 +143,12 @@ describe('ErrorToast', () => {
     expect(rootDiv).toHaveClass('bg-yellow-50');
   });
 
-  it('should hide suggestions when hide button is clicked', () => {
-    render(<ErrorToast {...defaultProps} showRecoverySuggestions={true} />);
+  it('should not render recovery suggestions when disabled', () => {
+    render(<ErrorToast {...defaultProps} showRecoverySuggestions={false} />);
 
-    expect(screen.getByText('Solution methods:')).toBeInTheDocument();
-    expect(screen.getByText('Check your connection')).toBeInTheDocument();
-    expect(screen.getByText('Try again later')).toBeInTheDocument();
+    expect(screen.queryByText(/해결 방법:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Check your connection')).not.toBeInTheDocument();
+    expect(screen.queryByText('Try again later')).not.toBeInTheDocument();
   });
 
   it('should handle multiple error types correctly', () => {

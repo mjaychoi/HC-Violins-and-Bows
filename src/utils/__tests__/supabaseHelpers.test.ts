@@ -256,4 +256,150 @@ describe('SupabaseHelpers', () => {
       expect(mockLimit).toHaveBeenCalledWith(20);
     });
   });
+
+  describe('Error handling', () => {
+    it('should handle fetchAll error', async () => {
+      const mockError = { message: 'Database error', code: 'PGRST116' };
+      const mockSelect = jest
+        .fn()
+        .mockResolvedValue({ data: null, error: mockError });
+
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
+
+      const result = await SupabaseHelpers.fetchAll(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS
+      );
+
+      expect(result.data).toBeNull();
+      expect(result.error).toEqual(mockError);
+    });
+
+    it('should handle fetchById error', async () => {
+      const mockError = { message: 'Not found', code: 'PGRST116' };
+      const mockEq = jest.fn().mockReturnThis();
+      const mockSingle = jest
+        .fn()
+        .mockResolvedValue({ data: null, error: mockError });
+      const mockSelect = jest
+        .fn()
+        .mockReturnValue({ eq: mockEq, single: mockSingle });
+
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
+
+      const result = await SupabaseHelpers.fetchById('test_table', '1');
+
+      expect(result.data).toBeNull();
+      expect(result.error).toEqual(mockError);
+    });
+
+    it('should handle create error', async () => {
+      const mockError = { message: 'Validation error', code: '23505' };
+      const mockInsert = jest.fn().mockReturnThis();
+      const mockSelect = jest.fn().mockReturnThis();
+      const mockSingle = jest
+        .fn()
+        .mockResolvedValue({ data: null, error: mockError });
+
+      const chainableMock = createChainableMock();
+      chainableMock.insert = mockInsert;
+      chainableMock.select = mockSelect;
+      chainableMock.single = mockSingle;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
+
+      const result = await SupabaseHelpers.create('test_table', {
+        name: 'Test',
+      });
+
+      expect(result.data).toBeNull();
+      expect(result.error).toEqual(mockError);
+    });
+
+    it('should handle update error', async () => {
+      const mockError = { message: 'Not found', code: 'PGRST116' };
+      const mockUpdate = jest.fn().mockReturnThis();
+      const mockEq = jest.fn().mockReturnThis();
+      const mockSelect = jest.fn().mockReturnThis();
+      const mockSingle = jest
+        .fn()
+        .mockResolvedValue({ data: null, error: mockError });
+
+      const chainableMock = createChainableMock();
+      chainableMock.update = mockUpdate;
+      chainableMock.eq = mockEq;
+      chainableMock.select = mockSelect;
+      chainableMock.single = mockSingle;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
+
+      const result = await SupabaseHelpers.update('test_table', '1', {
+        name: 'Updated',
+      });
+
+      expect(result.data).toBeNull();
+      expect(result.error).toEqual(mockError);
+    });
+
+    it('should handle delete error', async () => {
+      const mockError = { message: 'Delete failed', code: 'PGRST116' };
+      const mockDelete = jest.fn().mockReturnThis();
+      const mockEq = jest.fn().mockResolvedValue({ error: mockError });
+
+      const chainableMock = createChainableMock();
+      chainableMock.delete = mockDelete;
+      chainableMock.eq = mockEq;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
+
+      const result = await SupabaseHelpers.delete('test_table', '1');
+
+      expect(result.error).toEqual(mockError);
+    });
+
+    it('should handle search error', async () => {
+      const mockError = { message: 'Search error', code: 'PGRST116' };
+      const mockOr = jest.fn().mockReturnThis();
+      const mockLimit = jest
+        .fn()
+        .mockResolvedValue({ data: null, error: mockError });
+      const mockSelect = jest
+        .fn()
+        .mockReturnValue({ or: mockOr, limit: mockLimit });
+
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
+
+      const result = await SupabaseHelpers.search('test_table', 'test', [
+        'name',
+      ]);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toEqual(mockError);
+    });
+
+    it('should handle fetchAll with exception', async () => {
+      const mockError = new Error('Network error');
+      const mockSelect = jest.fn().mockRejectedValue(mockError);
+
+      const chainableMock = createChainableMock();
+      chainableMock.select = mockSelect;
+
+      (mockSupabaseClient.from as jest.Mock).mockReturnValue(chainableMock);
+
+      const result = await SupabaseHelpers.fetchAll(
+        'instruments' as keyof typeof ALLOWED_SORT_COLUMNS
+      );
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBeDefined();
+    });
+  });
 });

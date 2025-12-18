@@ -99,6 +99,29 @@ jest.mock('@/contexts/ToastContext', () => {
 beforeEach(() => {
   // FIXED: Use mockResolvedValue instead of mockResolvedValueOnce to reset for each test
   (global.fetch as unknown) = jest.fn((url: string) => {
+    if (url.includes('/api/sales/summary-by-client')) {
+      // Return aggregated summary data
+      const summaryData = [
+        {
+          client_id: 'c1',
+          total_spend: 158000,
+          purchase_count: 2,
+          last_purchase_date: '2024-05-12',
+          first_purchase_date: '2024-04-10',
+        },
+        {
+          client_id: 'c2',
+          total_spend: 60500,
+          purchase_count: 1,
+          last_purchase_date: '2024-06-01',
+          first_purchase_date: '2024-06-01',
+        },
+      ];
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ data: summaryData }),
+      } as Response);
+    }
     if (url.includes('/api/sales')) {
       return Promise.resolve({
         ok: true,
@@ -214,48 +237,54 @@ describe('useCustomers', () => {
   it('should sort customers by recent activity', async () => {
     const { result } = renderHook(() => useCustomers());
 
-    // Wait for data to load
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false);
-      expect(result.current.customers.length).toBeGreaterThan(0);
-    });
+    // Wait for data to load (including summary API)
+    await waitFor(
+      () => {
+        expect(result.current.loading).toBe(false);
+        expect(result.current.customers.length).toBeGreaterThan(0);
+      },
+      { timeout: 3000 }
+    );
 
     act(() => {
       result.current.setSortBy('recent');
     });
 
-    await waitFor(() => {
-      const customers = result.current.customers;
-      expect(customers.length).toBe(3);
+    await waitFor(
+      () => {
+        const customers = result.current.customers;
+        expect(customers.length).toBe(3);
 
-      // Based on test data:
-      // - Minho (c2): purchase date 2024-06-01 (most recent)
-      // - Jane (c1): purchase dates 2024-05-12, 2024-04-10 → most recent: 2024-05-12
-      // - Ara (c3): no purchases → uses created_at: 2024-03-01
-      // Expected order: Minho (2024-06-01) > Jane (2024-05-12) > Ara (2024-03-01)
+        // Based on test data and summary API response:
+        // - Minho (c2): last_purchase_date 2024-06-01 (most recent)
+        // - Jane (c1): last_purchase_date 2024-05-12 (from summary)
+        // - Ara (c3): no purchases → uses created_at: 2024-03-01
+        // Expected order: Minho (2024-06-01) > Jane (2024-05-12) > Ara (2024-03-01)
 
-      // Verify Minho has purchase data
-      const minho = customers.find(c => c.first_name === 'Minho');
-      expect(minho).toBeDefined();
-      expect(minho?.purchases.length).toBeGreaterThan(0);
+        // Verify Minho has purchase data
+        const minho = customers.find(c => c.first_name === 'Minho');
+        expect(minho).toBeDefined();
+        expect(minho?.purchases.length).toBeGreaterThan(0);
 
-      // Verify Jane has purchase data
-      const jane = customers.find(c => c.first_name === 'Jane');
-      expect(jane).toBeDefined();
-      expect(jane?.purchases.length).toBeGreaterThan(0);
+        // Verify Jane has purchase data
+        const jane = customers.find(c => c.first_name === 'Jane');
+        expect(jane).toBeDefined();
+        expect(jane?.purchases.length).toBeGreaterThan(0);
 
-      // Verify Ara has no purchases
-      const ara = customers.find(c => c.first_name === 'Ara');
-      expect(ara).toBeDefined();
-      expect(ara?.purchases.length).toBe(0);
+        // Verify Ara has no purchases
+        const ara = customers.find(c => c.first_name === 'Ara');
+        expect(ara).toBeDefined();
+        expect(ara?.purchases.length).toBe(0);
 
-      // Minho should be first (most recent purchase: 2024-06-01)
-      expect(customers[0].first_name).toBe('Minho');
-      // Jane should be second (most recent purchase: 2024-05-12)
-      expect(customers[1].first_name).toBe('Jane');
-      // Ara should be last (no purchases, uses created_at: 2024-03-01)
-      expect(customers[2].first_name).toBe('Ara');
-    });
+        // Minho should be first (most recent purchase: 2024-06-01)
+        expect(customers[0].first_name).toBe('Minho');
+        // Jane should be second (most recent purchase: 2024-05-12)
+        expect(customers[1].first_name).toBe('Jane');
+        // Ara should be last (no purchases, uses created_at: 2024-03-01)
+        expect(customers[2].first_name).toBe('Ara');
+      },
+      { timeout: 3000 }
+    );
   });
 
   it('should combine search and tag filter', () => {

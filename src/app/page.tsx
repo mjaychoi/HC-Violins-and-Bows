@@ -8,6 +8,8 @@ import { useLoadingState } from '@/hooks/useLoadingState';
 import { ErrorBoundary } from '@/components/common';
 
 export default function LoginPage() {
+  const appName =
+    process.env.NEXT_PUBLIC_APP_NAME ?? 'Instrument Inventory App';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | undefined>();
@@ -70,7 +72,7 @@ export default function LoginPage() {
             </div>
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Instrument Inventory App
+            {appName}
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Sign in to your account

@@ -4,6 +4,8 @@ import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
+import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
+import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import {
   createSafeErrorResponse,
   createLogErrorInfo,
@@ -23,7 +25,7 @@ import {
 
 const PAGE_SIZE = 10;
 
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   const startTime = performance.now();
   const searchParams = request.nextUrl.searchParams;
 
@@ -346,7 +348,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export const GET = withSentryRoute(withAuthRoute(getHandler));
+
+export const POST = withAuthRoute(async function POST(request: NextRequest) {
   const startTime = performance.now();
 
   try {
@@ -470,9 +474,9 @@ export async function POST(request: NextRequest) {
     const safeError = createSafeErrorResponse(appError, 500);
     return NextResponse.json(safeError, { status: 500 });
   }
-}
+});
 
-export async function PATCH(request: NextRequest) {
+export const PATCH = withAuthRoute(async function PATCH(request: NextRequest) {
   const startTime = performance.now();
   let body: { id?: string; sale_price?: number | string; notes?: string } = {};
 
@@ -598,4 +602,4 @@ export async function PATCH(request: NextRequest) {
     const safeError = createSafeErrorResponse(appError, 500);
     return NextResponse.json(safeError, { status: 500 });
   }
-}
+});

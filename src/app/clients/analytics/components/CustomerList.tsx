@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { CustomerWithPurchases } from '../types';
 import { format } from 'date-fns';
 import { EmptyState, TagBadge, InterestBadge } from '@/components/common';
@@ -23,14 +23,14 @@ const formatAmount = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-export function CustomerList({
+export const CustomerListComponent = ({
   customers,
   selectedId,
   onSelect,
   hasActiveFilters = false,
   onResetFilters,
   onAddCustomer,
-}: CustomerListProps) {
+}: CustomerListProps) => {
   const listRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -194,4 +194,6 @@ export function CustomerList({
       })}
     </div>
   );
-}
+};
+
+export const CustomerList = React.memo(CustomerListComponent);

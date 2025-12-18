@@ -29,6 +29,9 @@ interface DashboardContentProps {
   onAddClick: () => void;
   onSellClick: (item: Instrument) => void;
   existingSerialNumbers?: string[]; // Serial numbers for validation
+  newlyCreatedItemId?: string | null; // ID of newly created item for scroll/highlight
+  onNewlyCreatedItemShown?: () => void; // Callback when newly created item is shown
+  onLoadSampleData?: () => void; // Load sample data handler
 }
 
 function DashboardContentInner({
@@ -42,6 +45,9 @@ function DashboardContentInner({
   onAddClick,
   onSellClick,
   existingSerialNumbers = [],
+  newlyCreatedItemId,
+  onNewlyCreatedItemShown,
+  onLoadSampleData,
 }: DashboardContentProps) {
   // Dashboard filters - use enrichedItems instead of instruments
   const {
@@ -187,6 +193,8 @@ function DashboardContentInner({
           onSort={handleSort}
           onAddClick={onAddClick}
           onSellClick={onSellClick}
+          newlyCreatedItemId={newlyCreatedItemId}
+          onNewlyCreatedItemShown={onNewlyCreatedItemShown}
           emptyState={{
             hasActiveFilters:
               getActiveFiltersCount() > 0 ||
@@ -201,6 +209,7 @@ function DashboardContentInner({
                 ? 'No items found matching your filters'
                 : undefined,
           }}
+          onLoadSampleData={onLoadSampleData}
           // Pagination props
           currentPage={currentPage}
           totalPages={totalPages}

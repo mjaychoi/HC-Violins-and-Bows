@@ -1,5 +1,6 @@
 import { Logger, LogContext } from './logger';
 import { AppError, ErrorSeverity } from '@/types/errors';
+import * as Sentry from '@sentry/nextjs';
 
 export interface WebhookConfig {
   url?: string;
@@ -164,6 +165,22 @@ export function captureException(
     appError = new Error(
       error instanceof Error ? error.message : String(error)
     );
+  }
+
+  // Report to Sentry (HIGH 이상만 전송, best-effort)
+  if (severity === ErrorSeverity.HIGH || severity === ErrorSeverity.CRITICAL) {
+    try {
+      const sentryLevel: Sentry.SeverityLevel =
+        severity === ErrorSeverity.CRITICAL ? 'fatal' : 'error';
+
+      Sentry.captureException(appError, {
+        level: sentryLevel,
+        tags: context ? { context } : undefined,
+        extra: metadata,
+      });
+    } catch {
+      // Sentry 미설정/로딩 실패 시에도 조용히 무시
+    }
   }
 
   // Send alert if severity threshold is met

@@ -9,6 +9,7 @@ interface FetchOptions {
   toDate?: string;
   search?: string;
   hasClient?: boolean; // true = has clients, false = no clients, undefined = all
+  instrumentId?: string; // Filter by instrument ID
   // FIXED: Make page required (or default to 1) to avoid stale closure issues
   page: number;
   sortColumn?: 'sale_date' | 'sale_price' | 'client_name';
@@ -67,6 +68,9 @@ export function useSalesHistory() {
         if (options?.hasClient !== undefined) {
           params.set('hasClient', options.hasClient ? 'true' : 'false');
         }
+        if (options?.instrumentId) {
+          params.set('instrument_id', options.instrumentId);
+        }
         // client_name은 클라이언트에서만 정렬하므로 서버에 보내지 않음
         if (options?.sortColumn && options.sortColumn !== 'client_name') {
           params.set('sortColumn', options.sortColumn);
@@ -112,7 +116,6 @@ export function useSalesHistory() {
         setLoading(false);
       }
     },
-    // FIXED: No need for eslint-disable - page is now required in options, no stale closure
     [handleError]
   );
 

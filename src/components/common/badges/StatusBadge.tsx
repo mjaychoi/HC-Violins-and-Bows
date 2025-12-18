@@ -1,3 +1,4 @@
+import React from 'react';
 import { Instrument } from '@/types';
 import { getStatusBadgeColor } from '@/utils/colorTokens';
 
@@ -7,7 +8,7 @@ export interface StatusBadgeProps {
   size?: 'sm' | 'md';
 }
 
-export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
+function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
   const finalClassName = getStatusBadgeColor(status);
 
   const iconMap = {
@@ -34,3 +35,5 @@ export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
     </span>
   );
 }
+
+export default React.memo(StatusBadge);

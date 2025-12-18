@@ -1,13 +1,27 @@
 import type { NextConfig } from 'next';
 import path from 'path';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let withBundleAnalyzer: any = (config: NextConfig) => config;
+let withBundleAnalyzer = (config: NextConfig): NextConfig => config;
 try {
   withBundleAnalyzer = require('@next/bundle-analyzer')({
     enabled: process.env.ANALYZE === '1',
   });
 } catch {}
+
+// Sentry 플러그인 (소스맵 업로드 / 릴리즈 태깅용)
+type NextConfigWrapper = (
+  config: NextConfig,
+  options?: Record<string, unknown>
+) => NextConfig;
+
+let withSentryConfig: NextConfigWrapper = (_config: NextConfig) => _config;
+try {
+  // require 사용: dev 환경에서 @sentry/nextjs 미설치여도 앱이 깨지지 않도록
+  const { withSentryConfig: sentryWrapper } = require('@sentry/nextjs');
+  withSentryConfig = sentryWrapper;
+} catch {
+  // Sentry 미설치 시에는 그대로 통과
+}
 
 const baseConfig: NextConfig = {
   output: 'standalone',
@@ -17,6 +31,22 @@ const baseConfig: NextConfig = {
   images: {
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 60 * 60 * 24, // 1 day
+    // 외부 이미지 도메인 허용 (Supabase Storage 등)
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**.supabase.co',
+        pathname: '/storage/v1/object/public/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.supabase.in',
+        pathname: '/storage/v1/object/public/**',
+      },
+    ],
+    // Lazy loading 기본 활성화 (priority prop으로 override 가능)
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
   },
   experimental: {
     optimizePackageImports: [
@@ -153,5 +183,20 @@ const baseConfig: NextConfig = {
   },
 };
 
-const nextConfig = withBundleAnalyzer(baseConfig);
+// Sentry + Bundle Analyzer를 순차적으로 래핑
+const withAll = (config: NextConfig): NextConfig => {
+  const withSentryApplied = withSentryConfig(config, {
+    // Sentry 빌드 타임 옵션 (환경 변수와 연동)
+    org: process.env.SENTRY_ORG,
+    project: process.env.SENTRY_PROJECT,
+    // 대략적인 예시 옵션들 (필요 시 조정 가능)
+    silent: true,
+    disableServerWebpackPlugin: false,
+    disableClientWebpackPlugin: false,
+  });
+
+  return withBundleAnalyzer(withSentryApplied);
+};
+
+const nextConfig = withAll(baseConfig);
 export default nextConfig;

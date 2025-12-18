@@ -41,16 +41,16 @@ declare module '@testing-library/user-event' {
       actions: Array<{ keys?: string; target?: Element }>
     ) => Promise<void>;
     // Fallback for any other methods not explicitly defined
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    [key: string]: ((...args: any[]) => Promise<void>) | any;
+    // Using unknown instead of any for better type safety
+    [key: string]: ((...args: unknown[]) => Promise<void>) | unknown;
   }
 
   export interface UserEventOptions {
     delay?: number;
     // Additional options that may be used by the library
     advanceTimers?: (delay: number) => Promise<void>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    [key: string]: number | ((...args: any[]) => Promise<void>) | any;
+    // Using unknown instead of any for better type safety
+    [key: string]: number | ((...args: unknown[]) => Promise<void>) | unknown;
   }
 
   const userEvent: {

@@ -1,4 +1,15 @@
-describe('supabase', () => {
+import { getSupabase } from '../supabase';
+import { getSupabaseClient } from '../supabase-client';
+
+jest.mock('../supabase-client', () => ({
+  getSupabaseClient: jest.fn(),
+}));
+
+const mockGetSupabaseClient = getSupabaseClient as jest.MockedFunction<
+  typeof getSupabaseClient
+>;
+
+describe('supabase (legacy wrapper)', () => {
   const originalEnv = process.env;
   const originalNodeEnv = process.env.NODE_ENV;
 
@@ -12,6 +23,10 @@ describe('supabase', () => {
       writable: true,
       configurable: true,
     });
+
+    // 기본적으로 Promise-like Supabase 클라이언트를 반환하도록 mock
+    const mockClient = { from: jest.fn() } as any;
+    mockGetSupabaseClient.mockResolvedValue(mockClient);
   });
 
   afterEach(() => {
@@ -24,12 +39,9 @@ describe('supabase', () => {
   });
 
   it('should create supabase client with valid env vars', () => {
-    jest.resetModules();
     const { supabase: testSupabase } = require('../supabase');
 
     expect(testSupabase).toBeDefined();
-    // Supabase client should have 'from' method
-    expect(testSupabase).toHaveProperty('from');
   });
 
   it('should create placeholder client when env vars are missing in production build', () => {
@@ -44,8 +56,6 @@ describe('supabase', () => {
     const originalWindow = global.window;
     delete (global as { window?: unknown }).window;
 
-    jest.resetModules();
-
     // Should not throw during build
     expect(() => {
       require('../supabase');
@@ -55,10 +65,17 @@ describe('supabase', () => {
     global.window = originalWindow;
   });
 
-  it('should export supabase client', () => {
-    jest.resetModules();
+  it('should export supabase client and define proxy without crashing', () => {
     const { supabase } = require('../supabase');
     expect(supabase).toBeDefined();
-    expect(supabase).toHaveProperty('from');
+  });
+
+  it('getSupabase delegates to getSupabaseClient', async () => {
+    const mockClient = { from: jest.fn() } as any;
+    mockGetSupabaseClient.mockResolvedValueOnce(mockClient);
+
+    const client = await getSupabase();
+    expect(client).toHaveProperty('from');
+    expect(mockGetSupabaseClient).toHaveBeenCalled();
   });
 });

@@ -1,4 +1,3 @@
-/* eslint-disable jsx-a11y/alt-text */
 // Note: @react-pdf/renderer's Image component doesn't support alt prop (PDF generation, not HTML)
 import React from 'react';
 import {
@@ -556,6 +555,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
       <Page size="A4" style={styles.page}>
         {/* Watermark logo - very subtle (5% opacity) */}
         {finalLogoSrc ? (
+          // eslint-disable-next-line jsx-a11y/alt-text
           <Image
             src={finalLogoSrc}
             style={{
@@ -725,6 +725,7 @@ const CertificateDocument: React.FC<CertificateDocumentProps> = ({
       <Page size="A4" style={styles.page}>
         {/* Watermark logo - very subtle (5% opacity) */}
         {finalLogoSrc ? (
+          // eslint-disable-next-line jsx-a11y/alt-text
           <Image
             src={finalLogoSrc}
             style={{

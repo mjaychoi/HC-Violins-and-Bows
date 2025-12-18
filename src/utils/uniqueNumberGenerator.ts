@@ -85,11 +85,29 @@ export function normalizeInstrumentSerial(
   return `${prefix}${digits.padStart(7, '0')}`;
 }
 
+export interface DuplicateInstrumentInfo {
+  serial_number: string;
+  id?: string;
+  maker?: string | null;
+  type?: string | null;
+}
+
 export function validateInstrumentSerial(
   serial: string | null | undefined,
   existingNumbers: string[] = [],
-  currentNumber?: string | null
-): { valid: boolean; error?: string; normalizedSerial?: string } {
+  currentNumber?: string | null,
+  instruments?: Array<{
+    serial_number: string | null;
+    id?: string;
+    maker?: string | null;
+    type?: string | null;
+  }>
+): {
+  valid: boolean;
+  error?: string;
+  normalizedSerial?: string;
+  duplicateInfo?: DuplicateInstrumentInfo;
+} {
   const normalized = normalizeInstrumentSerial(serial);
 
   if (!normalized) {
@@ -109,12 +127,44 @@ export function validateInstrumentSerial(
     normalizeInstrumentSerial(n)
   );
 
-  const isDuplicate = normalizedExisting.some(
+  const duplicateIndex = normalizedExisting.findIndex(
     num => num === normalized && num !== normalizedCurrent
   );
 
-  if (isDuplicate) {
-    return { valid: false, error: 'Serial number is already in use.' };
+  if (duplicateIndex !== -1) {
+    // 중복된 악기 정보 찾기
+    const duplicateSerial = existingNumbers[duplicateIndex];
+    let duplicateInfo: DuplicateInstrumentInfo | undefined;
+
+    if (instruments && duplicateSerial) {
+      const duplicateInstrument = instruments.find(
+        inst => normalizeInstrumentSerial(inst.serial_number) === normalized
+      );
+
+      if (duplicateInstrument) {
+        duplicateInfo = {
+          serial_number: duplicateSerial,
+          id: duplicateInstrument.id,
+          maker: duplicateInstrument.maker,
+          type: duplicateInstrument.type,
+        };
+      }
+    }
+
+    // 구체적인 에러 메시지 생성
+    let errorMessage = `Serial Number '${normalized}'가 이미 사용 중입니다.`;
+    if (duplicateInfo?.maker || duplicateInfo?.type) {
+      const instrumentName = [duplicateInfo.maker, duplicateInfo.type]
+        .filter(Boolean)
+        .join(' ');
+      errorMessage += ` (악기: ${instrumentName || '알 수 없음'})`;
+    }
+
+    return {
+      valid: false,
+      error: errorMessage,
+      duplicateInfo: duplicateInfo || { serial_number: duplicateSerial },
+    };
   }
 
   return { valid: true, normalizedSerial: normalized };

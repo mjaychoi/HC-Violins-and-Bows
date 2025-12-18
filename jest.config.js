@@ -32,6 +32,12 @@ const customJestConfig = {
     '!src/**/*.d.ts',
     '!src/**/index.ts',
     '!src/**/*.stories.{js,jsx,ts,tsx}',
+    // Deprecated / legacy entrypoints and pages that are not used in runtime
+    '!src/contexts/AuthContext.tsx',
+    '!src/contexts/DataContext.tsx',
+    '!src/lib/supabase.ts',
+    '!src/app/customer/page.tsx',
+    '!src/app/signup/page.tsx',
   ],
   coverageThreshold: {
     global: {
@@ -41,7 +47,36 @@ const customJestConfig = {
       statements: 40,
     },
   },
-  coverageReporters: ['text', 'text-summary', 'html'],
+  coverageReporters: ['text', 'text-summary', 'html', 'json', 'json-summary'],
 };
 
-module.exports = createJestConfig(customJestConfig);
+// Create Jest config using Next.js helper
+const jestConfig = createJestConfig(customJestConfig);
+
+// Mutate the final config to append legacy file ignores
+// This is necessary because createJestConfig re-reads/merges defaults,
+// which can reset coveragePathIgnorePatterns
+jestConfig.coveragePathIgnorePatterns = [
+  ...(jestConfig.coveragePathIgnorePatterns ?? []),
+  // Legacy/deprecated files that are not used in runtime
+  // Use regex patterns to match file paths
+  '/src/contexts/AuthContext\\.tsx$',
+  '/src/contexts/DataContext\\.tsx$',
+  '/src/lib/supabase\\.ts$',
+  '/src/app/customer/page\\.tsx$',
+  '/src/app/signup/page\\.tsx$',
+];
+
+// Also ensure collectCoverageFrom excludes legacy files
+if (jestConfig.collectCoverageFrom) {
+  jestConfig.collectCoverageFrom = [
+    ...jestConfig.collectCoverageFrom,
+    '!src/contexts/AuthContext.tsx',
+    '!src/contexts/DataContext.tsx',
+    '!src/lib/supabase.ts',
+    '!src/app/customer/page.tsx',
+    '!src/app/signup/page.tsx',
+  ];
+}
+
+module.exports = jestConfig;

@@ -6,7 +6,13 @@ import { todayLocalYMD, parseYMDLocal } from '@/utils/dateParsing';
 import { useCalendarFilters } from '../hooks/useCalendarFilters';
 import { useCalendarTasks } from '../hooks/useCalendarTasks';
 import { calculateSummaryStats } from '../utils/filterUtils';
-import type { MaintenanceTask, Instrument, Client, ContactLog } from '@/types';
+import type {
+  MaintenanceTask,
+  MaintenanceTaskUpdatePayload,
+  Instrument,
+  Client,
+  ContactLog,
+} from '@/types';
 import {
   CalendarFilters,
   CalendarSummary,
@@ -59,6 +65,10 @@ interface CalendarContentProps {
   onTaskClick: (task: MaintenanceTask) => void;
   onTaskDelete: (task: MaintenanceTask) => void;
   onTaskEdit?: (task: MaintenanceTask) => void;
+  onTaskUpdate?: (
+    id: string,
+    updates: MaintenanceTaskUpdatePayload
+  ) => Promise<MaintenanceTask | null>;
   onSelectEvent: (task: MaintenanceTask) => void;
   onSelectSlot: (slotInfo: { start: Date; end: Date }) => void;
   onEventDrop?: (data: {
@@ -88,6 +98,7 @@ function CalendarContentInner({
   onTaskClick,
   onTaskDelete,
   onTaskEdit,
+  onTaskUpdate,
   onSelectEvent,
   onSelectSlot,
   onEventDrop,
@@ -225,7 +236,7 @@ function CalendarContentInner({
       }
 
       if (preset === 'overdue') {
-        setDateRange({ from: null, to: fmt(subDays(today, 1)) });
+        setDateRange({ to: fmt(subDays(today, 1)) });
         setFilterStatus('pending');
         return;
       }
@@ -641,6 +652,7 @@ function CalendarContentInner({
               onTaskClick={onTaskClick}
               onTaskDelete={onTaskDelete}
               onTaskEdit={handleTaskEdit}
+              onTaskUpdate={onTaskUpdate}
             />
             {showPagination && (
               <div className="mt-6 border-t border-gray-200 pt-4">

@@ -126,6 +126,20 @@ describe('Skeleton Components', () => {
       const rows = container.querySelectorAll('tbody tr');
       expect(rows).toHaveLength(5);
     });
+
+    it('should render SpinnerLoading when shouldVirtualize is true', () => {
+      render(
+        <TableSkeleton
+          shouldVirtualize={true}
+          loadingMessage="Virtualized loading..."
+        />
+      );
+
+      // SpinnerLoading는 전달된 메시지를 그대로 렌더링해야 함
+      expect(screen.getByText('Virtualized loading...')).toBeInTheDocument();
+      // 테이블 구조는 렌더되지 않아야 함
+      expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    });
   });
 
   describe('SkeletonComponents export', () => {

@@ -28,10 +28,7 @@ describe('AdvancedSearch', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
 
     rerender(
-      <AdvancedSearch
-        {...baseProps}
-        dateRange={{ from: '2024-01-01', to: null }}
-      />
+      <AdvancedSearch {...baseProps} dateRange={{ from: '2024-01-01' }} />
     );
 
     // Badge rendered via the absolute span (not role), so check via query selector
@@ -40,10 +37,7 @@ describe('AdvancedSearch', () => {
 
   it('calls onDateRangeChange for from/to inputs and clear', () => {
     render(
-      <AdvancedSearch
-        {...baseProps}
-        dateRange={{ from: '2024-01-01', to: null }}
-      />
+      <AdvancedSearch {...baseProps} dateRange={{ from: '2024-01-01' }} />
     );
     const toggle = document.querySelector('button');
     if (toggle) {
@@ -61,7 +55,7 @@ describe('AdvancedSearch', () => {
     fireEvent.change(inputs[1], { target: { value: '2024-02-10' } });
     expect(baseProps.onDateRangeChange).toHaveBeenNthCalledWith(1, {
       from: '2024-02-01',
-      to: null,
+      to: undefined,
     });
     expect(baseProps.onDateRangeChange).toHaveBeenNthCalledWith(2, {
       from: '2024-01-01',

@@ -27,6 +27,7 @@ export function useClientsContactInfo({
     Map<string, ClientContactInfo>
   >(new Map());
   const [loading, setLoading] = useState(false);
+  const [refetchIndex, setRefetchIndex] = useState(0);
 
   // Normalize clientIds to string for comparison (avoid array reference issues)
   const clientIdsKey = useMemo(
@@ -73,16 +74,15 @@ export function useClientsContactInfo({
               `/api/contacts?clientIds=${encodeURIComponent(clientIdsParam)}`
             );
             const result = await response.json();
-            if (response.ok && result.data) {
+            if (!response.ok) {
+              throw result.error || new Error('Failed to fetch contact logs');
+            }
+            if (result.data) {
               allLogs.push(...(result.data as ContactLog[]));
-            } else {
-              console.error(
-                `Failed to fetch contact logs for batch:`,
-                result.error || 'Unknown error'
-              );
             }
           } catch (error) {
             console.error(`Failed to fetch contact logs for batch:`, error);
+            throw error;
           }
         }
 
@@ -200,7 +200,11 @@ export function useClientsContactInfo({
     return () => {
       cancelled = true;
     };
-  }, [clientIdsKey, enabled, clientIds]);
+    // We intentionally omit `clientIds` from the dependency list above because
+    // `clientIdsKey` already tracks the sorted values. This prevents effect
+    // re-running when a new array reference is created during loading state updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientIdsKey, enabled, refetchIndex]);
 
   const getContactInfo = useCallback(
     (clientId: string): ClientContactInfo | null => {
@@ -212,6 +216,7 @@ export function useClientsContactInfo({
   const refetch = useCallback(() => {
     // Reset the ref to force a refetch
     prevClientIdsKeyRef.current = '';
+    setRefetchIndex(value => value + 1);
   }, []);
 
   return {

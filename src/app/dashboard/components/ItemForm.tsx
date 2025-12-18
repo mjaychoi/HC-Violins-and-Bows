@@ -14,6 +14,7 @@ import {
 } from '@/utils/uniqueNumberGenerator';
 import { modalStyles } from '@/components/common/modals/modalStyles';
 import { ModalHeader } from '@/components/common/modals/ModalHeader';
+import OptimizedImage from '@/components/common/OptimizedImage';
 
 interface ItemFormProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ interface ItemFormProps {
   selectedItem?: Instrument | null;
   isEditing?: boolean;
   existingSerialNumbers: string[]; // Serial numbers from existing instruments for validation
+  instruments?: Instrument[]; // Full instruments array for duplicate info
 }
 
 export default function ItemForm({
@@ -33,6 +35,7 @@ export default function ItemForm({
   selectedItem,
   isEditing = false,
   existingSerialNumbers,
+  instruments = [],
 }: ItemFormProps) {
   const {
     formData,
@@ -45,7 +48,19 @@ export default function ItemForm({
     removeFile,
   } = useDashboardForm();
   const [errors, setErrors] = useState<string[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{
+    maker?: string;
+    type?: string;
+    year?: string;
+    price?: string;
+    serial_number?: string;
+  }>({});
   const [success, setSuccess] = useState(false);
+  // 이미지 미리보기 URL 생성
+  const [imagePreviews, setImagePreviews] = useState<Map<number, string>>(
+    new Map()
+  );
   const lastInitializedItemId = useRef<string | null>(null);
   const hasInitializedCreate = useRef(false);
   const lastAutoSerialRef = useRef<string>('');
@@ -56,6 +71,25 @@ export default function ItemForm({
   useEffect(() => {
     formDataRef.current = formData;
   }, [formData]);
+
+  const focusFirstErrorField = (fieldErrs: typeof fieldErrors) => {
+    const order: (keyof typeof fieldErrors)[] = [
+      'maker',
+      'type',
+      'year',
+      'price',
+      'serial_number',
+    ];
+    for (const field of order) {
+      if (fieldErrs[field]) {
+        const el = document.getElementById(field);
+        if (el && 'focus' in el) {
+          (el as HTMLElement).focus();
+          break;
+        }
+      }
+    }
+  };
 
   // FIXED: Derive stable key for existingSerialNumbers to avoid unnecessary re-runs
   const serialsKey = useMemo(
@@ -135,12 +169,25 @@ export default function ItemForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    setFormError(null);
+    setFieldErrors({});
+    setErrors([]);
+
     // Validate form data
     const validationErrors = validateInstrumentData(
       formData as unknown as Partial<Instrument>
     );
     if (validationErrors.length > 0) {
       setErrors(validationErrors);
+      const mappedFieldErrors: typeof fieldErrors = {};
+      validationErrors.forEach(msg => {
+        if (msg.includes('Maker')) mappedFieldErrors.maker = msg;
+        if (msg.includes('Type')) mappedFieldErrors.type = msg;
+        if (msg.includes('Year')) mappedFieldErrors.year = msg;
+        if (msg.includes('Price')) mappedFieldErrors.price = msg;
+      });
+      setFieldErrors(mappedFieldErrors);
+      focusFirstErrorField(mappedFieldErrors);
       return;
     }
 
@@ -162,10 +209,32 @@ export default function ItemForm({
       const serialValidation = validateInstrumentSerial(
         normalizedSerial || null,
         existingSerialNumbers,
-        isEditing ? (selectedItem?.serial_number ?? null) : undefined
+        isEditing ? (selectedItem?.serial_number ?? null) : undefined,
+        instruments
       );
       if (!serialValidation.valid) {
-        setErrors([serialValidation.error || 'Invalid serial number']);
+        const errorMessages = [
+          serialValidation.error || 'Invalid serial number',
+        ];
+
+        // 중복된 항목에 대한 추가 정보 및 해결 방법 제시
+        if (serialValidation.duplicateInfo) {
+          errorMessages.push(
+            '다른 Serial Number를 입력하거나 기존 악기를 수정하세요.'
+          );
+          if (serialValidation.duplicateInfo.id) {
+            errorMessages.push(
+              `중복된 악기 ID: ${serialValidation.duplicateInfo.id}`
+            );
+          }
+        }
+
+        setErrors(errorMessages);
+        setFieldErrors(prev => ({
+          ...prev,
+          serial_number: serialValidation.error || 'Invalid serial number',
+        }));
+        focusFirstErrorField({ serial_number: 'Serial number error' });
         return;
       }
 
@@ -204,6 +273,8 @@ export default function ItemForm({
 
       await onSubmit(instrumentData);
       setErrors([]);
+      setFieldErrors({});
+      setFormError(null);
 
       // UX: Show success state instead of immediately closing
       if (isEditing) {
@@ -217,10 +288,37 @@ export default function ItemForm({
         // For now, we'll just show success state
       }
     } catch {
-      setErrors(['Failed to save item. Please try again.']);
+      setFormError('저장에 실패했습니다. 입력 값을 다시 확인해 주세요.');
       setSuccess(false);
     }
   };
+
+  // 이미지 파일 선택 시 미리보기 생성
+  useEffect(() => {
+    selectedFiles.forEach((file, index) => {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (reader.result) {
+            setImagePreviews(prev => {
+              const updated = new Map(prev);
+              updated.set(index, reader.result as string);
+              return updated;
+            });
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+    // 선택 해제된 파일의 미리보기 제거
+    setImagePreviews(prev => {
+      const updated = new Map(prev);
+      for (let i = selectedFiles.length; i < updated.size; i++) {
+        updated.delete(i);
+      }
+      return updated;
+    });
+  }, [selectedFiles]);
 
   const handleInputChange = (
     e: React.ChangeEvent<
@@ -354,6 +452,12 @@ export default function ItemForm({
             </div>
           )}
 
+          {formError && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+              <p className="text-sm">{formError}</p>
+            </div>
+          )}
+
           {errors.length > 0 && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
               <ul className="list-disc list-inside">
@@ -371,28 +475,33 @@ export default function ItemForm({
           >
             <div className="grid grid-cols-2 gap-4">
               <Input
+                id="maker"
                 label="Maker"
                 name="maker"
                 value={formData.maker}
                 onChange={handleInputChange}
                 required
                 placeholder="Enter maker name"
+                error={fieldErrors.maker}
                 helperText="The manufacturer or brand name of the instrument"
               />
 
               <Input
+                id="type"
                 label="Type"
                 name="type"
                 value={formData.type}
                 onChange={handleInputChange}
                 required
                 placeholder="Enter type"
+                error={fieldErrors.type}
                 helperText="Primary category (e.g., Violin, Viola, Cello, Bow)"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <Input
+                id="subtype"
                 label="Subtype"
                 name="subtype"
                 value={formData.subtype}
@@ -401,19 +510,24 @@ export default function ItemForm({
               />
 
               <Input
+                id="year"
                 label="Year"
                 name="year"
                 type="number"
                 value={formData.year}
                 onChange={handleInputChange}
                 placeholder="Enter year"
+                error={fieldErrors.year}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className={classNames.formLabel}>Status</label>
+                <label className={classNames.formLabel} htmlFor="status">
+                  Status
+                </label>
                 <select
+                  id="status"
                   name="status"
                   value={formData.status}
                   onChange={handleInputChange}
@@ -428,6 +542,7 @@ export default function ItemForm({
               </div>
 
               <Input
+                id="price"
                 label="Price"
                 name="price"
                 type="text"
@@ -435,12 +550,14 @@ export default function ItemForm({
                 value={priceInput}
                 onChange={e => handlePriceChange(e.target.value)}
                 placeholder="Enter price"
+                error={fieldErrors.price}
                 helperText="Selling price (optional)"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <Input
+                id="size"
                 label="Size"
                 name="size"
                 value={formData.size}
@@ -449,6 +566,7 @@ export default function ItemForm({
               />
 
               <Input
+                id="weight"
                 label="Weight"
                 name="weight"
                 value={formData.weight}
@@ -458,6 +576,7 @@ export default function ItemForm({
             </div>
 
             <Input
+              id="ownership"
               label="Ownership"
               name="ownership"
               value={formData.ownership}
@@ -466,7 +585,7 @@ export default function ItemForm({
             />
 
             <div>
-              <label className={classNames.formLabel}>
+              <label className={classNames.formLabel} htmlFor="serial_number">
                 Serial Number
                 {!isEditing && (
                   <span className="ml-2 text-xs text-gray-500">
@@ -475,6 +594,7 @@ export default function ItemForm({
                 )}
               </label>
               <input
+                id="serial_number"
                 type="text"
                 name="serial_number"
                 value={formData.serial_number}
@@ -483,7 +603,9 @@ export default function ItemForm({
                 pattern="[A-Za-z]{2}[0-9]{7}"
                 title="2 letters + 7 digits (e.g., VI0000123)"
                 className={
-                  classNames.input +
+                  (fieldErrors.serial_number
+                    ? classNames.inputError
+                    : classNames.input) +
                   (isEditing ? '' : ' bg-gray-100 cursor-not-allowed')
                 }
                 placeholder={
@@ -492,6 +614,11 @@ export default function ItemForm({
                     : '자동 생성됨'
                 }
               />
+              {fieldErrors.serial_number && (
+                <p className={classNames.formError}>
+                  {fieldErrors.serial_number}
+                </p>
+              )}
               {!isEditing && (
                 <p className="mt-1 text-xs text-gray-500 italic">
                   타입 입력 시 자동으로 생성됩니다
@@ -500,8 +627,11 @@ export default function ItemForm({
             </div>
 
             <div>
-              <label className={classNames.formLabel}>Images</label>
+              <label className={classNames.formLabel} htmlFor="images">
+                Images
+              </label>
               <input
+                id="images"
                 type="file"
                 multiple
                 accept="image/*"
@@ -509,22 +639,52 @@ export default function ItemForm({
                 className={classNames.input}
               />
               {selectedFiles.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {selectedFiles.map((file, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <span className="text-gray-600">{file.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeFile(index)}
-                        className="text-red-600 hover:text-red-800"
+                <div className="mt-2 space-y-3">
+                  {selectedFiles.map((file, index) => {
+                    const previewUrl = imagePreviews.get(index);
+                    return (
+                      <div
+                        key={index}
+                        className="flex items-start gap-3 p-2 border border-gray-200 rounded-lg"
                       >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
+                        {previewUrl && (
+                          <div className="relative w-20 h-20 shrink-0 rounded overflow-hidden bg-gray-100">
+                            <OptimizedImage
+                              src={previewUrl}
+                              alt={`Preview ${file.name}`}
+                              fill
+                              objectFit="cover"
+                              className="rounded"
+                            />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-600 truncate">
+                              {file.name}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                removeFile(index);
+                                setImagePreviews(prev => {
+                                  const updated = new Map(prev);
+                                  updated.delete(index);
+                                  return updated;
+                                });
+                              }}
+                              className="ml-2 text-red-600 hover:text-red-800 text-sm font-medium"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {(file.size / 1024).toFixed(1)} KB
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -532,6 +692,7 @@ export default function ItemForm({
             <div>
               <label className="flex items-center">
                 <input
+                  id="certificate"
                   type="checkbox"
                   name="certificate"
                   checked={formData.certificate}
@@ -545,8 +706,11 @@ export default function ItemForm({
             </div>
 
             <div>
-              <label className={classNames.formLabel}>Note</label>
+              <label className={classNames.formLabel} htmlFor="note">
+                Note
+              </label>
               <textarea
+                id="note"
                 name="note"
                 value={formData.note}
                 onChange={handleInputChange}

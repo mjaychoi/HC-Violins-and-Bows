@@ -21,8 +21,9 @@ import {
   sanitizeSearchTerm,
   validateDateString,
 } from '@/utils/inputValidation';
+import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 
-export async function GET(request: NextRequest) {
+export const GET = withAuthRoute(async function GET(request: NextRequest) {
   const startTime = performance.now();
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get('id') || undefined;
@@ -316,9 +317,9 @@ export async function GET(request: NextRequest) {
     const safeError = createSafeErrorResponse(appError, 500);
     return NextResponse.json(safeError, { status: 500 });
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withAuthRoute(async function POST(request: NextRequest) {
   const startTime = performance.now();
   try {
     const body = await request.json();
@@ -403,9 +404,9 @@ export async function POST(request: NextRequest) {
     const safeError = createSafeErrorResponse(appError, 500);
     return NextResponse.json(safeError, { status: 500 });
   }
-}
+});
 
-export async function PATCH(request: NextRequest) {
+export const PATCH = withAuthRoute(async function PATCH(request: NextRequest) {
   const startTime = performance.now();
   try {
     const body = await request.json();
@@ -508,9 +509,11 @@ export async function PATCH(request: NextRequest) {
     const safeError = createSafeErrorResponse(appError, 500);
     return NextResponse.json(safeError, { status: 500 });
   }
-}
+});
 
-export async function DELETE(request: NextRequest) {
+export const DELETE = withAuthRoute(async function DELETE(
+  request: NextRequest
+) {
   const startTime = performance.now();
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get('id');
@@ -593,4 +596,4 @@ export async function DELETE(request: NextRequest) {
     const safeError = createSafeErrorResponse(appError, 500);
     return NextResponse.json(safeError, { status: 500 });
   }
-}
+});

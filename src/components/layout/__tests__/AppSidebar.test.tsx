@@ -1,11 +1,16 @@
-/* eslint-disable react/display-name */
 import { render, screen, waitFor } from '@/test-utils/render';
 import AppSidebar from '../AppSidebar';
 
 jest.mock('next/link', () => {
-  return ({ href, children }: { href: string; children: React.ReactNode }) => (
-    <a href={href}>{children}</a>
-  );
+  const MockLink = ({
+    href,
+    children,
+  }: {
+    href: string;
+    children: React.ReactNode;
+  }) => <a href={href}>{children}</a>;
+  MockLink.displayName = 'MockLink';
+  return MockLink;
 });
 
 describe('AppSidebar', () => {

@@ -1,12 +1,10 @@
 import React from 'react';
 import SuccessToast from './SuccessToast';
 
+import type { Toast } from '@/contexts/ToastContext';
+
 interface SuccessToastsProps {
-  toasts: Array<{
-    id: string;
-    message: string;
-    timestamp: Date;
-  }>;
+  toasts: Toast[];
   onRemove: (id: string) => void;
 }
 
@@ -26,6 +24,7 @@ export default function SuccessToasts({
         <SuccessToast
           key={toast.id}
           message={toast.message}
+          links={toast.links}
           onClose={() => onRemove(toast.id)}
         />
       ))}

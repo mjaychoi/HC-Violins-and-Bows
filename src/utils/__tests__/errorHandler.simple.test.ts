@@ -38,8 +38,9 @@ describe('ErrorHandler - Simple Tests', () => {
     );
 
     const suggestions = errorHandler.getRecoverySuggestions(error);
-    expect(suggestions).toContain('Check your internet connection');
-    expect(suggestions).toContain('Please try again later');
+    // ✅ 한국어 메시지 기준으로 검증
+    expect(suggestions).toContain('인터넷 연결을 확인해주세요');
+    expect(suggestions).toContain('잠시 후 다시 시도해주세요');
   });
 
   test('should track error statistics', () => {

@@ -22,6 +22,8 @@ interface ClientsListContentProps {
   onClientClick: (client: Client) => void;
   onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
   onDeleteClient: (client: Client) => void;
+  newlyCreatedClientId?: string | null;
+  onNewlyCreatedClientShown?: () => void;
 }
 
 function ClientsListContentInner({
@@ -32,6 +34,8 @@ function ClientsListContentInner({
   onClientClick,
   onUpdateClient,
   onDeleteClient,
+  newlyCreatedClientId,
+  onNewlyCreatedClientShown,
 }: ClientsListContentProps) {
   const {
     searchTerm,
@@ -151,6 +155,8 @@ function ClientsListContentInner({
         onDeleteClient={onDeleteClient}
         onColumnSort={handleColumnSort}
         getSortArrow={getSortArrow}
+        newlyCreatedClientId={newlyCreatedClientId}
+        onNewlyCreatedClientShown={onNewlyCreatedClientShown}
         // Pagination props
         currentPage={currentPage}
         totalPages={totalPages}

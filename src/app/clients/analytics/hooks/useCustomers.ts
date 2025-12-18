@@ -3,7 +3,16 @@ import { CustomerWithPurchases, salesHistoryToPurchase } from '../types';
 import { SalesHistory, Instrument } from '@/types';
 import { useUnifiedClients } from '@/hooks/useUnifiedData';
 import { useErrorHandler } from '@/contexts/ToastContext';
-import { parseYMDUTC, compareDatesDesc } from '@/utils/dateParsing';
+import { compareDatesDesc } from '@/utils/dateParsing';
+
+// Client sales summary type (from API)
+export interface ClientSalesSummary {
+  client_id: string;
+  total_spend: number;
+  purchase_count: number;
+  last_purchase_date: string | null;
+  first_purchase_date: string | null;
+}
 
 interface UseCustomersOptions {
   enabled?: boolean; // ✅ Control whether to fetch data (default: true)
@@ -15,6 +24,9 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
   const [loading, setLoading] = useState(false);
   const [salesByClient, setSalesByClient] = useState<
     Map<string, SalesHistory[]>
+  >(new Map());
+  const [salesSummaryByClient, setSalesSummaryByClient] = useState<
+    Map<string, ClientSalesSummary>
   >(new Map());
   const [instrumentsMap, setInstrumentsMap] = useState<Map<string, Instrument>>(
     new Map()
@@ -30,7 +42,7 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
   const hasFetchedRef = useRef(false);
   const fetchSalesHistoryRef = useRef<(() => Promise<void>) | null>(null);
 
-  // Fetch all sales history and group by client_id
+  // Fetch sales summary (aggregated by client) and detailed sales history
   const fetchSalesHistory = useCallback(async () => {
     // Prevent duplicate fetches
     if (hasFetchedRef.current) {
@@ -44,10 +56,29 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
     }
     try {
       setLoading(true);
-      // FIXED: Performance note - fetching all sales (10k limit) for analytics
-      // TODO: Consider server-side aggregation endpoint /api/sales/summary-by-client
-      // that returns {client_id, total_spend, last_purchase_date, purchase_count}
-      // to avoid pulling 10k rows just to compute totals/sorting
+
+      // ✅ OPTIMIZED: Fetch aggregated summary first (much smaller data transfer)
+      // This provides total_spend, purchase_count, last_purchase_date for sorting/filtering
+      const summaryResponse = await fetch('/api/sales/summary-by-client');
+      const summaryResult = await summaryResponse.json();
+
+      if (!summaryResponse.ok) {
+        console.error('[useCustomers] Sales summary API error:', {
+          status: summaryResponse.status,
+          error: summaryResult.error,
+        });
+        throw summaryResult.error || new Error('Failed to fetch sales summary');
+      }
+
+      const summaries = (summaryResult.data || []) as ClientSalesSummary[];
+      const summaryMap = new Map<string, ClientSalesSummary>();
+      summaries.forEach(summary => {
+        summaryMap.set(summary.client_id, summary);
+      });
+      setSalesSummaryByClient(summaryMap);
+
+      // Still fetch detailed sales for purchase history display
+      // TODO: Further optimize by fetching only selected customer's purchases
       const response = await fetch('/api/sales?page=1&pageSize=10000');
       const result = await response.json();
 
@@ -84,7 +115,8 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         // FIXED: Performance note - fetching all instruments when only specific IDs are needed
         // TODO: Add endpoint /api/instruments?ids=... (or POST body) to fetch only required IDs
         // This reduces network transfer and memory usage
-        const instrumentsResponse = await fetch('/api/instruments');
+        // 전체 데이터가 필요한 경우 all=true 파라미터 추가
+        const instrumentsResponse = await fetch('/api/instruments?all=true');
         const instrumentsResult = await instrumentsResponse.json();
 
         if (instrumentsResponse.ok && instrumentsResult.data) {
@@ -181,22 +213,9 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         return salesHistoryToPurchase(sale, instrument);
       });
 
-      // Calculate last purchase date for sorting (raw ISO string, not formatted)
-      const lastPurchaseAt =
-        purchases.length > 0
-          ? purchases
-              .map(p => p.date)
-              .sort((a, b) => {
-                // Sort dates descending to get most recent
-                try {
-                  const dateA = parseYMDUTC(a);
-                  const dateB = parseYMDUTC(b);
-                  return dateB.getTime() - dateA.getTime();
-                } catch {
-                  return 0;
-                }
-              })[0]
-          : null;
+      // ✅ OPTIMIZED: Use summary data for last purchase date (faster than calculating from purchases)
+      const summary = salesSummaryByClient.get(client.id);
+      const lastPurchaseAt = summary?.last_purchase_date || null;
 
       return {
         ...client,
@@ -210,7 +229,7 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
     // Debug logging removed to reduce console noise
 
     return result;
-  }, [clients, salesByClient, instrumentsMap]);
+  }, [clients, salesByClient, instrumentsMap, salesSummaryByClient]);
 
   const filteredCustomers = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
@@ -235,8 +254,11 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         return nameA.localeCompare(nameB);
       }
       if (sortBy === 'spend') {
-        const spendA = a.purchases.reduce((s, p) => s + p.amount, 0);
-        const spendB = b.purchases.reduce((s, p) => s + p.amount, 0);
+        // ✅ OPTIMIZED: Use summary data for total spend (faster than calculating from purchases)
+        const summaryA = salesSummaryByClient.get(a.id);
+        const summaryB = salesSummaryByClient.get(b.id);
+        const spendA = summaryA?.total_spend || 0;
+        const spendB = summaryB?.total_spend || 0;
         return spendB - spendA;
       }
       // recent
@@ -247,7 +269,7 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
     });
 
     return sorted;
-  }, [customers, searchTerm, tagFilter, sortBy]);
+  }, [customers, searchTerm, tagFilter, sortBy, salesSummaryByClient]);
 
   useEffect(() => {
     // Only auto-select first customer if no customer is explicitly selected

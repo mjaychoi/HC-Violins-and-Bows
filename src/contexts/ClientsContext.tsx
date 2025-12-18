@@ -150,8 +150,9 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_LOADING', payload: true });
       try {
         const fetcher = async () => {
+          // 전체 데이터가 필요한 경우 all=true 파라미터 추가
           const response = await fetch(
-            '/api/clients?orderBy=created_at&ascending=false'
+            '/api/clients?orderBy=created_at&ascending=false&all=true'
           );
           if (!response.ok) {
             const errorData = await response.json();

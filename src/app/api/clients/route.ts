@@ -4,6 +4,8 @@ import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest, Logger } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
+import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
+import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import {
   createSafeErrorResponse,
   createLogErrorInfo,
@@ -18,15 +20,19 @@ import {
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   const startTime = performance.now();
   const searchParams = request.nextUrl.searchParams;
   const orderBy = validateSortColumn('clients', searchParams.get('orderBy'));
   const ascending = searchParams.get('ascending') !== 'false';
   const search = searchParams.get('search') || undefined;
-  const limit = searchParams.get('limit')
-    ? parseInt(searchParams.get('limit')!, 10)
-    : undefined;
+  const all = searchParams.get('all') === 'true'; // 전체 데이터 요청 플래그
+  const limitParam = searchParams.get('limit');
+  const limit = limitParam
+    ? parseInt(limitParam, 10)
+    : all
+      ? undefined // all=true면 limit 없음
+      : 1000; // 기본 limit: 1000개
 
   try {
     const supabase = getServerSupabase();
@@ -41,8 +47,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Add limit if provided (for search queries)
-    if (limit && limit > 0) {
+    // Add limit if provided and not requesting all data
+    if (limit !== undefined && limit > 0) {
       query = query.limit(limit);
     }
 
@@ -190,7 +196,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export const GET = withSentryRoute(withAuthRoute(getHandler));
+
+async function postHandler(request: NextRequest) {
   const startTime = performance.now();
   try {
     const body = await request.json();
@@ -257,7 +265,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+export const POST = withSentryRoute(withAuthRoute(postHandler));
+
+async function patchHandler(request: NextRequest) {
   const startTime = performance.now();
   try {
     const body = await request.json();
@@ -346,7 +356,9 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-export async function DELETE(request: NextRequest) {
+export const PATCH = withSentryRoute(withAuthRoute(patchHandler));
+
+async function deleteHandler(request: NextRequest) {
   const startTime = performance.now();
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get('id');
@@ -417,3 +429,5 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json(safeError, { status: 500 });
   }
 }
+
+export const DELETE = withSentryRoute(withAuthRoute(deleteHandler));

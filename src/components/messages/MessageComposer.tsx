@@ -42,9 +42,9 @@ export default function MessageComposer({
   quoteUrl,
   invoiceUrl,
   pickupWindow,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onClose: _onClose, // Prefixed with _ to indicate intentionally unused
 }: MessageComposerProps) {
+  void _onClose;
   const { showSuccess } = useAppFeedback();
   const [selectedTemplateKey, setSelectedTemplateKey] =
     useState<TemplateKey | null>(null);

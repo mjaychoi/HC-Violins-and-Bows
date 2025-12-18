@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Instrument, ClientInstrument } from '@/types';
 import {
   DashboardFilters,
@@ -7,7 +8,8 @@ import {
   DashboardArrayFilterKeys,
 } from '../types';
 import { buildDashboardFilterOptions } from '../constants';
-import { usePageFilters, DateRange } from '@/hooks/usePageFilters';
+import { usePageFilters } from '@/hooks/usePageFilters';
+import { DateRange } from '@/types/search';
 import {
   filterDashboardItems,
   EMPTY_DASHBOARD_FILTERS,
@@ -22,11 +24,16 @@ type EnrichedInstrument = Instrument & {
 export function useDashboardFilters(
   items: EnrichedInstrument[] | Instrument[]
 ) {
+  const searchParams = useSearchParams();
   const [dateRange, setDateRange] = useState<DateRange | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20; // Items per page
+
+  // URL 쿼리 파라미터에서 instrumentId와 clientId 읽기
+  const instrumentIdFromURL = searchParams.get('instrumentId');
+  const clientIdFromURL = searchParams.get('clientId');
 
   // FIXED: Normalize items to ensure all have clients array (even if empty)
   // This prevents runtime issues when filterDashboardItems expects clients for HAS_CLIENTS logic
@@ -87,15 +94,41 @@ export function useDashboardFilters(
   // This ensures React dependency graph is clear and dateRange changes trigger re-filtering
   const filteredItems = useMemo(() => {
     // Apply dateRange filter after baseFilters.filteredItems
-    if (!dateRange?.from && !dateRange?.to) {
-      return baseFilters.filteredItems;
+    let items = baseFilters.filteredItems;
+
+    if (dateRange?.from || dateRange?.to) {
+      items = filterDashboardItems(
+        items as Instrument[],
+        baseFilters.filters as DashboardFilters,
+        dateRange
+      ) as EnrichedInstrument[];
     }
-    return filterDashboardItems(
-      baseFilters.filteredItems as Instrument[],
-      baseFilters.filters as DashboardFilters,
-      dateRange
-    ) as EnrichedInstrument[];
-  }, [baseFilters.filteredItems, baseFilters.filters, dateRange]);
+
+    // URL 쿼리 파라미터 기반 필터링: instrumentId
+    if (instrumentIdFromURL) {
+      items = items.filter(item => item.id === instrumentIdFromURL);
+    }
+
+    // URL 쿼리 파라미터 기반 필터링: clientId
+    if (clientIdFromURL) {
+      items = items.filter(item => {
+        const enrichedItem = item as EnrichedInstrument;
+        return (
+          enrichedItem.clients?.some(
+            (rel: ClientInstrument) => rel.client_id === clientIdFromURL
+          ) ?? false
+        );
+      });
+    }
+
+    return items;
+  }, [
+    baseFilters.filteredItems,
+    baseFilters.filters,
+    dateRange,
+    instrumentIdFromURL,
+    clientIdFromURL,
+  ]);
 
   // Pagination calculations
   const totalCount = filteredItems.length;

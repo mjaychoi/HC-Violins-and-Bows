@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@/test-utils/render';
+import { fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FormWrapper, SimpleFormWrapper } from '@/components/common/layout';
 import { useFormState } from '@/hooks/useFormState';
@@ -166,6 +167,209 @@ describe('FormWrapper', () => {
 
     const button = screen.getByRole('button', { name: 'Submit' });
     expect(button).toBeDisabled();
+  });
+
+  it('should pass all form state props to children', () => {
+    const mockSetFieldError = jest.fn();
+    const mockSetFieldTouched = jest.fn();
+    const mockUpdateField = jest.fn();
+    const mockUpdateFields = jest.fn();
+    const mockResetForm = jest.fn();
+
+    mockUseFormState.mockReturnValue({
+      ...mockFormState,
+      setFieldError: mockSetFieldError,
+      setFieldTouched: mockSetFieldTouched,
+      updateField: mockUpdateField,
+      updateFields: mockUpdateFields,
+      resetForm: mockResetForm,
+      hasErrors: true,
+      isTouched: true,
+    } as unknown as ReturnType<typeof useFormState>);
+
+    render(
+      <FormWrapper
+        initialData={{ name: 'Test', email: 'test@example.com' }}
+        onSubmit={jest.fn()}
+      >
+        {({
+          formData,
+          updateField,
+          updateFields,
+          setFieldError,
+          setFieldTouched,
+          resetForm,
+          hasErrors,
+          isTouched,
+        }) => (
+          <div>
+            <div data-testid="form-data">{JSON.stringify(formData)}</div>
+            <div data-testid="has-errors">{hasErrors ? 'true' : 'false'}</div>
+            <div data-testid="is-touched">{isTouched ? 'true' : 'false'}</div>
+            <button
+              onClick={() => updateField('name', 'Updated')}
+              data-testid="update-field"
+            >
+              Update Field
+            </button>
+            <button
+              onClick={() => updateFields({ name: 'Updated' })}
+              data-testid="update-fields"
+            >
+              Update Fields
+            </button>
+            <button
+              onClick={() => setFieldError('name', 'Error')}
+              data-testid="set-error"
+            >
+              Set Error
+            </button>
+            <button
+              onClick={() => setFieldTouched('name', true)}
+              data-testid="set-touched"
+            >
+              Set Touched
+            </button>
+            <button onClick={resetForm} data-testid="reset">
+              Reset
+            </button>
+          </div>
+        )}
+      </FormWrapper>
+    );
+
+    expect(screen.getByTestId('has-errors')).toHaveTextContent('true');
+    expect(screen.getByTestId('is-touched')).toHaveTextContent('true');
+
+    fireEvent.click(screen.getByTestId('update-field'));
+    expect(mockUpdateField).toHaveBeenCalledWith('name', 'Updated');
+
+    fireEvent.click(screen.getByTestId('update-fields'));
+    expect(mockUpdateFields).toHaveBeenCalledWith({ name: 'Updated' });
+
+    fireEvent.click(screen.getByTestId('set-error'));
+    expect(mockSetFieldError).toHaveBeenCalledWith('name', 'Error');
+
+    fireEvent.click(screen.getByTestId('set-touched'));
+    expect(mockSetFieldTouched).toHaveBeenCalledWith('name', true);
+
+    fireEvent.click(screen.getByTestId('reset'));
+    expect(mockResetForm).toHaveBeenCalled();
+  });
+
+  it('should handle validation with empty errors object', async () => {
+    const user = userEvent.setup();
+    const mockOnSubmit = jest.fn().mockResolvedValue(undefined);
+    const validate = jest.fn().mockReturnValue({});
+
+    render(
+      <FormWrapper
+        initialData={{ name: 'Test', email: 'test@example.com' }}
+        onSubmit={mockOnSubmit}
+        validate={validate}
+      >
+        {() => <button type="submit">Submit</button>}
+      </FormWrapper>
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Submit' }));
+
+    await waitFor(() => {
+      expect(validate).toHaveBeenCalled();
+      expect(mockOnSubmit).toHaveBeenCalled();
+    });
+  });
+
+  it('should handle validation with multiple field errors', async () => {
+    const user = userEvent.setup();
+    const mockOnSubmit = jest.fn();
+    const validate = jest.fn().mockReturnValue({
+      name: 'Name is required',
+      email: 'Email is invalid',
+    });
+
+    const mockSetFieldError = jest.fn();
+    mockUseFormState.mockReturnValue({
+      ...mockFormState,
+      setFieldError: mockSetFieldError,
+    } as unknown as ReturnType<typeof useFormState>);
+
+    render(
+      <FormWrapper
+        initialData={{ name: '', email: '' }}
+        onSubmit={mockOnSubmit}
+        validate={validate}
+      >
+        {() => <button type="submit">Submit</button>}
+      </FormWrapper>
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Submit' }));
+
+    await waitFor(() => {
+      expect(validate).toHaveBeenCalled();
+      expect(mockSetFieldError).toHaveBeenCalledWith(
+        'name',
+        'Name is required'
+      );
+      expect(mockSetFieldError).toHaveBeenCalledWith(
+        'email',
+        'Email is invalid'
+      );
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+  });
+
+  it('should handle validation with null/undefined errors', async () => {
+    const user = userEvent.setup();
+    const mockOnSubmit = jest.fn().mockResolvedValue(undefined);
+    const validate = jest.fn().mockReturnValue({
+      name: 'Name is required',
+      email: null,
+      phone: undefined,
+    });
+
+    const mockSetFieldError = jest.fn();
+    mockUseFormState.mockReturnValue({
+      ...mockFormState,
+      setFieldError: mockSetFieldError,
+    } as unknown as ReturnType<typeof useFormState>);
+
+    render(
+      <FormWrapper
+        initialData={{ name: '', email: '', phone: '' }}
+        onSubmit={mockOnSubmit}
+        validate={validate}
+      >
+        {() => <button type="submit">Submit</button>}
+      </FormWrapper>
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Submit' }));
+
+    await waitFor(() => {
+      expect(validate).toHaveBeenCalled();
+      expect(mockSetFieldError).toHaveBeenCalledWith(
+        'name',
+        'Name is required'
+      );
+      expect(mockSetFieldError).not.toHaveBeenCalledWith('email', null);
+      expect(mockSetFieldError).not.toHaveBeenCalledWith('phone', undefined);
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+  });
+
+  it('should use default className when not provided', () => {
+    const { container } = render(
+      <FormWrapper initialData={{ name: '' }} onSubmit={jest.fn()}>
+        {() => <button type="submit">Submit</button>}
+      </FormWrapper>
+    );
+
+    const form = container.querySelector('form');
+    expect(form).toBeInTheDocument();
+    // Default className is empty string, so className attribute should be empty or not present
+    expect(form?.className).toBe('');
   });
 });
 

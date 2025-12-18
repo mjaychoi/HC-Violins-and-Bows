@@ -451,6 +451,7 @@ export default function CalendarPage() {
           onEventResize={handleEventResize}
           draggingEventId={draggingEventId}
           onOpenNewTask={handleOpenNewTask}
+          onTaskUpdate={updateTask}
         />
 
         {/* Task Modal */}
