@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   LineChart,
   Line,
@@ -41,9 +41,34 @@ export default function SalesCharts({
   onClientFilter,
   onInstrumentFilter,
 }: SalesChartsProps) {
-  // Toggle state for Daily Sales Trend chart
-  const [showRefunds, setShowRefunds] = useState(false);
-  const [showNetSales, setShowNetSales] = useState(false);
+  // ✅ FIXED: Toggle state for Daily Sales Trend chart - persist in sessionStorage
+  const [showRefunds, setShowRefunds] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('sales:showRefunds');
+      return saved === 'true';
+    }
+    return false;
+  });
+  const [showNetSales, setShowNetSales] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('sales:showNetSales');
+      return saved === 'true';
+    }
+    return false;
+  });
+
+  // ✅ FIXED: Persist toggle state to sessionStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('sales:showRefunds', String(showRefunds));
+    }
+  }, [showRefunds]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('sales:showNetSales', String(showNetSales));
+    }
+  }, [showNetSales]);
   // 날짜 필터 적용된 데이터
   // FIXED: Normalize date strings to date-only format (YYYY-MM-DD) to handle ISO timestamps
   // This prevents issues when sale_date comes as ISO timestamp (e.g., 2025-12-13T00:00:00Z)
@@ -404,47 +429,91 @@ export default function SalesCharts({
       .slice(0, 10);
   }, [filteredSales]);
 
-  // FIXED: Helper to safely extract payload from Recharts click event
-  function getFirstPayload<T extends { fullDate?: string; monthKey?: string }>(
-    e: unknown
-  ): T | null {
-    const payload = (
-      e as {
-        activePayload?: Array<{
-          payload?: T;
-        }>;
-        activeLabel?: string;
-      }
-    )?.activePayload;
-    if (!payload || payload.length === 0 || !payload[0]?.payload) return null;
-    return payload[0].payload as T;
-  }
-
   // 차트 클릭 핸들러 (Drill-down)
-  // FIXED: Improved click handler - guard against empty/stale activePayload
-  const handleChartClick = (data: unknown, chartType: 'daily' | 'monthly') => {
-    const payload = getFirstPayload<{ fullDate?: string; monthKey?: string }>(
-      data
-    );
-    if (!payload || !onDateFilter) return;
+  // FIXED: Improved click handler with better payload extraction to avoid empty/stale activePayload issues
+  const handleDailyChartClick = (data: unknown) => {
+    if (!onDateFilter) return;
+    // Extract payload from Recharts click event more safely
+    const payload = (
+      data as {
+        activePayload?: Array<{ payload?: { fullDate?: string } }>;
+        activeTooltipIndex?: number;
+      }
+    )?.activePayload?.[0]?.payload;
 
-    if (chartType === 'daily' && payload.fullDate) {
-      // 일별 차트 클릭 시 해당 날짜로 필터링
-      // FIXED: toDate is inclusive (matches filteredSales comparison logic)
-      const fullDate = payload.fullDate;
-      onDateFilter(fullDate, fullDate);
-    } else if (chartType === 'monthly' && payload.monthKey) {
-      // 월별 차트 클릭 시 해당 월로 필터링
-      // FIXED: toDate is inclusive (matches filteredSales comparison logic)
-      const monthKey = payload.monthKey;
-      const [year, month] = monthKey.split('-');
+    if (payload?.fullDate) {
+      onDateFilter(payload.fullDate, payload.fullDate);
+      return;
+    }
+
+    // Fallback: try to get index from activeTooltipIndex
+    const activeIndex = (data as { activeTooltipIndex?: number })
+      ?.activeTooltipIndex;
+    if (
+      typeof activeIndex === 'number' &&
+      activeIndex >= 0 &&
+      activeIndex < dailyData.length
+    ) {
+      const row = dailyData[activeIndex];
+      if (row?.fullDate) {
+        onDateFilter(row.fullDate, row.fullDate);
+      }
+    }
+  };
+
+  const handleMonthlyChartClick = (data: unknown) => {
+    if (!onDateFilter) return;
+    // Extract payload from Recharts click event more safely
+    const payload = (
+      data as {
+        activePayload?: Array<{ payload?: { monthKey?: string } }>;
+        activeTooltipIndex?: number;
+      }
+    )?.activePayload?.[0]?.payload;
+
+    if (payload?.monthKey) {
+      const [year, month] = payload.monthKey.split('-');
       const from = `${year}-${month}-01`;
-      // FIXED: Use UTC for lastDay calculation to avoid timezone issues (consistent with rest of file)
-      const lastDay = new Date(
-        Date.UTC(Number(year), Number(month), 0)
-      ).getUTCDate();
-      const to = `${year}-${month}-${lastDay.toString().padStart(2, '0')}`;
-      onDateFilter(from, to);
+      // Use parseYMDLocal for lastDay calculation (consistent with local date parsing)
+      const firstDay = parseYMDLocal(from);
+      if (firstDay) {
+        // Get last day of month: move to next month, then subtract one day
+        const lastDayDate = new Date(
+          firstDay.getFullYear(),
+          firstDay.getMonth() + 1,
+          0
+        );
+        const lastDay = lastDayDate.getDate();
+        const to = `${year}-${month}-${lastDay.toString().padStart(2, '0')}`;
+        onDateFilter(from, to);
+        return;
+      }
+    }
+
+    // Fallback: try to get index from activeTooltipIndex
+    const activeIndex = (data as { activeTooltipIndex?: number })
+      ?.activeTooltipIndex;
+    if (
+      typeof activeIndex === 'number' &&
+      activeIndex >= 0 &&
+      activeIndex < monthlyData.length
+    ) {
+      const row = monthlyData[activeIndex];
+      if (row?.monthKey) {
+        const [year, month] = row.monthKey.split('-');
+        const from = `${year}-${month}-01`;
+        const firstDay = parseYMDLocal(from);
+        if (firstDay) {
+          const lastDayDate = new Date(
+            firstDay.getFullYear(),
+            firstDay.getMonth() + 1,
+            0
+          );
+          const lastDay = lastDayDate.getDate();
+          const to = `${year}-${month}-${lastDay.toString().padStart(2, '0')}`;
+          onDateFilter(from, to);
+        }
+      }
     }
   };
 
@@ -506,7 +575,7 @@ export default function SalesCharts({
             <LineChart
               data={dailyData}
               margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-              onClick={data => handleChartClick(data, 'daily')}
+              onClick={handleDailyChartClick}
               style={{ cursor: 'pointer' }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -697,7 +766,7 @@ export default function SalesCharts({
             <BarChart
               data={monthlyData}
               margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-              onClick={data => handleChartClick(data, 'monthly')}
+              onClick={handleMonthlyChartClick}
               style={{ cursor: 'pointer' }}
               barCategoryGap="20%"
             >

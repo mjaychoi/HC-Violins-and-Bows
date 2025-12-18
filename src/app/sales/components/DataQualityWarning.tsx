@@ -15,21 +15,23 @@ export default function DataQualityWarning({
   }
   if (dataQuality.hasOutliers) {
     messages.push(
-      'Some transactions have unusually high values that may skew averages.'
+      'Some transactions have unusually high values that may affect averages.'
     );
   }
   if (dataQuality.hasSparseDates) {
     messages.push(
-      'Data is spread across many days, making daily patterns less reliable.'
+      'Data is spread across many days, making daily patterns less consistent.'
     );
   }
-  // FIXED: Keep "Charts and insights..." as separate paragraph for clarity
+
+  // Fallback message if isLowQuality is true but no specific flags are set
+  const displayMessages =
+    messages.length > 0 ? messages : ['Data quality is limited.'];
 
   return (
     <div
       className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4"
-      role="status"
-      aria-live="polite"
+      role="note"
     >
       <div className="flex items-start gap-3">
         <svg
@@ -38,6 +40,7 @@ export default function DataQualityWarning({
           stroke="currentColor"
           viewBox="0 0 24 24"
           aria-hidden="true"
+          focusable="false"
         >
           <path
             strokeLinecap="round"
@@ -50,11 +53,11 @@ export default function DataQualityWarning({
           <h4 className="text-sm font-semibold text-yellow-900 mb-1">
             Limited Data Available
           </h4>
-          {/* FIXED: Display messages as list for better readability and accessibility */}
-          {messages.length > 0 && (
+          {/* Display messages as list for better readability and accessibility */}
+          {displayMessages.length > 0 && (
             <ul className="text-sm text-yellow-700 list-disc pl-5 space-y-1 mb-2">
-              {messages.map((message, index) => (
-                <li key={index}>{message}</li>
+              {displayMessages.map(message => (
+                <li key={message}>{message}</li>
               ))}
             </ul>
           )}

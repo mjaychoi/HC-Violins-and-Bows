@@ -140,10 +140,17 @@ function SalesTable({
               <th
                 className={classNames.tableHeaderCellSortable}
                 onClick={() => onSort('client_name')}
+                title="Client sort applies to current page only"
               >
                 <span className="inline-flex items-center gap-1">
                   Client
                   {getSortArrow('client_name')}
+                  <span
+                    className="text-xs text-gray-400"
+                    aria-label="Client sort applies to current page only"
+                  >
+                    ⚠
+                  </span>
                 </span>
               </th>
               <th className={classNames.tableHeaderCell}>Instrument</th>

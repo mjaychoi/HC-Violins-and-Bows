@@ -319,9 +319,14 @@ export function getDateRangeFromPreset(preset: DatePreset): {
  * CSV 데이터를 생성합니다.
  * FIXED: Use parseYMDUTC to avoid timezone issues
  */
+// Type for date formatter that only needs format method
+type DateFormatter = {
+  format: (date: Date) => string;
+};
+
 export function generateCSV(
   sales: EnrichedSale[],
-  dateFormat: Intl.DateTimeFormat,
+  dateFormat: DateFormatter,
   currency: Intl.NumberFormat
 ) {
   const headers = [
@@ -379,7 +384,7 @@ export function generateCSV(
  */
 export function generateReceiptEmail(
   sale: EnrichedSale,
-  dateFormat: Intl.DateTimeFormat,
+  dateFormat: DateFormatter,
   currency: Intl.NumberFormat
 ) {
   const clientName = sale.client

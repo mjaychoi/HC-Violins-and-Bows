@@ -177,7 +177,7 @@ function SalesPageContent() {
     sortDirection
   );
 
-  // 필터 변경 시 page를 1로 리셋 (API 호출은 하지 않음)
+  // 필터 변경 추적 (page reset과 fetch 중복 방지용)
   const prevFiltersRef = useRef({
     from,
     to,
@@ -186,6 +186,9 @@ function SalesPageContent() {
     sortColumn,
     sortDirection,
   });
+  const filtersChangedRef = useRef(false);
+
+  // 필터 변경 감지 및 page 리셋
   useEffect(() => {
     const prevFilters = prevFiltersRef.current;
     const filtersChanged =
@@ -195,6 +198,8 @@ function SalesPageContent() {
       prevFilters.hasClient !== hasClient ||
       prevFilters.sortColumn !== sortColumn ||
       prevFilters.sortDirection !== sortDirection;
+
+    filtersChangedRef.current = filtersChanged;
 
     if (filtersChanged && page !== 1) {
       setPage(1);
@@ -210,7 +215,17 @@ function SalesPageContent() {
   }, [from, to, search, hasClient, sortColumn, sortDirection, page, setPage]);
 
   // 초기 로드 및 필터/페이지/정렬 변경 시 API 호출
+  // FIXED: 필터 변경 시 page !== 1이면 fetch를 건너뛰고 page=1로만 맞춘 뒤 다음 render에서 fetch
   useEffect(() => {
+    // 필터가 변경되었고 page가 아직 1이 아니면 fetch 건너뛰기
+    if (filtersChangedRef.current && page !== 1) {
+      return;
+    }
+    // page가 1로 리셋된 후에는 filtersChanged 플래그를 리셋
+    if (filtersChangedRef.current && page === 1) {
+      filtersChangedRef.current = false;
+    }
+
     fetchSales({
       fromDate: from || undefined,
       toDate: to || undefined,
@@ -433,16 +448,19 @@ function SalesPageContent() {
     ]
   );
 
-  const handleExportCSV = useCallback(async () => {
-    try {
-      // Show loading indicator
-      showSuccess('Exporting CSV...');
+  // Export CSV loading state
+  const [isExportingCSV, setIsExportingCSV] = useState(false);
 
+  const handleExportCSV = useCallback(async () => {
+    if (isExportingCSV) return; // Prevent duplicate exports
+    setIsExportingCSV(true);
+    try {
       // Export 모드로 전체 데이터를 한 번에 가져오기
+      // FIXED: pageSize를 5000으로 제한 (서버 타임아웃/메모리 방지)
       const params = new URLSearchParams();
       params.set('export', 'true'); // Export 모드 활성화
       params.set('page', '1');
-      params.set('pageSize', '10000'); // 최대 10000개까지
+      params.set('pageSize', '5000'); // 최대 5000개까지 (안전한 제한)
       if (from) {
         params.set('fromDate', from);
       }
@@ -520,6 +538,8 @@ function SalesPageContent() {
       showSuccess(`Exported ${enrichedAllSales.length} sales to CSV`);
     } catch (error) {
       handleError(error, 'Export CSV');
+    } finally {
+      setIsExportingCSV(false);
     }
   }, [
     from,
@@ -527,6 +547,7 @@ function SalesPageContent() {
     search,
     hasClient,
     sortColumn,
+    isExportingCSV,
     sortDirection,
     clients,
     instruments,
@@ -559,6 +580,7 @@ function SalesPageContent() {
               onDatePreset={handleDatePreset}
               onClearFilters={clearFilters}
               onExportCSV={handleExportCSV}
+              isExportingCSV={isExportingCSV}
               hasData={enrichedSales.length > 0}
             />
 

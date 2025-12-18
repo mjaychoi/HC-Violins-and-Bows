@@ -224,14 +224,20 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     return result;
   }, [sales]);
 
-  if (alerts.length === 0) {
+  // Filter and limit alerts to reduce noise
+  // Hide severity 'low' alerts by default, limit to top 3
+  const visibleAlerts = alerts
+    .filter(alert => alert.severity !== 'low')
+    .slice(0, 3);
+
+  if (visibleAlerts.length === 0) {
     return null;
   }
 
   return (
     <div className="space-y-2">
       {/* FIXED: Use stable key instead of index to prevent incorrect DOM reuse */}
-      {alerts.map(alert => (
+      {visibleAlerts.map(alert => (
         <div
           key={`${alert.type}:${alert.title}:${alert.message}`}
           className={`border rounded-lg p-3 ${
