@@ -534,7 +534,7 @@ interface AutomationRule {
 
 ## 참고 자료
 
-- [프로젝트 크리틱](./PROJECT_CRITIQUE.md)
+- [프로젝트 상태 및 분석](./PROJECT_STATUS.md)
 - [가게 사장님 기준 UX 개선 사항](./STORE_OWNER_UX_IMPROVEMENTS.md)
 - [사용자 가이드](./USER_GUIDE.md)
 - [에러 처리 가이드라인](./ERROR_HANDLING_GUIDELINES.md)
