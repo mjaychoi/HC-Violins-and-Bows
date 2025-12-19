@@ -620,6 +620,20 @@ export const getRowAccentColor = (status: string): string => {
 /**
  * Certificate 색상 가져오기 (outline variant 기본)
  * 디자인 원칙: Certificate badge는 outline 스타일 사용
+ *
+ * @param certificate - Certificate 값 (true | false | null | undefined)
+ *   - true: "Yes" (인증서 있음)
+ *   - false: "No" (인증서 없음)
+ *   - null | undefined: "Unknown" (알 수 없음)
+ * @param variant - Badge variant (기본값: 'outline')
+ * @returns Tailwind CSS 클래스 문자열 (bg + text + border 등)
+ *
+ * @example
+ * ```tsx
+ * const className = getCertificateColor(true); // "border-green-300 bg-white text-green-800"
+ * const className = getCertificateColor(false); // "border-red-300 bg-white text-red-800"
+ * const className = getCertificateColor(null); // "border-gray-300 bg-white text-gray-800"
+ * ```
  */
 export const getCertificateColor = (
   certificate: boolean | null | undefined,

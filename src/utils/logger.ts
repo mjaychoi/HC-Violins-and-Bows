@@ -209,7 +209,19 @@ class Logger {
       }
     } else {
       // In production, print structured JSON directly to avoid recursive logging
-      console.log(JSON.stringify(log));
+      // Use console.log directly to avoid infinite recursion
+      try {
+        console.log(JSON.stringify(log));
+      } catch {
+        // If JSON.stringify fails (e.g., circular reference), use console.log with the log object directly
+        console.log(
+          '[LOG]',
+          log.message,
+          log.context || '',
+          log.data || '',
+          log.metadata || ''
+        );
+      }
     }
   }
 

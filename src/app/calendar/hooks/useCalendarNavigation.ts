@@ -30,6 +30,13 @@ export const useCalendarNavigation = ({
   const fetchRef = useRef(fetchTasksByDateRange);
   const onErrorRef = useRef(onError);
 
+  // Request deduplication: prevent duplicate fetches for the same range
+  const lastRequestKeyRef = useRef<string>('');
+
+  // Race condition prevention: track request ID and abort controller
+  const requestIdRef = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     fetchRef.current = fetchTasksByDateRange;
   }, [fetchTasksByDateRange]);
@@ -43,18 +50,69 @@ export const useCalendarNavigation = ({
     return getDateRangeForView(calendarView, currentDate);
   }, [calendarView, currentDate]);
 
-  // Refetch current range (reuse memoized currentRange for consistency)
-  const refetchCurrentRange = useCallback(async () => {
-    try {
-      await fetchRef.current(currentRange.startDate, currentRange.endDate);
-    } catch (error) {
-      if (onErrorRef.current) {
-        onErrorRef.current(error);
-      }
-    }
-  }, [currentRange]);
+  // Refetch current range with deduplication and race condition prevention
+  const refetchCurrentRange = useCallback(
+    async (force = false) => {
+      // Create request key for deduplication
+      const requestKey = `${calendarView}|${currentRange.startDate}|${currentRange.endDate}`;
 
-  // Fetch tasks when date or view changes
+      // Skip if this is the same request as the last one (StrictMode double-invoke prevention)
+      // Unless force=true (for manual refresh after external changes)
+      if (!force && lastRequestKeyRef.current === requestKey) {
+        return;
+      }
+
+      // Abort previous request if still pending
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      // Create new abort controller for this request
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
+      // Increment request ID
+      const currentRequestId = ++requestIdRef.current;
+      lastRequestKeyRef.current = requestKey;
+
+      try {
+        await fetchRef.current(currentRange.startDate, currentRange.endDate);
+
+        // Only process if this is still the latest request (race condition check)
+        if (
+          currentRequestId === requestIdRef.current &&
+          !abortController.signal.aborted
+        ) {
+          // Request completed successfully
+          abortControllerRef.current = null;
+        }
+      } catch (error) {
+        // Only handle error if this is still the latest request
+        if (
+          currentRequestId === requestIdRef.current &&
+          !abortController.signal.aborted
+        ) {
+          if (onErrorRef.current) {
+            onErrorRef.current(error);
+          }
+          abortControllerRef.current = null;
+        }
+      }
+    },
+    [calendarView, currentRange.startDate, currentRange.endDate]
+  );
+
+  // Force refetch: bypass deduplication for manual refresh (e.g., after external task changes)
+  const forceRefetch = useCallback(async () => {
+    await refetchCurrentRange(true);
+  }, [refetchCurrentRange]);
+
+  // Invalidate request key: allows next refetch to bypass deduplication
+  const invalidateRequestKey = useCallback(() => {
+    lastRequestKeyRef.current = '';
+  }, []);
+
+  // Fetch tasks when date or view changes (with deduplication)
   useEffect(() => {
     refetchCurrentRange();
   }, [refetchCurrentRange]);
@@ -63,12 +121,16 @@ export const useCalendarNavigation = ({
   const handlePrevious = useCallback(() => {
     const newDate = navigatePrevious(calendarView, currentDate);
     setCurrentDate(newDate);
+    // Clear selectedDate when navigating to avoid stale selection
+    setSelectedDate(null);
   }, [calendarView, currentDate]);
 
   // Navigate to next period
   const handleNext = useCallback(() => {
     const newDate = navigateNext(calendarView, currentDate);
     setCurrentDate(newDate);
+    // Clear selectedDate when navigating to avoid stale selection
+    setSelectedDate(null);
   }, [calendarView, currentDate]);
 
   // Navigate to today
@@ -81,6 +143,8 @@ export const useCalendarNavigation = ({
   // Handle view change
   const handleViewChange = useCallback((view: ExtendedView) => {
     setCalendarView(view);
+    // Clear selectedDate when changing view to avoid stale selection
+    setSelectedDate(null);
   }, []);
 
   return {
@@ -93,8 +157,10 @@ export const useCalendarNavigation = ({
     handlePrevious,
     handleNext,
     handleGoToToday,
-    // Expose current range and refetch function
+    // Expose current range and refetch functions
     currentRange,
     refetchCurrentRange,
+    forceRefetch, // Force refetch bypassing deduplication
+    invalidateRequestKey, // Invalidate request key to allow next refetch
   };
 };

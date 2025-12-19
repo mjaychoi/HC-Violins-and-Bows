@@ -86,11 +86,19 @@ function maskFilePath(path: string): string {
 
 /**
  * 민감한 정보가 포함된 패턴들 (개선된 버전)
+ * ⚠️ Order matters: more specific patterns must come first
+ * Longer/more specific patterns (e.g., JWT) should be checked before shorter/generic ones
+ * to prevent shorter patterns from matching parts of longer tokens
  */
 const SENSITIVE_PATTERNS: Array<{
   pattern: RegExp;
   masker: (match: string) => string;
 }> = [
+  // JWT 토큰 (직접 감지) - 가장 구체적인 패턴이므로 먼저 체크
+  {
+    pattern: /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
+    masker: maskToken,
+  },
   // API 키, 토큰 (개선: JWT, Bearer, 긴 hex 문자열 포함)
   {
     pattern:
@@ -102,11 +110,6 @@ const SENSITIVE_PATTERNS: Array<{
       }
       return maskToken(match);
     },
-  },
-  // JWT 토큰 (직접 감지)
-  {
-    pattern: /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
-    masker: maskToken,
   },
   // 이메일 (특수 마스커 사용)
   {

@@ -123,8 +123,8 @@ describe('ErrorHandler', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Check your internet connection');
-      expect(suggestions).toContain('Please try again later');
+      expect(suggestions).toContain('인터넷 연결을 확인해주세요');
+      expect(suggestions).toContain('잠시 후 다시 시도해주세요');
     });
 
     it('should provide validation error suggestions', () => {
@@ -134,7 +134,7 @@ describe('ErrorHandler', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Please verify your input information');
+      expect(suggestions).toContain('입력한 정보를 확인하고 다시 시도해주세요');
     });
   });
 

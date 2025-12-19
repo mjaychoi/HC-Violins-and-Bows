@@ -1,5 +1,6 @@
 import {
-  formatDate,
+  formatDateOnly,
+  formatTimestamp,
   formatRelativeTime,
   formatCurrency,
   formatNumber,
@@ -25,36 +26,38 @@ import {
 } from '../formatUtils';
 
 describe('formatUtils', () => {
-  describe('formatDate', () => {
-    it('should format date with short style', () => {
-      const date = new Date('2024-01-15');
-      const result = formatDate(date, 'short');
+  describe('formatDateOnly', () => {
+    it('should format date-only string with short style', () => {
+      const result = formatDateOnly('2024-01-15');
       expect(result).toContain('2024');
     });
 
-    it('should format date string', () => {
-      const result = formatDate('2024-01-15', 'short');
+    it('should format date-only string with long style', () => {
+      const result = formatDateOnly('2024-01-15', 'long');
       expect(result).toContain('2024');
     });
 
-    it('should format date with iso style', () => {
-      const date = new Date('2024-01-15');
-      const result = formatDate(date, 'iso');
+    it('should format date-only string with iso style', () => {
+      const result = formatDateOnly('2024-01-15', 'iso');
       expect(result).toBe('2024-01-15');
     });
 
     it('should handle invalid date', () => {
-      const result = formatDate('invalid');
+      const result = formatDateOnly('invalid');
       expect(result).toBe('Invalid Date');
     });
+  });
 
-    it('should format with different styles', () => {
+  describe('formatTimestamp', () => {
+    it('should format Date object with datetime style', () => {
       const date = new Date('2024-01-15T10:30:00');
-      expect(formatDate(date, 'short')).toBeTruthy();
-      expect(formatDate(date, 'long')).toBeTruthy();
-      expect(formatDate(date, 'time')).toBeTruthy();
-      expect(formatDate(date, 'datetime')).toBeTruthy();
-      expect(formatDate(date, 'display')).toBeTruthy();
+      const result = formatTimestamp(date, 'datetime');
+      expect(result).toContain('2024');
+    });
+
+    it('should format ISO string with time style', () => {
+      const result = formatTimestamp('2024-01-15T10:30:00', 'time');
+      expect(result).toContain(':');
     });
   });
 

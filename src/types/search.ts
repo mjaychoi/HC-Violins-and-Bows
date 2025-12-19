@@ -3,8 +3,8 @@
 export type FilterOperator = 'AND' | 'OR';
 
 export interface DateRange {
-  from: string | null; // YYYY-MM-DD
-  to: string | null; // YYYY-MM-DD
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD
 }
 
 export interface AdvancedFilter {

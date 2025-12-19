@@ -11,12 +11,14 @@ import {
   useInstruments,
   useConnections,
 } from '@/contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   RelationshipType,
   Client,
   Instrument,
   ClientInstrument,
 } from '@/types';
+import { logInfo, logDebug } from '@/utils/logger';
 
 // FIXED: Global refs shared across all component instances to prevent duplicate fetches
 // These are module-level refs that persist across all hook instances and survive Strict Mode remounts
@@ -37,13 +39,16 @@ const ongoingFetchConnectionsPromise = {
 export function useUnifiedData() {
   // DEBUG: Log every time this hook is called to track multiple invocations
   if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-    console.log('[useUnifiedData] Hook called');
+    logInfo('[useUnifiedData] Hook called');
   }
 
   // Use individual contexts for better performance
   const clientsContext = useClientsContext();
   const instrumentsContext = useInstrumentsContext();
   const connectionsContext = useConnectionsContext();
+
+  // Check authentication status - don't fetch data if not logged in
+  const { user, loading: authLoading } = useAuth();
 
   // Combine states for unified interface
   const state = useMemo(
@@ -121,6 +126,16 @@ export function useUnifiedData() {
   // FIXED: Use global refs ONLY - don't check state.length as it changes and causes re-runs
   // Global refs persist across Strict Mode remounts, so once set to true, it stays true
   useEffect(() => {
+    // Don't fetch data if not authenticated or auth is still loading
+    if (authLoading || !user) {
+      if (process.env.NODE_ENV === 'development') {
+        logInfo(
+          '[useUnifiedData] Not authenticated or auth loading, skipping fetch'
+        );
+      }
+      return;
+    }
+
     // CRITICAL: Check global refs FIRST - if already fetched, don't do anything
     // This must be the first check to prevent any fetch attempts
     if (
@@ -130,9 +145,7 @@ export function useUnifiedData() {
     ) {
       // Already fetched globally, skip entirely
       if (process.env.NODE_ENV === 'development') {
-        console.log(
-          '[useUnifiedData] All data already fetched globally, skipping'
-        );
+        logInfo('[useUnifiedData] All data already fetched globally, skipping');
       }
       return;
     }
@@ -150,14 +163,14 @@ export function useUnifiedData() {
 
     if (!needClients && !needInstruments && !needConnections) {
       if (process.env.NODE_ENV === 'development') {
-        console.log('[useUnifiedData] No data needed, skipping');
+        logInfo('[useUnifiedData] No data needed, skipping');
       }
       return;
     }
 
     // Debug logging
     if (process.env.NODE_ENV === 'development') {
-      console.log('[useUnifiedData] Fetch check:', {
+      logDebug('[useUnifiedData] Fetch check:', {
         needClients,
         needInstruments,
         needConnections,
@@ -192,12 +205,12 @@ export function useUnifiedData() {
       // CRITICAL: Check if fetch is already in progress and wait for it instead of starting a new one
       if (needClients) {
         if (ongoingFetchClientsPromise.current) {
-          console.log(
+          logInfo(
             '[useUnifiedData] Clients fetch already in progress, waiting...'
           );
           await ongoingFetchClientsPromise.current;
         } else {
-          console.log('[useUnifiedData] Starting clients fetch...');
+          logInfo('[useUnifiedData] Starting clients fetch...');
           ongoingFetchClientsPromise.current = (async () => {
             try {
               await currentActions.fetchClients();
@@ -211,12 +224,12 @@ export function useUnifiedData() {
 
       if (needInstruments) {
         if (ongoingFetchInstrumentsPromise.current) {
-          console.log(
+          logInfo(
             '[useUnifiedData] Instruments fetch already in progress, waiting...'
           );
           await ongoingFetchInstrumentsPromise.current;
         } else {
-          console.log('[useUnifiedData] Starting instruments fetch...');
+          logInfo('[useUnifiedData] Starting instruments fetch...');
           ongoingFetchInstrumentsPromise.current = (async () => {
             try {
               await currentActions.fetchInstruments();
@@ -230,12 +243,12 @@ export function useUnifiedData() {
 
       if (needConnections) {
         if (ongoingFetchConnectionsPromise.current) {
-          console.log(
+          logInfo(
             '[useUnifiedData] Connections fetch already in progress, waiting...'
           );
           await ongoingFetchConnectionsPromise.current;
         } else {
-          console.log('[useUnifiedData] Starting connections fetch...');
+          logInfo('[useUnifiedData] Starting connections fetch...');
           ongoingFetchConnectionsPromise.current = (async () => {
             try {
               await currentActions.fetchConnections();
@@ -249,10 +262,10 @@ export function useUnifiedData() {
     };
 
     loadMissingData();
-    // FIXED: Empty dependency array - useEffect runs once on mount
+    // FIXED: Include auth state in dependencies - don't fetch if not authenticated
     // Global refs persist across Strict Mode remounts, so once fetched, it won't fetch again
     // We use refs to access latest state/actions without adding them to dependencies
-  }, []); // Empty deps - check once on mount, global refs prevent duplicates
+  }, [authLoading, user]); // Check auth state - only fetch when authenticated
 
   return {
     // state

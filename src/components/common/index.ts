@@ -17,3 +17,7 @@ export * from './empty-state';
 
 // Badges
 export * from './badges';
+
+// Images
+export { default as OptimizedImage } from './OptimizedImage';
+export type { OptimizedImageProps } from './OptimizedImage';

@@ -52,12 +52,15 @@ const mockInstrument = {
 describe('SaleForm', () => {
   const mockOnClose = jest.fn();
   const mockOnSubmit = jest.fn().mockResolvedValue(undefined);
+  const baseClient = {
+    ...mockClient,
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
 
     mockUseUnifiedClients.mockReturnValue({
-      clients: [mockClient],
+      clients: [baseClient],
       loading: false,
       fetchClients: jest.fn(),
       createClient: jest.fn(),
@@ -217,7 +220,8 @@ describe('SaleForm', () => {
         expect(mockOnSubmit).toHaveBeenCalledWith(
           expect.objectContaining({
             sale_price: -100,
-          })
+          }),
+          expect.any(Object)
         );
       },
       { timeout: 3000 }
@@ -283,13 +287,16 @@ describe('SaleForm', () => {
 
     await waitFor(
       () => {
-        expect(mockOnSubmit).toHaveBeenCalledWith({
-          sale_price: 2500,
-          sale_date: '2024-01-15',
-          client_id: null,
-          instrument_id: null,
-          notes: null,
-        });
+        expect(mockOnSubmit).toHaveBeenCalledWith(
+          {
+            sale_price: 2500,
+            sale_date: '2024-01-15',
+            client_id: null,
+            instrument_id: null,
+            notes: null,
+          },
+          expect.any(Object)
+        );
       },
       { timeout: 3000 }
     );
@@ -355,6 +362,47 @@ describe('SaleForm', () => {
       instrument_id: 'inst-1',
       notes: 'Test notes',
     });
+  });
+
+  it('should prioritize recentClientIds order when provided', async () => {
+    // 최근 거래 순서: client-2가 가장 최근, 그 다음 client-1
+    const recentClientIds = ['client-2', 'client-1'];
+
+    const secondClient = {
+      ...baseClient,
+      id: 'client-2',
+      first_name: 'Alice',
+      last_name: 'Smith',
+      email: 'alice@example.com',
+    };
+
+    mockUseUnifiedClients.mockReturnValue({
+      clients: [baseClient, secondClient],
+      loading: false,
+      fetchClients: jest.fn(),
+      createClient: jest.fn(),
+      updateClient: jest.fn(),
+      deleteClient: jest.fn(),
+    } as any);
+
+    render(
+      <SaleForm
+        isOpen={true}
+        onClose={mockOnClose}
+        onSubmit={mockOnSubmit}
+        submitting={false}
+        recentClientIds={recentClientIds}
+      />
+    );
+
+    const clientSelect = screen.getByLabelText(/Client/i) as HTMLSelectElement;
+    const options = Array.from(clientSelect.options).map(o => o.textContent);
+
+    // 최근 거래한 클라이언트(Alice)가 목록 상단에 와야 함
+    const aliceIndex = options.findIndex(text => text?.includes('Alice Smith'));
+    const johnIndex = options.findIndex(text => text?.includes('John Doe'));
+
+    expect(aliceIndex).toBeLessThan(johnIndex);
   });
 
   it('should close modal when clicking cancel', async () => {
@@ -477,7 +525,8 @@ describe('SaleForm', () => {
         expect(mockOnSubmit).toHaveBeenCalledWith(
           expect.objectContaining({
             sale_price: 1999.5,
-          })
+          }),
+          expect.any(Object)
         );
       },
       { timeout: 3000 }

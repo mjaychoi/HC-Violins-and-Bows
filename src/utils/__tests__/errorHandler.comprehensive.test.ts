@@ -237,8 +237,8 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Check your internet connection');
-      expect(suggestions).toContain('Please try again later');
+      expect(suggestions).toContain('인터넷 연결을 확인해주세요');
+      expect(suggestions).toContain('잠시 후 다시 시도해주세요');
     });
 
     it('should provide suggestions for TIMEOUT_ERROR', () => {
@@ -248,8 +248,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Request timeout occurred');
-      expect(suggestions).toContain('Check network status and try again');
+      expect(suggestions).toContain('요청 시간이 초과되었습니다');
+      expect(suggestions).toContain(
+        '네트워크 상태를 확인하고 다시 시도해주세요'
+      );
     });
 
     it('should provide suggestions for UNAUTHORIZED', () => {
@@ -259,16 +261,16 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Redirecting to login page');
+      expect(suggestions).toContain('로그인이 필요합니다');
+      expect(suggestions).toContain('로그인 페이지로 이동합니다');
     });
 
     it('should provide suggestions for FORBIDDEN', () => {
       const error = errorHandler.createError(ErrorCodes.FORBIDDEN, 'Forbidden');
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain(
-        'Contact administrator for permission request'
-      );
+      expect(suggestions).toContain('이 작업을 수행할 권한이 없습니다');
+      expect(suggestions).toContain('관리자에게 권한 요청을 문의하세요');
     });
 
     it('should provide suggestions for DATABASE_ERROR', () => {
@@ -278,8 +280,8 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Check database connection');
-      expect(suggestions).toContain('Please try again later');
+      expect(suggestions).toContain('데이터베이스 연결에 문제가 발생했습니다');
+      expect(suggestions).toContain('잠시 후 다시 시도해주세요');
     });
 
     it('should provide suggestions for VALIDATION_ERROR', () => {
@@ -289,7 +291,7 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Please verify your input information');
+      expect(suggestions).toContain('입력한 정보를 확인하고 다시 시도해주세요');
     });
 
     it('should provide suggestions for DUPLICATE_RECORD', () => {
@@ -299,8 +301,10 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Data already exists');
-      expect(suggestions).toContain('Try with different information');
+      expect(suggestions).toContain('이미 존재하는 데이터입니다');
+      expect(suggestions).toContain(
+        '다른 정보로 시도하거나 기존 항목을 수정하세요'
+      );
     });
 
     it('should provide default suggestions for unknown error codes', () => {
@@ -310,10 +314,8 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Please try again later');
-      expect(suggestions).toContain(
-        'Contact administrator if problem persists'
-      );
+      expect(suggestions).toContain('잠시 후 다시 시도해주세요');
+      expect(suggestions).toContain('문제가 계속되면 관리자에게 문의하세요');
     });
   });
 

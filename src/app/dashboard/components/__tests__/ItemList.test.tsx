@@ -99,13 +99,17 @@ describe('ItemList', () => {
       />
     );
 
-    expect(screen.getByText('Strad')).toBeInTheDocument();
+    const makers = screen.getAllByText('Strad');
+    expect(makers.length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    const moreActionsButtons = screen.getAllByRole('button', {
+      name: 'More actions',
+    });
+    fireEvent.click(moreActionsButtons[0]);
     fireEvent.click(screen.getByText('Delete'));
     expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(moreActionsButtons[0]);
     fireEvent.click(screen.getByText('Edit'));
     fireEvent.change(screen.getByPlaceholderText('Maker'), {
       target: { value: 'Guarneri' },

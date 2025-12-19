@@ -15,6 +15,9 @@ import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import { Instrument, SalesHistory, Client, ClientInstrument } from '@/types';
 import dynamic from 'next/dynamic';
 import { useSalesHistory } from '@/app/sales/hooks/useSalesHistory';
+import { generateSampleInstruments } from './utils/sampleData';
+import TodayFollowUps from '@/app/clients/components/TodayFollowUps';
+import { logDebug } from '@/utils/logger';
 
 // Dynamic import for SaleForm to reduce initial bundle size
 const SaleForm = dynamic(() => import('@/app/sales/components/SaleForm'), {
@@ -33,6 +36,49 @@ export default function DashboardPage() {
 
   // 판매 기록 생성
   const { createSale } = useSalesHistory();
+
+  // 최근 거래한 클라이언트 ID 리스트 (판매 기록 기반)
+  const [recentClientIds, setRecentClientIds] = useState<string[]>([]);
+
+  // 판매 기록을 가져와서 최근 거래 클라이언트 ID 계산
+  useEffect(() => {
+    const fetchRecentClients = async () => {
+      try {
+        // 최근 100개의 판매 기록을 가져와서 클라이언트 ID 추출
+        const response = await fetch(
+          '/api/sales?page=1&pageSize=100&sortColumn=sale_date&sortDirection=desc'
+        );
+        const result = await response.json();
+
+        if (response.ok && result.data) {
+          const sales = result.data as SalesHistory[];
+          // sale_date 기준으로 정렬되어 있으므로, client_id를 순서대로 추출
+          // 중복 제거하면서 순서 유지 (가장 최근 거래만 유지)
+          const seen = new Set<string>();
+          const clientIds: string[] = [];
+
+          for (const sale of sales) {
+            if (sale.client_id && !seen.has(sale.client_id)) {
+              seen.add(sale.client_id);
+              clientIds.push(sale.client_id);
+            }
+          }
+
+          setRecentClientIds(clientIds);
+        }
+      } catch (error) {
+        // 에러는 무시 (최근 클라이언트는 선택적 기능)
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to fetch recent clients:', error);
+        }
+      }
+    };
+
+    // 판매 모달이 열릴 때만 가져오도록 최적화
+    if (showSaleModal) {
+      fetchRecentClients();
+    }
+  }, [showSaleModal]);
 
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched
@@ -87,13 +133,17 @@ export default function DashboardPage() {
     })) as EnrichedInstrument[];
   }, [instruments, clientRelationships]);
 
+  // FIXED: Only scroll to top on initial mount, not on every render
+  // Removed automatic scroll to top to prevent unwanted scroll position changes
+  // Users should maintain their scroll position when navigating to dashboard
+
   // Debug: Log clients loading state
   useEffect(() => {
     if (
       typeof window !== 'undefined' &&
       process.env.NODE_ENV === 'development'
     ) {
-      console.log('[Dashboard] Clients state:', {
+      logDebug('[Dashboard] Clients state:', {
         clientsCount: clients?.length ?? 0,
         loading: loading.hasAnyLoading,
         sampleClientIds:
@@ -128,16 +178,23 @@ export default function DashboardPage() {
 
   // Dashboard modal state
   const {
-    showModal,
+    isModalOpen,
     isEditing,
     selectedItem,
     closeModal,
     handleAddItem,
-    confirmItem,
     isConfirmDialogOpen,
     handleRequestDelete,
     handleCancelDelete,
-  } = useDashboardModal();
+    handleConfirmDelete: handleConfirmDeleteFromHook,
+  } = useDashboardModal({
+    onDelete: handleDeleteItem,
+  });
+
+  // Track newly created item for scroll/highlight feedback
+  const [newlyCreatedItemId, setNewlyCreatedItemId] = useState<string | null>(
+    null
+  );
 
   // FIXED: Calculate existing serial numbers as Set for O(1) lookup performance
   // This avoids duplicate data fetching in ItemForm (DashboardPage already has instruments)
@@ -156,16 +213,8 @@ export default function DashboardPage() {
     [existingSerialNumbersSet]
   );
 
-  // Handle confirmed deletion
-  const handleConfirmDelete = useCallback(async () => {
-    if (!confirmItem) return;
-    try {
-      await handleDeleteItem(confirmItem.id);
-      handleCancelDelete();
-    } catch {
-      // Error already handled in handleDeleteItem
-    }
-  }, [confirmItem, handleDeleteItem, handleCancelDelete]);
+  // ✅ FIXED: handleConfirmDelete는 이제 훅에서 제공됨
+  const handleConfirmDelete = handleConfirmDeleteFromHook;
 
   // 원클릭 판매 핸들러
   const handleSellClick = useCallback(
@@ -184,11 +233,27 @@ export default function DashboardPage() {
 
   // 판매 기록 저장 핸들러
   const handleSaleSubmit = useCallback(
-    async (payload: Omit<SalesHistory, 'id' | 'created_at'>) => {
+    async (
+      payload: Omit<SalesHistory, 'id' | 'created_at'>,
+      options?: { instrumentStatusUpdated?: boolean; instrumentId?: string }
+    ) => {
       try {
         const result = await createSale(payload);
         if (result) {
-          showSuccess('판매 기록이 성공적으로 생성되었습니다.');
+          // 작업 완료 요약 메시지 생성
+          const messages: string[] = ['판매 기록이 추가되었습니다'];
+          const links: Array<{ label: string; href: string }> = [];
+
+          if (options?.instrumentStatusUpdated && options?.instrumentId) {
+            messages.push("악기 상태가 'Sold'로 변경되었습니다");
+            links.push({
+              label: '악기 보기',
+              href: `/dashboard?instrumentId=${options.instrumentId}`,
+            });
+          }
+
+          const message = messages.join('고, ');
+          showSuccess(message + '.', links.length > 0 ? links : undefined);
           setShowSaleModal(false);
           setSelectedInstrumentForSale(null);
           setSelectedClientForSale(null);
@@ -199,6 +264,41 @@ export default function DashboardPage() {
     },
     [createSale, showSuccess, handleError]
   );
+
+  // 예시 데이터 로드 핸들러
+  const handleLoadSampleData = useCallback(async () => {
+    try {
+      const sampleInstruments = generateSampleInstruments(
+        existingSerialNumbers
+      );
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const instrument of sampleInstruments) {
+        try {
+          await handleCreateItem(instrument);
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          console.error('Failed to create sample instrument:', error);
+        }
+      }
+
+      if (successCount > 0) {
+        showSuccess(
+          `예시 데이터 ${successCount}개가 성공적으로 추가되었습니다.`
+        );
+      }
+      if (errorCount > 0) {
+        handleError(
+          new Error(`일부 예시 데이터 추가에 실패했습니다 (${errorCount}개)`),
+          '예시 데이터 로드'
+        );
+      }
+    } catch (error) {
+      handleError(error, '예시 데이터 로드 실패');
+    }
+  }, [existingSerialNumbers, handleCreateItem, showSuccess, handleError]);
 
   return (
     <ErrorBoundary>
@@ -234,36 +334,71 @@ export default function DashboardPage() {
           />
         }
       >
+        {/* 오늘/지연된 Follow-up 요약 카드 */}
+        <div className="px-6 pt-6">
+          <TodayFollowUps />
+        </div>
+
         <DashboardContent
           enrichedItems={enrichedItems}
           clients={clients}
           clientRelationships={clientRelationships}
           clientsLoading={clientsLoading}
           loading={loading}
-          onDeleteClick={handleRequestDelete}
+          onDeleteClick={item => handleRequestDelete(item.id)}
           onUpdateItemInline={handleUpdateItemInline}
           onAddClick={handleAddItem}
           onSellClick={handleSellClick}
           existingSerialNumbers={existingSerialNumbers}
+          newlyCreatedItemId={newlyCreatedItemId}
+          onNewlyCreatedItemShown={() => setNewlyCreatedItemId(null)}
+          onLoadSampleData={handleLoadSampleData}
         />
 
         {/* Item Form Modal - Show when editing or creating */}
         {/* Note: Form state management is handled internally by ItemForm via useDashboardForm.
             ItemForm handles form reset and modal close on successful submit. */}
         <ItemForm
-          isOpen={showModal}
+          isOpen={isModalOpen}
           onClose={closeModal}
           onSubmit={
             isEditing && selectedItem
               ? async formData => {
                   await handleUpdateItem(selectedItem.id, formData);
+
+                  // UX: Show which item was updated
+                  const titleParts = [
+                    formData.maker ?? undefined,
+                    formData.type ?? undefined,
+                  ].filter(Boolean);
+                  const label =
+                    (titleParts.length > 0 ? titleParts.join(' - ') : '악기') +
+                    '이(가)';
+                  showSuccess(`"${label}" 수정되었습니다.`);
                 }
-              : handleCreateItem
+              : async formData => {
+                  const createdId = await handleCreateItem(formData);
+                  if (createdId) {
+                    setNewlyCreatedItemId(createdId);
+
+                    // UX: Show which item was created
+                    const titleParts = [
+                      formData.maker ?? undefined,
+                      formData.type ?? undefined,
+                    ].filter(Boolean);
+                    const label =
+                      (titleParts.length > 0
+                        ? titleParts.join(' - ')
+                        : '새 악기') + '이(가)';
+                    showSuccess(`"${label}" 추가되었습니다.`);
+                  }
+                }
           }
           submitting={submitting.hasAnySubmitting}
           selectedItem={selectedItem}
           isEditing={isEditing}
           existingSerialNumbers={existingSerialNumbers}
+          instruments={instruments}
         />
 
         <ConfirmDialog
@@ -289,6 +424,7 @@ export default function DashboardPage() {
           initialInstrument={selectedInstrumentForSale}
           initialClient={selectedClientForSale}
           autoUpdateInstrumentStatus={true}
+          recentClientIds={recentClientIds}
         />
       </AppLayout>
     </ErrorBoundary>

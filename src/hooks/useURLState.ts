@@ -108,11 +108,26 @@ export function useURLState(config: URLStateConfig) {
       }
     });
 
-    // 이전 상태와 비교하여 변경된 경우에만 업데이트
+    // ✅ FIXED: 이전 상태와 비교하여 변경된 경우에만 업데이트
+    // Direct comparison for strings/arrays (more efficient than JSON.stringify)
     setUrlState(prevState => {
       const hasChanged = keys.some(key => {
         const prevValue = prevState[key];
         const newValue = state[key];
+
+        // Direct comparison for primitive types
+        if (prevValue === newValue) return false;
+
+        // Array comparison: check length and elements
+        if (Array.isArray(prevValue) && Array.isArray(newValue)) {
+          if (prevValue.length !== newValue.length) return true;
+          return prevValue.some((v, i) => v !== newValue[i]);
+        }
+
+        // One is array, one is not
+        if (Array.isArray(prevValue) !== Array.isArray(newValue)) return true;
+
+        // Fallback to JSON.stringify for complex objects (rare)
         return JSON.stringify(prevValue) !== JSON.stringify(newValue);
       });
 

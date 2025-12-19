@@ -32,10 +32,10 @@ export function useNotifications({
   tasks,
   upcomingDays = 3,
 }: UseNotificationsOptions) {
-  const today = startOfDay(new Date());
-
-  // Use useMemo for derived state - no unnecessary re-renders
+  // ✅ FIXED: today를 useMemo 내부에서 생성하여 dependency 문제 해결
+  // 매 렌더마다 새 Date가 생성되어 dependency가 계속 바뀌는 문제 방지
   const { notifications, counts } = useMemo(() => {
+    const today = startOfDay(new Date());
     const upcomingTasks: NotificationTask[] = [];
     const todayTasks: NotificationTask[] = [];
     const overdueTasks: NotificationTask[] = [];
@@ -72,7 +72,8 @@ export function useNotifications({
         total: allNotifications.length,
       } as NotificationCounts,
     };
-  }, [tasks, upcomingDays, today]);
+    // ✅ FIXED: today를 dependency에서 제거 (내부에서 생성)
+  }, [tasks, upcomingDays]);
 
   return {
     notifications,
@@ -83,12 +84,13 @@ export function useNotifications({
 }
 
 /**
- * @deprecated Use useNotifications instead - this function has incorrect date priority
- * This function incorrectly prioritizes scheduled_date over due_date, causing bugs
- * where badge counts don't match notification lists
+ * @deprecated Use useNotifications().counts instead
  *
- * REMOVED: Use useNotifications().counts instead for consistent date priority
- * Priority should be: due_date > personal_due_date > scheduled_date
+ * This function is a wrapper around useNotifications and maintains correct date priority.
+ * The underlying bug (scheduled_date prioritized over due_date) has been fixed in useNotifications.
+ * Date priority: due_date > personal_due_date > scheduled_date
+ *
+ * This function is kept for backwards compatibility but should be replaced with useNotifications().counts
  */
 export function useNotificationCounts(
   tasks: MaintenanceTask[],

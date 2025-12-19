@@ -6,6 +6,7 @@ import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useErrorHandler, useToast } from '@/contexts/ToastContext';
 import { format } from 'date-fns';
+import { apiFetch } from '@/utils/apiFetch';
 
 export const useDashboardData = () => {
   const { handleError } = useErrorHandler();
@@ -49,10 +50,13 @@ export const useDashboardData = () => {
   const handleCreateItem = useCallback(
     async (formData: Omit<Instrument, 'id' | 'created_at'>) => {
       try {
+        let createdItemId: string | null = null;
         await withSubmitting(async () => {
-          await createInstrument(formData);
+          const result = await createInstrument(formData);
+          createdItemId = result?.id || null;
           showSuccess('아이템이 성공적으로 생성되었습니다.');
         });
+        return createdItemId;
       } catch (error) {
         handleError(error, 'Failed to create item');
         throw error; // Re-throw to allow form to handle error
@@ -136,7 +140,7 @@ export const useDashboardData = () => {
 
               // Only create if it doesn't already exist (idempotent)
               if (!existingAutoSale) {
-                const response = await fetch('/api/sales', {
+                const response = await apiFetch('/api/sales', {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',

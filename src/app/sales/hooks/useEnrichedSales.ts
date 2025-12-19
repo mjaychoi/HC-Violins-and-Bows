@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
-import { EnrichedSale, Client, Instrument } from '@/types';
-import { SalesHistory } from '@/types';
+import { EnrichedSale, Client, Instrument, SalesHistory } from '@/types';
 import { createMaps, enrichSales, sortByClientName } from '../utils/salesUtils';
 import { SortColumn, SortDirection } from '../types';
 

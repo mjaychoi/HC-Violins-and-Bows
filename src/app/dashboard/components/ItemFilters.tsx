@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, memo } from 'react';
 import { Instrument, ClientInstrument } from '@/types';
 import { getPriceRange } from '../utils/dashboardUtils';
 import { DateRange } from '@/types/search';
@@ -48,7 +48,7 @@ interface ItemFiltersProps {
   }>;
 }
 
-export default function ItemFilters({
+function ItemFilters({
   items,
   searchTerm,
   onSearchChange,
@@ -366,3 +366,5 @@ export default function ItemFilters({
     />
   );
 }
+
+export default memo(ItemFilters);

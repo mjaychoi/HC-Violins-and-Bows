@@ -1,4 +1,5 @@
-import { addDays, isBefore, isSameDay } from 'date-fns';
+import { addDays, isBefore } from 'date-fns';
+import { format } from 'date-fns';
 import type { MaintenanceTask } from '@/types';
 import type { DateRange, FilterOperator } from '@/types/search';
 import type { TaskType, TaskStatus, TaskPriority } from '@/types';
@@ -78,11 +79,10 @@ export const filterByStatus = (
 export const filterByOwnership = (
   tasks: MaintenanceTask[],
   ownership: string,
-  instrumentsMap: Map<
+  ownershipMap: Map<
     string,
     {
       ownership: string | null;
-      [key: string]: unknown;
     }
   >
 ): MaintenanceTask[] => {
@@ -91,7 +91,7 @@ export const filterByOwnership = (
   }
   return tasks.filter(task => {
     const instrument = task.instrument_id
-      ? instrumentsMap.get(task.instrument_id)
+      ? ownershipMap.get(task.instrument_id)
       : undefined;
     return instrument?.ownership === ownership;
   });
@@ -108,11 +108,10 @@ export const filterBySearchFilters = (
     status?: TaskStatus | 'all';
     owner?: string | 'all';
   },
-  instrumentsMap: Map<
+  ownershipMap: Map<
     string,
     {
       ownership: string | null;
-      [key: string]: unknown;
     }
   >
 ): MaintenanceTask[] => {
@@ -131,7 +130,7 @@ export const filterBySearchFilters = (
   if (searchFilters.owner && searchFilters.owner !== 'all') {
     filtered = filtered.filter(task => {
       const instrument = task.instrument_id
-        ? instrumentsMap.get(task.instrument_id)
+        ? ownershipMap.get(task.instrument_id)
         : undefined;
       return instrument?.ownership === searchFilters.owner;
     });
@@ -155,6 +154,7 @@ export const calculateSummaryStats = (
   // Use standardized "today" source for consistency
   const todayYMD = todayLocalYMD();
   const today = parseYMDLocal(todayYMD)!;
+  const todayStr = format(today, 'yyyy-MM-dd');
   let overdue = 0;
   let todayCount = 0;
   let upcoming = 0;
@@ -171,9 +171,13 @@ export const calculateSummaryStats = (
       const taskDate = parseYMDLocal(dateStr);
       if (!taskDate) return;
 
+      // Normalize to YYYY-MM-DD string for reliable comparison
+      const taskDateStr = format(taskDate, 'yyyy-MM-dd');
+
       if (isBefore(taskDate, today)) {
         overdue += 1;
-      } else if (isSameDay(taskDate, today)) {
+      } else if (taskDateStr === todayStr) {
+        // Use string comparison for exact day match
         todayCount += 1;
       } else if (isBefore(taskDate, addDays(today, 7))) {
         upcoming += 1;

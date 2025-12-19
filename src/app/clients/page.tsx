@@ -1,7 +1,10 @@
 'use client';
 import { Client, ClientInstrument, Instrument } from '@/types';
 import dynamic from 'next/dynamic';
-import { useUnifiedClients } from '@/hooks/useUnifiedData';
+import {
+  useUnifiedClients,
+  useUnifiedInstruments,
+} from '@/hooks/useUnifiedData';
 import { generateClientNumber } from '@/utils/uniqueNumberGenerator';
 import {
   useClientInstruments,
@@ -33,6 +36,11 @@ export default function ClientsPage() {
   const { handleError, showSuccess } = useAppFeedback();
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
 
+  // Track newly created client for scroll/highlight feedback
+  const [newlyCreatedClientId, setNewlyCreatedClientId] = useState<
+    string | null
+  >(null);
+
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched
 
@@ -45,6 +53,8 @@ export default function ClientsPage() {
     updateClient,
     deleteClient,
   } = useUnifiedClients();
+
+  const { instruments } = useUnifiedInstruments();
 
   // useClientInstruments uses DataContext connections directly
   // No separate fetching needed - DataContext handles all data fetching
@@ -153,6 +163,8 @@ export default function ClientsPage() {
       if (newClient) {
         closeModal();
         showSuccess('Client added successfully.');
+        // Track newly created client for scroll/highlight feedback
+        setNewlyCreatedClientId(newClient.id);
       }
     } catch (error) {
       handleError(error, 'Failed to create client');
@@ -205,7 +217,7 @@ export default function ClientsPage() {
     if (!selectedClient) return;
 
     try {
-      await addInstrumentRelationshipHook(
+      const connection = await addInstrumentRelationshipHook(
         selectedClient.id,
         instrumentId,
         relationshipType
@@ -214,7 +226,40 @@ export default function ClientsPage() {
       // Relationships are automatically updated in DataContext
       // No need to manually refresh
       closeInstrumentSearch();
-      showSuccess('Instrument connection added.');
+
+      // 작업 완료 요약 메시지 생성
+      if (connection) {
+        const instrument = instruments.find(i => i.id === instrumentId);
+        const instrumentName =
+          instrument?.maker && instrument?.serial_number
+            ? `${instrument.maker} (${instrument.serial_number})`
+            : instrument?.maker || instrument?.serial_number || '악기';
+        const clientName =
+          selectedClient.first_name || selectedClient.last_name
+            ? `${selectedClient.first_name || ''} ${selectedClient.last_name || ''}`.trim()
+            : selectedClient.email || '클라이언트';
+
+        const links: Array<{ label: string; href: string }> = [];
+        if (instrumentId) {
+          links.push({
+            label: '악기 보기',
+            href: `/dashboard?instrumentId=${instrumentId}`,
+          });
+        }
+        if (selectedClient.id) {
+          links.push({
+            label: '클라이언트 보기',
+            href: `/clients?clientId=${selectedClient.id}`,
+          });
+        }
+
+        showSuccess(
+          `연결이 추가되었습니다. ${instrumentName}과 ${clientName}이 연결되었습니다.`,
+          links.length > 0 ? links : undefined
+        );
+      } else {
+        showSuccess('Instrument connection added.');
+      }
     } catch (error) {
       handleError(error, 'Failed to add instrument relationship');
     }
@@ -285,6 +330,8 @@ export default function ClientsPage() {
             onDeleteClient={(client: Client) => {
               setConfirmDelete(client);
             }}
+            newlyCreatedClientId={newlyCreatedClientId}
+            onNewlyCreatedClientShown={() => setNewlyCreatedClientId(null)}
           />
         )}
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 
 interface NotificationBadgeProps {
   overdue: number;
@@ -19,7 +19,8 @@ export default function NotificationBadge({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const total = overdue + upcoming + today;
-  const tooltipId = `notif-tip-${Math.random().toString(36).substr(2, 9)}`;
+  // ✅ FIXED: useId() for stable ID across renders (prevents SR confusion)
+  const tooltipId = useId();
 
   // ✅ FIXED: Escape로 tooltip 닫기
   useEffect(() => {
@@ -36,19 +37,17 @@ export default function NotificationBadge({
     }
   }, [showTooltip]);
 
-  // ✅ FIXED: onClick이 있으면 tooltip 내부 버튼 클릭 시 먼저 tooltip 닫기
-  const handleTooltipClick = useCallback(() => {
-    setShowTooltip(false);
-    onClick?.();
-  }, [onClick]);
-
   if (total === 0) return null;
 
   return (
     <div className="relative">
       <button
         ref={buttonRef}
-        onClick={onClick}
+        onClick={() => {
+          // ✅ FIXED: Close tooltip first, then navigate (clearer UX)
+          setShowTooltip(false);
+          onClick?.();
+        }}
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
         onFocus={() => setShowTooltip(true)}
@@ -102,14 +101,18 @@ export default function NotificationBadge({
             <div className="px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-50 transition-colors">
               <span className="text-red-600">⚠️</span>
               <span className="text-gray-700">지연된 작업:</span>
-              <span className="font-semibold text-red-600">{overdue}개</span>
+              <span className="font-semibold text-red-600">
+                {overdue > 99 ? '99+' : overdue}개
+              </span>
             </div>
           )}
           {today > 0 && (
             <div className="px-4 py-2 text-sm flex items-center gap-2 hover:bg-blue-50 transition-colors">
               <span className="text-blue-600">📅</span>
               <span className="text-gray-700">오늘 마감:</span>
-              <span className="font-semibold text-blue-600">{today}개</span>
+              <span className="font-semibold text-blue-600">
+                {today > 99 ? '99+' : today}개
+              </span>
             </div>
           )}
           {upcoming > 0 && (
@@ -117,18 +120,8 @@ export default function NotificationBadge({
               <span className="text-yellow-600">⏰</span>
               <span className="text-gray-700">곧 마감 (3일 이내):</span>
               <span className="font-semibold text-yellow-600">
-                {upcoming}개
+                {upcoming > 99 ? '99+' : upcoming}개
               </span>
-            </div>
-          )}
-          {onClick && (
-            <div className="px-4 py-2 border-t border-gray-100">
-              <button
-                onClick={handleTooltipClick}
-                className="text-sm text-blue-600 hover:text-blue-700 font-medium w-full text-left"
-              >
-                캘린더에서 확인하기 →
-              </button>
             </div>
           )}
         </div>

@@ -21,20 +21,33 @@ describe('useAppFeedback', () => {
 
   it('should combine error handler and toast hooks', () => {
     const mockHandleError = jest.fn();
-    const mockShowSuccess = jest.fn();
+    const mockShowSuccessBase = jest.fn();
 
     (useErrorHandler as jest.Mock).mockReturnValue({
       handleError: mockHandleError,
     });
 
     (useToast as jest.Mock).mockReturnValue({
-      showSuccess: mockShowSuccess,
+      showSuccess: mockShowSuccessBase,
     });
 
     const { result } = renderHook(() => useAppFeedback());
 
     expect(result.current.handleError).toBe(mockHandleError);
-    expect(result.current.showSuccess).toBe(mockShowSuccess);
+    // showSuccess is a wrapper function, so we test that it calls the base function
+    expect(result.current.showSuccess).toBeInstanceOf(Function);
+
+    // Test that the wrapper calls the base function
+    result.current.showSuccess('Test message');
+    expect(mockShowSuccessBase).toHaveBeenCalledWith('Test message', undefined);
+
+    // Test with links parameter
+    const testLinks = [{ label: 'Test', href: '/test' }];
+    result.current.showSuccess('Test message with links', testLinks);
+    expect(mockShowSuccessBase).toHaveBeenCalledWith(
+      'Test message with links',
+      testLinks
+    );
   });
 
   it('should call useErrorHandler and useToast', () => {

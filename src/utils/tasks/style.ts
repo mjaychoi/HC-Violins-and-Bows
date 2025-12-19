@@ -4,10 +4,9 @@ import {
   isBefore,
   endOfDay,
   startOfDay,
-  isValid,
-  parseISO,
 } from 'date-fns';
-import { parseYMDLocal } from '@/utils/dateParsing';
+// ✅ FIXED: Use centralized date parsing (single source of truth)
+import { parseTaskDateLocal } from '@/utils/dateParsing';
 // ✅ FIXED: Use centralized color tokens
 import { getTaskStatusColor, getTaskStatusDotColor } from '@/utils/colorTokens';
 
@@ -35,31 +34,8 @@ function normalizeStatus(input: unknown): TaskStatus {
   return 'pending';
 }
 
-/**
- * Parse task date string safely, handling both YYYY-MM-DD and ISO timestamps
- * YYYY-MM-DD strings are parsed as local midnight to avoid UTC timezone issues
- * FIXED: Use parseYMDLocal from dateParsing for consistency
- */
-function parseTaskDateLocal(raw: unknown): Date | null {
-  if (!raw) return null;
-
-  // Date object: validate and return
-  if (raw instanceof Date && isValid(raw)) return raw;
-
-  const s = String(raw);
-
-  // Use parseYMDLocal for date-only strings (handles YYYY-MM-DD as local)
-  const parsed = parseYMDLocal(s);
-  if (parsed) return parsed;
-
-  // Fallback for ISO timestamps or other formats
-  try {
-    const d = parseISO(s);
-    return isValid(d) ? d : null;
-  } catch {
-    return null;
-  }
-}
+// ✅ FIXED: parseTaskDateLocal moved to @/utils/dateParsing for single source of truth
+// Import from dateParsing to ensure consistent date handling across the codebase
 
 /**
  * Get Tailwind CSS classes for priority pill styling

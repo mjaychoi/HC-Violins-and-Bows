@@ -1,23 +1,20 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import type { RelationshipType, ClientInstrument } from '@/types';
 import { useConnectedClientsData } from '@/hooks/useUnifiedData';
 import { useConnectionFilters, useConnectionEdit } from './hooks';
-import {
-  ConnectionModal,
-  FilterBar,
-  ConnectionsList,
-  EditConnectionModal,
-  ConnectionSearch,
-  ConnectionCard,
-} from './components';
+import { useURLState } from '@/hooks/useURLState';
+import { ConnectionModal, ConnectionSearch } from './components';
 import EmptyState from '@/components/common/empty-state/EmptyState';
 import { useErrorHandler } from '@/contexts/ToastContext';
+import { useAppFeedback } from '@/hooks/useAppFeedback';
+import { logInfo } from '@/utils/logger';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useFilterSort } from '@/hooks/useFilterSort';
 import { AppLayout } from '@/components/layout';
-import { ErrorBoundary } from '@/components/common';
+import { ErrorBoundary, TableSkeleton } from '@/components/common';
 import {
   DndContext,
   closestCenter,
@@ -32,9 +29,57 @@ import {
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 
-export default function ConnectedClientsPage() {
+// Dynamic imports for large dnd-kit related components
+// This reduces initial bundle size by ~50KB+ (dnd-kit + sortable)
+const FilterBar = dynamic(
+  () =>
+    import('./components/FilterBar').then(mod => ({ default: mod.FilterBar })),
+  {
+    ssr: false,
+  }
+);
+
+const ConnectionsList = dynamic(
+  () =>
+    import('./components/ConnectionsList').then(mod => ({
+      default: mod.ConnectionsList,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="p-6">
+        <TableSkeleton rows={5} columns={1} />
+      </div>
+    ),
+  }
+);
+
+const EditConnectionModal = dynamic(
+  () =>
+    import('./components/EditConnectionModal').then(mod => ({
+      default: mod.EditConnectionModal,
+    })),
+  {
+    ssr: false,
+  }
+);
+
+// ConnectionCard is only used in DragOverlay, can be lazy loaded
+const ConnectionCard = dynamic(
+  () =>
+    import('./components/ConnectionCard').then(mod => ({
+      default: mod.ConnectionCard,
+    })),
+  {
+    ssr: false,
+  }
+);
+
+// Component that uses useURLState (which uses useSearchParams) - must be wrapped in Suspense
+function ConnectedClientsPageContent() {
   // Error handling
   const { handleError } = useErrorHandler();
+  const { showSuccess } = useAppFeedback();
 
   // Custom hooks
   const {
@@ -52,6 +97,21 @@ export default function ConnectedClientsPage() {
   // FIXED: useLoadingState returns boolean, so use it directly
   const isLoading = loading;
 
+  const { urlState, updateURLState } = useURLState({
+    enabled: true,
+    keys: ['search', 'filter', 'page'],
+    paramMapping: {
+      search: 'search',
+      filter: 'filter',
+      page: 'page',
+    },
+  });
+
+  // Initialize state from URL
+  const initialSearch = urlState.search ? String(urlState.search) : '';
+  const initialFilter = urlState.filter ? String(urlState.filter) : null;
+  const initialPage = urlState.page ? parseInt(String(urlState.page), 10) : 1;
+
   // Connection form state
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   // FIXED: Store only IDs to avoid stale objects and reduce state duplication
@@ -62,8 +122,11 @@ export default function ConnectedClientsPage() {
   const [connectionNotes, setConnectionNotes] = useState('');
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
-  const [connectionSearchTerm, setConnectionSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [connectionSearchTerm, setConnectionSearchTerm] =
+    useState(initialSearch);
+  const [currentPage, setCurrentPage] = useState(
+    isNaN(initialPage) || initialPage < 1 ? 1 : initialPage
+  );
   const pageSize = 20;
 
   // FIXED: Create searchable connections with nested field support
@@ -110,11 +173,73 @@ export default function ConnectedClientsPage() {
 
   // Use connection filters hook
   const {
-    selectedFilter,
-    setSelectedFilter,
+    selectedFilter: internalSelectedFilter,
+    setSelectedFilter: setInternalSelectedFilter,
     groupedConnections,
     relationshipTypeCounts,
   } = useConnectionFilters(filteredConnections);
+
+  // Initialize filter from URL
+  const [selectedFilter, setSelectedFilter] = useState<RelationshipType | null>(
+    initialFilter as RelationshipType | null
+  );
+
+  // Sync internal filter with URL filter
+  useEffect(() => {
+    if (selectedFilter !== internalSelectedFilter) {
+      setInternalSelectedFilter(selectedFilter);
+    }
+  }, [selectedFilter, internalSelectedFilter, setInternalSelectedFilter]);
+
+  // 페이지 변경 시 URL 업데이트
+  const handlePageChange = useCallback(
+    (page: number) => {
+      setCurrentPage(page);
+      updateURLState({
+        page: page > 1 ? String(page) : null,
+      });
+    },
+    [updateURLState]
+  );
+
+  // 필터 변경 시 페이지를 1로 리셋 및 URL 업데이트
+  // FIXED: Use RelationshipType instead of string
+  const handleFilterChange = useCallback(
+    (filter: RelationshipType | null) => {
+      setSelectedFilter(filter);
+      setCurrentPage(1);
+      updateURLState({
+        filter: filter || null,
+        page: null, // Reset page when filter changes
+      });
+    },
+    [updateURLState]
+  );
+
+  // 검색어 변경 시 페이지를 1로 리셋 및 URL 업데이트
+  const handleSearchChange = useCallback(
+    (term: string) => {
+      setConnectionSearchTerm(term);
+      setCurrentPage(1);
+      updateURLState({
+        search: term || null,
+        page: null, // Reset page when search changes
+      });
+    },
+    [updateURLState]
+  );
+
+  // Clear filters handler
+  const handleClearFilters = useCallback(() => {
+    handleFilterChange(null);
+    setConnectionSearchTerm('');
+    setCurrentPage(1);
+    updateURLState({
+      filter: null,
+      search: null,
+      page: null,
+    });
+  }, [handleFilterChange, updateURLState]);
 
   // Calculate total pages for pagination clamp
   const totalPages = useMemo(() => {
@@ -124,28 +249,11 @@ export default function ConnectedClientsPage() {
 
   // Clamp currentPage when filter/search changes
   useEffect(() => {
-    setCurrentPage(p => Math.max(1, Math.min(p, totalPages || 1)));
-  }, [totalPages]);
-
-  // 필터 변경 시 페이지를 1로 리셋
-  // FIXED: Use RelationshipType instead of string
-  const handleFilterChange = (filter: RelationshipType | null) => {
-    setSelectedFilter(filter);
-    setCurrentPage(1);
-  };
-
-  // 검색어 변경 시 페이지를 1로 리셋
-  const handleSearchChange = (term: string) => {
-    setConnectionSearchTerm(term);
-    setCurrentPage(1);
-  };
-
-  // Clear filters handler
-  const handleClearFilters = () => {
-    handleFilterChange(null);
-    setConnectionSearchTerm('');
-    setCurrentPage(1);
-  };
+    const clampedPage = Math.max(1, Math.min(currentPage, totalPages || 1));
+    if (clampedPage !== currentPage) {
+      handlePageChange(clampedPage);
+    }
+  }, [totalPages, currentPage, handlePageChange]);
 
   // Use connection edit hook
   const { showEditModal, editingConnection, openEditModal, closeEditModal } =
@@ -171,9 +279,47 @@ export default function ConnectedClientsPage() {
   ) => {
     try {
       await withSubmitting(async () => {
-        await createConnection(clientId, itemId, relationshipType, notes);
+        const connection = await createConnection(
+          clientId,
+          itemId,
+          relationshipType,
+          notes
+        );
         setShowConnectionModal(false);
         resetConnectionForm();
+
+        // 작업 완료 요약 메시지 생성
+        if (connection) {
+          const instrument = instruments.find(i => i.id === itemId);
+          const client = clients.find(c => c.id === clientId);
+          const instrumentName =
+            instrument?.maker && instrument?.serial_number
+              ? `${instrument.maker} (${instrument.serial_number})`
+              : instrument?.maker || instrument?.serial_number || '악기';
+          const clientName =
+            client?.first_name || client?.last_name
+              ? `${client.first_name || ''} ${client.last_name || ''}`.trim()
+              : client?.email || '클라이언트';
+
+          const links: Array<{ label: string; href: string }> = [];
+          if (itemId) {
+            links.push({
+              label: '악기 보기',
+              href: `/dashboard?instrumentId=${itemId}`,
+            });
+          }
+          if (clientId) {
+            links.push({
+              label: '클라이언트 보기',
+              href: `/clients?clientId=${clientId}`,
+            });
+          }
+
+          showSuccess(
+            `연결이 추가되었습니다. ${instrumentName}과 ${clientName}이 연결되었습니다.`,
+            links.length > 0 ? links : undefined
+          );
+        }
       });
     } catch (error) {
       handleError(error, 'Failed to create connection');
@@ -441,6 +587,18 @@ export default function ConnectedClientsPage() {
                         </svg>
                       ),
                     }}
+                    guideSteps={[
+                      '클라이언트와 악기를 선택하세요',
+                      '관계 타입을 선택하세요 (Owned, Interested, Booked 등)',
+                      '연결을 저장하면 양쪽에서 확인할 수 있습니다',
+                    ]}
+                    helpLink={{
+                      label: '연결 관리 방법 알아보기',
+                      onClick: () => {
+                        // TODO: 도움말 모달 또는 페이지로 이동
+                        logInfo('Show help guide');
+                      },
+                    }}
                   />
                 );
               }
@@ -483,7 +641,7 @@ export default function ConnectedClientsPage() {
                   onDeleteConnection={handleDeleteConnection}
                   currentPage={currentPage}
                   pageSize={pageSize}
-                  onPageChange={setCurrentPage}
+                  onPageChange={handlePageChange}
                   loading={isLoading}
                 />
               );
@@ -508,5 +666,23 @@ export default function ConnectedClientsPage() {
         </div>
       </AppLayout>
     </ErrorBoundary>
+  );
+}
+
+export default function ConnectedClientsPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppLayout title="Connected Clients">
+          <div className="p-6">
+            <div className="flex justify-center items-center py-12">
+              <div className="text-gray-500">Loading connections...</div>
+            </div>
+          </div>
+        </AppLayout>
+      }
+    >
+      <ConnectedClientsPageContent />
+    </Suspense>
   );
 }

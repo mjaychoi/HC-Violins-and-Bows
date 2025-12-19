@@ -12,6 +12,13 @@ import {
 } from '../useUnifiedData';
 import { Client, Instrument, ClientInstrument } from '@/types';
 
+jest.mock('@/contexts/AuthContext', () => ({
+  useAuth: jest.fn(() => ({
+    user: { id: 'mock-user' },
+    loading: false,
+  })),
+}));
+
 // Mock DataContext
 // Export for use in jest.mock factory functions
 export const mockState = {
@@ -52,6 +59,8 @@ const mockActions = {
   resetState: jest.fn(),
 };
 
+let mockUseAuth: jest.MockedFunction<any>;
+
 // Mock individual Contexts (replaced DataContext mock)
 // Mock with default implementations that read from mockState
 jest.mock('@/contexts/ClientsContext', () => ({
@@ -81,6 +90,13 @@ describe('useUnifiedData', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    const authContextModule = require('@/contexts/AuthContext');
+    mockUseAuth = authContextModule.useAuth;
+    mockUseAuth.mockReturnValue({
+      user: { id: 'mock-user' },
+      loading: false,
+    });
 
     // Get mocked functions after jest.mock has run
     const clientsContextModule = require('@/contexts/ClientsContext');

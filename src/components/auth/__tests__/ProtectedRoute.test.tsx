@@ -1,12 +1,13 @@
-import { render, screen, waitFor } from '@/test-utils/render';
+import { render, screen } from '@/test-utils/render';
 import ProtectedRoute from '../ProtectedRoute';
 
 // Mock next/navigation
-const mockPush = jest.fn();
+const mockReplace = jest.fn();
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
-    push: mockPush,
+    replace: mockReplace,
   }),
+  usePathname: () => '/protected',
 }));
 
 // Mock AuthContext
@@ -33,7 +34,7 @@ describe('ProtectedRoute', () => {
     );
 
     expect(screen.getByText('Protected Content')).toBeInTheDocument();
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it('should show loading state when checking auth', () => {
@@ -64,11 +65,12 @@ describe('ProtectedRoute', () => {
       </ProtectedRoute>
     );
 
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/');
-    });
-
+    // ProtectedRoute no longer handles redirects (moved to AppLayout)
+    // It only shows "Redirecting..." UI
+    expect(screen.getByText('Redirecting...')).toBeInTheDocument();
     expect(screen.queryByText('Protected Content')).not.toBeInTheDocument();
+    // Redirect is handled by AppLayout, not ProtectedRoute
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it('should not redirect while loading', () => {
@@ -83,7 +85,7 @@ describe('ProtectedRoute', () => {
       </ProtectedRoute>
     );
 
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it('should not render children when user is not authenticated', () => {
@@ -92,13 +94,13 @@ describe('ProtectedRoute', () => {
       loading: false,
     });
 
-    const { container } = render(
+    render(
       <ProtectedRoute>
         <div>Protected Content</div>
       </ProtectedRoute>
     );
 
-    expect(container.firstChild).toBeNull();
+    expect(screen.getByText('Redirecting...')).toBeInTheDocument();
   });
 
   it('should handle user state changes', async () => {
@@ -113,9 +115,8 @@ describe('ProtectedRoute', () => {
       </ProtectedRoute>
     );
 
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/');
-    });
+    // ProtectedRoute no longer handles redirects (moved to AppLayout)
+    expect(screen.getByText('Redirecting...')).toBeInTheDocument();
 
     mockUseAuth.mockReturnValue({
       user: { id: '1', email: 'test@example.com' },

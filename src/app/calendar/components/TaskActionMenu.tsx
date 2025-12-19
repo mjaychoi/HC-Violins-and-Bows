@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { memo, useState, useRef, useEffect } from 'react';
 import type { MaintenanceTask } from '@/types';
 
 interface TaskActionMenuProps {
@@ -11,7 +11,7 @@ interface TaskActionMenuProps {
   onDelete?: (task: MaintenanceTask) => void;
 }
 
-export default function TaskActionMenu({
+function TaskActionMenu({
   task,
   onViewDetails,
   onMarkComplete,
@@ -147,3 +147,5 @@ export default function TaskActionMenu({
     </div>
   );
 }
+
+export default memo(TaskActionMenu);

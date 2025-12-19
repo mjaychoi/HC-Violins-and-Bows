@@ -1,3 +1,4 @@
+import React from 'react';
 import { getTagColor } from '@/app/clients/utils';
 import { getTagDisplayLabel } from '@/app/clients/utils';
 
@@ -7,13 +8,13 @@ export interface TagBadgeProps {
   context?: 'table' | 'card';
 }
 
-export default function TagBadge({ tag, context = 'table' }: TagBadgeProps) {
+function TagBadge({ tag, context = 'table' }: TagBadgeProps) {
   const variant = context === 'table' ? 'muted' : 'soft';
   const className = getTagColor(tag, variant);
 
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className}`}
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className} max-w-[150px] truncate`}
       aria-label={`Tag: ${getTagDisplayLabel(tag)}`}
       title={getTagDisplayLabel(tag)}
     >
@@ -21,3 +22,5 @@ export default function TagBadge({ tag, context = 'table' }: TagBadgeProps) {
     </span>
   );
 }
+
+export default React.memo(TagBadge);

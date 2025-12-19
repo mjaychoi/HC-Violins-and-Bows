@@ -1,661 +1,83 @@
-# HC Violins and Bows - 전체 사용자 가이드
+# HC Violins & Bows — User Guide
 
-## 📋 목차
-
-1. [시작하기](#시작하기)
-2. [로그인 및 계정 관리](#로그인-및-계정-관리)
-3. [Dashboard (Items) - 악기 관리](#dashboard-items---악기-관리)
-4. [Clients - 고객 관리](#clients---고객-관리)
-5. [Connected Clients - 고객-악기 연결](#connected-clients---고객-악기-연결)
-6. [Calendar - 유지보수 캘린더](#calendar---유지보수-캘린더)
-7. [Customers - 고객 상세 정보](#customers---고객-상세-정보)
-8. [Sales - 판매 이력](#sales---판매-이력)
-9. [Instruments - 악기 관리 (Dashboard로 통합됨)](#instruments---악기-관리-dashboard로-통합됨)
-10. [자주 묻는 질문 (FAQ)](#자주-묻는-질문-faq)
-11. [변경 이력](#-변경-이력)
+This guide walks through the main flows in the inventory system so teams can use the app without digging through code. Each section explains what you see, what action to take, and how the UI reacts.
 
 ---
 
-## 시작하기
+## 1. Sign In & Navigation
 
-### 첫 접속
+1. Open the app at `/` and sign in with your Supabase credentials (email + password).
+2. The left-hand sidebar shows the primary sections: **Dashboard**, **Clients**, **Connections**, **Calendar**, **Sales**, and **Settings**.
+3. Use the **top filters** (status, ownership, view modes) to keep data scoped as you navigate; filters persist per section.
+4. The breadcrumb + tabs at the top help you know whether you are looking at month/week/day views, dashboards, or tasks.
 
-1. 웹 브라우저에서 애플리케이션 URL에 접속합니다.
-2. 로그인 페이지가 표시됩니다.
-3. 계정이 없다면 회원가입을 진행합니다.
+## 2. Dashboard Overview
 
-### 화면 구성
+Purpose: instantly see inventory health, new clients, and actionable tasks.
 
-- **사이드바**: 왼쪽에 위치한 네비게이션 메뉴
-  - 접힘/펼침 가능 (아이콘만 표시 또는 전체 메뉴 표시)
-  - 주요 메뉴: Items, Clients, Connected Clients, Calendar, Sales, **Client Analytics**
-    - 악기 관련 작업은 Dashboard의 Items 메뉴 안에서 모두 처리됩니다.
-- **헤더**: 상단에 위치한 제목 및 액션 버튼
-- **메인 콘텐츠**: 중앙에 위치한 페이지 내용
+- **KPI cards** summarize totals (Available instruments, Sold this week, Pending maintenance).
+- **Filters panel** lets you drill down by instrument type, status, and certification. Each filter chip shows an active state and can be reset via the “Clear filters” button.
+- **Inline editing** works directly in the grid (double-click a row to edit fields like Maker, Type, Status). Save/cancel buttons show in-place with confirmation to avoid losing work.
+- **Row actions menu** (⋯) exposes contextual actions: download certificate, book instrument, mark for maintenance, or delete. The UI hides actions that don’t apply based on the instrument status.
+- **Pagination controls** keep the list manageable; you can jump to any page or adjust the page size via the pager at the bottom.
 
-> 💡 **팁**: 모든 주요 페이지는 사이드바에서 바로 접근할 수 있습니다. 악기 관련 작업은 **Dashboard (Items)** 안에서 처리되며 `/clients/analytics`도 사이드바에서 열 수 있습니다.
+## 3. Clients & Contacts
 
----
+Purpose: maintain client records, track communications, and link instruments.
 
-## 로그인 및 계정 관리
+- The **Clients page** lists all customers with tags, last contact date, and spend summary.
+- Use the **search bar** to look up clients by name, tags, or notes. A “Very long search term” that doesn’t match anything will return zero rows (guards against overmatching).
+- The **“Add client”** button (top-right) opens a modal for new entries. Fill the contact details, assign tags, and optionally link instruments right away.
+- **Contact logs** live under each client row. Expanding a client row reveals a timeline of emails, calls, and follow-ups with quick action buttons to launch a new log or schedule a follow-up.
+- The **Today Follow-Ups** panel surfaces tasks due for contact follow-ups; you can complete or reschedule them from the same view.
 
-### 로그인
+## 4. Connections (Client-Instrument Mapping)
 
-1. 이메일 주소와 비밀번호를 입력합니다.
-2. "Sign In" 버튼을 클릭합니다.
-3. 로그인 성공 시 Dashboard로 자동 이동합니다.
+- Connections show which clients own or are interested in specific instruments.
+- Hit **“New connection”** to assign a client to an instrument, describe the relationship (e.g., Sold, Booked, Interested), and capture notes.
+- The **table** supports filtering by client ID or instrument ID via query parameters (accessible in the URL).
+- Use the **pagination controls** and sort arrows to step through large datasets without losing context.
 
-### 회원가입
+## 5. Instruments & Certificates
 
-1. 로그인 페이지에서 "Sign Up" 링크를 클릭합니다.
-2. 다음 정보를 입력합니다:
-   - **Email**: 이메일 주소
-   - **Password**: 비밀번호 (최소 6자)
-   - **Confirm Password**: 비밀번호 확인
-3. "Sign Up" 버튼을 클릭합니다.
-4. 회원가입 성공 시 자동으로 로그인됩니다.
+- The **Instruments registry** shares core details (maker, type, status, serial). Each row displays badges for certificates and maintains quick actions (view sales history, download certificate, delete).
+- **Certificate documents** are generated via the `/api/certificates/[id]` route. When you click “Download certificate,” the API renders a PDF using the certificate document template.
+- Use the **certificate badge** to identify instruments with an active certificate. Hovering reveals certificate generation metadata.
 
-### 로그아웃
+## 6. Calendar & Maintenance
 
-1. 헤더 우측 상단의 **로그아웃 버튼**을 클릭합니다.
-2. 로그아웃되면 로그인 페이지로 이동합니다.
+- The **Calendar view** toggles between month/week/day/year/timeline. Use the toolbar to switch modes and jump to “Today”.
+- **Filters on the calendar** include statuses, priorities, owners, and custom date ranges. The “Advanced Search” drawer exposes date range selectors and quick apply/reset buttons.
+- **Tasks (maintenance jobs)** are grouped by date. Clicking a day opens the `GroupedTaskList`: collapsed rows show summary info; expand to edit priority/status inline or open the detail modal.
+- Drag-and-drop is enabled. Moving a task to a new date instantly updates the Supabase record with rollback safeguards if the update fails.
+- Events include tasks and follow-up logs. Clicking a task opens the `TaskModal`, while the context menu (`TaskActionMenu`) exposes deeper actions (view details, edit, delete).
 
----
+## 7. Sales & Reporting
 
-## Dashboard (Items) - 악기 관리
+- The **Sales page** lists closed deals and revenue history.
+- Filters: use the column filters to scope by instrument type, client, or sale date.
+- **Pagination** splits the table into manageable pages. Graphs summarizing sales trends sit above the table.
+- To create a new sale record, click **“New sale”** and fill in fields (instrument, client, sale price, date).
 
-### 개요
+## 8. Notifications & Feedback
 
-Dashboard는 악기(바이올린, 활 등)를 관리하는 메인 페이지입니다. 재고 관리, 상태 변경, 가격 설정 등을 할 수 있습니다.
+- Every major action surfaces toasts via `ToastContext`: success toasts, errors, and warnings all stack at the top-right corner.
+- The **“Show Success”** button triggers a helper toast, while errors automatically use the centralized `handleError` logic to show consistent messaging.
+- For repeated success messages, a history (click each toast) reveals clickable details and links.
 
-### 주요 기능
+## 9. Advanced Filters & Search
 
-#### 1. 악기 목록 보기
+- The shared **filter drawer** (`useFilters`, `usePageFilters`) is used across Dashboard/Clients/Calendar.
+- Search input supports fuzzy text matching. When you enter extremely long queries, the hook prevents matches by enforcing a maximum length and escaping special characters.
+- For combinational filters (e.g., status + ownership + text), the UI highlights active filters and you can reset either individual filter or all of them via the “Reset” button.
 
-- 모든 악기가 테이블 형태로 표시됩니다.
-- 각 악기는 다음 정보를 포함합니다:
-  - Serial Number (일련번호)
-  - Maker (제조사)
-  - Type (타입: Violin, Viola, Cello, Bow 등)
-  - Subtype (서브타입)
-  - Price (가격)
-  - Status (상태: Available, Sold, On Loan, Repair, Reserved, Maintenance 등)
-  - Client (연결된 고객)
+## 10. Power Tools for Admins
 
-#### 2. 악기 추가
-
-1. 페이지 상단의 **"Add Item"** 버튼을 클릭합니다.
-2. 악기 정보 입력 폼이 열립니다.
-3. 다음 정보를 입력합니다:
-   - **Maker**: 제조사명
-   - **Type**: 악기 타입 (필수)
-   - **Subtype**: 서브타입 (선택)
-   - **Serial Number**: 일련번호 (자동 생성 가능)
-   - **Price**: 가격
-   - **Status**: 상태 (기본값: Available)
-   - **Notes**: 메모
-   - **Images**: 이미지 파일 (선택)
-4. **"Save"** 버튼을 클릭하여 저장합니다.
-
-> 💡 **팁**: Serial Number는 자동 생성 버튼을 클릭하면 고유한 번호가 자동으로 생성됩니다.
-
-#### 3. 악기 수정
-
-1. 목록에서 수정할 악기를 클릭합니다.
-2. 편집 모달이 열립니다.
-3. 정보를 수정합니다.
-4. **"Save"** 버튼을 클릭합니다.
-
-#### 4. 인라인 편집
-
-- **Status**와 **Price**는 테이블에서 직접 수정할 수 있습니다.
-- 해당 필드를 클릭하면 드롭다운 또는 입력 필드가 나타납니다.
-- 변경 후 자동으로 저장됩니다.
-
-#### 5. 악기 삭제
-
-1. 목록에서 삭제할 악기를 클릭합니다.
-2. 편집 모달이 열립니다.
-3. **"Delete"** 버튼을 클릭합니다.
-4. 확인 대화상자에서 **"Delete"**를 다시 클릭합니다.
-
-> ⚠️ **주의**: 삭제된 악기는 복구할 수 없습니다. 고객과 연결된 악기는 삭제 전에 연결을 해제하는 것이 좋습니다.
-
-#### 6. 필터링 및 검색
-
-**필터 표시/숨기기**
-
-- **"Filters"** 버튼을 클릭하여 필터 패널을 열거나 닫습니다.
-
-**검색**
-
-- 검색 입력 필드에 키워드를 입력합니다.
-- Maker, Type, Serial Number, Notes 등에서 검색됩니다.
-
-**필터 옵션**
-
-- **Type**: Violin, Viola, Cello, Bow 등
-- **Status**: Available, Sold, On Loan 등
-- **Price Range**: 최소 가격 ~ 최대 가격
-- **Date Range**: 생성 날짜 범위
-
-**정렬**
-
-- 컬럼 헤더를 클릭하여 정렬합니다.
-- 첫 클릭: 오름차순 (↑)
-- 두 번째 클릭: 내림차순 (↓)
-
-#### 7. 원클릭 판매 (One-Click Sale) ⭐ **NEW**
-
-**가장 빠른 판매 방법**: Dashboard에서 각 악기 행의 **"Sell"** 버튼을 클릭하면 판매 기록이 즉시 생성됩니다!
-
-**사용 방법**
-
-1. Dashboard 페이지에서 판매할 악기를 찾습니다.
-2. 해당 악기 행의 **액션 메뉴 (⋮)**를 클릭합니다.
-3. **"Sell"** 버튼을 클릭합니다.
-4. 판매 폼이 자동으로 열리며 다음 정보가 자동으로 채워집니다:
-   - **악기 정보**: 선택한 악기
-   - **고객 정보**: 악기와 연결된 고객 (있는 경우)
-   - **판매 가격**: 악기의 현재 가격
-   - **판매 날짜**: 오늘 날짜
-5. 필요시 고객이나 가격을 수정할 수 있습니다.
-6. **"Save"** 버튼을 클릭합니다.
-7. ✅ 판매 기록이 생성되고, 악기 상태가 자동으로 **"Sold"**로 변경됩니다!
-
-> 💡 **팁**:
->
-> - 악기와 연결된 고객이 있으면 자동으로 선택됩니다.
-> - 가격은 악기의 현재 가격으로 자동 설정되지만 필요시 수정할 수 있습니다.
-> - 판매 후 악기 상태가 자동으로 "Sold"로 변경되므로 별도로 상태를 변경할 필요가 없습니다.
-
-#### 8. 판매 기록 자동 생성 (기존 방법)
-
-**중요**: Dashboard에서 악기 상태를 **"Sold"**로 변경하면 자동으로 Sales History에 판매 기록이 생성됩니다!
-
-**사용 방법**
-
-1. 악기 편집 모달을 엽니다.
-2. **Status**를 **"Sold"**로 변경합니다.
-3. **Price**가 올바르게 설정되어 있는지 확인합니다.
-4. **Save**를 클릭합니다.
-5. ✅ Sales History 페이지에서 자동으로 생성된 판매 기록을 확인할 수 있습니다.
-
-**자동 생성되는 정보**
-
-- 판매 가격: 악기의 Price 필드 값
-- 판매 날짜: 오늘 날짜
-- 고객 정보: 악기와 연결된 'Sold' 관계의 고객 (있는 경우)
-- 악기 정보: 판매된 악기 ID
-
-#### 9. 자동 환불 처리
-
-**중요**: Dashboard에서 악기 상태를 **"Sold"**에서 다른 상태로 변경하면 자동으로 환불 처리됩니다!
-
-**사용 방법**
-
-1. 상태가 "Sold"인 악기를 찾습니다.
-2. 악기 편집 모달을 엽니다.
-3. **Status**를 "Sold"가 아닌 다른 상태로 변경합니다 (예: Available, On Loan 등).
-4. **Save**를 클릭합니다.
-5. ✅ 해당 악기의 최근 판매 기록이 자동으로 환불 처리됩니다.
-
-> ⚠️ **주의**: 여러 번 판매 기록이 있는 경우, 가장 최근 판매 기록만 환불 처리됩니다.
+- **Error Handling**: Global error handling wraps Supabase calls; check the `/logs` section of the UI (if available) to review aggregated errors.
+- **Instrumentation**: Client and server instrumentation modules emit events for performance monitoring. Use the `instrumentation` endpoint to observe request timings.
+- **Supabase schema checks**: Periodically run `npm run schema:check` to ensure the local schema matches production.
+- **Database migrations**: Add new tables/columns via the migration scripts in `supabase/migrations/`. Run `npm run migrate:subtype` for subtype updates before deploying.
 
 ---
 
-## Clients - 고객 관리
-
-### 개요
-
-Clients 페이지는 고객 정보를 관리하는 페이지입니다. 고객 추가, 수정, 삭제, 악기 연결 등을 할 수 있습니다.
-
-### 주요 기능
-
-#### 1. 고객 목록 보기
-
-- 모든 고객이 테이블 형태로 표시됩니다.
-- 각 고객은 다음 정보를 포함합니다:
-  - Client Number (고객 번호)
-  - Name (이름)
-  - Email (이메일)
-  - Phone (전화번호)
-  - Tags (태그)
-  - Interests (관심사)
-  - Owned Items (보유 악기 수)
-  - Connected Items (연결된 악기 수)
-
-#### 2. 고객 추가
-
-1. 페이지 상단의 **"Add Client"** 버튼을 클릭합니다.
-2. 고객 정보 입력 폼이 열립니다.
-3. 다음 정보를 입력합니다:
-   - **First Name**: 이름 (필수)
-   - **Last Name**: 성 (필수)
-   - **Email**: 이메일 주소
-   - **Phone**: 전화번호
-   - **Tags**: 태그 (여러 개 선택 가능)
-   - **Interests**: 관심사 (여러 개 선택 가능)
-   - **Notes**: 메모
-4. **"Save"** 버튼을 클릭합니다.
-
-> 💡 **팁**: Client Number는 자동으로 생성됩니다.
-
-#### 3. 고객 수정
-
-1. 목록에서 수정할 고객을 클릭합니다.
-2. 편집 모달이 열립니다.
-3. 정보를 수정합니다.
-4. **"Save"** 버튼을 클릭합니다.
-
-#### 4. 고객 삭제
-
-1. 목록에서 삭제할 고객을 클릭합니다.
-2. 편집 모달이 열립니다.
-3. **"Delete"** 버튼을 클릭합니다.
-4. 확인 대화상자에서 **"Delete"**를 다시 클릭합니다.
-
-> ⚠️ **주의**: 고객과 연결된 악기가 있으면 삭제 전에 연결을 해제하는 것이 좋습니다.
-
-#### 5. 악기 연결 관리
-
-**고객에 악기 연결하기**
-
-1. 고객 편집 모달을 엽니다.
-2. **"Instruments"** 섹션에서 **"Add Instrument"** 버튼을 클릭합니다.
-3. 악기 검색 창이 열립니다.
-4. 연결할 악기를 검색하고 선택합니다.
-5. 연결이 추가됩니다.
-
-**고객에서 악기 연결 해제하기**
-
-1. 고객 편집 모달을 엽니다.
-2. **"Instruments"** 섹션에서 연결 해제할 악기의 **"Remove"** 버튼을 클릭합니다.
-3. 확인 대화상자에서 확인합니다.
-
-#### 6. 필터링 및 검색
-
-**검색**
-
-- 검색 입력 필드에 키워드를 입력합니다.
-- 이름, 이메일, 전화번호, 메모 등에서 검색됩니다.
-
-**필터 옵션**
-
-- **Tags**: 태그별 필터링
-- **Interests**: 관심사별 필터링
-- **Owned Items**: 보유 악기 수 기준
-- **Connected Items**: 연결된 악기 수 기준
-
-**정렬**
-
-- 컬럼 헤더를 클릭하여 정렬합니다.
-- Name, Email, Client Number 등으로 정렬 가능합니다.
-
----
-
-## Connected Clients - 고객-악기 연결
-
-### 개요
-
-Connected Clients 페이지는 고객과 악기 간의 관계(연결)를 관리하는 페이지입니다. 고객이 어떤 악기에 관심이 있는지, 어떤 악기를 빌렸는지 등을 관리할 수 있습니다.
-
-### 주요 기능
-
-#### 1. 연결 목록 보기
-
-- 모든 고객-악기 연결이 표시됩니다.
-- 연결은 다음 정보를 포함합니다:
-  - Client (고객)
-  - Instrument (악기)
-  - Relationship Type (관계 유형)
-  - Notes (메모)
-  - Created Date (생성 날짜)
-
-#### 2. 연결 추가
-
-1. 페이지 상단의 **"Add Connection"** 버튼을 클릭합니다.
-2. 연결 추가 모달이 열립니다.
-3. 다음 정보를 입력합니다:
-   - **Client**: 고객 검색 및 선택
-   - **Instrument**: 악기 검색 및 선택
-   - **Relationship Type**: 관계 유형 선택
-     - **Interested**: 관심 있음
-     - **On Loan**: 대여 중
-     - **Sold**: 판매됨
-     - **Repair**: 수리 중
-     - **Reserved**: 예약됨
-   - **Notes**: 메모
-4. **"Save"** 버튼을 클릭합니다.
-
-#### 3. 연결 수정
-
-1. 목록에서 수정할 연결을 클릭합니다.
-2. 편집 모달이 열립니다.
-3. 정보를 수정합니다.
-4. **"Save"** 버튼을 클릭합니다.
-
-#### 4. 연결 삭제
-
-1. 목록에서 삭제할 연결을 클릭합니다.
-2. 편집 모달이 열립니다.
-3. **"Delete"** 버튼을 클릭합니다.
-4. 확인 대화상자에서 확인합니다.
-
-#### 5. 필터링 및 검색
-
-**필터 옵션**
-
-- **Client**: 고객명으로 필터링
-- **Instrument**: 악기명으로 필터링
-- **Relationship Type**: 관계 유형별 필터링
-
-**검색**
-
-- 검색 입력 필드에 키워드를 입력합니다.
-- 고객명, 악기명, 메모 등에서 검색됩니다.
-
----
-
-## Calendar - 유지보수 캘린더
-
-### 개요
-
-Calendar 페이지는 악기 유지보수 작업을 일정으로 관리하는 페이지입니다. 다양한 뷰(월별, 주별, 일별, 연도별, 타임라인)로 작업을 확인하고 관리할 수 있습니다.
-
-### 주요 기능
-
-#### 1. 뷰 전환
-
-페이지 상단에서 원하는 뷰를 선택할 수 있습니다:
-
-- **Month View**: 월별 캘린더 뷰
-- **Week View**: 주별 캘린더 뷰
-- **Day View**: 일별 캘린더 뷰
-- **Year View**: 연도별 뷰
-- **Timeline View**: 타임라인 뷰
-
-#### 2. 날짜 네비게이션
-
-- **이전/다음 버튼**: 이전 기간 또는 다음 기간으로 이동
-- **Today 버튼**: 오늘 날짜로 빠르게 이동
-- **날짜 선택기**: 특정 날짜로 직접 이동
-
-#### 3. 작업 추가
-
-1. 페이지 상단의 **"Add Task"** 버튼을 클릭합니다.
-2. 작업 추가 모달이 열립니다.
-3. 다음 정보를 입력합니다:
-   - **Title**: 작업 제목 (필수)
-   - **Instrument**: 관련 악기 (검색 가능)
-   - **Client**: 관련 고객 (검색 가능)
-   - **Due Date**: 마감일
-   - **Priority**: 우선순위 (Low, Medium, High)
-   - **Status**: 상태 (Pending, In Progress, Completed, Cancelled)
-   - **Type**: 작업 유형 (Maintenance, Repair, Setup 등)
-   - **Notes**: 메모
-4. **"Save"** 버튼을 클릭합니다.
-
-#### 4. 작업 수정
-
-1. 캘린더에서 수정할 작업을 클릭합니다.
-2. 작업 상세 모달이 열립니다.
-3. 정보를 수정합니다.
-4. **"Save"** 버튼을 클릭합니다.
-
-#### 5. 작업 삭제
-
-1. 작업 상세 모달에서 **"Delete"** 버튼을 클릭합니다.
-2. 확인 대화상자에서 확인합니다.
-
-#### 6. 필터링 및 검색
-
-**검색**
-
-- 검색 입력 필드에 키워드를 입력합니다.
-- 작업 제목, 악기명, 일련번호, 고객명 등에서 검색됩니다.
-
-**필터 옵션**
-
-- **Priority**: 우선순위별 필터링
-- **Status**: 상태별 필터링
-- **Type**: 작업 유형별 필터링
-- **Ownership**: 소유권별 필터링
-- **Date Range**: 날짜 범위 필터링
-
-#### 7. 작업 그룹화
-
-- 작업은 날짜별로 그룹화되어 표시됩니다.
-- 각 그룹에는 작업 수가 표시됩니다.
-
-#### 8. 요약 통계
-
-페이지 상단에 다음 통계가 표시됩니다:
-
-- **Total Tasks**: 전체 작업 수
-- **Pending**: 대기 중인 작업 수
-- **In Progress**: 진행 중인 작업 수
-- **Completed**: 완료된 작업 수
-
----
-
-## Customers - 고객 상세 정보
-
-### 개요
-
-Customers 페이지는 고객의 상세 정보와 구매 이력을 확인할 수 있는 페이지입니다.
-
-### 주요 기능
-
-#### 1. 고객 목록
-
-- 왼쪽에 고객 목록이 표시됩니다.
-- 고객을 클릭하면 오른쪽에 상세 정보가 표시됩니다.
-
-#### 2. 고객 검색
-
-- 검색 입력 필드에 키워드를 입력합니다.
-- 이름, 이메일 등으로 검색됩니다.
-
-#### 3. 고객 상세 정보
-
-선택한 고객의 다음 정보를 확인할 수 있습니다:
-
-- **기본 정보**: 이름, 이메일, 전화번호
-- **태그**: 고객 태그 목록
-- **관심사**: 관심사 목록
-- **통계**: 구매 횟수, 총 구매 금액 등
-
-#### 4. 구매 이력
-
-- 고객의 구매 이력이 테이블로 표시됩니다.
-- 각 구매 기록은 다음 정보를 포함합니다:
-  - Date (구매 날짜)
-  - Instrument (악기 정보)
-  - Price (가격)
-  - Status (상태: Completed, Pending, Refunded)
-
-#### 5. 필터링
-
-- **태그 필터**: 태그별로 고객 필터링
-- **구매 상태 필터**: All, Completed, Pending, Refunded
-
----
-
-## Sales - 판매 이력
-
-### 개요
-
-Sales 페이지는 모든 판매 이력을 관리하고 분석할 수 있는 페이지입니다. 자세한 내용은 [Sales History 사용자 가이드](./SALES_HISTORY_USER_GUIDE.md)를 참조하세요.
-
-### 주요 기능 요약
-
-- **판매 기록 조회**: 날짜, 가격, 고객, 악기 정보 확인
-- **자동 판매 기록**: Dashboard에서 'Sold' 상태로 변경 시 자동 생성
-- **환불 처리**: Dashboard에서 자동 환불 또는 수동 환불
-- **환불 취소**: 환불된 기록을 원래 상태로 복원
-- **필터링 및 검색**: 날짜 범위, 메모 검색
-- **정렬**: 날짜, 가격, 고객명 기준 정렬
-- **데이터 시각화**: 다양한 차트로 판매 패턴 분석
-- **인사이트**: 월간 성장률, 트렌드 분석
-- **알림**: 매출 급감, 환불 급증 등 이상 징후 감지
-- **영수증 발송**: 이메일로 영수증 발송
-
-> 📖 **상세 가이드**: [Sales History 사용자 가이드](./SALES_HISTORY_USER_GUIDE.md) 참조
-
----
-
-## Instruments - 악기 관리 (Dashboard로 통합됨)
-
-### 개요
-
-> ⚠️ **변경 사항**: Instruments 페이지는 Dashboard로 통합되었습니다. 모든 악기 관리 기능은 **Dashboard (Items)** 페이지에서 사용할 수 있습니다.
-
-### 접근 방법
-
-1. 사이드바에서 **"Items"** (Dashboard) 메뉴를 클릭합니다.
-2. 또는 URL에 `/dashboard`를 입력합니다.
-
-### 주요 기능
-
-Dashboard 페이지에서 다음 기능을 사용할 수 있습니다:
-
-- **악기 목록 보기**: 모든 악기가 테이블 형태로 표시됩니다.
-- **악기 추가**: "Add Item" 버튼을 클릭하여 새 악기를 추가합니다.
-- **인라인 편집**: 각 행에서 직접 상태, 가격 등을 수정할 수 있습니다.
-- **악기 삭제**: 액션 메뉴에서 삭제할 수 있습니다.
-- **판매 기능**: "Sell" 버튼을 통해 원클릭 판매가 가능합니다.
-- **필터링 및 검색**: Maker, Type, Serial Number, Status 등으로 필터링 및 검색
-- **정렬**: 컬럼 헤더를 클릭하여 정렬
-
-자세한 내용은 [Dashboard - 재고 관리](#dashboard---재고-관리) 섹션을 참조하세요.
-
-### Dashboard (Items) - 악기 관리
-
-**Dashboard (Items)**는 모든 악기 관리 기능을 제공합니다:
-
-- 악기 재고 관리 및 전체 현황
-- 악기 추가/수정/삭제
-- 원클릭 판매 기능
-- 인라인 편집 (Status, Price)
-
-**Instruments**:
-
-- 악기 목록 조회
-- 악기 상세 정보 확인
-- 필터링 및 검색
-- 간단한 인터페이스
-
----
-
-## 자주 묻는 질문 (FAQ)
-
-### 일반적인 질문
-
-#### Q1. 악기를 삭제했는데 복구할 수 있나요?
-
-**A**: 아니요, 삭제된 악기는 복구할 수 없습니다. 삭제 전에 신중하게 확인하세요.
-
-#### Q2. 고객을 삭제했는데 판매 기록은 어떻게 되나요?
-
-**A**: 판매 기록은 유지되지만 고객 정보는 "Unknown" 또는 null로 표시됩니다. 판매 기록은 삭제되지 않습니다.
-
-#### Q3. 악기 상태를 'Sold'로 변경했는데 Sales History에 기록이 안 보여요.
-
-**A**: 다음을 확인해보세요:
-
-- 페이지를 새로고침해보세요
-- 악기 가격(Price)이 설정되어 있는지 확인하세요
-- 날짜 필터가 적용되어 있는지 확인하세요
-
-#### Q4. 여러 고객이 같은 악기에 연결되어 있나요?
-
-**A**: 네, 가능합니다. 예를 들어 한 고객은 "Interested", 다른 고객은 "On Loan" 관계로 연결될 수 있습니다.
-
-#### Q5. 악기 이미지를 업로드할 수 있나요?
-
-**A**: 현재는 이미지 업로드 UI가 있지만 실제 업로드 기능은 아직 구현되지 않았습니다. 곧 추가될 예정입니다.
-
-#### Q6. 데이터를 백업할 수 있나요?
-
-**A**: 데이터베이스 백업은 Supabase 대시보드에서 설정할 수 있습니다. 자세한 내용은 관리자에게 문의하세요.
-
-#### Q7. 여러 사용자가 동시에 같은 데이터를 수정하면 어떻게 되나요?
-
-**A**: Supabase의 실시간 동기화 기능으로 최신 데이터가 자동으로 반영됩니다. 하지만 동시에 같은 레코드를 수정하면 마지막 저장이 우선됩니다.
-
-#### Q8. 검색이 제대로 작동하지 않아요.
-
-**A**: 다음을 확인해보세요:
-
-- 검색어의 철자가 정확한지 확인
-- 필터가 검색 결과를 제한하고 있는지 확인
-- 페이지를 새로고침해보세요
-
-#### Q9. 캘린더에서 작업을 드래그하여 날짜를 변경할 수 있나요?
-
-**A**: 현재는 지원되지 않습니다. 작업을 수정하여 날짜를 변경해야 합니다.
-
-#### Q10. 판매 기록을 수정하거나 삭제할 수 있나요?
-
-**A**: 현재는 판매 기록 수정/삭제 기능이 없습니다. 환불 처리로 취소하거나, 필요시 데이터베이스에서 직접 수정해야 합니다.
-
----
-
-## 💡 유용한 팁
-
-### 1. 빠른 작업 팁
-
-- **원클릭 판매 활용**: Dashboard에서 "Sell" 버튼을 사용하여 빠르게 판매 기록을 생성하세요. ⭐ **NEW**
-- **인라인 편집 활용**: Dashboard에서 Status와 Price는 테이블에서 직접 수정할 수 있습니다.
-- **자동화 활용**: 가능한 한 Dashboard에서 상태 변경을 통해 판매/환불을 처리하세요.
-- **검색 단축키**: 검색 입력 필드에 포커스를 두고 바로 입력을 시작하세요.
-- **사이드바 네비게이션**: 모든 주요 페이지는 사이드바에서 바로 접근할 수 있습니다.
-
-### 2. 데이터 관리 팁
-
-- **일관성 유지**: 악기 상태를 정기적으로 업데이트하여 정확한 재고 정보를 유지하세요.
-- **메모 활용**: 중요한 정보는 메모 필드에 기록하여 나중에 검색하기 쉽게 하세요.
-- **태그 활용**: 고객과 악기에 태그를 적절히 사용하여 필터링을 용이하게 하세요.
-
-### 3. 효율적인 사용 팁
-
-- **필터 저장**: 자주 사용하는 필터 조합을 기억하여 빠르게 적용하세요.
-- **정렬 활용**: 컬럼 헤더를 클릭하여 원하는 순서로 데이터를 정렬하세요.
-- **뷰 전환**: Calendar에서 다양한 뷰를 활용하여 작업을 효율적으로 관리하세요.
-
-### 4. 오류 방지 팁
-
-- **삭제 전 확인**: 중요한 데이터를 삭제하기 전에 연결된 항목이 없는지 확인하세요.
-- **가격 확인**: 판매 기록이 자동 생성되기 전에 악기 가격이 올바른지 확인하세요.
-- **상태 변경 주의**: 'Sold' 상태 변경 시 자동으로 판매 기록이 생성되므로 신중하게 처리하세요.
-
----
-
-## 📞 지원
-
-문제가 발생하거나 질문이 있으시면:
-
-1. **FAQ 섹션 확인**: 위의 자주 묻는 질문을 먼저 확인하세요.
-2. **기능별 가이드 참조**:
-   - [Sales History 사용자 가이드](./SALES_HISTORY_USER_GUIDE.md)
-3. **개발팀 문의**: 추가 지원이 필요한 경우 개발팀에 문의하세요.
-
----
-
-**마지막 업데이트**: 2025년 1월
-
-**버전**: 1.1
-
-## 📝 변경 이력
-
-### v1.1 (2025-01)
-
-- ✅ 원클릭 판매 기능 추가 (Dashboard에서 "Sell" 버튼)
-- ✅ 네비게이션 구조 개선 (Instruments, Client Analytics 페이지 접근 가능)
-- ✅ Dashboard (Items) 페이지에서 모든 악기 관리 기능 제공
-- ✅ Instruments 페이지는 Dashboard로 통합됨
-
-### v1.0 (2024-12)
-
-- 초기 버전 릴리스
+If you’d like a clickable walkthrough or annotated screenshots, I can help create a more visual guide next. Let me know what you'd like to add first.

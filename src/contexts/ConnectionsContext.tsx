@@ -11,6 +11,7 @@ import React, {
 } from 'react';
 import { ClientInstrument } from '@/types';
 import { useErrorHandler } from '@/contexts/ToastContext';
+import { apiFetch } from '@/utils/apiFetch';
 
 // Connections 상태 타입
 interface ConnectionsState {
@@ -155,12 +156,20 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     return deduped(async () => {
       dispatch({ type: 'SET_LOADING', payload: true });
       try {
-        const response = await fetch(
+        const response = await apiFetch(
           '/api/connections?orderBy=created_at&ascending=false'
         );
         if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to fetch connections');
+          let errorMessage = 'Failed to fetch connections';
+          try {
+            const errorData = await response.json();
+            errorMessage =
+              errorData.error?.message || errorData.error || errorMessage;
+          } catch {
+            // If response is not JSON, use status text
+            errorMessage = response.statusText || errorMessage;
+          }
+          throw new Error(errorMessage);
         }
         const result = await response.json();
         dispatch({ type: 'SET_CONNECTIONS', payload: result.data || [] });
@@ -176,7 +185,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     async (connection: Omit<ClientInstrument, 'id' | 'created_at'>) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await fetch('/api/connections', {
+        const response = await apiFetch('/api/connections', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(connection),
@@ -204,7 +213,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     async (id: string, connection: Partial<ClientInstrument>) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await fetch('/api/connections', {
+        const response = await apiFetch('/api/connections', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, ...connection }),
@@ -235,7 +244,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await fetch(`/api/connections?id=${id}`, {
+        const response = await apiFetch(`/api/connections?id=${id}`, {
           method: 'DELETE',
         });
         if (!response.ok) {

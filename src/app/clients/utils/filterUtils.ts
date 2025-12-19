@@ -1,7 +1,7 @@
 // src/app/clients/utils/filterUtils.ts
 import { Client } from '@/types';
 import {
-  getUniqueValues as getUniqueValuesGeneric,
+  getUniqueStringValues,
   getUniqueArrayValues,
 } from '@/utils/uniqueValues';
 import { toggleValue } from '@/utils/filterHelpers';
@@ -11,7 +11,7 @@ import { FilterState } from '../types';
 export const getUniqueValues = (
   clients: Client[],
   field: keyof Client
-): string[] => getUniqueValuesGeneric(clients, field);
+): string[] => getUniqueStringValues(clients, field);
 
 export const getUniqueLastNames = (clients: Client[]) =>
   getUniqueValues(clients, 'last_name');
@@ -26,7 +26,7 @@ export const getUniqueTags = (clients: Client[]): string[] =>
   getUniqueArrayValues(clients, 'tags');
 
 export const getUniqueInterests = (clients: Client[]): string[] =>
-  getUniqueValuesGeneric(clients, 'interest');
+  getUniqueStringValues(clients, 'interest');
 
 // Filter change handler
 export const handleFilterChange = (

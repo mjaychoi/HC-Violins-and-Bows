@@ -5,6 +5,7 @@
 import {
   getTagColor as getTagColorFromTokens,
   type BadgeVariant,
+  TAG_TOKENS,
 } from '@/utils/colorTokens';
 
 // ✅ Generate tag color from centralized tokens
@@ -17,17 +18,16 @@ export const getTagColor = (
   return getTagColorFromTokens(tag, variant);
 };
 
-// ✅ Extract text color from tone (derived from centralized tokens)
-// Note: This is a simplified version that extracts text color from the full color string
+// ✅ Extract text color from tokens (safer than regex parsing)
+// 텍스트 색상은 soft tone 기준으로 계산 (variant와 무관하게 일관된 텍스트 컬러 유지)
 export const getTagTextColor = (tag: string): string => {
-  // 텍스트 색상은 soft tone 기준으로 계산 (variant와 무관하게 일관된 텍스트 컬러 유지)
-  const colorString = getTagColorFromTokens(tag, 'soft');
-  // Extract text color class from the color string (e.g., "text-emerald-800")
-  const match = colorString.match(/text-(\w+)-(\d+)/);
-  if (match) {
-    return `text-${match[1]}-${match[2]}`;
-  }
-  return 'text-gray-800'; // Fallback
+  const normalizedTag = tag.trim();
+  const token = TAG_TOKENS[normalizedTag] || TAG_TOKENS.Default;
+  // Extract text color class from the soft variant string (e.g., "text-emerald-800")
+  // More robust: split by space and find text-* class
+  const classes = token.soft.split(/\s+/);
+  const textClass = classes.find(cls => cls.startsWith('text-'));
+  return textClass || 'text-gray-800'; // Fallback
 };
 
 /**

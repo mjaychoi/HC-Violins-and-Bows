@@ -11,18 +11,32 @@ jest.mock('@/hooks/useURLState', () => ({
   })),
 }));
 
-// Mock next/navigation for useURLState (fallback)
-jest.mock('next/navigation', () => ({
-  useRouter: jest.fn(() => ({
-    push: jest.fn(),
-    replace: jest.fn(),
-    refresh: jest.fn(),
-    back: jest.fn(),
-    forward: jest.fn(),
-    prefetch: jest.fn(),
-  })),
-  usePathname: jest.fn(() => '/dashboard'),
-}));
+// Mock next/navigation for useURLState and useSearchParams
+jest.mock('next/navigation', () => {
+  const createSearchParams = (urlString?: string) => {
+    try {
+      const url = new URL(urlString || 'http://localhost/dashboard');
+      return url.searchParams;
+    } catch {
+      return new URL('http://localhost/dashboard').searchParams;
+    }
+  };
+
+  return {
+    useRouter: jest.fn(() => ({
+      push: jest.fn(),
+      replace: jest.fn(),
+      refresh: jest.fn(),
+      back: jest.fn(),
+      forward: jest.fn(),
+      prefetch: jest.fn(),
+    })),
+    usePathname: jest.fn(() => '/dashboard'),
+    useSearchParams: jest.fn(() =>
+      createSearchParams('http://localhost/dashboard')
+    ),
+  };
+});
 
 describe('useDashboardFilters', () => {
   const mockItems: Instrument[] = [

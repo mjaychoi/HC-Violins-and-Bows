@@ -232,13 +232,23 @@ describe('YearView', () => {
       />
     );
 
-    // Tasks are rendered as dots, find them by title attribute
+    // Tasks are rendered as dots, find them by title attribute (now includes status)
+    // Title format: "{task.title} - {status}"
     const taskDots = screen
-      .getAllByTitle('Task 1')
-      .filter(el => el.tagName === 'DIV');
+      .getAllByTitle(/^Task 1 -/)
+      .filter(el => el.tagName === 'SPAN' || el.tagName === 'DIV');
     if (taskDots.length > 0) {
       await user.click(taskDots[0]);
       expect(mockOnSelectEvent).toHaveBeenCalledWith(mockTasks[0]);
+    } else {
+      // Fallback: try finding by aria-label
+      const taskDotsByLabel = screen
+        .getAllByLabelText(/^Task: Task 1/)
+        .filter(el => el.tagName === 'SPAN' || el.tagName === 'DIV');
+      if (taskDotsByLabel.length > 0) {
+        await user.click(taskDotsByLabel[0]);
+        expect(mockOnSelectEvent).toHaveBeenCalledWith(mockTasks[0]);
+      }
     }
   });
 

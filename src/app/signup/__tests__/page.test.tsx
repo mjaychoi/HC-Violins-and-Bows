@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import { useRouter } from 'next/navigation';
@@ -20,9 +21,7 @@ jest.mock('@/hooks/useLoadingState', () => ({
 }));
 
 jest.mock('@/components/common', () => ({
-  ErrorBoundary: ({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  ),
+  ErrorBoundary: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 const mockUseRouter = useRouter as jest.MockedFunction<typeof useRouter>;
@@ -162,7 +161,6 @@ describe('SignUpPage', () => {
       { timeout: 3000 }
     );
 
-    // Wait for redirect (setTimeout in component)
     await waitFor(
       () => {
         expect(mockPush).toHaveBeenCalledWith('/dashboard');

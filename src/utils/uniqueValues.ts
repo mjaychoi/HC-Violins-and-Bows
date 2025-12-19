@@ -13,16 +13,8 @@ export function getUniqueStringValues<T, K extends keyof T>(
   return Array.from(new Set(values));
 }
 
-/**
- * @deprecated Use getUniqueStringValues instead for better type safety
- * Kept for backward compatibility
- */
-export function getUniqueValues<T, K extends keyof T>(
-  items: T[],
-  field: K
-): string[] {
-  return getUniqueStringValues(items, field);
-}
+// ✅ REMOVED: getUniqueValues function deleted - use getUniqueStringValues instead
+// All usages have been migrated to getUniqueStringValues for better type safety
 
 /**
  * Type helper to extract keys that are array types

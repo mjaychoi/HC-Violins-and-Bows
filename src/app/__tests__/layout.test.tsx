@@ -1,6 +1,7 @@
 import { render as rtlRender } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import RootProviders from '@/components/providers/RootProviders';
+import RootLayout from '../layout';
 
 // Mock ErrorBoundary
 jest.mock('@/components/common', () => ({
@@ -151,5 +152,23 @@ describe('RootLayout', () => {
 
     // If the import fails, the test would fail
     expect(true).toBe(true);
+  });
+});
+
+describe('RootLayout (Smoke Test)', () => {
+  it('should export default function', () => {
+    // Smoke test: Verify RootLayout is exported and is a function component
+    expect(typeof RootLayout).toBe('function');
+  });
+
+  it('should accept children prop', () => {
+    // Smoke test: Verify component accepts children prop
+    // We can't directly render html/body in React Testing Library,
+    // but we can verify the component structure is correct
+    const testChildren = <div>Test Content</div>;
+    expect(() => {
+      // Component signature check - if it accepts children, this should work
+      RootLayout({ children: testChildren });
+    }).not.toThrow();
   });
 });

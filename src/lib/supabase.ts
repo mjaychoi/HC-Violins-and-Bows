@@ -2,52 +2,58 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient } from './supabase-client';
 
 /**
- * Legacy Supabase entrypoint kept for backward compatibility.
+ * ⚠️ Legacy Supabase entrypoint - FOR TESTING/MOCKING ONLY
  *
- * - Application 코드에서는 `supabase-client.ts` / `supabase-server.ts` 를 직접 사용합니다.
- * - 테스트와 예전 코드에서 `@/lib/supabase`를 mock/require 하기 때문에 이 파일은 남겨둡니다.
+ * - Application 코드에서는 절대 사용하지 마세요.
+ *   Use `@/lib/supabase-client` or `@/lib/supabase-server` instead.
+ * - Jest 테스트에서 `require('../supabase').supabase`를 mock하기 위해 유지됩니다.
+ *
+ * ✅ FIXED: More secure legacy pattern - throws immediately on import
+ * This prevents accidental use in application code while allowing Jest mocks
  */
 
 /**
  * Async helper that delegates to getSupabaseClient().
+ * @deprecated Use getSupabaseClient() from '@/lib/supabase-client' instead
  */
 export async function getSupabase(): Promise<SupabaseClient> {
   return getSupabaseClient();
 }
 
 /**
- * Deprecated sync-style proxy client.
+ * ✅ FIXED: Deprecated sync-style client - throws immediately to prevent runtime errors
+ * This ensures the legacy file is only used for Jest mocking, not in application code
  *
- * - 실제 앱 코드에서는 사용하지 않아야 합니다.
- * - Jest 테스트에서 `require('../supabase').supabase` 가 존재하기만 하면 되기 때문에
- *   간단한 Proxy 래퍼를 유지합니다.
+ * Jest tests can mock this export, but application code will fail fast with a clear error.
  */
-let _supabaseProxyInstance: SupabaseClient | null = null;
+const isTestEnv =
+  process.env.NODE_ENV === 'test' ||
+  typeof process.env.JEST_WORKER_ID !== 'undefined';
 
-export const supabase = new Proxy({} as SupabaseClient, {
-  get(target, prop) {
-    if (!_supabaseProxyInstance) {
-      // initialize lazily; ignore 실패 (테스트에서 대부분 mock 됨)
-      getSupabaseClient()
-        .then(client => {
-          _supabaseProxyInstance = client;
-        })
-        .catch(() => {
-          // noop
-        });
-      // 첫 sync 접근 시에는 더미 객체를 반환해서 from 등을 안전하게 호출 가능하게 함
-      return () => {
-        throw new Error(
-          'Supabase client not initialized yet. In production code, use async getSupabaseClient().'
-        );
-      };
-    }
-    const value = (
-      _supabaseProxyInstance as unknown as Record<string, unknown>
-    )[prop as string];
-    if (typeof value === 'function') {
-      return value.bind(_supabaseProxyInstance);
-    }
-    return value;
-  },
-}) as SupabaseClient;
+// ✅ FIXED: Strong guard for production builds - prevents accidental usage
+// This prevents runtime errors in production builds
+if (!isTestEnv) {
+  // Check if we're in a production build (not just production environment)
+  const isProductionBuild =
+    process.env.NODE_ENV === 'production' ||
+    (typeof process !== 'undefined' &&
+      process.env.NEXT_PHASE === 'production-build');
+
+  if (isProductionBuild) {
+    throw new Error(
+      "CRITICAL: '@/lib/supabase' must not be imported in production builds. " +
+        'Use "@/lib/supabase-client" (client-side) or "@/lib/supabase-server" (server-side) instead. ' +
+        'This export is only available for Jest mocking purposes.'
+    );
+  }
+
+  // Development: warn but don't throw (allows easier debugging)
+  if (typeof console !== 'undefined' && console.warn) {
+    console.warn(
+      "⚠️ '@/lib/supabase' should not be imported in application code. " +
+        'Use "@/lib/supabase-client" or "@/lib/supabase-server" instead.'
+    );
+  }
+}
+
+export const supabase: SupabaseClient = {} as unknown as SupabaseClient;

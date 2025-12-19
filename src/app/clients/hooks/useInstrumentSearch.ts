@@ -45,11 +45,15 @@ export function useInstrumentSearch() {
     setInstrumentSearchTerm(term);
   }, []);
 
+  // ✅ FIXED: Indicate search is in progress when deferred value hasn't caught up
+  // This provides visual feedback during debounce delay
+  const isSearchingInstruments = deferred !== instrumentSearchTerm;
+
   return {
     showInstrumentSearch,
     instrumentSearchTerm,
     searchResults,
-    isSearchingInstruments: false, // No longer async, so always false
+    isSearchingInstruments,
     openInstrumentSearch,
     closeInstrumentSearch,
     handleInstrumentSearch,

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { addDays, format } from 'date-fns';
 import { ContactLog } from '@/types';
+import { apiFetch } from '@/utils/apiFetch';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { todayLocalYMD } from '@/utils/dateParsing';
@@ -33,7 +34,8 @@ export function useContactLogs({
         params.set('instrumentId', instrumentId);
       }
 
-      const response = await fetch(`/api/contacts?${params.toString()}`);
+      // ✅ FIXED: Use apiFetch to include authentication headers
+      const response = await apiFetch(`/api/contacts?${params.toString()}`);
       const result = await response.json();
 
       if (!response.ok) {
@@ -61,7 +63,7 @@ export function useContactLogs({
     ) => {
       return withSubmitting(async () => {
         try {
-          const response = await fetch('/api/contacts', {
+          const response = await apiFetch('/api/contacts', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -90,7 +92,7 @@ export function useContactLogs({
     async (id: string, updates: Partial<ContactLog>) => {
       return withSubmitting(async () => {
         try {
-          const response = await fetch('/api/contacts', {
+          const response = await apiFetch('/api/contacts', {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
@@ -119,7 +121,8 @@ export function useContactLogs({
     async (id: string) => {
       return withSubmitting(async () => {
         try {
-          const response = await fetch(`/api/contacts?id=${id}`, {
+          // ✅ FIXED: Use apiFetch to include authentication headers
+          const response = await apiFetch(`/api/contacts?id=${id}`, {
             method: 'DELETE',
           });
 
@@ -178,7 +181,7 @@ export function useContactLogs({
     async (contactLogId: string) => {
       return withSubmitting(async () => {
         try {
-          const response = await fetch('/api/contacts', {
+          const response = await apiFetch('/api/contacts', {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
@@ -213,7 +216,7 @@ export function useContactLogs({
           const base = new Date();
           const newFollowUpDate = format(addDays(base, days), 'yyyy-MM-dd');
 
-          const response = await fetch('/api/contacts', {
+          const response = await apiFetch('/api/contacts', {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',

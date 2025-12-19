@@ -23,7 +23,10 @@ export default function DataQualityWarning({
       'Data is spread across many days, making daily patterns less reliable.'
     );
   }
-  // FIXED: Keep "Charts and insights..." as separate paragraph for clarity
+
+  // Only show messages if there are specific issues
+  // If isLowQuality is true but no specific flags, don't show list
+  const displayMessages = messages.length > 0 ? messages : [];
 
   return (
     <div
@@ -38,6 +41,7 @@ export default function DataQualityWarning({
           stroke="currentColor"
           viewBox="0 0 24 24"
           aria-hidden="true"
+          focusable="false"
         >
           <path
             strokeLinecap="round"
@@ -50,11 +54,11 @@ export default function DataQualityWarning({
           <h4 className="text-sm font-semibold text-yellow-900 mb-1">
             Limited Data Available
           </h4>
-          {/* FIXED: Display messages as list for better readability and accessibility */}
-          {messages.length > 0 && (
+          {/* Display messages as list for better readability and accessibility */}
+          {displayMessages.length > 0 && (
             <ul className="text-sm text-yellow-700 list-disc pl-5 space-y-1 mb-2">
-              {messages.map((message, index) => (
-                <li key={index}>{message}</li>
+              {displayMessages.map(message => (
+                <li key={message}>{message}</li>
               ))}
             </ul>
           )}

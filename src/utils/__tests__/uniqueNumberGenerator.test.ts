@@ -179,7 +179,7 @@ describe('uniqueNumberGenerator', () => {
 
       const dup = validateInstrumentSerial('VI0000001', existing);
       expect(dup.valid).toBe(false);
-      expect(dup.error).toContain('already in use');
+      expect(dup.error).toContain('이미 사용 중입니다');
 
       const badFormat = validateInstrumentSerial('V10000001', existing);
       expect(badFormat.valid).toBe(false);
@@ -216,7 +216,51 @@ describe('uniqueNumberGenerator', () => {
         'VI0000001'
       );
       expect(duplicate.valid).toBe(false);
-      expect(duplicate.error).toContain('already in use');
+      expect(duplicate.error).toContain('이미 사용 중입니다');
+    });
+
+    it('should include duplicate instrument info when instruments array is provided', () => {
+      const existing = ['VI0000001', 'BO0000001'];
+      const instruments = [
+        {
+          id: 'inst-1',
+          serial_number: 'VI0000001',
+          maker: 'Stradivarius',
+          type: 'Violin',
+        },
+        {
+          id: 'inst-2',
+          serial_number: 'BO0000001',
+          maker: 'Tourte',
+          type: 'Bow',
+        },
+      ];
+
+      const result = validateInstrumentSerial(
+        'VI0000001',
+        existing,
+        undefined,
+        instruments
+      );
+
+      expect(result.valid).toBe(false);
+      expect(result.duplicateInfo).toBeDefined();
+      expect(result.duplicateInfo?.serial_number).toBe('VI0000001');
+      expect(result.duplicateInfo?.id).toBe('inst-1');
+      expect(result.duplicateInfo?.maker).toBe('Stradivarius');
+      expect(result.duplicateInfo?.type).toBe('Violin');
+      expect(result.error).toContain('이미 사용 중입니다');
+      expect(result.error).toContain('Stradivarius Violin');
+    });
+
+    it('should still provide duplicateInfo with serial only when instruments are not provided', () => {
+      const existing = ['VI0000001'];
+
+      const result = validateInstrumentSerial('VI0000001', existing);
+
+      expect(result.valid).toBe(false);
+      expect(result.duplicateInfo).toBeDefined();
+      expect(result.duplicateInfo?.serial_number).toBe('VI0000001');
     });
 
     it('should validate instrument serials with normalized existing numbers', () => {
@@ -563,7 +607,8 @@ describe('uniqueNumberGenerator', () => {
       const existing = ['VI0000001'];
       const result = validateInstrumentSerial('VI0000001', existing, '');
       expect(result.valid).toBe(false);
-      expect(result.error).toBe('Serial number is already in use.');
+      // 구현은 한국어 메시지 + 시리얼 넘버를 포함해서 반환
+      expect(result.error).toContain('이미 사용 중입니다.');
     });
 
     it('should handle validateUniqueNumber with currentNumber as empty string', () => {
@@ -744,7 +789,8 @@ describe('uniqueNumberGenerator', () => {
 
       const existing = ['VI0000001'];
       const result3 = validateInstrumentSerial('VI0000001', existing);
-      expect(result3.error).toBe('Serial number is already in use.');
+      // 구체적인 시리얼 넘버를 포함한 한국어 메시지
+      expect(result3.error).toContain('이미 사용 중입니다.');
     });
 
     it('should handle normalizeInstrumentSerial with numbers exceeding 7 digits', () => {

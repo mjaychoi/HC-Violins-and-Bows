@@ -4,7 +4,16 @@
  * 브라우저 Notification API를 사용한 데스크톱 알림 기능
  */
 
-export type NotificationPermission = 'default' | 'granted' | 'denied';
+/**
+ * ✅ FIXED: Notification permission type with 'unsupported' state
+ * Distinguishes between "browser doesn't support" vs "user denied"
+ * This allows UI to show appropriate messages for each state
+ */
+export type NotificationPermission =
+  | 'default'
+  | 'granted'
+  | 'denied'
+  | 'unsupported';
 
 /**
  * Check if browser notifications are supported
@@ -15,21 +24,28 @@ export function isNotificationSupported(): boolean {
 }
 
 /**
- * Get current notification permission status
+ * ✅ FIXED: Get current notification permission status with 'unsupported' state
+ * Returns 'unsupported' if browser doesn't support notifications (not 'denied')
+ * This allows UI to differentiate between:
+ * - unsupported: "This browser doesn't support notifications"
+ * - default: "Request permission"
+ * - denied: "Enable in browser settings"
  */
 export function getNotificationPermission(): NotificationPermission {
   if (typeof window === 'undefined' || !isNotificationSupported()) {
-    return 'denied';
+    return 'unsupported';
   }
   return Notification.permission as NotificationPermission;
 }
 
 /**
- * Request notification permission from user
+ * ✅ FIXED: Request notification permission from user
+ * ⚠️ Important: This must be called within a user gesture (button click, etc.)
+ * Browsers block automatic permission requests from useEffect or other non-user-initiated contexts
  */
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   if (typeof window === 'undefined' || !isNotificationSupported()) {
-    return 'denied';
+    return 'unsupported';
   }
 
   if (Notification.permission === 'granted') {
@@ -42,7 +58,9 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
 
   try {
     const permission = await Notification.requestPermission();
-    return permission as NotificationPermission;
+    // Notification.requestPermission() returns 'default' | 'granted' | 'denied'
+    // but we need to handle it as our extended type
+    return permission as Exclude<NotificationPermission, 'unsupported'>;
   } catch (error) {
     console.error('Error requesting notification permission:', error);
     return 'denied';
@@ -50,7 +68,9 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
 }
 
 /**
- * Show a browser notification
+ * ✅ FIXED: Show a browser notification
+ * Note: icon uses '/favicon.ico' by default, but consider using a dedicated brand icon file
+ * if available for better visual consistency
  */
 export function showBrowserNotification(
   title: string,
@@ -66,7 +86,7 @@ export function showBrowserNotification(
 
   try {
     const notification = new Notification(title, {
-      icon: '/favicon.ico',
+      icon: '/favicon.ico', // Consider using dedicated brand icon if available
       badge: '/favicon.ico',
       requireInteraction: false,
       ...options,

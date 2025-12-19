@@ -13,12 +13,7 @@ import {
 } from '@/utils/filterHelpers';
 import { useURLState } from './useURLState';
 import { useDebounce } from './useDebounce';
-import type { FilterOperator } from '@/types/search';
-
-export interface DateRange {
-  from: string | null;
-  to: string | null;
-}
+import type { FilterOperator, DateRange } from '@/types/search';
 
 export interface PageFiltersConfig<T extends object> {
   /**
@@ -204,12 +199,12 @@ export function usePageFilters<T extends object = Record<string, unknown>>(
   // URL에서 초기값 읽기 (syncWithURL이 true일 때)
   const initialSearchTerm =
     syncWithURL && urlState.searchTerm ? String(urlState.searchTerm) : '';
-  const initialDateRange =
+  const initialDateRange: DateRange | null =
     syncWithURL && enableDateRange && urlState.dateRange
       ? Array.isArray(urlState.dateRange) && urlState.dateRange.length === 2
         ? {
-            from: urlState.dateRange[0] || null,
-            to: urlState.dateRange[1] || null,
+            from: urlState.dateRange[0] || undefined,
+            to: urlState.dateRange[1] || undefined,
           }
         : null
       : null;

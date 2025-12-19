@@ -14,6 +14,13 @@ interface PillSelectProps extends Omit<
   onChange: (value: string) => void;
   options: PillSelectOption[];
   wrapperClassName?: string;
+  /**
+   * 기본 옵션 추가 여부 (All / None)
+   * 'all': "All" 옵션 추가 (value="")
+   * 'none': "None" 옵션 추가 (value="")
+   * false: 기본 옵션 없음
+   */
+  defaultOption?: 'all' | 'none' | false;
 }
 
 export default function PillSelect({
@@ -22,8 +29,19 @@ export default function PillSelect({
   options,
   className,
   wrapperClassName,
+  defaultOption = false,
   ...rest
 }: PillSelectProps) {
+  // ✅ FIXED: 기본 옵션 지원 (All / None)
+  const defaultOptions: PillSelectOption[] = [];
+  if (defaultOption === 'all') {
+    defaultOptions.push({ value: '', label: 'All' });
+  } else if (defaultOption === 'none') {
+    defaultOptions.push({ value: '', label: 'None' });
+  }
+
+  const allOptions = [...defaultOptions, ...options];
+
   return (
     <div className={cn('relative', wrapperClassName)}>
       <select
@@ -35,7 +53,7 @@ export default function PillSelect({
         )}
         {...rest}
       >
-        {options.map(opt => (
+        {allOptions.map(opt => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
           </option>

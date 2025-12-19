@@ -1,5 +1,4 @@
 import React from 'react';
-import { classNames } from '@/utils/classNames';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger' | 'success' | 'warning';
@@ -23,12 +22,15 @@ export default function Button({
   type = 'button', // ✅ FIXED: 기본 type="button" (submit 사고 방지)
   ...props
 }: ButtonProps) {
+  // ✅ FIXED: Button variant styles (colorTokens 기반으로 직접 정의)
   const variantClasses = {
-    primary: classNames.buttonPrimary,
-    secondary: classNames.buttonSecondary,
-    danger: classNames.buttonDanger,
-    success: classNames.buttonSuccess,
-    warning: classNames.buttonWarning,
+    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
+    secondary:
+      'bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500',
+    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
+    success: 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500',
+    warning:
+      'bg-yellow-600 text-white hover:bg-yellow-700 focus:ring-yellow-500',
   };
 
   const sizeClasses = {
@@ -46,6 +48,7 @@ export default function Button({
       className={`${variantClasses[variant]} ${sizeClasses[size]} ${baseClasses} ${className}`}
       disabled={disabled || loading}
       aria-busy={loading}
+      aria-disabled={disabled || loading}
       {...props}
     >
       {loading ? (
@@ -55,8 +58,11 @@ export default function Button({
           {showLoadingText ? (
             'Loading...'
           ) : (
-            // ✅ FIXED: 화면리더에만 읽히게 (UI에 텍스트 없음)
-            <span className="sr-only">Loading</span>
+            // ✅ FIXED: 기존 children 유지 + 스피너 옆에 배치 (레이아웃 점프 방지)
+            <>
+              <span className="sr-only">Loading</span>
+              {children}
+            </>
           )}
         </span>
       ) : (

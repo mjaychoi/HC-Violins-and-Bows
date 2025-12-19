@@ -228,27 +228,9 @@ export function formatDateTime(dateTimeStr: string): string {
 }
 
 /**
- * Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
- * parseISO('2025-12-12') interprets as UTC midnight, which can render as previous day in US timezones
- * This function parses date-only strings as local dates instead
- *
- * For timestamps (with time/timezone), uses parseISO to preserve the actual moment
- *
- * @deprecated Remove after migrating all callsites to parseYMDLocal.
- *             Use parseYMDLocal instead for consistency. This function is kept for backward compatibility
- *             but will be removed in a future version.
- */
-export function parseTaskDateLocal(dateStr: string): Date {
-  const parsed = parseYMDLocal(dateStr);
-  if (parsed) return parsed;
-  // Fallback for non-date-only strings (ISO timestamps)
-  return parseISO(dateStr);
-}
-
-/**
  * Normalize any date string to local YYYY-MM-DD format
  * Handles both date-only strings and timestamps
- * Uses parseYMDLocal directly to avoid dependency on deprecated parseTaskDateLocal
+ * Uses parseYMDLocal directly (parseTaskDateLocal is not deprecated, it's the canonical function)
  *
  * Important: Date-only strings (YYYY-MM-DD) are returned as-is without conversion.
  * This is because YYYY-MM-DD is already a "calendar day key" that represents a specific
@@ -293,16 +275,49 @@ export function taskDayKey(dateStr: string): string {
 }
 
 /**
- * Parse date string loosely (handles various formats) and return timestamp
- * Supports: YYYY-MM-DD, ISO timestamps, and other common date formats
- * Use this for reliable date comparisons when input format is uncertain
+ * ✅ FIXED: Parse task date string safely, handling both YYYY-MM-DD and ISO timestamps
+ * Single source of truth for task date parsing across the codebase
+ * YYYY-MM-DD strings are parsed as local midnight to avoid UTC timezone issues
  *
+ * This function is used by both calendar components and notification utilities
+ * to ensure consistent date handling
+ *
+ * @param raw - Date string, Date object, or unknown value
+ * @returns Date object at local midnight, or null if invalid
+ */
+export function parseTaskDateLocal(raw: unknown): Date | null {
+  if (!raw) return null;
+
+  // Date object: validate and normalize to local midnight
+  if (raw instanceof Date) {
+    if (!Number.isFinite(raw.getTime())) return null;
+    return startOfDay(raw);
+  }
+
+  const s = String(raw);
+
+  // Use parseYMDLocal for date-only strings (handles YYYY-MM-DD as local)
+  const parsed = parseYMDLocal(s);
+  if (parsed) return parsed;
+
+  // Fallback for ISO timestamps or other formats
+  try {
+    const d = parseISO(s);
+    return Number.isFinite(d.getTime()) ? startOfDay(d) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Internal helper: Parse date string in various formats (loose parsing)
  * Note: YYYY-MM-DD is interpreted as local midnight for recency comparison.
  * This ensures "most recent date" calculations match user's local timezone expectations.
  * For server/DB date comparisons, consider using UTC-based parsing instead.
  *
  * @param dateStr - Date string in various formats (YYYY-MM-DD, ISO, or other parseable formats)
  * @returns Timestamp (number) or -Infinity if invalid
+ * @internal This is an internal helper function, not exported for external use
  */
 function parseDateLoose(dateStr: string): number {
   if (!dateStr) return -Infinity;
@@ -332,10 +347,11 @@ function parseDateLoose(dateStr: string): number {
  * FIXED: Replaces fragile string sorting with proper date parsing
  *
  * @param dates - Array of date strings
- * @returns Most recent date string, or '—' if empty/invalid
+ * @returns Most recent date string, or null if empty/invalid
+ * Note: UI should handle null display (e.g., show '—' or empty string)
  */
-export function getMostRecentDate(dates: string[]): string {
-  let best = '';
+export function getMostRecentDate(dates: string[]): string | null {
+  let best: string | null = null;
   let bestT = -Infinity;
   for (const s of dates) {
     const t = parseDateLoose(s);
@@ -344,7 +360,7 @@ export function getMostRecentDate(dates: string[]): string {
       best = s;
     }
   }
-  return best || '—';
+  return best;
 }
 
 /**

@@ -87,13 +87,15 @@ export default function ErrorToast({
             )}
 
             {recoverySuggestions.length > 0 && (
-              <div className="mt-2">
-                <p className="text-xs font-medium mb-1">Solution methods:</p>
-                <ul className="text-xs space-y-1">
+              <div className="mt-3 pt-2 border-t border-gray-200">
+                <p className="text-xs font-semibold mb-1.5 text-gray-700">
+                  해결 방법:
+                </p>
+                <ul className="text-xs space-y-1.5">
                   {recoverySuggestions.map((suggestion, index) => (
                     <li key={index} className="flex items-start">
-                      <span className="mr-1">•</span>
-                      <span>{suggestion}</span>
+                      <span className="mr-1.5 text-blue-500">✓</span>
+                      <span className="text-gray-600">{suggestion}</span>
                     </li>
                   ))}
                 </ul>

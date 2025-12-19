@@ -349,7 +349,7 @@ describe('ErrorHandler - Extended Tests', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Please try again later');
+      expect(suggestions).toContain('잠시 후 다시 시도해주세요');
       expect(suggestions.length).toBeGreaterThan(0);
     });
 
@@ -360,16 +360,14 @@ describe('ErrorHandler - Extended Tests', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Redirecting to login page');
+      expect(suggestions).toContain('로그인 페이지로 이동합니다');
     });
 
     it('should provide suggestions for FORBIDDEN', () => {
       const error = errorHandler.createError(ErrorCodes.FORBIDDEN, 'Forbidden');
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain(
-        'Contact administrator for permission request'
-      );
+      expect(suggestions).toContain('관리자에게 권한 요청을 문의하세요');
     });
 
     it('should provide suggestions for SESSION_EXPIRED', () => {
@@ -390,8 +388,10 @@ describe('ErrorHandler - Extended Tests', () => {
       );
       const suggestions = errorHandler.getRecoverySuggestions(error);
 
-      expect(suggestions).toContain('Request timeout occurred');
-      expect(suggestions).toContain('Check network status and try again');
+      expect(suggestions).toContain('요청 시간이 초과되었습니다');
+      expect(suggestions).toContain(
+        '네트워크 상태를 확인하고 다시 시도해주세요'
+      );
     });
   });
 

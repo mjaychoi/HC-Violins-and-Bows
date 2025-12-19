@@ -57,6 +57,8 @@ describe('useFilters additional counts', () => {
 
   it('counts hasInstruments filter', () => {
     const { result } = renderHook(() => useFilters(clients, new Set()));
+    // Clear any initial filters first
+    act(() => result.current.clearAllFilters());
     act(() => result.current.handleHasInstrumentsChange('Has Instruments'));
     expect(result.current.getActiveFiltersCount()).toBe(1);
   });
@@ -82,6 +84,7 @@ describe('useFilters additional counts', () => {
         hasInstruments: ['Has Instruments'],
       });
     });
+    // 6 base filters + 1 hasInstruments = 7
     expect(result.current.getActiveFiltersCount()).toBe(7);
   });
 
@@ -99,6 +102,7 @@ describe('useFilters additional counts', () => {
       });
       result.current.setSearchTerm('Alpha');
     });
+    // 6 base filters + 1 hasInstruments + 1 searchTerm = 8
     expect(result.current.getActiveFiltersCount()).toBe(8);
     act(() => result.current.clearAllFilters());
     expect(result.current.getActiveFiltersCount()).toBe(0);

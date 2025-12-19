@@ -123,6 +123,13 @@ export interface MaintenanceTask {
   client?: Client; // 관계 데이터
 }
 
+export type MaintenanceTaskUpdatePayload = Partial<
+  Omit<
+    MaintenanceTask,
+    'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+  >
+>;
+
 // Calendar Event Types
 export interface CalendarEvent {
   id: string;

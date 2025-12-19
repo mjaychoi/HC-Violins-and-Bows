@@ -62,9 +62,9 @@
 
 **작업 내용**:
 
-- [ ] 로그인 페이지 "LATEST" 제거
-- [ ] 빈 상태 처리 일관성 개선
-- [ ] 에러 메시지 표시 방식 통일 (이미 대부분 완료)
+- [x] 로그인 페이지 "LATEST" 제거
+- [x] 빈 상태 처리 일관성 개선
+- [x] 에러 메시지 표시 방식 통일 (이미 대부분 완료)
 
 **중요도**: ⭐⭐⭐ (Medium)
 
@@ -272,7 +272,7 @@
 
 ## 📝 참고 문서
 
-- [PROJECT_CRITIQUE.md](./PROJECT_CRITIQUE.md) - 전체 프로젝트 분석
+- [PROJECT_STATUS.md](./PROJECT_STATUS.md) - 프로젝트 상태 및 분석 (통합 문서)
 - [STORE_OWNER_UX_IMPROVEMENTS.md](./STORE_OWNER_UX_IMPROVEMENTS.md) - UX 개선 사항
 - [MANUAL_QA_CHECKLIST.md](./MANUAL_QA_CHECKLIST.md) - QA 체크리스트
 - [ERROR_HANDLING_GUIDELINES.md](./ERROR_HANDLING_GUIDELINES.md) - 에러 처리 가이드라인

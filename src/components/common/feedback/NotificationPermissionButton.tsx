@@ -124,6 +124,7 @@ export default function NotificationPermissionButton({
     }
   };
 
+  // ✅ FIXED: isSupported가 false면 null 반환 (이미 처리됨)
   if (!isSupported) {
     return null; // 브라우저가 알림을 지원하지 않으면 표시하지 않음
   }
@@ -187,11 +188,14 @@ export default function NotificationPermissionButton({
 
   if (permission === 'denied') {
     // 권한이 거부된 경우, 안내 메시지 표시
+    // ✅ FIXED: disabled 처리로 클릭 불가능 상태 명확히 표시
     if (variant === 'icon') {
       return (
         <button
           type="button"
-          className={`p-1.5 rounded-md hover:bg-gray-100 transition-colors ${className}`}
+          disabled
+          aria-disabled="true"
+          className={`p-1.5 rounded-md transition-colors cursor-not-allowed opacity-60 ${className}`}
           title="브라우저 알림이 거부되었습니다. 브라우저 설정에서 허용해주세요."
           aria-label="브라우저 알림 거부됨"
         >

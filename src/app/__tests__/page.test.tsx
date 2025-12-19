@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 // Mock next/navigation
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
+  useSearchParams: jest.fn(() => new URLSearchParams()),
 }));
 
 // Mock AuthContext
@@ -27,12 +28,14 @@ const mockSignIn = jest.fn();
 const mockUseRouter = useRouter as jest.MockedFunction<typeof useRouter>;
 const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 
+const mockReplace = jest.fn();
+
 describe('LoginPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseRouter.mockReturnValue({
       push: mockPush,
-      replace: jest.fn(),
+      replace: mockReplace,
       prefetch: jest.fn(),
       back: jest.fn(),
       refresh: jest.fn(),
@@ -162,7 +165,7 @@ describe('LoginPage', () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 
-  it('should redirect to dashboard if user is already logged in', () => {
+  it('should redirect to dashboard if user is already logged in', async () => {
     const mockUser = { id: '1', email: 'test@example.com' } as any;
     mockUseAuth.mockReturnValue({
       user: mockUser,
@@ -176,7 +179,10 @@ describe('LoginPage', () => {
 
     render(<LoginPage />);
 
-    expect(mockPush).toHaveBeenCalledWith('/dashboard');
+    // LoginRedirect uses useEffect with router.replace, so wait for it to execute
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/dashboard');
+    });
   });
 
   it('should disable submit button while loading', () => {

@@ -2,7 +2,7 @@
 
 import { Instrument } from '@/types';
 import { DashboardFilters } from '../types';
-import { DateRange } from '@/hooks/usePageFilters';
+import { DateRange } from '@/types/search';
 import { DASHBOARD_FILTER_KEYS } from '../constants';
 
 /**

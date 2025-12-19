@@ -8,13 +8,39 @@ import {
 } from '@/types/errors';
 import { logError as structuredLogError } from './logger';
 import { captureException } from './monitoring';
-import { getUserFriendlyErrorMessage } from './errorSanitization';
+import {
+  getUserFriendlyErrorMessage,
+  isDevelopment,
+} from './errorSanitization';
 
-// Error Handler Class
+/**
+ * Error Handler Class
+ *
+ * ⚠️ Structural Note: This class currently handles multiple responsibilities:
+ * - Error creation (createError, createApiError, createValidationError)
+ * - Error interpretation (handleSupabaseError, handleNetworkError)
+ * - Retry management (shouldRetry, recordRetryAttempt)
+ * - Error statistics (errorStats, getErrorCount)
+ * - External logging (sendToExternalLogger)
+ * - Recovery suggestions (getRecoverySuggestions)
+ * - Category classification (categorizeError)
+ *
+ * For long-term maintainability, consider splitting into:
+ * - errorFactory.ts: Error creation
+ * - errorInterpreter.ts: Supabase/Network parsing
+ * - errorRecovery.ts: Retry logic and suggestions
+ * - errorMetrics.ts: Statistics and counts
+ * - errorHandler.ts: Orchestration layer
+ */
 export class ErrorHandler {
   private static instance: ErrorHandler;
   private errorLog: AppError[] = [];
   private errorStats: Map<ErrorCodes, number> = new Map();
+  /**
+   * ⚠️ Important: operationId must be globally unique per request type
+   * Using the same operationId across different operations will share retry state,
+   * which can lead to incorrect retry behavior
+   */
   private retryAttempts: Map<string, number> = new Map();
   private maxRetries = 3;
 
@@ -84,7 +110,20 @@ export class ErrorHandler {
     let errorCode: string | undefined;
     let errorDetails: string | undefined;
 
-    if (error && typeof error === 'object') {
+    // Handle Error instances
+    if (error instanceof Error) {
+      errorMessage = error.message || 'Unknown error';
+      errorDetails = error.stack;
+
+      // Check if it's a Supabase error by checking the error name or message
+      if (error.name === 'PostgrestError' || error.message?.includes('PGRST')) {
+        // Try to extract code from message or other properties
+        const match = error.message.match(/PGRST\d+/);
+        if (match) {
+          errorCode = match[0];
+        }
+      }
+    } else if (error && typeof error === 'object') {
       const err = error as {
         code?: string;
         message?: string;
@@ -304,7 +343,7 @@ export class ErrorHandler {
   // Get user-friendly error message
   getUserFriendlyMessage(error: AppError): string {
     // 개발 환경에서는 원본 메시지 사용
-    if (process.env.NODE_ENV === 'development') {
+    if (isDevelopment()) {
       const messages: Record<string, string> = {
         [ErrorCodes.NETWORK_ERROR]: 'Please check your network connection.',
         [ErrorCodes.TIMEOUT_ERROR]: 'Request timeout. Please try again.',
@@ -438,7 +477,10 @@ export class ErrorHandler {
     return attempts < this.maxRetries;
   }
 
-  // Record retry attempt
+  /**
+   * Record retry attempt
+   * ⚠️ operationId must be globally unique per request type to avoid retry state conflicts
+   */
   recordRetryAttempt(operationId: string): void {
     const attempts = this.retryAttempts.get(operationId) || 0;
     this.retryAttempts.set(operationId, attempts + 1);
@@ -454,39 +496,66 @@ export class ErrorHandler {
     return this.retryAttempts.get(operationId) || 0;
   }
 
-  // Enhanced error recovery suggestions
+  // Enhanced error recovery suggestions with specific solutions
   getRecoverySuggestions(error: AppError): string[] {
     const suggestions: string[] = [];
 
     switch (error.code) {
       case ErrorCodes.NETWORK_ERROR:
-        suggestions.push('Check your internet connection');
-        suggestions.push('Please try again later');
+        suggestions.push('인터넷 연결을 확인해주세요');
+        suggestions.push('Wi-Fi 또는 모바일 데이터가 켜져 있는지 확인하세요');
+        suggestions.push('잠시 후 다시 시도해주세요');
         break;
       case ErrorCodes.TIMEOUT_ERROR:
-        suggestions.push('Request timeout occurred');
-        suggestions.push('Check network status and try again');
+        suggestions.push('요청 시간이 초과되었습니다');
+        suggestions.push('네트워크 상태를 확인하고 다시 시도해주세요');
+        suggestions.push('데이터가 많다면 필터를 사용해보세요');
         break;
       case ErrorCodes.UNAUTHORIZED:
-        suggestions.push('Redirecting to login page');
+        suggestions.push('로그인이 필요합니다');
+        suggestions.push('로그인 페이지로 이동합니다');
         break;
       case ErrorCodes.FORBIDDEN:
-        suggestions.push('Contact administrator for permission request');
+        suggestions.push('이 작업을 수행할 권한이 없습니다');
+        suggestions.push('관리자에게 권한 요청을 문의하세요');
         break;
       case ErrorCodes.DATABASE_ERROR:
-        suggestions.push('Check database connection');
-        suggestions.push('Please try again later');
+        suggestions.push('데이터베이스 연결에 문제가 발생했습니다');
+        suggestions.push('잠시 후 다시 시도해주세요');
+        suggestions.push('문제가 계속되면 관리자에게 문의하세요');
         break;
       case ErrorCodes.VALIDATION_ERROR:
-        suggestions.push('Please verify your input information');
+        // 필드별 구체적인 안내 (ValidationError 타입 체크)
+        if ('field' in error && error.field) {
+          suggestions.push(`"${error.field}" 필드를 확인해주세요`);
+        }
+        if (error.details) {
+          suggestions.push(error.details);
+        } else {
+          suggestions.push('입력한 정보를 확인하고 다시 시도해주세요');
+        }
         break;
       case ErrorCodes.DUPLICATE_RECORD:
-        suggestions.push('Data already exists');
-        suggestions.push('Try with different information');
+        // 중복된 항목 정보가 있으면 표시
+        if (error.details) {
+          suggestions.push(`중복된 항목: ${error.details}`);
+        } else {
+          suggestions.push('이미 존재하는 데이터입니다');
+        }
+        suggestions.push('다른 정보로 시도하거나 기존 항목을 수정하세요');
+        break;
+      case ErrorCodes.RECORD_NOT_FOUND:
+        suggestions.push('요청한 항목을 찾을 수 없습니다');
+        suggestions.push('항목이 삭제되었거나 ID가 잘못되었을 수 있습니다');
+        suggestions.push('목록에서 다시 확인해주세요');
+        break;
+      case ErrorCodes.SESSION_EXPIRED:
+        suggestions.push('세션이 만료되었습니다');
+        suggestions.push('다시 로그인해주세요');
         break;
       default:
-        suggestions.push('Please try again later');
-        suggestions.push('Contact administrator if problem persists');
+        suggestions.push('잠시 후 다시 시도해주세요');
+        suggestions.push('문제가 계속되면 관리자에게 문의하세요');
     }
 
     return suggestions;

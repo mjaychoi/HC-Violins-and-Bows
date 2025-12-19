@@ -77,7 +77,9 @@ export default function Pagination({
         {showCount && totalCount !== undefined ? (
           <>
             <span>
-              {hasFilters && typeof filteredCount === 'number' ? (
+              {hasFilters &&
+              typeof filteredCount === 'number' &&
+              filteredCount !== totalCount ? (
                 <>
                   Showing{' '}
                   <span className="font-medium">
@@ -129,9 +131,6 @@ export default function Pagination({
         >
           Prev
         </button>
-        <span className="px-2 text-gray-600 text-xs sm:text-sm">
-          {safeCurrentPage} / {safeTotalPages}
-        </span>
         <button
           type="button"
           onClick={handleNext}

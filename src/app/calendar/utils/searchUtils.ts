@@ -1,8 +1,12 @@
 import React from 'react';
 import { MaintenanceTask } from '@/types';
+import { getTaskDateKey } from '@/utils/calendar';
+import { getPriorityOrder, getStatusOrder } from '../constants';
 
 /**
  * Highlight search term in text
+ * Supports multi-word search: highlights each token separately
+ * Longer tokens are highlighted first to avoid overlap issues
  */
 export function highlightText(
   text: string,
@@ -10,13 +14,26 @@ export function highlightText(
 ): React.ReactNode {
   if (!searchTerm || !text) return text;
 
-  const regex = new RegExp(`(${escapeRegex(searchTerm)})`, 'gi');
+  // Split search term into tokens and sort by length (longest first)
+  // This prevents shorter tokens from being highlighted inside longer ones
+  const tokens = searchTerm
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+
+  if (tokens.length === 0) return text;
+
+  // Build regex pattern for all tokens (case-insensitive)
+  const pattern = tokens.map(token => escapeRegex(token)).join('|');
+  const regex = new RegExp(`(${pattern})`, 'gi');
   const parts = text.split(regex);
 
-  const lowerSearch = searchTerm.toLowerCase();
+  const lowerTokens = tokens.map(t => t.toLowerCase());
+
   return parts.map((part, index) => {
-    // Simplified: use case-insensitive string comparison instead of regex.test
-    const isMatch = part.toLowerCase() === lowerSearch;
+    const lowerPart = part.toLowerCase();
+    // Check if this part matches any token (prioritize longer matches)
+    const isMatch = lowerTokens.some(token => lowerPart === token);
     return isMatch
       ? React.createElement(
           'mark',
@@ -36,6 +53,11 @@ function escapeRegex(str: string): string {
 
 /**
  * Search tasks by multiple fields (name, serial, type, owner)
+ *
+ * Search logic:
+ * - Single token: OR logic (any field contains the token)
+ * - Multiple tokens (2+): AND logic (all tokens must be present)
+ *   This provides a balance between power-user precision and general usability
  */
 export function searchTasks(
   tasks: MaintenanceTask[],
@@ -53,8 +75,44 @@ export function searchTasks(
   if (!searchTerm.trim()) return tasks;
 
   const lowerSearch = searchTerm.toLowerCase().trim();
-  const searchFields = lowerSearch.split(/\s+/); // Support multiple words
+  const searchFields = lowerSearch.split(/\s+/).filter(Boolean); // Support multiple words
 
+  // Single token: use OR logic (any field contains it)
+  if (searchFields.length === 1) {
+    const singleToken = searchFields[0];
+    return tasks.filter(task => {
+      const instrument = task.instrument_id
+        ? instrumentsMap.get(task.instrument_id)
+        : undefined;
+
+      if (!instrument) {
+        // If no instrument info, search in task fields
+        return (
+          task.title?.toLowerCase().includes(singleToken) ||
+          task.description?.toLowerCase().includes(singleToken) ||
+          task.task_type?.toLowerCase().includes(singleToken)
+        );
+      }
+
+      // Search in multiple fields (OR logic for single token)
+      const searchableText = [
+        instrument.maker,
+        instrument.type,
+        instrument.ownership,
+        instrument.serial_number,
+        task.title,
+        task.description,
+        task.task_type,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return searchableText.includes(singleToken);
+    });
+  }
+
+  // Multiple tokens: use AND logic (all tokens must be present)
   return tasks.filter(task => {
     const instrument = task.instrument_id
       ? instrumentsMap.get(task.instrument_id)
@@ -62,11 +120,11 @@ export function searchTasks(
 
     if (!instrument) {
       // If no instrument info, search in task fields
-      return (
-        task.title?.toLowerCase().includes(lowerSearch) ||
-        task.description?.toLowerCase().includes(lowerSearch) ||
-        task.task_type?.toLowerCase().includes(lowerSearch)
-      );
+      const searchableText = [task.title, task.description, task.task_type]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return searchFields.every(field => searchableText.includes(field));
     }
 
     // Search in multiple fields
@@ -83,7 +141,7 @@ export function searchTasks(
       .join(' ')
       .toLowerCase();
 
-    // Match all search fields (AND logic)
+    // Match all search fields (AND logic for multiple tokens)
     return searchFields.every(field => searchableText.includes(field));
   });
 }
@@ -118,38 +176,23 @@ export function sortTasks(
 
     switch (sortBy) {
       case 'date':
-        // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date > received_date
-        const aDate =
-          a.due_date ||
-          a.personal_due_date ||
-          a.scheduled_date ||
-          a.received_date ||
-          '';
-        const bDate =
-          b.due_date ||
-          b.personal_due_date ||
-          b.scheduled_date ||
-          b.received_date ||
-          '';
+        // Use centralized date key function for consistent priority
+        const aDate = getTaskDateKey(a) || '';
+        const bDate = getTaskDateKey(b) || '';
         comparison = aDate.localeCompare(bDate);
         break;
 
       case 'priority':
-        const priorityOrder = { urgent: 4, high: 3, medium: 2, low: 1 };
-        const aPriority = priorityOrder[a.priority] || 0;
-        const bPriority = priorityOrder[b.priority] || 0;
+        // Use centralized priority order constants
+        const aPriority = getPriorityOrder(a.priority);
+        const bPriority = getPriorityOrder(b.priority);
         comparison = bPriority - aPriority; // Higher priority first
         break;
 
       case 'status':
-        const statusOrder = {
-          pending: 1,
-          in_progress: 2,
-          completed: 3,
-          cancelled: 4,
-        };
-        const aStatus = statusOrder[a.status] || 0;
-        const bStatus = statusOrder[b.status] || 0;
+        // Use centralized status order constants
+        const aStatus = getStatusOrder(a.status);
+        const bStatus = getStatusOrder(b.status);
         comparison = aStatus - bStatus;
         break;
 

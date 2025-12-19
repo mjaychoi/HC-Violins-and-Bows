@@ -38,11 +38,12 @@
 5. ✅ 알림 클릭 시 해당 페이지로 이동
 6. ✅ `usePageNotifications`에 자동 통합
 
-### ⏳ Phase 3: 서버 사이드 알림 (미구현)
+### ✅ Phase 3: 서버 사이드 알림 (완료 - 2025-01-15)
 
-1. Supabase Edge Functions
-2. 이메일 알림
-3. 알림 설정 테이블
+1. ✅ 알림 설정 테이블 생성 (`notification_settings`)
+2. ✅ Supabase Edge Function 생성 (`send-notifications`)
+3. ✅ 이메일 템플릿 및 전송 로직 (Resend API)
+4. ✅ 알림 설정 API 라우트 (`/api/notification-settings`)
 
 ---
 
@@ -311,22 +312,50 @@ import { NotificationPermissionButton } from '@/components/common';
 <NotificationPermissionButton variant="icon" />
 ```
 
-### 🔴 Phase 3: 이메일 알림 (장기)
+### ✅ Phase 3: 이메일 알림 (완료)
 
-**구현 필요 사항**:
+**구현된 사항**:
 
-1. Supabase Edge Functions 설정
-2. Cron job 설정 (매일 오전 9시 등)
-3. 이메일 서비스 연동 (Resend, SendGrid 등)
-4. 알림 설정 테이블 및 UI
+1. ✅ 알림 설정 테이블 (`notification_settings`)
+   - 사용자별 이메일 알림 설정 저장
+   - 알림 시간, D-day 설정 (days_before_due)
+   - RLS 정책으로 사용자별 접근 제어
 
-**예상 소요 시간**: 1-2일
+2. ✅ Supabase Edge Function (`send-notifications`)
+   - 매일 오전 9시 실행 (cron job 설정 필요)
+   - 활성화된 사용자에게 알림 전송
+   - Overdue/Today/Upcoming 작업 분류 및 이메일 생성
 
-**구현 시 고려사항**:
+3. ✅ 이메일 서비스 연동 (Resend API)
+   - HTML 이메일 템플릿
+   - 작업별 상세 정보 표시
+   - 캘린더 링크 포함
 
-- 이메일 서비스 비용
-- 사용자별 알림 설정
-- 이메일 템플릿 디자인
+4. ✅ 알림 설정 API (`/api/notification-settings`)
+   - GET: 사용자 설정 조회
+   - POST: 사용자 설정 생성/업데이트
+
+**설정 방법**:
+
+1. **Resend API 키 설정**
+
+   ```bash
+   # .env.local 또는 Supabase 환경 변수
+   RESEND_API_KEY=re_xxxxxxxxxxxxx
+   ```
+
+2. **Edge Function 배포**
+
+   ```bash
+   supabase functions deploy send-notifications
+   ```
+
+3. **Cron Job 설정**
+   - Supabase Dashboard > Database > Cron Jobs
+   - Schedule: `0 9 * * *` (매일 오전 9시)
+   - Function: `send-notifications`
+
+**상세 문서**: `supabase/functions/send-notifications/README.md`
 
 ---
 
@@ -334,7 +363,7 @@ import { NotificationPermissionButton } from '@/components/common';
 
 - ✅ **Phase 1 완료**: 알림 배지 시스템 구현 및 통합 완료
 - ✅ **Phase 2 완료**: 브라우저 알림 구현 및 통합 완료
-- ⏳ **Phase 3 대기**: 이메일 알림 (선택사항)
+- ✅ **Phase 3 완료**: 이메일 알림 구현 완료 (배포 및 설정 필요)
 
 ### 구현된 파일
 
@@ -350,4 +379,18 @@ import { NotificationPermissionButton } from '@/components/common';
 - `src/hooks/useBrowserNotifications.ts` - 브라우저 알림 훅
 - `src/components/common/NotificationPermissionButton.tsx` - 권한 요청 버튼
 
-현재 Phase 1과 2가 완료되어 기본적인 알림 기능과 브라우저 알림이 모두 작동합니다. Phase 3(이메일 알림)은 실제 사용자 피드백을 수집한 후 필요성을 판단하여 구현하는 것을 권장합니다.
+**Phase 3**:
+
+- `supabase/migrations/20250115000004_notification_settings.sql` - 알림 설정 테이블 마이그레이션
+- `supabase/functions/send-notifications/index.ts` - Edge Function (이메일 전송)
+- `supabase/functions/send-notifications/README.md` - Edge Function 문서
+- `src/app/api/notification-settings/route.ts` - 알림 설정 API 라우트
+
+**배포 필요 사항**:
+
+1. 마이그레이션 실행: `notification_settings` 테이블 생성
+2. Edge Function 배포: `supabase functions deploy send-notifications`
+3. 환경 변수 설정: `RESEND_API_KEY` 설정
+4. Cron Job 설정: Supabase Dashboard에서 매일 오전 9시 실행 스케줄 설정
+
+모든 Phase가 완료되어 기본적인 알림 기능, 브라우저 알림, 그리고 이메일 알림이 모두 구현되었습니다. 배포 및 설정을 완료하면 서버 사이드 이메일 알림도 작동합니다.

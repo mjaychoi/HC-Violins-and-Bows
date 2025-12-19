@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { Client } from '@/types';
 import { useDataState } from '@/hooks/useDataState';
 import { logError } from '@/utils/logger';
+import { apiFetch } from '@/utils/apiFetch';
 // Removed direct supabase import to reduce bundle size - using API routes instead
 
 export function useDashboardClients() {
@@ -41,7 +42,7 @@ export function useDashboardClients() {
         search: term,
         limit: '10',
       });
-      const response = await fetch(`/api/clients?${params.toString()}`);
+      const response = await apiFetch(`/api/clients?${params.toString()}`);
       if (!response.ok) {
         throw new Error(`Failed to search clients: ${response.statusText}`);
       }

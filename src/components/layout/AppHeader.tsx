@@ -29,7 +29,7 @@ export default function AppHeader({
     <div className="bg-white shadow-sm border-b">
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center py-4">
-          {/* ✅ FIXED: 토글 버튼을 w-16 슬롯 안에 넣고 가운데 정렬 (calc 해킹 제거) */}
+          {/* 좌측: 토글 + 브레드크럼 + 타이틀 */}
           <div className="flex items-center min-w-0">
             {/* Sidebar toggle slot: always 64px wide */}
             <div className="w-16 flex items-center justify-center">
@@ -53,11 +53,14 @@ export default function AppHeader({
                 </svg>
               </button>
             </div>
-            <h1 className="ml-2 sm:ml-4 text-xl sm:text-2xl font-semibold text-gray-900 truncate">
-              {title}
-            </h1>
+            <div className="flex flex-col ml-2 sm:ml-4 min-w-0">
+              <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 truncate">
+                {title}
+              </h1>
+            </div>
           </div>
 
+          {/* 우측: 액션/유저 영역 */}
           <div className="flex items-center space-x-2 sm:space-x-4">
             {headerActions && (
               <div className="hidden sm:flex items-center">{headerActions}</div>

@@ -9,13 +9,17 @@ import {
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import { logInfo } from '@/utils/logger';
 import { todayLocalYMD } from '@/utils/dateParsing';
+import { apiFetch } from '@/utils/apiFetch';
 import { modalStyles } from '@/components/common/modals/modalStyles';
 import { ModalHeader } from '@/components/common/modals/ModalHeader';
 
 interface SaleFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (payload: Omit<SalesHistory, 'id' | 'created_at'>) => Promise<void>;
+  onSubmit: (
+    payload: Omit<SalesHistory, 'id' | 'created_at'>,
+    options?: { instrumentStatusUpdated?: boolean; instrumentId?: string }
+  ) => Promise<void>;
   submitting: boolean;
   // 원클릭 판매를 위한 초기값
   initialInstrument?: Instrument | null;
@@ -117,6 +121,8 @@ export default function SaleForm({
 
   const [errors, setErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState(false);
+  const [instrumentStatusUpdateFailed, setInstrumentStatusUpdateFailed] =
+    useState(false);
   // FIXED: Removed unnecessary useEffect - errors already initialized as empty array
 
   useEffect(() => {
@@ -136,6 +142,7 @@ export default function SaleForm({
     if (!isOpen) {
       resetForm();
       setSuccess(false);
+      setInstrumentStatusUpdateFailed(false);
     }
   }, [isOpen, resetForm]);
 
@@ -170,7 +177,9 @@ export default function SaleForm({
     };
 
     try {
-      await onSubmit(payload);
+      let instrumentStatusUpdated = false;
+      let updatedInstrumentId: string | undefined;
+      let statusUpdateFailed = false;
 
       // 판매 기록 저장 후 악기 상태 자동 업데이트
       if (
@@ -179,7 +188,7 @@ export default function SaleForm({
         parsedPrice > 0
       ) {
         try {
-          const response = await fetch('/api/instruments', {
+          const response = await apiFetch('/api/instruments', {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
@@ -190,20 +199,32 @@ export default function SaleForm({
             }),
           });
 
-          if (!response.ok) {
+          if (response.ok) {
+            instrumentStatusUpdated = true;
+            updatedInstrumentId = formData.instrument_id;
+          } else {
             console.warn('Failed to update instrument status to Sold');
+            statusUpdateFailed = true;
           }
         } catch (error) {
           console.warn('Failed to update instrument status:', error);
+          statusUpdateFailed = true;
           // 에러가 발생해도 판매 기록은 성공했으므로 계속 진행
         }
       }
 
+      await onSubmit(payload, {
+        instrumentStatusUpdated,
+        instrumentId: updatedInstrumentId,
+      });
+
       // UX: Show success state instead of immediately closing
       setSuccess(true);
+      setInstrumentStatusUpdateFailed(statusUpdateFailed);
     } catch {
       // Error handling is done by parent
       setSuccess(false);
+      setInstrumentStatusUpdateFailed(false);
     }
   };
 
@@ -254,6 +275,13 @@ export default function SaleForm({
                   <h4 className="text-sm font-medium text-green-800">
                     Sale recorded successfully!
                   </h4>
+                  {instrumentStatusUpdateFailed && (
+                    <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+                      <strong>Note:</strong> The sale was recorded, but the
+                      instrument status could not be updated to
+                      &quot;Sold&quot;. You may need to update it manually.
+                    </div>
+                  )}
                   <p className="mt-1 text-sm text-green-700">
                     What would you like to do next?
                   </p>
@@ -282,6 +310,7 @@ export default function SaleForm({
                       onClick={() => {
                         resetForm();
                         setSuccess(false);
+                        setInstrumentStatusUpdateFailed(false);
                         onClose();
                       }}
                       className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors"

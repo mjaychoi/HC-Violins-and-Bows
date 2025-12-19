@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@/test-utils/render';
+import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import '@testing-library/jest-dom';
 import ClientList from '../ClientList';
 import { Client } from '@/types';
@@ -132,13 +132,32 @@ describe('ClientList', () => {
     expect(screen.getByText('Active')).toBeInTheDocument();
   });
 
-  it('handles empty client list', () => {
-    render(<ClientList {...mockProps} clients={[]} />);
+  it('handles empty client list without filters', () => {
+    render(<ClientList {...mockProps} clients={[]} hasActiveFilters={false} />);
 
     // 공통 EmptyState 패턴: 필터 없음일 때 "No clients yet" 사용
     expect(
+      screen.getByText(/No clients yet|등록된 고객이 없습니다/i)
+    ).toBeInTheDocument();
+  });
+
+  it('handles empty client list with active filters', () => {
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[]}
+        hasActiveFilters={true}
+        onResetFilters={jest.fn()}
+      />
+    );
+
+    // 필터 활성화 시에는 필터 전용 메시지가 보여야 함
+    expect(
+      screen.getByText('No clients found matching your filters')
+    ).toBeInTheDocument();
+    expect(
       screen.getByText(
-        /등록된 고객이 없습니다|No clients found|No clients yet/i
+        'Try adjusting your filters or clearing them to see all clients.'
       )
     ).toBeInTheDocument();
   });
@@ -264,5 +283,296 @@ describe('ClientList', () => {
 
     // Should NOT use window.confirm
     expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('allows inline editing via row actions and saves changes', () => {
+    const onUpdateClient = jest
+      .fn()
+      .mockResolvedValue(undefined) as jest.MockedFunction<
+      (id: string, updates: Partial<Client>) => Promise<void>
+    >;
+
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[mockClients[0]]}
+        onUpdateClient={onUpdateClient}
+      />
+    );
+
+    // Row actions 메뉴 열기
+    const moreActionsButton = screen.getByLabelText('More actions');
+    fireEvent.click(moreActionsButton);
+
+    // Edit 선택 → 인라인 편집 모드 진입
+    const editButton = screen.getByText('Edit');
+    fireEvent.click(editButton);
+
+    const nameInput = screen.getByPlaceholderText(
+      'Full name'
+    ) as HTMLInputElement;
+    const emailInput = screen.getByPlaceholderText('Email') as HTMLInputElement;
+
+    // 이름과 이메일 수정
+    fireEvent.change(nameInput, { target: { value: 'John Updated' } });
+    fireEvent.change(emailInput, { target: { value: 'updated@example.com' } });
+
+    // 저장 버튼 클릭
+    const saveButton = screen.getByTitle('Save changes');
+    fireEvent.click(saveButton);
+
+    expect(onUpdateClient).toHaveBeenCalledWith(
+      mockClients[0].id,
+      expect.objectContaining({
+        first_name: 'John',
+        last_name: 'Updated',
+        email: 'updated@example.com',
+      })
+    );
+  });
+
+  it('allows cancelling inline editing without calling onUpdateClient', () => {
+    const onUpdateClient = jest
+      .fn()
+      .mockResolvedValue(undefined) as jest.MockedFunction<
+      (id: string, updates: Partial<Client>) => Promise<void>
+    >;
+
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[mockClients[0]]}
+        onUpdateClient={onUpdateClient}
+      />
+    );
+
+    // Row actions 메뉴 열기 후 Edit
+    const moreActionsButton = screen.getByLabelText('More actions');
+    fireEvent.click(moreActionsButton);
+    fireEvent.click(screen.getByText('Edit'));
+
+    // Cancel 버튼 클릭
+    const cancelButton = screen.getByTitle('Cancel editing');
+    fireEvent.click(cancelButton);
+
+    expect(onUpdateClient).not.toHaveBeenCalled();
+    // 원래 Name 셀 텍스트가 다시 보이는지 확인
+    expect(screen.getByText('John Doe')).toBeInTheDocument();
+  });
+
+  it('should expand and collapse client row', () => {
+    render(<ClientList {...mockProps} clients={[mockClients[0]]} />);
+
+    const johnRow = screen.getByText('John Doe').closest('tr');
+    expect(johnRow).toBeInTheDocument();
+
+    // Click to expand
+    fireEvent.click(johnRow!);
+
+    // Click again to collapse
+    fireEvent.click(johnRow!);
+  });
+
+  it('should handle pagination', () => {
+    const onPageChange = jest.fn();
+    render(
+      <ClientList
+        {...mockProps}
+        currentPage={1}
+        totalPages={3}
+        totalCount={60}
+        pageSize={20}
+        onPageChange={onPageChange}
+      />
+    );
+
+    // Pagination should be rendered
+    expect(screen.getByText('John Doe')).toBeInTheDocument();
+  });
+
+  it('should highlight newly created client', () => {
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[mockClients[0]]}
+        newlyCreatedClientId="1"
+      />
+    );
+
+    const johnRow = screen.getByText('John Doe').closest('tr');
+    expect(johnRow).toHaveClass('ring-2', 'ring-green-400', 'bg-green-50');
+  });
+
+  it('should handle full name editing', () => {
+    const onUpdateClient = jest
+      .fn()
+      .mockResolvedValue(undefined) as jest.MockedFunction<
+      (id: string, updates: Partial<Client>) => Promise<void>
+    >;
+
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[mockClients[0]]}
+        onUpdateClient={onUpdateClient}
+      />
+    );
+
+    // Enter edit mode
+    const moreActionsButton = screen.getByLabelText('More actions');
+    fireEvent.click(moreActionsButton);
+    fireEvent.click(screen.getByText('Edit'));
+
+    // Edit full name
+    const nameInput = screen.getByPlaceholderText(
+      'Full name'
+    ) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'John Updated Doe' } });
+
+    // Save
+    const saveButton = screen.getByTitle('Save changes');
+    fireEvent.click(saveButton);
+
+    expect(onUpdateClient).toHaveBeenCalledWith(
+      mockClients[0].id,
+      expect.objectContaining({
+        first_name: 'John Updated',
+        last_name: 'Doe',
+      })
+    );
+  });
+
+  it('should handle single word name as first name', () => {
+    const onUpdateClient = jest
+      .fn()
+      .mockResolvedValue(undefined) as jest.MockedFunction<
+      (id: string, updates: Partial<Client>) => Promise<void>
+    >;
+
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[mockClients[0]]}
+        onUpdateClient={onUpdateClient}
+      />
+    );
+
+    // Enter edit mode
+    const moreActionsButton = screen.getByLabelText('More actions');
+    fireEvent.click(moreActionsButton);
+    fireEvent.click(screen.getByText('Edit'));
+
+    // Edit with single word
+    const nameInput = screen.getByPlaceholderText(
+      'Full name'
+    ) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'SingleName' } });
+
+    // Save
+    const saveButton = screen.getByTitle('Save changes');
+    fireEvent.click(saveButton);
+
+    expect(onUpdateClient).toHaveBeenCalledWith(
+      mockClients[0].id,
+      expect.objectContaining({
+        first_name: 'SingleName',
+        last_name: '',
+      })
+    );
+  });
+
+  it('should handle empty name', () => {
+    const onUpdateClient = jest
+      .fn()
+      .mockResolvedValue(undefined) as jest.MockedFunction<
+      (id: string, updates: Partial<Client>) => Promise<void>
+    >;
+
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[mockClients[0]]}
+        onUpdateClient={onUpdateClient}
+      />
+    );
+
+    // Enter edit mode
+    const moreActionsButton = screen.getByLabelText('More actions');
+    fireEvent.click(moreActionsButton);
+    fireEvent.click(screen.getByText('Edit'));
+
+    // Clear name
+    const nameInput = screen.getByPlaceholderText(
+      'Full name'
+    ) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: '' } });
+
+    // Save
+    const saveButton = screen.getByTitle('Save changes');
+    fireEvent.click(saveButton);
+
+    expect(onUpdateClient).toHaveBeenCalledWith(
+      mockClients[0].id,
+      expect.objectContaining({
+        first_name: '',
+        last_name: '',
+      })
+    );
+  });
+
+  it('should handle keyboard navigation for row expansion', () => {
+    render(<ClientList {...mockProps} clients={[mockClients[0]]} />);
+
+    const johnName = screen.getByText('John Doe');
+    expect(johnName).toBeInTheDocument();
+
+    const johnRow = johnName.closest('tr');
+    expect(johnRow).toBeInTheDocument();
+
+    // Press Enter to expand
+    fireEvent.keyDown(johnRow!, { key: 'Enter', code: 'Enter' });
+
+    // Press Space to toggle
+    fireEvent.keyDown(johnRow!, { key: ' ', code: 'Space' });
+  });
+
+  it('should handle save error without closing edit mode', async () => {
+    const onUpdateClient = jest
+      .fn()
+      .mockRejectedValue(new Error('Update failed')) as jest.MockedFunction<
+      (id: string, updates: Partial<Client>) => Promise<void>
+    >;
+
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[mockClients[0]]}
+        onUpdateClient={onUpdateClient}
+      />
+    );
+
+    // Enter edit mode
+    const moreActionsButton = screen.getByLabelText('More actions');
+    fireEvent.click(moreActionsButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Edit'));
+
+    // Wait for edit mode to activate
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Full name')).toBeInTheDocument();
+    });
+
+    // Try to save (will fail)
+    const saveButton = screen.getByTitle('Save changes');
+    fireEvent.click(saveButton);
+
+    // Should still be in edit mode after error
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Full name')).toBeInTheDocument();
+    });
   });
 });

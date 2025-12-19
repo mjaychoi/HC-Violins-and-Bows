@@ -1,12 +1,18 @@
 import { renderHook, act, waitFor } from '@/test-utils/render';
 import { AuthProvider, useAuth } from '../AuthContext';
 import { useRouter } from 'next/navigation';
+import { logError, logApiRequest } from '@/utils/logger';
 
 const mockGetSupabaseClient = jest.fn();
 const mockGetSupabaseClientSync = jest.fn();
 jest.mock('@/lib/supabase-client', () => ({
   getSupabaseClient: () => mockGetSupabaseClient(),
   getSupabaseClientSync: () => mockGetSupabaseClientSync(),
+}));
+jest.mock('@/utils/logger', () => ({
+  logError: jest.fn(),
+  logInfo: jest.fn(),
+  logApiRequest: jest.fn(),
 }));
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
@@ -219,5 +225,134 @@ describe('AuthContext', () => {
     });
 
     expect(mockRefreshSession).toHaveBeenCalled();
+  });
+
+  it('handles invalid refresh token error during loadInitialSession', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: null },
+      error: { message: 'Invalid Refresh Token', name: 'AuthError' },
+    } as any);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider>{children}</AuthProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    // Invalid refresh token 시 signOut 호출 및 세션 클리어 로직이 실행되어야 함
+    expect(mockSignOut).toHaveBeenCalled();
+    expect(result.current.session).toBeNull();
+    expect(result.current.user).toBeNull();
+  });
+
+  it('logs and clears session on network error during loadInitialSession', async () => {
+    mockGetSession.mockRejectedValue(
+      new Error('Failed to fetch: network error')
+    );
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider>{children}</AuthProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    // 네트워크 에러 시에도 세션을 비우고 계속 진행
+    expect(logError).toHaveBeenCalled();
+    expect(result.current.session).toBeNull();
+    expect(result.current.user).toBeNull();
+  });
+
+  it('logs and returns error when signIn fails', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+
+    const signInError = { message: 'Invalid credentials' } as any;
+    mockSignIn.mockResolvedValue({
+      data: { session: null, user: null },
+      error: signInError,
+    });
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider>{children}</AuthProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    let response: any = null;
+    await act(async () => {
+      response = await result.current.signIn('test@example.com', 'wrong-pass');
+    });
+
+    expect(response?.error).toBe(signInError);
+    expect(logApiRequest).toHaveBeenCalledWith(
+      'POST',
+      'auth/signin',
+      undefined,
+      expect.any(Number),
+      'AuthContext',
+      expect.objectContaining({
+        operation: 'signIn',
+        error: true,
+      })
+    );
+    expect(logError).toHaveBeenCalledWith(
+      'Sign in failed',
+      signInError,
+      'AuthContext',
+      expect.objectContaining({ email: 'test@example.com' })
+    );
+  });
+
+  it('clears session and redirects on invalid refresh token during refreshSession', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+
+    const refreshError = {
+      message: 'Invalid Refresh Token',
+    } as any;
+
+    mockRefreshSession.mockResolvedValue({
+      data: { session: null },
+      error: refreshError,
+    });
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider>{children}</AuthProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.refreshSession();
+    });
+
+    // refreshSession 내에서 invalid refresh token 처리 브랜치 실행 확인
+    expect(logError).toHaveBeenCalledWith(
+      'Session refresh failed',
+      refreshError,
+      'AuthContext'
+    );
+    expect(mockSignOut).toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith('/');
   });
 });

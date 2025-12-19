@@ -1,3 +1,4 @@
+import React from 'react';
 import { Instrument } from '@/types';
 import { getStatusBadgeColor } from '@/utils/colorTokens';
 
@@ -7,7 +8,7 @@ export interface StatusBadgeProps {
   size?: 'sm' | 'md';
 }
 
-export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
+function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
   const finalClassName = getStatusBadgeColor(status);
 
   const iconMap = {
@@ -23,14 +24,19 @@ export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
   const paddingClasses =
     size === 'sm' ? 'px-2 py-0.5 text-[11px]' : 'px-2 py-1 text-xs';
 
+  // ✅ FIXED: size="sm"일 때 아이콘 숨김 (테이블에서 시각 잡음 감소)
+  const showIcon = size !== 'sm';
+
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full ${paddingClasses} ${finalClassName}`}
+      className={`inline-flex items-center gap-1 rounded-full ${paddingClasses} ${finalClassName} ${size === 'sm' ? 'max-w-[120px] truncate' : ''}`}
       aria-label={`Status: ${status}`}
       title={`Status: ${status}`}
     >
-      <span aria-hidden="true">{icon}</span>
-      {status}
+      {showIcon && <span aria-hidden="true">{icon}</span>}
+      <span className={size === 'sm' ? 'truncate' : ''}>{status}</span>
     </span>
   );
 }
+
+export default React.memo(StatusBadge);

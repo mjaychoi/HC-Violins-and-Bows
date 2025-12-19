@@ -49,51 +49,9 @@ export function formatTimestamp(
   });
 }
 
-/**
- * @deprecated Use formatDateOnly or formatTimestamp instead
- * This function mixes date-only and timestamp logic, causing UTC/local confusion
- */
-export function formatDate(
-  date: string | Date,
-  style: keyof typeof dateFormats = 'short'
-): string {
-  // Legacy support: try to detect if it's date-only or timestamp
-  if (typeof date === 'string') {
-    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(date);
-    if (isDateOnly) {
-      return formatDateOnly(
-        date,
-        style === 'iso' ? 'iso' : style === 'long' ? 'long' : 'short'
-      );
-    }
-    // Timestamp
-    if (style === 'time' || style === 'datetime' || style === 'display') {
-      return formatTimestamp(date, style === 'time' ? 'time' : 'datetime');
-    }
-    // For other styles, treat as date-only
-    return formatDateOnly(
-      toDateOnly(date),
-      style === 'iso' ? 'iso' : style === 'long' ? 'long' : 'short'
-    );
-  }
-
-  // Date object: check if it has time component
-  const hasTime =
-    date.getHours() !== 0 || date.getMinutes() !== 0 || date.getSeconds() !== 0;
-  if (
-    hasTime &&
-    (style === 'time' || style === 'datetime' || style === 'display')
-  ) {
-    return formatTimestamp(date, style === 'time' ? 'time' : 'datetime');
-  }
-
-  // Date-only
-  const ymd = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-  return formatDateOnly(
-    ymd,
-    style === 'iso' ? 'iso' : style === 'long' ? 'long' : 'short'
-  );
-}
+// ✅ REMOVED: formatDate function deleted - use formatDateOnly or formatTimestamp instead
+// This function mixed date-only and timestamp logic, causing UTC/local confusion
+// All usages have been migrated to formatDateOnly (for YYYY-MM-DD strings) or formatTimestamp (for Date objects/ISO strings)
 
 export function formatRelativeTime(date: string | Date): string {
   const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -106,7 +64,11 @@ export function formatRelativeTime(date: string | Date): string {
   if (diffInSeconds < 2592000)
     return `${Math.floor(diffInSeconds / 86400)}d ago`;
 
-  return formatDate(dateObj, 'short');
+  // ✅ FIXED: Use formatDateOnly for date-only strings, formatTimestamp for timestamps
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return formatDateOnly(date);
+  }
+  return formatTimestamp(dateObj, 'datetime');
 }
 
 // Currency formatting
@@ -411,7 +373,8 @@ export function formatValidationErrors(errors: Record<string, string>): string {
 
 // Export all formatting functions
 export const formatters = {
-  date: formatDate,
+  dateOnly: formatDateOnly,
+  timestamp: formatTimestamp,
   relativeTime: formatRelativeTime,
   currency: formatCurrency,
   number: formatNumber,

@@ -11,6 +11,7 @@ import React, {
   Fragment,
   forwardRef,
   useMemo,
+  useEffect,
 } from 'react';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
@@ -21,6 +22,14 @@ import {
   TagBadge,
   InterestBadge,
 } from '@/components/common';
+import { useInlineEdit } from '@/hooks/useInlineEdit';
+import {
+  InlineSelectField,
+  InlineEditActions,
+  InlineEditButton,
+} from '@/components/common/InlineEditFields';
+import { logInfo } from '@/utils/logger';
+import { INTEREST_LEVELS } from '../constants';
 import dynamic from 'next/dynamic';
 
 const MessageComposer = dynamic(
@@ -385,12 +394,17 @@ interface ClientListProps {
   onResetFilters?: () => void;
   /** 새 클라이언트 추가 CTA가 필요할 때 */
   onAddClient?: () => void;
+  /** 새로 생성된 클라이언트 ID (스크롤/하이라이트용) */
+  newlyCreatedClientId?: string | null;
+  /** 새로 생성된 클라이언트가 표시되었을 때 호출되는 콜백 */
+  onNewlyCreatedClientShown?: () => void;
+  /** URL에서 선택된 클라이언트 ID (스크롤/하이라이트용) */
+  selectedClientIdFromURL?: string | null;
 }
 
 const ClientList = memo(function ClientList({
   clients,
   clientInstruments,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onClientClick: _onClientClick, // Prefixed with _ to indicate intentionally unused
   onUpdateClient,
   onDeleteClient,
@@ -407,11 +421,31 @@ const ClientList = memo(function ClientList({
   hasActiveFilters = false,
   onResetFilters,
   onAddClient,
+  newlyCreatedClientId,
+  onNewlyCreatedClientShown,
+  selectedClientIdFromURL,
 }: ClientListProps) {
+  // Keep interface-compatible prop referenced without using it.
+  void _onClientClick;
   const [editingClient, setEditingClient] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Client>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+
+  // 인라인 편집 훅 (interest와 tags만 별도 편집)
+  const inlineEditInterest = useInlineEdit<Client>({
+    onSave: async (id, data) => {
+      await onUpdateClient(id, { interest: data.interest as string });
+    },
+    highlightDuration: 2000,
+  });
+
+  const inlineEditTags = useInlineEdit<Client>({
+    onSave: async (id, data) => {
+      await onUpdateClient(id, { tags: data.tags as string[] });
+    },
+    highlightDuration: 2000,
+  });
 
   // Fetch contact info for all clients
   const clientIds = useMemo(() => clients.map(c => c.id), [clients]);
@@ -467,6 +501,92 @@ const ClientList = memo(function ClientList({
       setIsSaving(false);
     }
   }, [editingClient, editData, onUpdateClient]);
+
+  // Scroll to and highlight newly created client
+  useEffect(() => {
+    if (!newlyCreatedClientId || loading) return;
+
+    let highlightTimeout: NodeJS.Timeout | null = null;
+
+    // Check if the client is in the current page
+    const clientIndex = clients.findIndex(
+      client => client.id === newlyCreatedClientId
+    );
+    if (clientIndex === -1) {
+      // Client not in current page - might be filtered out or on different page
+      // Wait a bit for data to update, then try again
+      const retryTimeout = setTimeout(() => {
+        const retryElement = document.querySelector(
+          `[data-client-id="${newlyCreatedClientId}"]`
+        );
+        if (!retryElement && onNewlyCreatedClientShown) {
+          // Client still not found - clear the ID to stop retrying
+          onNewlyCreatedClientShown();
+        }
+      }, 500);
+      return () => clearTimeout(retryTimeout);
+    }
+
+    // Wait for DOM to update
+    const timeoutId = setTimeout(() => {
+      const element = document.querySelector(
+        `[data-client-id="${newlyCreatedClientId}"]`
+      );
+      if (element) {
+        // Scroll to element with smooth behavior
+        element.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+
+        // Remove highlight after animation completes
+        highlightTimeout = setTimeout(() => {
+          if (onNewlyCreatedClientShown) {
+            onNewlyCreatedClientShown();
+          }
+        }, 3000); // Keep highlight for 3 seconds
+      }
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (highlightTimeout) {
+        clearTimeout(highlightTimeout);
+      }
+    };
+  }, [newlyCreatedClientId, clients, loading, onNewlyCreatedClientShown]);
+
+  // Scroll to and highlight client from URL parameter
+  useEffect(() => {
+    if (!selectedClientIdFromURL || loading) return;
+
+    // Check if the client is in the current page
+    const clientIndex = clients.findIndex(
+      client => client.id === selectedClientIdFromURL
+    );
+    if (clientIndex === -1) {
+      // Client not in current page - might be filtered out or on different page
+      return;
+    }
+
+    // Wait for DOM to update
+    const timeoutId = setTimeout(() => {
+      const element = document.querySelector(
+        `[data-client-id="${selectedClientIdFromURL}"]`
+      );
+      if (element) {
+        // Scroll to element with smooth behavior
+        element.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [selectedClientIdFromURL, clients, loading]);
 
   const handleEditFieldChange = useCallback(
     (field: keyof Client, value: Client[keyof Client] | string | string[]) => {
@@ -525,6 +645,26 @@ const ClientList = memo(function ClientList({
         actionButton={
           !hasActiveFilters && onAddClient
             ? { label: 'Add client', onClick: onAddClient }
+            : undefined
+        }
+        guideSteps={
+          !hasActiveFilters
+            ? [
+                '클라이언트 이름과 연락처를 입력하세요',
+                '태그와 관심도를 설정하여 분류하세요',
+                '악기와 연결하려면 Connections 페이지를 사용하세요',
+              ]
+            : undefined
+        }
+        helpLink={
+          !hasActiveFilters
+            ? {
+                label: '클라이언트 관리 방법 알아보기',
+                onClick: () => {
+                  // TODO: 도움말 모달 또는 페이지로 이동
+                  logInfo('Show help guide');
+                },
+              }
             : undefined
         }
       />
@@ -628,9 +768,14 @@ const ClientList = memo(function ClientList({
 
                   const isExpanded = expandedClientId === client.id;
 
+                  const isNewlyCreated = newlyCreatedClientId === client.id;
+                  const isSelectedFromURL =
+                    selectedClientIdFromURL === client.id;
+
                   return (
                     <Fragment key={client.id}>
                       <tr
+                        data-client-id={client.id}
                         onClick={() => {
                           // ✅ FIXED: Only handle expand, not onClientClick (UX improvement)
                           if (editingClient === client.id) return;
@@ -642,7 +787,9 @@ const ClientList = memo(function ClientList({
                           classNames.tableRow,
                           'cursor-pointer group',
                           editingClient === client.id ? 'bg-blue-50' : '',
-                          'hover:bg-blue-50/30 transition-colors'
+                          'hover:bg-blue-50/30 transition-colors',
+                          isNewlyCreated && 'ring-2 ring-green-400 bg-green-50',
+                          isSelectedFromURL && 'ring-2 ring-blue-400 bg-blue-50'
                         )}
                         role="button"
                         tabIndex={0}
@@ -825,8 +972,17 @@ const ClientList = memo(function ClientList({
                             </div>
                           )}
                         </td>
-                        <td className={classNames.tableCell}>
+                        <td
+                          className={cn(
+                            classNames.tableCell,
+                            inlineEditTags.editingId === client.id &&
+                              'ring-2 ring-blue-200 bg-blue-50',
+                            inlineEditTags.savedId === client.id &&
+                              'ring-2 ring-green-200 bg-green-50'
+                          )}
+                        >
                           {editingClient === client.id ? (
+                            // 전체 편집 모드: 기존 ClientTagSelector 사용
                             <div className="min-w-[150px]">
                               <ClientTagSelector
                                 selectedTags={editData.tags || []}
@@ -844,16 +1000,72 @@ const ClientList = memo(function ClientList({
                                 stopPropagation
                               />
                             </div>
+                          ) : inlineEditTags.editingId === client.id ? (
+                            // 인라인 편집 모드: tags만 편집
+                            <div className="min-w-[150px] space-y-2">
+                              <ClientTagSelector
+                                selectedTags={
+                                  (inlineEditTags.editData.tags as string[]) ||
+                                  client.tags ||
+                                  []
+                                }
+                                onChange={next =>
+                                  inlineEditTags.updateField('tags', next)
+                                }
+                                className="space-y-1.5"
+                                optionClassName="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
+                                checkboxClassName="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                                labelClassName="ml-2 text-xs font-medium"
+                                getLabelClassName={tag => getTagTextColor(tag)}
+                                stopPropagation
+                              />
+                              <InlineEditActions
+                                isSaving={inlineEditTags.isSaving}
+                                onSave={inlineEditTags.saveEditing}
+                                onCancel={inlineEditTags.cancelEditing}
+                                className="justify-end"
+                              />
+                            </div>
                           ) : (
-                            <div className="flex flex-wrap gap-1 min-w-[120px]">
-                              {sortTags([...(client.tags ?? [])]).map(tag => (
-                                <TagBadge key={tag} tag={tag} context="table" />
-                              ))}
+                            // 보기 모드: 편집 아이콘 버튼과 태그 표시
+                            <div className="flex items-start gap-2 min-w-[120px]">
+                              <div className="flex flex-wrap gap-1 flex-1">
+                                {sortTags([...(client.tags ?? [])]).map(tag => (
+                                  <TagBadge
+                                    key={tag}
+                                    tag={tag}
+                                    context="table"
+                                  />
+                                ))}
+                                {(!client.tags || client.tags.length === 0) && (
+                                  <span className="text-gray-400 text-xs">
+                                    No tags
+                                  </span>
+                                )}
+                              </div>
+                              <InlineEditButton
+                                onClick={() =>
+                                  inlineEditTags.startEditing(client.id, {
+                                    tags: client.tags || [],
+                                  })
+                                }
+                                aria-label="Edit tags"
+                                size="sm"
+                              />
                             </div>
                           )}
                         </td>
-                        <td className={classNames.tableCell}>
+                        <td
+                          className={cn(
+                            classNames.tableCell,
+                            inlineEditInterest.editingId === client.id &&
+                              'ring-2 ring-blue-200 bg-blue-50',
+                            inlineEditInterest.savedId === client.id &&
+                              'ring-2 ring-green-200 bg-green-50'
+                          )}
+                        >
                           {editingClient === client.id ? (
+                            // 전체 편집 모드: 기존 InterestSelector 사용
                             <div className="min-w-[120px]">
                               <InterestSelector
                                 value={editData.interest || ''}
@@ -865,16 +1077,63 @@ const ClientList = memo(function ClientList({
                                 stopPropagation
                               />
                             </div>
+                          ) : inlineEditInterest.editingId === client.id ? (
+                            // 인라인 편집 모드: interest만 편집
+                            <div className="min-w-[120px] space-y-2">
+                              <InlineSelectField
+                                isEditing={true}
+                                value={
+                                  (inlineEditInterest.editData
+                                    .interest as string) ||
+                                  client.interest ||
+                                  null
+                                }
+                                onChange={value =>
+                                  inlineEditInterest.updateField(
+                                    'interest',
+                                    value
+                                  )
+                                }
+                                options={INTEREST_LEVELS.map(level => ({
+                                  value: level,
+                                  label: level,
+                                }))}
+                                placeholder="Select interest"
+                                editingClassName="w-full"
+                                onEnter={inlineEditInterest.saveEditing}
+                                onEscape={inlineEditInterest.cancelEditing}
+                              />
+                              <InlineEditActions
+                                isSaving={inlineEditInterest.isSaving}
+                                onSave={inlineEditInterest.saveEditing}
+                                onCancel={inlineEditInterest.cancelEditing}
+                                className="justify-end"
+                              />
+                            </div>
                           ) : (
-                            <div className="text-sm min-w-[100px]">
-                              {client.interest ? (
-                                <InterestBadge
-                                  interest={client.interest}
-                                  context="table"
-                                />
-                              ) : (
-                                <span className="text-gray-400">—</span>
-                              )}
+                            // 보기 모드: 편집 아이콘 버튼과 interest 표시
+                            <div className="flex items-center gap-2 min-w-[100px]">
+                              <div className="flex-1">
+                                {client.interest ? (
+                                  <InterestBadge
+                                    interest={client.interest}
+                                    context="table"
+                                  />
+                                ) : (
+                                  <span className="text-sm text-gray-400">
+                                    —
+                                  </span>
+                                )}
+                              </div>
+                              <InlineEditButton
+                                onClick={() =>
+                                  inlineEditInterest.startEditing(client.id, {
+                                    interest: client.interest || '',
+                                  })
+                                }
+                                aria-label="Edit interest"
+                                size="sm"
+                              />
                             </div>
                           )}
                         </td>

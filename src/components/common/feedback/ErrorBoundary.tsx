@@ -100,8 +100,14 @@ export default class ErrorBoundary extends Component<
     const { resetKeys, resetOnPropsChange } = this.props;
     const { hasError } = this.state;
 
-    if (hasError && prevProps.resetKeys !== resetKeys) {
-      if (resetOnPropsChange && resetKeys) {
+    if (hasError && resetOnPropsChange && resetKeys) {
+      // ✅ FIXED: 배열 참조 비교 대신 값 비교로 변경
+      const keysChanged =
+        !prevProps.resetKeys ||
+        prevProps.resetKeys.length !== resetKeys.length ||
+        prevProps.resetKeys.some((key, index) => key !== resetKeys[index]);
+
+      if (keysChanged) {
         this.resetErrorBoundary();
       }
     }

@@ -1,15 +1,22 @@
 'use client';
 
 import React from 'react';
-import type { MaintenanceTask } from '@/types';
-import { formatDate } from '@/utils/formatUtils';
+import type { MaintenanceTask, TaskPriority, TaskStatus } from '@/types';
+import { formatDateOnly } from '@/utils/formatUtils';
 import {
   getPriorityPillClasses,
   getStatusColorClasses,
   getStatusDotClasses,
   getDateStatus,
 } from '@/utils/tasks/style';
+import { getStatusLabel } from '@/utils/calendar';
 import EmptyState from '@/components/common/empty-state/EmptyState';
+import { useInlineEdit } from '@/hooks/useInlineEdit';
+import {
+  InlineSelectField,
+  InlineEditActions,
+} from '@/components/common/InlineEditFields';
+import { cn } from '@/utils/classNames';
 
 interface TaskListProps {
   tasks: MaintenanceTask[];
@@ -25,6 +32,10 @@ interface TaskListProps {
   >;
   onTaskClick?: (task: MaintenanceTask) => void;
   onTaskDelete?: (task: MaintenanceTask) => void;
+  onTaskUpdate?: (
+    id: string,
+    updates: Partial<MaintenanceTask>
+  ) => Promise<void>;
   /** 필터가 활성화되어 있는지 여부 (빈 상태 문구/버튼 제어) */
   hasActiveFilters?: boolean;
   /** 필터 리셋 핸들러 (필터 활성 시에만 사용) */
@@ -38,10 +49,43 @@ export default function TaskList({
   instruments,
   onTaskClick,
   onTaskDelete,
+  onTaskUpdate,
   hasActiveFilters = false,
   onResetFilters,
   onAddTask,
 }: TaskListProps) {
+  // 인라인 편집 훅 (priority와 status)
+  const inlineEditPriority = useInlineEdit<MaintenanceTask>({
+    onSave: async (id, data) => {
+      if (onTaskUpdate && data.priority) {
+        await onTaskUpdate(id, { priority: data.priority as TaskPriority });
+      }
+    },
+    highlightDuration: 2000,
+  });
+
+  const inlineEditStatus = useInlineEdit<MaintenanceTask>({
+    onSave: async (id, data) => {
+      if (onTaskUpdate && data.status) {
+        await onTaskUpdate(id, { status: data.status as TaskStatus });
+      }
+    },
+    highlightDuration: 2000,
+  });
+
+  const priorityOptions: Array<{ value: TaskPriority; label: string }> = [
+    { value: 'low', label: 'Low' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'high', label: 'High' },
+    { value: 'urgent', label: 'Urgent' },
+  ];
+
+  const statusOptions: Array<{ value: TaskStatus; label: string }> = [
+    { value: 'pending', label: 'Pending' },
+    { value: 'in_progress', label: 'In Progress' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'cancelled', label: 'Cancelled' },
+  ];
   if (tasks.length === 0) {
     return (
       <EmptyState
@@ -113,24 +157,98 @@ export default function TaskList({
                           <h4 className="font-semibold text-gray-900 text-base">
                             {task.title}
                           </h4>
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getPriorityPillClasses(
-                              task.priority
-                            )}`}
+                          <div
+                            className="inline-flex items-center gap-1"
+                            onClick={e => e.stopPropagation()}
                           >
-                            {task.priority}
-                          </span>
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColorClasses(
-                              task.status,
-                              {
-                                isOverdue: dateStatus.status === 'overdue',
-                                isUpcoming: dateStatus.status === 'upcoming',
-                              }
-                            )}`}
+                            {inlineEditPriority.editingId === task.id ? (
+                              <div className="flex items-center gap-2">
+                                <InlineSelectField<TaskPriority>
+                                  isEditing={true}
+                                  value={task.priority}
+                                  onChange={value =>
+                                    inlineEditPriority.updateField(
+                                      'priority',
+                                      value
+                                    )
+                                  }
+                                  options={priorityOptions}
+                                  className="text-xs"
+                                  editingClassName="border-gray-300"
+                                />
+                                <InlineEditActions
+                                  isSaving={inlineEditPriority.isSaving}
+                                  onSave={inlineEditPriority.saveEditing}
+                                  onCancel={inlineEditPriority.cancelEditing}
+                                  className="gap-1"
+                                />
+                              </div>
+                            ) : (
+                              <span
+                                className={cn(
+                                  'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity',
+                                  getPriorityPillClasses(task.priority)
+                                )}
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  inlineEditPriority.startEditing(task.id, {
+                                    priority: task.priority,
+                                  });
+                                }}
+                                title="Click to edit priority"
+                              >
+                                {task.priority}
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            className="inline-flex items-center gap-1"
+                            onClick={e => e.stopPropagation()}
                           >
-                            {task.status.replace('_', ' ')}
-                          </span>
+                            {inlineEditStatus.editingId === task.id ? (
+                              <div className="flex items-center gap-2">
+                                <InlineSelectField<TaskStatus>
+                                  isEditing={true}
+                                  value={task.status}
+                                  onChange={value =>
+                                    inlineEditStatus.updateField(
+                                      'status',
+                                      value
+                                    )
+                                  }
+                                  options={statusOptions}
+                                  className="text-xs"
+                                  editingClassName="border-gray-300"
+                                />
+                                <InlineEditActions
+                                  isSaving={inlineEditStatus.isSaving}
+                                  onSave={inlineEditStatus.saveEditing}
+                                  onCancel={inlineEditStatus.cancelEditing}
+                                  className="gap-1"
+                                />
+                              </div>
+                            ) : (
+                              <span
+                                className={cn(
+                                  'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity',
+                                  getStatusColorClasses(task.status, {
+                                    isOverdue: dateStatus.status === 'overdue',
+                                    isUpcoming:
+                                      dateStatus.status === 'upcoming',
+                                  })
+                                )}
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  inlineEditStatus.startEditing(task.id, {
+                                    status: task.status,
+                                  });
+                                }}
+                                title="Click to edit status"
+                              >
+                                {getStatusLabel(task.status)}
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Instrument Info */}
@@ -224,9 +342,7 @@ export default function TaskList({
                                 />
                               </svg>
                               <span className="font-medium">Received:</span>
-                              <span>
-                                {formatDate(task.received_date, 'short')}
-                              </span>
+                              <span>{formatDateOnly(task.received_date)}</span>
                             </div>
                           )}
 
@@ -248,7 +364,7 @@ export default function TaskList({
                               <span className="font-medium">
                                 Due (Customer):
                               </span>
-                              <span>{formatDate(task.due_date, 'short')}</span>
+                              <span>{formatDateOnly(task.due_date)}</span>
                             </div>
                           )}
 
@@ -271,7 +387,7 @@ export default function TaskList({
                                 Personal Due:
                               </span>
                               <span className="text-slate-700 font-medium">
-                                {formatDate(task.personal_due_date, 'short')}
+                                {formatDateOnly(task.personal_due_date)}
                               </span>
                             </div>
                           )}
@@ -292,9 +408,7 @@ export default function TaskList({
                                 />
                               </svg>
                               <span className="font-medium">Scheduled:</span>
-                              <span>
-                                {formatDate(task.scheduled_date, 'short')}
-                              </span>
+                              <span>{formatDateOnly(task.scheduled_date)}</span>
                             </div>
                           )}
                         </div>

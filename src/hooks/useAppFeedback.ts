@@ -1,4 +1,5 @@
 import { useErrorHandler, useToast } from '@/contexts/ToastContext';
+import type { ToastLink } from '@/contexts/ToastContext';
 
 /**
  * Combines error handling and success toasts into a single hook
@@ -7,7 +8,12 @@ import { useErrorHandler, useToast } from '@/contexts/ToastContext';
  */
 export function useAppFeedback() {
   const { handleError } = useErrorHandler();
-  const { showSuccess } = useToast();
+  const { showSuccess: showSuccessBase } = useToast();
+
+  // Wrapper to maintain backward compatibility
+  const showSuccess = (message: string, links?: ToastLink[]) => {
+    showSuccessBase(message, links);
+  };
 
   return {
     handleError,

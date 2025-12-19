@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import type { MaintenanceTask } from '@/types';
-import { formatDate } from '@/utils/formatUtils';
+import { formatDateOnly } from '@/utils/formatUtils';
 import { parseYMDLocal } from '@/utils/dateParsing';
 import {
   differenceInCalendarDays,
@@ -48,7 +48,7 @@ const getInstrumentIcon = (
 
 const getRelativeDateDisplay = (date: string): string => {
   const dateObj = parseYMDLocal(date);
-  if (!dateObj) return formatDate(date, 'short');
+  if (!dateObj) return formatDateOnly(date);
 
   // Use calendar days for consistent date comparison (ignores time)
   const today = startOfDay(new Date());
@@ -60,10 +60,10 @@ const getRelativeDateDisplay = (date: string): string => {
   if (isYesterday(dateObj)) return 'Yesterday';
   if (daysDiff > 0 && daysDiff <= 7) return `In ${daysDiff} days`;
   if (daysDiff < 0 && daysDiff >= -7) return `${Math.abs(daysDiff)} days ago`;
-  return formatDate(date, 'short');
+  return formatDateOnly(date);
 };
 
-export default function TaskRowExpanded({
+function TaskRowExpanded({
   task,
   instrument,
   client,
@@ -140,7 +140,10 @@ export default function TaskRowExpanded({
               />
             )}
             {task.status === 'completed' && (
-              <span className="text-xs text-gray-500 font-normal">
+              <span
+                className="text-xs text-gray-500 font-normal"
+                aria-label="Status: Completed"
+              >
                 Completed
               </span>
             )}
@@ -204,7 +207,7 @@ export default function TaskRowExpanded({
               {task.received_date && (
                 <div>
                   <span className="font-medium">Received:</span>{' '}
-                  <span>{formatDate(task.received_date, 'short')}</span>
+                  <span>{formatDateOnly(task.received_date)}</span>
                   <span className="text-gray-500 text-xs ml-1">
                     ({getRelativeDateDisplay(task.received_date)})
                   </span>
@@ -216,7 +219,7 @@ export default function TaskRowExpanded({
                   <span
                     className={isOverdue ? 'text-red-700 font-semibold' : ''}
                   >
-                    {formatDate(task.due_date, 'short')}
+                    {formatDateOnly(task.due_date)}
                   </span>
                   <span className="text-gray-500 text-xs ml-1">
                     ({getRelativeDateDisplay(task.due_date)})
@@ -226,7 +229,7 @@ export default function TaskRowExpanded({
               {task.personal_due_date && (
                 <div>
                   <span className="font-medium">Personal Due:</span>{' '}
-                  <span>{formatDate(task.personal_due_date, 'short')}</span>
+                  <span>{formatDateOnly(task.personal_due_date)}</span>
                   <span className="text-gray-500 text-xs ml-1">
                     ({getRelativeDateDisplay(task.personal_due_date)})
                   </span>
@@ -235,7 +238,7 @@ export default function TaskRowExpanded({
               {task.scheduled_date && (
                 <div>
                   <span className="font-medium">Scheduled:</span>{' '}
-                  <span>{formatDate(task.scheduled_date, 'short')}</span>
+                  <span>{formatDateOnly(task.scheduled_date)}</span>
                   <span className="text-gray-500 text-xs ml-1">
                     ({getRelativeDateDisplay(task.scheduled_date)})
                   </span>
@@ -350,3 +353,5 @@ export default function TaskRowExpanded({
     </div>
   );
 }
+
+export default memo(TaskRowExpanded);

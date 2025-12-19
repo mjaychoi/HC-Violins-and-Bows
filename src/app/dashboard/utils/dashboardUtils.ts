@@ -1,5 +1,5 @@
 import { Instrument, Client, ClientInstrument } from '@/types';
-import { getUniqueValues as getUniqueValuesGeneric } from '@/utils/uniqueValues';
+import { getUniqueStringValues } from '@/utils/uniqueValues';
 
 // Instrument formatting utilities
 export const formatInstrumentName = (instrument: Instrument): string => {
@@ -118,7 +118,7 @@ export const getRelationshipIcon = (
 export const getUniqueValues = (
   instruments: Instrument[],
   field: keyof Instrument
-): string[] => getUniqueValuesGeneric(instruments, field);
+): string[] => getUniqueStringValues(instruments, field);
 
 export const getPriceRange = (
   instruments: Instrument[]
@@ -132,13 +132,20 @@ export const getPriceRange = (
 };
 
 // Validation utilities
-export const validateInstrumentData = (data: Partial<Instrument>): string[] => {
+export const validateInstrumentData = (
+  data: Partial<Instrument>,
+  priceInput?: string
+): string[] => {
   const errors: string[] = [];
 
   if (!data.maker?.trim()) errors.push('Maker is required');
   if (!data.type?.trim()) errors.push('Type is required');
 
-  if (data.year !== null && data.year !== undefined) {
+  // Year is required
+  const yearStr = data.year?.toString().trim() || '';
+  if (!yearStr) {
+    errors.push('Year is required');
+  } else {
     const year =
       typeof data.year === 'string' ? parseInt(data.year, 10) : data.year;
     if (
@@ -151,10 +158,18 @@ export const validateInstrumentData = (data: Partial<Instrument>): string[] => {
     }
   }
 
-  if (data.price !== null && data.price !== undefined) {
-    const price =
-      typeof data.price === 'string' ? parseFloat(data.price) : data.price;
-    if (typeof price !== 'number' || isNaN(price) || price < 0) {
+  // Price is required - check priceInput if provided, otherwise check data.price
+  const priceValue = priceInput !== undefined ? priceInput : data.price;
+  const normalizedPrice =
+    typeof priceValue === 'string'
+      ? priceValue.trim().replace(/,/g, '')
+      : priceValue?.toString() || '';
+
+  if (!normalizedPrice) {
+    errors.push('Price is required');
+  } else {
+    const priceNum = parseFloat(normalizedPrice);
+    if (isNaN(priceNum) || priceNum <= 0) {
       errors.push('Price must be a valid positive number');
     }
   }

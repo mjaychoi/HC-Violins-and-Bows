@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import type { MaintenanceTask } from '@/types';
+import type { MaintenanceTask, MaintenanceTaskUpdatePayload } from '@/types';
 import { parseYMDLocal } from '@/utils/dateParsing';
 import { getDateStatus } from '@/utils/tasks/style';
+import { getTaskDateKey } from '@/utils/calendar';
 import EmptyState from '@/components/common/empty-state/EmptyState';
 import DateGroupHeader from './DateGroupHeader';
 import TaskRowCollapsed from './TaskRowCollapsed';
@@ -41,6 +42,10 @@ interface GroupedTaskListProps {
   onTaskClick?: (task: MaintenanceTask) => void;
   onTaskDelete?: (task: MaintenanceTask) => void;
   onTaskEdit?: (task: MaintenanceTask) => void;
+  onTaskUpdate?: (
+    id: string,
+    updates: MaintenanceTaskUpdatePayload
+  ) => Promise<MaintenanceTask | null>;
   /** 필터 활성 여부 (빈 상태 문구/버튼 제어) */
   hasActiveFilters?: boolean;
   /** 필터 리셋 핸들러 */
@@ -61,6 +66,7 @@ export default function GroupedTaskList({
   onTaskClick,
   onTaskDelete,
   onTaskEdit,
+  onTaskUpdate,
   hasActiveFilters = false,
   onResetFilters,
   onAddTask,
@@ -75,12 +81,8 @@ export default function GroupedTaskList({
     const groups = new Map<string, MaintenanceTask[]>();
 
     tasks.forEach(task => {
-      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
-      const rawKey =
-        task.due_date ||
-        task.personal_due_date ||
-        task.scheduled_date ||
-        task.received_date;
+      // Use centralized date key function for consistent priority
+      const rawKey = getTaskDateKey(task);
       if (!rawKey) return;
 
       // Normalize date string to YYYY-MM-DD format
@@ -237,6 +239,7 @@ export default function GroupedTaskList({
                           instrument={instrument}
                           client={client}
                           onTaskClick={() => toggleTaskExpanded(task.id)}
+                          onTaskUpdate={onTaskUpdate}
                         />
                         {hasMenu && (
                           <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20">

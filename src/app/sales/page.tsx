@@ -1,6 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useCallback,
+  useState,
+  useRef,
+  Suspense,
+} from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AppLayout } from '@/components/layout';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import {
@@ -102,8 +110,13 @@ import {
 // generateCSV and generateReceiptEmail are imported dynamically when needed
 import { currency, dateFormat } from './utils/salesFormatters';
 import { SaleStatus } from './types';
+import { apiFetch } from '@/utils/apiFetch';
 
-export default function SalesPage() {
+// Component that uses useSearchParams - must be wrapped in Suspense
+function SalesPageContent() {
+  const searchParams = useSearchParams();
+  const instrumentIdFromUrl = searchParams.get('instrumentId') || undefined;
+
   const {
     sales,
     page,
@@ -165,7 +178,7 @@ export default function SalesPage() {
     sortDirection
   );
 
-  // 필터 변경 시 page를 1로 리셋 (API 호출은 하지 않음)
+  // 필터 변경 추적 (page reset과 fetch 중복 방지용)
   const prevFiltersRef = useRef({
     from,
     to,
@@ -174,6 +187,9 @@ export default function SalesPage() {
     sortColumn,
     sortDirection,
   });
+  const filtersChangedRef = useRef(false);
+
+  // 필터 변경 감지 및 page 리셋
   useEffect(() => {
     const prevFilters = prevFiltersRef.current;
     const filtersChanged =
@@ -183,6 +199,8 @@ export default function SalesPage() {
       prevFilters.hasClient !== hasClient ||
       prevFilters.sortColumn !== sortColumn ||
       prevFilters.sortDirection !== sortDirection;
+
+    filtersChangedRef.current = filtersChanged;
 
     if (filtersChanged && page !== 1) {
       setPage(1);
@@ -198,13 +216,24 @@ export default function SalesPage() {
   }, [from, to, search, hasClient, sortColumn, sortDirection, page, setPage]);
 
   // 초기 로드 및 필터/페이지/정렬 변경 시 API 호출
+  // FIXED: 필터 변경 시 page !== 1이면 fetch를 건너뛰고 page=1로만 맞춘 뒤 다음 render에서 fetch
   useEffect(() => {
+    // 필터가 변경되었고 page가 아직 1이 아니면 fetch 건너뛰기
+    if (filtersChangedRef.current && page !== 1) {
+      return;
+    }
+    // page가 1로 리셋된 후에는 filtersChanged 플래그를 리셋
+    if (filtersChangedRef.current && page === 1) {
+      filtersChangedRef.current = false;
+    }
+
     fetchSales({
       fromDate: from || undefined,
       toDate: to || undefined,
       page,
       search: search || undefined,
       hasClient: hasClient !== null ? hasClient : undefined,
+      instrumentId: instrumentIdFromUrl,
       sortColumn: sortColumn === 'client_name' ? undefined : sortColumn, // client_name은 클라이언트에서만 처리
       sortDirection,
     });
@@ -214,6 +243,7 @@ export default function SalesPage() {
     page,
     search,
     hasClient,
+    instrumentIdFromUrl,
     sortColumn,
     sortDirection,
     fetchSales,
@@ -260,31 +290,21 @@ export default function SalesPage() {
 
   const handleSendReceipt = useCallback(
     async (sale: EnrichedSale) => {
-      const email = sale.client?.email;
-      if (!email) {
-        handleError(
-          new Error('No customer email available for this sale.'),
-          'Send receipt'
-        );
-        return;
-      }
-
       try {
-        // Dynamic import for large utility function
-        const { generateReceiptEmail } = await import('./utils/salesUtils');
-        const { subject, body } = generateReceiptEmail(
-          sale,
-          dateFormat,
-          currency
-        );
-        window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
-        showSuccess('Receipt email opened in your email client.');
+        // Download invoice PDF
+        const invoiceUrl = `/api/invoices/${sale.id}`;
+        const link = document.createElement('a');
+        link.href = invoiceUrl;
+        link.download = `invoice-${sale.id.slice(0, 8)}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showSuccess('Invoice PDF downloaded.');
       } catch (error) {
-        handleError(error, 'Send Receipt');
+        handleError(error, 'Download Invoice');
       }
     },
     [handleError, showSuccess]
-    // dateFormat and currency are constants, not dependencies
   );
 
   // Request refund (shows confirmation dialog)
@@ -369,16 +389,69 @@ export default function SalesPage() {
     []
   );
 
-  const handleExportCSV = useCallback(async () => {
-    try {
-      // Show loading indicator
-      showSuccess('Exporting CSV...');
+  // 인라인 편집용 sale 업데이트 핸들러
+  const handleUpdateSale = useCallback(
+    async (id: string, data: { sale_price?: number }) => {
+      try {
+        const response = await apiFetch('/api/sales', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id,
+            sale_price: data.sale_price,
+          }),
+        });
 
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to update sale');
+        }
+
+        showSuccess('Sale updated successfully.');
+        // 데이터 새로고침
+        await fetchSales({
+          fromDate: from || undefined,
+          toDate: to || undefined,
+          page,
+          search: search || undefined,
+          hasClient: hasClient !== null ? hasClient : undefined,
+          sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
+          sortDirection,
+        });
+      } catch (error) {
+        handleError(error, 'Update sale');
+        throw error; // 인라인 편집 훅에서 에러 처리하도록
+      }
+    },
+    [
+      showSuccess,
+      handleError,
+      fetchSales,
+      from,
+      to,
+      page,
+      search,
+      hasClient,
+      sortColumn,
+      sortDirection,
+    ]
+  );
+
+  // Export CSV loading state
+  const [isExportingCSV, setIsExportingCSV] = useState(false);
+
+  const handleExportCSV = useCallback(async () => {
+    if (isExportingCSV) return; // Prevent duplicate exports
+    setIsExportingCSV(true);
+    try {
       // Export 모드로 전체 데이터를 한 번에 가져오기
+      // FIXED: pageSize를 5000으로 제한 (서버 타임아웃/메모리 방지)
       const params = new URLSearchParams();
       params.set('export', 'true'); // Export 모드 활성화
       params.set('page', '1');
-      params.set('pageSize', '10000'); // 최대 10000개까지
+      params.set('pageSize', '5000'); // 최대 5000개까지 (안전한 제한)
       if (from) {
         params.set('fromDate', from);
       }
@@ -456,6 +529,8 @@ export default function SalesPage() {
       showSuccess(`Exported ${enrichedAllSales.length} sales to CSV`);
     } catch (error) {
       handleError(error, 'Export CSV');
+    } finally {
+      setIsExportingCSV(false);
     }
   }, [
     from,
@@ -463,6 +538,7 @@ export default function SalesPage() {
     search,
     hasClient,
     sortColumn,
+    isExportingCSV,
     sortDirection,
     clients,
     instruments,
@@ -495,6 +571,7 @@ export default function SalesPage() {
               onDatePreset={handleDatePreset}
               onClearFilters={clearFilters}
               onExportCSV={handleExportCSV}
+              isExportingCSV={isExportingCSV}
               hasData={enrichedSales.length > 0}
             />
 
@@ -564,9 +641,16 @@ export default function SalesPage() {
                 onUndoRefund={handleRequestUndoRefund}
                 statusForSale={statusForSale}
                 hasActiveFilters={
-                  !!(search || from || to || hasClient !== null)
+                  !!(
+                    search ||
+                    from ||
+                    to ||
+                    hasClient !== null ||
+                    instrumentIdFromUrl
+                  )
                 }
                 onResetFilters={clearFilters}
+                onUpdateSale={handleUpdateSale}
               />
               {/* FIXED: filteredCount is now same as totalCount since server handles all filtering */}
               <Pagination
@@ -576,7 +660,15 @@ export default function SalesPage() {
                 filteredCount={totalCount}
                 pageSize={10}
                 loading={loading}
-                hasFilters={!!(search || from || to || hasClient !== null)}
+                hasFilters={
+                  !!(
+                    search ||
+                    from ||
+                    to ||
+                    hasClient !== null ||
+                    instrumentIdFromUrl
+                  )
+                }
                 onPageChange={setPage}
                 compact={false}
               />
@@ -627,5 +719,24 @@ export default function SalesPage() {
         />
       </AppLayout>
     </ErrorBoundary>
+  );
+}
+
+// Main page component with Suspense boundary
+export default function SalesPage() {
+  return (
+    <Suspense
+      fallback={
+        <ErrorBoundary>
+          <AppLayout title="Sales">
+            <div className="p-6">
+              <TableSkeleton rows={8} columns={7} />
+            </div>
+          </AppLayout>
+        </ErrorBoundary>
+      }
+    >
+      <SalesPageContent />
+    </Suspense>
   );
 }

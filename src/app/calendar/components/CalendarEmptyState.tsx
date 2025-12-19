@@ -1,26 +1,64 @@
 'use client';
 
 import React from 'react';
+import { formatDateOnly } from '@/utils/formatUtils';
+import { getStatusLabel } from '@/utils/calendar';
 
 interface CalendarEmptyStateProps {
   hasActiveFilters: boolean;
   onResetFilters: () => void;
   onOpenNewTask: () => void;
+  resultCount?: number;
+  // Filter summary for better UX
+  activeFilters?: {
+    status?: string;
+    owner?: string;
+    dateRange?: { from?: string; to?: string } | null;
+    searchTerm?: string;
+  };
 }
 
 export default function CalendarEmptyState({
   hasActiveFilters,
   onResetFilters,
   onOpenNewTask,
+  resultCount = 0,
+  activeFilters,
 }: CalendarEmptyStateProps) {
+  // Build filter summary text
+  const filterSummaryParts: string[] = [];
+  if (activeFilters?.status && activeFilters.status !== 'all') {
+    filterSummaryParts.push(`Status: ${getStatusLabel(activeFilters.status)}`);
+  }
+  if (activeFilters?.owner && activeFilters.owner !== 'all') {
+    filterSummaryParts.push(`Owner: ${activeFilters.owner}`);
+  }
+  if (activeFilters?.dateRange) {
+    const { from, to } = activeFilters.dateRange;
+    if (from && to) {
+      filterSummaryParts.push(
+        `Date: ${formatDateOnly(from)} - ${formatDateOnly(to)}`
+      );
+    } else if (from) {
+      filterSummaryParts.push(`From: ${formatDateOnly(from)}`);
+    } else if (to) {
+      filterSummaryParts.push(`Until: ${formatDateOnly(to)}`);
+    }
+  }
+  if (activeFilters?.searchTerm?.trim()) {
+    filterSummaryParts.push(`Search: "${activeFilters.searchTerm}"`);
+  }
+
+  const filterSummaryText = filterSummaryParts.join(' · ');
+
   return (
     <div className="py-12 text-center">
       <div className="mx-auto max-w-md">
         {/* Screen reader announcement */}
         <div role="status" aria-live="polite" className="sr-only">
           {hasActiveFilters
-            ? 'No tasks found for current filters'
-            : 'No tasks yet'}
+            ? `No tasks found for current filters. ${resultCount} results. ${filterSummaryText ? `Active filters: ${filterSummaryText}` : ''}`
+            : `No tasks yet. ${resultCount} results.`}
         </div>
         <div className="mb-4">
           {/* FIXED: Decorative SVG hidden from screen readers */}
@@ -44,6 +82,12 @@ export default function CalendarEmptyState({
         <h2 className="text-base font-medium text-gray-900 mb-1">
           {hasActiveFilters ? 'No tasks found' : 'No tasks yet'}
         </h2>
+        {hasActiveFilters && filterSummaryText && (
+          <div className="mb-2 px-4 py-2 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-600">
+            <span className="font-medium">Active filters:</span>{' '}
+            <span>{filterSummaryText}</span>
+          </div>
+        )}
         <p className="text-sm text-gray-500 mb-6">
           {hasActiveFilters
             ? 'Try adjusting your filters or create a new task.'
@@ -95,7 +139,7 @@ export default function CalendarEmptyState({
                 d="M12 4v16m8-8H4"
               />
             </svg>
-            Add New Task
+            Add maintenance task
           </button>
         </div>
       </div>

@@ -1,10 +1,20 @@
 'use client';
 
-import React from 'react';
-import type { MaintenanceTask } from '@/types';
+import React, { memo } from 'react';
+import type {
+  MaintenanceTask,
+  MaintenanceTaskUpdatePayload,
+  TaskPriority,
+  TaskStatus,
+} from '@/types';
 import StatusPill from './StatusPill';
 import PriorityPill from './PriorityPill';
 import { getDateStatus } from '@/utils/tasks/style';
+import { useInlineEdit } from '@/hooks/useInlineEdit';
+import {
+  InlineSelectField,
+  InlineEditActions,
+} from '@/components/common/InlineEditFields';
 
 interface TaskRowCollapsedProps {
   task: MaintenanceTask;
@@ -20,6 +30,10 @@ interface TaskRowCollapsedProps {
     lastName: string;
   } | null;
   onTaskClick?: (task: MaintenanceTask) => void;
+  onTaskUpdate?: (
+    id: string,
+    updates: MaintenanceTaskUpdatePayload
+  ) => Promise<MaintenanceTask | null>;
 }
 
 // Instrument icon helper
@@ -36,12 +50,45 @@ const getInstrumentIcon = (
   return '🎼';
 };
 
-export default function TaskRowCollapsed({
+function TaskRowCollapsed({
   task,
   instrument,
   client,
   onTaskClick,
+  onTaskUpdate,
 }: TaskRowCollapsedProps) {
+  // 인라인 편집 훅
+  const inlineEditPriority = useInlineEdit<MaintenanceTask>({
+    onSave: async (id, data) => {
+      if (onTaskUpdate && data.priority) {
+        await onTaskUpdate(id, { priority: data.priority as TaskPriority });
+      }
+    },
+    highlightDuration: 2000,
+  });
+
+  const inlineEditStatus = useInlineEdit<MaintenanceTask>({
+    onSave: async (id, data) => {
+      if (onTaskUpdate && data.status) {
+        await onTaskUpdate(id, { status: data.status as TaskStatus });
+      }
+    },
+    highlightDuration: 2000,
+  });
+
+  const priorityOptions: Array<{ value: TaskPriority; label: string }> = [
+    { value: 'low', label: 'Low' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'high', label: 'High' },
+    { value: 'urgent', label: 'Urgent' },
+  ];
+
+  const statusOptions: Array<{ value: TaskStatus; label: string }> = [
+    { value: 'pending', label: 'Pending' },
+    { value: 'in_progress', label: 'In Progress' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'cancelled', label: 'Cancelled' },
+  ];
   const dateStatus = getDateStatus(task);
   const isOverdue = dateStatus.status === 'overdue';
   const isUpcoming = dateStatus.status === 'upcoming';
@@ -131,18 +178,100 @@ export default function TaskRowCollapsed({
       {/* Right: 2-line layout - Status/Priority (top) + Workload (bottom, subtle) */}
       <div className="flex flex-col items-end gap-1 shrink-0">
         {/* Top: Status + Priority (main badges) */}
-        <div className="flex items-center gap-2">
+        <div
+          className="flex items-center gap-2"
+          onClick={e => e.stopPropagation()}
+        >
           {!isCompleted && (
-            <StatusPill
-              task={task}
-              isOverdue={isOverdueStatus}
-              isUpcoming={isDueSoon}
-            />
+            <>
+              {inlineEditStatus.editingId === task.id ? (
+                <div className="flex items-center gap-1">
+                  <InlineSelectField<TaskStatus>
+                    isEditing={true}
+                    value={task.status}
+                    onChange={value =>
+                      inlineEditStatus.updateField('status', value)
+                    }
+                    options={statusOptions}
+                    className="text-xs"
+                    editingClassName="border-gray-300"
+                  />
+                  <InlineEditActions
+                    isSaving={inlineEditStatus.isSaving}
+                    onSave={inlineEditStatus.saveEditing}
+                    onCancel={inlineEditStatus.cancelEditing}
+                    className="gap-0.5"
+                    saveLabel=""
+                    cancelLabel=""
+                  />
+                </div>
+              ) : (
+                <div
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (onTaskUpdate) {
+                      inlineEditStatus.startEditing(task.id, {
+                        status: task.status,
+                      });
+                    }
+                  }}
+                  className="cursor-pointer hover:opacity-80 transition-opacity"
+                  title="Click to edit status"
+                >
+                  <StatusPill
+                    task={task}
+                    isOverdue={isOverdueStatus}
+                    isUpcoming={isDueSoon}
+                  />
+                </div>
+              )}
+            </>
           )}
           {isCompleted && (
-            <span className="text-xs text-gray-500 font-normal">Completed</span>
+            <span
+              className="text-xs text-gray-500 font-normal"
+              aria-label="Status: Completed"
+            >
+              Completed
+            </span>
           )}
-          <PriorityPill priority={task.priority} />
+          {inlineEditPriority.editingId === task.id ? (
+            <div className="flex items-center gap-1">
+              <InlineSelectField<TaskPriority>
+                isEditing={true}
+                value={task.priority}
+                onChange={value =>
+                  inlineEditPriority.updateField('priority', value)
+                }
+                options={priorityOptions}
+                className="text-xs"
+                editingClassName="border-gray-300"
+              />
+              <InlineEditActions
+                isSaving={inlineEditPriority.isSaving}
+                onSave={inlineEditPriority.saveEditing}
+                onCancel={inlineEditPriority.cancelEditing}
+                className="gap-0.5"
+                saveLabel=""
+                cancelLabel=""
+              />
+            </div>
+          ) : (
+            <div
+              onClick={e => {
+                e.stopPropagation();
+                if (onTaskUpdate) {
+                  inlineEditPriority.startEditing(task.id, {
+                    priority: task.priority,
+                  });
+                }
+              }}
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+              title="Click to edit priority"
+            >
+              <PriorityPill priority={task.priority} />
+            </div>
+          )}
         </div>
         {/* Bottom: Workload (subtle, smaller) */}
         {workloadInfo && (
@@ -154,3 +283,5 @@ export default function TaskRowCollapsed({
     </div>
   );
 }
+
+export default memo(TaskRowCollapsed);

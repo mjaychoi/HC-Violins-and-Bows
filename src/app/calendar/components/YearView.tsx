@@ -190,6 +190,43 @@ export default function YearView({
                 const dayTasks = dayMap.get(dayKey) ?? [];
                 const isToday = isSameDay(day, new Date());
 
+                // Build status summary for aria-label
+                const statusCounts = {
+                  overdue: 0,
+                  completed: 0,
+                  inProgress: 0,
+                  scheduled: 0,
+                };
+                dayTasks.forEach(task => {
+                  const dateStatus = getDateStatus(task);
+                  if (task.status === 'completed') {
+                    statusCounts.completed++;
+                  } else if (dateStatus.status === 'overdue') {
+                    statusCounts.overdue++;
+                  } else if (task.status === 'in_progress') {
+                    statusCounts.inProgress++;
+                  } else {
+                    statusCounts.scheduled++;
+                  }
+                });
+
+                const statusParts: string[] = [];
+                if (statusCounts.overdue > 0) {
+                  statusParts.push(`${statusCounts.overdue} overdue`);
+                }
+                if (statusCounts.completed > 0) {
+                  statusParts.push(`${statusCounts.completed} completed`);
+                }
+                if (statusCounts.inProgress > 0) {
+                  statusParts.push(`${statusCounts.inProgress} in progress`);
+                }
+                if (statusCounts.scheduled > 0) {
+                  statusParts.push(`${statusCounts.scheduled} scheduled`);
+                }
+
+                const statusText =
+                  statusParts.length > 0 ? ` - ${statusParts.join(', ')}` : '';
+
                 return (
                   <button
                     key={day.toISOString()}
@@ -205,32 +242,45 @@ export default function YearView({
                       e.stopPropagation();
                       onNavigate?.(day);
                     }}
-                    aria-label={`View ${format(day, 'MMMM d, yyyy', { locale: ko })}${dayTasks.length > 0 ? ` - ${dayTasks.length} tasks` : ''}`}
+                    aria-label={`View ${format(day, 'MMMM d, yyyy', { locale: ko })}${dayTasks.length > 0 ? ` - ${dayTasks.length} tasks${statusText}` : ''}`}
                   >
                     <span>{format(day, 'd')}</span>
                     {dayTasks.length > 0 && (
                       <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-0.5 pb-0.5 pointer-events-none">
-                        {dayTasks.slice(0, 3).map(task => (
-                          <span
-                            key={task.id}
-                            role="button"
-                            tabIndex={0}
-                            className={`w-1.5 h-1.5 rounded-full ${getTaskColor(task)} pointer-events-auto cursor-pointer`}
-                            title={task.title}
-                            onClick={e => {
-                              e.stopPropagation();
-                              onSelectEvent?.(task);
-                            }}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
+                        {dayTasks.slice(0, 3).map(task => {
+                          const dateStatus = getDateStatus(task);
+                          const taskStatusLabel =
+                            task.status === 'completed'
+                              ? 'Completed'
+                              : task.status === 'cancelled'
+                                ? 'Cancelled'
+                                : dateStatus.status === 'overdue'
+                                  ? 'Overdue'
+                                  : task.status === 'in_progress'
+                                    ? 'In Progress'
+                                    : 'Scheduled';
+                          return (
+                            <span
+                              key={task.id}
+                              role="button"
+                              tabIndex={0}
+                              className={`w-1.5 h-1.5 rounded-full ${getTaskColor(task)} pointer-events-auto cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1`}
+                              title={`${task.title} - ${taskStatusLabel}`}
+                              onClick={e => {
                                 e.stopPropagation();
                                 onSelectEvent?.(task);
-                              }
-                            }}
-                            aria-label={`Task: ${task.title}`}
-                          />
-                        ))}
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  onSelectEvent?.(task);
+                                }
+                              }}
+                              aria-label={`Task: ${task.title}, ${taskStatusLabel}`}
+                            />
+                          );
+                        })}
                         {dayTasks.length > 3 && (
                           <div className="text-[8px] text-gray-500 pointer-events-auto">
                             +{dayTasks.length - 3}

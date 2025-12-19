@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useFilters } from '../hooks/useFilters';
 import { useClientKPIs } from '../hooks/useClientKPIs';
 import ClientList from './ClientList';
@@ -22,6 +23,8 @@ interface ClientsListContentProps {
   onClientClick: (client: Client) => void;
   onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
   onDeleteClient: (client: Client) => void;
+  newlyCreatedClientId?: string | null;
+  onNewlyCreatedClientShown?: () => void;
 }
 
 function ClientsListContentInner({
@@ -32,7 +35,12 @@ function ClientsListContentInner({
   onClientClick,
   onUpdateClient,
   onDeleteClient,
+  newlyCreatedClientId,
+  onNewlyCreatedClientShown,
 }: ClientsListContentProps) {
+  const searchParams = useSearchParams();
+  const clientIdFromURL = searchParams.get('clientId');
+
   const {
     searchTerm,
     setSearchTerm,
@@ -151,6 +159,9 @@ function ClientsListContentInner({
         onDeleteClient={onDeleteClient}
         onColumnSort={handleColumnSort}
         getSortArrow={getSortArrow}
+        newlyCreatedClientId={newlyCreatedClientId}
+        onNewlyCreatedClientShown={onNewlyCreatedClientShown}
+        selectedClientIdFromURL={clientIdFromURL}
         // Pagination props
         currentPage={currentPage}
         totalPages={totalPages}

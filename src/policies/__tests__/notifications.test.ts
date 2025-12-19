@@ -32,7 +32,7 @@ describe('formatNotificationMessage', () => {
 
   it('formats today', () => {
     expect(formatNotificationMessage(task, 'today', 0)).toBe(
-      'Check strings · Today'
+      'Check strings · 오늘'
     );
   });
 
@@ -44,7 +44,7 @@ describe('formatNotificationMessage', () => {
 
   it('falls back to default title when missing', () => {
     expect(formatNotificationMessage({ ...task, title: '' }, 'today', 0)).toBe(
-      '다음 작업 · Today'
+      '다음 작업 · 오늘'
     );
   });
 });

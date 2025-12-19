@@ -867,9 +867,15 @@ async function seedSampleData() {
 
     // 7. 유지보수 작업 생성
     logInfo('🔧 유지보수 작업 생성 중...', 'seedSampleData');
-    const now = new Date();
+    // 현재 날짜를 2025-12-18로 설정
+    const today = new Date('2025-12-18T00:00:00');
+    const now = today;
     const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     const threeMonthsLater = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+    // 날짜별 작업 개수 추적 (하루 최대 8개)
+    const tasksPerDate = new Map<string, number>();
+    const MAX_TASKS_PER_DAY = 8;
 
     const taskTitles = [
       '바이올린 현 교체',
@@ -905,7 +911,8 @@ async function seedSampleData() {
     ];
 
     let taskCount = 0;
-    // 더 많은 작업 생성 (200개)
+    let skippedCount = 0;
+    // 작업 생성 시도 (200번 시도, 실제 생성은 하루 최대 8개 제한 적용)
     for (let i = 0; i < 200; i++) {
       const instrumentId = getRandomElement(instrumentIds);
       const clientId = Math.random() > 0.3 ? getRandomElement(clientIds) : null; // 70% 확률로 클라이언트 연결
@@ -915,12 +922,33 @@ async function seedSampleData() {
       const title = taskTitles[i % taskTitles.length];
 
       const receivedDate = getRandomDate(threeMonthsAgo, now);
-      const dueDate =
-        status === 'completed' ? null : getRandomDate(now, threeMonthsLater);
-      const personalDueDate =
-        status === 'completed' ? null : getRandomDate(now, threeMonthsLater);
-      const scheduledDate =
-        status === 'completed' ? null : getRandomDate(now, threeMonthsLater);
+
+      // due_date는 미래 날짜 (하루 최대 개수 체크)
+      let dueDate: string | null = null;
+      let personalDueDate: string | null = null;
+      let scheduledDate: string | null = null;
+
+      if (status !== 'completed') {
+        // 날짜별 개수 제한을 위해 여러 번 시도
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const candidateDueDate = getRandomDate(now, threeMonthsLater);
+          const count = tasksPerDate.get(candidateDueDate) || 0;
+          if (count < MAX_TASKS_PER_DAY) {
+            dueDate = candidateDueDate;
+            tasksPerDate.set(candidateDueDate, count + 1);
+            break;
+          }
+        }
+
+        if (!dueDate) {
+          // 제한을 넘어서면 스킵
+          skippedCount++;
+          continue;
+        }
+
+        personalDueDate = getRandomDate(now, threeMonthsLater);
+        scheduledDate = getRandomDate(now, threeMonthsLater);
+      }
       const completedDate =
         status === 'completed'
           ? getRandomDate(new Date(receivedDate), now)
@@ -960,19 +988,31 @@ async function seedSampleData() {
         ]
       );
       taskCount++;
-      logInfo(`  ✓ ${title} (${status}, ${priority})`, 'seedSampleData');
+      if (taskCount % 20 === 0) {
+        logInfo(`  ✓ ${taskCount}개 생성 중...`, 'seedSampleData');
+      }
     }
-    logInfo(`✅ ${taskCount}개의 작업 생성 완료\n`, 'seedSampleData');
+    logInfo(
+      `✅ ${taskCount}개의 작업 생성 완료${skippedCount > 0 ? ` (${skippedCount}개 스킵 - 하루 최대 ${MAX_TASKS_PER_DAY}개 제한)` : ''}\n`,
+      'seedSampleData'
+    );
 
-    // 8. 판매 이력 생성
+    // 8. 판매 이력 생성 (현재 날짜 기준으로 전후 분산)
     logInfo('💰 판매 이력 생성 중...', 'seedSampleData');
     let salesCount = 0;
+    const salesDateRange = 180; // 6개월 전후
+    const salesStartDate = new Date(
+      now.getTime() - salesDateRange * 24 * 60 * 60 * 1000
+    );
+    const salesEndDate = new Date(
+      now.getTime() + salesDateRange * 24 * 60 * 60 * 1000
+    );
     // 더 많은 판매 이력 생성 (30개)
     for (let i = 0; i < 30; i++) {
       const instrumentId = getRandomElement(instrumentIds);
       const clientId = getRandomElement(clientIds);
       const salePrice = getRandomInt(1000000, 10000000);
-      const saleDate = getRandomDate(threeMonthsAgo, now);
+      const saleDate = getRandomDate(salesStartDate, salesEndDate);
 
       await client.query(
         `INSERT INTO sales_history (instrument_id, client_id, sale_price, sale_date, notes)
@@ -1034,14 +1074,36 @@ async function seedSampleData() {
     const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
     const oneMonthLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    // 더 많은 연락 기록 생성 (약 100개)
+    // 날짜별 연락 기록 개수 추적 (하루 최대 5개)
+    const contactsPerDate = new Map<string, number>();
+    const MAX_CONTACTS_PER_DAY = 5;
+
+    // 연락 기록 생성 (약 100개 시도, 실제 생성은 하루 최대 5개 제한 적용)
+    let contactSkippedCount = 0;
     for (let i = 0; i < 100; i++) {
       const clientId = getRandomElement(clientIds);
       const instrumentId =
         Math.random() > 0.5 ? getRandomElement(instrumentIds) : null; // 50% 확률로 악기 연결
       const contactType = getRandomElement([...contactTypes]);
       const purpose = getRandomElement([...purposes]);
-      const contactDate = getRandomDate(sixMonthsAgo, now);
+
+      // 날짜별 개수 제한을 위해 여러 번 시도
+      let contactDate: string | null = null;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const candidateDate = getRandomDate(sixMonthsAgo, oneMonthLater);
+        const count = contactsPerDate.get(candidateDate) || 0;
+        if (count < MAX_CONTACTS_PER_DAY) {
+          contactDate = candidateDate;
+          contactsPerDate.set(candidateDate, count + 1);
+          break;
+        }
+      }
+
+      if (!contactDate) {
+        // 제한을 넘어서면 스킵
+        contactSkippedCount++;
+        continue;
+      }
 
       // subject는 email이나 meeting일 때만 설정
       const subject =
@@ -1087,12 +1149,12 @@ async function seedSampleData() {
       );
       contactLogCount++;
 
-      if (i % 20 === 0) {
+      if (contactLogCount % 20 === 0) {
         logInfo(`  ✓ ${contactLogCount}개 생성 중...`, 'seedSampleData');
       }
     }
     logInfo(
-      `✅ ${contactLogCount}개의 연락 기록 생성 완료\n`,
+      `✅ ${contactLogCount}개의 연락 기록 생성 완료${contactSkippedCount > 0 ? ` (${contactSkippedCount}개 스킵 - 하루 최대 ${MAX_CONTACTS_PER_DAY}개 제한)` : ''}\n`,
       'seedSampleData'
     );
 
