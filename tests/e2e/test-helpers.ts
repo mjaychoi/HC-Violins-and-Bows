@@ -590,7 +590,28 @@ export async function loginUser(
         { timeout: 15000 }
       );
 
-      // Token exists - now verify with app-level signals
+      // Token exists - now wait for redirect to protected route
+      // LoginRedirect component uses useEffect which is asynchronous
+      // Wait for URL to change to a protected route
+      try {
+        await page.waitForURL(
+          url => {
+            const urlStr = url.toString();
+            return (
+              urlStr.includes('/dashboard') ||
+              urlStr.includes('/clients') ||
+              urlStr.includes('/calendar') ||
+              urlStr.includes('/connections') ||
+              urlStr.includes('/sales')
+            );
+          },
+          { timeout: 10000 }
+        );
+      } catch {
+        // URL might not change if already on protected route or redirect is delayed
+        // Continue with verification
+      }
+
       await waitForStable(page, 1000);
 
       // App-level verification: Check multiple signals

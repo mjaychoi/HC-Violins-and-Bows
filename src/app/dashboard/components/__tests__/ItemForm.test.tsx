@@ -74,9 +74,9 @@ describe('ItemForm', () => {
         maker: 'Strad',
         type: 'Violin',
         year: '2020',
-        price: '1000',
         serial_number: 'VI0000002',
       },
+      priceInput: '1000',
     });
 
     render(

@@ -58,18 +58,50 @@ describe('/api/contacts', () => {
 
   describe('GET', () => {
     it('should return contact logs', async () => {
-      const mockQuery = {
+      // Mock contact_logs query
+      const mockContactLogsQuery = {
         select: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        in: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        is: jest.fn().mockReturnThis(),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
+      (mockContactLogsQuery.order as jest.Mock).mockResolvedValue({
         data: [mockContactLog],
         error: null,
         count: 1,
       });
 
+      // Mock clients query (for batch fetch)
+      const mockClientsQuery = {
+        select: jest.fn().mockReturnThis(),
+        in: jest.fn().mockReturnThis(),
+      };
+      (mockClientsQuery.in as jest.Mock).mockResolvedValue({
+        data: [],
+        error: null,
+      });
+
+      // Mock instruments query (for batch fetch)
+      const mockInstrumentsQuery = {
+        select: jest.fn().mockReturnThis(),
+        in: jest.fn().mockReturnThis(),
+      };
+      (mockInstrumentsQuery.in as jest.Mock).mockResolvedValue({
+        data: [],
+        error: null,
+      });
+
       const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
+        from: jest.fn((table: string) => {
+          if (table === 'contact_logs') return mockContactLogsQuery;
+          if (table === 'clients') return mockClientsQuery;
+          if (table === 'instruments') return mockInstrumentsQuery;
+          return mockContactLogsQuery;
+        }),
       } as any;
 
       mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
@@ -79,7 +111,13 @@ describe('/api/contacts', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
-      expect(json.data).toEqual([mockContactLog]);
+      expect(json.data).toEqual([
+        {
+          ...mockContactLog,
+          client: null,
+          instrument: null,
+        },
+      ]);
       expect(json.success).toBe(true);
     });
 

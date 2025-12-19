@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Client, SalesHistory } from '@/types';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { getMostRecentDate } from '@/utils/dateParsing';
+import { apiFetch } from '@/utils/apiFetch';
 
 export interface ClientKPIs {
   totalCustomers: number;
@@ -40,7 +41,7 @@ export function useClientKPIs(
       hasFetchedRef.current = true;
 
       // Fetch all sales (up to 10k limit for KPI calculation)
-      const response = await fetch('/api/sales?page=1&pageSize=10000');
+      const response = await apiFetch('/api/sales?page=1&pageSize=10000');
       const result = await response.json();
 
       if (!response.ok) {
@@ -133,7 +134,8 @@ export function useClientSalesData(clientId: string | null) {
       try {
         setLoading(true);
         // ✅ FIXED: Use client_id parameter for server-side filtering (much more efficient)
-        const response = await fetch(
+        // ✅ FIXED: Use apiFetch to include authentication headers
+        const response = await apiFetch(
           `/api/sales?client_id=${clientId}&page=1&pageSize=200`
         );
         const result = await response.json();

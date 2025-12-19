@@ -27,7 +27,7 @@ interface ItemFormProps {
   instruments?: Instrument[]; // Full instruments array for duplicate info
 }
 
-export default function ItemForm({
+function ItemForm({
   isOpen,
   onClose,
   onSubmit,
@@ -177,9 +177,10 @@ export default function ItemForm({
     setFieldErrors({});
     setErrors([]);
 
-    // Validate form data
+    // Validate form data - pass priceInput for accurate validation
     const validationErrors = validateInstrumentData(
-      formData as unknown as Partial<Instrument>
+      formData as unknown as Partial<Instrument>,
+      priceInput
     );
     if (validationErrors.length > 0) {
       setErrors(validationErrors);
@@ -447,9 +448,9 @@ export default function ItemForm({
                         updateField('serial_number', autoSerialNumber);
                         hasInitializedCreate.current = true;
                       }}
-                      variant="success"
+                      variant="secondary"
                       size="sm"
-                      className="bg-white border border-green-300 text-green-700 hover:bg-green-50"
+                      className="!bg-white !border !border-green-300 !text-green-700 hover:!bg-green-50"
                     >
                       Add Another
                     </Button>
@@ -539,6 +540,7 @@ export default function ItemForm({
                 onChange={handleInputChange}
                 placeholder="Enter year"
                 error={fieldErrors.year}
+                required
               />
             </div>
 
@@ -572,7 +574,7 @@ export default function ItemForm({
                 onChange={e => handlePriceChange(e.target.value)}
                 placeholder="Enter price"
                 error={fieldErrors.price}
-                helperText="Selling price (optional)"
+                required
               />
             </div>
 
@@ -764,3 +766,5 @@ export default function ItemForm({
     </div>
   );
 }
+
+export default React.memo(ItemForm);

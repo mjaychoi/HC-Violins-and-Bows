@@ -286,7 +286,7 @@ function CalendarContentInner({
   const showPagination = totalPages > 1 && isListView;
 
   return (
-    <div className="p-6">
+    <div className="p-6 pb-14">
       {/* Today Follow-ups */}
       <TodayFollowUps />
 

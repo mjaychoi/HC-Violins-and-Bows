@@ -6,6 +6,7 @@ import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useErrorHandler, useToast } from '@/contexts/ToastContext';
 import { format } from 'date-fns';
+import { apiFetch } from '@/utils/apiFetch';
 
 export const useDashboardData = () => {
   const { handleError } = useErrorHandler();
@@ -139,7 +140,7 @@ export const useDashboardData = () => {
 
               // Only create if it doesn't already exist (idempotent)
               if (!existingAutoSale) {
-                const response = await fetch('/api/sales', {
+                const response = await apiFetch('/api/sales', {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',

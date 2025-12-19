@@ -5,6 +5,7 @@
  * 실행: npm run generate:sample-data
  */
 
+import { logInfo, logError } from '@/utils/logger';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -492,10 +493,10 @@ async function main() {
   await mkdir(outputDir, { recursive: true });
   await writeFile(outputPath, JSON.stringify(payload, null, 2), 'utf8');
 
-  console.log(`✅ 샘플 데이터를 ${outputPath}으로 저장했습니다.`);
+  logInfo(`✅ 샘플 데이터를 ${outputPath}으로 저장했습니다.`);
 }
 
 main().catch(error => {
-  console.error('❌ 샘플 데이터 생성 중 오류 발생:', error);
+  logError('❌ 샘플 데이터 생성 중 오류 발생:', error);
   process.exit(1);
 });

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ContactLog } from '@/types';
 import { todayLocalYMD, formatDisplayDate } from '@/utils/dateParsing';
-import { differenceInDays, parseISO } from 'date-fns';
+import { differenceInDays, parseISO, isValid } from 'date-fns';
+import { apiFetch } from '@/utils/apiFetch';
 
 export interface ClientContactInfo {
   clientId: string;
@@ -69,8 +70,9 @@ export function useClientsContactInfo({
 
           try {
             // Use batch endpoint: /api/contacts?clientIds=id1,id2,id3
+            // ✅ FIXED: Use apiFetch to include authentication headers
             const clientIdsParam = batch.join(',');
-            const response = await fetch(
+            const response = await apiFetch(
               `/api/contacts?clientIds=${encodeURIComponent(clientIdsParam)}`
             );
             const result = await response.json();
@@ -141,7 +143,10 @@ export function useClientsContactInfo({
             try {
               const lastDate = parseISO(`${lastContactDate}T00:00:00`);
               const todayDate = parseISO(`${today}T00:00:00`);
-              daysSinceLastContact = differenceInDays(todayDate, lastDate);
+              // ✅ FIXED: Validate dates before using differenceInDays to prevent undefined errors
+              if (isValid(lastDate) && isValid(todayDate)) {
+                daysSinceLastContact = differenceInDays(todayDate, lastDate);
+              }
             } catch {
               // Ignore parse errors
             }
@@ -152,7 +157,10 @@ export function useClientsContactInfo({
             try {
               const followUpDate = parseISO(`${nextFollowUpDate}T00:00:00`);
               const todayDate = parseISO(`${today}T00:00:00`);
-              daysUntilFollowUp = differenceInDays(followUpDate, todayDate);
+              // ✅ FIXED: Validate dates before using differenceInDays to prevent undefined errors
+              if (isValid(followUpDate) && isValid(todayDate)) {
+                daysUntilFollowUp = differenceInDays(followUpDate, todayDate);
+              }
             } catch {
               // Ignore parse errors
             }

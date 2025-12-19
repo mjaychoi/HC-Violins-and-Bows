@@ -1,8 +1,23 @@
 // Supabase Edge Function: Send daily email notifications for maintenance tasks
 // Run via cron job (daily at 9:00 AM)
 
+// @ts-expect-error - Deno URL import, works at runtime but TypeScript doesn't understand it
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+// @ts-expect-error - Deno URL import
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// Simple logger for Deno (replaces Node.js logger from src/utils/logger)
+// Note: Cannot import from src/utils/logger as it's Node.js code, not compatible with Deno
+const logInfo = (...args: unknown[]) => console.log('[INFO]', ...args);
+const logWarn = (...args: unknown[]) => console.warn('[WARN]', ...args);
+const logError = (...args: unknown[]) => console.error('[ERROR]', ...args);
+
+// Declare Deno global for TypeScript
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined;
+  };
+};
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 const APP_URL = Deno.env.get('NEXT_PUBLIC_APP_URL') || 'http://localhost:3000';
@@ -58,7 +73,7 @@ serve(async _req => {
       .eq('email_notifications', true);
 
     if (settingsError) {
-      console.error('Error fetching notification settings:', settingsError);
+      logError('Error fetching notification settings:', settingsError);
       return new Response(
         JSON.stringify({ error: 'Failed to fetch notification settings' }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
@@ -80,7 +95,7 @@ serve(async _req => {
       await supabase.auth.admin.listUsers();
 
     if (usersError) {
-      console.error('Error fetching users:', usersError);
+      logError('Error fetching users:', usersError);
       return new Response(JSON.stringify({ error: 'Failed to fetch users' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
@@ -98,11 +113,18 @@ serve(async _req => {
     today.setHours(0, 0, 0, 0);
 
     // Process notifications for each user
-    const results = [];
+    type ResultItem = {
+      user_id: string;
+      status: string;
+      error?: string;
+      email?: string;
+      notificationCount?: number;
+    };
+    const results: ResultItem[] = [];
     for (const setting of settings as NotificationSettings[]) {
       const userEmail = userEmails.get(setting.user_id);
       if (!userEmail) {
-        console.warn(`No email found for user ${setting.user_id}`);
+        logWarn(`No email found for user ${setting.user_id}`);
         continue;
       }
 
@@ -129,7 +151,7 @@ serve(async _req => {
         .is('completed_date', null);
 
       if (tasksError) {
-        console.error(
+        logError(
           `Error fetching tasks for user ${setting.user_id}:`,
           tasksError
         );
@@ -205,7 +227,7 @@ serve(async _req => {
 
         if (!emailResponse.ok) {
           const errorData = await emailResponse.text();
-          console.error(`Failed to send email to ${userEmail}:`, errorData);
+          logError(`Failed to send email to ${userEmail}:`, errorData);
           results.push({
             user_id: setting.user_id,
             status: 'failed',
@@ -228,9 +250,9 @@ serve(async _req => {
         });
       } else {
         // Fallback: Log to console if Resend API key is not configured
-        console.log(`[Email Notification] To: ${userEmail}`);
-        console.log(`Subject: ${emailContent.subject}`);
-        console.log(`Body: ${emailContent.html}`);
+        logInfo(`[Email Notification] To: ${userEmail}`);
+        logInfo(`Subject: ${emailContent.subject}`);
+        logInfo(`Body: ${emailContent.html}`);
         results.push({
           user_id: setting.user_id,
           email: userEmail,
@@ -249,7 +271,7 @@ serve(async _req => {
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in send-notifications function:', error);
+    logError('Error in send-notifications function:', error);
     return new Response(
       JSON.stringify({
         error: 'Internal server error',

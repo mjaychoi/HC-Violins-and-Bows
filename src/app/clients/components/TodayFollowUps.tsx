@@ -7,6 +7,7 @@ import { todayLocalYMD } from '@/utils/dateParsing';
 import { formatDisplayDate } from '@/utils/dateParsing';
 import Link from 'next/link';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
+import { apiFetch } from '@/utils/apiFetch';
 
 export default function TodayFollowUps() {
   const [followUps, setFollowUps] = useState<ContactLog[]>([]);
@@ -20,7 +21,7 @@ export default function TodayFollowUps() {
     setLoading(true);
     try {
       // FIXED: Use followUpDue=true to get both today and overdue follow-ups
-      const response = await fetch(`/api/contacts?followUpDue=true`);
+      const response = await apiFetch(`/api/contacts?followUpDue=true`);
 
       if (!response.ok) {
         // Handle non-OK responses without throwing to prevent error boundary
@@ -91,7 +92,7 @@ export default function TodayFollowUps() {
     async (contactLogId: string) => {
       setProcessingIds(prev => new Set(prev).add(contactLogId));
       try {
-        const response = await fetch('/api/contacts', {
+        const response = await apiFetch('/api/contacts', {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
@@ -133,7 +134,7 @@ export default function TodayFollowUps() {
         const base = new Date(`${todayStr}T00:00:00`);
         const newFollowUpDate = format(addDays(base, days), 'yyyy-MM-dd');
 
-        const response = await fetch('/api/contacts', {
+        const response = await apiFetch('/api/contacts', {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',

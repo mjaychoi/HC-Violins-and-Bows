@@ -4,6 +4,8 @@ import { SalesHistory, Instrument } from '@/types';
 import { useUnifiedClients } from '@/hooks/useUnifiedData';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { compareDatesDesc } from '@/utils/dateParsing';
+import { apiFetch } from '@/utils/apiFetch';
+import { logInfo, logWarn, logDebug, logError } from '@/utils/logger';
 
 // Client sales summary type (from API)
 export interface ClientSalesSummary {
@@ -50,7 +52,7 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         typeof window !== 'undefined' &&
         process.env.NODE_ENV === 'development'
       ) {
-        console.log('[useCustomers] Skipping duplicate fetch');
+        logInfo('[useCustomers] Skipping duplicate fetch');
       }
       return;
     }
@@ -59,11 +61,11 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
 
       // ✅ OPTIMIZED: Fetch aggregated summary first (much smaller data transfer)
       // This provides total_spend, purchase_count, last_purchase_date for sorting/filtering
-      const summaryResponse = await fetch('/api/sales/summary-by-client');
+      const summaryResponse = await apiFetch('/api/sales/summary-by-client');
       const summaryResult = await summaryResponse.json();
 
       if (!summaryResponse.ok) {
-        console.error('[useCustomers] Sales summary API error:', {
+        logError('[useCustomers] Sales summary API error:', {
           status: summaryResponse.status,
           error: summaryResult.error,
         });
@@ -79,11 +81,12 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
 
       // Still fetch detailed sales for purchase history display
       // TODO: Further optimize by fetching only selected customer's purchases
-      const response = await fetch('/api/sales?page=1&pageSize=10000');
+      // ✅ FIXED: Use apiFetch to include authentication headers
+      const response = await apiFetch('/api/sales?page=1&pageSize=10000');
       const result = await response.json();
 
       if (!response.ok) {
-        console.error('[useCustomers] Sales API error:', {
+        logError('[useCustomers] Sales API error:', {
           status: response.status,
           error: result.error,
         });
@@ -116,7 +119,7 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         // TODO: Add endpoint /api/instruments?ids=... (or POST body) to fetch only required IDs
         // This reduces network transfer and memory usage
         // 전체 데이터가 필요한 경우 all=true 파라미터 추가
-        const instrumentsResponse = await fetch('/api/instruments?all=true');
+        const instrumentsResponse = await apiFetch('/api/instruments?all=true');
         const instrumentsResult = await instrumentsResponse.json();
 
         if (instrumentsResponse.ok && instrumentsResult.data) {
@@ -130,7 +133,7 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
           });
           setInstrumentsMap(map);
         } else {
-          console.warn(
+          logWarn(
             '[useCustomers] Failed to fetch instruments:',
             instrumentsResult
           );
@@ -160,7 +163,7 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         typeof window !== 'undefined' &&
         process.env.NODE_ENV === 'development'
       ) {
-        console.log('[useCustomers] Fetch disabled (enabled=false)');
+        logInfo('[useCustomers] Fetch disabled (enabled=false)');
       }
       return;
     }
@@ -169,7 +172,7 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
       typeof window !== 'undefined' &&
       process.env.NODE_ENV === 'development'
     ) {
-      console.log('[useCustomers] Clients state:', {
+      logDebug('[useCustomers] Clients state:', {
         clientsLoading,
         clientsCount: clients.length,
         shouldFetch:
@@ -192,11 +195,8 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         typeof window !== 'undefined' &&
         process.env.NODE_ENV === 'development'
       ) {
-        console.warn(
-          '[useCustomers] No client data available. clientsLoading:',
-          clientsLoading,
-          'clients.length:',
-          clients.length
+        logWarn(
+          `[useCustomers] No client data available. clientsLoading: ${clientsLoading}, clients.length: ${clients.length}`
         );
       }
     }

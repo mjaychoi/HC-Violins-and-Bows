@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Client, Instrument, ClientInstrument } from '@/types';
 // Removed direct supabase import to reduce bundle size - using API routes instead
 import { useDataState } from '@/hooks/useDataState';
@@ -13,6 +13,7 @@ import { useUnifiedClients } from '@/hooks/useUnifiedData';
 import { Button, Input } from '@/components/common/inputs';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { shouldShowInterestDropdown } from '@/policies/interest';
+import { apiFetch } from '@/utils/apiFetch';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
 import { ClientRelationshipType } from '../types';
@@ -32,7 +33,7 @@ interface ClientFormProps {
   submitting: boolean;
 }
 
-export default function ClientForm({
+function ClientForm({
   isOpen,
   onClose,
   onSubmit,
@@ -119,7 +120,10 @@ export default function ClientForm({
           search: term,
           limit: '10',
         });
-        const response = await fetch(`/api/instruments?${params.toString()}`);
+        // ✅ FIXED: Use apiFetch to include authentication headers
+        const response = await apiFetch(
+          `/api/instruments?${params.toString()}`
+        );
         if (!response.ok) {
           throw new Error(
             `Failed to search instruments: ${response.statusText}`
@@ -576,3 +580,5 @@ export default function ClientForm({
     </div>
   );
 }
+
+export default React.memo(ClientForm);

@@ -2,6 +2,7 @@
 
 import { ReactNode } from 'react';
 import { useUnifiedData } from '@/hooks/useUnifiedData';
+import { logInfo } from '@/utils/logger';
 
 /**
  * DataInitializer - Initializes data fetching at the root level
@@ -15,7 +16,7 @@ export function DataInitializer({ children }: { children: ReactNode }) {
   // FIXED: Call useUnifiedData only once at the root level
   // This ensures data is fetched once per session, not on every page mount
   if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-    console.log('[DataInitializer] Mounting - will call useUnifiedData');
+    logInfo('[DataInitializer] Mounting - will call useUnifiedData');
   }
   useUnifiedData();
   return <>{children}</>;

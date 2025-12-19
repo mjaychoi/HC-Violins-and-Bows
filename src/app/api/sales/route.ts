@@ -175,7 +175,8 @@ async function getHandler(request: NextRequest, _user: User) {
       if (!isExport && count !== null && count > 0) {
         // 전체 필터링된 데이터를 가져와서 totals 계산
         // 효율성을 위해 sale_price만 선택
-        const totalsQuery = supabase.from('sales_history').select('sale_price');
+        // ✅ FIXED: Supabase queries are immutable, must reassign chain results
+        let totalsQuery = supabase.from('sales_history').select('sale_price');
 
         // 동일한 필터 적용
         if (
@@ -187,34 +188,36 @@ async function getHandler(request: NextRequest, _user: User) {
           if (fromFilter > toFilter) {
             [fromFilter, toFilter] = [toFilter, fromFilter];
           }
-          totalsQuery.gte('sale_date', fromFilter).lte('sale_date', toFilter);
+          totalsQuery = totalsQuery
+            .gte('sale_date', fromFilter)
+            .lte('sale_date', toFilter);
         } else {
           if (fromFilter && validateDateString(fromFilter)) {
-            totalsQuery.gte('sale_date', fromFilter);
+            totalsQuery = totalsQuery.gte('sale_date', fromFilter);
           }
           if (toFilter && validateDateString(toFilter)) {
-            totalsQuery.lte('sale_date', toFilter);
+            totalsQuery = totalsQuery.lte('sale_date', toFilter);
           }
         }
 
         if (search) {
           const sanitizedSearch = sanitizeSearchTerm(search);
           if (sanitizedSearch) {
-            totalsQuery.ilike('notes', `%${sanitizedSearch}%`);
+            totalsQuery = totalsQuery.ilike('notes', `%${sanitizedSearch}%`);
           }
         }
 
         // Client filter: totals 계산에도 동일하게 적용
         if (hasClient !== undefined) {
           if (hasClient) {
-            totalsQuery.not('client_id', 'is', null);
+            totalsQuery = totalsQuery.not('client_id', 'is', null);
           } else {
-            totalsQuery.is('client_id', null);
+            totalsQuery = totalsQuery.is('client_id', null);
           }
         }
 
         if (instrumentId && validateUUID(instrumentId)) {
-          totalsQuery.eq('instrument_id', instrumentId);
+          totalsQuery = totalsQuery.eq('instrument_id', instrumentId);
         }
 
         // Limit을 크게 설정하되, 너무 많은 데이터는 가져오지 않도록 (totals 계산용)

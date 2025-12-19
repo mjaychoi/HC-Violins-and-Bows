@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 // captureException removed - withSentryRoute handles error reporting
-import type { ContactLog } from '@/types';
+import type { ContactLog, Client, Instrument } from '@/types';
 import type { User } from '@supabase/supabase-js';
 import { validateUUID } from '@/utils/inputValidation';
 import { todayLocalYMD } from '@/utils/dateParsing';
@@ -23,7 +23,7 @@ async function getHandler(request: NextRequest, _user: User) {
     async () => {
       const searchParams = request.nextUrl.searchParams;
       const clientId = searchParams.get('clientId');
-      const clientIds = searchParams.get('clientIds'); // Batch query: comma-separated UUIDs
+      const clientIdsParam = searchParams.get('clientIds'); // Batch query: comma-separated UUIDs
       const instrumentId = searchParams.get('instrumentId');
       const fromDate = searchParams.get('fromDate');
       const toDate = searchParams.get('toDate');
@@ -32,19 +32,14 @@ async function getHandler(request: NextRequest, _user: User) {
       const followUpDue = searchParams.get('followUpDue') === 'true'; // 오늘 및 지난 Follow-up 필터
 
       const supabase = getServerSupabase();
-      let query = supabase.from('contact_logs').select(
-        `
-          *,
-          client:clients(*),
-          instrument:instruments(*)
-        `,
-        { count: 'exact' }
-      );
+      // FIXED: Use separate queries to avoid Supabase relationship issues
+      // Fetch contact logs first, then enrich with client and instrument data
+      let query = supabase.from('contact_logs').select('*', { count: 'exact' });
 
       // Filter by client_id(s) - support both single and batch
-      if (clientIds) {
+      if (clientIdsParam) {
         // Batch query: parse comma-separated UUIDs
-        const ids = clientIds
+        const ids = clientIdsParam
           .split(',')
           .map(id => id.trim())
           .filter(id => validateUUID(id));
@@ -96,7 +91,7 @@ async function getHandler(request: NextRequest, _user: User) {
         query = query.order('contact_date', { ascending: false });
       }
 
-      const { data, error, count } = await query;
+      const { data: logs, error, count } = await query;
 
       // 개발 환경에서 더 자세한 에러 정보 로깅
       if (error && process.env.NODE_ENV === 'development') {
@@ -113,16 +108,62 @@ async function getHandler(request: NextRequest, _user: User) {
         throw errorHandler.handleSupabaseError(error, 'Fetch contact logs');
       }
 
+      // Enrich logs with client and instrument data
+      // Collect unique client_ids and instrument_ids to batch fetch
+      const clientIdSet = new Set<string>();
+      const instrumentIds = new Set<string>();
+      (logs || []).forEach((log: ContactLog) => {
+        if (log.client_id) clientIdSet.add(log.client_id);
+        if (log.instrument_id) instrumentIds.add(log.instrument_id);
+      });
+
+      // Batch fetch clients and instruments
+      const clientsMap = new Map<string, Client>();
+      const instrumentsMap = new Map<string, Instrument>();
+
+      if (clientIdSet.size > 0) {
+        const { data: clientsData } = await supabase
+          .from('clients')
+          .select('*')
+          .in('id', Array.from(clientIdSet));
+        if (clientsData) {
+          clientsData.forEach((client: Client) => {
+            clientsMap.set(client.id, client);
+          });
+        }
+      }
+
+      if (instrumentIds.size > 0) {
+        const { data: instrumentsData } = await supabase
+          .from('instruments')
+          .select('*')
+          .in('id', Array.from(instrumentIds));
+        if (instrumentsData) {
+          instrumentsData.forEach((instrument: Instrument) => {
+            instrumentsMap.set(instrument.id, instrument);
+          });
+        }
+      }
+
+      // Enrich logs with fetched data
+      const enrichedLogs = (logs || []).map((log: ContactLog) => ({
+        ...log,
+        client: log.client_id ? clientsMap.get(log.client_id) || null : null,
+        instrument: log.instrument_id
+          ? instrumentsMap.get(log.instrument_id) || null
+          : null,
+      }));
+
       return {
         payload: {
-          data: data || [],
+          data: enrichedLogs,
           count: count || 0,
           success: true,
         },
         metadata: {
           clientId,
-          clientIds: clientIds
-            ? `${clientIds.split(',').length} clients`
+          clientIds: clientIdsParam
+            ? `${clientIdsParam.split(',').length} clients`
             : undefined,
           instrumentId,
           fromDate,
@@ -130,7 +171,7 @@ async function getHandler(request: NextRequest, _user: User) {
           hasFollowUp,
           followUpDate,
           followUpDue,
-          recordCount: data?.length || 0,
+          recordCount: enrichedLogs?.length || 0,
           totalCount: count || 0,
         },
       };

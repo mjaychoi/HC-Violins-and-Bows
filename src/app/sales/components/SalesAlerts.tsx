@@ -68,11 +68,13 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     });
 
     // 1. 매출 급감 알림
-    const recentRevenue = recentSales.reduce((sum, s) => sum + s.sale_price, 0);
-    const previousRevenue = previousSales.reduce(
-      (sum, s) => sum + s.sale_price,
-      0
-    );
+    // FIXED: Only count positive sale_price for revenue (refunds are separate)
+    const recentRevenue = recentSales
+      .filter(s => s.sale_price > 0)
+      .reduce((sum, s) => sum + s.sale_price, 0);
+    const previousRevenue = previousSales
+      .filter(s => s.sale_price > 0)
+      .reduce((sum, s) => sum + s.sale_price, 0);
     if (previousRevenue > 0) {
       const revenueDrop =
         ((previousRevenue - recentRevenue) / previousRevenue) * 100;

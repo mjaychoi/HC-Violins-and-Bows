@@ -28,6 +28,7 @@ import {
   InlineEditActions,
   InlineEditButton,
 } from '@/components/common/InlineEditFields';
+import { logInfo } from '@/utils/logger';
 import { INTEREST_LEVELS } from '../constants';
 import dynamic from 'next/dynamic';
 
@@ -397,6 +398,8 @@ interface ClientListProps {
   newlyCreatedClientId?: string | null;
   /** 새로 생성된 클라이언트가 표시되었을 때 호출되는 콜백 */
   onNewlyCreatedClientShown?: () => void;
+  /** URL에서 선택된 클라이언트 ID (스크롤/하이라이트용) */
+  selectedClientIdFromURL?: string | null;
 }
 
 const ClientList = memo(function ClientList({
@@ -420,6 +423,7 @@ const ClientList = memo(function ClientList({
   onAddClient,
   newlyCreatedClientId,
   onNewlyCreatedClientShown,
+  selectedClientIdFromURL,
 }: ClientListProps) {
   // Keep interface-compatible prop referenced without using it.
   void _onClientClick;
@@ -552,6 +556,38 @@ const ClientList = memo(function ClientList({
     };
   }, [newlyCreatedClientId, clients, loading, onNewlyCreatedClientShown]);
 
+  // Scroll to and highlight client from URL parameter
+  useEffect(() => {
+    if (!selectedClientIdFromURL || loading) return;
+
+    // Check if the client is in the current page
+    const clientIndex = clients.findIndex(
+      client => client.id === selectedClientIdFromURL
+    );
+    if (clientIndex === -1) {
+      // Client not in current page - might be filtered out or on different page
+      return;
+    }
+
+    // Wait for DOM to update
+    const timeoutId = setTimeout(() => {
+      const element = document.querySelector(
+        `[data-client-id="${selectedClientIdFromURL}"]`
+      );
+      if (element) {
+        // Scroll to element with smooth behavior
+        element.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [selectedClientIdFromURL, clients, loading]);
+
   const handleEditFieldChange = useCallback(
     (field: keyof Client, value: Client[keyof Client] | string | string[]) => {
       setEditData(prev => ({ ...prev, [field]: value as never }));
@@ -626,7 +662,7 @@ const ClientList = memo(function ClientList({
                 label: '클라이언트 관리 방법 알아보기',
                 onClick: () => {
                   // TODO: 도움말 모달 또는 페이지로 이동
-                  console.log('Show help guide');
+                  logInfo('Show help guide');
                 },
               }
             : undefined
@@ -733,6 +769,8 @@ const ClientList = memo(function ClientList({
                   const isExpanded = expandedClientId === client.id;
 
                   const isNewlyCreated = newlyCreatedClientId === client.id;
+                  const isSelectedFromURL =
+                    selectedClientIdFromURL === client.id;
 
                   return (
                     <Fragment key={client.id}>
@@ -750,7 +788,8 @@ const ClientList = memo(function ClientList({
                           'cursor-pointer group',
                           editingClient === client.id ? 'bg-blue-50' : '',
                           'hover:bg-blue-50/30 transition-colors',
-                          isNewlyCreated && 'ring-2 ring-green-400 bg-green-50'
+                          isNewlyCreated && 'ring-2 ring-green-400 bg-green-50',
+                          isSelectedFromURL && 'ring-2 ring-blue-400 bg-blue-50'
                         )}
                         role="button"
                         tabIndex={0}

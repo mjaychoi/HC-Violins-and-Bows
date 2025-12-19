@@ -481,6 +481,8 @@ describe('dashboardUtils', () => {
       const errors = validateInstrumentData({
         maker: 'Stradivari',
         type: 'Violin',
+        year: 1700,
+        price: 1000,
       });
       expect(errors).toHaveLength(0);
     });
@@ -490,6 +492,7 @@ describe('dashboardUtils', () => {
         maker: 'Stradivari',
         type: 'Violin',
         year: 999,
+        price: 1000,
       });
       expect(errors1).toContain('Year must be a valid year');
 
@@ -497,6 +500,7 @@ describe('dashboardUtils', () => {
         maker: 'Stradivari',
         type: 'Violin',
         year: 2100,
+        price: 1000,
       });
       expect(errors2).toContain('Year must be a valid year');
 
@@ -504,6 +508,7 @@ describe('dashboardUtils', () => {
         maker: 'Stradivari',
         type: 'Violin',
         year: 1700,
+        price: 1000,
       });
       expect(errors3).not.toContain('Year must be a valid year');
     });
@@ -512,6 +517,7 @@ describe('dashboardUtils', () => {
       const errors1 = validateInstrumentData({
         maker: 'Stradivari',
         type: 'Violin',
+        year: 1700,
         price: -100,
       });
       expect(errors1).toContain('Price must be a valid positive number');
@@ -519,6 +525,7 @@ describe('dashboardUtils', () => {
       const errors2 = validateInstrumentData({
         maker: 'Stradivari',
         type: 'Violin',
+        year: 1700,
         price: 100,
       });
       expect(errors2).not.toContain('Price must be a valid positive number');

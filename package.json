@@ -32,6 +32,7 @@
     "migrate:maintenance": "tsx scripts/migrate-maintenance-tasks.ts",
     "populate:numbers": "tsx scripts/populate-unique-numbers.ts",
     "fix:ownership": "tsx scripts/fix-ownership-uuids.ts",
+    "reset:db": "tsx scripts/reset-database.ts",
     "seed:data": "tsx scripts/seed-sample-data.ts",
     "generate:sample-data": "tsx scripts/generate-sample-data.ts",
     "schema:check": "tsx scripts/check-schema.ts",

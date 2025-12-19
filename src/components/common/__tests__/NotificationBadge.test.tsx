@@ -169,7 +169,7 @@ describe('NotificationBadge', () => {
     expect(screen.queryByText(/곧 마감/)).not.toBeInTheDocument();
   });
 
-  it('shows "캘린더에서 확인하기" button in tooltip when onClick is provided', () => {
+  it('calls onClick when badge button is clicked', () => {
     render(
       <NotificationBadge
         overdue={1}
@@ -180,22 +180,8 @@ describe('NotificationBadge', () => {
     );
 
     const button = screen.getByRole('button', { name: /알림 1개/i });
-    fireEvent.mouseEnter(button);
-
-    const calendarButton = screen.getByText(/캘린더에서 확인하기/);
-    expect(calendarButton).toBeInTheDocument();
-
-    fireEvent.click(calendarButton);
+    fireEvent.click(button);
     expect(mockOnClick).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not show calendar button in tooltip when onClick is not provided', () => {
-    render(<NotificationBadge overdue={1} upcoming={0} today={0} />);
-
-    const button = screen.getByRole('button', { name: /알림 1개/i });
-    fireEvent.mouseEnter(button);
-
-    expect(screen.queryByText(/캘린더에서 확인하기/)).not.toBeInTheDocument();
   });
 
   it('has correct aria-label', () => {

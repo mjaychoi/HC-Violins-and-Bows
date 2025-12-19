@@ -17,6 +17,7 @@ import dynamic from 'next/dynamic';
 import { useSalesHistory } from '@/app/sales/hooks/useSalesHistory';
 import { generateSampleInstruments } from './utils/sampleData';
 import TodayFollowUps from '@/app/clients/components/TodayFollowUps';
+import { logDebug } from '@/utils/logger';
 
 // Dynamic import for SaleForm to reduce initial bundle size
 const SaleForm = dynamic(() => import('@/app/sales/components/SaleForm'), {
@@ -132,13 +133,17 @@ export default function DashboardPage() {
     })) as EnrichedInstrument[];
   }, [instruments, clientRelationships]);
 
+  // FIXED: Only scroll to top on initial mount, not on every render
+  // Removed automatic scroll to top to prevent unwanted scroll position changes
+  // Users should maintain their scroll position when navigating to dashboard
+
   // Debug: Log clients loading state
   useEffect(() => {
     if (
       typeof window !== 'undefined' &&
       process.env.NODE_ENV === 'development'
     ) {
-      console.log('[Dashboard] Clients state:', {
+      logDebug('[Dashboard] Clients state:', {
         clientsCount: clients?.length ?? 0,
         loading: loading.hasAnyLoading,
         sampleClientIds:

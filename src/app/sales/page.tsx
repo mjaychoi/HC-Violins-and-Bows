@@ -110,6 +110,7 @@ import {
 // generateCSV and generateReceiptEmail are imported dynamically when needed
 import { currency, dateFormat } from './utils/salesFormatters';
 import { SaleStatus } from './types';
+import { apiFetch } from '@/utils/apiFetch';
 
 // Component that uses useSearchParams - must be wrapped in Suspense
 function SalesPageContent() {
@@ -289,31 +290,21 @@ function SalesPageContent() {
 
   const handleSendReceipt = useCallback(
     async (sale: EnrichedSale) => {
-      const email = sale.client?.email;
-      if (!email) {
-        handleError(
-          new Error('No customer email available for this sale.'),
-          'Send receipt'
-        );
-        return;
-      }
-
       try {
-        // Dynamic import for large utility function
-        const { generateReceiptEmail } = await import('./utils/salesUtils');
-        const { subject, body } = generateReceiptEmail(
-          sale,
-          dateFormat,
-          currency
-        );
-        window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
-        showSuccess('Receipt email opened in your email client.');
+        // Download invoice PDF
+        const invoiceUrl = `/api/invoices/${sale.id}`;
+        const link = document.createElement('a');
+        link.href = invoiceUrl;
+        link.download = `invoice-${sale.id.slice(0, 8)}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showSuccess('Invoice PDF downloaded.');
       } catch (error) {
-        handleError(error, 'Send Receipt');
+        handleError(error, 'Download Invoice');
       }
     },
     [handleError, showSuccess]
-    // dateFormat and currency are constants, not dependencies
   );
 
   // Request refund (shows confirmation dialog)
@@ -402,7 +393,7 @@ function SalesPageContent() {
   const handleUpdateSale = useCallback(
     async (id: string, data: { sale_price?: number }) => {
       try {
-        const response = await fetch('/api/sales', {
+        const response = await apiFetch('/api/sales', {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
@@ -650,7 +641,13 @@ function SalesPageContent() {
                 onUndoRefund={handleRequestUndoRefund}
                 statusForSale={statusForSale}
                 hasActiveFilters={
-                  !!(search || from || to || hasClient !== null)
+                  !!(
+                    search ||
+                    from ||
+                    to ||
+                    hasClient !== null ||
+                    instrumentIdFromUrl
+                  )
                 }
                 onResetFilters={clearFilters}
                 onUpdateSale={handleUpdateSale}
@@ -663,7 +660,15 @@ function SalesPageContent() {
                 filteredCount={totalCount}
                 pageSize={10}
                 loading={loading}
-                hasFilters={!!(search || from || to || hasClient !== null)}
+                hasFilters={
+                  !!(
+                    search ||
+                    from ||
+                    to ||
+                    hasClient !== null ||
+                    instrumentIdFromUrl
+                  )
+                }
                 onPageChange={setPage}
                 compact={false}
               />

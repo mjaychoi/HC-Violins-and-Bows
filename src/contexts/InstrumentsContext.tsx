@@ -12,6 +12,7 @@ import React, {
 import { Instrument } from '@/types';
 import { fetchInstruments as serviceFetchInstruments } from '@/services/dataService';
 import { useErrorHandler } from '@/contexts/ToastContext';
+import { apiFetch } from '@/utils/apiFetch';
 
 // Helper function to parse type field: if it contains "/", split into type and subtype
 function parseInstrumentType(item: Instrument): Instrument {
@@ -185,7 +186,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
       try {
         const fetcher = async () => {
           // 전체 데이터가 필요한 경우 all=true 파라미터 추가
-          const response = await fetch(
+          const response = await apiFetch(
             '/api/instruments?orderBy=created_at&ascending=false&all=true'
           );
           if (!response.ok) {
@@ -210,7 +211,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
     async (instrument: Omit<Instrument, 'id' | 'created_at'>) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await fetch('/api/instruments', {
+        const response = await apiFetch('/api/instruments', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(instrument),
@@ -264,7 +265,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
     async (id: string, instrument: Partial<Instrument>) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await fetch('/api/instruments', {
+        const response = await apiFetch('/api/instruments', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, ...instrument }),

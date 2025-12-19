@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { SalesHistory } from '@/types';
 import { useErrorHandler } from '@/contexts/ToastContext';
+import { apiFetch } from '@/utils/apiFetch';
 
 const PAGE_SIZE = 10;
 
@@ -79,7 +80,7 @@ export function useSalesHistory() {
           params.set('sortDirection', options.sortDirection);
         }
 
-        const response = await fetch(`/api/sales?${params.toString()}`);
+        const response = await apiFetch(`/api/sales?${params.toString()}`);
         const result = await response.json();
 
         if (!response.ok) {
@@ -125,7 +126,7 @@ export function useSalesHistory() {
         setLoading(true);
         setError(null);
 
-        const response = await fetch('/api/sales', {
+        const response = await apiFetch('/api/sales', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -171,7 +172,7 @@ export function useSalesHistory() {
         setLoading(true);
         setError(null);
 
-        const response = await fetch('/api/sales', {
+        const response = await apiFetch('/api/sales', {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
@@ -224,7 +225,7 @@ export function useSalesHistory() {
         setLoading(true);
         setError(null);
 
-        const response = await fetch('/api/sales', {
+        const response = await apiFetch('/api/sales', {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',

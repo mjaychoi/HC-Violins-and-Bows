@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useFilters } from '../hooks/useFilters';
 import { useClientKPIs } from '../hooks/useClientKPIs';
 import ClientList from './ClientList';
@@ -37,6 +38,9 @@ function ClientsListContentInner({
   newlyCreatedClientId,
   onNewlyCreatedClientShown,
 }: ClientsListContentProps) {
+  const searchParams = useSearchParams();
+  const clientIdFromURL = searchParams.get('clientId');
+
   const {
     searchTerm,
     setSearchTerm,
@@ -157,6 +161,7 @@ function ClientsListContentInner({
         getSortArrow={getSortArrow}
         newlyCreatedClientId={newlyCreatedClientId}
         onNewlyCreatedClientShown={onNewlyCreatedClientShown}
+        selectedClientIdFromURL={clientIdFromURL}
         // Pagination props
         currentPage={currentPage}
         totalPages={totalPages}

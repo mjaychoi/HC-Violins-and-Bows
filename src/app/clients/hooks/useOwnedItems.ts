@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Client, Instrument } from '@/types';
 import { logError } from '@/utils/logger';
+import { apiFetch } from '@/utils/apiFetch';
 // Removed direct supabase import to reduce bundle size - using API routes instead
 
 export function useOwnedItems() {
@@ -41,7 +42,7 @@ export function useOwnedItems() {
         ascending: 'false',
       });
 
-      const response = await fetch(`/api/instruments?${params.toString()}`, {
+      const response = await apiFetch(`/api/instruments?${params.toString()}`, {
         signal: controller.signal,
       });
 

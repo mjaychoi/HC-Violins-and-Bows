@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { format } from 'date-fns';
 import { parseISO } from 'date-fns';
 import { CustomerWithPurchases } from '../types';
-import { getMostRecentDate, parseYMDUTC } from '@/utils/dateParsing';
+import { getMostRecentDate, parseYMDLocal } from '@/utils/dateParsing';
 
 // Format amount with 0 decimal places (for total spend)
 const formatAmount = (amount: number) =>
@@ -22,20 +22,24 @@ const formatAmountWithDecimals = (amount: number) =>
   }).format(amount);
 
 // Format date for display (consistent with PurchaseHistory and CustomerList)
+// Use local parsing for display to avoid timezone issues
 const formatDateForDisplay = (dateStr?: string | null): string => {
   if (!dateStr) return '—';
   try {
-    // Try parsing as YYYY-MM-DD first
-    const date = parseYMDUTC(dateStr);
+    // Use parseYMDLocal for display to show correct local date
+    const date = parseYMDLocal(dateStr);
+    if (date) {
+      return format(date, 'MMM d, yyyy');
+    }
+  } catch {
+    // Continue to fallback
+  }
+  // Fallback to ISO parsing
+  try {
+    const date = parseISO(dateStr);
     return format(date, 'MMM d, yyyy');
   } catch {
-    // Fallback to ISO parsing
-    try {
-      const date = parseISO(dateStr);
-      return format(date, 'MMM d, yyyy');
-    } catch {
-      return dateStr; // Fallback to raw string
-    }
+    return dateStr; // Fallback to raw string
   }
 };
 

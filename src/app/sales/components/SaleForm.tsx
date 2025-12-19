@@ -9,6 +9,7 @@ import {
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import { logInfo } from '@/utils/logger';
 import { todayLocalYMD } from '@/utils/dateParsing';
+import { apiFetch } from '@/utils/apiFetch';
 import { modalStyles } from '@/components/common/modals/modalStyles';
 import { ModalHeader } from '@/components/common/modals/ModalHeader';
 
@@ -187,7 +188,7 @@ export default function SaleForm({
         parsedPrice > 0
       ) {
         try {
-          const response = await fetch('/api/instruments', {
+          const response = await apiFetch('/api/instruments', {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',

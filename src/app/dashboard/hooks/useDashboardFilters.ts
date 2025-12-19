@@ -14,6 +14,7 @@ import {
   filterDashboardItems,
   EMPTY_DASHBOARD_FILTERS,
 } from '../utils/filterUtils';
+import { logDebug } from '@/utils/logger';
 
 // FIXED: Accept enriched items (Instrument with clients array) for HAS_CLIENTS filter
 // FIXED: Use explicit ClientInstrument[] type (not optional, always present even if empty)
@@ -216,7 +217,7 @@ export function useDashboardFilters(
     ) {
       const dashboardFilters = baseFilters.filters as DashboardFilters;
       const beforeCount = getActiveFiltersCount();
-      console.log('[useDashboardFilters] clearAllFilters called', {
+      logDebug('[useDashboardFilters] clearAllFilters called', {
         before: {
           searchTerm: baseFilters.searchTerm,
           dateRange,
@@ -253,7 +254,7 @@ export function useDashboardFilters(
       setTimeout(() => {
         const afterFilters = baseFilters.filters as DashboardFilters;
         const afterCount = getActiveFiltersCount();
-        console.log('[useDashboardFilters] clearAllFilters completed', {
+        logDebug('[useDashboardFilters] clearAllFilters completed', {
           after: {
             searchTerm: baseFilters.searchTerm || '(empty)',
             dateRange: null,

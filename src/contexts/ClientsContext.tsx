@@ -12,6 +12,8 @@ import React, {
 import { Client } from '@/types';
 import { fetchClients as serviceFetchClients } from '@/services/dataService';
 import { useErrorHandler } from '@/contexts/ToastContext';
+import { apiFetch } from '@/utils/apiFetch';
+import { logInfo, logWarn } from '@/utils/logger';
 
 // Clients 상태 타입
 interface ClientsState {
@@ -151,7 +153,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
       try {
         const fetcher = async () => {
           // 전체 데이터가 필요한 경우 all=true 파라미터 추가
-          const response = await fetch(
+          const response = await apiFetch(
             '/api/clients?orderBy=created_at&ascending=false&all=true'
           );
           if (!response.ok) {
@@ -180,11 +182,11 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
         };
 
         const clients = await serviceFetchClients(fetcher);
-        console.log(
+        logInfo(
           `[ClientsContext] fetchClients: Received ${clients.length} clients`
         );
         if (clients.length === 0) {
-          console.warn(
+          logWarn(
             '[ClientsContext] fetchClients: Received empty array - check API response'
           );
         }
@@ -203,9 +205,8 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
             err.code === 'SESSION_EXPIRED' ||
             err.code === 'UNAUTHORIZED'
           ) {
-            console.warn(
-              'Authentication error in fetchClients, setting empty array:',
-              err
+            logWarn(
+              `Authentication error in fetchClients, setting empty array: ${err instanceof Error ? err.message : String(err)}`
             );
             dispatch({ type: 'SET_CLIENTS', payload: [] });
             return;
@@ -222,7 +223,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
     async (client: Omit<Client, 'id' | 'created_at'>) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await fetch('/api/clients', {
+        const response = await apiFetch('/api/clients', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(client),
@@ -250,7 +251,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
     async (id: string, client: Partial<Client>) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await fetch('/api/clients', {
+        const response = await apiFetch('/api/clients', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, ...client }),

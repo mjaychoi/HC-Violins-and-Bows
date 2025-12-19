@@ -21,6 +21,7 @@ import {
 import { Button } from '@/components/common/inputs';
 import type { MaintenanceTask, ContactLog } from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
+import { apiFetch } from '@/utils/apiFetch';
 import { useCalendarNavigation, useCalendarView } from './hooks';
 import {
   CALENDAR_MESSAGES,
@@ -121,7 +122,8 @@ export default function CalendarPage() {
     try {
       // Fetch all follow-ups (past, today, and future) for calendar display
       // hasFollowUp=true gets all logs with next_follow_up_date set (regardless of date)
-      const response = await fetch(`/api/contacts?hasFollowUp=true`);
+      // ✅ FIXED: Use apiFetch to include authentication headers
+      const response = await apiFetch(`/api/contacts?hasFollowUp=true`);
       const result = await response.json();
 
       if (!response.ok) {

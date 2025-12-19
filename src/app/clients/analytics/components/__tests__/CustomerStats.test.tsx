@@ -91,7 +91,7 @@ describe('CustomerStats', () => {
   it('should display most recent purchase date', () => {
     render(<CustomerStats customers={[mockCustomer1, mockCustomer2]} />);
     // Most recent is 2024-06-01
-    expect(screen.getByText('May 31, 2024')).toBeInTheDocument();
+    expect(screen.getByText('Jun 1, 2024')).toBeInTheDocument();
   });
 
   it('should handle empty customers array', () => {

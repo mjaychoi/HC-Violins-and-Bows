@@ -5,6 +5,18 @@ import TodayFollowUps from '../TodayFollowUps';
 import { ContactLog } from '@/types';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 
+const mockGetSession = jest.fn().mockResolvedValue({
+  data: { session: null },
+});
+
+jest.mock('@/lib/supabase-client', () => ({
+  getSupabaseClient: jest.fn(async () => ({
+    auth: {
+      getSession: mockGetSession,
+    },
+  })),
+}));
+
 // Mock fetch
 global.fetch = jest.fn();
 
@@ -104,6 +116,11 @@ describe('TodayFollowUps', () => {
       handleError: mockHandleError,
       showSuccess: mockShowSuccess,
     });
+    mockGetSession.mockReturnValue(
+      Promise.resolve({
+        data: { session: null },
+      })
+    );
   });
 
   it('renders loading state initially', async () => {

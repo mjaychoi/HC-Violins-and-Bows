@@ -14,7 +14,6 @@ import {
   validateInstrumentSerial,
 } from '@/utils/uniqueNumberGenerator';
 import Link from 'next/link';
-import { arrowToClass } from '@/utils/filterHelpers';
 import { ListSkeleton, Pagination, EmptyState } from '@/components/common';
 import StatusBadge from './StatusBadge';
 import CertificateBadge from './CertificateBadge';
@@ -25,6 +24,7 @@ import MobileCardView, {
   MobileCardRow,
 } from '@/components/common/layout/MobileCardView';
 import { useInlineEdit } from '@/hooks/useInlineEdit';
+import { logInfo } from '@/utils/logger';
 
 // FIXED: Use EnrichedInstrument type to avoid duplicate computation
 // Import from DashboardContent or define here - using explicit definition for clarity
@@ -391,9 +391,14 @@ const ItemList = memo(function ItemList({
     [inlineEdit]
   );
 
-  // Scroll to and highlight newly created item
+  // Scroll to and highlight newly created item (only if not visible)
+  const hasScrolledRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!newlyCreatedItemId || loading) return;
+
+    // Skip if we've already scrolled to this item
+    if (hasScrolledRef.current === newlyCreatedItemId) return;
 
     let highlightTimeout: NodeJS.Timeout | null = null;
 
@@ -401,7 +406,7 @@ const ItemList = memo(function ItemList({
     const itemIndex = items.findIndex(item => item.id === newlyCreatedItemId);
     if (itemIndex === -1) {
       // Item not in current page - might be filtered out or on different page
-      // Wait a bit for data to update, then try again
+      // Wait a bit for data to update, then try again (only once)
       const retryTimeout = setTimeout(() => {
         const retryElement = document.querySelector(
           `[data-item-id="${newlyCreatedItemId}"]`
@@ -420,16 +425,39 @@ const ItemList = memo(function ItemList({
         `[data-item-id="${newlyCreatedItemId}"]`
       );
       if (element) {
-        // Scroll to element with smooth behavior
-        element.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-        });
+        // Only scroll if element is not already visible in viewport
+        const rect = element.getBoundingClientRect();
+        const viewportHeight =
+          window.innerHeight || document.documentElement.clientHeight;
+        const viewportWidth =
+          window.innerWidth || document.documentElement.clientWidth;
+        const isVisible =
+          rect.top >= 0 &&
+          rect.left >= 0 &&
+          rect.bottom <= viewportHeight &&
+          rect.right <= viewportWidth;
+
+        if (!isVisible) {
+          // Scroll to element with smooth behavior, using 'start' to align to top
+          element.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          });
+          // Mark as scrolled to prevent repeated scrolling
+          hasScrolledRef.current = newlyCreatedItemId;
+        } else {
+          // Element is already visible, mark as handled
+          hasScrolledRef.current = newlyCreatedItemId;
+        }
 
         // Remove highlight after animation completes
         highlightTimeout = setTimeout(() => {
           if (onNewlyCreatedItemShown) {
             onNewlyCreatedItemShown();
+          }
+          // Clear the ref when highlight is removed
+          if (hasScrolledRef.current === newlyCreatedItemId) {
+            hasScrolledRef.current = null;
           }
         }, 3000); // Keep highlight for 3 seconds
       }
@@ -493,7 +521,7 @@ const ItemList = memo(function ItemList({
                 label: '악기 추가 방법 알아보기',
                 onClick: () => {
                   // TODO: 도움말 모달 또는 페이지로 이동
-                  console.log('Show help guide');
+                  logInfo('Show help guide');
                 },
               }
             : undefined
@@ -715,17 +743,13 @@ const ItemList = memo(function ItemList({
                   <span className="inline-flex items-center gap-1">
                     Status
                     <span
-                      className={`opacity-0 group-hover:opacity-100 transition-opacity ${
-                        arrowToClass(getSortArrow('status')) !== 'sort-neutral'
-                          ? `opacity-100 text-blue-600`
-                          : 'text-gray-400'
+                      className={`opacity-0 group-hover:opacity-100 ${
+                        getSortArrow('status') !== ''
+                          ? 'opacity-100 text-gray-900'
+                          : ''
                       }`}
                     >
-                      {arrowToClass(getSortArrow('status')) === 'sort-asc'
-                        ? '▲'
-                        : arrowToClass(getSortArrow('status')) === 'sort-desc'
-                          ? '▼'
-                          : '↕'}
+                      {getSortArrow('status') || ''}
                     </span>
                   </span>
                 </th>
@@ -736,20 +760,13 @@ const ItemList = memo(function ItemList({
                   <span className="inline-flex items-center gap-1">
                     Serial #
                     <span
-                      className={`opacity-0 group-hover:opacity-100 transition-opacity ${
-                        arrowToClass(getSortArrow('serial_number')) !==
-                        'sort-neutral'
-                          ? 'opacity-100 text-blue-600'
-                          : 'text-gray-400'
+                      className={`opacity-0 group-hover:opacity-100 ${
+                        getSortArrow('serial_number') !== ''
+                          ? 'opacity-100 text-gray-900'
+                          : ''
                       }`}
                     >
-                      {arrowToClass(getSortArrow('serial_number')) ===
-                      'sort-asc'
-                        ? '▲'
-                        : arrowToClass(getSortArrow('serial_number')) ===
-                            'sort-desc'
-                          ? '▼'
-                          : '↕'}
+                      {getSortArrow('serial_number') || ''}
                     </span>
                   </span>
                 </th>
@@ -760,13 +777,13 @@ const ItemList = memo(function ItemList({
                   <span className="inline-flex items-center gap-1">
                     Maker
                     <span
-                      className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('maker')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
+                      className={`opacity-0 group-hover:opacity-100 ${
+                        getSortArrow('maker') !== ''
+                          ? 'opacity-100 text-gray-900'
+                          : ''
+                      }`}
                     >
-                      {arrowToClass(getSortArrow('maker')) === 'sort-asc'
-                        ? '▲'
-                        : arrowToClass(getSortArrow('maker')) === 'sort-desc'
-                          ? '▼'
-                          : '↕'}
+                      {getSortArrow('maker') || ''}
                     </span>
                   </span>
                 </th>
@@ -777,17 +794,13 @@ const ItemList = memo(function ItemList({
                   <span className="inline-flex items-center gap-1">
                     Type
                     <span
-                      className={`opacity-0 group-hover:opacity-100 transition-opacity ${
-                        arrowToClass(getSortArrow('type')) !== 'sort-neutral'
-                          ? 'opacity-100 text-blue-600'
-                          : 'text-gray-400'
+                      className={`opacity-0 group-hover:opacity-100 ${
+                        getSortArrow('type') !== ''
+                          ? 'opacity-100 text-gray-900'
+                          : ''
                       }`}
                     >
-                      {arrowToClass(getSortArrow('type')) === 'sort-asc'
-                        ? '▲'
-                        : arrowToClass(getSortArrow('type')) === 'sort-desc'
-                          ? '▼'
-                          : '↕'}
+                      {getSortArrow('type') || ''}
                     </span>
                   </span>
                 </th>
@@ -798,13 +811,13 @@ const ItemList = memo(function ItemList({
                   <span className="inline-flex items-center gap-1">
                     Subtype
                     <span
-                      className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('subtype')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
+                      className={`opacity-0 group-hover:opacity-100 ${
+                        getSortArrow('subtype') !== ''
+                          ? 'opacity-100 text-gray-900'
+                          : ''
+                      }`}
                     >
-                      {arrowToClass(getSortArrow('subtype')) === 'sort-asc'
-                        ? '▲'
-                        : arrowToClass(getSortArrow('subtype')) === 'sort-desc'
-                          ? '▼'
-                          : '↕'}
+                      {getSortArrow('subtype') || ''}
                     </span>
                   </span>
                 </th>
@@ -815,17 +828,13 @@ const ItemList = memo(function ItemList({
                   <span className="inline-flex items-center gap-1">
                     Year
                     <span
-                      className={`opacity-0 group-hover:opacity-100 transition-opacity ${
-                        arrowToClass(getSortArrow('year')) !== 'sort-neutral'
-                          ? 'opacity-100 text-blue-600'
-                          : 'text-gray-400'
+                      className={`opacity-0 group-hover:opacity-100 ${
+                        getSortArrow('year') !== ''
+                          ? 'opacity-100 text-gray-900'
+                          : ''
                       }`}
                     >
-                      {arrowToClass(getSortArrow('year')) === 'sort-asc'
-                        ? '▲'
-                        : arrowToClass(getSortArrow('year')) === 'sort-desc'
-                          ? '▼'
-                          : '↕'}
+                      {getSortArrow('year') || ''}
                     </span>
                   </span>
                 </th>
@@ -836,13 +845,13 @@ const ItemList = memo(function ItemList({
                   <span className="inline-flex items-center gap-1">
                     Price
                     <span
-                      className={`opacity-0 group-hover:opacity-100 ${arrowToClass(getSortArrow('price')) !== 'sort-neutral' ? 'opacity-100 text-gray-900' : ''}`}
+                      className={`opacity-0 group-hover:opacity-100 ${
+                        getSortArrow('price') !== ''
+                          ? 'opacity-100 text-gray-900'
+                          : ''
+                      }`}
                     >
-                      {arrowToClass(getSortArrow('price')) === 'sort-asc'
-                        ? '▲'
-                        : arrowToClass(getSortArrow('price')) === 'sort-desc'
-                          ? '▼'
-                          : '↕'}
+                      {getSortArrow('price') || ''}
                     </span>
                   </span>
                 </th>

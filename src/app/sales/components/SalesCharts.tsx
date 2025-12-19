@@ -21,6 +21,7 @@ import {
   formatCompactDate,
   formatMonth,
 } from '@/utils/dateParsing';
+import { logDebug } from '@/utils/logger';
 
 interface SalesChartsProps {
   sales: EnrichedSale[];
@@ -110,21 +111,27 @@ export default function SalesCharts({
       }
     });
 
-    return Array.from(dailyMap.entries())
-      .map(([dateStr, data]) => {
-        // FIXED: Use unified date formatter for consistency
-        const formattedDate = formatCompactDate(dateStr);
+    const sortedEntries = Array.from(dailyMap.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
 
-        return {
-          date: formattedDate,
-          fullDate: dateStr,
-          revenue: data.revenue,
-          refunds: data.refunds,
-          net: data.revenue - data.refunds,
-          count: data.count,
-        };
-      })
-      .sort((a, b) => a.fullDate.localeCompare(b.fullDate));
+    // Calculate cumulative net sales
+    let cumulativeNet = 0;
+    return sortedEntries.map(([dateStr, data]) => {
+      // FIXED: Use unified date formatter for consistency
+      const formattedDate = formatCompactDate(dateStr);
+      const dailyNet = data.revenue - data.refunds;
+      cumulativeNet += dailyNet;
+
+      return {
+        date: formattedDate,
+        fullDate: dateStr,
+        revenue: data.revenue,
+        refunds: data.refunds,
+        net: cumulativeNet, // Cumulative net sales
+        count: data.count,
+      };
+    });
   }, [filteredSales]);
 
   // 요일별 매출 데이터 준비 (패턴 분석용)
@@ -859,8 +866,8 @@ export default function SalesCharts({
             <BarChart
               data={refundByClient}
               layout="vertical"
-              margin={{ top: 5, right: 30, left: 110, bottom: 70 }}
-              barCategoryGap="0%"
+              margin={{ top: 20, right: 30, left: 110, bottom: 70 }}
+              barCategoryGap="10%"
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis
@@ -894,9 +901,6 @@ export default function SalesCharts({
                   borderRadius: '6px',
                   padding: '8px',
                 }}
-              />
-              <Legend
-                wrapperStyle={{ paddingTop: '40px', marginBottom: '10px' }}
               />
               <Bar
                 dataKey="refunds"
@@ -938,8 +942,8 @@ export default function SalesCharts({
             <BarChart
               data={refundByInstrument}
               layout="vertical"
-              margin={{ top: 5, right: 30, left: 110, bottom: 70 }}
-              barCategoryGap="0%"
+              margin={{ top: 20, right: 30, left: 110, bottom: 70 }}
+              barCategoryGap="10%"
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis
@@ -973,9 +977,6 @@ export default function SalesCharts({
                   borderRadius: '6px',
                   padding: '8px',
                 }}
-              />
-              <Legend
-                wrapperStyle={{ paddingTop: '40px', marginBottom: '10px' }}
               />
               <Bar
                 dataKey="refunds"
@@ -1125,7 +1126,7 @@ export default function SalesCharts({
                     // Filter by instrument type
                     // Note: This requires instrument type filtering in parent component
                     // For now, we'll just log it - parent should handle the filter
-                    console.log('Filter by instrument type:', payload.type);
+                    logDebug('Filter by instrument type:', payload.type);
                   }
                 }}
                 label={(props: {

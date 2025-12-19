@@ -9,6 +9,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const { logInfo, logWarn } = require('../src/utils/logger');
+const { logError } = require('../src/utils/logger');
 
 const COVERAGE_DIR = path.join(__dirname, '..', 'coverage');
 const COVERAGE_SUMMARY = path.join(COVERAGE_DIR, 'coverage-summary.json');
@@ -35,10 +37,7 @@ function filterCoverageSummary() {
   }
 
   if (!fs.existsSync(coverageFile)) {
-    console.warn(
-      '⚠️  커버리지 리포트 파일을 찾을 수 없습니다:',
-      COVERAGE_SUMMARY
-    );
+    logWarn('⚠️  커버리지 리포트 파일을 찾을 수 없습니다:', COVERAGE_SUMMARY);
     return;
   }
 
@@ -62,7 +61,7 @@ function filterCoverageSummary() {
     }
 
     if (isLegacyFile(filePath)) {
-      console.log(`  제외: ${filePath.replace(process.cwd() + '/', '')}`);
+      logInfo(`  제외: ${filePath.replace(process.cwd() + '/', '')}`);
       continue;
     }
 
@@ -135,21 +134,21 @@ function filterCoverageSummary() {
   }
 
   // 결과 출력
-  console.log('\n✅ 커버리지 리포트 필터링 완료');
-  console.log(`\n📊 레거시 파일 제외 후 커버리지:`);
-  console.log(
+  logInfo('\n✅ 커버리지 리포트 필터링 완료');
+  logInfo(`\n📊 레거시 파일 제외 후 커버리지:`);
+  logInfo(
     `  Statements: ${newTotal.statements.pct.toFixed(2)}% (${coveredStatements}/${totalStatements})`
   );
-  console.log(
+  logInfo(
     `  Branches:   ${newTotal.branches.pct.toFixed(2)}% (${coveredBranches}/${totalBranches})`
   );
-  console.log(
+  logInfo(
     `  Functions:  ${newTotal.functions.pct.toFixed(2)}% (${coveredFunctions}/${totalFunctions})`
   );
-  console.log(
+  logInfo(
     `  Lines:      ${newTotal.lines.pct.toFixed(2)}% (${coveredLines}/${totalLines})`
   );
-  console.log(
+  logInfo(
     `\n  (이전: ${originalTotal.lines.pct.toFixed(2)}% → 현재: ${newTotal.lines.pct.toFixed(2)}%)`
   );
 }
@@ -158,6 +157,6 @@ function filterCoverageSummary() {
 try {
   filterCoverageSummary();
 } catch (error) {
-  console.error('❌ 커버리지 필터링 중 오류 발생:', error.message);
+  logError('❌ 커버리지 필터링 중 오류 발생:', error.message);
   process.exit(1);
 }

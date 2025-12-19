@@ -10,6 +10,7 @@ import { ConnectionModal, ConnectionSearch } from './components';
 import EmptyState from '@/components/common/empty-state/EmptyState';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
+import { logInfo } from '@/utils/logger';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useFilterSort } from '@/hooks/useFilterSort';
 import { AppLayout } from '@/components/layout';
@@ -595,7 +596,7 @@ function ConnectedClientsPageContent() {
                       label: '연결 관리 방법 알아보기',
                       onClick: () => {
                         // TODO: 도움말 모달 또는 페이지로 이동
-                        console.log('Show help guide');
+                        logInfo('Show help guide');
                       },
                     }}
                   />
