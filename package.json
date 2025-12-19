@@ -43,7 +43,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@react-pdf/renderer": "^4.3.1",
-    "@sentry/nextjs": "^10.30.0",
+    "@sentry/nextjs": "^10.32.1",
     "@supabase/supabase-js": "^2.51.0",
     "@types/react-dnd": "^2.0.36",
     "@types/react-window": "^1.8.8",

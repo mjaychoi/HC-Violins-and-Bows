@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import * as Sentry from '@sentry/nextjs';
 
 type GlobalErrorProps = {
   error: Error & { digest?: string };
@@ -10,13 +9,26 @@ type GlobalErrorProps = {
 
 /**
  * Next.js app router 전역 에러 핸들러
- * - Sentry에 렌더링 에러를 보고
+ * - Sentry에 렌더링 에러를 보고 (Sentry가 설치된 경우)
  * - 사용자는 간단한 재시도 / 새로고침 UI를 보게 됨
  * - 앱 내부 ErrorBoundary와는 별도로, 루트 레벨에서 한 번 더 안전망 역할
  */
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
   React.useEffect(() => {
-    Sentry.captureException(error);
+    // Dynamically import Sentry to avoid build errors if it's not installed
+    import('@sentry/nextjs')
+      .then(Sentry => {
+        Sentry.captureException(error);
+      })
+      .catch(() => {
+        // Sentry not available - silently ignore in development
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(
+            '[GlobalError] Sentry not available, error not reported:',
+            error
+          );
+        }
+      });
   }, [error]);
 
   return (
