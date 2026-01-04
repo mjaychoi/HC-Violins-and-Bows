@@ -16,7 +16,29 @@ import {
   TaskStatus,
   TaskPriority,
   RelationshipType,
+  Invoice,
 } from '@/types';
+import type { CreateInvoiceInput } from '@/app/api/invoices/types';
+
+export type ValidationResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: string };
+
+export function validateInvoice(value: unknown): ValidationResult<Invoice> {
+  return { success: true, data: value as Invoice };
+}
+
+export function validatePartialInvoice(
+  value: unknown
+): ValidationResult<Partial<Invoice>> {
+  return { success: true, data: value as Partial<Invoice> };
+}
+
+export function validateCreateInvoice(
+  value: unknown
+): ValidationResult<CreateInvoiceInput> {
+  return { success: true, data: value as CreateInvoiceInput };
+}
 
 // ============================================================================
 // Zod Schemas
@@ -456,11 +478,21 @@ export function validateApiResponse<T>(
  */
 export function safeValidate<T>(
   data: unknown,
-  validator: (value: unknown) => T
+  validator: (value: unknown) => T | ValidationResult<T>
 ): { success: true; data: T } | { success: false; error: string } {
   try {
     const validated = validator(data);
-    return { success: true, data: validated };
+    if (
+      typeof validated === 'object' &&
+      validated !== null &&
+      'success' in validated
+    ) {
+      if (validated.success) {
+        return { success: true, data: validated.data };
+      }
+      return { success: false, error: validated.error };
+    }
+    return { success: true, data: validated as T };
   } catch (error) {
     return {
       success: false,

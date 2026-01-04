@@ -13,7 +13,8 @@ export type DashboardSortField =
   | 'type'
   | 'subtype'
   | 'year'
-  | 'price';
+  | 'price'
+  | 'ownership';
 
 /**
  * Calendar page sort fields
@@ -58,6 +59,7 @@ export const DASHBOARD_SORT_FIELDS: readonly DashboardSortField[] = [
   'subtype',
   'year',
   'price',
+  'ownership',
 ] as const;
 
 /**

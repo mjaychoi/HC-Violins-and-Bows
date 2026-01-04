@@ -15,6 +15,17 @@
  */
 export type BadgeVariant = 'soft' | 'solid' | 'outline' | 'muted';
 
+export function getButtonVariantClasses(
+  variant: 'primary' | 'secondary' | 'ghost' = 'primary'
+): string {
+  const variants: Record<typeof variant, string> = {
+    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
+    secondary:
+      'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-400',
+    ghost: 'bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-400',
+  };
+  return variants[variant];
+}
 /**
  * 색상 토큰 구조 (variant별 색상 제공)
  */
