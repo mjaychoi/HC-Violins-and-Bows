@@ -10,7 +10,7 @@ export interface ValidationRule<T = unknown> {
   message?: string;
 }
 
-export interface ValidationResult {
+export interface FormValidationResult {
   isValid: boolean;
   errors: Record<string, string>;
 }
@@ -124,7 +124,7 @@ export function validateField<T>(
 export function validateForm<T extends Record<string, unknown>>(
   data: T,
   validationSchema: Partial<Record<keyof T, ValidationRule<T[keyof T]>[]>>
-): ValidationResult {
+): FormValidationResult {
   const errors: Record<string, string> = {};
 
   for (const [fieldName, rules] of Object.entries(validationSchema)) {

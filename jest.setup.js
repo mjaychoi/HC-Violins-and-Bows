@@ -66,16 +66,53 @@ jest.mock('next/navigation', () => {
 // Mock next/server for API route tests so that NextRequest/NextResponse
 // work in the Node/Jest environment without relying on the real Web API
 jest.mock('next/server', () => {
+  class MockHeaders {
+    constructor(init = {}) {
+      this._map = new Map();
+      if (init) {
+        if (typeof init.forEach === 'function') {
+          init.forEach((value, key) => this.set(key, value));
+        } else if (Symbol.iterator in init) {
+          for (const [key, value] of init) {
+            this.set(key, value);
+          }
+        } else {
+          for (const key of Object.keys(init)) {
+            this.set(key, init[key]);
+          }
+        }
+      }
+    }
+
+    _normalize(name) {
+      return String(name).toLowerCase();
+    }
+
+    get(name) {
+      const normalized = this._normalize(name);
+      return this._map.has(normalized) ? this._map.get(normalized) : null;
+    }
+
+    set(name, value) {
+      this._map.set(this._normalize(name), String(value));
+    }
+
+    entries() {
+      return this._map.entries();
+    }
+  }
+
   class NextRequest {
     constructor(input, init = {}) {
       this.url = input;
       this.method = init.method || 'GET';
       this._body = init.body;
       this.nextUrl = new URL(input);
+      this._headers = new MockHeaders(init.headers);
     }
 
     get headers() {
-      return new Map();
+      return this._headers;
     }
 
     async json() {

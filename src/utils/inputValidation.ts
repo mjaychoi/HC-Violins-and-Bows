@@ -182,6 +182,14 @@ export function sanitizeSearchTerm(
   // Supabase ilike automatically escapes these, so we don't remove them here
 }
 
+/**
+ * Escape characters that have special meaning in PostgREST filters
+ * (%, _, ,, (, ), \)
+ */
+export function escapePostgrestFilterValue(value: string): string {
+  return value.replace(/[%_,()\\]/g, match => `\\${match}`);
+}
+
 // ============================================================================
 // Partial Update Validation
 // ============================================================================
