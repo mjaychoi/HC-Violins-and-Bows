@@ -5,16 +5,32 @@
 
 import { getSupabaseClient } from '@/lib/supabase-client';
 
+type ApiFetchMeta = {
+  idempotencyKey?: string;
+};
+
 /**
  * Fetch with automatic authentication token injection
  * @param url - API endpoint URL
  * @param options - Fetch options (headers will be merged with auth header)
+ * @param meta - Optional metadata (e.g., idempotency keys)
  * @returns Promise<Response>
  */
 export async function apiFetch(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  meta?: ApiFetchMeta
 ): Promise<Response> {
+  const requestOptions: RequestInit = {
+    ...options,
+  };
+
+  if (meta?.idempotencyKey) {
+    const idempotencyHeaders = new Headers(requestOptions.headers);
+    idempotencyHeaders.set('Idempotency-Key', meta.idempotencyKey);
+    requestOptions.headers = idempotencyHeaders;
+  }
+
   try {
     // Get Supabase client to access session
     const supabase = await getSupabaseClient();
@@ -23,7 +39,7 @@ export async function apiFetch(
     } = await supabase.auth.getSession();
 
     // Prepare headers
-    const headers = new Headers(options.headers);
+    const headers = new Headers(requestOptions.headers);
 
     // Add Authorization header if session exists
     if (session?.access_token) {
@@ -41,7 +57,7 @@ export async function apiFetch(
       normalizedHeaders[canonicalKey] = value;
     });
 
-    const fetchOptions: RequestInit = { ...options };
+    const fetchOptions: RequestInit = { ...requestOptions };
 
     if (Object.keys(normalizedHeaders).length > 0) {
       fetchOptions.headers = normalizedHeaders;
@@ -57,6 +73,6 @@ export async function apiFetch(
       'Failed to get session for API fetch, attempting without auth:',
       error
     );
-    return fetch(url, options);
+    return fetch(url, requestOptions);
   }
 }

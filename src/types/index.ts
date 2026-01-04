@@ -6,7 +6,10 @@ export interface Instrument {
   type: string | null;
   subtype: string | null;
   year: number | null;
-  certificate: boolean;
+  certificate: boolean | null;
+  certificate_name?: string | null;
+  cost_price?: number | null;
+  consignment_price?: number | null;
   size: string | null;
   weight: string | null;
   price: number | null;
@@ -42,6 +45,7 @@ export interface Client {
   type?: 'Musician' | 'Dealer' | 'Collector' | 'Regular';
   status?: 'Active' | 'Browsing' | 'In Negotiation' | 'Inactive';
   created_at: string;
+  address?: string | null;
 }
 
 // Relationship types
@@ -169,6 +173,62 @@ export interface TaskFilters {
   date_from?: string;
   date_to?: string;
   search?: string;
+}
+// =====================
+// Invoice Types (ADD)
+// =====================
+
+export type InvoiceStatus =
+  | 'draft'
+  | 'sent'
+  | 'paid'
+  | 'overdue'
+  | 'cancelled'
+  | 'void';
+
+export interface InvoiceItem {
+  id: string;
+  invoice_id: string;
+  instrument_id: string | null;
+  description: string;
+  qty: number;
+  rate: number;
+  amount: number;
+  image_url: string | null;
+  display_order: number;
+  created_at: string;
+  instrument?: Instrument | null;
+}
+
+export interface Invoice {
+  id: string;
+  invoice_number: string | null;
+  status: InvoiceStatus;
+  invoice_date: string; // YYYY-MM-DD or ISO; keep consistent in app
+  due_date: string | null;
+  client_id: string | null;
+  items?: InvoiceItem[];
+  subtotal: number;
+  tax: number | null;
+  total: number;
+  currency: string;
+  notes?: string | null;
+  created_at: string;
+  updated_at?: string;
+
+  business_name?: string | null;
+  business_address?: string | null;
+  business_phone?: string | null;
+  business_email?: string | null;
+  bank_account_holder?: string | null;
+  bank_name?: string | null;
+  bank_swift_code?: string | null;
+  bank_account_number?: string | null;
+  default_conditions?: string | null;
+  default_exchange_rate?: string | null;
+
+  // optional relationships for UI convenience
+  client?: Client | null;
 }
 
 // Contact Log Types
