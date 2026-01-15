@@ -55,7 +55,9 @@ export const sortConnectionsByOrder = (
       return orderA - orderB;
     }
     // Fallback to created_at if display_order is the same
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    const timestampA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const timestampB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return timestampA - timestampB;
   });
 };
 

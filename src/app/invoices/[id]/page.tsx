@@ -42,12 +42,13 @@ type InvoicePayload = {
   }>;
 };
 
-const statusColors: Record<string, string> = {
+const statusColors: Record<InvoiceStatus, string> = {
   draft: 'bg-gray-100 text-gray-800',
   sent: 'bg-blue-100 text-blue-800',
   paid: 'bg-green-100 text-green-800',
   overdue: 'bg-red-100 text-red-800',
   cancelled: 'bg-gray-100 text-gray-500',
+  void: 'bg-gray-50 text-gray-400',
 };
 
 export default function InvoiceDetailPage() {
@@ -65,9 +66,6 @@ export default function InvoiceDetailPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [pdfError, setPdfError] = useState<string | null>(null);
-  const [pdfLoading, setPdfLoading] = useState(true);
-
   const fetchInvoice = useCallback(async () => {
     if (!invoiceId) {
       setInvoice(null);
@@ -95,47 +93,6 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     void fetchInvoice();
   }, [fetchInvoice]);
-
-  // Check PDF load status
-  useEffect(() => {
-    if (!invoice?.id) return;
-
-    const checkPdfStatus = async () => {
-      try {
-        const response = await apiFetch(
-          `/api/invoices/${invoice.id}/pdf?inline=true`
-        );
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorMessage = 'PDF를 불러올 수 없습니다';
-          try {
-            const errorData = JSON.parse(errorText);
-            errorMessage = errorData.message || errorData.error || errorMessage;
-          } catch {
-            if (errorText) errorMessage = errorText;
-          }
-          setPdfError(errorMessage);
-          setPdfLoading(false);
-        } else {
-          setPdfError(null);
-        }
-      } catch (error) {
-        setPdfError(
-          error instanceof Error
-            ? error.message
-            : 'PDF를 불러오는 중 오류가 발생했습니다.'
-        );
-        setPdfLoading(false);
-      }
-    };
-
-    // Small delay to let iframe start loading
-    const timeoutId = setTimeout(() => {
-      void checkPdfStatus();
-    }, 1000);
-
-    return () => clearTimeout(timeoutId);
-  }, [invoice?.id]);
 
   const formatCurrency = useCallback((amount: number, currency: string) => {
     return new Intl.NumberFormat('en-US', {
@@ -276,17 +233,25 @@ export default function InvoiceDetailPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link
+            {/* <Link
               href={`/api/invoices/${invoice.id}/pdf`}
               target="_blank"
               className="px-3 py-2 text-sm rounded-md bg-gray-200 text-gray-900 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
             >
               Open PDF
-            </Link>
-            <Button variant="secondary" onClick={() => setIsModalOpen(true)}>
+            </Link> */}
+            <Button
+              variant="secondary"
+              disabled={submitting}
+              onClick={() => setIsModalOpen(true)}
+            >
               Edit
             </Button>
-            <Button variant="danger" onClick={() => setConfirmDeleteOpen(true)}>
+            <Button
+              variant="danger"
+              disabled={submitting}
+              onClick={() => setConfirmDeleteOpen(true)}
+            >
               Delete
             </Button>
           </div>
@@ -390,68 +355,6 @@ export default function InvoiceDetailPage() {
                 </div>
               ) : (
                 <div className="text-sm text-gray-500">No items.</div>
-              )}
-            </div>
-
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-gray-700">
-                  PDF Preview
-                </h2>
-                <Link
-                  href={`/api/invoices/${invoice.id}/pdf`}
-                  target="_blank"
-                  className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                >
-                  Open PDF
-                </Link>
-              </div>
-              {pdfError ? (
-                <div className="w-full h-[600px] border border-gray-200 rounded-lg flex items-center justify-center bg-gray-50">
-                  <div className="text-center">
-                    <p className="text-red-600 mb-2">
-                      PDF를 불러올 수 없습니다
-                    </p>
-                    <p className="text-sm text-gray-600 mb-4">{pdfError}</p>
-                    <button
-                      onClick={() => {
-                        setPdfError(null);
-                        setPdfLoading(true);
-                        if (pdfIframeRef.current) {
-                          pdfIframeRef.current.src = `/api/invoices/${invoice.id}/pdf?inline=true&ts=${Date.now()}`;
-                        }
-                      }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
-                    >
-                      다시 시도
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="relative w-full h-[600px] border border-gray-200 rounded-lg bg-gray-50">
-                  {pdfLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-10">
-                      <div className="text-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                        <p className="text-sm text-gray-600">PDF 로딩 중...</p>
-                      </div>
-                    </div>
-                  )}
-                  <iframe
-                    title={`Invoice ${invoice.invoice_number} PDF preview`}
-                    src={`/api/invoices/${invoice.id}/pdf?inline=true`}
-                    ref={pdfIframeRef}
-                    className="w-full h-full border-0 rounded-lg"
-                    onLoad={() => {
-                      setPdfLoading(false);
-                      setPdfError(null);
-                    }}
-                    onError={() => {
-                      setPdfLoading(false);
-                      setPdfError('PDF를 불러오는 중 오류가 발생했습니다.');
-                    }}
-                  />
-                </div>
               )}
             </div>
           </div>

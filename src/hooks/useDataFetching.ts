@@ -1,20 +1,21 @@
 // src/hooks/useDataFetching.ts
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { useAsyncOperation } from './useAsyncOperation';
 
 // common useEffect hook for data fetching
 // ✅ FIXED: useAsyncOperation의 run이 "최신 요청만 setData 한다"면 → useDataFetching의 myId 가드 제거
 // useAsyncOperation은 실행/취소/로딩만, useDataFetching이 items state만 담당
+type UseDataFetchingDeps = string | number | ReadonlyArray<unknown>;
+
 export function useDataFetching<T, P = void>(
   fetchFunction: (param?: P, signal?: AbortSignal) => Promise<T[]>,
   context: string,
-  dependencies: unknown[] = []
+  depsKey: UseDataFetchingDeps = ''
 ) {
   const { loading, run } = useAsyncOperation<T[]>();
   const [items, setItems] = useState<T[]>([]);
   const fetchFunctionRef = useRef(fetchFunction);
 
-  // Update ref when fetchFunction changes
   useEffect(() => {
     fetchFunctionRef.current = fetchFunction;
   }, [fetchFunction]);
@@ -41,10 +42,22 @@ export function useDataFetching<T, P = void>(
   // Caller MUST ensure dependencies are stable primitives or memoized
   // If dependencies are objects/arrays that change every render, this will refetch on every render
   // Consider using a stable depsKey: string | number instead if dependencies are complex
+  const serializedDepsKey = useMemo(() => {
+    if (Array.isArray(depsKey)) {
+      return JSON.stringify(depsKey);
+    }
+    return String(depsKey ?? '');
+  }, [depsKey]);
+
+  const lastDepsKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run, context, ...dependencies]);
+    const triggerKey = `${context}:${serializedDepsKey}`;
+    if (lastDepsKeyRef.current === triggerKey) {
+      return;
+    }
+    lastDepsKeyRef.current = triggerKey;
+    void fetchData();
+  }, [fetchData, serializedDepsKey, context]);
 
   return { fetchData, loading, items, setItems };
 }
@@ -54,14 +67,27 @@ export function useInitialData<T>(
   fetchFunction: () => Promise<T[]>,
   context: string
 ) {
-  return useDataFetching(fetchFunction, context, []);
+  return useDataFetching(fetchFunction, context, '');
 }
 
 // hook for dependent data fetching
+function serializeDeps(dependencies: unknown[]): string {
+  return dependencies
+    .map(dep => {
+      try {
+        return JSON.stringify(dep);
+      } catch {
+        return String(dep);
+      }
+    })
+    .join('|');
+}
+
 export function useDependentData<T>(
   fetchFunction: () => Promise<T[]>,
   context: string,
   dependencies: unknown[]
 ) {
-  return useDataFetching(fetchFunction, context, dependencies);
+  const depsKey = serializeDeps(dependencies);
+  return useDataFetching(fetchFunction, context, depsKey);
 }

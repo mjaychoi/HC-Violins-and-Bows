@@ -2,7 +2,7 @@
 import { render, screen } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import CalendarView from '../CalendarView';
-import { MaintenanceTask, ContactLog } from '@/types';
+import { MaintenanceTask } from '@/types';
 
 // Mock react-dnd
 jest.mock('react-dnd/dist/core', () => ({
@@ -378,72 +378,6 @@ describe('CalendarView', () => {
         currentDate={new Date()}
         onNavigate={mockOnNavigate}
         draggingEventId="1"
-      />
-    );
-
-    expect(screen.getByTestId('react-big-calendar')).toBeInTheDocument();
-  });
-
-  it('should handle follow-up events', () => {
-    const mockContactLogs: ContactLog[] = [
-      {
-        id: 'log-1',
-        client_id: 'client-1',
-        instrument_id: 'instrument-1',
-        contact_type: 'email' as const,
-        subject: 'Follow-up',
-        content: 'Discussed repair status',
-        purpose: 'follow_up' as const,
-        contact_date: '2024-01-01',
-        notes: 'Follow up note',
-        next_follow_up_date: '2024-01-20',
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T01:00:00Z',
-        follow_up_completed_at: null,
-        client: {
-          id: 'client-1',
-          first_name: 'John',
-          last_name: 'Doe',
-          email: 'john@example.com',
-          contact_number: '000-000',
-          tags: [],
-          interest: null,
-          note: null,
-          client_number: 'CL000',
-          created_at: '2024-01-01T00:00:00Z',
-        },
-        instrument: {
-          id: 'instrument-1',
-          type: 'Violin',
-          maker: 'Stradivarius',
-          status: 'Available',
-          subtype: null,
-          year: null,
-          certificate: false,
-          size: null,
-          weight: null,
-          price: null,
-          ownership: null,
-          note: null,
-          serial_number: null,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z',
-        },
-      } as ContactLog,
-    ];
-
-    const mockOnSelectFollowUpEvent = jest.fn();
-
-    render(
-      <CalendarView
-        tasks={mockTasks}
-        contactLogs={mockContactLogs}
-        instruments={mockInstruments}
-        onSelectEvent={mockOnSelectEvent}
-        onSelectFollowUpEvent={mockOnSelectFollowUpEvent}
-        onSelectSlot={mockOnSelectSlot}
-        currentDate={new Date()}
-        onNavigate={mockOnNavigate}
       />
     );
 

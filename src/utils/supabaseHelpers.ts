@@ -1,6 +1,9 @@
 import { getSupabaseClient } from '@/lib/supabase-client';
 import { logApiRequest, logError } from './logger';
+import type { Database } from '@/types/database';
 import type { MaintenanceTask, TaskFilters } from '@/types';
+import { validateSortColumn, ALLOWED_SORT_COLUMNS } from './inputValidation';
+import { TABLE_TO_DB, TableName } from '@/utils/apiClient';
 
 // FIXED: Use unified getSupabaseClient() to ensure single instance
 // This prevents Multiple GoTrueClient instances warning
@@ -14,7 +17,6 @@ interface SupabaseError {
 }
 
 // Escape ILike special characters
-import { validateSortColumn, ALLOWED_SORT_COLUMNS } from './inputValidation';
 
 function escapeILike(s: string): string {
   return s.replace(/[%_]/g, c => '\\' + c);
@@ -26,6 +28,13 @@ function escapeILike(s: string): string {
  */
 function escapeOrValue(s: string): string {
   return s.replace(/[,\(\)]/g, ' ').replace(/[%_]/g, c => '\\' + c);
+}
+
+function resolveDbTable(table: string): keyof Database['public']['Tables'] {
+  if (table in TABLE_TO_DB) {
+    return TABLE_TO_DB[table as TableName];
+  }
+  return table as keyof Database['public']['Tables'];
 }
 
 export class SupabaseHelpers {
@@ -47,7 +56,8 @@ export class SupabaseHelpers {
 
     try {
       const supabase = await getSupabaseClient();
-      let query = supabase.from(table).select(options?.select || '*');
+      const dbTable = resolveDbTable(table);
+      let query = supabase.from(dbTable).select(options?.select || '*');
 
       // SECURITY: Validate orderBy column against whitelist to prevent injection
       if (options?.orderBy) {
@@ -108,8 +118,9 @@ export class SupabaseHelpers {
 
     try {
       const supabase = await getSupabaseClient();
+      const dbTable = resolveDbTable(table);
       const { data, error } = await supabase
-        .from(table)
+        .from(dbTable)
         .select(select || '*')
         .eq('id', id)
         .single();
@@ -153,8 +164,9 @@ export class SupabaseHelpers {
 
     try {
       const supabase = await getSupabaseClient();
+      const dbTable = resolveDbTable(table);
       const { data: result, error } = await supabase
-        .from(table)
+        .from(dbTable)
         .insert([data])
         .select()
         .single();
@@ -197,8 +209,9 @@ export class SupabaseHelpers {
 
     try {
       const supabase = await getSupabaseClient();
+      const dbTable = resolveDbTable(table);
       const { data: result, error } = await supabase
-        .from(table)
+        .from(dbTable)
         .update(data)
         .eq('id', id)
         .select()
@@ -240,7 +253,8 @@ export class SupabaseHelpers {
 
     try {
       const supabase = await getSupabaseClient();
-      const { error } = await supabase.from(table).delete().eq('id', id);
+      const dbTable = resolveDbTable(table);
+      const { error } = await supabase.from(dbTable).delete().eq('id', id);
       const duration = Math.round(performance.now() - startTime);
 
       if (error) {
@@ -298,8 +312,9 @@ export class SupabaseHelpers {
         .join(',');
 
       const supabase = await getSupabaseClient();
+      const dbTable = resolveDbTable(table);
       const { data, error } = await supabase
-        .from(table)
+        .from(dbTable)
         .select('*')
         .or(orCondition)
         .limit(limit);
@@ -474,7 +489,7 @@ export class SupabaseHelpers {
         const normalizedStartDate = startDate; // Assume already validated/normalized
         const normalizedEndDate = endDate; // Assume already validated/normalized
 
-        const filteredData = data.filter((task: MaintenanceTask) => {
+        const filteredData = data.filter(task => {
           const dates = [
             task.scheduled_date,
             task.due_date,

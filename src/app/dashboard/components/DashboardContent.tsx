@@ -27,8 +27,6 @@ interface DashboardContentProps {
     updates: Partial<Instrument>
   ) => Promise<void>;
   onAddClick: () => void;
-  onSellClick: (item: Instrument) => void;
-  existingSerialNumbers?: string[]; // Serial numbers for validation
   newlyCreatedItemId?: string | null; // ID of newly created item for scroll/highlight
   onNewlyCreatedItemShown?: () => void; // Callback when newly created item is shown
   onLoadSampleData?: () => void; // Load sample data handler
@@ -43,8 +41,6 @@ function DashboardContentInner({
   onDeleteClick,
   onUpdateItemInline,
   onAddClick,
-  onSellClick,
-  existingSerialNumbers = [],
   newlyCreatedItemId,
   onNewlyCreatedItemShown,
   onLoadSampleData,
@@ -72,6 +68,11 @@ function DashboardContentInner({
     pageSize,
     setPage,
   } = useDashboardFilters(enrichedItems);
+  const hasActiveFilters =
+    getActiveFiltersCount() > 0 ||
+    Boolean(searchTerm) ||
+    Boolean(dateRange?.from) ||
+    Boolean(dateRange?.to);
 
   return (
     <div className="p-6 space-y-4">
@@ -91,40 +92,6 @@ function DashboardContentInner({
 
           {/* UX: Quick Filter Pills - Common use cases */}
           <div className="flex items-center gap-2 flex-wrap">
-            {/* UX: Quick filter for "Has Clients" - toggle boolean filter */}
-            <button
-              onClick={() => {
-                // handleFilterChange toggles the value, so just call it
-                handleFilterChange('hasClients', true);
-              }}
-              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                filters.hasClients.includes(true)
-                  ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-              aria-pressed={filters.hasClients.includes(true)}
-              type="button"
-            >
-              Has Clients
-            </button>
-            {/* UX: Quick filter for "No Clients" - toggle boolean filter */}
-            <button
-              onClick={() => {
-                // handleFilterChange toggles the value, so just call it
-                handleFilterChange('hasClients', false);
-              }}
-              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                filters.hasClients.includes(false)
-                  ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-              aria-pressed={filters.hasClients.includes(false)}
-              type="button"
-            >
-              No Clients
-            </button>
-
-            {/* More Filters Button - Secondary action */}
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors flex items-center gap-2 ${
@@ -154,6 +121,18 @@ function DashboardContentInner({
                 </span>
               )}
             </button>
+            {hasActiveFilters && (
+              <button
+                onClick={() => {
+                  clearAllFilters();
+                  setShowFilters(false);
+                }}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg border text-gray-700 border-gray-300 bg-white hover:bg-gray-50 transition-colors"
+                type="button"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         </div>
 
@@ -188,11 +167,9 @@ function DashboardContentInner({
           clientRelationships={clientRelationships}
           allClients={clients}
           clientsLoading={clientsLoading}
-          existingSerialNumbers={existingSerialNumbers}
           getSortArrow={getSortArrow}
           onSort={handleSort}
           onAddClick={onAddClick}
-          onSellClick={onSellClick}
           newlyCreatedItemId={newlyCreatedItemId}
           onNewlyCreatedItemShown={onNewlyCreatedItemShown}
           emptyState={{

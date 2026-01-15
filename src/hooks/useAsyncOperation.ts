@@ -71,9 +71,9 @@ export function useAsyncOperation<T = unknown>() {
           return null;
         }
         // Current request error
-        if (error instanceof Error && error.name === 'AbortError') {
-          return null;
-        }
+        if (controller.signal.aborted) return null;
+        if (error instanceof Error && error.name === 'AbortError') return null;
+
         handleError(error, context);
         return null;
       } finally {

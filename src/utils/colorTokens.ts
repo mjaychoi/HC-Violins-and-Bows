@@ -15,10 +15,12 @@
  */
 export type BadgeVariant = 'soft' | 'solid' | 'outline' | 'muted';
 
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
+
 export function getButtonVariantClasses(
-  variant: 'primary' | 'secondary' | 'ghost' = 'primary'
+  variant: ButtonVariant = 'primary'
 ): string {
-  const variants: Record<typeof variant, string> = {
+  const variants: Record<ButtonVariant, string> = {
     primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
     secondary:
       'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-400',
@@ -635,28 +637,20 @@ export const getRowAccentColor = (status: string): string => {
  * @param certificate - Certificate 값 (true | false | null | undefined)
  *   - true: "Yes" (인증서 있음)
  *   - false: "No" (인증서 없음)
- *   - null | undefined: "Unknown" (알 수 없음)
  * @param variant - Badge variant (기본값: 'outline')
  * @returns Tailwind CSS 클래스 문자열 (bg + text + border 등)
  *
  * @example
  * ```tsx
  * const className = getCertificateColor(true); // "border-green-300 bg-white text-green-800"
- * const className = getCertificateColor(false); // "border-red-300 bg-white text-red-800"
- * const className = getCertificateColor(null); // "border-gray-300 bg-white text-gray-800"
+ * const className = getCertificateColor(false); // "border-gray-300 bg-white text-red-800"
  * ```
  */
-export const getCertificateColor = (
-  certificate: boolean | null | undefined,
-  variant: BadgeVariant = 'outline'
-): string => {
-  let key: CertificateKey = 'Unknown';
-  if (certificate === true) key = 'Yes';
-  else if (certificate === false) key = 'No';
-
-  const token = CERTIFICATE_TOKENS[key];
-  return getTokenClass(token, variant);
-};
+export function getCertificateColor(hasCertificate: boolean) {
+  return hasCertificate
+    ? 'bg-green-100 text-green-800'
+    : 'bg-gray-100 text-gray-600';
+}
 
 /**
  * Interest 색상 가져오기

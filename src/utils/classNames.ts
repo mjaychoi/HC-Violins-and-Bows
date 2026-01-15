@@ -21,7 +21,8 @@ export const classNames = {
   inputError:
     'w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2',
 
-  // Button base styles (layout/spacing only, colors handled separately)
+  // Button base styles (layout/spacing only) – colors are currently included for backward compatibility
+  // Future work: migrate button color definitions into colorTokens/btnVariant helpers
   buttonBase:
     'px-4 py-2 rounded-md focus:outline-none focus:ring-2 transition-colors',
   buttonPrimary:
@@ -30,7 +31,6 @@ export const classNames = {
     'px-4 py-2 rounded-md focus:outline-none focus:ring-2 transition-colors bg-white text-gray-700 border border-gray-300 hover:bg-gray-50',
   buttonDanger:
     'px-4 py-2 rounded-md focus:outline-none focus:ring-2 transition-colors bg-red-600 text-white hover:bg-red-500',
-  // Note: Use colorTokens-based functions for button colors (e.g., btnVariant('primary'))
 
   // Card styles (layout/spacing only)
   card: 'bg-white p-6 rounded-lg shadow border',

@@ -16,21 +16,24 @@ export default function SuccessToast({
   links,
 }: SuccessToastProps) {
   const [isVisible, setIsVisible] = React.useState(true);
-  // ✅ FIXED: "한 번만 close" 보장하는 guard
+  const closeTimerRef = React.useRef<number | null>(null);
   const closedRef = React.useRef(false);
 
-  const requestClose = React.useCallback(() => {
+  const handleClose = React.useCallback(() => {
     if (closedRef.current) return;
     closedRef.current = true;
     setIsVisible(false);
-    window.setTimeout(onClose, 300);
+    onClose();
   }, [onClose]);
 
   React.useEffect(() => {
     if (!autoClose) return;
-    const timer = window.setTimeout(requestClose, 3000);
-    return () => window.clearTimeout(timer);
-  }, [autoClose, requestClose]);
+    const timer = window.setTimeout(handleClose, 5000);
+    closeTimerRef.current = timer;
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [autoClose, handleClose]);
 
   if (!isVisible) return null;
 
@@ -78,7 +81,7 @@ export default function SuccessToast({
           )}
         </div>
         <button
-          onClick={requestClose}
+          onClick={handleClose}
           className="ml-4 shrink-0 inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
           aria-label="Close"
         >

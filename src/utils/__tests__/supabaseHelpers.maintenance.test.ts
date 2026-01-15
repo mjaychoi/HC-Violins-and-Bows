@@ -13,9 +13,9 @@ const mockSupabaseClient = {
   from: jest.fn(),
 };
 
-// Mock getSupabaseClient function (async)
+// Mock getSupabaseClient function (sync)
 jest.mock('@/lib/supabase-client', () => ({
-  getSupabaseClient: jest.fn(() => Promise.resolve(mockSupabaseClient)),
+  getSupabaseClient: jest.fn(() => mockSupabaseClient),
 }));
 
 const mockMaintenanceTask: MaintenanceTask = {

@@ -1,9 +1,8 @@
 'use client';
 // src/app/clients/components/ClientList.tsx
-import { Client, ClientInstrument } from '@/types';
+import { Client, ClientInstrument, Instrument } from '@/types';
+import Link from 'next/link';
 import { getTagTextColor, sortTags } from '../utils';
-import { useClientSalesData } from '../hooks/useClientKPIs';
-import { useClientsContactInfo } from '../hooks/useClientsContactInfo';
 import React, {
   useState,
   memo,
@@ -26,7 +25,6 @@ import { useInlineEdit } from '@/hooks/useInlineEdit';
 import {
   InlineSelectField,
   InlineEditActions,
-  InlineEditButton,
 } from '@/components/common/InlineEditFields';
 import { logInfo } from '@/utils/logger';
 import { INTEREST_LEVELS } from '../constants';
@@ -59,6 +57,47 @@ const TbodyInnerElement = forwardRef<
   <tbody ref={ref} {...props} className={classNames.tableBody} />
 ));
 TbodyInnerElement.displayName = 'TbodyInnerElement';
+
+const INSTRUMENT_STATUS_STYLES: Record<
+  Instrument['status'],
+  { border: string; bg: string; badge: string }
+> = {
+  Available: {
+    border: 'border-emerald-200',
+    bg: 'bg-emerald-50',
+    badge: 'text-emerald-700 border-emerald-300 bg-emerald-100',
+  },
+  Booked: {
+    border: 'border-amber-200',
+    bg: 'bg-amber-50',
+    badge: 'text-amber-700 border-amber-300 bg-amber-100',
+  },
+  Sold: {
+    border: 'border-rose-200',
+    bg: 'bg-rose-50',
+    badge: 'text-rose-700 border-rose-300 bg-rose-100',
+  },
+  Reserved: {
+    border: 'border-sky-200',
+    bg: 'bg-sky-50',
+    badge: 'text-sky-700 border-sky-300 bg-sky-100',
+  },
+  Maintenance: {
+    border: 'border-slate-200',
+    bg: 'bg-slate-50',
+    badge: 'text-slate-700 border-slate-300 bg-slate-100',
+  },
+};
+
+const RELATIONSHIP_TAG_STYLES: Record<
+  ClientInstrument['relationship_type'],
+  string
+> = {
+  Interested: 'text-blue-700 border-blue-200 bg-blue-50',
+  Sold: 'text-rose-700 border-rose-200 bg-rose-50',
+  Booked: 'text-amber-700 border-amber-200 bg-amber-50',
+  Owned: 'text-emerald-700 border-emerald-200 bg-emerald-50',
+};
 
 // ✅ FIXED: RowActions moved to file top to prevent recreation on every render
 // Row Actions Component (Dropdown menu like Dashboard)
@@ -170,132 +209,100 @@ const RowActions = memo(
 );
 RowActions.displayName = 'RowActions';
 
-// Client Expanded Row Component (with sales data)
+// Client Expanded Row Component (with instrument list)
 const ClientExpandedRow = memo(function ClientExpandedRow({
   client,
-  contactInfo,
+  relatedInstruments,
   instrument,
 }: {
   client: Client;
-  contactInfo: ReturnType<typeof useClientsContactInfo>['getContactInfo'];
+  relatedInstruments: ClientInstrument[];
   instrument?: ClientInstrument['instrument'];
 }) {
-  const { totalSpend, purchaseCount, lastPurchaseDate, loading } =
-    useClientSalesData(client.id);
-  const info = contactInfo(client.id);
-
-  const formatAmount = (amount: number) =>
-    new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0,
-    }).format(amount);
-
   return (
     <tr className="bg-gray-50">
       <td
-        colSpan={9}
+        colSpan={6}
         className={cn(classNames.tableCell, 'text-sm text-gray-700 px-6 py-4')}
       >
         <div className="space-y-4">
-          {/* Sales Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-              <div className="text-xs font-medium text-gray-500 mb-1">
-                Total Spend
-              </div>
-              <div className="text-lg font-semibold text-gray-900">
-                {loading ? (
-                  <span className="text-gray-400">Loading...</span>
-                ) : (
-                  formatAmount(totalSpend)
-                )}
-              </div>
+          <div>
+            <div className="text-xs font-medium text-gray-500 mb-2">
+              Connected Instruments
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-              <div className="text-xs font-medium text-gray-500 mb-1">
-                Purchase Count
-              </div>
-              <div className="text-lg font-semibold text-gray-900">
-                {loading ? (
-                  <span className="text-gray-400">Loading...</span>
-                ) : (
-                  purchaseCount
-                )}
-              </div>
-            </div>
-            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-              <div className="text-xs font-medium text-gray-500 mb-1">
-                Last Purchase
-              </div>
-              <div className="text-lg font-semibold text-gray-900">
-                {loading ? (
-                  <span className="text-gray-400">Loading...</span>
-                ) : (
-                  lastPurchaseDate
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Contact Info Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-              <div className="text-xs font-medium text-gray-500 mb-1">
-                Recent Contact
-              </div>
-              <div className="text-sm font-semibold text-gray-900">
-                {info?.lastContactDateDisplay || (
-                  <span className="text-gray-400">None</span>
-                )}
-                {info && info.daysSinceLastContact !== null && (
-                  <span className="ml-2 text-xs font-normal text-gray-500">
-                    ({info.daysSinceLastContact} days ago)
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-              <div className="text-xs font-medium text-gray-500 mb-1">
-                Next Follow-up
-              </div>
-              <div className="text-sm font-semibold text-gray-900">
-                {info?.nextFollowUpDateDisplay ? (
-                  info && (
-                    <span
-                      className={
-                        info.isOverdue
-                          ? 'text-red-600'
-                          : info.daysUntilFollowUp !== null &&
-                              info.daysUntilFollowUp <= 3
-                            ? 'text-amber-600'
-                            : ''
-                      }
+            {relatedInstruments.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {relatedInstruments.map(ci => {
+                  const instr = ci.instrument;
+                  const title =
+                    instr && (instr.maker || instr.type)
+                      ? `${instr.maker || ''} ${instr.type || ''}`.trim()
+                      : 'Instrument';
+                  const serial = instr?.serial_number || '—';
+                  const statusText = instr?.status || '—';
+                  const statusTheme = instr?.status
+                    ? INSTRUMENT_STATUS_STYLES[instr.status]
+                    : INSTRUMENT_STATUS_STYLES.Available;
+                  const relationshipBadgeClass =
+                    RELATIONSHIP_TAG_STYLES[ci.relationship_type] ??
+                    'text-gray-700 border-gray-200 bg-gray-50';
+                  const cardBody = (
+                    <div
+                      className={`rounded-lg border ${statusTheme.border} ${statusTheme.bg} px-4 py-3 shadow-sm space-y-1 transition-transform duration-150 hover:-translate-y-0.5 group`}
                     >
-                      {info.nextFollowUpDateDisplay}
-                      {info.daysUntilFollowUp !== null && (
-                        <span className="ml-2 text-xs font-normal text-gray-500">
-                          (
-                          {info.daysUntilFollowUp < 0
-                            ? `${Math.abs(info.daysUntilFollowUp)} days overdue`
-                            : info.daysUntilFollowUp === 0
-                              ? 'Today'
-                              : `${info.daysUntilFollowUp} days later`}
-                          )
+                      <div className="flex items-center justify-between gap-3">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 text-[0.6rem] font-semibold tracking-[0.2em] uppercase rounded-full border ${relationshipBadgeClass}`}
+                        >
+                          {ci.relationship_type || 'Connection'}
                         </span>
+                        {instr?.status && (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide rounded-full border ${statusTheme.badge}`}
+                          >
+                            {instr.status}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {title || 'Instrument'}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Serial {serial} • {statusText}
+                      </div>
+                      {instr?.note && (
+                        <div className="text-xs text-gray-500">
+                          {instr.note}
+                        </div>
                       )}
-                      {info.isOverdue && (
-                        <span className="ml-2 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                          overdue
-                        </span>
-                      )}
-                    </span>
-                  )
-                ) : (
-                  <span className="text-gray-400">None</span>
-                )}
+                    </div>
+                  );
+                  if (instr?.id) {
+                    return (
+                      <Link
+                        key={ci.id}
+                        href={`/dashboard?instrumentId=${encodeURIComponent(
+                          instr.id
+                        )}`}
+                        className="block"
+                        prefetch={false}
+                      >
+                        {cardBody}
+                      </Link>
+                    );
+                  }
+                  return (
+                    <div key={ci.id} className="block">
+                      {cardBody}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            ) : (
+              <div className="text-sm text-gray-500">
+                No instruments connected to this client.
+              </div>
+            )}
           </div>
 
           {/* Client Details */}
@@ -447,14 +454,15 @@ const ClientList = memo(function ClientList({
     highlightDuration: 2000,
   });
 
-  // Fetch contact info for all clients
-  const clientIds = useMemo(() => clients.map(c => c.id), [clients]);
-  const { getContactInfo, loading: contactInfoLoading } = useClientsContactInfo(
-    {
-      clientIds,
-      enabled: clients.length > 0,
-    }
-  );
+  const instrumentsByClient = useMemo(() => {
+    const map = new Map<string, ClientInstrument[]>();
+    clientInstruments.forEach(ci => {
+      const existing = map.get(ci.client_id) || [];
+      existing.push(ci);
+      map.set(ci.client_id, existing);
+    });
+    return map;
+  }, [clientInstruments]);
   // Dead code: instrument dropdown 관련 코드 제거 (현재 사용되지 않음)
   // const [showInstrumentDropdown, setShowInstrumentDropdown] = useState<
   //   string | null
@@ -474,7 +482,6 @@ const ClientList = memo(function ClientList({
       interest: client.interest || '',
       note: client.note || '',
       tags: client.tags || [],
-      client_number: client.client_number || '',
     });
   }, []);
 
@@ -747,16 +754,6 @@ const ClientList = memo(function ClientList({
                       </span>
                     </span>
                   </th>
-                  <th className={classNames.tableHeaderCell}>
-                    <span className="inline-flex items-center gap-1">
-                      Recent Contact
-                    </span>
-                  </th>
-                  <th className={classNames.tableHeaderCell}>
-                    <span className="inline-flex items-center gap-1">
-                      Next Follow-up
-                    </span>
-                  </th>
                 </tr>
               </thead>
               {/* ✅ FIXED: Removed virtualization - pagination handles large lists */}
@@ -769,6 +766,11 @@ const ClientList = memo(function ClientList({
                   const isExpanded = expandedClientId === client.id;
 
                   const isNewlyCreated = newlyCreatedClientId === client.id;
+                  const relatedInstruments =
+                    instrumentsByClient.get(client.id) || [];
+                  const primaryInstrument =
+                    relatedInstruments.find(ci => ci.instrument)?.instrument ||
+                    undefined;
                   const isSelectedFromURL =
                     selectedClientIdFromURL === client.id;
 
@@ -1043,15 +1045,6 @@ const ClientList = memo(function ClientList({
                                   </span>
                                 )}
                               </div>
-                              <InlineEditButton
-                                onClick={() =>
-                                  inlineEditTags.startEditing(client.id, {
-                                    tags: client.tags || [],
-                                  })
-                                }
-                                aria-label="Edit tags"
-                                size="sm"
-                              />
                             </div>
                           )}
                         </td>
@@ -1125,125 +1118,21 @@ const ClientList = memo(function ClientList({
                                   </span>
                                 )}
                               </div>
-                              <InlineEditButton
-                                onClick={() =>
-                                  inlineEditInterest.startEditing(client.id, {
-                                    interest: client.interest || '',
-                                  })
-                                }
-                                aria-label="Edit interest"
-                                size="sm"
-                              />
                             </div>
                           )}
                         </td>
                         <td className={classNames.tableCell}>
-                          {editingClient === client.id ? (
-                            <input
-                              type="text"
-                              value={editData.client_number || ''}
-                              onChange={e =>
-                                handleEditFieldChange(
-                                  'client_number',
-                                  e.target.value
-                                )
-                              }
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              onClick={e => e.stopPropagation()}
-                              placeholder="Client #"
-                            />
-                          ) : (
-                            <div className="text-sm text-gray-400 font-mono">
-                              {client.client_number || '—'}
-                            </div>
-                          )}
-                        </td>
-                        <td className={classNames.tableCell}>
-                          {contactInfoLoading ? (
-                            <div className="text-sm text-gray-400">...</div>
-                          ) : (
-                            <div className="text-sm text-gray-900 min-w-[120px]">
-                              {(() => {
-                                const info = getContactInfo(client.id);
-                                if (!info?.lastContactDateDisplay) {
-                                  return (
-                                    <span className="text-gray-400">None</span>
-                                  );
-                                }
-                                return (
-                                  <div className="flex flex-col">
-                                    <span>{info.lastContactDateDisplay}</span>
-                                    {info.daysSinceLastContact !== null && (
-                                      <span className="text-xs text-gray-500">
-                                        {info.daysSinceLastContact} days ago
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          )}
-                        </td>
-                        <td className={classNames.tableCell}>
-                          {contactInfoLoading ? (
-                            <div className="text-sm text-gray-400">...</div>
-                          ) : (
-                            <div className="text-sm text-gray-900 min-w-[140px]">
-                              {(() => {
-                                const info = getContactInfo(client.id);
-                                if (!info?.nextFollowUpDateDisplay) {
-                                  return (
-                                    <span className="text-gray-400">None</span>
-                                  );
-                                }
-                                return (
-                                  <div className="flex flex-col gap-1">
-                                    <span
-                                      className={
-                                        info.isOverdue
-                                          ? 'text-red-600 font-medium'
-                                          : info.daysUntilFollowUp !== null &&
-                                              info.daysUntilFollowUp <= 3
-                                            ? 'text-amber-600 font-medium'
-                                            : ''
-                                      }
-                                    >
-                                      {info.nextFollowUpDateDisplay}
-                                    </span>
-                                    {info.daysUntilFollowUp !== null && (
-                                      <span className="text-xs text-gray-500">
-                                        {info.daysUntilFollowUp < 0
-                                          ? `${Math.abs(info.daysUntilFollowUp)} days overdue`
-                                          : info.daysUntilFollowUp === 0
-                                            ? 'Today'
-                                            : `${info.daysUntilFollowUp} days later`}
-                                      </span>
-                                    )}
-                                    {info.isOverdue && (
-                                      <span className="inline-flex items-center text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded-full w-fit">
-                                        overdue
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          )}
+                          <div className="text-sm text-gray-400 font-mono">
+                            {client.client_number || '—'}
+                          </div>
                         </td>
                       </tr>
                       {/* ✅ Expanded row - only render when expanded */}
                       {isExpanded && (
                         <ClientExpandedRow
                           client={client}
-                          contactInfo={getContactInfo}
-                          instrument={
-                            clientInstruments
-                              .filter(ci => ci.client_id === client.id)
-                              .map(ci => ci.instrument)
-                              .find(
-                                instr => instr !== null && instr !== undefined
-                              ) || undefined
-                          }
+                          relatedInstruments={relatedInstruments}
+                          instrument={primaryInstrument}
                         />
                       )}
                     </Fragment>

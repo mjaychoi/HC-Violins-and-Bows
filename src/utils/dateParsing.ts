@@ -139,8 +139,13 @@ export function toDateOnly(dateStr?: string): string {
  * @returns Formatted date string (e.g., "Dec 13, 2025")
  */
 export function formatDisplayDate(dateStr: string): string {
+  const onlyDate = toDateOnly(dateStr);
+  if (!onlyDate) {
+    return dateStr;
+  }
+
   try {
-    const date = parseYMDUTC(dateStr);
+    const date = parseYMDUTC(onlyDate);
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',

@@ -2,6 +2,7 @@ import { renderHook, act } from '@/test-utils/render';
 import { useClientInstruments } from '../useClientInstruments';
 import { Client, ClientInstrument, Instrument } from '@/types';
 import { flushPromises } from '../../../../../tests/utils/flushPromises';
+import { withNormalizedDefaults } from '@/test/fixtures/rows';
 
 const mockClient: Client = {
   id: '1',
@@ -16,12 +17,12 @@ const mockClient: Client = {
   created_at: '2023-01-01T00:00:00Z',
 };
 
-const mockInstrument: Instrument = {
+const mockInstrument = withNormalizedDefaults<Instrument>({
   id: '1',
   status: 'Available',
   maker: 'Stradivari',
   type: 'Violin',
-  subtype: null,
+  subtype: '4/4',
   year: 1700,
   certificate: true,
   size: '4/4',
@@ -29,9 +30,10 @@ const mockInstrument: Instrument = {
   price: 1000000,
   ownership: 'Museum',
   note: 'Famous violin',
-  serial_number: null,
+  serial_number: 'STR001',
   created_at: '2023-01-01T00:00:00Z',
-};
+  updated_at: '2023-01-01T00:00:00Z',
+});
 
 const mockInstrumentRelationship: ClientInstrument = {
   id: '1',

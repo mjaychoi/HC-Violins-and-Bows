@@ -42,6 +42,9 @@ export const getClientDisplayInfo = (client: Client) => {
 };
 
 // Search and filter functions
+const ensureArray = <T>(value?: T[] | null): T[] =>
+  Array.isArray(value) ? value : [];
+
 export const filterClients = (
   clients: Client[],
   searchTerm: string,
@@ -67,39 +70,42 @@ export const filterClients = (
     }
 
     // Filter by specific fields
+    const lastNameFilters = ensureArray(filters.last_name);
     if (
-      filters.last_name.length > 0 &&
-      !filters.last_name.includes(client.last_name || '')
+      lastNameFilters.length > 0 &&
+      !lastNameFilters.includes(client.last_name || '')
     ) {
       return false;
     }
+    const firstNameFilters = ensureArray(filters.first_name);
     if (
-      filters.first_name.length > 0 &&
-      !filters.first_name.includes(client.first_name || '')
+      firstNameFilters.length > 0 &&
+      !firstNameFilters.includes(client.first_name || '')
     ) {
       return false;
     }
+    const contactNumberFilters = ensureArray(filters.contact_number);
     if (
-      filters.contact_number.length > 0 &&
-      !filters.contact_number.includes(client.contact_number || '')
+      contactNumberFilters.length > 0 &&
+      !contactNumberFilters.includes(client.contact_number || '')
     ) {
       return false;
     }
+    const emailFilters = ensureArray(filters.email);
+    if (emailFilters.length > 0 && !emailFilters.includes(client.email || '')) {
+      return false;
+    }
+    const tagFilters = ensureArray(filters.tags);
     if (
-      filters.email.length > 0 &&
-      !filters.email.includes(client.email || '')
+      tagFilters.length > 0 &&
+      !tagFilters.some(tag => client.tags?.includes(tag))
     ) {
       return false;
     }
+    const interestFilters = ensureArray(filters.interest);
     if (
-      filters.tags.length > 0 &&
-      !filters.tags.some(tag => client.tags?.includes(tag))
-    ) {
-      return false;
-    }
-    if (
-      filters.interest.length > 0 &&
-      !filters.interest.includes(client.interest || '')
+      interestFilters.length > 0 &&
+      !interestFilters.includes(client.interest || '')
     ) {
       return false;
     }
@@ -107,17 +113,15 @@ export const filterClients = (
     // hasInstruments filter
     // UI에서 최대 1개만 선택되도록 보장됨 (0개 또는 2개는 필터 미적용)
     // 선택된 옵션이 정확히 1개일 때만 필터 적용
-    if (filters.hasInstruments.length === 1) {
+    const hasInstrumentsFilters = ensureArray(filters.hasInstruments);
+    if (hasInstrumentsFilters.length === 1) {
       const has = withInst.has(client.id);
       if (
-        filters.hasInstruments[0] === HAS_INSTRUMENTS_FILTER_OPTIONS.HAS &&
+        hasInstrumentsFilters[0] === HAS_INSTRUMENTS_FILTER_OPTIONS.HAS &&
         !has
       )
         return false;
-      if (
-        filters.hasInstruments[0] === HAS_INSTRUMENTS_FILTER_OPTIONS.NO &&
-        has
-      )
+      if (hasInstrumentsFilters[0] === HAS_INSTRUMENTS_FILTER_OPTIONS.NO && has)
         return false;
     }
 

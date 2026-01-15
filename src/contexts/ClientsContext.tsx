@@ -15,7 +15,6 @@ import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
 import { logInfo, logWarn } from '@/utils/logger';
 
-// Clients 상태 타입
 interface ClientsState {
   clients: Client[];
   loading: boolean;
@@ -23,7 +22,6 @@ interface ClientsState {
   lastUpdated: Date | null;
 }
 
-// Clients 액션 타입
 type ClientsAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_SUBMITTING'; payload: boolean }
@@ -34,7 +32,6 @@ type ClientsAction =
   | { type: 'INVALIDATE_CACHE' }
   | { type: 'RESET_STATE' };
 
-// 초기 상태
 const initialState: ClientsState = {
   clients: [],
   loading: false,
@@ -42,7 +39,6 @@ const initialState: ClientsState = {
   lastUpdated: null,
 };
 
-// 리듀서
 function clientsReducer(
   state: ClientsState,
   action: ClientsAction
@@ -50,57 +46,44 @@ function clientsReducer(
   switch (action.type) {
     case 'SET_LOADING':
       return { ...state, loading: action.payload };
-
     case 'SET_SUBMITTING':
       return { ...state, submitting: action.payload };
-
     case 'SET_CLIENTS':
-      return {
-        ...state,
-        clients: action.payload,
-        lastUpdated: new Date(),
-      };
-
+      return { ...state, clients: action.payload, lastUpdated: new Date() };
     case 'ADD_CLIENT':
       return {
         ...state,
         clients: [action.payload, ...state.clients],
         lastUpdated: new Date(),
       };
-
     case 'UPDATE_CLIENT':
       return {
         ...state,
-        clients: state.clients.map(client =>
-          client.id === action.payload.id ? action.payload.client : client
+        clients: state.clients.map(c =>
+          c.id === action.payload.id ? action.payload.client : c
         ),
         lastUpdated: new Date(),
       };
-
     case 'REMOVE_CLIENT':
       return {
         ...state,
-        clients: state.clients.filter(client => client.id !== action.payload),
+        clients: state.clients.filter(c => c.id !== action.payload),
         lastUpdated: new Date(),
       };
-
     case 'INVALIDATE_CACHE':
       return { ...state, lastUpdated: null };
-
     case 'RESET_STATE':
       return initialState;
-
     default:
       return state;
   }
 }
 
-// Context 생성
-const ClientsContext = createContext<{
+type ClientsContextValue = {
   state: ClientsState;
   dispatch: React.Dispatch<ClientsAction>;
   actions: {
-    fetchClients: () => Promise<void>;
+    fetchClients: (opts?: { force?: boolean }) => Promise<void>;
     createClient: (
       client: Omit<Client, 'id' | 'created_at'>
     ) => Promise<Client | null>;
@@ -112,21 +95,65 @@ const ClientsContext = createContext<{
     invalidateCache: () => void;
     resetState: () => void;
   };
-} | null>(null);
+};
 
-// Provider 컴포넌트
+const CLIENTS_DEFAULT_PAGE = 1;
+const CLIENTS_DEFAULT_PAGE_SIZE = 150;
+
+const ClientsContext = createContext<ClientsContextValue | null>(null);
+
+function isAuthLikeError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : '';
+  const code =
+    typeof err === 'object' && err && 'code' in err
+      ? (err as { code?: unknown }).code
+      : undefined;
+
+  return (
+    msg.includes('Invalid Refresh Token') ||
+    msg.includes('Refresh Token Not Found') ||
+    code === 'SESSION_EXPIRED' ||
+    code === 'UNAUTHORIZED'
+  );
+}
+
+type JsonRecord = Record<string, unknown>;
+
+async function safeJson(res: Response): Promise<JsonRecord | null> {
+  try {
+    const json = await res.json();
+    if (json && typeof json === 'object') {
+      return json as JsonRecord;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function sameClientList(a: Client[], b: Client[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+
+  // Cheap stable comparison: id + updated_at(if exists) ordering match
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]?.id !== b[i]?.id) return false;
+    const au = (a[i] as Client & { updated_at?: string })?.updated_at;
+    const bu = (b[i] as Client & { updated_at?: string })?.updated_at;
+    if (au && bu && au !== bu) return false;
+  }
+  return true;
+}
+
 export function ClientsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(clientsReducer, initialState);
   const { handleError } = useErrorHandler();
 
-  // In-flight request deduplication
+  // In-flight request deduplication (fetchClients only)
   const inflight = useRef<Promise<void> | null>(null);
-
   const deduped = useCallback(
     <T extends () => Promise<void>>(fn: T): Promise<void> => {
-      if (inflight.current) {
-        return inflight.current;
-      }
+      if (inflight.current) return inflight.current;
       const p = fn().finally(() => {
         inflight.current = null;
       });
@@ -136,109 +163,109 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  // 캐시 무효화 함수
   const invalidateCache = useCallback(() => {
     dispatch({ type: 'INVALIDATE_CACHE' });
   }, []);
 
-  // 상태 리셋 함수
   const resetState = useCallback(() => {
     dispatch({ type: 'RESET_STATE' });
   }, []);
 
-  // Clients 액션들
-  const fetchClients = useCallback(async () => {
-    return deduped(async () => {
-      dispatch({ type: 'SET_LOADING', payload: true });
-      try {
-        const fetcher = async () => {
-          // 전체 데이터가 필요한 경우 all=true 파라미터 추가
-          const response = await apiFetch(
-            '/api/clients?orderBy=created_at&ascending=false&all=true'
-          );
-          if (!response.ok) {
-            const errorData = await response.json();
-            const error =
-              errorData.error || new Error('Failed to fetch clients');
+  const fetchClients = useCallback(
+    async (opts?: { force?: boolean }) => {
+      const force = opts?.force ?? false;
 
-            // 인증 에러 감지 (무한 루프 방지)
-            if (
-              error?.message?.includes('Invalid Refresh Token') ||
-              error?.message?.includes('Refresh Token Not Found') ||
-              error?.code === 'SESSION_EXPIRED' ||
-              error?.code === 'UNAUTHORIZED'
-            ) {
-              console.warn(
-                'Authentication error detected, skipping fetch:',
-                error
-              );
-              return [];
+      // Optional cache check (very light): if not forced and already loaded, skip
+      if (!force && state.lastUpdated && state.clients.length > 0) {
+        return;
+      }
+
+      return deduped(async () => {
+        dispatch({ type: 'SET_LOADING', payload: true });
+
+        try {
+          const fetcher = async (): Promise<Client[]> => {
+            const res = await apiFetch(
+              `/api/clients?orderBy=created_at&ascending=false&page=${CLIENTS_DEFAULT_PAGE}&pageSize=${CLIENTS_DEFAULT_PAGE_SIZE}`
+            );
+
+            if (!res.ok) {
+              const body = await safeJson(res);
+              const err =
+                body?.error ??
+                new Error(`Failed to fetch clients (${res.status})`);
+
+              // Auth-like error: bubble up as Error for统一처리
+              if (isAuthLikeError(err)) {
+                throw err;
+              }
+
+              throw err;
             }
 
-            throw error;
-          }
-          const result = await response.json();
-          return result.data || [];
-        };
+            const body = await safeJson(res);
+            if (Array.isArray(body?.data)) {
+              return body?.data as Client[];
+            }
+            return [];
+          };
 
-        const clients = await serviceFetchClients(fetcher);
-        logInfo(
-          `[ClientsContext] fetchClients: Received ${clients.length} clients`
-        );
-        if (clients.length === 0) {
-          logWarn(
-            '[ClientsContext] fetchClients: Received empty array - check API response'
+          const clients = await serviceFetchClients(fetcher);
+
+          logInfo(
+            `[ClientsContext] fetchClients: Received ${clients.length} clients`
           );
-        }
-        dispatch({ type: 'SET_CLIENTS', payload: clients });
-      } catch (error) {
-        // 인증 에러인 경우 무한 루프 방지를 위해 빈 배열로 설정
-        if (
-          error &&
-          typeof error === 'object' &&
-          ('message' in error || 'code' in error)
-        ) {
-          const err = error as { message?: string; code?: string };
-          if (
-            err.message?.includes('Invalid Refresh Token') ||
-            err.message?.includes('Refresh Token Not Found') ||
-            err.code === 'SESSION_EXPIRED' ||
-            err.code === 'UNAUTHORIZED'
-          ) {
+          if (clients.length === 0) {
             logWarn(
-              `Authentication error in fetchClients, setting empty array: ${err instanceof Error ? err.message : String(err)}`
+              '[ClientsContext] fetchClients: Received empty array (could be valid)'
             );
-            dispatch({ type: 'SET_CLIENTS', payload: [] });
+          }
+
+          // Avoid unnecessary re-renders if identical
+          if (!sameClientList(state.clients, clients)) {
+            dispatch({ type: 'SET_CLIENTS', payload: clients });
+          }
+        } catch (err) {
+          // IMPORTANT: Do NOT clear clients on auth errors here.
+          // AuthContext/AppLayout should handle redirect/logout.
+          if (isAuthLikeError(err)) {
+            logWarn(
+              '[ClientsContext] fetchClients auth-like error; keeping existing state'
+            );
             return;
           }
+          handleError(err, 'Fetch clients');
+        } finally {
+          dispatch({ type: 'SET_LOADING', payload: false });
         }
-        handleError(error, 'Fetch clients');
-      } finally {
-        dispatch({ type: 'SET_LOADING', payload: false });
-      }
-    });
-  }, [handleError, deduped]);
+      });
+    },
+    [deduped, handleError, state.clients, state.lastUpdated]
+  );
 
   const createClient = useCallback(
     async (client: Omit<Client, 'id' | 'created_at'>) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await apiFetch('/api/clients', {
+        const res = await apiFetch('/api/clients', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(client),
         });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to create client');
+
+        if (!res.ok) {
+          const body = await safeJson(res);
+          throw (
+            body?.error ?? new Error(`Failed to create client (${res.status})`)
+          );
         }
-        const result = await response.json();
-        if (result.data) {
-          dispatch({ type: 'ADD_CLIENT', payload: result.data });
-        }
-        return result.data;
-      } catch (error) {
-        handleError(error, 'Create client');
+
+        const body = await safeJson(res);
+        const created = body?.data as Client | undefined;
+        if (created) dispatch({ type: 'ADD_CLIENT', payload: created });
+        return created ?? null;
+      } catch (err) {
+        handleError(err, 'Create client');
         return null;
       } finally {
         dispatch({ type: 'SET_SUBMITTING', payload: false });
@@ -251,25 +278,27 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
     async (id: string, client: Partial<Client>) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await apiFetch('/api/clients', {
+        const res = await apiFetch('/api/clients', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, ...client }),
         });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to update client');
+
+        if (!res.ok) {
+          const body = await safeJson(res);
+          throw (
+            body?.error ?? new Error(`Failed to update client (${res.status})`)
+          );
         }
-        const result = await response.json();
-        if (result.data) {
-          dispatch({
-            type: 'UPDATE_CLIENT',
-            payload: { id, client: result.data },
-          });
+
+        const body = await safeJson(res);
+        const updated = body?.data as Client | undefined;
+        if (updated) {
+          dispatch({ type: 'UPDATE_CLIENT', payload: { id, client: updated } });
         }
-        return result.data;
-      } catch (error) {
-        handleError(error, 'Update client');
+        return updated ?? null;
+      } catch (err) {
+        handleError(err, 'Update client');
         return null;
       } finally {
         dispatch({ type: 'SET_SUBMITTING', payload: false });
@@ -282,17 +311,25 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await fetch(`/api/clients?id=${id}`, {
-          method: 'DELETE',
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to delete client');
+        // ✅ FIXED: Use apiFetch for consistency (auth/cookies/error handling)
+        const res = await apiFetch(
+          `/api/clients?id=${encodeURIComponent(id)}`,
+          {
+            method: 'DELETE',
+          }
+        );
+
+        if (!res.ok) {
+          const body = await safeJson(res);
+          throw (
+            body?.error ?? new Error(`Failed to delete client (${res.status})`)
+          );
         }
+
         dispatch({ type: 'REMOVE_CLIENT', payload: id });
         return true;
-      } catch (error) {
-        handleError(error, 'Delete client');
+      } catch (err) {
+        handleError(err, 'Delete client');
         return false;
       } finally {
         dispatch({ type: 'SET_SUBMITTING', payload: false });
@@ -301,7 +338,6 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
     [handleError]
   );
 
-  // actions 객체를 useMemo로 메모이제이션
   const actions = useMemo(
     () => ({
       fetchClients,
@@ -328,16 +364,13 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Hook for using the context
 export function useClientsContext() {
-  const context = useContext(ClientsContext);
-  if (!context) {
+  const ctx = useContext(ClientsContext);
+  if (!ctx)
     throw new Error('useClientsContext must be used within a ClientsProvider');
-  }
-  return context;
+  return ctx;
 }
 
-// 특화된 훅
 export function useClients() {
   const { state, actions } = useClientsContext();
   return {

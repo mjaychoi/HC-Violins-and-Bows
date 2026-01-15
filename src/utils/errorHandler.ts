@@ -13,34 +13,10 @@ import {
   isDevelopment,
 } from './errorSanitization';
 
-/**
- * Error Handler Class
- *
- * ⚠️ Structural Note: This class currently handles multiple responsibilities:
- * - Error creation (createError, createApiError, createValidationError)
- * - Error interpretation (handleSupabaseError, handleNetworkError)
- * - Retry management (shouldRetry, recordRetryAttempt)
- * - Error statistics (errorStats, getErrorCount)
- * - External logging (sendToExternalLogger)
- * - Recovery suggestions (getRecoverySuggestions)
- * - Category classification (categorizeError)
- *
- * For long-term maintainability, consider splitting into:
- * - errorFactory.ts: Error creation
- * - errorInterpreter.ts: Supabase/Network parsing
- * - errorRecovery.ts: Retry logic and suggestions
- * - errorMetrics.ts: Statistics and counts
- * - errorHandler.ts: Orchestration layer
- */
 export class ErrorHandler {
   private static instance: ErrorHandler;
   private errorLog: AppError[] = [];
   private errorStats: Map<ErrorCodes, number> = new Map();
-  /**
-   * ⚠️ Important: operationId must be globally unique per request type
-   * Using the same operationId across different operations will share retry state,
-   * which can lead to incorrect retry behavior
-   */
   private retryAttempts: Map<string, number> = new Map();
   private maxRetries = 3;
 
@@ -51,8 +27,28 @@ export class ErrorHandler {
     return ErrorHandler.instance;
   }
 
-  // Create standardized error
-  // ✅ FIXED: timestamp를 ISO string으로 통일
+  private toSafeOriginalError(err: unknown): Record<string, unknown> {
+    if (err instanceof Error) {
+      return { name: err.name, message: err.message, stack: err.stack };
+    }
+    if (err && typeof err === 'object') {
+      const e = err as Record<string, unknown>;
+      const picked: Record<string, unknown> = {};
+      for (const k of [
+        'code',
+        'message',
+        'details',
+        'hint',
+        'status',
+        'name',
+      ]) {
+        if (k in e) picked[k] = e[k];
+      }
+      return picked;
+    }
+    return { value: String(err) };
+  }
+
   createError(
     code: ErrorCodes,
     message: string,
@@ -68,7 +64,6 @@ export class ErrorHandler {
     };
   }
 
-  // Create API error
   createApiError(
     code: ErrorCodes,
     message: string,
@@ -86,7 +81,6 @@ export class ErrorHandler {
     };
   }
 
-  // Create validation error
   createValidationError(
     message: string,
     field?: string,
@@ -103,25 +97,18 @@ export class ErrorHandler {
     };
   }
 
-  // Handle Supabase errors with PostgrestError type
   handleSupabaseError(error: unknown, context?: string): AppError {
-    // 에러 객체를 JSON으로 변환 시도
     let errorMessage = 'Unknown error';
     let errorCode: string | undefined;
     let errorDetails: string | undefined;
 
-    // Handle Error instances
     if (error instanceof Error) {
       errorMessage = error.message || 'Unknown error';
       errorDetails = error.stack;
 
-      // Check if it's a Supabase error by checking the error name or message
       if (error.name === 'PostgrestError' || error.message?.includes('PGRST')) {
-        // Try to extract code from message or other properties
         const match = error.message.match(/PGRST\d+/);
-        if (match) {
-          errorCode = match[0];
-        }
+        if (match) errorCode = match[0];
       }
     } else if (error && typeof error === 'object') {
       const err = error as {
@@ -135,7 +122,6 @@ export class ErrorHandler {
       errorMessage = err.message || errorMessage;
       errorDetails = err.details || err.hint;
 
-      // Invalid Refresh Token 에러 감지 (AuthApiError)
       if (
         err.name === 'AuthApiError' ||
         errorMessage?.includes('Invalid Refresh Token') ||
@@ -147,19 +133,18 @@ export class ErrorHandler {
           errorDetails,
           {
             context,
-            originalError: error,
-            preventRetry: true, // 무한 루프 방지 플래그
+            originalError: this.toSafeOriginalError(error),
+            preventRetry: true,
           }
         );
       }
 
-      // 특정 에러 코드에 대한 안내 메시지 추가
       if (err.code === 'PGRST204' && err.message?.includes('subtype')) {
         errorMessage =
           '데이터베이스에 subtype 컬럼이 없습니다. 마이그레이션을 실행해주세요.';
         errorDetails =
           'SUBTYPE_MIGRATION_GUIDE.md 파일을 참고하여 마이그레이션을 실행하세요.';
-        // 개발 환경에서만 상세 로그 출력
+
         if (process.env.NODE_ENV === 'development') {
           structuredLogError(
             'Subtype column missing. Please run migration',
@@ -172,7 +157,6 @@ export class ErrorHandler {
           );
         }
       } else if (process.env.NODE_ENV === 'development') {
-        // 개발 환경에서만 상세 로그 출력
         structuredLogError('Supabase Error', error, 'ErrorHandler', {
           errorCode,
           errorMessage,
@@ -182,13 +166,11 @@ export class ErrorHandler {
     }
 
     let code = ErrorCodes.DATABASE_ERROR;
-    // subtype 컬럼 누락 에러는 이미 처리되었으므로 설정된 메시지 사용
     let message =
       errorCode === 'PGRST204' && errorMessage.includes('subtype')
         ? errorMessage
         : 'Database operation failed';
 
-    // Prefer HTTP status + hint/message; fall back to code
     if (
       typeof error === 'object' &&
       error &&
@@ -198,12 +180,8 @@ export class ErrorHandler {
       const { status } = error as { status?: number };
       const msg =
         typeof (error as { message?: unknown }).message === 'string'
-          ? ((error as { message?: string }).message as string)
+          ? (error as { message?: string }).message
           : undefined;
-
-      // 개발 환경에서만 상세 로그 출력 (subtype 에러는 이미 처리됨)
-      // 구조화된 로거는 이미 handleSupabaseError 호출 전후에 사용됨
-      // 여기서는 추가 디버깅 정보만 필요시 출력
 
       if (status === 401) {
         code = ErrorCodes.UNAUTHORIZED;
@@ -221,12 +199,10 @@ export class ErrorHandler {
         code = ErrorCodes.DUPLICATE_RECORD;
         message = 'Record already exists';
       } else if (!errorCode || errorCode !== 'PGRST204') {
-        // PGRST204가 아니고 다른 메시지가 없으면 추출한 메시지 사용
         message = errorMessage || msg || 'Database operation failed';
       }
     }
 
-    // Type guard for PostgrestError - fallback
     if (
       error &&
       typeof error === 'object' &&
@@ -242,29 +218,26 @@ export class ErrorHandler {
       };
 
       switch (pgError.code) {
-        case '23505': // Unique constraint violation
+        case '23505':
           code = ErrorCodes.DUPLICATE_RECORD;
           message = 'Record already exists';
           break;
-        case '23503': // Foreign key constraint violation
+        case '23503':
           code = ErrorCodes.VALIDATION_ERROR;
           message = 'Invalid reference to related record';
           break;
-        case 'PGRST116': // Row Level Security
+        case 'PGRST116':
           code = ErrorCodes.FORBIDDEN;
           message = 'Access denied';
           break;
-        case 'PGRST204': // Column not found in schema cache
+        case 'PGRST204':
           code = ErrorCodes.DATABASE_ERROR;
-          if (pgError.message?.includes('subtype')) {
-            message =
-              errorMessage ||
-              '데이터베이스에 subtype 컬럼이 없습니다. 마이그레이션을 실행해주세요.';
-          } else {
-            message = pgError.message || 'Database column not found';
-          }
+          message = pgError.message?.includes('subtype')
+            ? errorMessage ||
+              '데이터베이스에 subtype 컬럼이 없습니다. 마이그레이션을 실행해주세요.'
+            : pgError.message || 'Database column not found';
           break;
-        case 'PGRST301': // JWT expired
+        case 'PGRST301':
           code = ErrorCodes.SESSION_EXPIRED;
           message = 'Session expired';
           break;
@@ -274,22 +247,24 @@ export class ErrorHandler {
       }
     }
 
-    // Safe access to details property
     const details =
-      error && typeof error === 'object' && 'details' in error
+      errorDetails ??
+      (error && typeof error === 'object' && 'details' in error
         ? String((error as { details?: unknown }).details)
-        : undefined;
+        : undefined);
 
     return this.createError(code, message, details, {
       context,
-      originalError: error,
+      originalError: this.toSafeOriginalError(error),
     });
   }
 
-  // Handle network errors
   handleNetworkError(error: unknown, endpoint?: string): ApiError {
+    const safeOriginal = this.toSafeOriginalError(error);
+
     structuredLogError('Network Error', error, 'ErrorHandler', {
       endpoint,
+      originalError: safeOriginal,
     });
 
     let code = ErrorCodes.NETWORK_ERROR;
@@ -307,6 +282,7 @@ export class ErrorHandler {
     } else if (error && typeof error === 'object' && 'response' in error) {
       const response = (error as { response: { status: number } }).response;
       status = response.status;
+
       switch (status) {
         case 401:
           code = ErrorCodes.UNAUTHORIZED;
@@ -331,18 +307,20 @@ export class ErrorHandler {
       }
     }
 
-    return this.createApiError(
-      code,
-      message,
-      status,
-      endpoint,
-      error instanceof Error ? error.message : undefined
+    const details = error instanceof Error ? error.message : String(error);
+
+    // monitoring에도 safe snapshot 넣기
+    captureException(
+      new Error(message),
+      'ErrorHandler.handleNetworkError',
+      { endpoint, status, code, originalError: safeOriginal },
+      ErrorSeverity.MEDIUM
     );
+
+    return this.createApiError(code, message, status, endpoint, details);
   }
 
-  // Get user-friendly error message
   getUserFriendlyMessage(error: AppError): string {
-    // 개발 환경에서는 원본 메시지 사용
     if (isDevelopment()) {
       const messages: Record<string, string> = {
         [ErrorCodes.NETWORK_ERROR]: 'Please check your network connection.',
@@ -365,22 +343,18 @@ export class ErrorHandler {
       return messages[error.code] || error.message;
     }
 
-    // 프로덕션 환경에서는 sanitized 메시지 사용
     return getUserFriendlyErrorMessage(error);
   }
 
-  // Log error with enhanced tracking
   logError(
     error: AppError,
     severity: ErrorSeverity = ErrorSeverity.MEDIUM
   ): void {
     this.errorLog.push(error);
 
-    // Update error statistics
     const currentCount = this.errorStats.get(error.code as ErrorCodes) || 0;
     this.errorStats.set(error.code as ErrorCodes, currentCount + 1);
 
-    // Use structured logger
     const metadata = {
       errorCode: error.code,
       severity: ErrorSeverity[severity],
@@ -388,13 +362,7 @@ export class ErrorHandler {
       timestamp: new Date().toISOString(),
     };
 
-    // Map severity to log level
-    const errorMessage =
-      error instanceof Error
-        ? error.message
-        : typeof error === 'object' && error !== null && 'message' in error
-          ? String((error as { message: unknown }).message)
-          : String(error);
+    const errorMessage = error.message || String(error.code);
 
     structuredLogError(
       `[${ErrorSeverity[severity]}] ${errorMessage}`,
@@ -403,71 +371,51 @@ export class ErrorHandler {
       metadata
     );
 
-    // For critical errors, send to external logging service
     if (severity === ErrorSeverity.CRITICAL) {
       this.sendToExternalLogger(error);
     }
   }
 
-  // Send critical errors to external logging service
   private sendToExternalLogger(error: AppError): void {
-    // Use captureException for integrated error handling and alerting
     captureException(
       error,
       'ErrorHandler',
-      {
-        code: error.code,
-        context: error.context,
-        details: error.details,
-      },
+      { code: error.code, context: error.context, details: error.details },
       ErrorSeverity.CRITICAL
     );
-
-    // Example integration with external services (Sentry, LogRocket, etc.)
-    if (typeof window !== 'undefined') {
-      // Sentry integration example
-      // if (window.Sentry) {
-      //   window.Sentry.captureException(new Error(error.message), {
-      //     tags: { code: error.code, severity: 'critical' },
-      //     extra: error.context
-      //   });
-      // }
-      // LogRocket integration example
-      // if (window.LogRocket) {
-      //   window.LogRocket.captureException(new Error(error.message));
-      // }
-    }
   }
 
-  // Get error logs
   getErrorLogs(): AppError[] {
     return [...this.errorLog];
   }
 
-  // Clear error logs
   clearErrorLogs(): void {
     this.errorLog = [];
     this.errorStats.clear();
     this.retryAttempts.clear();
   }
 
-  // Get error statistics
   getErrorStats(): Map<ErrorCodes, number> {
     return new Map(this.errorStats);
   }
 
-  // Get error count by code
   getErrorCount(code: ErrorCodes): number {
     return this.errorStats.get(code) || 0;
   }
 
-  // Check if error should be retried
   shouldRetry(error: AppError, operationId: string): boolean {
     const retryableErrors = [
       ErrorCodes.NETWORK_ERROR,
       ErrorCodes.TIMEOUT_ERROR,
       ErrorCodes.INTERNAL_ERROR,
     ];
+
+    if (
+      error.context &&
+      (error.context as { preventRetry?: boolean }).preventRetry
+    ) {
+      return false;
+    }
 
     if (!retryableErrors.includes(error.code as ErrorCodes)) {
       return false;
@@ -477,91 +425,82 @@ export class ErrorHandler {
     return attempts < this.maxRetries;
   }
 
-  /**
-   * Record retry attempt
-   * ⚠️ operationId must be globally unique per request type to avoid retry state conflicts
-   */
   recordRetryAttempt(operationId: string): void {
     const attempts = this.retryAttempts.get(operationId) || 0;
     this.retryAttempts.set(operationId, attempts + 1);
   }
 
-  // Clear retry attempts for operation
   clearRetryAttempts(operationId: string): void {
     this.retryAttempts.delete(operationId);
   }
 
-  // Get retry count for operation
   getRetryCount(operationId: string): number {
     return this.retryAttempts.get(operationId) || 0;
   }
 
-  // Enhanced error recovery suggestions with specific solutions
   getRecoverySuggestions(error: AppError): string[] {
     const suggestions: string[] = [];
 
     switch (error.code) {
       case ErrorCodes.NETWORK_ERROR:
-        suggestions.push('인터넷 연결을 확인해주세요');
-        suggestions.push('Wi-Fi 또는 모바일 데이터가 켜져 있는지 확인하세요');
-        suggestions.push('잠시 후 다시 시도해주세요');
+        suggestions.push(
+          '인터넷 연결을 확인해주세요',
+          '잠시 후 다시 시도해주세요'
+        );
         break;
       case ErrorCodes.TIMEOUT_ERROR:
-        suggestions.push('요청 시간이 초과되었습니다');
-        suggestions.push('네트워크 상태를 확인하고 다시 시도해주세요');
-        suggestions.push('데이터가 많다면 필터를 사용해보세요');
+        suggestions.push(
+          '요청 시간이 초과되었습니다',
+          '네트워크 상태를 확인하고 다시 시도해주세요'
+        );
         break;
       case ErrorCodes.UNAUTHORIZED:
-        suggestions.push('로그인이 필요합니다');
-        suggestions.push('로그인 페이지로 이동합니다');
+        suggestions.push('로그인이 필요합니다', '로그인 페이지로 이동합니다');
         break;
       case ErrorCodes.FORBIDDEN:
-        suggestions.push('이 작업을 수행할 권한이 없습니다');
-        suggestions.push('관리자에게 권한 요청을 문의하세요');
+        suggestions.push(
+          '이 작업을 수행할 권한이 없습니다',
+          '관리자에게 권한 요청을 문의하세요'
+        );
         break;
       case ErrorCodes.DATABASE_ERROR:
-        suggestions.push('데이터베이스 연결에 문제가 발생했습니다');
-        suggestions.push('잠시 후 다시 시도해주세요');
-        suggestions.push('문제가 계속되면 관리자에게 문의하세요');
+        suggestions.push(
+          '데이터베이스 연결에 문제가 발생했습니다',
+          '잠시 후 다시 시도해주세요'
+        );
         break;
       case ErrorCodes.VALIDATION_ERROR:
-        // 필드별 구체적인 안내 (ValidationError 타입 체크)
-        if ('field' in error && error.field) {
-          suggestions.push(`"${error.field}" 필드를 확인해주세요`);
+        if ('field' in error && (error as { field?: string }).field) {
+          suggestions.push(
+            `"${(error as { field?: string }).field}" 필드를 확인해주세요`
+          );
         }
-        if (error.details) {
-          suggestions.push(error.details);
-        } else {
-          suggestions.push('입력한 정보를 확인하고 다시 시도해주세요');
-        }
+        suggestions.push(
+          error.details || '입력한 정보를 확인하고 다시 시도해주세요'
+        );
         break;
       case ErrorCodes.DUPLICATE_RECORD:
-        // 중복된 항목 정보가 있으면 표시
-        if (error.details) {
-          suggestions.push(`중복된 항목: ${error.details}`);
-        } else {
-          suggestions.push('이미 존재하는 데이터입니다');
-        }
-        suggestions.push('다른 정보로 시도하거나 기존 항목을 수정하세요');
+        suggestions.push(
+          '이미 존재하는 데이터입니다',
+          '다른 정보로 시도하거나 기존 항목을 수정하세요'
+        );
         break;
       case ErrorCodes.RECORD_NOT_FOUND:
         suggestions.push('요청한 항목을 찾을 수 없습니다');
-        suggestions.push('항목이 삭제되었거나 ID가 잘못되었을 수 있습니다');
-        suggestions.push('목록에서 다시 확인해주세요');
         break;
       case ErrorCodes.SESSION_EXPIRED:
-        suggestions.push('세션이 만료되었습니다');
-        suggestions.push('다시 로그인해주세요');
+        suggestions.push('세션이 만료되었습니다', '다시 로그인해주세요');
         break;
       default:
-        suggestions.push('잠시 후 다시 시도해주세요');
-        suggestions.push('문제가 계속되면 관리자에게 문의하세요');
+        suggestions.push(
+          '잠시 후 다시 시도해주세요',
+          '문제가 계속되면 관리자에게 문의하세요'
+        );
     }
 
     return suggestions;
   }
 
-  // Get error category
   getErrorCategory(error: AppError): ErrorCategory {
     switch (error.code) {
       case ErrorCodes.NETWORK_ERROR:
@@ -589,10 +528,8 @@ export class ErrorHandler {
   }
 }
 
-// Export singleton instance
 export const errorHandler = ErrorHandler.getInstance();
 
-// Utility functions
 export const isNetworkError = (error: unknown): boolean => {
   if (error && typeof error === 'object' && 'name' in error) {
     const name = (error as { name: string }).name;
@@ -601,7 +538,7 @@ export const isNetworkError = (error: unknown): boolean => {
   if (typeof navigator !== 'undefined') {
     return !navigator.onLine;
   }
-  return false; // SSR: don't assume offline
+  return false;
 };
 
 export const isValidationError = (error: unknown): boolean => {

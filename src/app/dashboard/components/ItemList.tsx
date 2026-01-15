@@ -1,7 +1,15 @@
 'use client';
 
-import React, { memo, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Instrument, ClientInstrument } from '@/types';
+import React, {
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Instrument, Client, ClientInstrument } from '@/types';
 import {
   formatInstrumentPrice,
   formatInstrumentYear,
@@ -9,20 +17,13 @@ import {
   formatInstrumentPriceCompact,
 } from '../utils/dashboardUtils';
 import { validateUUID } from '@/utils/inputValidation';
-import {
-  normalizeInstrumentSerial,
-  validateInstrumentSerial,
-} from '@/utils/uniqueNumberGenerator';
 import Link from 'next/link';
 import { ListSkeleton, Pagination, EmptyState } from '@/components/common';
+import { InstrumentExpandedRow } from './InstrumentExpandedRow';
 import StatusBadge from './StatusBadge';
 import CertificateBadge from './CertificateBadge';
 import RowActions from './RowActions';
 import { classNames, cn } from '@/utils/classNames';
-import MobileCardView, {
-  MobileCard,
-  MobileCardRow,
-} from '@/components/common/layout/MobileCardView';
 import { useInlineEdit } from '@/hooks/useInlineEdit';
 import { logInfo } from '@/utils/logger';
 
@@ -45,7 +46,6 @@ interface ItemListProps {
   getSortArrow: (field: string) => string;
   onSort: (field: string) => void;
   onAddClick?: () => void;
-  onSellClick?: (item: Instrument) => void; // 원클릭 판매
   allClients?: Array<{
     id: string;
     first_name?: string | null;
@@ -53,8 +53,6 @@ interface ItemListProps {
     email?: string | null;
   }>;
   clientsLoading?: boolean; // UX: Track if clients are still loading
-  // FIXED: Add existingSerialNumbers for inline editing serial validation
-  existingSerialNumbers?: string[]; // Serial numbers from existing instruments for validation
   // UX: Empty state customization
   emptyState?: {
     message?: string;
@@ -83,10 +81,8 @@ const ItemList = memo(function ItemList({
   getSortArrow,
   onSort,
   onAddClick,
-  onSellClick,
   allClients = [],
   clientsLoading = false,
-  existingSerialNumbers = [],
   emptyState = {},
   currentPage,
   totalPages,
@@ -106,8 +102,6 @@ const ItemList = memo(function ItemList({
     year?: string | number | null;
     price?: string | number | null;
     status?: Instrument['status'];
-    serial_number?: string | null;
-    certificate?: boolean | null;
     ownership?: string | null;
   };
   type EditField = keyof EditData;
@@ -116,28 +110,6 @@ const ItemList = memo(function ItemList({
     onSave: async (id, data) => {
       if (!onUpdateItem) return;
 
-      // Serial number validation
-      const serialNumber = data.serial_number?.trim() || null;
-      if (serialNumber) {
-        const currentItem = items.find(item => item.id === id);
-        const currentSerialNumber = currentItem?.serial_number || null;
-
-        const normalizedSerial = normalizeInstrumentSerial(serialNumber);
-        const serialValidation = validateInstrumentSerial(
-          normalizedSerial,
-          existingSerialNumbers,
-          currentSerialNumber
-        );
-        if (!serialValidation.valid) {
-          console.error(
-            'Serial number validation failed:',
-            serialValidation.error
-          );
-          throw new Error(serialValidation.error || 'Invalid serial number');
-        }
-      }
-
-      // Convert form data to proper types
       const updates: Partial<Instrument> = {
         maker: data.maker?.trim() || null,
         type: data.type?.trim() || null,
@@ -173,10 +145,6 @@ const ItemList = memo(function ItemList({
           return isNaN(priceNum) ? null : priceNum;
         })(),
         status: (data.status as Instrument['status']) || 'Available',
-        serial_number: serialNumber
-          ? normalizeInstrumentSerial(serialNumber)
-          : null,
-        certificate: data.certificate ?? false,
         ownership: data.ownership?.trim() || null,
       };
 
@@ -185,11 +153,30 @@ const ItemList = memo(function ItemList({
     highlightDuration: 2000,
   });
 
+  const [expandedInstrumentId, setExpandedInstrumentId] = useState<
+    string | null
+  >(null);
+
   // 편의를 위한 별칭
   const editingItem = inlineEdit.editingId;
   const editData = inlineEdit.editData;
   const isSaving = inlineEdit.isSaving;
   const savedItemId = inlineEdit.savedId;
+
+  useEffect(() => {
+    if (
+      expandedInstrumentId &&
+      !items.some(item => item.id === expandedInstrumentId)
+    ) {
+      setExpandedInstrumentId(null);
+    }
+  }, [expandedInstrumentId, items]);
+
+  useEffect(() => {
+    if (editingItem && expandedInstrumentId === editingItem) {
+      setExpandedInstrumentId(null);
+    }
+  }, [editingItem, expandedInstrumentId]);
 
   // Track newly created item for scroll/highlight
   const newlyCreatedItemRef = useRef<string | null>(null);
@@ -201,6 +188,51 @@ const ItemList = memo(function ItemList({
   const clientsMap = useMemo(
     () => new Map(allClients.map(client => [client.id, client])),
     [allClients]
+  );
+
+  const resolveOwnerMeta = useCallback(
+    (item: EnrichedInstrument) => {
+      const ownership = item.ownership;
+      if (!ownership) {
+        return null;
+      }
+
+      if (!validateUUID(ownership)) {
+        return {
+          label: ownership,
+          client: null,
+        };
+      }
+
+      const matchingRelationship = item.clients.find(
+        rel => rel.client_id === ownership
+      );
+
+      if (matchingRelationship?.client) {
+        return {
+          label: formatClientName(matchingRelationship.client),
+          client: matchingRelationship.client,
+        };
+      }
+
+      const mappedClient = clientsMap.get(ownership);
+      if (mappedClient) {
+        const fallbackName =
+          `${mappedClient.first_name || ''} ${mappedClient.last_name || ''}`.trim() ||
+          mappedClient.email ||
+          'Client';
+        return {
+          label: fallbackName,
+          client: null,
+        };
+      }
+
+      return {
+        label: ownership,
+        client: null,
+      };
+    },
+    [clientsMap]
   );
 
   // FIXED: Extract ownership cell rendering logic into useCallback to avoid re-running expensive operations on every render
@@ -310,48 +342,66 @@ const ItemList = memo(function ItemList({
 
       // UX: No ownership - show connected clients count with hover detail
       if (item.clients && item.clients.length > 0) {
-        const clientCount = item.clients.length;
-
+        const clientEntries = item.clients
+          .filter(rel => Boolean(rel.client_id))
+          .map(rel => {
+            const client = rel.client || clientsMap.get(rel.client_id) || null;
+            const clientName = client
+              ? formatClientName(client as Client)
+              : 'Client';
+            return {
+              id: rel.client_id,
+              name: clientName,
+              relationship: rel.relationship_type || 'Client',
+              relId: rel.id,
+            };
+          });
+        const visibleClients = clientEntries.slice(0, 2);
+        const hiddenCount = clientEntries.length - visibleClients.length;
         return (
           <div className="group relative">
-            <div className="inline-flex items-center gap-1.5 text-sm text-gray-700">
-              <span className="text-gray-600">
-                {clientCount === 1
-                  ? '1 Active Client'
-                  : `${clientCount} Active Clients`}
+            <div className="text-sm text-gray-700">
+              <span className="font-medium">
+                {visibleClients.map((entry, index) => (
+                  <React.Fragment key={entry.relId}>
+                    <Link
+                      href={`/clients?clientId=${entry.id}`}
+                      onClick={e => e.stopPropagation()}
+                      className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                      title={`View client details (${entry.relationship})`}
+                    >
+                      {entry.name}
+                    </Link>
+                    {index < visibleClients.length - 1 && ', '}
+                  </React.Fragment>
+                ))}
+                {hiddenCount > 0 && (
+                  <span className="text-xs text-gray-500 ml-1">
+                    +{hiddenCount} more
+                  </span>
+                )}
               </span>
+              <span className="ml-1 text-xs text-gray-500">Connected</span>
             </div>
-            {/* UX: Hover tooltip showing client details */}
-            {/* ✅ FIXED: popover를 왼쪽으로 표시 (right-0으로 부모 요소의 오른쪽에 정렬하여 왼쪽으로 확장) */}
             <div className="absolute right-0 top-full mt-1 z-10 hidden group-hover:block w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
               <div className="text-xs font-semibold text-gray-900 mb-2">
-                Connected Clients ({clientCount})
+                Connected Clients ({clientEntries.length})
               </div>
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {item.clients.map(rel => {
-                  if (!rel.client_id) return null;
-                  const clientName = rel.client
-                    ? formatClientName(rel.client)
-                    : clientsMap.get(rel.client_id)
-                      ? `${clientsMap.get(rel.client_id)!.first_name || ''} ${clientsMap.get(rel.client_id)!.last_name || ''}`.trim() ||
-                        clientsMap.get(rel.client_id)!.email ||
-                        'Client'
-                      : 'Client';
-                  return (
-                    <Link
-                      key={rel.id}
-                      href={`/clients?clientId=${rel.client_id}`}
-                      onClick={e => e.stopPropagation()}
-                      className="block text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors py-0.5"
-                      title={`View client details (${rel.relationship_type})`}
-                    >
-                      <span className="font-medium">{clientName}</span>
-                      <span className="text-gray-500 ml-1">
-                        ({rel.relationship_type})
-                      </span>
-                    </Link>
-                  );
-                })}
+                {clientEntries.map(entry => (
+                  <Link
+                    key={`${entry.id}-${entry.relationship}`}
+                    href={`/clients?clientId=${entry.id}`}
+                    onClick={e => e.stopPropagation()}
+                    className="block text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors py-0.5"
+                    title={`View client details (${entry.relationship})`}
+                  >
+                    <span className="font-medium">{entry.name}</span>
+                    <span className="text-gray-500 ml-1">
+                      ({entry.relationship})
+                    </span>
+                  </Link>
+                ))}
               </div>
             </div>
           </div>
@@ -373,8 +423,6 @@ const ItemList = memo(function ItemList({
         year: item.year ? String(item.year) : '',
         price: item.price ? String(item.price) : '',
         status: item.status || 'Available',
-        serial_number: item.serial_number || '',
-        certificate: item.certificate ?? false,
         ownership: item.ownership || '',
       } as Partial<EditData>);
     },
@@ -533,204 +581,8 @@ const ItemList = memo(function ItemList({
 
   return (
     <>
-      {/* 모바일 카드 뷰 */}
-      <MobileCardView>
-        <div className="space-y-3">
-          {items.map(item => {
-            const isEditing = editingItem === item.id;
-            const isSaved = savedItemId === item.id;
-
-            const isNewlyCreated = newlyCreatedItemId === item.id;
-
-            return (
-              <MobileCard
-                key={item.id}
-                data-item-id={item.id}
-                className={cn(
-                  isEditing && 'ring-2 ring-blue-200 bg-blue-50',
-                  isSaved && 'ring-2 ring-green-200 bg-green-50',
-                  isNewlyCreated && 'ring-2 ring-green-400 bg-green-50'
-                )}
-              >
-                {/* 헤더: Status + Serial # */}
-                <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-200">
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={item.status} size="sm" />
-                    <span className="text-xs text-gray-500 font-mono">
-                      {item.serial_number || '—'}
-                    </span>
-                  </div>
-                  <RowActions
-                    onEdit={() => startEditing(item)}
-                    onDelete={() => onDeleteClick(item)}
-                    onSell={onSellClick ? () => onSellClick(item) : undefined}
-                    instrumentId={item.id}
-                  />
-                </div>
-
-                {/* 주요 정보 */}
-                <MobileCardRow
-                  label="Maker"
-                  value={
-                    isEditing ? (
-                      <input
-                        type="text"
-                        value={editData.maker || ''}
-                        onChange={e =>
-                          handleEditFieldChange('maker', e.target.value)
-                        }
-                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                        onClick={e => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span className="font-medium">{item.maker || '—'}</span>
-                    )
-                  }
-                />
-                <MobileCardRow
-                  label="Type"
-                  value={
-                    isEditing ? (
-                      <input
-                        type="text"
-                        value={editData.type || ''}
-                        onChange={e =>
-                          handleEditFieldChange('type', e.target.value)
-                        }
-                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                        onClick={e => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span>{item.type || '—'}</span>
-                    )
-                  }
-                />
-                {item.subtype && (
-                  <MobileCardRow
-                    label="Subtype"
-                    value={
-                      isEditing ? (
-                        <input
-                          type="text"
-                          value={editData.subtype || ''}
-                          onChange={e =>
-                            handleEditFieldChange('subtype', e.target.value)
-                          }
-                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                          onClick={e => e.stopPropagation()}
-                        />
-                      ) : (
-                        <span>{item.subtype}</span>
-                      )
-                    }
-                  />
-                )}
-                <MobileCardRow
-                  label="Year"
-                  value={
-                    isEditing ? (
-                      <input
-                        type="number"
-                        value={editData.year || ''}
-                        onChange={e =>
-                          handleEditFieldChange('year', e.target.value)
-                        }
-                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                        onClick={e => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span>{formatInstrumentYear(item.year)}</span>
-                    )
-                  }
-                />
-                <MobileCardRow
-                  label="Price"
-                  value={
-                    isEditing ? (
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editData.price || ''}
-                        onChange={e =>
-                          handleEditFieldChange('price', e.target.value)
-                        }
-                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                        onClick={e => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span className="font-semibold">
-                        {formatInstrumentPriceCompact(item.price)}
-                      </span>
-                    )
-                  }
-                />
-                <MobileCardRow
-                  label="Certificate"
-                  value={
-                    isEditing ? (
-                      <select
-                        value={String(!!editData.certificate)}
-                        onChange={e =>
-                          handleEditFieldChange(
-                            'certificate',
-                            e.target.value === 'true'
-                          )
-                        }
-                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <option value="true">Yes</option>
-                        <option value="false">No</option>
-                      </select>
-                    ) : (
-                      <CertificateBadge certificate={item.certificate} />
-                    )
-                  }
-                />
-                {item.clients && item.clients.length > 0 && (
-                  <MobileCardRow
-                    label="Clients"
-                    value={
-                      <span className="text-xs text-blue-600">
-                        {item.clients.length}{' '}
-                        {item.clients.length === 1 ? 'client' : 'clients'}
-                      </span>
-                    }
-                  />
-                )}
-
-                {/* 편집 모드일 때 저장/취소 버튼 */}
-                {isEditing && (
-                  <div className="mt-3 pt-3 border-t border-gray-200 flex gap-2">
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        saveEditing();
-                      }}
-                      disabled={isSaving}
-                      className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {isSaving ? 'Saving...' : 'Save'}
-                    </button>
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        cancelEditing();
-                      }}
-                      className="flex-1 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </MobileCard>
-            );
-          })}
-        </div>
-      </MobileCardView>
-
       {/* 데스크톱 테이블 뷰 */}
-      <div className={cn('hidden md:block', classNames.tableWrapper)}>
+      <div className={cn('w-full', classNames.tableWrapper)}>
         <div className={classNames.tableContainer}>
           <table className={classNames.table}>
             <thead className={classNames.tableHeader}>
@@ -887,88 +739,95 @@ const ItemList = memo(function ItemList({
                 };
 
                 const isNewlyCreated = newlyCreatedItemId === item.id;
+                const isExpanded = expandedInstrumentId === item.id;
+                const ownerMeta = resolveOwnerMeta(item);
+
+                const toggleRowExpanded = () => {
+                  if (editingItem === item.id) return;
+                  setExpandedInstrumentId(prev =>
+                    prev === item.id ? null : item.id
+                  );
+                };
+
+                const rowLabel = item.serial_number
+                  ? `Toggle details for ${item.serial_number}`
+                  : `Toggle details for instrument ${item.id}`;
 
                 return (
-                  <tr
-                    key={item.id}
-                    data-item-id={item.id}
-                    className={cn(
-                      classNames.tableRow,
-                      getRowStyles(item.status),
-                      isNewlyCreated && 'ring-2 ring-green-400 bg-green-50'
-                    )}
-                  >
-                    <td className={cn(classNames.tableCell, 'text-right')}>
-                      {isEditing ? (
-                        <div className="flex items-center justify-end space-x-1">
-                          <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              saveEditing();
-                            }}
-                            disabled={isSaving}
-                            className="text-green-600 hover:text-green-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-green-50"
-                            title="Save changes"
-                            aria-label="Save changes"
-                          >
-                            {isSaving ? (
-                              <svg
-                                className="w-4 h-4 animate-spin"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth="2"
-                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                                />
-                              </svg>
-                            ) : (
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth="2"
-                                  d="M5 13l4 4L19 7"
-                                />
-                              </svg>
-                            )}
-                          </button>
-                          <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              cancelEditing();
-                            }}
-                            disabled={isSaving}
-                            className="text-red-600 hover:text-red-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-red-50"
-                            title="Cancel editing"
-                          >
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
+                  <Fragment key={item.id}>
+                    <tr
+                      data-item-id={item.id}
+                      className={cn(
+                        classNames.tableRow,
+                        getRowStyles(item.status),
+                        isNewlyCreated && 'ring-2 ring-green-400 bg-green-50',
+                        'cursor-pointer'
+                      )}
+                      onClick={toggleRowExpanded}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          toggleRowExpanded();
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={rowLabel}
+                      aria-expanded={isExpanded}
+                    >
+                      <td className={cn(classNames.tableCell, 'text-right')}>
+                        {isEditing ? (
+                          <div className="flex items-center justify-end space-x-1">
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                saveEditing();
+                              }}
+                              disabled={isSaving}
+                              className="text-green-600 hover:text-green-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-green-50"
+                              title="Save changes"
+                              aria-label="Save changes"
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M6 18L18 6M6 6l12 12"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-end gap-2">
-                          {isSaved && (
-                            <div className="flex items-center gap-1 text-green-600">
+                              {isSaving ? (
+                                <svg
+                                  className="w-4 h-4 animate-spin"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth="2"
+                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                  />
+                                </svg>
+                              ) : (
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth="2"
+                                    d="M5 13l4 4L19 7"
+                                  />
+                                </svg>
+                              )}
+                            </button>
+
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                cancelEditing();
+                              }}
+                              disabled={isSaving}
+                              className="text-red-600 hover:text-red-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-red-50"
+                              title="Cancel editing"
+                            >
                               <svg
                                 className="w-4 h-4"
                                 fill="none"
@@ -978,279 +837,252 @@ const ItemList = memo(function ItemList({
                                 <path
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M5 13l4 4L19 7"
+                                  strokeWidth="2"
+                                  d="M6 18L18 6M6 6l12 12"
                                 />
                               </svg>
-                              <span className="text-xs font-medium">Saved</span>
-                            </div>
-                          )}
-                          <RowActions
-                            onEdit={() => startEditing(item)}
-                            onDelete={() => onDeleteClick(item)}
-                            currentStatus={item.status}
-                            hasCertificateField={true}
-                            itemId={item.id}
-                            instrumentId={item.id}
-                            onBook={async () => {
-                              if (onUpdateItem) {
-                                await onUpdateItem(item.id, {
-                                  status: 'Booked',
-                                });
-                              }
-                            }}
-                            onSendToMaintenance={async () => {
-                              if (onUpdateItem) {
-                                await onUpdateItem(item.id, {
-                                  status: 'Maintenance',
-                                });
-                              }
-                            }}
-                            onAttachCertificate={async () => {
-                              if (onUpdateItem) {
-                                await onUpdateItem(item.id, {
-                                  certificate: true,
-                                });
-                              }
-                            }}
-                            onSell={
-                              onSellClick ? () => onSellClick(item) : undefined
-                            }
-                            hasCertificate={item.certificate ?? null}
-                            onDownloadCertificate={async () => {
-                              try {
-                                const res = await fetch(
-                                  `/api/certificates/${item.id}`
-                                );
-                                if (!res.ok) return;
-                                const blob = await res.blob();
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                // FIXED: Sanitize filename to prevent issues with special characters
-                                // Reuse server sanitization logic (matches route.tsx)
-                                const rawFilename =
-                                  item.serial_number || item.id;
-                                const safe = String(rawFilename)
-                                  .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
-                                  .replace(/\s+/g, '_')
-                                  .trim()
-                                  .substring(0, 200);
-                                // FIXED: Let browser use Content-Disposition header if available
-                                // Only set download if we have a safe filename
-                                if (safe) {
-                                  a.download = `certificate-${safe}.pdf`;
-                                }
-                                document.body.appendChild(a);
-                                a.click();
-                                a.remove();
-                                URL.revokeObjectURL(url);
-                              } catch (error) {
-                                // Error is handled silently - user can retry if needed
-                                if (process.env.NODE_ENV === 'development') {
-                                  console.error(
-                                    'Failed to download certificate:',
-                                    error
-                                  );
-                                }
-                              }
-                            }}
-                          />
-                        </div>
-                      )}
-                    </td>
-                    <td className={classNames.tableCell}>
-                      {isEditing ? (
-                        <select
-                          value={editData.status || 'Available'}
-                          onChange={e =>
-                            handleEditFieldChange(
-                              'status',
-                              e.target.value as Instrument['status']
-                            )
-                          }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          <option value="Available">Available</option>
-                          <option value="Booked">Booked</option>
-                          <option value="Sold">Sold</option>
-                          <option value="Reserved">Reserved</option>
-                          <option value="Maintenance">Maintenance</option>
-                        </select>
-                      ) : (
-                        <StatusBadge status={item.status} />
-                      )}
-                    </td>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-2">
+                            {isSaved && (
+                              <div className="flex items-center gap-1 text-green-600">
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M5 13l4 4L19 7"
+                                  />
+                                </svg>
+                                <span className="text-xs font-medium">
+                                  Saved
+                                </span>
+                              </div>
+                            )}
 
-                    <td className={classNames.tableCell}>
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={editData.serial_number || ''}
-                          onChange={e =>
-                            handleEditFieldChange(
-                              'serial_number',
-                              e.target.value
-                            )
-                          }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                          placeholder="Serial #"
-                        />
-                      ) : (
+                            <div onClick={e => e.stopPropagation()}>
+                              <RowActions
+                                onEdit={() => startEditing(item)}
+                                onDelete={() => onDeleteClick(item)}
+                                currentStatus={item.status}
+                                itemId={item.id}
+                                hasCertificate={Boolean(item.has_certificate)}
+                                onDownloadCertificate={async () => {
+                                  try {
+                                    const res = await fetch(
+                                      `/api/certificates/${item.id}`
+                                    );
+                                    if (!res.ok) return;
+                                    const blob = await res.blob();
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+
+                                    const rawFilename =
+                                      item.serial_number || item.id;
+                                    const safe = String(rawFilename)
+                                      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+                                      .replace(/\s+/g, '_')
+                                      .trim()
+                                      .substring(0, 200);
+
+                                    if (safe)
+                                      a.download = `certificate-${safe}.pdf`;
+
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    a.remove();
+                                    URL.revokeObjectURL(url);
+                                  } catch (error) {
+                                    if (
+                                      process.env.NODE_ENV === 'development'
+                                    ) {
+                                      console.error(
+                                        'Failed to download certificate:',
+                                        error
+                                      );
+                                    }
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                      <td className={classNames.tableCell}>
+                        {isEditing ? (
+                          <select
+                            value={editData.status || 'Available'}
+                            onChange={e =>
+                              handleEditFieldChange(
+                                'status',
+                                e.target.value as Instrument['status']
+                              )
+                            }
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <option value="Available">Available</option>
+                            <option value="Booked">Booked</option>
+                            <option value="Sold">Sold</option>
+                            <option value="Reserved">Reserved</option>
+                            <option value="Maintenance">Maintenance</option>
+                          </select>
+                        ) : (
+                          <StatusBadge status={item.status} />
+                        )}
+                      </td>
+
+                      <td className={classNames.tableCell}>
                         <div className="text-sm text-gray-900 font-mono">
                           {item.serial_number || '—'}
                         </div>
-                      )}
-                    </td>
+                      </td>
 
-                    <td className={classNames.tableCell}>
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={editData.maker || ''}
-                          onChange={e =>
-                            handleEditFieldChange('maker', e.target.value)
-                          }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                          placeholder="Maker"
+                      <td className={classNames.tableCell}>
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editData.maker || ''}
+                            onChange={e =>
+                              handleEditFieldChange('maker', e.target.value)
+                            }
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onClick={e => e.stopPropagation()}
+                            placeholder="Maker"
+                          />
+                        ) : (
+                          <div className="text-sm font-medium text-gray-900">
+                            {item.maker || '—'}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className={classNames.tableCell}>
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editData.type || ''}
+                            onChange={e =>
+                              handleEditFieldChange('type', e.target.value)
+                            }
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onClick={e => e.stopPropagation()}
+                            placeholder="Type"
+                          />
+                        ) : (
+                          <div className="text-sm text-gray-900">
+                            {item.type || '—'}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className={classNames.tableCell}>
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editData.subtype || ''}
+                            onChange={e =>
+                              handleEditFieldChange('subtype', e.target.value)
+                            }
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onClick={e => e.stopPropagation()}
+                            placeholder="Subtype"
+                          />
+                        ) : (
+                          <div className="text-sm text-gray-900 text-center">
+                            {item.subtype || '—'}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className={classNames.tableCell}>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            value={editData.year || ''}
+                            onChange={e =>
+                              handleEditFieldChange('year', e.target.value)
+                            }
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onClick={e => e.stopPropagation()}
+                            placeholder="Year"
+                          />
+                        ) : (
+                          <div className="text-sm text-gray-900">
+                            {formatInstrumentYear(item.year)}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className={classNames.tableCell}>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editData.price || ''}
+                            onChange={e =>
+                              handleEditFieldChange('price', e.target.value)
+                            }
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onClick={e => e.stopPropagation()}
+                            placeholder="Price"
+                          />
+                        ) : (
+                          <div
+                            className="text-sm text-gray-900"
+                            title={
+                              item.price
+                                ? formatInstrumentPrice(item.price)
+                                : undefined
+                            }
+                          >
+                            {formatInstrumentPriceCompact(item.price)}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className={classNames.tableCell}>
+                        <CertificateBadge
+                          hasCertificate={Boolean(item.has_certificate)}
                         />
-                      ) : (
-                        <div className="text-sm font-medium text-gray-900">
-                          {item.maker || '—'}
-                        </div>
-                      )}
-                    </td>
+                      </td>
 
-                    <td className={classNames.tableCell}>
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={editData.type || ''}
-                          onChange={e =>
-                            handleEditFieldChange('type', e.target.value)
-                          }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                          placeholder="Type"
-                        />
-                      ) : (
-                        <div className="text-sm text-gray-900">
-                          {item.type || '—'}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className={classNames.tableCell}>
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={editData.subtype || ''}
-                          onChange={e =>
-                            handleEditFieldChange('subtype', e.target.value)
-                          }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                          placeholder="Subtype"
-                        />
-                      ) : (
-                        <div className="text-sm text-gray-900 text-center">
-                          {item.subtype || '—'}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className={classNames.tableCell}>
-                      {isEditing ? (
-                        <input
-                          type="number"
-                          value={editData.year || ''}
-                          onChange={e =>
-                            handleEditFieldChange('year', e.target.value)
-                          }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                          placeholder="Year"
-                        />
-                      ) : (
-                        <div className="text-sm text-gray-900">
-                          {formatInstrumentYear(item.year)}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className={classNames.tableCell}>
-                      {isEditing ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={editData.price || ''}
-                          onChange={e =>
-                            handleEditFieldChange('price', e.target.value)
-                          }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                          placeholder="Price"
-                        />
-                      ) : (
-                        <div
-                          className="text-sm text-gray-900"
-                          title={
-                            item.price
-                              ? formatInstrumentPrice(item.price)
-                              : undefined
-                          }
-                        >
-                          {formatInstrumentPriceCompact(item.price)}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className={classNames.tableCell}>
-                      {isEditing ? (
-                        // FIXED: Use boolean option values instead of Yes/No strings
-                        <select
-                          value={String(!!editData.certificate)}
-                          onChange={e =>
-                            handleEditFieldChange(
-                              'certificate',
-                              e.target.value === 'true'
-                            )
-                          }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          <option value="true">Yes</option>
-                          <option value="false">No</option>
-                        </select>
-                      ) : (
-                        // FIXED: CertificateBadge now accepts nullable certificate
-                        <CertificateBadge certificate={item.certificate} />
-                      )}
-                    </td>
-
-                    <td className={classNames.tableCell}>
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={editData.ownership || ''}
-                          onChange={e =>
-                            handleEditFieldChange('ownership', e.target.value)
-                          }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          onClick={e => e.stopPropagation()}
-                          placeholder="Ownership"
-                        />
-                      ) : (
-                        // FIXED: Use memoized renderOwnership callback instead of inline IIFE
-                        <div className="text-sm text-gray-900 text-center">
-                          {renderOwnership(item)}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
+                      <td className={classNames.tableCell}>
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editData.ownership || ''}
+                            onChange={e =>
+                              handleEditFieldChange('ownership', e.target.value)
+                            }
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onClick={e => e.stopPropagation()}
+                            placeholder="Ownership"
+                          />
+                        ) : (
+                          // FIXED: Use memoized renderOwnership callback instead of inline IIFE
+                          <div className="text-sm text-gray-900 text-center">
+                            {renderOwnership(item)}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <InstrumentExpandedRow
+                        instrument={item}
+                        clients={item.clients}
+                        ownerLabel={ownerMeta?.label}
+                        ownerClient={ownerMeta?.client || null}
+                      />
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>

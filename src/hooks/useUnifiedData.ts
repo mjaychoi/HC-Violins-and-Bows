@@ -1,8 +1,20 @@
 'use client';
 
-// unified data management hook - replace existing hooks
+/**
+ * Unified data management hooks
+ *
+ * 업데이트 포인트(핵심):
+ * - ✅ 전역 ref "fetched" 플래그를 'true 선점'하지 않음 → fetch 성공 시에만 true로 set
+ *   (기존 코드는 fetch 실패/취소에도 영구적으로 true가 되어 다시 못 가져오는 버그 가능)
+ * - ✅ auth user 변경(로그아웃/로그인, 다른 유저) 시 전역 ref/ongoing promise 리셋
+ * - ✅ StrictMode/다중 인스턴스에서도 중복 fetch 방지: "ongoing promise"를 1급으로 사용
+ * - ✅ need 판정은 state.length === 0 + not fetched 조합 유지하되, fetched가 false일 때만 시도
+ * - ✅ 불필요 import 제거(DataContext 훅/RelationshipType 등 실제 사용만 남김)
+ * - ✅ return shape 유지(호환) + deprecated any 필드 유지
+ */
+
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-// Note: useRef is only used in useUnifiedData (Single Source of Truth for fetching)
+
 import { useClientsContext } from '@/contexts/ClientsContext';
 import { useInstrumentsContext } from '@/contexts/InstrumentsContext';
 import { useConnectionsContext } from '@/contexts/ConnectionsContext';
@@ -12,7 +24,8 @@ import {
   useConnections,
 } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
-import {
+
+import type {
   RelationshipType,
   Client,
   Instrument,
@@ -20,20 +33,46 @@ import {
 } from '@/types';
 import { logInfo, logDebug } from '@/utils/logger';
 
-// FIXED: Global refs shared across all component instances to prevent duplicate fetches
-// These are module-level refs that persist across all hook instances and survive Strict Mode remounts
-const globalHasFetchedClientsRef = { current: false };
-const globalHasFetchedInstrumentsRef = { current: false };
-const globalHasFetchedConnectionsRef = { current: false };
+// ----------------------------
+// Module-level singletons
+// ----------------------------
 
-// CRITICAL: Track ongoing fetch promises to prevent duplicate concurrent fetches
-const ongoingFetchClientsPromise = { current: null as Promise<void> | null };
-const ongoingFetchInstrumentsPromise = {
-  current: null as Promise<void> | null,
+// "fetched successfully" flags (persist across instances / StrictMode remounts)
+const globalFetched = {
+  clients: { current: false },
+  instruments: { current: false },
+  connections: { current: false },
 };
-const ongoingFetchConnectionsPromise = {
-  current: null as Promise<void> | null,
+
+// ongoing fetch promises (dedupe concurrent calls)
+const ongoing = {
+  clients: { current: null as Promise<void> | null },
+  instruments: { current: null as Promise<void> | null },
+  connections: { current: null as Promise<void> | null },
 };
+
+// track which auth identity these globals correspond to
+const globalAuthKeyRef = { current: null as string | null };
+
+function getAuthKey(user: unknown): string | null {
+  // 프로젝트의 user shape 모르니 안전하게: id/sub/email 중 하나
+  if (!user || typeof user !== 'object') return null;
+  const u = user as Record<string, unknown>;
+  const id = typeof u.id === 'string' ? u.id : null;
+  const sub = typeof u.sub === 'string' ? u.sub : null;
+  const email = typeof u.email === 'string' ? u.email : null;
+  return id ?? sub ?? email ?? null;
+}
+
+function resetGlobalsForAuthChange() {
+  globalFetched.clients.current = false;
+  globalFetched.instruments.current = false;
+  globalFetched.connections.current = false;
+
+  ongoing.clients.current = null;
+  ongoing.instruments.current = null;
+  ongoing.connections.current = null;
+}
 
 // unified data hook - manage all data in one place
 export function useUnifiedData() {
@@ -42,15 +81,12 @@ export function useUnifiedData() {
     logInfo('[useUnifiedData] Hook called');
   }
 
-  // Use individual contexts for better performance
   const clientsContext = useClientsContext();
   const instrumentsContext = useInstrumentsContext();
   const connectionsContext = useConnectionsContext();
 
-  // Check authentication status - don't fetch data if not logged in
   const { user, loading: authLoading } = useAuth();
 
-  // Combine states for unified interface
   const state = useMemo(
     () => ({
       clients: clientsContext.state.clients,
@@ -75,32 +111,32 @@ export function useUnifiedData() {
     [clientsContext.state, instrumentsContext.state, connectionsContext.state]
   );
 
-  // Combine actions for unified interface
   const actions = useMemo(
     () => ({
       fetchClients: clientsContext.actions.fetchClients,
       createClient: clientsContext.actions.createClient,
       updateClient: clientsContext.actions.updateClient,
       deleteClient: clientsContext.actions.deleteClient,
+
       fetchInstruments: instrumentsContext.actions.fetchInstruments,
       createInstrument: instrumentsContext.actions.createInstrument,
       updateInstrument: instrumentsContext.actions.updateInstrument,
       deleteInstrument: instrumentsContext.actions.deleteInstrument,
+
       fetchConnections: connectionsContext.actions.fetchConnections,
       createConnection: connectionsContext.actions.createConnection,
       updateConnection: connectionsContext.actions.updateConnection,
       deleteConnection: connectionsContext.actions.deleteConnection,
+
       invalidateCache: (
         dataType: 'clients' | 'instruments' | 'connections'
       ) => {
-        if (dataType === 'clients') {
-          clientsContext.actions.invalidateCache();
-        } else if (dataType === 'instruments') {
+        if (dataType === 'clients') clientsContext.actions.invalidateCache();
+        else if (dataType === 'instruments')
           instrumentsContext.actions.invalidateCache();
-        } else {
-          connectionsContext.actions.invalidateCache();
-        }
+        else connectionsContext.actions.invalidateCache();
       },
+
       resetState: () => {
         clientsContext.actions.resetState();
         instrumentsContext.actions.resetState();
@@ -114,19 +150,41 @@ export function useUnifiedData() {
     ]
   );
 
-  // FIXED: Store actions and state in refs to avoid dependency issues
   const actionsRef = useRef(actions);
   const stateRef = useRef(state);
-
-  // Always keep refs up-to-date
   actionsRef.current = actions;
   stateRef.current = state;
 
-  // initial data loading - 각 리소스별로 missing일 때만 fetch (once globally)
-  // FIXED: Use global refs ONLY - don't check state.length as it changes and causes re-runs
-  // Global refs persist across Strict Mode remounts, so once set to true, it stays true
+  /**
+   * Auth identity 변경 시 전역 상태 리셋
+   * - 로그아웃/로그인/계정 변경에서 기존 전역 fetched=true가 남아있는 문제 방지
+   */
   useEffect(() => {
-    // Don't fetch data if not authenticated or auth is still loading
+    const authKey = getAuthKey(user);
+    if (authLoading) return;
+
+    if (!authKey) {
+      // logged out
+      if (globalAuthKeyRef.current !== null) {
+        globalAuthKeyRef.current = null;
+        resetGlobalsForAuthChange();
+      }
+      return;
+    }
+
+    if (globalAuthKeyRef.current !== authKey) {
+      globalAuthKeyRef.current = authKey;
+      resetGlobalsForAuthChange();
+    }
+  }, [user, authLoading]);
+
+  /**
+   * initial data loading
+   * - 각 리소스별로 missing일 때만 fetch (once globally)
+   * - 핵심: fetched flag는 "성공"했을 때만 true
+   *   (중복 방지는 ongoing promise로 해결)
+   */
+  useEffect(() => {
     if (authLoading || !user) {
       if (process.env.NODE_ENV === 'development') {
         logInfo(
@@ -136,29 +194,15 @@ export function useUnifiedData() {
       return;
     }
 
-    // CRITICAL: Check global refs FIRST - if already fetched, don't do anything
-    // This must be the first check to prevent any fetch attempts
-    if (
-      globalHasFetchedClientsRef.current &&
-      globalHasFetchedInstrumentsRef.current &&
-      globalHasFetchedConnectionsRef.current
-    ) {
-      // Already fetched globally, skip entirely
-      if (process.env.NODE_ENV === 'development') {
-        logInfo('[useUnifiedData] All data already fetched globally, skipping');
-      }
-      return;
-    }
-
-    // Check current state using ref (not directly) to avoid dependency issues
     const currentState = stateRef.current;
+
     const needClients =
-      !globalHasFetchedClientsRef.current && currentState.clients.length === 0;
+      !globalFetched.clients.current && currentState.clients.length === 0;
     const needInstruments =
-      !globalHasFetchedInstrumentsRef.current &&
+      !globalFetched.instruments.current &&
       currentState.instruments.length === 0;
     const needConnections =
-      !globalHasFetchedConnectionsRef.current &&
+      !globalFetched.connections.current &&
       currentState.connections.length === 0;
 
     if (!needClients && !needInstruments && !needConnections) {
@@ -168,16 +212,15 @@ export function useUnifiedData() {
       return;
     }
 
-    // Debug logging
     if (process.env.NODE_ENV === 'development') {
       logDebug('[useUnifiedData] Fetch check:', {
         needClients,
         needInstruments,
         needConnections,
-        globalRefs: {
-          clients: globalHasFetchedClientsRef.current,
-          instruments: globalHasFetchedInstrumentsRef.current,
-          connections: globalHasFetchedConnectionsRef.current,
+        globalFetched: {
+          clients: globalFetched.clients.current,
+          instruments: globalFetched.instruments.current,
+          connections: globalFetched.connections.current,
         },
         stateLengths: {
           clients: currentState.clients.length,
@@ -187,85 +230,76 @@ export function useUnifiedData() {
       });
     }
 
-    // CRITICAL: Mark as fetching BEFORE calling to prevent race conditions
-    // This must happen synchronously, not inside the async function
-    if (needClients) {
-      globalHasFetchedClientsRef.current = true;
-    }
-    if (needInstruments) {
-      globalHasFetchedInstrumentsRef.current = true;
-    }
-    if (needConnections) {
-      globalHasFetchedConnectionsRef.current = true;
-    }
+    let cancelled = false;
 
-    const loadMissingData = async () => {
-      const currentActions = actionsRef.current;
+    const load = async () => {
+      const a = actionsRef.current;
 
-      // CRITICAL: Check if fetch is already in progress and wait for it instead of starting a new one
-      if (needClients) {
-        if (ongoingFetchClientsPromise.current) {
-          logInfo(
-            '[useUnifiedData] Clients fetch already in progress, waiting...'
-          );
-          await ongoingFetchClientsPromise.current;
-        } else {
-          logInfo('[useUnifiedData] Starting clients fetch...');
-          ongoingFetchClientsPromise.current = (async () => {
-            try {
-              await currentActions.fetchClients();
-            } finally {
-              ongoingFetchClientsPromise.current = null;
-            }
-          })();
-          await ongoingFetchClientsPromise.current;
+      const runOne = async (
+        key: 'clients' | 'instruments' | 'connections',
+        shouldRun: boolean,
+        fetchFn: () => Promise<void>
+      ) => {
+        if (!shouldRun || cancelled) return;
+
+        // If there's already an in-flight request, await it.
+        if (ongoing[key].current) {
+          if (process.env.NODE_ENV === 'development') {
+            logInfo(
+              `[useUnifiedData] ${key} fetch already in progress, waiting...`
+            );
+          }
+          await ongoing[key].current;
+          return;
         }
-      }
 
-      if (needInstruments) {
-        if (ongoingFetchInstrumentsPromise.current) {
-          logInfo(
-            '[useUnifiedData] Instruments fetch already in progress, waiting...'
-          );
-          await ongoingFetchInstrumentsPromise.current;
-        } else {
-          logInfo('[useUnifiedData] Starting instruments fetch...');
-          ongoingFetchInstrumentsPromise.current = (async () => {
-            try {
-              await currentActions.fetchInstruments();
-            } finally {
-              ongoingFetchInstrumentsPromise.current = null;
-            }
-          })();
-          await ongoingFetchInstrumentsPromise.current;
+        if (process.env.NODE_ENV === 'development') {
+          logInfo(`[useUnifiedData] Starting ${key} fetch...`);
         }
-      }
 
-      if (needConnections) {
-        if (ongoingFetchConnectionsPromise.current) {
-          logInfo(
-            '[useUnifiedData] Connections fetch already in progress, waiting...'
-          );
-          await ongoingFetchConnectionsPromise.current;
-        } else {
-          logInfo('[useUnifiedData] Starting connections fetch...');
-          ongoingFetchConnectionsPromise.current = (async () => {
-            try {
-              await currentActions.fetchConnections();
-            } finally {
-              ongoingFetchConnectionsPromise.current = null;
-            }
-          })();
-          await ongoingFetchConnectionsPromise.current;
+        ongoing[key].current = (async () => {
+          try {
+            await fetchFn();
+            // ✅ mark fetched only on success
+            globalFetched[key].current = true;
+          } catch (e) {
+            // 실패 시 fetched는 false 유지 → 다음 렌더에서 재시도 가능
+            globalFetched[key].current = false;
+            throw e;
+          } finally {
+            ongoing[key].current = null;
+          }
+        })();
+
+        try {
+          await ongoing[key].current;
+        } catch {
+          // fetchFn 내부에서 toast/error 처리할 가능성이 높아서 여기서 추가 처리 생략
         }
-      }
+      };
+
+      await Promise.all([
+        runOne('clients', needClients, a.fetchClients),
+        runOne('instruments', needInstruments, a.fetchInstruments),
+        runOne('connections', needConnections, a.fetchConnections),
+      ]);
     };
 
-    loadMissingData();
-    // FIXED: Include auth state in dependencies - don't fetch if not authenticated
-    // Global refs persist across Strict Mode remounts, so once fetched, it won't fetch again
-    // We use refs to access latest state/actions without adding them to dependencies
-  }, [authLoading, user]); // Check auth state - only fetch when authenticated
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user]);
+
+  const hasAnyLoading =
+    state.loading.clients ||
+    state.loading.instruments ||
+    state.loading.connections;
+  const hasAnySubmitting =
+    state.submitting.clients ||
+    state.submitting.instruments ||
+    state.submitting.connections;
 
   return {
     // state
@@ -273,39 +307,27 @@ export function useUnifiedData() {
     instruments: state.instruments,
     connections: state.connections,
 
-    // loading state
+    // loading
     loading: {
       clients: state.loading.clients,
       instruments: state.loading.instruments,
       connections: state.loading.connections,
       // @deprecated Use hasAnyLoading instead
-      any:
-        state.loading.clients ||
-        state.loading.instruments ||
-        state.loading.connections,
-      hasAnyLoading:
-        state.loading.clients ||
-        state.loading.instruments ||
-        state.loading.connections,
+      any: hasAnyLoading,
+      hasAnyLoading,
     },
 
-    // submitting state
+    // submitting
     submitting: {
       clients: state.submitting.clients,
       instruments: state.submitting.instruments,
       connections: state.submitting.connections,
       // @deprecated Use hasAnySubmitting instead
-      any:
-        state.submitting.clients ||
-        state.submitting.instruments ||
-        state.submitting.connections,
-      hasAnySubmitting:
-        state.submitting.clients ||
-        state.submitting.instruments ||
-        state.submitting.connections,
+      any: hasAnySubmitting,
+      hasAnySubmitting,
     },
 
-    // last updated time
+    // last updated
     lastUpdated: state.lastUpdated,
 
     // actions
@@ -313,17 +335,12 @@ export function useUnifiedData() {
   };
 }
 
-// client-specific hook (replace existing useOptimizedClients)
-// Returns object with loading/submitting for consistency with Dashboard pattern
-// FIXED: Removed fetch - useUnifiedData is the Single Source of Truth for fetching
-// This hook only reads state and provides computed values
+// ----------------------------
+// Client / Instrument / Connection wrappers
+// ----------------------------
+
 export function useUnifiedClients() {
   const clientsHook = useClients();
-
-  // FIXED: No fetch here - data is fetched by useUnifiedData or manually via actions
-  // This hook only reads state and provides computed values
-
-  // Return object format consistent with Dashboard pattern (loading.any, submitting.any)
   return {
     ...clientsHook,
     loading: {
@@ -341,33 +358,18 @@ export function useUnifiedClients() {
   };
 }
 
-// instrument-specific hook (replace existing useOptimizedInstruments)
-// FIXED: Removed fetch - useUnifiedData is the Single Source of Truth for fetching
-// This hook only reads state and provides computed values
 export function useUnifiedInstruments() {
-  const instrumentsHook = useInstruments();
-
-  // FIXED: No fetch here - data is fetched by useUnifiedData or manually via actions
-  // This hook only reads state and provides computed values
-
-  return instrumentsHook;
+  return useInstruments();
 }
 
-// connection-specific hook (replace existing useOptimizedConnections)
-// FIXED: Removed fetch - useUnifiedData is the Single Source of Truth for fetching
-// This hook only reads state and provides computed values
 export function useUnifiedConnections() {
-  const connectionsHook = useConnections();
-
-  // FIXED: No fetch here - data is fetched by useUnifiedData or manually via actions
-  // This hook only reads state and provides computed values
-
-  return connectionsHook;
+  return useConnections();
 }
 
-// dashboard-specific hook (replace existing useDashboardItems)
-// FIXED: Removed fetch - useUnifiedData is the Single Source of Truth for fetching
-// This hook only calculates relationships from state
+// ----------------------------
+// Dashboard computed hook
+// ----------------------------
+
 export function useUnifiedDashboard() {
   const clientsContext = useClientsContext();
   const instrumentsContext = useInstrumentsContext();
@@ -409,13 +411,10 @@ export function useUnifiedDashboard() {
       invalidateCache: (
         dataType: 'clients' | 'instruments' | 'connections'
       ) => {
-        if (dataType === 'clients') {
-          clientsContext.actions.invalidateCache();
-        } else if (dataType === 'instruments') {
+        if (dataType === 'clients') clientsContext.actions.invalidateCache();
+        else if (dataType === 'instruments')
           instrumentsContext.actions.invalidateCache();
-        } else {
-          connectionsContext.actions.invalidateCache();
-        }
+        else connectionsContext.actions.invalidateCache();
       },
       resetState: () => {
         clientsContext.actions.resetState();
@@ -430,11 +429,6 @@ export function useUnifiedDashboard() {
     ]
   );
 
-  // FIXED: No fetch here - data is fetched by useUnifiedData or manually via actions
-  // This hook only calculates relationships from existing state
-
-  // Optimized: Use Map for O(1) lookups instead of O(n) find operations
-  // calculate instrument-client relationships with explicit type
   type EnrichedConnection = ClientInstrument & {
     client: Client;
     instrument: Instrument;
@@ -456,48 +450,43 @@ export function useUnifiedDashboard() {
       );
   }, [state.connections, state.clients, state.instruments]);
 
-  // calculate client-instrument relationships (same as clientRelationships for now)
-  const instrumentRelationships = useMemo(() => {
-    return clientRelationships;
-  }, [clientRelationships]);
+  const instrumentRelationships = useMemo(
+    () => clientRelationships,
+    [clientRelationships]
+  );
+
+  const hasAnyLoading =
+    state.loading.instruments ||
+    state.loading.clients ||
+    state.loading.connections;
+  const hasAnySubmitting =
+    state.submitting.instruments || state.submitting.connections;
 
   return {
-    // basic data
     instruments: state.instruments,
     connections: state.connections,
     clients: state.clients,
 
-    // calculated relationships
     clientRelationships,
     instrumentRelationships,
 
-    // loading state
     loading: {
       instruments: state.loading.instruments,
       clients: state.loading.clients,
       connections: state.loading.connections,
       // @deprecated Use hasAnyLoading instead
-      any:
-        state.loading.instruments ||
-        state.loading.clients ||
-        state.loading.connections,
-      hasAnyLoading:
-        state.loading.instruments ||
-        state.loading.clients ||
-        state.loading.connections,
+      any: hasAnyLoading,
+      hasAnyLoading,
     },
 
-    // submitting state
     submitting: {
       instruments: state.submitting.instruments,
       connections: state.submitting.connections,
       // @deprecated Use hasAnySubmitting instead
-      any: state.submitting.instruments || state.submitting.connections,
-      hasAnySubmitting:
-        state.submitting.instruments || state.submitting.connections,
+      any: hasAnySubmitting,
+      hasAnySubmitting,
     },
 
-    // actions - explicitly list to avoid webpack issues with spread operator
     fetchClients: actions.fetchClients,
     createClient: actions.createClient,
     updateClient: actions.updateClient,
@@ -515,10 +504,10 @@ export function useUnifiedDashboard() {
   };
 }
 
-// Connected clients data hook (provides data + CRUD operations for connections)
-// FIXED: Removed fetch - useUnifiedData is the Single Source of Truth for fetching
-// This hook provides clients, instruments, connections data and CRUD operations
-// Renamed from useUnifiedConnectionForm for clarity - this is not just a form hook
+// ----------------------------
+// Connected clients data hook
+// ----------------------------
+
 export function useConnectedClientsData() {
   const clientsContext = useClientsContext();
   const instrumentsContext = useInstrumentsContext();
@@ -540,12 +529,7 @@ export function useConnectedClientsData() {
     }),
     [clientsContext.state, instrumentsContext.state, connectionsContext.state]
   );
-  // state is used below in return statement (state.clients, state.instruments, etc.)
 
-  // FIXED: No fetch here - data is fetched by useUnifiedData or manually via actions
-  // This hook only provides CRUD operations
-
-  // create connection
   const createConnection = useCallback(
     async (
       clientId: string,
@@ -563,7 +547,6 @@ export function useConnectedClientsData() {
     [connectionsContext.actions]
   );
 
-  // update connection
   const updateConnection = useCallback(
     async (
       connectionId: string,
@@ -577,29 +560,25 @@ export function useConnectedClientsData() {
     [connectionsContext.actions]
   );
 
+  const hasAnyLoading =
+    state.loading.clients ||
+    state.loading.instruments ||
+    state.loading.connections;
+
   return {
-    // data
     clients: state.clients,
     instruments: state.instruments,
     connections: state.connections,
 
-    // loading state
     loading: {
       clients: state.loading.clients,
       instruments: state.loading.instruments,
       connections: state.loading.connections,
       // @deprecated Use hasAnyLoading instead
-      any:
-        state.loading.clients ||
-        state.loading.instruments ||
-        state.loading.connections,
-      hasAnyLoading:
-        state.loading.clients ||
-        state.loading.instruments ||
-        state.loading.connections,
+      any: hasAnyLoading,
+      hasAnyLoading,
     },
 
-    // submitting state
     submitting: {
       connections: state.submitting.connections,
       // @deprecated Use hasAnySubmitting instead
@@ -607,7 +586,6 @@ export function useConnectedClientsData() {
       hasAnySubmitting: state.submitting.connections,
     },
 
-    // actions
     createConnection,
     updateConnection,
     deleteConnection: connectionsContext.actions.deleteConnection,
@@ -615,7 +593,10 @@ export function useConnectedClientsData() {
   };
 }
 
-// search-specific hook (replace existing useSearch)
+// ----------------------------
+// Search hook
+// ----------------------------
+
 export function useUnifiedSearch() {
   const clientsContext = useClientsContext();
   const instrumentsContext = useInstrumentsContext();
@@ -625,7 +606,6 @@ export function useUnifiedSearch() {
   const instruments = instrumentsContext.state.instruments;
   const connections = connectionsContext.state.connections;
 
-  // unified search
   const searchAll = useCallback(
     (query: string) => {
       const lowerQuery = query.toLowerCase();
@@ -647,7 +627,7 @@ export function useUnifiedSearch() {
 
       const filteredConnections = connections.filter(
         (connection: ClientInstrument) =>
-          connection.notes?.toLowerCase().includes(lowerQuery) ||
+          (connection.notes || '').toLowerCase().includes(lowerQuery) ||
           connection.relationship_type.toLowerCase().includes(lowerQuery)
       );
 
@@ -672,22 +652,21 @@ export function useUnifiedSearch() {
   };
 }
 
-// cache management hook
+// ----------------------------
+// Cache hook
+// ----------------------------
+
 export function useUnifiedCache() {
   const clientsContext = useClientsContext();
   const instrumentsContext = useInstrumentsContext();
   const connectionsContext = useConnectionsContext();
 
-  // invalidate specific data type cache
   const invalidate = useCallback(
     (dataType: 'clients' | 'instruments' | 'connections') => {
-      if (dataType === 'clients') {
-        clientsContext.actions.invalidateCache();
-      } else if (dataType === 'instruments') {
+      if (dataType === 'clients') clientsContext.actions.invalidateCache();
+      else if (dataType === 'instruments')
         instrumentsContext.actions.invalidateCache();
-      } else {
-        connectionsContext.actions.invalidateCache();
-      }
+      else connectionsContext.actions.invalidateCache();
     },
     [
       clientsContext.actions,
@@ -696,7 +675,6 @@ export function useUnifiedCache() {
     ]
   );
 
-  // invalidate all cache
   const invalidateAll = useCallback(() => {
     clientsContext.actions.invalidateCache();
     instrumentsContext.actions.invalidateCache();
@@ -707,11 +685,11 @@ export function useUnifiedCache() {
     connectionsContext.actions,
   ]);
 
-  // reset state
   const reset = useCallback(() => {
     clientsContext.actions.resetState();
     instrumentsContext.actions.resetState();
     connectionsContext.actions.resetState();
+    resetGlobalsForAuthChange();
   }, [
     clientsContext.actions,
     instrumentsContext.actions,

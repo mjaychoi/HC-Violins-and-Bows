@@ -6,17 +6,131 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { getSupabaseClient } from '@/lib/supabase-client';
-import { Instrument, InstrumentImage, ClientInstrument, Client } from '@/types';
+import {
+  Instrument,
+  InstrumentImage,
+  ClientInstrument,
+  Client,
+  RelationshipType,
+} from '@/types';
+import type { Database } from '@/types/database';
 
-// FIXED: Define explicit type for joined client_instruments query
-type ClientInstrumentJoined = ClientInstrument & {
+type ClientInstrumentRow =
+  Database['public']['Tables']['client_instruments']['Row'];
+type ClientRow = Database['public']['Tables']['clients']['Row'];
+type InstrumentRow = Database['public']['Tables']['instruments']['Row'];
+
+type ClientInstrumentJoinedRow = ClientInstrumentRow & {
+  client?: ClientRow | null;
+  item?: InstrumentRow | null;
+};
+
+type ClientInstrumentJoined = Omit<
+  ClientInstrument,
+  'client' | 'instrument'
+> & {
   client: Client | null;
+  instrument: Instrument | null;
   item: Instrument | null;
 };
 import { useDataState } from '@/hooks/useDataState';
 import { logError, logApiRequest } from '@/utils/logger';
 
 /** @deprecated Use `useDashboardData` instead */
+const INSTRUMENT_STATUSES: Instrument['status'][] = [
+  'Available',
+  'Booked',
+  'Sold',
+  'Reserved',
+  'Maintenance',
+];
+
+const RELATIONSHIP_TYPES: RelationshipType[] = [
+  'Interested',
+  'Sold',
+  'Booked',
+  'Owned',
+];
+
+function ensureInstrumentStatus(value: string | null): Instrument['status'] {
+  if (value && INSTRUMENT_STATUSES.includes(value as Instrument['status'])) {
+    return value as Instrument['status'];
+  }
+  return 'Available';
+}
+
+function normalizeInstrumentRow(row: InstrumentRow): Instrument {
+  return {
+    id: row.id,
+    status: ensureInstrumentStatus(row.status),
+    maker: row.maker,
+    type: row.type,
+    subtype: row.subtype,
+    year: row.year,
+    certificate: row.certificate,
+    certificate_name: row.certificate_name ?? null,
+    cost_price: row.cost_price ?? null,
+    consignment_price: row.consignment_price ?? null,
+    size: row.size,
+    weight: row.weight,
+    price: row.price,
+    ownership: row.ownership,
+    note: row.note,
+    serial_number: row.serial_number,
+    created_at: row.created_at ?? new Date().toISOString(),
+    updated_at: row.updated_at ?? undefined,
+  };
+}
+
+function normalizeClientRow(row: ClientRow): Client {
+  return {
+    id: row.id,
+    last_name: row.last_name,
+    first_name: row.first_name,
+    contact_number: row.contact_number,
+    email: row.email,
+    tags: row.tags ?? [],
+    interest: row.interest,
+    note: row.note,
+    client_number: row.client_number,
+    type: undefined,
+    status: undefined,
+    created_at: row.created_at ?? new Date().toISOString(),
+    address: undefined,
+  };
+}
+
+function normalizeClientRelationships(
+  rows: ClientInstrumentJoinedRow[]
+): ClientInstrumentJoined[] {
+  return rows
+    .filter(row => Boolean(row.client_id) && Boolean(row.instrument_id))
+    .map(row => {
+      const normalizedClient = row.client
+        ? normalizeClientRow(row.client)
+        : null;
+      const normalizedInstrument = row.item
+        ? normalizeInstrumentRow(row.item)
+        : null;
+      return {
+        id: row.id,
+        client_id: row.client_id as string,
+        instrument_id: row.instrument_id as string,
+        notes: row.notes ?? null,
+        display_order: row.display_order,
+        relationship_type: RELATIONSHIP_TYPES.includes(
+          row.relationship_type as RelationshipType
+        )
+          ? (row.relationship_type as RelationshipType)
+          : 'Interested',
+        created_at: row.created_at ?? new Date().toISOString(),
+        client: normalizedClient,
+        instrument: normalizedInstrument,
+        item: normalizedInstrument,
+      };
+    });
+}
+
 export function useDashboardItems() {
   const [items, setItems] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +168,8 @@ export function useDashboardItems() {
         `);
 
       if (error) throw error;
-      setClientRelationships(data || []);
+      const rows = (data || []) as ClientInstrumentJoinedRow[];
+      setClientRelationships(normalizeClientRelationships(rows));
     } catch (error) {
       logError(
         'Error fetching client relationships',
@@ -104,7 +219,7 @@ export function useDashboardItems() {
         }
       );
 
-      setItems(data || []);
+      setItems((data || []).map(normalizeInstrumentRow));
 
       // FIXED: Run fetches in parallel instead of sequentially for better performance
       await Promise.all([
@@ -162,7 +277,7 @@ export function useDashboardItems() {
           }
         );
 
-        setItems(prev => [data, ...prev]);
+        setItems(prev => [normalizeInstrumentRow(data), ...prev]);
         return data;
       } catch (error) {
         logError('Error creating item', error, 'useDashboardItems', {
@@ -221,7 +336,11 @@ export function useDashboardItems() {
           }
         );
 
-        setItems(prev => prev.map(item => (item.id === id ? data : item)));
+        setItems(prev =>
+          prev.map(item =>
+            item.id === id ? normalizeInstrumentRow(data) : item
+          )
+        );
         return data;
       } catch (error) {
         logError('Error updating item', error, 'useDashboardItems', {

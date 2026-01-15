@@ -21,7 +21,6 @@ interface ConnectionsState {
   lastUpdated: Date | null;
 }
 
-// Connections 액션 타입
 type ConnectionsAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_SUBMITTING'; payload: boolean }
@@ -35,7 +34,6 @@ type ConnectionsAction =
   | { type: 'INVALIDATE_CACHE' }
   | { type: 'RESET_STATE' };
 
-// 초기 상태
 const initialState: ConnectionsState = {
   connections: [],
   loading: false,
@@ -43,7 +41,6 @@ const initialState: ConnectionsState = {
   lastUpdated: null,
 };
 
-// 리듀서
 function connectionsReducer(
   state: ConnectionsState,
   action: ConnectionsAction
@@ -51,61 +48,44 @@ function connectionsReducer(
   switch (action.type) {
     case 'SET_LOADING':
       return { ...state, loading: action.payload };
-
     case 'SET_SUBMITTING':
       return { ...state, submitting: action.payload };
-
     case 'SET_CONNECTIONS':
-      return {
-        ...state,
-        connections: action.payload,
-        lastUpdated: new Date(),
-      };
-
+      return { ...state, connections: action.payload, lastUpdated: new Date() };
     case 'ADD_CONNECTION':
       return {
         ...state,
         connections: [action.payload, ...state.connections],
         lastUpdated: new Date(),
       };
-
     case 'UPDATE_CONNECTION':
       return {
         ...state,
-        connections: state.connections.map(connection =>
-          connection.id === action.payload.id
-            ? action.payload.connection
-            : connection
+        connections: state.connections.map(c =>
+          c.id === action.payload.id ? action.payload.connection : c
         ),
         lastUpdated: new Date(),
       };
-
     case 'REMOVE_CONNECTION':
       return {
         ...state,
-        connections: state.connections.filter(
-          connection => connection.id !== action.payload
-        ),
+        connections: state.connections.filter(c => c.id !== action.payload),
         lastUpdated: new Date(),
       };
-
     case 'INVALIDATE_CACHE':
       return { ...state, lastUpdated: null };
-
     case 'RESET_STATE':
       return initialState;
-
     default:
       return state;
   }
 }
 
-// Context 생성
-const ConnectionsContext = createContext<{
+type ConnectionsContextValue = {
   state: ConnectionsState;
   dispatch: React.Dispatch<ConnectionsAction>;
   actions: {
-    fetchConnections: () => Promise<void>;
+    fetchConnections: (opts?: { force?: boolean }) => Promise<void>;
     createConnection: (
       connection: Omit<ClientInstrument, 'id' | 'created_at'>
     ) => Promise<ClientInstrument | null>;
@@ -117,21 +97,48 @@ const ConnectionsContext = createContext<{
     invalidateCache: () => void;
     resetState: () => void;
   };
-} | null>(null);
+};
 
-// Provider 컴포넌트
+const ConnectionsContext = createContext<ConnectionsContextValue | null>(null);
+
+type JsonRecord = Record<string, unknown>;
+
+async function safeJson(res: Response): Promise<JsonRecord | null> {
+  try {
+    const json = await res.json();
+    if (json && typeof json === 'object') {
+      return json as JsonRecord;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function sameConnections(
+  a: ClientInstrument[],
+  b: ClientInstrument[]
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]?.id !== b[i]?.id) return false;
+    const au = (a[i] as ClientInstrument & { updated_at?: string })?.updated_at;
+    const bu = (b[i] as ClientInstrument & { updated_at?: string })?.updated_at;
+    if (au && bu && au !== bu) return false;
+  }
+  return true;
+}
+
 export function ConnectionsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(connectionsReducer, initialState);
   const { handleError } = useErrorHandler();
 
   // In-flight request deduplication
   const inflight = useRef<Promise<void> | null>(null);
-
   const deduped = useCallback(
     <T extends () => Promise<void>>(fn: T): Promise<void> => {
-      if (inflight.current) {
-        return inflight.current;
-      }
+      if (inflight.current) return inflight.current;
       const p = fn().finally(() => {
         inflight.current = null;
       });
@@ -141,66 +148,88 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  // 캐시 무효화 함수
   const invalidateCache = useCallback(() => {
     dispatch({ type: 'INVALIDATE_CACHE' });
   }, []);
 
-  // 상태 리셋 함수
   const resetState = useCallback(() => {
     dispatch({ type: 'RESET_STATE' });
   }, []);
 
-  // Connections 액션들
-  const fetchConnections = useCallback(async () => {
-    return deduped(async () => {
-      dispatch({ type: 'SET_LOADING', payload: true });
-      try {
-        const response = await apiFetch(
-          '/api/connections?orderBy=created_at&ascending=false'
-        );
-        if (!response.ok) {
-          let errorMessage = 'Failed to fetch connections';
-          try {
-            const errorData = await response.json();
-            errorMessage =
-              errorData.error?.message || errorData.error || errorMessage;
-          } catch {
-            // If response is not JSON, use status text
-            errorMessage = response.statusText || errorMessage;
+  const fetchConnections = useCallback(
+    async (opts?: { force?: boolean }) => {
+      const force = opts?.force ?? false;
+
+      // Optional cache check: already loaded & not forced -> skip
+      if (!force && state.lastUpdated && state.connections.length > 0) return;
+
+      return deduped(async () => {
+        dispatch({ type: 'SET_LOADING', payload: true });
+        try {
+          const res = await apiFetch(
+            '/api/connections?orderBy=created_at&ascending=false'
+          );
+          const body = await safeJson(res);
+
+          if (!res.ok) {
+            const errorObj = body?.error;
+            if (errorObj instanceof Error) {
+              throw errorObj;
+            }
+            const message =
+              (typeof errorObj === 'string' && errorObj) ||
+              (typeof body?.message === 'string' && body.message) ||
+              res.statusText ||
+              'Failed to fetch connections';
+            throw new Error(message);
           }
-          throw new Error(errorMessage);
+
+          const next = Array.isArray(body?.data)
+            ? (body?.data as ClientInstrument[])
+            : [];
+
+          // Avoid unnecessary re-render
+          if (!sameConnections(state.connections, next)) {
+            dispatch({ type: 'SET_CONNECTIONS', payload: next });
+          }
+        } catch (err) {
+          handleError(err, 'Fetch connections');
+        } finally {
+          dispatch({ type: 'SET_LOADING', payload: false });
         }
-        const result = await response.json();
-        dispatch({ type: 'SET_CONNECTIONS', payload: result.data || [] });
-      } catch (error) {
-        handleError(error, 'Fetch connections');
-      } finally {
-        dispatch({ type: 'SET_LOADING', payload: false });
-      }
-    });
-  }, [handleError, deduped]);
+      });
+    },
+    [deduped, handleError, state.connections, state.lastUpdated]
+  );
 
   const createConnection = useCallback(
     async (connection: Omit<ClientInstrument, 'id' | 'created_at'>) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await apiFetch('/api/connections', {
+        const res = await apiFetch('/api/connections', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(connection),
         });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to create connection');
+
+        const body = await safeJson(res);
+
+        if (!res.ok) {
+          const message =
+            (typeof body?.error === 'string' && body.error) ||
+            (typeof body?.message === 'string' && body.message) ||
+            res.statusText ||
+            'Failed to create connection';
+          throw new Error(message);
         }
-        const result = await response.json();
-        if (result.data) {
-          dispatch({ type: 'ADD_CONNECTION', payload: result.data });
+
+        const created = body?.data as ClientInstrument | undefined;
+        if (created) {
+          dispatch({ type: 'ADD_CONNECTION', payload: created });
         }
-        return result.data;
-      } catch (error) {
-        handleError(error, 'Create connection');
+        return created ?? null;
+      } catch (err) {
+        handleError(err, 'Create connection');
         return null;
       } finally {
         dispatch({ type: 'SET_SUBMITTING', payload: false });
@@ -213,25 +242,33 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     async (id: string, connection: Partial<ClientInstrument>) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await apiFetch('/api/connections', {
+        const res = await apiFetch('/api/connections', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, ...connection }),
         });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to update connection');
+
+        const body = await safeJson(res);
+
+        if (!res.ok) {
+          const message =
+            (typeof body?.error === 'string' && body.error) ||
+            (typeof body?.message === 'string' && body.message) ||
+            res.statusText ||
+            'Failed to update connection';
+          throw new Error(message);
         }
-        const result = await response.json();
-        if (result.data) {
+
+        const updated = body?.data as ClientInstrument | undefined;
+        if (updated) {
           dispatch({
             type: 'UPDATE_CONNECTION',
-            payload: { id, connection: result.data },
+            payload: { id, connection: updated },
           });
         }
-        return result.data;
-      } catch (error) {
-        handleError(error, 'Update connection');
+        return updated ?? null;
+      } catch (err) {
+        handleError(err, 'Update connection');
         return null;
       } finally {
         dispatch({ type: 'SET_SUBMITTING', payload: false });
@@ -244,17 +281,28 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await apiFetch(`/api/connections?id=${id}`, {
-          method: 'DELETE',
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to delete connection');
+        const res = await apiFetch(
+          `/api/connections?id=${encodeURIComponent(id)}`,
+          {
+            method: 'DELETE',
+          }
+        );
+
+        const body = await safeJson(res);
+
+        if (!res.ok) {
+          const message =
+            (typeof body?.error === 'string' && body.error) ||
+            (typeof body?.message === 'string' && body.message) ||
+            res.statusText ||
+            'Failed to delete connection';
+          throw new Error(message);
         }
+
         dispatch({ type: 'REMOVE_CONNECTION', payload: id });
         return true;
-      } catch (error) {
-        handleError(error, 'Delete connection');
+      } catch (err) {
+        handleError(err, 'Delete connection');
         return false;
       } finally {
         dispatch({ type: 'SET_SUBMITTING', payload: false });
@@ -263,7 +311,6 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     [handleError]
   );
 
-  // actions 객체를 useMemo로 메모이제이션
   const actions = useMemo(
     () => ({
       fetchConnections,
@@ -290,18 +337,16 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Hook for using the context
 export function useConnectionsContext() {
-  const context = useContext(ConnectionsContext);
-  if (!context) {
+  const ctx = useContext(ConnectionsContext);
+  if (!ctx) {
     throw new Error(
       'useConnectionsContext must be used within a ConnectionsProvider'
     );
   }
-  return context;
+  return ctx;
 }
 
-// 특화된 훅
 export function useConnections() {
   const { state, actions } = useConnectionsContext();
   return {

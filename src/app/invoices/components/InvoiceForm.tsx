@@ -325,7 +325,8 @@ function InvoiceForm({
         if (instrument.type) descriptionParts.push(instrument.type);
         if (instrument.maker) descriptionParts.push(instrument.maker);
         if (instrument.year) descriptionParts.push(String(instrument.year));
-        if (instrument.certificate) descriptionParts.push('with certificate');
+        if (instrument.has_certificate)
+          descriptionParts.push('with certificate');
         const description = descriptionParts.join(', ') || 'Instrument';
 
         updateItem(itemId, 'instrument_id', instrumentId);

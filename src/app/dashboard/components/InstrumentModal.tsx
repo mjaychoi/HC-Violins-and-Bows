@@ -48,6 +48,7 @@ export default function InstrumentModal({
   } | null>(null);
   const { showSuccess } = useSuccessToastContext();
   const { handleError } = useErrorContext();
+  const hasCertificate = Boolean(instrument?.has_certificate);
 
   // Request ID counters to handle concurrent requests
   const imageReqIdRef = useRef(0);
@@ -526,9 +527,9 @@ export default function InstrumentModal({
                   </div>
                 ) : (
                   <p className="text-xs text-gray-500">
-                    {instrument.certificate === false
-                      ? 'Marked as no certificate'
-                      : 'No certificate files uploaded yet.'}
+                    {hasCertificate
+                      ? 'No certificate files uploaded yet.'
+                      : 'Marked as no certificate'}
                   </p>
                 )}
               </div>
@@ -654,11 +655,7 @@ export default function InstrumentModal({
                 <div className="col-span-2">
                   <div className="text-xs text-gray-500 mb-1">Certificate</div>
                   <div className="text-sm text-gray-900">
-                    {instrument.certificate === true
-                      ? 'Yes'
-                      : instrument.certificate === false
-                        ? 'No'
-                        : '—'}
+                    {hasCertificate ? 'Yes' : 'No'}
                   </div>
                 </div>
 

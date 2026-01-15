@@ -51,6 +51,9 @@ export const filterButtonClasses = {
     'rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700',
   activeBadge:
     'rounded-full bg-blue-600 px-2.5 py-1 text-xs font-medium text-white',
+  // Optional: a reasonable default button style for filter UIs
+  default:
+    'flex h-8 items-center rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500',
 } as const;
 
 /**
@@ -106,60 +109,96 @@ export const filterToggleButtonClasses = {
     'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed',
 } as const;
 
-/**
- * Build filter select dropdown with preset classes
- * Note: This returns props object, not JSX. Use it with spread operator: <select {...buildFilterSelect(...)} />
- */
-export function buildFilterSelect({
+// ============================================================================
+// Builders (props-only, safer for TS and JSX)
+// ============================================================================
+
+export type FilterOption = { value: string; label: string };
+
+export function buildFilterSelectProps({
   value,
   onChange,
-  options,
   className,
 }: {
   value: string;
   onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
   className?: string;
-}) {
+}): React.SelectHTMLAttributes<HTMLSelectElement> {
   return {
-    className: className || filterSelectClasses.select,
+    className: className ?? filterSelectClasses.select,
     value,
     onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
       onChange(e.target.value),
-    children: options.map(option =>
-      React.createElement(
-        'option',
-        { key: option.value, value: option.value },
-        option.label
-      )
-    ),
   };
 }
 
-/**
- * Build filter button with preset classes
- * Note: This returns props object, not JSX. Use it with spread operator: <button {...buildFilterButton(...)}>...</button>
- */
-export function buildFilterButton({
+export function renderFilterOptions(options: FilterOption[]) {
+  return options.map(option => (
+    <option key={option.value} value={option.value}>
+      {option.label}
+    </option>
+  ));
+}
+
+export type FilterButtonVariant = 'default' | 'reset' | 'sortToggle';
+
+export function buildFilterButtonProps({
   onClick,
-  children,
   variant = 'default',
   className,
+  disabled,
 }: {
   onClick: () => void;
-  children: React.ReactNode;
-  variant?: 'default' | 'reset' | 'sortToggle';
+  variant?: FilterButtonVariant;
   className?: string;
-}) {
-  const variantClasses = {
-    default: '',
+  disabled?: boolean;
+}): React.ButtonHTMLAttributes<HTMLButtonElement> {
+  const variantClasses: Record<FilterButtonVariant, string> = {
+    default: filterButtonClasses.default,
     reset: filterButtonClasses.reset,
     sortToggle: filterButtonClasses.sortToggle,
   };
 
   return {
-    className: className || variantClasses[variant],
+    type: 'button', // ✅ avoid accidental form submit
+    className: className ?? variantClasses[variant],
     onClick,
+    disabled,
+  };
+}
+
+/**
+ * Example usage:
+ *
+ * <select {...buildFilterSelectProps({ value, onChange })}>
+ *   {renderFilterOptions(options)}
+ * </select>
+ *
+ * <button {...buildFilterButtonProps({ onClick, variant: 'reset' })}>
+ *   Reset
+ * </button>
+ */
+
+export function buildFilterSelect({
+  options,
+  ...rest
+}: Parameters<typeof buildFilterSelectProps>[0] & { options: FilterOption[] }) {
+  const props = buildFilterSelectProps(rest);
+  return {
+    ...props,
+    children: renderFilterOptions(options),
+  };
+}
+
+export function buildFilterButton({
+  children,
+  ...rest
+}: Parameters<typeof buildFilterButtonProps>[0] & {
+  children: React.ReactNode;
+}) {
+  const props = buildFilterButtonProps(rest);
+  return {
+    ...props,
     children,
   };
 }

@@ -4,11 +4,6 @@ import CalendarContent from '../CalendarContent';
 import type { MaintenanceTask, Instrument, Client } from '@/types';
 import type { ExtendedView } from '../CalendarView';
 
-jest.mock('@/app/clients/components/TodayFollowUps', () => ({
-  __esModule: true,
-  default: () => <div data-testid="today-follow-ups" />,
-}));
-
 jest.mock('../CalendarView', () => ({
   __esModule: true,
   default: () => <div data-testid="calendar-view-mock" />,
@@ -104,7 +99,6 @@ describe('CalendarContent', () => {
     render(
       <CalendarContent
         tasks={[]}
-        contactLogs={[]}
         instruments={[]}
         clients={[]}
         loading={{ fetch: false, mutate: false }}
@@ -135,7 +129,6 @@ describe('CalendarContent', () => {
     render(
       <CalendarContent
         tasks={[baseTask]}
-        contactLogs={[]}
         instruments={[baseInstrument]}
         clients={[baseClient]}
         loading={{ fetch: false, mutate: false }}
@@ -179,7 +172,6 @@ describe('CalendarContent', () => {
     render(
       <CalendarContent
         tasks={[baseTask]}
-        contactLogs={[]}
         instruments={[baseInstrument]}
         clients={[baseClient]}
         loading={{ fetch: false, mutate: false }}

@@ -1,27 +1,28 @@
 /**
  * Client-side Supabase helper
  * Use this in client components instead of direct import from supabase.ts
- * FIXED: Use static import and synchronous initialization to avoid webpack module loading issues
+ * - Single cached client instance
+ * - Safe initialization (returns null if env missing)
+ * - Typed with Database to avoid GenericStringError inference
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
-let _supabase: SupabaseClient | null = null;
+let _client: SupabaseClient<Database> | null = null;
 
 /**
- * Initialize Supabase client synchronously (called once at module load)
- * This ensures the client is available immediately without async overhead
+ * Initialize Supabase client synchronously.
+ * Returns null if env vars are missing or URL is invalid.
  */
-function initializeSupabaseClient(): SupabaseClient | null {
-  if (_supabase) {
-    return _supabase;
-  }
+function initializeSupabaseClient(): SupabaseClient<Database> | null {
+  if (_client) return _client;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !key) {
-    // Don't throw during module initialization - return null and let callers handle it
+    // Don't throw during module initialization - let callers handle it.
     if (typeof window !== 'undefined') {
       console.error(
         '❌ Supabase environment variables not set!\n' +
@@ -48,22 +49,19 @@ function initializeSupabaseClient(): SupabaseClient | null {
   }
 
   try {
-    _supabase = createClient(url, key, {
+    _client = createClient<Database>(url, key, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        // FIXED: Add better error handling for network failures
-        detectSessionInUrl: false, // Disable URL-based session detection to avoid fetch errors
+        detectSessionInUrl: false,
       },
-      // FIXED: Add global fetch options for better error handling
       global: {
-        fetch: (url, options = {}) => {
-          // Create abort controller for timeout
+        fetch: (input, init) => {
           const abortController = new AbortController();
-          const timeoutId = setTimeout(() => abortController.abort(), 30000);
+          const timeoutId = setTimeout(() => abortController.abort(), 30_000);
 
-          return fetch(url, {
-            ...options,
+          return fetch(input, {
+            ...(init ?? {}),
             signal: abortController.signal,
           })
             .then(response => {
@@ -72,49 +70,42 @@ function initializeSupabaseClient(): SupabaseClient | null {
             })
             .catch(error => {
               clearTimeout(timeoutId);
-              // Log network errors but don't throw - let the app continue
+
+              // Log network-ish errors (but still rethrow so callers can handle)
               if (
                 typeof window !== 'undefined' &&
-                error.name !== 'AbortError'
+                error?.name !== 'AbortError'
               ) {
-                const errorMessage =
+                const msg =
                   error instanceof Error ? error.message : String(error);
                 if (
-                  errorMessage.includes('fetch') ||
-                  errorMessage.includes('network')
+                  msg.toLowerCase().includes('fetch') ||
+                  msg.toLowerCase().includes('network')
                 ) {
-                  console.warn(
-                    'Supabase network request failed. This may be due to:',
-                    {
-                      message: errorMessage,
-                      url: typeof url === 'string' ? url : 'unknown',
-                      possibleCauses: [
-                        'No internet connection',
-                        'Supabase service unavailable',
-                        'Incorrect Supabase URL',
-                        'CORS configuration issue',
-                      ],
-                    }
-                  );
+                  console.warn('Supabase network request failed.', {
+                    message: msg,
+                    possibleCauses: [
+                      'No internet connection',
+                      'Supabase service unavailable',
+                      'Incorrect Supabase URL',
+                      'CORS configuration issue',
+                    ],
+                  });
                 }
               }
+
               throw error;
             });
         },
       },
     });
-    return _supabase;
+
+    return _client;
   } catch (error) {
     if (typeof window !== 'undefined') {
       console.error('Failed to initialize Supabase client:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('fetch') || errorMessage.includes('network')) {
-        console.warn(
-          'Network error during Supabase initialization. Check your internet connection and Supabase URL.'
-        );
-      }
     }
+    _client = null;
     return null;
   }
 }
@@ -125,32 +116,21 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Get or create Supabase client instance
- * Returns a Promise for backward compatibility, but actually resolves synchronously
- * Throws error if required environment variables are missing
+ * Get Supabase client (typed) or throw if env vars are missing.
+ * Use this when the app cannot operate without Supabase.
  */
-export async function getSupabaseClient(): Promise<SupabaseClient> {
-  if (_supabase) {
-    return _supabase;
-  }
-
+export async function getSupabaseClient(): Promise<SupabaseClient<Database>> {
   const client = initializeSupabaseClient();
   if (!client) {
-    throw new Error(
-      'Missing Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY'
-    );
+    throw new Error('Missing Supabase environment variables');
   }
-
   return client;
 }
 
 /**
- * Get Supabase client synchronously (for cases where async is not needed)
- * Returns null if not initialized or environment variables are missing
+ * Get Supabase client synchronously (typed).
+ * Returns null if not initialized or env vars are missing/invalid.
  */
-export function getSupabaseClientSync(): SupabaseClient | null {
-  if (_supabase) {
-    return _supabase;
-  }
+export function getSupabaseClientSync(): SupabaseClient<Database> | null {
   return initializeSupabaseClient();
 }

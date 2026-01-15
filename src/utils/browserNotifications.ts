@@ -20,7 +20,7 @@ export type NotificationPermission =
  */
 export function isNotificationSupported(): boolean {
   // Keep this safe for SSR/Node by avoiding direct window access
-  return typeof Notification !== 'undefined' && typeof window !== 'undefined';
+  return typeof window !== 'undefined' && 'Notification' in window;
 }
 
 /**

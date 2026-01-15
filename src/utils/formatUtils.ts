@@ -1,5 +1,8 @@
 // Formatting utility functions for data display and manipulation
 
+import React from 'react';
+import { formatDisplayDate, toDateOnly } from './dateParsing';
+
 // Date formatting
 export const dateFormats = {
   short: 'MMM dd, yyyy',
@@ -9,8 +12,6 @@ export const dateFormats = {
   iso: 'yyyy-MM-dd',
   display: "MMM dd, yyyy 'at' HH:mm",
 } as const;
-
-import { formatDisplayDate, toDateOnly } from './dateParsing';
 
 /**
  * ✅ FIXED: date-only 전용 포맷터 - Date 객체 받지 않음 (YYYY-MM-DD만)
@@ -49,12 +50,10 @@ export function formatTimestamp(
   });
 }
 
-// ✅ REMOVED: formatDate function deleted - use formatDateOnly or formatTimestamp instead
-// This function mixed date-only and timestamp logic, causing UTC/local confusion
-// All usages have been migrated to formatDateOnly (for YYYY-MM-DD strings) or formatTimestamp (for Date objects/ISO strings)
-
 export function formatRelativeTime(date: string | Date): string {
   const dateObj = typeof date === 'string' ? new Date(date) : date;
+  if (!Number.isFinite(dateObj.getTime())) return '';
+
   const now = new Date();
   const diffInSeconds = Math.floor((now.getTime() - dateObj.getTime()) / 1000);
 
@@ -64,7 +63,6 @@ export function formatRelativeTime(date: string | Date): string {
   if (diffInSeconds < 2592000)
     return `${Math.floor(diffInSeconds / 86400)}d ago`;
 
-  // ✅ FIXED: Use formatDateOnly for date-only strings, formatTimestamp for timestamps
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return formatDateOnly(date);
   }
@@ -78,8 +76,7 @@ export function formatCurrency(
   locale: string = 'en-US'
 ): string {
   const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-
-  if (isNaN(numAmount)) return 'Invalid Amount';
+  if (Number.isNaN(numAmount)) return 'Invalid Amount';
 
   return new Intl.NumberFormat(locale, {
     style: 'currency',
@@ -91,16 +88,11 @@ export function formatCurrency(
 
 export function formatNumber(
   value: number | string,
-  options: {
-    decimals?: number;
-    locale?: string;
-    compact?: boolean;
-  } = {}
+  options: { decimals?: number; locale?: string; compact?: boolean } = {}
 ): string {
   const { decimals = 0, locale = 'en-US', compact = false } = options;
   const numValue = typeof value === 'string' ? parseFloat(value) : value;
-
-  if (isNaN(numValue)) return 'Invalid Number';
+  if (Number.isNaN(numValue)) return 'Invalid Number';
 
   const formatOptions: Intl.NumberFormatOptions = {
     minimumFractionDigits: decimals,
@@ -114,17 +106,11 @@ export function formatNumber(
 // Text formatting
 export function formatText(
   text: string,
-  options: {
-    capitalize?: boolean;
-    truncate?: number;
-    trim?: boolean;
-  } = {}
+  options: { capitalize?: boolean; truncate?: number; trim?: boolean } = {}
 ): string {
   let formatted = text;
 
-  if (options.trim) {
-    formatted = formatted.trim();
-  }
+  if (options.trim) formatted = formatted.trim();
 
   if (options.capitalize) {
     formatted =
@@ -138,7 +124,6 @@ export function formatText(
   return formatted;
 }
 
-// ✅ FIXED: 빈 문자열 방어 로직 추가
 export function formatName(firstName: string, lastName: string): string {
   const first = firstName?.trim() || '';
   const last = lastName?.trim() || '';
@@ -154,49 +139,38 @@ export function formatInitials(firstName: string, lastName: string): string {
 }
 
 // Phone number formatting
-// ✅ FIXED: 길이 맞지 않으면 원본 반환 옵션 (UI에서 선택 가능)
 export function formatPhone(
   phone?: string | null,
   options: { returnOriginal?: boolean } = {}
 ): string {
   if (!phone) return '';
-
   const cleaned = phone.replace(/\D/g, '');
 
   if (cleaned.length === 10) {
     return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
   }
-
   if (cleaned.length === 11 && cleaned[0] === '1') {
     return `+1 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
   }
-
-  // ✅ FIXED: 길이 맞지 않으면 원본 반환 옵션
   return options.returnOriginal ? phone : '';
 }
 
-// Email formatting
 export function formatEmail(email?: string | null): string {
   return (email ?? '').toLowerCase().trim();
 }
 
-// File size formatting
 export function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
-
   const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'] as const;
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Percentage formatting
 export function formatPercentage(value: number, decimals: number = 1): string {
   return `${(value * 100).toFixed(decimals)}%`;
 }
 
-// Address formatting
 export function formatAddress(address: {
   street?: string;
   city?: string;
@@ -211,11 +185,9 @@ export function formatAddress(address: {
     address.zipCode,
     address.country,
   ].filter(Boolean);
-
   return parts.join(', ');
 }
 
-// Status formatting
 export function formatStatus(status: string): string {
   return status
     .split('_')
@@ -223,7 +195,6 @@ export function formatStatus(status: string): string {
     .join(' ');
 }
 
-// Relationship type formatting
 export function formatRelationshipType(type: string): string {
   const typeMap: Record<string, string> = {
     interested: 'Interested',
@@ -231,11 +202,9 @@ export function formatRelationshipType(type: string): string {
     sold: 'Sold',
     owned: 'Owned',
   };
-
   return typeMap[type.toLowerCase()] || type;
 }
 
-// Instrument formatting
 export function formatInstrumentName(
   maker?: string | null,
   name?: string | null,
@@ -246,7 +215,6 @@ export function formatInstrumentName(
   return parts.join(' ');
 }
 
-// Table formatting utilities
 export function formatTableData<T>(
   data: T[],
   columns: Array<{
@@ -261,7 +229,7 @@ export function formatTableData<T>(
         const value = item[column.key];
         acc[column.label] = column.formatter
           ? column.formatter(value)
-          : String(value);
+          : String(value ?? '');
         return acc;
       },
       {} as Record<string, string>
@@ -270,9 +238,6 @@ export function formatTableData<T>(
 }
 
 // Search highlighting
-// ✅ FIXED: XSS 위험 제거 - ReactNode 배열로 반환 (가장 안전)
-import React from 'react';
-
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -299,7 +264,6 @@ export function highlightSearchTerm(
 }
 
 // CSV formatting
-// ✅ FIXED: 모든 타입을 string으로 직렬화 (number/boolean/object 처리)
 function csvCell(v: unknown): string {
   if (v == null) return '';
 
@@ -310,7 +274,6 @@ function csvCell(v: unknown): string {
         ? String(v)
         : JSON.stringify(v);
 
-  // Escape commas, quotes, and newlines
   if (/[,"\n]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }
@@ -322,56 +285,45 @@ export function formatCSV(
   headers?: string[]
 ): string {
   if (data.length === 0) return '';
-
   const keys = headers || Object.keys(data[0]);
   const rows = data.map(row => keys.map(k => csvCell(row[k])).join(','));
   return [keys.join(','), ...rows].join('\n');
 }
 
-// JSON formatting
 export function formatJSON(data: unknown, indent: number = 2): string {
   return JSON.stringify(data, null, indent);
 }
 
 // URL formatting
-// ✅ FIXED: javascript: 같은 위험한 스킴 차단
 export function formatURL(url: string): string {
   const trimmed = url.trim();
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  // ✅ FIXED: 위험한 스킴 차단
-  if (/^[a-z]+:/i.test(trimmed)) return ''; // block weird schemes (javascript:, data:, etc.)
+  if (/^\/\//.test(trimmed)) return `https:${trimmed}`;
+  if (/^[a-z]+:/i.test(trimmed)) return '';
   return `https://${trimmed}`;
 }
 
-// Color formatting
 export function formatColor(hex: string): string {
   if (hex.startsWith('#')) return hex;
   return `#${hex}`;
 }
 
-// Time formatting
 export function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
 
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${secs}s`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${secs}s`;
-  } else {
-    return `${secs}s`;
-  }
+  if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
+  if (minutes > 0) return `${minutes}m ${secs}s`;
+  return `${secs}s`;
 }
 
-// Validation formatting
 export function formatValidationErrors(errors: Record<string, string>): string {
   return Object.entries(errors)
     .map(([field, error]) => `${field}: ${error}`)
     .join('\n');
 }
 
-// Export all formatting functions
 export const formatters = {
   dateOnly: formatDateOnly,
   timestamp: formatTimestamp,

@@ -107,8 +107,6 @@ describe('DashboardContent', () => {
   const mockOnDeleteClick = jest.fn();
   const mockOnUpdateItemInline = jest.fn();
   const mockOnAddClick = jest.fn();
-  const mockOnSellClick = jest.fn();
-
   const defaultProps = {
     enrichedItems: mockEnrichedItems,
     clients: mockClients,
@@ -121,7 +119,6 @@ describe('DashboardContent', () => {
     onDeleteClick: mockOnDeleteClick,
     onUpdateItemInline: mockOnUpdateItemInline,
     onAddClick: mockOnAddClick,
-    onSellClick: mockOnSellClick,
   };
 
   beforeEach(() => {
@@ -179,30 +176,51 @@ describe('DashboardContent', () => {
     expect(mockSetSearchTerm).toHaveBeenCalledWith('test search');
   });
 
-  it('should render quick filter buttons', () => {
+  it('should render the More Filters button', () => {
     render(<DashboardContent {...defaultProps} />);
 
-    expect(screen.getByText('Has Clients')).toBeInTheDocument();
-    expect(screen.getByText('No Clients')).toBeInTheDocument();
     expect(screen.getByText('More Filters')).toBeInTheDocument();
   });
 
-  it('should toggle filters when "Has Clients" button is clicked', () => {
+  it('should show clear filters button when filters are active', () => {
+    const { useDashboardFilters } = require('../../hooks');
+    (useDashboardFilters as jest.Mock).mockReturnValue({
+      searchTerm: 'test',
+      setSearchTerm: mockSetSearchTerm,
+      showFilters: false,
+      setShowFilters: mockSetShowFilters,
+      filters: {
+        status: [],
+        maker: [],
+        type: [],
+        subtype: [],
+        ownership: [],
+        certificate: [],
+        priceRange: { min: '', max: '' },
+        hasClients: [],
+      },
+      paginatedItems: mockEnrichedItems,
+      handleFilterChange: mockHandleFilterChange,
+      handlePriceRangeChange: mockHandlePriceRangeChange,
+      clearAllFilters: mockClearAllFilters,
+      handleSort: mockHandleSort,
+      getSortArrow: mockGetSortArrow,
+      getActiveFiltersCount: jest.fn(() => 1),
+      dateRange: null,
+      setDateRange: mockSetDateRange,
+      currentPage: 1,
+      totalPages: 1,
+      totalCount: 1,
+      pageSize: 20,
+      setPage: mockSetPage,
+    });
+
     render(<DashboardContent {...defaultProps} />);
-
-    const hasClientsButton = screen.getByText('Has Clients');
-    fireEvent.click(hasClientsButton);
-
-    expect(mockHandleFilterChange).toHaveBeenCalledWith('hasClients', true);
-  });
-
-  it('should toggle filters when "No Clients" button is clicked', () => {
-    render(<DashboardContent {...defaultProps} />);
-
-    const noClientsButton = screen.getByText('No Clients');
-    fireEvent.click(noClientsButton);
-
-    expect(mockHandleFilterChange).toHaveBeenCalledWith('hasClients', false);
+    const clearButton = screen.getByText('Clear filters');
+    expect(clearButton).toBeInTheDocument();
+    fireEvent.click(clearButton);
+    expect(mockClearAllFilters).toHaveBeenCalled();
+    expect(mockSetShowFilters).toHaveBeenCalledWith(false);
   });
 
   it('should toggle filters panel when "More Filters" button is clicked', () => {
@@ -310,46 +328,6 @@ describe('DashboardContent', () => {
     expect(itemList).toHaveTextContent('Loading...');
   });
 
-  it('should highlight active filter button when filter is active', () => {
-    const { useDashboardFilters } = require('../../hooks');
-    (useDashboardFilters as jest.Mock).mockReturnValue({
-      searchTerm: '',
-      setSearchTerm: mockSetSearchTerm,
-      showFilters: false,
-      setShowFilters: mockSetShowFilters,
-      filters: {
-        status: [],
-        maker: [],
-        type: [],
-        subtype: [],
-        ownership: [],
-        certificate: [],
-        priceRange: { min: '', max: '' },
-        hasClients: [true],
-      },
-      paginatedItems: mockEnrichedItems,
-      handleFilterChange: mockHandleFilterChange,
-      handlePriceRangeChange: mockHandlePriceRangeChange,
-      clearAllFilters: mockClearAllFilters,
-      handleSort: mockHandleSort,
-      getSortArrow: mockGetSortArrow,
-      getActiveFiltersCount: mockGetActiveFiltersCount,
-      dateRange: null,
-      setDateRange: mockSetDateRange,
-      currentPage: 1,
-      totalPages: 1,
-      totalCount: 1,
-      pageSize: 20,
-      setPage: mockSetPage,
-    });
-
-    render(<DashboardContent {...defaultProps} />);
-
-    const hasClientsButton = screen.getByText('Has Clients');
-    expect(hasClientsButton).toHaveClass('bg-blue-600');
-    expect(hasClientsButton).toHaveAttribute('aria-pressed', 'true');
-  });
-
   it('should handle empty items list', () => {
     const { useDashboardFilters } = require('../../hooks');
     (useDashboardFilters as jest.Mock).mockReturnValue({
@@ -393,7 +371,6 @@ describe('DashboardContent', () => {
     render(
       <DashboardContent
         {...defaultProps}
-        existingSerialNumbers={['SN123', 'SN456']}
         newlyCreatedItemId="inst-1"
         onNewlyCreatedItemShown={jest.fn()}
         onLoadSampleData={jest.fn()}

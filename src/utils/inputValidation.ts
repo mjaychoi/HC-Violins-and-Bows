@@ -17,6 +17,7 @@ import { parse, isValid, format } from 'date-fns';
  */
 export const ALLOWED_SORT_COLUMNS = {
   clients: [
+    'id',
     'created_at',
     'first_name',
     'last_name',
@@ -25,6 +26,7 @@ export const ALLOWED_SORT_COLUMNS = {
     'client_number',
   ] as const,
   instruments: [
+    'id',
     'created_at',
     'type',
     'maker',
@@ -32,8 +34,9 @@ export const ALLOWED_SORT_COLUMNS = {
     'status',
     'price',
   ] as const,
-  connections: ['created_at', 'relationship_type'] as const,
+  connections: ['id', 'created_at', 'relationship_type'] as const,
   maintenance_tasks: [
+    'id',
     'created_at',
     'received_date',
     'due_date',
@@ -41,7 +44,7 @@ export const ALLOWED_SORT_COLUMNS = {
     'priority',
     'status',
   ] as const,
-  sales_history: ['created_at', 'sale_date', 'sale_price'] as const,
+  sales_history: ['id', 'created_at', 'sale_date', 'sale_price'] as const,
 } as const;
 
 /**
@@ -52,15 +55,27 @@ export function validateSortColumn(
   column: string | null
 ): string {
   const allowed = ALLOWED_SORT_COLUMNS[table];
+  const preferredDefault = 'created_at';
   if (!column) {
-    return allowed[0] as string; // Return default column
+    return allowed.includes(preferredDefault)
+      ? (preferredDefault as string)
+      : (allowed[0] as string);
   }
   // Type-safe check
   const allowedSet = new Set(allowed as readonly string[]);
   if (allowedSet.has(column)) {
     return column;
   }
-  return allowed[0] as string; // Return default column
+  return allowed.includes(preferredDefault)
+    ? (preferredDefault as string)
+    : (allowed[0] as string);
+}
+
+export function validateFilterColumn(
+  table: keyof typeof ALLOWED_SORT_COLUMNS,
+  column: string | null
+): string {
+  return validateSortColumn(table, column);
 }
 
 /**

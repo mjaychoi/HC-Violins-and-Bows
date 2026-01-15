@@ -9,7 +9,6 @@ export function useDashboardForm() {
     type: 'Instrument',
     subtype: 'Violin',
     year: '',
-    certificate: false,
     size: '',
     weight: '',
     price: '',

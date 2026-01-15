@@ -12,7 +12,7 @@ import { ko } from 'date-fns/locale';
 import { addHours } from 'date-fns';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
-import { MaintenanceTask, ContactLog } from '@/types';
+import { MaintenanceTask } from '@/types';
 import YearView from './YearView';
 import TimelineView from './TimelineView';
 import { getDateStatus } from '@/utils/tasks/style';
@@ -48,9 +48,11 @@ export interface EventData {
   description: string;
 }
 
-export type CalendarResource =
-  | { kind: 'task'; task: MaintenanceTask; eventData: EventData }
-  | { kind: 'follow_up'; contactLog: ContactLog; clientName: string };
+export type CalendarResource = {
+  kind: 'task';
+  task: MaintenanceTask;
+  eventData: EventData;
+};
 
 export type CalendarEvent = Omit<Event, 'resource'> & {
   resource: CalendarResource;
@@ -58,7 +60,6 @@ export type CalendarEvent = Omit<Event, 'resource'> & {
 
 interface CalendarViewProps {
   tasks: MaintenanceTask[];
-  contactLogs?: ContactLog[]; // Follow-up 이벤트용
   instruments?: Map<
     string,
     {
@@ -70,7 +71,6 @@ interface CalendarViewProps {
     }
   >;
   onSelectEvent?: (task: MaintenanceTask) => void;
-  onSelectFollowUpEvent?: (log: ContactLog) => void;
   onSelectSlot?: (slotInfo: { start: Date; end: Date }) => void;
   onEventDrop?: (data: {
     event: Event;
@@ -116,10 +116,8 @@ const DragAndDropCalendar = withDragAndDrop(
 
 export default function CalendarView({
   tasks,
-  contactLogs = [],
   instruments,
   onSelectEvent,
-  onSelectFollowUpEvent,
   onSelectSlot,
   onEventDrop,
   onEventResize,
@@ -254,61 +252,12 @@ export default function CalendarView({
       })
       .filter((event): event is Event => event !== null);
 
-    // Follow-up events (from contact logs)
-    const followUpEvents = contactLogs
-      .filter(log => log.next_follow_up_date)
-      .map(log => {
-        const followUpDate = parseYMDLocal(log.next_follow_up_date!);
-        if (!followUpDate) return null;
-
-        const start = new Date(followUpDate);
-        start.setHours(10, 0, 0, 0); // 10AM for follow-ups
-        const endDate = addHours(start, 1);
-
-        const clientName = log.client
-          ? `${log.client.first_name || ''} ${log.client.last_name || ''}`.trim() ||
-            log.client.email ||
-            'Unknown Client'
-          : 'Unknown Client';
-
-        const eventData: EventData = {
-          instrument: log.instrument
-            ? `${log.instrument.maker || ''} ${log.instrument.type || ''}`.trim() ||
-              'Unknown Instrument'
-            : 'Follow-up',
-          instrumentColor: 'text-amber-600',
-          description: `Follow-up: ${clientName}`,
-        };
-
-        const event: Event = {
-          title: `${eventData.instrument}\n${eventData.description}`,
-          start: start,
-          end: endDate,
-          resource: {
-            kind: 'follow_up',
-            contactLog: log,
-            clientName,
-          } as CalendarResource,
-        };
-
-        return event;
-      })
-      .filter((event): event is Event => event !== null);
-
-    return [...taskEvents, ...followUpEvents];
-  }, [tasks, contactLogs, instruments]);
+    return taskEvents;
+  }, [tasks, instruments]);
 
   const eventStyleGetter = useCallback(
     (event: Event) => {
       const r = event.resource as CalendarResource | undefined;
-
-      // Handle follow-up events first - early return (not draggable, so no dragging styles)
-      if (r?.kind === 'follow_up') {
-        return {
-          style: {},
-          className: 'rbc-event status-followup',
-        };
-      }
 
       // Handle task events
       const task = r?.kind === 'task' ? r.task : undefined;
@@ -444,18 +393,7 @@ export default function CalendarView({
               eventPropGetter: eventStyleGetter,
               onSelectEvent: (event: Event) => {
                 const r = event.resource as CalendarResource | undefined;
-                if (!r) return;
-
-                // Follow-up 클릭 처리
-                if (r.kind === 'follow_up') {
-                  if (onSelectFollowUpEvent) {
-                    onSelectFollowUpEvent(r.contactLog);
-                  }
-                  return;
-                }
-
-                // Task 이벤트 처리
-                if (r.kind === 'task' && onSelectEvent) {
+                if (r?.kind === 'task' && onSelectEvent) {
                   onSelectEvent(r.task);
                 }
               },
@@ -498,19 +436,6 @@ export default function CalendarView({
             components={{
               event: ({ event }: { event: Event }) => {
                 const resource = event.resource as CalendarResource | undefined;
-
-                // Handle follow-up events
-                if (resource?.kind === 'follow_up') {
-                  const clientName = resource.clientName || 'Unknown Client';
-                  return (
-                    <div className="rbc-event-content">
-                      <div className="event-instrument text-amber-600">
-                        ⏰ Follow-up
-                      </div>
-                      <div className="event-description">{clientName}</div>
-                    </div>
-                  );
-                }
 
                 // Handle task events
                 const eventData =

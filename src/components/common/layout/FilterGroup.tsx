@@ -135,7 +135,7 @@ export default function FilterGroup({
               className="text-xs text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
               type="button"
             >
-              {allSelected ? '전체 해제' : '전체 선택'}
+              {allSelected ? 'Reset All' : 'Select All'}
             </button>
           )}
           {collapsible && (

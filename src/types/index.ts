@@ -7,6 +7,7 @@ export interface Instrument {
   subtype: string | null;
   year: number | null;
   certificate: boolean | null;
+  has_certificate?: boolean;
   certificate_name?: string | null;
   cost_price?: number | null;
   consignment_price?: number | null;
@@ -17,7 +18,7 @@ export interface Instrument {
   note: string | null;
   serial_number: string | null; // 악기 고유 번호
   created_at: string;
-  updated_at?: string; // Optional: automatically updated by database trigger
+  updated_at?: string | null; // Optional: automatically updated by database trigger
 }
 
 export interface InstrumentImage {
@@ -58,9 +59,9 @@ export interface ClientInstrument {
   relationship_type: RelationshipType;
   notes: string | null;
   display_order?: number; // Display order for drag & drop sorting
-  created_at: string;
-  client?: Client;
-  instrument?: Instrument;
+  created_at: string | null;
+  client?: Client | null;
+  instrument?: Instrument | null;
 }
 
 // Form data types
@@ -105,7 +106,7 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export interface MaintenanceTask {
   id: string;
-  instrument_id: string;
+  instrument_id: string | null;
   client_id: string | null; // 클라이언트 ID (선택사항)
   task_type: TaskType;
   title: string;

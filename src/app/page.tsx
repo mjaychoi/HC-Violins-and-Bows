@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,7 +18,12 @@ function LoginRedirect() {
     if (!authLoading && user) {
       // ✅ FIXED: Check for next parameter to redirect to original destination
       const next = searchParams.get('next');
-      const destination = next ? decodeURIComponent(next) : '/dashboard';
+      // ✅ 보안: open redirect 방지 (내부 경로만 허용)
+      // - /dashboard 같은 내부 path만 허용하고, https://evil.com 같은 외부 이동은 차단
+      const destination =
+        next && next.startsWith('/') && !next.startsWith('//')
+          ? decodeURIComponent(next)
+          : '/dashboard';
       router.replace(destination);
     }
   }, [user, authLoading, router, searchParams]);
@@ -37,7 +42,7 @@ function LoginPageContent() {
   // Loading states
   const { loading, withLoading } = useLoadingState();
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
 
