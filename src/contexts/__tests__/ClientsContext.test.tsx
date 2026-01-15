@@ -144,7 +144,7 @@ describe('ClientsContext', () => {
       expect(result.current.clients).toEqual(mockClients);
       expect(result.current.lastUpdated).not.toBeNull();
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/clients?orderBy=created_at&ascending=false&all=true'
+        '/api/clients?orderBy=created_at&ascending=false&page=1&pageSize=150'
       );
     });
 

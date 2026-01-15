@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   isNotificationSupported,
   getNotificationPermission,
@@ -143,6 +143,33 @@ function saveNotificationEnabled(enabled: boolean): void {
 }
 
 /**
+ * type 우선순위 계산 (대소문자/표기 흔들림 방어)
+ * - overdue > today > upcoming > 기타
+ */
+function getTypePriority(type: unknown): number {
+  const t = String(type ?? '')
+    .toLowerCase()
+    .trim();
+
+  // 흔한 케이스들: "overdue", "OVERDUE", "Overdue"
+  if (t === 'overdue') return 0;
+
+  // "today", "due_today", "due-today"
+  if (
+    t === 'today' ||
+    t === 'due_today' ||
+    t === 'due-today' ||
+    t === 'due today'
+  )
+    return 1;
+
+  // "upcoming", "soon"
+  if (t === 'upcoming' || t === 'soon') return 2;
+
+  return 99;
+}
+
+/**
  * 브라우저 알림 훅
  */
 export function useBrowserNotifications(
@@ -155,19 +182,25 @@ export function useBrowserNotifications(
     enabled: enabledProp = true,
   } = options;
 
+  // isSupported는 브라우저 환경에서만 의미있지만, 이 파일은 client 전용이라 OK
+  const isSupported = useMemo(() => isNotificationSupported(), []);
+
   const [permission, setPermission] = useState<NotificationPermission>(() => {
     if (typeof window === 'undefined') return 'denied';
     return getNotificationPermission();
   });
 
-  const [enabled, setEnabled] = useState(() => {
+  const [enabled, setEnabled] = useState<boolean>(() => {
     return enabledProp && getNotificationEnabled();
   });
 
-  const isSupported = isNotificationSupported();
+  // enabledProp 변경이 내부 enabled에 반영되도록 동기화
+  useEffect(() => {
+    setEnabled(enabledProp && getNotificationEnabled());
+  }, [enabledProp]);
+
   const notifiedTasksRef = useRef<Set<string>>(getNotifiedTaskIds());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastCheckRef = useRef<Date>(new Date());
 
   /**
    * 알림 권한 요청
@@ -181,31 +214,42 @@ export function useBrowserNotifications(
    * 알림 활성화/비활성화 토글
    */
   const toggleEnabled = useCallback(() => {
-    const newEnabled = !enabled;
-    setEnabled(newEnabled);
-    saveNotificationEnabled(newEnabled);
-  }, [enabled]);
+    setEnabled(prev => {
+      const next = !prev;
+      saveNotificationEnabled(next);
+      return next;
+    });
+  }, []);
 
   /**
    * 새 알림이 있는지 확인하고 표시
    */
   const checkAndShowNotifications = useCallback(() => {
-    if (!enabled || permission !== 'granted' || !isSupported) {
-      return;
-    }
+    if (!enabled || permission !== 'granted' || !isSupported) return;
 
     // 새로 추가된 알림만 필터링 (중복 방지)
     const newNotifications = notifications.filter(
-      notification => !notifiedTasksRef.current.has(notification.task.id)
+      n => !notifiedTasksRef.current.has(n.task.id)
     );
-
-    if (newNotifications.length === 0) {
-      return;
-    }
+    if (newNotifications.length === 0) return;
 
     // 우선순위: overdue > today > upcoming
-    // 가장 우선순위가 높은 알림 하나만 표시
-    const topNotification = newNotifications[0];
+    // 동일 우선순위면 daysUntil 작은 것, 그 다음 task.id로 안정 정렬
+    const topNotification = [...newNotifications].sort((a, b) => {
+      const pa = getTypePriority(a.type);
+      const pb = getTypePriority(b.type);
+      if (pa !== pb) return pa - pb;
+
+      const da = Number.isFinite(a.daysUntil)
+        ? a.daysUntil
+        : Number.POSITIVE_INFINITY;
+      const db = Number.isFinite(b.daysUntil)
+        ? b.daysUntil
+        : Number.POSITIVE_INFINITY;
+      if (da !== db) return da - db;
+
+      return String(a.task.id).localeCompare(String(b.task.id));
+    })[0];
 
     const message = formatNotificationMessage(
       topNotification.task,
@@ -213,7 +257,7 @@ export function useBrowserNotifications(
       topNotification.daysUntil
     );
 
-    const notification = showBrowserNotification('작업 알림', {
+    const notif = showBrowserNotification('작업 알림', {
       body: message,
       tag: `task-${topNotification.task.id}`, // 같은 작업의 중복 알림 방지
       data: {
@@ -222,24 +266,25 @@ export function useBrowserNotifications(
       },
     });
 
-    if (notification) {
-      // 알림 클릭 시 해당 페이지로 이동
-      notification.onclick = () => {
-        window.focus();
-        window.location.href = navigateUrl;
-        notification.close();
-      };
+    if (!notif) return;
 
-      // 알림을 받은 작업 ID 저장
-      saveNotifiedTaskId(topNotification.task.id);
-      notifiedTasksRef.current.add(topNotification.task.id);
-    }
+    // 알림 클릭 시 해당 페이지로 이동
+    notif.onclick = () => {
+      window.focus();
+      window.location.href = navigateUrl;
+      notif.close();
+    };
+
+    // 알림을 받은 작업 ID 저장
+    saveNotifiedTaskId(topNotification.task.id);
+    notifiedTasksRef.current.add(topNotification.task.id);
   }, [enabled, permission, isSupported, notifications, navigateUrl]);
 
   /**
    * 주기적 체크 설정
    */
   useEffect(() => {
+    // 조건 불충족이면 interval 정리
     if (!enabled || permission !== 'granted' || !isSupported) {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -250,12 +295,10 @@ export function useBrowserNotifications(
 
     // 초기 체크
     checkAndShowNotifications();
-    lastCheckRef.current = new Date();
 
     // 주기적 체크
     intervalRef.current = setInterval(() => {
       checkAndShowNotifications();
-      lastCheckRef.current = new Date();
     }, checkInterval);
 
     return () => {
@@ -277,7 +320,6 @@ export function useBrowserNotifications(
    */
   useEffect(() => {
     if (enabled && permission === 'granted' && isSupported) {
-      // 알림 목록이 변경되면 즉시 체크
       checkAndShowNotifications();
     }
   }, [
@@ -290,7 +332,8 @@ export function useBrowserNotifications(
 
   /**
    * 권한 상태 동기화
-   * ✅ FIXED: 10초 polling 대신 visibilitychange/focus 이벤트 사용 (더 가벼움)
+   * - polling 대신 focus/visibilitychange로 동기화
+   * - visibilitychange는 document.hidden 상태에서도 불릴 수 있으니 permission 조회만 수행
    */
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -300,7 +343,6 @@ export function useBrowserNotifications(
     // 초기 체크
     sync();
 
-    // 탭이 다시 활성화될 때만 체크
     window.addEventListener('focus', sync);
     document.addEventListener('visibilitychange', sync);
 

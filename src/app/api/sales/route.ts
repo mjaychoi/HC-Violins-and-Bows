@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
+import { captureException } from '@/utils/monitoring';
 // captureException removed - withSentryRoute handles error reporting
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
@@ -168,6 +169,13 @@ async function getHandler(request: NextRequest, _user: User) {
         validateSalesHistoryArray
       );
       const validationWarning = !validationResult.success;
+
+      if (validationWarning) {
+        captureException(
+          new Error('SalesAPI response validation warning'),
+          'SalesAPI GET response validation warning'
+        );
+      }
 
       // 전체 데이터의 totals 계산 (필터링된 전체 데이터 기준)
       // Export 모드가 아니고, totals 계산이 필요한 경우에만 수행

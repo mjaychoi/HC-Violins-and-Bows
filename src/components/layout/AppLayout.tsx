@@ -4,7 +4,7 @@ import { useSidebarState } from '@/hooks/useSidebarState';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import AppHeader from './AppHeader';
 import AppSidebar from './AppSidebar';
 
@@ -25,31 +25,12 @@ export default function AppLayout({
   actionButton,
   headerActions = null,
 }: AppLayoutProps) {
-  const { isExpanded, toggleSidebar, collapseSidebar } = useSidebarState();
+  const { isExpanded, toggleSidebar } = useSidebarState();
   const pathname = usePathname();
   const { user, loading } = useAuth();
   const router = useRouter();
 
   // ✅ FIXED: matchMedia 훅으로 변경 (리렌더/이벤트 줄이기)
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)');
-    const handler = () => setIsMobile(mq.matches);
-    handler(); // 초기값 설정
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-
-  // 모바일에서도 사이드바가 닫힌 상태로 항상 보이도록 설정 (사라지지 않게)
-  // 사이드바는 닫힌 상태(isExpanded=false)로 유지되지만 항상 표시됨
-  useEffect(() => {
-    if (isMobile && isExpanded) {
-      collapseSidebar(); // 모바일에서 사이드바를 닫힌 상태로 유지
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMobile]);
-
   // ✅ FIXED: redirect는 AppLayout에서만 처리 (단일 책임 원칙)
   // ProtectedRoute와 중복 방지: AppLayout이 모든 보호된 페이지의 인증 체크를 담당
   useEffect(() => {

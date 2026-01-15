@@ -135,9 +135,9 @@ async function updateInvoiceHandler(
       return { payload: { error: 'Invalid JSON body' }, status: 400 };
     }
 
-    // ✅ safeValidate(arg order) 유지 (validator first)
+    // ✅ safeValidate(arg order) 유지 (data first, validator second)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const validationResult = safeValidate(validatePartialInvoice, body as any);
+    const validationResult = safeValidate(body as any, validatePartialInvoice);
 
     if (!validationResult.success) {
       return {
@@ -265,13 +265,11 @@ async function updateInvoiceHandler(
           if (Array.isArray(oldItems) && oldItems.length > 0) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const restoreRows = oldItems.map((it: any) => {
-              const {
-                id: _itemId,
-                created_at: _created_at,
-                updated_at: _updated_at,
-                ...rest
-              } = it ?? {};
-              return rest;
+              const row = { ...(it ?? {}) };
+              delete row.id;
+              delete row.created_at;
+              delete row.updated_at;
+              return row;
             });
 
             const { error: restoreError } = await supabase

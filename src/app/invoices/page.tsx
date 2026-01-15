@@ -268,8 +268,8 @@ function InvoicesPageContent() {
 
   // 초기 로드 및 필터/페이지/정렬 변경 시 API 호출
   useEffect(() => {
-    // URL 동기화가 완료되지 않았거나 동기화 중이면 대기
-    if (!isURLSyncReady || isSyncingFromURLRef.current) return;
+    // 동기화 중이라면 대기
+    if (isSyncingFromURLRef.current) return;
 
     if (filtersChangedRef.current && page !== 1) {
       return;
@@ -306,7 +306,6 @@ function InvoicesPageContent() {
     sortColumn,
     sortDirection,
     fetchInvoices,
-    isURLSyncReady,
   ]);
 
   // URL 동기화가 완료되었지만 아직 fetch하지 않은 경우 강제로 fetch (안전장치)

@@ -4,12 +4,21 @@ import {
   ClientInstrument,
   MaintenanceTask,
   TaskFilters,
+  TaskType,
+  RelationshipType,
+  TaskPriority,
+  TaskStatus,
 } from '@/types';
-import { apiClient } from '@/utils/apiClient';
+import {
+  apiClient,
+  QueryFilter,
+  TableName,
+  TableRowMap,
+  AllowedColumn,
+} from '@/utils/apiClient';
 import { getSupabaseClient } from '@/lib/supabase-client';
 import { AppError, ErrorCodes } from '@/types/errors';
 import { errorHandler } from '@/utils/errorHandler';
-import { ALLOWED_SORT_COLUMNS } from '@/utils/inputValidation';
 
 type CacheKey = 'clients' | 'instruments' | 'connections' | 'maintenance_tasks';
 type SortDirection = 'asc' | 'desc';
@@ -22,13 +31,6 @@ interface QueryOptions<T> {
   sortBy?: keyof T;
   sortDirection?: SortDirection;
   filter?: Partial<T>;
-}
-
-interface FetchOptions {
-  select?: string;
-  orderBy?: { column: string; ascending?: boolean };
-  limit?: number;
-  eq?: { column: string; value: unknown };
 }
 
 // Simple in-memory cache timestamps to coordinate invalidation.
@@ -140,6 +142,216 @@ export function applyQuery<T extends object>(
       matchesSearch(item, searchTerm, searchFields)
   );
   return applySorting(filtered, sortBy, sortDirection);
+}
+
+const INSTRUMENT_STATUSES: Instrument['status'][] = [
+  'Available',
+  'Booked',
+  'Sold',
+  'Reserved',
+  'Maintenance',
+];
+
+const RELATIONSHIP_TYPES: RelationshipType[] = [
+  'Interested',
+  'Sold',
+  'Booked',
+  'Owned',
+];
+
+const MAINTENANCE_STATUSES: TaskStatus[] = [
+  'pending',
+  'in_progress',
+  'completed',
+  'cancelled',
+];
+
+const MAINTENANCE_PRIORITIES: TaskPriority[] = [
+  'low',
+  'medium',
+  'high',
+  'urgent',
+];
+
+const TASK_TYPES: TaskType[] = [
+  'repair',
+  'rehair',
+  'maintenance',
+  'inspection',
+  'setup',
+  'adjustment',
+  'restoration',
+];
+
+function ensureTaskType(value: string | null): TaskType {
+  if (value && TASK_TYPES.includes(value as TaskType)) {
+    return value as TaskType;
+  }
+  return 'maintenance';
+}
+
+type QueryColumn<T extends TableName> = AllowedColumn<T>;
+
+interface EntityFetchOptions<T extends TableName> {
+  select?: string;
+  eq?: QueryFilter<T>;
+  orderBy?: { column: QueryColumn<T>; ascending?: boolean };
+  limit?: number;
+}
+
+const nowISOString = () => new Date().toISOString();
+
+function ensureInstrumentStatus(value: string | null): Instrument['status'] {
+  if (value && INSTRUMENT_STATUSES.includes(value as Instrument['status'])) {
+    return value as Instrument['status'];
+  }
+  return 'Available';
+}
+
+function normalizeClientRow(row: TableRowMap['clients']): Client {
+  return {
+    id: row.id,
+    last_name: row.last_name,
+    first_name: row.first_name,
+    contact_number: row.contact_number,
+    email: row.email,
+    tags: row.tags ?? [],
+    interest: row.interest,
+    note: row.note,
+    client_number: row.client_number,
+    created_at: row.created_at ?? nowISOString(),
+  };
+}
+
+function normalizeClients(rows: TableRowMap['clients'][]): Client[] {
+  return rows.map(normalizeClientRow);
+}
+
+function normalizeInstrumentRow(row: TableRowMap['instruments']): Instrument {
+  return {
+    id: row.id,
+    status: ensureInstrumentStatus(row.status),
+    maker: row.maker,
+    type: row.type,
+    subtype: row.subtype,
+    year: row.year,
+    certificate: row.certificate,
+    certificate_name: row.certificate_name ?? null,
+    cost_price: row.cost_price ?? null,
+    consignment_price: row.consignment_price ?? null,
+    size: row.size,
+    weight: row.weight,
+    price: row.price,
+    ownership: row.ownership,
+    note: row.note,
+    serial_number: row.serial_number,
+    has_certificate:
+      (row as { has_certificate?: boolean }).has_certificate ?? false,
+    created_at: row.created_at ?? nowISOString(),
+    updated_at: row.updated_at ?? null,
+  };
+}
+
+function normalizeInstruments(
+  rows: TableRowMap['instruments'][]
+): Instrument[] {
+  return rows.map(normalizeInstrumentRow);
+}
+
+function normalizeClientInstrumentRow(
+  row: TableRowMap['connections']
+): ClientInstrument | null {
+  if (!row.client_id || !row.instrument_id) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(
+        '[dataService] Dropping incomplete client_instruments row',
+        row.id
+      );
+    }
+    return null;
+  }
+
+  const relationship_type = RELATIONSHIP_TYPES.includes(
+    row.relationship_type as RelationshipType
+  )
+    ? (row.relationship_type as RelationshipType)
+    : 'Interested';
+
+  return {
+    id: row.id,
+    client_id: row.client_id,
+    instrument_id: row.instrument_id,
+    relationship_type,
+    notes: row.notes,
+    display_order: row.display_order,
+    created_at: row.created_at ?? nowISOString(),
+  };
+}
+
+function normalizeClientInstruments(
+  rows: TableRowMap['connections'][]
+): ClientInstrument[] {
+  return rows
+    .map(normalizeClientInstrumentRow)
+    .filter(
+      (item): item is ClientInstrument => item !== null && item !== undefined
+    );
+}
+
+function normalizeMaintenanceTaskRow(
+  row: TableRowMap['maintenance_tasks']
+): MaintenanceTask | null {
+  if (!row.instrument_id) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(
+        '[dataService] Maintenance task missing instrument_id',
+        row.id
+      );
+    }
+    return null;
+  }
+
+  const status = MAINTENANCE_STATUSES.includes(row.status as TaskStatus)
+    ? (row.status as TaskStatus)
+    : 'pending';
+  const priority = MAINTENANCE_PRIORITIES.includes(row.priority as TaskPriority)
+    ? (row.priority as TaskPriority)
+    : 'medium';
+
+  const created_at = row.created_at ?? nowISOString();
+  const updated_at = row.updated_at ?? created_at;
+
+  return {
+    id: row.id,
+    instrument_id: row.instrument_id,
+    client_id: row.client_id ?? null,
+    task_type: ensureTaskType(row.task_type),
+    title: row.title,
+    description: row.description,
+    status,
+    received_date: row.received_date || created_at,
+    due_date: row.due_date,
+    personal_due_date: row.personal_due_date,
+    scheduled_date: row.scheduled_date,
+    completed_date: row.completed_date,
+    priority,
+    estimated_hours: row.estimated_hours,
+    actual_hours: row.actual_hours,
+    cost: row.cost,
+    notes: row.notes,
+    created_at,
+    updated_at,
+  };
+}
+
+function normalizeMaintenanceTasks(
+  rows: TableRowMap['maintenance_tasks'][]
+): MaintenanceTask[] {
+  return rows
+    .map(normalizeMaintenanceTaskRow)
+    .filter(
+      (item): item is MaintenanceTask => item !== null && item !== undefined
+    );
 }
 
 /**
@@ -273,9 +485,13 @@ class DataService {
   // ============================================================================
 
   // ✅ FIXED: Result 타입으로 변경 (AppError normalize)
-  async fetchClients(options?: FetchOptions): Promise<Result<Client[]>> {
-    const { data, error } = await apiClient.query<Client>('clients', {
-      select: options?.select,
+  async fetchClients(
+    options?: EntityFetchOptions<'clients'>
+  ): Promise<Result<Client[]>> {
+    const { data, error } = await apiClient.query('clients', {
+      select:
+        options?.select ||
+        'id, client_id, instrument_id, relationship_type, notes, display_order, created_at',
       eq: options?.eq,
       order: options?.orderBy,
       limit: options?.limit,
@@ -283,55 +499,52 @@ class DataService {
     if (error) {
       return { data: null, error: error as AppError };
     }
+    const normalized = data ? normalizeClients(data) : null;
     if (data) {
       updateCacheTimestamp('clients');
     }
-    return { data: data || null, error: null };
+    return { data: normalized, error: null };
   }
 
   async fetchClientById(id: string): Promise<Result<Client>> {
-    const { data, error } = await apiClient.query<Client>('clients', {
+    const { data, error } = await apiClient.query('clients', {
       eq: { column: 'id', value: id },
       limit: 1,
     });
     if (error) {
       return { data: null, error: error as AppError };
     }
-    return { data: data?.[0] || null, error: null };
+    const client = data?.[0] ? normalizeClientRow(data[0]) : null;
+    return { data: client, error: null };
   }
 
   async createClient(
     clientData: Omit<Client, 'id' | 'created_at'>
   ): Promise<Result<Client>> {
-    const { data, error } = await apiClient.create<Client>(
-      'clients',
-      clientData
-    );
+    const { data, error } = await apiClient.create('clients', clientData);
     if (error) {
       return { data: null, error: error as AppError };
     }
     if (data) {
       invalidateCache('clients');
     }
-    return { data: data || null, error: null };
+    const created = data ? normalizeClientRow(data) : null;
+    return { data: created, error: null };
   }
 
   async updateClient(
     id: string,
     clientData: Partial<Client>
   ): Promise<Result<Client>> {
-    const { data, error } = await apiClient.update<Client>(
-      'clients',
-      id,
-      clientData
-    );
+    const { data, error } = await apiClient.update('clients', id, clientData);
     if (error) {
       return { data: null, error: error as AppError };
     }
     if (data) {
       invalidateCache('clients');
     }
-    return { data: data || null, error: null };
+    const updated = data ? normalizeClientRow(data) : null;
+    return { data: updated, error: null };
   }
 
   async deleteClient(
@@ -350,9 +563,9 @@ class DataService {
   // ============================================================================
 
   async fetchInstruments(
-    options?: FetchOptions
+    options?: EntityFetchOptions<'instruments'>
   ): Promise<Result<Instrument[]>> {
-    const { data, error } = await apiClient.query<Instrument>('instruments', {
+    const { data, error } = await apiClient.query('instruments', {
       select: options?.select,
       eq: options?.eq,
       order: options?.orderBy,
@@ -364,24 +577,26 @@ class DataService {
     if (data) {
       updateCacheTimestamp('instruments');
     }
-    return { data: data || null, error: null };
+    const normalized = data ? normalizeInstruments(data) : null;
+    return { data: normalized, error: null };
   }
 
   async fetchInstrumentById(id: string): Promise<Result<Instrument>> {
-    const { data, error } = await apiClient.query<Instrument>('instruments', {
+    const { data, error } = await apiClient.query('instruments', {
       eq: { column: 'id', value: id },
       limit: 1,
     });
     if (error) {
       return { data: null, error: error as AppError };
     }
-    return { data: data?.[0] || null, error: null };
+    const instrument = data?.[0] ? normalizeInstrumentRow(data[0]) : null;
+    return { data: instrument, error: null };
   }
 
   async createInstrument(
     instrumentData: Omit<Instrument, 'id' | 'created_at'>
   ): Promise<Result<Instrument>> {
-    const { data, error } = await apiClient.create<Instrument>(
+    const { data, error } = await apiClient.create(
       'instruments',
       instrumentData
     );
@@ -391,26 +606,27 @@ class DataService {
     if (data) {
       invalidateCache('instruments');
     }
-    return { data: data || null, error: null };
+    const created = data ? normalizeInstrumentRow(data) : null;
+    return { data: created, error: null };
   }
 
   async updateInstrument(
     id: string,
     instrumentData: Partial<Instrument>
   ): Promise<Result<Instrument>> {
-    const { data, error } = await apiClient.update<Instrument>(
+    const { data, error } = await apiClient.update(
       'instruments',
       id,
       instrumentData
     );
-    if (!error && data) {
-      invalidateCache('instruments');
-      return { data, error: null };
-    }
     if (error) {
       return { data: null, error: error as AppError };
     }
-    return { data: null, error: null };
+    if (data) {
+      invalidateCache('instruments');
+    }
+    const updated = data ? normalizeInstrumentRow(data) : null;
+    return { data: updated, error: null };
   }
 
   async deleteInstrument(
@@ -430,25 +646,23 @@ class DataService {
 
   // ✅ FIXED: TableName 유니언 타입 사용 (캐스팅 개선)
   async fetchConnections(
-    options?: FetchOptions
+    options?: EntityFetchOptions<'connections'>
   ): Promise<Result<ClientInstrument[]>> {
-    const { data, error } = await apiClient.query<ClientInstrument>(
-      'connections' as keyof typeof ALLOWED_SORT_COLUMNS,
-      {
-        select:
-          options?.select || '*, client:clients(*), instrument:instruments(*)',
-        eq: options?.eq,
-        order: options?.orderBy,
-        limit: options?.limit,
-      }
-    );
-    if (error) {
-      return { data: null, error: error as AppError };
-    }
-    if (data) {
-      updateCacheTimestamp('connections');
-    }
-    return { data: data || null, error: null };
+    const { data, error } = await apiClient.query('connections', {
+      // ✅ nested join 제거 (clients/instruments는 따로 fetch하니까 중복)
+      select:
+        options?.select ||
+        'id, client_id, instrument_id, relationship_type, notes, display_order, created_at',
+      eq: options?.eq,
+      order: options?.orderBy,
+      limit: options?.limit,
+    });
+
+    if (error) return { data: null, error: error as AppError };
+    if (data) updateCacheTimestamp('connections');
+
+    const normalized = data ? normalizeClientInstruments(data) : null;
+    return { data: normalized, error: null };
   }
 
   async createConnection(
@@ -457,8 +671,8 @@ class DataService {
       'id' | 'created_at' | 'client' | 'instrument'
     >
   ): Promise<Result<ClientInstrument>> {
-    const { data, error } = await apiClient.create<ClientInstrument>(
-      'client_instruments',
+    const { data, error } = await apiClient.create(
+      'connections',
       connectionData
     );
     if (error) {
@@ -467,15 +681,16 @@ class DataService {
     if (data) {
       invalidateCache('connections');
     }
-    return { data: data || null, error: null };
+    const created = data ? normalizeClientInstrumentRow(data) : null;
+    return { data: created, error: null };
   }
 
   async updateConnection(
     id: string,
     connectionData: Partial<ClientInstrument>
   ): Promise<Result<ClientInstrument>> {
-    const { data, error } = await apiClient.update<ClientInstrument>(
-      'client_instruments',
+    const { data, error } = await apiClient.update(
+      'connections',
       id,
       connectionData
     );
@@ -485,13 +700,14 @@ class DataService {
     if (data) {
       invalidateCache('connections');
     }
-    return { data: data || null, error: null };
+    const updated = data ? normalizeClientInstrumentRow(data) : null;
+    return { data: updated, error: null };
   }
 
   async deleteConnection(
     id: string
   ): Promise<{ success: boolean; error: AppError | null }> {
-    const { success, error } = await apiClient.delete('client_instruments', id);
+    const { success, error } = await apiClient.delete('connections', id);
     if (success) {
       invalidateCache('connections');
       return { success: true, error: null };
@@ -556,24 +772,24 @@ class DataService {
           updateCacheTimestamp('maintenance_tasks');
         }
 
-        return { data: data as MaintenanceTask[], error };
+        const rows = (data ?? []) as TableRowMap['maintenance_tasks'][];
+        const normalized = normalizeMaintenanceTasks(rows);
+        return { data: normalized, error };
       },
       { operation: 'fetchMaintenanceTasks', filters }
     );
   }
 
   async fetchMaintenanceTaskById(id: string): Promise<Result<MaintenanceTask>> {
-    const { data, error } = await apiClient.query<MaintenanceTask>(
-      'maintenance_tasks',
-      {
-        eq: { column: 'id', value: id },
-        limit: 1,
-      }
-    );
+    const { data, error } = await apiClient.query('maintenance_tasks', {
+      eq: { column: 'id', value: id },
+      limit: 1,
+    });
     if (error) {
       return { data: null, error: error as AppError };
     }
-    return { data: data?.[0] || null, error: null };
+    const task = data?.[0] ? normalizeMaintenanceTaskRow(data[0]) : null;
+    return { data: task, error: null };
   }
 
   async createMaintenanceTask(
@@ -582,17 +798,15 @@ class DataService {
       'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
     >
   ): Promise<Result<MaintenanceTask>> {
-    const { data, error } = await apiClient.create<MaintenanceTask>(
-      'maintenance_tasks',
-      task
-    );
+    const { data, error } = await apiClient.create('maintenance_tasks', task);
     if (error) {
       return { data: null, error: error as AppError };
     }
     if (data) {
       invalidateCache('maintenance_tasks');
     }
-    return { data: data || null, error: null };
+    const created = data ? normalizeMaintenanceTaskRow(data) : null;
+    return { data: created, error: null };
   }
 
   async updateMaintenanceTask(
@@ -604,7 +818,7 @@ class DataService {
       >
     >
   ): Promise<Result<MaintenanceTask>> {
-    const { data, error } = await apiClient.update<MaintenanceTask>(
+    const { data, error } = await apiClient.update(
       'maintenance_tasks',
       id,
       updates
@@ -615,7 +829,8 @@ class DataService {
     if (data) {
       invalidateCache('maintenance_tasks');
     }
-    return { data: data || null, error: null };
+    const updated = data ? normalizeMaintenanceTaskRow(data) : null;
+    return { data: updated, error: null };
   }
 
   async deleteMaintenanceTask(
@@ -657,7 +872,9 @@ class DataService {
           updateCacheTimestamp('maintenance_tasks');
         }
 
-        return { data: data as MaintenanceTask[], error };
+        const rows = (data ?? []) as TableRowMap['maintenance_tasks'][];
+        const normalized = normalizeMaintenanceTasks(rows);
+        return { data: normalized, error };
       },
       { operation: 'fetchTasksByDateRange', startDate, endDate }
     );
@@ -666,17 +883,15 @@ class DataService {
   async fetchTasksByScheduledDate(
     date: string
   ): Promise<Result<MaintenanceTask[]>> {
-    const { data, error } = await apiClient.query<MaintenanceTask>(
-      'maintenance_tasks',
-      {
-        eq: { column: 'scheduled_date', value: date },
-        order: { column: 'priority', ascending: false },
-      }
-    );
+    const { data, error } = await apiClient.query('maintenance_tasks', {
+      eq: { column: 'scheduled_date', value: date },
+      order: { column: 'priority', ascending: false },
+    });
     if (error) {
       return { data: null, error: error as AppError };
     }
-    return { data: data || null, error: null };
+    const normalized = data ? normalizeMaintenanceTasks(data) : null;
+    return { data: normalized, error: null };
   }
 
   /**
@@ -703,7 +918,9 @@ class DataService {
           updateCacheTimestamp('maintenance_tasks');
         }
 
-        return { data: data as MaintenanceTask[], error };
+        const rows = (data ?? []) as TableRowMap['maintenance_tasks'][];
+        const normalized = normalizeMaintenanceTasks(rows);
+        return { data: normalized, error };
       },
       { operation: 'fetchOverdueTasks' }
     );

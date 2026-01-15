@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next';
 import path from 'path';
+// NOTE: keep config deterministic across environments
 
 let withBundleAnalyzer = (config: NextConfig): NextConfig => config;
 try {
@@ -30,9 +31,9 @@ const baseConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname),
   images: {
     formats: ['image/avif', 'image/webp'],
-    minimumCacheTTL: 60 * 60 * 24, // 1 day
-    // 외부 이미지 도메인 허용 (Supabase Storage 등)
+    minimumCacheTTL: 60 * 60 * 24,
     remotePatterns: [
+      // ✅ Supabase
       {
         protocol: 'https',
         hostname: '**.supabase.co',
@@ -43,11 +44,18 @@ const baseConfig: NextConfig = {
         hostname: '**.supabase.in',
         pathname: '/storage/v1/object/public/**',
       },
+
+      // ✅ AWS S3 (이게 빠져 있었음)
+      {
+        protocol: 'https',
+        hostname: 'hc-bows.s3.us-west-1.amazonaws.com',
+        pathname: '/**',
+      },
     ],
-    // Lazy loading 기본 활성화 (priority prop으로 override 가능)
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
   },
+
   experimental: {
     optimizePackageImports: [
       'date-fns',
@@ -193,13 +201,10 @@ const baseConfig: NextConfig = {
         },
       };
 
-      if (dev) {
-        config.optimization = {
-          ...config.optimization,
-          splitChunks: splitChunksConfig,
-        };
-      } else {
-        // Production 최적화
+      // ✅ 안정성: dev(HMR)에서는 splitChunks를 강제하지 않는 편이 안전함
+      // - Next(App Router)의 기본 chunking + HMR과 충돌해서 ChunkLoadError, reload loop 등이 생길 수 있음
+      // - 실제 번들 최적화는 production에서만 적용해도 충분
+      if (!dev) {
         config.optimization = {
           ...config.optimization,
           splitChunks: splitChunksConfig,
@@ -232,7 +237,9 @@ const baseConfig: NextConfig = {
         ],
       },
       {
-        source: '/:all*(js|css|svg|png|jpg|jpeg|gif|webp|avif)',
+        // ✅ 캐시: Next가 빌드 시 생성하는 해시 기반 정적 파일에만 immutable 적용
+        // (해시 없는 경로까지 immutable 걸면 업데이트 후에도 캐시가 남는 문제가 생길 수 있음)
+        source: '/_next/static/:path*',
         headers: [
           {
             key: 'Cache-Control',

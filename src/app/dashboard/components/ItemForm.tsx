@@ -115,10 +115,6 @@ function ItemForm({
       // FIXED: Don't update formData.price - use priceInput directly
       // priceInput will be set via handlePriceChange
       handlePriceChange(selectedItem.price?.toString() || '');
-      // ✅ NOTE: certificate null → false 변환은 의도된 UX
-      // DB는 boolean | null이지만, 폼에서는 checkbox로 boolean만 다룸
-      // "Unknown" 상태는 폼에서 명시적으로 선택할 수 없음 (현재 UX 설계)
-      updateField('certificate', selectedItem.certificate ?? false);
       updateField('size', selectedItem.size || '');
       updateField('weight', selectedItem.weight || '');
       updateField('ownership', selectedItem.ownership || '');
@@ -268,7 +264,7 @@ function ItemForm({
           const priceNum = Number(normalizedPrice);
           return Number.isFinite(priceNum) ? priceNum : null;
         })(),
-        certificate: formData.certificate,
+        certificate: null,
         size: formData.size?.trim() || null,
         weight: formData.weight?.trim() || null,
         ownership: formData.ownership?.trim() || null,
@@ -347,28 +343,20 @@ function ItemForm({
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
     >
   ) => {
-    const { name, value, type } = e.target;
-    if (type === 'checkbox') {
-      updateField(
-        name as keyof typeof formData,
-        (e.target as HTMLInputElement).checked as boolean
-      );
-    } else {
-      updateField(name as keyof typeof formData, value as string);
-
-      // 타입이 변경되면 serial number 자동 재생성 (새 악기 추가 시에만)
-      // FIXED: Only auto-generate when serial was auto-generated (or empty) to avoid clobbering user edits
-      if (name === 'type' && !isEditing) {
-        const current = formData.serial_number?.trim();
-        const shouldAuto = !current || current === lastAutoSerialRef.current;
-        if (shouldAuto) {
-          const newSerialNumber = generateInstrumentSerialNumber(
-            value || null,
-            existingSerialNumbers
-          );
-          lastAutoSerialRef.current = newSerialNumber;
-          updateField('serial_number', newSerialNumber);
-        }
+    const { name, value } = e.target;
+    updateField(name as keyof typeof formData, value as string);
+    // 타입이 변경되면 serial number 자동 재생성 (새 악기 추가 시에만)
+    // FIXED: Only auto-generate when serial was auto-generated (or empty) to avoid clobbering user edits
+    if (name === 'type' && !isEditing) {
+      const current = formData.serial_number?.trim();
+      const shouldAuto = !current || current === lastAutoSerialRef.current;
+      if (shouldAuto) {
+        const newSerialNumber = generateInstrumentSerialNumber(
+          value || null,
+          existingSerialNumbers
+        );
+        lastAutoSerialRef.current = newSerialNumber;
+        updateField('serial_number', newSerialNumber);
       }
     }
   };
@@ -715,22 +703,6 @@ function ItemForm({
                   })}
                 </div>
               )}
-            </div>
-
-            <div>
-              <label className="flex items-center">
-                <input
-                  id="certificate"
-                  type="checkbox"
-                  name="certificate"
-                  checked={formData.certificate}
-                  onChange={handleInputChange}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-700">
-                  Has Certificate
-                </span>
-              </label>
             </div>
 
             <div>

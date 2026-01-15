@@ -21,7 +21,6 @@ import {
 import { Button } from '@/components/common/inputs';
 import type { MaintenanceTask, ContactLog } from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
-import { apiFetch } from '@/utils/apiFetch';
 import { useCalendarNavigation, useCalendarView } from './hooks';
 import {
   CALENDAR_MESSAGES,
@@ -55,6 +54,42 @@ export default function CalendarPage() {
     useState<MaintenanceTask | null>(null);
   const [modalDefaultDate, setModalDefaultDate] = useState<string>('');
   const [draggingEventId, setDraggingEventId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchFollowUps = async () => {
+      try {
+        const response = await fetch('/api/contacts?hasFollowUp=true');
+        const payload = await response.json();
+
+        if (!response.ok) {
+          const errorMessage =
+            (payload && typeof payload === 'object' && 'error' in payload
+              ? (payload as { error?: string }).error
+              : undefined) ||
+            (payload && typeof payload === 'object' && 'message' in payload
+              ? (payload as { message?: string }).message
+              : undefined) ||
+            'Failed to fetch follow-ups';
+
+          throw new Error(errorMessage);
+        }
+
+        if (!isMounted) return;
+        // follow-up data is temporarily unused; retain for future UI hooks
+      } catch (error) {
+        if (!isMounted) return;
+        handleError(error, 'Fetch follow-ups');
+      }
+    };
+
+    void fetchFollowUps();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [handleError]);
 
   // Calendar data hooks
   const {
@@ -114,36 +149,6 @@ export default function CalendarPage() {
 
   // Calendar view (calendar/list toggle)
   const { view, setView } = useCalendarView();
-
-  // Fetch contact logs for follow-ups
-  const [contactLogs, setContactLogs] = useState<ContactLog[]>([]);
-
-  const fetchContactLogs = useCallback(async () => {
-    try {
-      // Fetch all follow-ups (past, today, and future) for calendar display
-      // hasFollowUp=true gets all logs with next_follow_up_date set (regardless of date)
-      // ✅ FIXED: Use apiFetch to include authentication headers
-      const response = await apiFetch(`/api/contacts?hasFollowUp=true`);
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to fetch contact logs');
-      }
-
-      // Filter to only include incomplete follow-ups (not completed)
-      const incompleteFollowUps = (result.data || []).filter(
-        (log: ContactLog) => !log.follow_up_completed_at
-      );
-
-      setContactLogs(incompleteFollowUps);
-    } catch (error) {
-      handleError(error, 'Fetch follow-ups');
-    }
-  }, [handleError]);
-
-  useEffect(() => {
-    fetchContactLogs();
-  }, [fetchContactLogs]);
 
   const handleOpenNewTask = useCallback(() => {
     setModalDefaultDate('');
@@ -437,7 +442,6 @@ export default function CalendarPage() {
       >
         <CalendarContent
           tasks={tasks}
-          contactLogs={contactLogs}
           instruments={instruments}
           clients={clients}
           loading={loading}

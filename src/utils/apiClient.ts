@@ -3,309 +3,425 @@ import { getSupabaseClient } from '@/lib/supabase-client';
 import { logApiRequest, logError } from './logger';
 import { captureException } from './monitoring';
 import { ErrorSeverity } from '@/types/errors';
-import { validateSortColumn, ALLOWED_SORT_COLUMNS } from './inputValidation';
+import type { PostgrestSingleResponse } from '@supabase/supabase-js';
 
-// FIXED: Use unified getSupabaseClient() to ensure single instance
-// This prevents Multiple GoTrueClient instances warning
+import type { PostgrestError } from '@supabase/postgrest-js';
+import {
+  validateSortColumn,
+  validateFilterColumn,
+  ALLOWED_SORT_COLUMNS,
+} from './inputValidation';
+import type { Database } from '@/types/database';
 
-// Safe timing helper that works in both browser and Node.js/SSR
-const nowMs = (): number => {
-  if (typeof globalThis !== 'undefined' && globalThis.performance?.now) {
-    const perfNow = globalThis.performance.now();
-    return typeof perfNow === 'number' ? perfNow : Date.now();
-  }
-  return Date.now();
+const nowMs = (): number =>
+  typeof globalThis !== 'undefined' && globalThis.performance?.now
+    ? globalThis.performance.now()
+    : Date.now();
+
+export type AppError = ReturnType<typeof errorHandler.handleSupabaseError>;
+export type ApiResult<T> =
+  | { data: T; error: null }
+  | { data: null; error: AppError };
+
+export type TableName =
+  | 'clients'
+  | 'instruments'
+  | 'connections'
+  | 'maintenance_tasks'
+  | 'sales_history';
+
+type DbTableName = keyof Database['public']['Tables'];
+
+export const TABLE_TO_DB = {
+  clients: 'clients',
+  instruments: 'instruments',
+  connections: 'client_instruments',
+  maintenance_tasks: 'maintenance_tasks',
+  sales_history: 'sales_history',
+} as const satisfies Record<TableName, DbTableName>;
+
+type AllowedTables = keyof typeof ALLOWED_SORT_COLUMNS;
+type DbTableOf<K extends TableName> = (typeof TABLE_TO_DB)[K];
+type DbTableInfo<K extends TableName> =
+  Database['public']['Tables'][DbTableOf<K>];
+
+export type AllowedColumn<K extends AllowedTables> =
+  (typeof ALLOWED_SORT_COLUMNS)[K][number] & string;
+
+export type TableRowMap = {
+  [K in TableName]: DbTableInfo<K>['Row'];
+};
+
+type EqValue<K extends TableName> = TableRowMap[K][AllowedColumn<
+  K & AllowedTables
+> &
+  keyof TableRowMap[K]];
+
+export type QueryFilter<K extends TableName> = {
+  column: AllowedColumn<K & AllowedTables>;
+  value: EqValue<K>;
+};
+
+export type QueryOptions<K extends TableName> = {
+  select?: string;
+  eq?: QueryFilter<K>;
+  order?: { column: AllowedColumn<K & AllowedTables>; ascending?: boolean };
+  limit?: number;
+  offset?: number;
 };
 
 export class ApiClient {
   private static instance: ApiClient;
 
   static getInstance(): ApiClient {
-    if (!ApiClient.instance) {
-      ApiClient.instance = new ApiClient();
-    }
+    if (!ApiClient.instance) ApiClient.instance = new ApiClient();
     return ApiClient.instance;
   }
 
-  async query<T>(
-    table: keyof typeof ALLOWED_SORT_COLUMNS,
-    options?: {
-      select?: string;
-      eq?: { column: string; value: unknown };
-      order?: { column: string; ascending?: boolean };
-      limit?: number;
-    }
-  ): Promise<{ data: T[] | null; error: unknown }> {
+  private getDbTable<K extends TableName>(table: K): DbTableName {
+    return TABLE_TO_DB[table];
+  }
+
+  private handleQueryError(
+    operation: string,
+    table: TableName,
+    duration: number,
+    error: unknown,
+    url: string,
+    extra?: Record<string, unknown>
+  ): ApiResult<never> {
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      `${operation} ${table}`
+    );
+    logApiRequest('GET', url, undefined, duration, 'ApiClient', {
+      table,
+      operation,
+      error: true,
+      errorCode: (appError as { code?: string })?.code,
+      ...extra,
+    });
+    captureException(
+      appError,
+      `ApiClient.${operation}(${table})`,
+      { table, operation, duration, originalError: error },
+      ErrorSeverity.MEDIUM
+    );
+    return { data: null, error: appError };
+  }
+
+  async query<K extends TableName>(
+    table: K,
+    options?: QueryOptions<K>
+  ): Promise<ApiResult<TableRowMap[K][]>> {
     const startTime = nowMs();
-    const url = `supabase://${table}`;
+    const url = `supabase://${String(table)}`;
 
     try {
       const supabase = await getSupabaseClient();
-      let query = supabase.from(table).select(options?.select || '*');
+      const dbTable = this.getDbTable(table) as DbTableOf<K>;
+      let q = supabase
+        .from<DbTableOf<K>, DbTableInfo<K>>(dbTable)
+        .select(options?.select ?? '*');
 
       if (options?.eq) {
-        query = query.eq(options.eq.column, options.eq.value);
+        const safeColumn = validateFilterColumn(
+          table as K & AllowedTables,
+          options.eq.column
+        ) as AllowedColumn<K & AllowedTables>;
+        const columnKey = safeColumn as Extract<
+          keyof DbTableInfo<K>['Row'],
+          string
+        >;
+        const value = options.eq
+          .value as DbTableInfo<K>['Row'][typeof columnKey];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        q = (q as any).eq(columnKey, value);
       }
 
-      // SECURITY: Validate order column against whitelist to prevent injection
       if (options?.order) {
         const safeColumn = validateSortColumn(
-          table,
+          table as K & AllowedTables,
           options.order.column ?? null
         );
-        query = query.order(safeColumn, {
-          ascending: options.order.ascending ?? true,
-        });
+        q = q.order(safeColumn, { ascending: options.order.ascending ?? true });
       }
 
-      if (options?.limit) {
-        query = query.limit(options.limit);
+      const hasLimit = typeof options?.limit === 'number';
+      const hasOffset = typeof options?.offset === 'number';
+
+      if (hasLimit || hasOffset) {
+        const limit = options?.limit ?? 1000;
+        const offset = options?.offset ?? 0;
+        if (hasLimit) {
+          q = q.limit(limit);
+        }
+        if (limit === 0) {
+          const duration = Math.round(nowMs() - startTime);
+          logApiRequest('GET', url, 200, duration, 'ApiClient', {
+            table,
+            operation: 'query',
+            recordCount: 0,
+            note: 'limit=0 short-circuit',
+          });
+          return { data: [], error: null };
+        }
+        q = q.range(offset, offset + limit - 1);
       }
 
-      const queryResult = await query;
-      const { data, error } = queryResult;
+      const result = (await q) as {
+        data: TableRowMap[K][] | null;
+        error: PostgrestError | null;
+      };
+      const { data, error } = result;
       const duration = Math.round(nowMs() - startTime);
 
       if (error) {
-        const appError = errorHandler.handleSupabaseError(
-          error,
-          `Query ${table}`
-        );
-        logApiRequest('GET', url, undefined, duration, 'ApiClient', {
-          table,
-          operation: 'query',
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-        });
-        captureException(
-          appError,
-          `ApiClient.query(${table})`,
-          { table, operation: 'query', duration },
-          ErrorSeverity.MEDIUM
-        );
-        return { data: null, error: appError };
+        return this.handleQueryError('query', table, duration, error, url);
       }
 
+      const recordCount = Array.isArray(data) ? data.length : 0;
       logApiRequest('GET', url, 200, duration, 'ApiClient', {
         table,
         operation: 'query',
-        recordCount: data?.length || 0,
+        recordCount,
       });
-
-      return { data: data as T[], error: null };
-    } catch (error) {
+      const normalized = Array.isArray(data) ? (data as TableRowMap[K][]) : [];
+      return { data: normalized, error: null };
+    } catch (err) {
       const duration = Math.round(nowMs() - startTime);
       const appError = errorHandler.handleSupabaseError(
-        error,
-        `Query ${table}`
+        err,
+        `Query ${String(table)}`
       );
-      logError(`Query failed: ${table}`, error, 'ApiClient', {
+      logError(`Query failed: ${String(table)}`, err, 'ApiClient', {
         table,
         operation: 'query',
         duration,
       });
       captureException(
-        error,
-        `ApiClient.query(${table})`,
-        { table, operation: 'query', duration },
+        appError,
+        `ApiClient.query(${String(table)})`,
+        { table, operation: 'query', duration, originalError: err },
         ErrorSeverity.HIGH
       );
       return { data: null, error: appError };
     }
   }
 
-  async create<T>(
-    table: string,
-    data: Record<string, unknown>
-  ): Promise<{ data: T | null; error: unknown }> {
-    const startTime = nowMs();
-    const url = `supabase://${table}`;
+  private logAndCapture(
+    method: 'create' | 'update' | 'delete',
+    table: TableName,
+    duration: number,
+    error: AppError | null,
+    payload?: { recordId?: string }
+  ) {
+    logApiRequest(
+      method === 'create' ? 'POST' : method === 'update' ? 'PUT' : 'DELETE',
+      `supabase://${table}/${method}`,
+      error
+        ? undefined
+        : method === 'delete'
+          ? payload?.recordId
+            ? 200
+            : undefined
+          : 200,
+      duration,
+      'ApiClient',
+      {
+        table,
+        operation: method,
+        recordId: payload?.recordId,
+        error: Boolean(error),
+        errorCode: (error as { code?: string })?.code,
+      }
+    );
+  }
 
+  private captureAndHandle(
+    method: 'create' | 'update' | 'delete',
+    table: TableName,
+    duration: number,
+    error: unknown,
+    context: Record<string, unknown>
+  ): AppError {
+    const appError = errorHandler.handleSupabaseError(
+      error,
+      `${method} ${table}`
+    );
+    captureException(
+      appError,
+      `ApiClient.${method}(${table})`,
+      { table, operation: method, duration, ...context },
+      ErrorSeverity.MEDIUM
+    );
+    return appError;
+  }
+
+  async create<K extends TableName>(
+    table: K,
+    payload: DbTableInfo<K>['Insert']
+  ): Promise<ApiResult<TableRowMap[K]>> {
+    const startTime = nowMs();
     try {
       const supabase = await getSupabaseClient();
-      const { data: result, error } = await supabase
-        .from(table)
-        .insert([data])
+      const dbTable = this.getDbTable(table) as DbTableOf<K>;
+      const response = (await supabase
+        .from(dbTable)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .insert([payload as any])
         .select()
-        .single();
+        .single()) as {
+        data: DbTableInfo<K>['Row'] | null;
+        error: PostgrestError | null;
+      };
+      const { data, error } = response;
+      const duration = Math.round(nowMs() - startTime);
 
-      const duration = Math.round(performance.now() - startTime);
-
-      if (error) {
-        const appError = errorHandler.handleSupabaseError(
-          error,
-          `Create ${table}`
-        );
-        logApiRequest('POST', url, undefined, duration, 'ApiClient', {
+      if (error || !data) {
+        const appError = this.captureAndHandle(
+          'create',
           table,
-          operation: 'create',
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-        });
-        captureException(
-          appError,
-          `ApiClient.create(${table})`,
-          { table, operation: 'create', duration },
-          ErrorSeverity.MEDIUM
+          duration,
+          error ?? new Error('Create operation failed'),
+          {
+            originalError: error,
+          }
         );
+        this.logAndCapture('create', table, duration, appError);
         return { data: null, error: appError };
       }
 
-      logApiRequest('POST', url, 201, duration, 'ApiClient', {
-        table,
-        operation: 'create',
-        recordId: (result as { id?: string })?.id,
+      const normalized = data as TableRowMap[K];
+      this.logAndCapture('create', table, duration, null, {
+        recordId: normalized?.id,
       });
-
-      return { data: result, error: null };
-    } catch (error) {
+      return { data: normalized, error: null };
+    } catch (err) {
       const duration = Math.round(nowMs() - startTime);
-      const appError = errorHandler.handleSupabaseError(
-        error,
-        `Create ${table}`
+      const appError = this.captureAndHandle(
+        'create',
+        table,
+        duration,
+        err,
+        {}
       );
-      logError(`Create failed: ${table}`, error, 'ApiClient', {
+      this.logAndCapture('create', table, duration, appError);
+      logError(`Create failed: ${String(table)}`, err, 'ApiClient', {
         table,
         operation: 'create',
         duration,
       });
-      captureException(
-        error,
-        `ApiClient.create(${table})`,
-        { table, operation: 'create', duration },
-        ErrorSeverity.HIGH
-      );
       return { data: null, error: appError };
     }
   }
 
-  async update<T>(
-    table: string,
+  async update<K extends TableName>(
+    table: K,
     id: string,
-    data: Record<string, unknown>
-  ): Promise<{ data: T | null; error: unknown }> {
+    payload: DbTableInfo<K>['Update']
+  ): Promise<ApiResult<TableRowMap[K]>> {
     const startTime = nowMs();
-    const url = `supabase://${table}/${id}`;
 
     try {
       const supabase = await getSupabaseClient();
-      const { data: result, error } = await supabase
-        .from(table)
-        .update(data)
-        .eq('id', id)
-        .select()
-        .single();
+      const dbTable = this.getDbTable(table) as DbTableOf<K>;
 
-      const duration = Math.round(performance.now() - startTime);
+      const response: PostgrestSingleResponse<DbTableInfo<K>['Row']> =
+        await supabase
+          .from(dbTable)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .update(payload as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .eq('id' as any, id as any)
+          .select()
+          .single();
 
-      if (error) {
-        const appError = errorHandler.handleSupabaseError(
-          error,
-          `Update ${table}`
-        );
-        logApiRequest('PATCH', url, undefined, duration, 'ApiClient', {
+      const { data, error } = response;
+      const duration = Math.round(nowMs() - startTime);
+
+      if (error || !data) {
+        const appError = this.captureAndHandle(
+          'update',
           table,
-          id,
-          operation: 'update',
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-        });
-        captureException(
-          appError,
-          `ApiClient.update(${table})`,
-          { table, id, operation: 'update', duration },
-          ErrorSeverity.MEDIUM
+          duration,
+          error ?? new Error('Update operation failed'),
+          { originalError: error }
         );
+        this.logAndCapture('update', table, duration, appError);
         return { data: null, error: appError };
       }
 
-      logApiRequest('PATCH', url, 200, duration, 'ApiClient', {
-        table,
-        id,
-        operation: 'update',
+      const normalized = data as TableRowMap[K];
+      this.logAndCapture('update', table, duration, null, {
+        recordId: normalized?.id,
       });
-
-      return { data: result, error: null };
-    } catch (error) {
+      return { data: normalized, error: null };
+    } catch (err: unknown) {
       const duration = Math.round(nowMs() - startTime);
-      const appError = errorHandler.handleSupabaseError(
-        error,
-        `Update ${table}`
-      );
-      logError(`Update failed: ${table}`, error, 'ApiClient', {
-        table,
+      const appError = this.captureAndHandle('update', table, duration, err, {
         id,
+      });
+      this.logAndCapture('update', table, duration, appError);
+      logError(`Update failed: ${String(table)}`, err, 'ApiClient', {
+        table,
         operation: 'update',
         duration,
       });
-      captureException(
-        error,
-        `ApiClient.update(${table})`,
-        { table, id, operation: 'update', duration },
-        ErrorSeverity.HIGH
-      );
       return { data: null, error: appError };
     }
   }
 
-  async delete(
-    table: string,
+  async delete<K extends TableName>(
+    table: K,
     id: string
-  ): Promise<{ success: boolean; error: unknown }> {
+  ): Promise<{ success: boolean; error: AppError | null }> {
     const startTime = nowMs();
-    const url = `supabase://${table}/${id}`;
-
     try {
       const supabase = await getSupabaseClient();
-      const { error } = await supabase.from(table).delete().eq('id', id);
+      const dbTable = this.getDbTable(table) as DbTableOf<K>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const builder = supabase.from(dbTable) as any;
+      const response = (await builder
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single()) as {
+        data: DbTableInfo<K>['Row'] | null;
+        error: PostgrestError | null;
+      };
+      const { data, error } = response;
+
       const duration = Math.round(nowMs() - startTime);
 
-      if (error) {
-        const appError = errorHandler.handleSupabaseError(
-          error,
-          `Delete ${table}`
-        );
-        logApiRequest('DELETE', url, undefined, duration, 'ApiClient', {
+      if (error || !data) {
+        const appError = this.captureAndHandle(
+          'delete',
           table,
-          id,
-          operation: 'delete',
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-        });
-        captureException(
-          appError,
-          `ApiClient.delete(${table})`,
-          { table, id, operation: 'delete', duration },
-          ErrorSeverity.MEDIUM
+          duration,
+          error ?? new Error('Delete operation failed'),
+          {
+            originalError: error,
+          }
         );
+        this.logAndCapture('delete', table, duration, appError);
         return { success: false, error: appError };
       }
 
-      logApiRequest('DELETE', url, 204, duration, 'ApiClient', {
-        table,
-        id,
-        operation: 'delete',
-      });
-
+      const recordId = (data as { id?: string })?.id;
+      this.logAndCapture('delete', table, duration, null, { recordId });
       return { success: true, error: null };
-    } catch (error) {
+    } catch (err) {
       const duration = Math.round(nowMs() - startTime);
-      const appError = errorHandler.handleSupabaseError(
-        error,
-        `Delete ${table}`
-      );
-      logError(`Delete failed: ${table}`, error, 'ApiClient', {
-        table,
+      const appError = this.captureAndHandle('delete', table, duration, err, {
         id,
+      });
+      this.logAndCapture('delete', table, duration, appError);
+      logError(`Delete failed: ${String(table)}`, err, 'ApiClient', {
+        table,
         operation: 'delete',
         duration,
       });
-      captureException(
-        error,
-        `ApiClient.delete(${table})`,
-        { table, id, operation: 'delete', duration },
-        ErrorSeverity.HIGH
-      );
       return { success: false, error: appError };
     }
   }

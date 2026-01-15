@@ -108,23 +108,61 @@ export const uuidSchema = z.string().uuid();
 /**
  * Instrument Schema
  */
-export const instrumentSchema: z.ZodType<Instrument> = z.object({
-  id: uuidSchema,
-  status: instrumentStatusSchema,
-  maker: z.string().nullable(),
-  type: z.string().nullable(),
-  subtype: z.string().nullable(),
-  year: z.number().nullable(),
-  certificate: z.boolean(),
-  size: z.string().nullable(),
-  weight: z.string().nullable(),
-  price: z.number().nullable(),
-  ownership: z.string().nullable(),
-  note: z.string().nullable(),
-  serial_number: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string().optional(),
-});
+type InstrumentTransformInput = Record<string, unknown> & {
+  has_certificate?: boolean;
+  certificate?: boolean;
+  certificate_name?: unknown;
+};
+
+export const instrumentSchema: z.ZodType<Instrument> = z
+  .object({
+    id: uuidSchema,
+    status: instrumentStatusSchema,
+    maker: z.string().nullable(),
+    type: z.string().nullable(),
+    subtype: z.string().nullable(),
+    year: z.number().nullable(),
+    // legacy field (some payloads still use this)
+    certificate: z.boolean().optional().default(false),
+    // new field (may be missing in older fixtures/responses)
+    has_certificate: z.boolean().optional().default(false),
+    size: z.string().nullable(),
+    weight: z.string().nullable(),
+    price: z.number().nullable(),
+    ownership: z.string().nullable(),
+    note: z.string().nullable(),
+    serial_number: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string().optional(),
+  })
+  // allow extra keys from API without failing (helps when API adds fields)
+  .passthrough()
+  .transform((raw: InstrumentTransformInput) => {
+    const computedHasCert =
+      raw.has_certificate ?? raw.certificate ?? Boolean(raw.certificate_name);
+
+    return {
+      ...raw,
+      has_certificate: computedHasCert,
+      certificate: raw.certificate ?? computedHasCert,
+    } as Instrument;
+  });
+
+export type InstrumentRecord = Record<string, unknown> & {
+  has_certificate?: boolean;
+  certificate?: boolean;
+  certificate_name?: unknown;
+};
+
+export function normalizeInstrument(raw: InstrumentRecord): Instrument {
+  const hasCert =
+    raw.has_certificate ?? raw.certificate ?? Boolean(raw.certificate_name);
+  return {
+    ...(raw as unknown as Instrument),
+    has_certificate: hasCert,
+    certificate: raw.certificate ?? hasCert,
+  };
+}
 
 /**
  * Client Schema
@@ -508,24 +546,38 @@ export function safeValidate<T>(
 /**
  * Partial Instrument Schema for updates
  */
-export const partialInstrumentSchema = z.object({
-  id: uuidSchema.optional(),
-  status: instrumentStatusSchema.optional(),
-  maker: z.string().nullable().optional(),
-  type: z.string().nullable().optional(),
-  subtype: z.string().nullable().optional(),
-  year: z.number().nullable().optional(),
-  certificate: z.boolean().optional(),
-  size: z.string().nullable().optional(),
-  weight: z.string().nullable().optional(),
-  price: z.number().nullable().optional(),
-  ownership: z.string().nullable().optional(),
-  note: z.string().nullable().optional(),
-  serial_number: z.string().nullable().optional(),
-  created_at: z.string().optional(),
-  updated_at: z.string().optional(),
-});
+export const partialInstrumentSchema = z
+  .object({
+    id: uuidSchema.optional(),
+    status: instrumentStatusSchema.optional(),
+    maker: z.string().nullable().optional(),
+    type: z.string().nullable().optional(),
+    subtype: z.string().nullable().optional(),
+    year: z.number().nullable().optional(),
 
+    certificate: z.boolean().optional(),
+    has_certificate: z.boolean().optional(),
+
+    size: z.string().nullable().optional(),
+    weight: z.string().nullable().optional(),
+    price: z.number().nullable().optional(),
+    ownership: z.string().nullable().optional(),
+    note: z.string().nullable().optional(),
+    serial_number: z.string().nullable().optional(),
+    created_at: z.string().optional(),
+    updated_at: z.string().optional(),
+  })
+  .transform(raw => {
+    // For PATCH: only compute if one of the fields is present.
+    if (raw.has_certificate === undefined && raw.certificate === undefined)
+      return raw;
+    const computedHasCert = raw.has_certificate ?? raw.certificate ?? false;
+    return {
+      ...raw,
+      has_certificate: computedHasCert,
+      certificate: raw.certificate ?? computedHasCert,
+    };
+  });
 /**
  * Partial Client Schema for updates
  */
@@ -560,20 +612,32 @@ export const createClientInstrumentSchema = z.object({
 /**
  * Instrument creation schema (for POST requests - without id and created_at)
  */
-export const createInstrumentSchema = z.object({
-  status: instrumentStatusSchema,
-  maker: z.string().nullable(),
-  type: z.string().nullable(),
-  subtype: z.string().nullable(),
-  year: z.number().nullable(),
-  certificate: z.boolean(),
-  size: z.string().nullable(),
-  weight: z.string().nullable(),
-  price: z.number().nullable(),
-  ownership: z.string().nullable(),
-  note: z.string().nullable(),
-  serial_number: z.string().nullable(),
-});
+export const createInstrumentSchema = z
+  .object({
+    status: instrumentStatusSchema,
+    maker: z.string().nullable(),
+    type: z.string().nullable(),
+    subtype: z.string().nullable(),
+    year: z.number().nullable(),
+
+    certificate: z.boolean().optional().default(false),
+    has_certificate: z.boolean().optional(),
+
+    size: z.string().nullable(),
+    weight: z.string().nullable(),
+    price: z.number().nullable(),
+    ownership: z.string().nullable(),
+    note: z.string().nullable(),
+    serial_number: z.string().nullable(),
+  })
+  .transform(raw => {
+    const computedHasCert = raw.has_certificate ?? raw.certificate ?? false;
+    return {
+      ...raw,
+      has_certificate: computedHasCert,
+      certificate: raw.certificate ?? computedHasCert,
+    };
+  });
 
 /**
  * Client creation schema (for POST requests - without id and created_at)

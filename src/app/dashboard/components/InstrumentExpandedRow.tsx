@@ -30,6 +30,16 @@ interface CertificateFile {
   createdAt: string | null;
 }
 
+const CERTIFICATE_CACHE_TTL = 60 * 1000; // 1 minute
+const certificateCache = new Map<
+  string,
+  { data: CertificateFile[]; updatedAt: number }
+>();
+
+export function __resetCertificateCacheForTests() {
+  certificateCache.clear();
+}
+
 export function InstrumentExpandedRow({
   instrument,
   clients = [],
@@ -51,6 +61,7 @@ export function InstrumentExpandedRow({
   } | null>(null);
   const { showSuccess } = useSuccessToastContext();
   const { handleError } = useErrorContext();
+  const hasCertificateFile = certificateFiles.length > 0;
 
   // Request ID counters to handle concurrent requests
   const imageReqIdRef = useRef(0);
@@ -76,17 +87,8 @@ export function InstrumentExpandedRow({
     fetchImages(currentInstrumentId, isStillValid);
     fetchCertificates(currentInstrumentId, isStillValid);
 
-    // Retry certificate fetch after a delay to handle newly uploaded certificates
-    // This is useful when a new item is created and certificates are uploaded immediately
-    const retryTimeout = setTimeout(() => {
-      if (isStillValid()) {
-        fetchCertificates(currentInstrumentId, isStillValid);
-      }
-    }, 1000);
-
     return () => {
       alive = false;
-      clearTimeout(retryTimeout);
     };
   }, [instrument?.id]);
 
@@ -123,11 +125,24 @@ export function InstrumentExpandedRow({
 
   const fetchCertificates = async (
     instrumentId: string,
-    isStillValid?: () => boolean
+    isStillValid?: () => boolean,
+    forceRefresh = false
   ) => {
     const reqId = ++certificateReqIdRef.current;
     setLoadingCertificates(true);
     try {
+      const cached = certificateCache.get(instrumentId);
+      if (
+        !forceRefresh &&
+        cached &&
+        Date.now() - cached.updatedAt < CERTIFICATE_CACHE_TTL
+      ) {
+        if (!isStillValid || isStillValid()) {
+          setCertificateFiles(cached.data);
+        }
+        return;
+      }
+
       const response = await apiFetch(
         `/api/instruments/${instrumentId}/certificates`
       );
@@ -135,6 +150,10 @@ export function InstrumentExpandedRow({
         if (response.ok && certificateReqIdRef.current === reqId) {
           const result = await response.json();
           setCertificateFiles(result.data || []);
+          certificateCache.set(instrumentId, {
+            data: result.data || [],
+            updatedAt: Date.now(),
+          });
         }
       }
     } catch (error) {
@@ -219,7 +238,8 @@ export function InstrumentExpandedRow({
 
       showSuccess('Certificate deleted successfully');
       // Refresh certificate list
-      await fetchCertificates(instrument.id, () => true);
+      certificateCache.delete(instrument.id);
+      await fetchCertificates(instrument.id, () => true, true);
       setShowDeleteConfirm(null);
     } catch (error) {
       handleError(error, 'CertificateDelete');
@@ -384,6 +404,9 @@ export function InstrumentExpandedRow({
                   {certificateFiles.map(file => {
                     const isDownloading = downloadingFile === file.name;
                     const isDeleting = deletingFile === file.name;
+                    const displayName = file.name.replace(/^\d+_/, '');
+                    const downloadLabel = `Download certificate ${displayName}`;
+                    const deleteLabel = `Delete certificate ${displayName}`;
                     return (
                       <div
                         key={file.name}
@@ -428,6 +451,7 @@ export function InstrumentExpandedRow({
                         <div className="ml-3 flex items-center gap-2 shrink-0">
                           <button
                             onClick={() => handleDownloadCertificate(file)}
+                            aria-label={downloadLabel}
                             disabled={isDownloading || isDeleting}
                             className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                           >
@@ -466,6 +490,7 @@ export function InstrumentExpandedRow({
                                 fileName: file.name,
                               })
                             }
+                            aria-label={deleteLabel}
                             disabled={isDownloading || isDeleting}
                             className="px-3 py-1.5 bg-red-600 text-white text-xs rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                           >
@@ -504,9 +529,7 @@ export function InstrumentExpandedRow({
                 </div>
               ) : (
                 <p className="text-xs text-gray-500">
-                  {instrument.certificate === false
-                    ? 'Marked as no certificate'
-                    : 'No certificate files uploaded yet.'}
+                  No certificate files uploaded yet.
                 </p>
               )}
             </div>
@@ -643,11 +666,7 @@ export function InstrumentExpandedRow({
               <div className="col-span-2">
                 <div className="text-xs text-gray-500 mb-1">Certificate</div>
                 <div className="text-sm text-gray-900">
-                  {instrument.certificate === true
-                    ? instrument.certificate_name || '있음'
-                    : instrument.certificate === false
-                      ? '없다'
-                      : '—'}
+                  {hasCertificateFile ? 'Yes' : 'No'}
                 </div>
               </div>
 

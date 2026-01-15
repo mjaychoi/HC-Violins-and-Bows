@@ -20,7 +20,7 @@ interface ErrorBoundaryProps {
   children: ReactNode;
   // ✅ FIXED: fallback 타입을 errorInfo?: React.ErrorInfo | null로 변경 (프로덕션 안전)
   fallback?: (error: AppError, errorInfo?: React.ErrorInfo | null) => ReactNode;
-  onError?: (error: AppError, errorInfo: React.ErrorInfo) => void;
+  onError?: (error: AppError, errorInfo?: React.ErrorInfo | null) => void;
   resetOnPropsChange?: boolean;
   resetKeys?: Array<string | number>;
 }
@@ -46,7 +46,6 @@ export default class ErrorBoundary extends Component<
       error: {
         code: ErrorCodes.UNKNOWN_ERROR,
         message: error.message,
-        details: error.stack,
         timestamp: new Date().toISOString(),
         context: { component: 'ErrorBoundary' },
       },
@@ -234,8 +233,8 @@ export function useErrorBoundary() {
     setError(null);
   }, []);
 
-  const captureError = React.useCallback((e: Error) => {
-    setError(e);
+  const captureError = React.useCallback((e: unknown) => {
+    setError(e instanceof Error ? e : new Error(String(e)));
   }, []);
 
   // ✅ FIXED: 렌더에서 throw (정석 패턴)

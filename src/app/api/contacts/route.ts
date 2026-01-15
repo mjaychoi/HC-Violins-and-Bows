@@ -183,7 +183,6 @@ export const GET = withSentryRoute(withAuthRoute(getHandler));
 
 async function postHandler(request: NextRequest, _user: User) {
   void _user;
-
   return apiHandler(
     request,
     {
@@ -296,7 +295,6 @@ export const POST = withSentryRoute(withAuthRoute(postHandler));
 
 async function patchHandler(request: NextRequest, _user: User) {
   void _user;
-
   return apiHandler(
     request,
     {

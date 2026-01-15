@@ -3,7 +3,7 @@ import { Client, Instrument, ClientInstrument } from '@/types';
 import { getRelationshipColor as getRelationshipColorFromTokens } from '@/utils/colorTokens';
 
 // Connection formatting utilities
-export const formatClientName = (client?: Client): string => {
+export const formatClientName = (client?: Client | null): string => {
   if (!client) return 'Unknown Client';
   return (
     `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
@@ -11,7 +11,9 @@ export const formatClientName = (client?: Client): string => {
   );
 };
 
-export const formatInstrumentName = (instrument?: Instrument): string => {
+export const formatInstrumentName = (
+  instrument?: Instrument | null
+): string => {
   if (!instrument) return 'Unknown Instrument';
   return `${instrument.maker || 'Unknown'} - ${instrument.type || 'Unknown'}`.trim();
 };

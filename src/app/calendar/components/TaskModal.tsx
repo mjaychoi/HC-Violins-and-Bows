@@ -34,6 +34,46 @@ interface TaskModalProps {
   defaultScheduledDate?: string;
 }
 
+type TaskFormState = {
+  instrument_id: string | null;
+  client_id: string;
+  task_type: TaskType;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  received_date: string;
+  due_date: string;
+  personal_due_date: string;
+  scheduled_date: string;
+  completed_date: string;
+  priority: TaskPriority;
+  estimated_hours: string;
+  actual_hours: string;
+  cost: string;
+  notes: string;
+};
+
+function createEmptyFormState(scheduledDate = ''): TaskFormState {
+  return {
+    instrument_id: '',
+    client_id: '',
+    task_type: 'repair',
+    title: '',
+    description: '',
+    status: 'pending',
+    received_date: todayLocalYMD(),
+    due_date: '',
+    personal_due_date: '',
+    scheduled_date: scheduledDate,
+    completed_date: '',
+    priority: 'medium',
+    estimated_hours: '',
+    actual_hours: '',
+    cost: '',
+    notes: '',
+  };
+}
+
 export default function TaskModal({
   isOpen,
   onClose,
@@ -45,25 +85,9 @@ export default function TaskModal({
   clients,
   defaultScheduledDate = '',
 }: TaskModalProps) {
-  const [formData, setFormData] = useState({
-    instrument_id: '',
-    client_id: '',
-    task_type: 'repair' as TaskType,
-    title: '',
-    description: '',
-    status: 'pending' as TaskStatus,
-    // FIXED: Use todayLocalYMD() instead of toISOString() to avoid UTC timezone issues
-    received_date: todayLocalYMD(),
-    due_date: '',
-    personal_due_date: '',
-    scheduled_date: '',
-    completed_date: '',
-    priority: 'medium' as TaskPriority,
-    estimated_hours: '',
-    actual_hours: '',
-    cost: '',
-    notes: '',
-  });
+  const [formData, setFormData] = useState<TaskFormState>(() =>
+    createEmptyFormState()
+  );
 
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -90,24 +114,7 @@ export default function TaskModal({
     } else {
       // Reset form for new task
       // FIXED: Use todayLocalYMD() instead of toISOString() to avoid UTC timezone issues
-      setFormData({
-        instrument_id: '',
-        client_id: '',
-        task_type: 'repair',
-        title: '',
-        description: '',
-        status: 'pending',
-        received_date: todayLocalYMD(),
-        due_date: '',
-        personal_due_date: '',
-        scheduled_date: defaultScheduledDate || '',
-        completed_date: '',
-        priority: 'medium',
-        estimated_hours: '',
-        actual_hours: '',
-        cost: '',
-        notes: '',
-      });
+      setFormData(createEmptyFormState(defaultScheduledDate || ''));
     }
     setErrors([]);
   }, [selectedTask, isEditing, isOpen, defaultScheduledDate]);
@@ -273,7 +280,7 @@ export default function TaskModal({
               </label>
               <select
                 name="instrument_id"
-                value={formData.instrument_id}
+                value={formData.instrument_id ?? ''}
                 onChange={handleInputChange}
                 className={classNames.input}
                 required

@@ -60,7 +60,8 @@ export function getStatusLabel(status: string): string {
     Cancelled: 'cancelled',
   };
 
-  const labelKey = keyMap[normalized] || status.toLowerCase();
+  const fallbackKey = status.trim().toLowerCase().replace(/\s+/g, '_');
+  const labelKey = keyMap[normalized] || fallbackKey;
   return STATUS_LABELS[labelKey] || status.replaceAll('_', ' ');
 }
 

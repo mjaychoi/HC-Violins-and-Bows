@@ -5,7 +5,6 @@ import { errorHandler } from '@/utils/errorHandler';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
-import type { User } from '@supabase/supabase-js';
 import {
   validateInstrument,
   validateInstrumentArray,
@@ -14,6 +13,8 @@ import {
   safeValidate,
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
+import { Instrument } from '@/types';
+import type { User } from '@supabase/supabase-js';
 
 async function getHandler(request: NextRequest, _user: User) {
   void _user;
@@ -72,16 +73,44 @@ async function getHandler(request: NextRequest, _user: User) {
         throw errorHandler.handleSupabaseError(error, 'Fetch instruments');
       }
 
+      const instrumentIds = (data || []).map((inst: Instrument) => inst.id);
+      let certificateSet = new Set<string>();
+
+      if (instrumentIds.length > 0) {
+        const { data: certificateRows, error: certError } = await supabase
+          .from('instrument_certificates')
+          .select('instrument_id')
+          .in('instrument_id', instrumentIds);
+
+        if (certError) {
+          throw errorHandler.handleSupabaseError(
+            certError,
+            'Fetch instrument certificates'
+          );
+        }
+
+        certificateSet = new Set(
+          (certificateRows || [])
+            .map(row => row.instrument_id)
+            .filter((id): id is string => typeof id === 'string')
+        );
+      }
+
       // Validate response data
+      const normalizedData = (data || []).map(inst => ({
+        ...inst,
+        has_certificate: certificateSet.has(inst.id),
+      }));
+
       const validationResult = safeValidate(
-        data || [],
+        normalizedData,
         validateInstrumentArray
       );
       const validationWarning = !validationResult.success;
 
       return {
         payload: {
-          data: data || [],
+          data: normalizedData,
           count: count || 0,
         },
         metadata: {
@@ -103,7 +132,6 @@ export const GET = withSentryRoute(withAuthRoute(getHandler));
 
 async function postHandler(request: NextRequest, _user: User) {
   void _user;
-
   return apiHandler(
     request,
     {
@@ -155,7 +183,6 @@ export const POST = withSentryRoute(withAuthRoute(postHandler));
 
 async function patchHandler(request: NextRequest, _user: User) {
   void _user;
-
   return apiHandler(
     request,
     {

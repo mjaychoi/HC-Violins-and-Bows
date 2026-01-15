@@ -1,67 +1,31 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
 
 interface RowActionsProps {
   onEdit: () => void;
   onDelete: () => void;
   onDownloadCertificate?: () => void;
-  hasCertificate?: boolean | null;
-  // Context actions
-  onBook?: () => void;
-  onSendToMaintenance?: () => void;
-  onAttachCertificate?: () => void;
-  onSell?: () => void; // 원클릭 판매
+  hasCertificate?: boolean;
   currentStatus?: string;
-  hasCertificateField?: boolean;
   // Optional stable ID for menu (for accessibility)
   itemId?: string;
-  // Instrument ID for sales history link
-  instrumentId?: string;
 }
 
 function RowActions({
   onEdit,
   onDelete,
   onDownloadCertificate,
-  hasCertificate = false,
-  onBook,
-  onSendToMaintenance,
-  onAttachCertificate,
-  onSell,
+  hasCertificate,
   currentStatus,
-  hasCertificateField = false,
   itemId,
-  instrumentId,
 }: RowActionsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuId = `row-actions-${itemId || 'menu'}`;
 
-  // Handle null/undefined certificate value
-  const certificateValue = hasCertificate ?? false;
-
-  // FIXED: Status-based action filtering - only show relevant actions
-  const showBook =
-    currentStatus !== 'Booked' && currentStatus !== 'Sold' && !!onBook;
-  const showMaint =
-    currentStatus !== 'Maintenance' &&
-    currentStatus !== 'Sold' &&
-    !!onSendToMaintenance;
-  const showAttach =
-    hasCertificateField &&
-    !certificateValue &&
-    currentStatus !== 'Sold' &&
-    !!onAttachCertificate;
-  const showSell = currentStatus !== 'Sold' && !!onSell;
-
-  // Status-specific actions
-  const showChangeToAvailable = currentStatus === 'Booked' && !!onBook;
-
-  const hasContextActions =
-    showBook || showMaint || showAttach || showSell || showChangeToAvailable;
+  const certificateValue = Boolean(hasCertificate);
 
   // FIXED: Close menu on Escape key press and focus management
   useEffect(() => {
@@ -133,161 +97,8 @@ function RowActions({
               </div>
             )}
 
-            {/* Context Actions */}
-            {showBook && (
-              <button
-                ref={hasContextActions ? firstItemRef : undefined}
-                role="menuitem"
-                onClick={e => {
-                  e.stopPropagation();
-                  onBook();
-                  setIsOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 transition-colors duration-200"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                  />
-                </svg>
-                Book this
-              </button>
-            )}
-            {showChangeToAvailable && (
-              <button
-                ref={hasContextActions ? firstItemRef : undefined}
-                role="menuitem"
-                onClick={e => {
-                  e.stopPropagation();
-                  // Change status to Available (using onBook as a status change handler)
-                  onBook();
-                  setIsOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-green-600 hover:bg-green-50 transition-colors duration-200"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                Change Status → Available
-              </button>
-            )}
-            {showMaint && (
-              <button
-                ref={!showBook && hasContextActions ? firstItemRef : undefined}
-                role="menuitem"
-                onClick={e => {
-                  e.stopPropagation();
-                  onSendToMaintenance();
-                  setIsOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 transition-colors duration-200"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21.75 6.75a4.5 4.5 0 01-4.884 4.484c-1.076-.091-2.264.071-2.95.904l-7.152 8.025a4.5 4.5 0 01-3.742 3.757c-.805.092-1.623-.1-2.95-.904l-7.152-8.025a4.5 4.5 0 013.742-3.757c.805-.092 1.623.1 2.95.904l7.152 8.025c.091.1.19.19.29.28"
-                  />
-                </svg>
-                Send to maintenance
-              </button>
-            )}
-            {showAttach && (
-              <button
-                ref={
-                  !showBook && !showMaint && hasContextActions
-                    ? firstItemRef
-                    : undefined
-                }
-                role="menuitem"
-                onClick={e => {
-                  e.stopPropagation();
-                  onAttachCertificate();
-                  setIsOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-green-600 hover:bg-green-50 transition-colors duration-200"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                Attach certificate
-              </button>
-            )}
-
-            {/* 원클릭 판매 버튼 */}
-            {showSell && (
-              <button
-                ref={
-                  !showBook && !showMaint && !showAttach && hasContextActions
-                    ? firstItemRef
-                    : undefined
-                }
-                role="menuitem"
-                onClick={e => {
-                  e.stopPropagation();
-                  onSell();
-                  setIsOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-green-600 hover:bg-green-50 transition-colors duration-200"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                Sell
-              </button>
-            )}
-
-            {/* Divider - only show if context actions are actually rendered */}
-            {hasContextActions && (
-              <div className="border-t border-gray-200 my-1" />
-            )}
-
             <button
-              ref={!hasContextActions ? firstItemRef : undefined}
+              ref={firstItemRef}
               role="menuitem"
               onClick={() => {
                 onEdit();
@@ -335,33 +146,6 @@ function RowActions({
                 </svg>
                 Certificate
               </button>
-            )}
-            {/* Sales History Link */}
-            {instrumentId && (
-              <Link
-                href={`/sales?instrumentId=${instrumentId}`}
-                onClick={e => {
-                  e.stopPropagation();
-                  setIsOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 transition-colors duration-200"
-                role="menuitem"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
-                  />
-                </svg>
-                View Sales History
-              </Link>
             )}
             <button
               role="menuitem"

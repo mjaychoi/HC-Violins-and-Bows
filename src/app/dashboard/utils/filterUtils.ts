@@ -5,6 +5,9 @@ import { DashboardFilters } from '../types';
 import { DateRange } from '@/types/search';
 import { DASHBOARD_FILTER_KEYS } from '../constants';
 
+const ensureArray = <T>(value: T[] | undefined | null): T[] =>
+  Array.isArray(value) ? value : [];
+
 /**
  * Dashboard 필드 기반 필터링 함수
  * searchTerm과 dateRange를 제외한 모든 필터를 적용
@@ -39,54 +42,68 @@ export function filterDashboardItems(
   }
 
   // Status filter
-  if (filters[DASHBOARD_FILTER_KEYS.STATUS].length > 0) {
-    filtered = filtered.filter(item =>
-      filters[DASHBOARD_FILTER_KEYS.STATUS].includes(item.status)
-    );
+  const statusFilters = ensureArray<string>(
+    filters[DASHBOARD_FILTER_KEYS.STATUS]
+  );
+  if (statusFilters.length > 0) {
+    filtered = filtered.filter(item => statusFilters.includes(item.status));
   }
 
   // Maker filter
-  if (filters[DASHBOARD_FILTER_KEYS.MAKER].length > 0) {
+  const makerFilters = ensureArray<string>(
+    filters[DASHBOARD_FILTER_KEYS.MAKER]
+  );
+  if (makerFilters.length > 0) {
     filtered = filtered.filter(
-      item =>
-        item.maker && filters[DASHBOARD_FILTER_KEYS.MAKER].includes(item.maker)
+      item => item.maker && makerFilters.includes(item.maker)
     );
   }
 
   // Type filter
-  if (filters[DASHBOARD_FILTER_KEYS.TYPE].length > 0) {
+  const typeFilters = ensureArray<string>(filters[DASHBOARD_FILTER_KEYS.TYPE]);
+  if (typeFilters.length > 0) {
     filtered = filtered.filter(
-      item =>
-        item.type && filters[DASHBOARD_FILTER_KEYS.TYPE].includes(item.type)
+      item => item.type && typeFilters.includes(item.type)
     );
   }
 
   // Subtype filter
-  if (filters[DASHBOARD_FILTER_KEYS.SUBTYPE].length > 0) {
+  const subtypeFilters = ensureArray<string>(
+    filters[DASHBOARD_FILTER_KEYS.SUBTYPE]
+  );
+  if (subtypeFilters.length > 0) {
     filtered = filtered.filter(
-      item =>
-        item.subtype &&
-        filters[DASHBOARD_FILTER_KEYS.SUBTYPE].includes(item.subtype)
+      item => item.subtype && subtypeFilters.includes(item.subtype)
     );
   }
 
   // Ownership filter
-  if (filters[DASHBOARD_FILTER_KEYS.OWNERSHIP].length > 0) {
+  const ownershipFilters = ensureArray<string>(
+    filters[DASHBOARD_FILTER_KEYS.OWNERSHIP]
+  );
+  if (ownershipFilters.length > 0) {
     filtered = filtered.filter(
-      item =>
-        item.ownership &&
-        filters[DASHBOARD_FILTER_KEYS.OWNERSHIP].includes(item.ownership)
+      item => item.ownership && ownershipFilters.includes(item.ownership)
     );
   }
 
   // FIXED: Certificate filter - normalize to boolean to handle null/undefined
-  if (filters[DASHBOARD_FILTER_KEYS.CERTIFICATE].length > 0) {
+  const certificateFilterValues = ensureArray<unknown>(
+    filters[DASHBOARD_FILTER_KEYS.CERTIFICATE]
+  );
+  const certificateFilters = certificateFilterValues.map(value => {
+    if (typeof value === 'string') {
+      return value === 'true';
+    }
+    return Boolean(value);
+  });
+  if (certificateFilters.length > 0) {
     filtered = filtered.filter(item => {
-      // Normalize certificate to boolean for consistent filtering
-      const cert = Boolean(item.certificate);
-      return (filters[DASHBOARD_FILTER_KEYS.CERTIFICATE] as boolean[]).includes(
-        cert
-      );
+      const cert =
+        Boolean(item.has_certificate) ||
+        Boolean(item.certificate_name) ||
+        Boolean(item.certificate);
+      return certificateFilters.includes(cert);
     });
   }
 
@@ -115,10 +132,11 @@ export function filterDashboardItems(
   // FIXED: HAS_CLIENTS filter - check if item has connected clients
   // Note: items should be enriched with clients array (done in DashboardPage)
   // DashboardPage.enrichedItems ensures items have clients property
-  if (filters[DASHBOARD_FILTER_KEYS.HAS_CLIENTS].length > 0) {
-    // FIXED: hasClients is now boolean[] (not string[])
-    const wantHasClients =
-      filters[DASHBOARD_FILTER_KEYS.HAS_CLIENTS][0] === true;
+  const hasClientsFilters = ensureArray<boolean>(
+    filters[DASHBOARD_FILTER_KEYS.HAS_CLIENTS]
+  );
+  if (hasClientsFilters.length > 0) {
+    const wantHasClients = hasClientsFilters[0] === true;
     filtered = filtered.filter(item => {
       // Items should be enriched with clients array from DashboardPage
       const enrichedItem = item as { clients?: unknown[] };

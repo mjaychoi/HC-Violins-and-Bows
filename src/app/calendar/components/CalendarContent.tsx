@@ -11,7 +11,6 @@ import type {
   MaintenanceTaskUpdatePayload,
   Instrument,
   Client,
-  ContactLog,
 } from '@/types';
 import {
   CalendarFilters,
@@ -25,8 +24,6 @@ import { TableSkeleton, Pagination } from '@/components/common';
 import { Button } from '@/components/common/inputs';
 import type { ExtendedView } from './CalendarView';
 import type { CalendarViewMode } from '../hooks/useCalendarView';
-import TodayFollowUps from '@/app/clients/components/TodayFollowUps';
-
 // Dynamic import for CalendarView (includes react-big-calendar and react-dnd)
 // This significantly reduces initial bundle size for calendar page
 const CalendarView = dynamic(() => import('./CalendarView'), {
@@ -43,7 +40,6 @@ const CalendarView = dynamic(() => import('./CalendarView'), {
 
 interface CalendarContentProps {
   tasks: MaintenanceTask[];
-  contactLogs?: ContactLog[];
   instruments: Instrument[];
   clients: Client[];
   loading: {
@@ -89,7 +85,6 @@ interface CalendarContentProps {
 
 function CalendarContentInner({
   tasks,
-  contactLogs = [],
   instruments,
   clients,
   loading,
@@ -287,9 +282,6 @@ function CalendarContentInner({
 
   return (
     <div className="p-6 pb-14">
-      {/* Today Follow-ups */}
-      <TodayFollowUps />
-
       {/* Sticky Mini Toolbar - always visible for list view */}
       {isListView && (
         <div className="sticky top-0 z-10 bg-white border-b border-gray-200 mb-4 -mx-6 px-6 py-3 shadow-sm">
@@ -645,7 +637,6 @@ function CalendarContentInner({
       ) : isCalendarView ? (
         <CalendarView
           tasks={filteredTasks}
-          contactLogs={contactLogs}
           instruments={taskData.instrumentsMap}
           onSelectEvent={onSelectEvent}
           onSelectSlot={onSelectSlot}

@@ -10,6 +10,31 @@ import {
 import { usePageFilters } from '@/hooks/usePageFilters';
 import { ClientFilterOptions, FilterState } from '../types';
 
+const asArray = (value?: string | string[] | null): string[] => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    return value.trim() === '' ? [] : [value];
+  }
+  return [];
+};
+
+const normalizeFilterState = (
+  raw?: Partial<FilterState> | null
+): FilterState => {
+  const base = raw ?? {};
+  return {
+    ...EMPTY_FILTER_STATE,
+    ...base,
+    last_name: asArray(base.last_name),
+    first_name: asArray(base.first_name),
+    contact_number: asArray(base.contact_number),
+    email: asArray(base.email),
+    tags: asArray(base.tags),
+    interest: asArray(base.interest),
+    hasInstruments: asArray(base.hasInstruments),
+  };
+};
+
 export const useFilters = (
   clients: Client[],
   clientsWithInstruments?: Set<string>
@@ -18,6 +43,7 @@ export const useFilters = (
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20; // Clients per page
   // usePageFilters를 기반으로 필터링 로직 구현
+  const normalizedInitialFilters = normalizeFilterState(EMPTY_FILTER_STATE);
   const baseFilters = usePageFilters<Record<string, unknown>>({
     items: clients as unknown as Record<string, unknown>[],
     filterOptionsConfig: {
@@ -40,7 +66,7 @@ export const useFilters = (
     initialSortBy: 'created_at',
     initialSortOrder: 'desc',
     debounceMs: 300,
-    initialFilters: EMPTY_FILTER_STATE as Record<string, unknown>,
+    initialFilters: normalizedInitialFilters as Record<string, unknown>,
     resetFilters: () => resetFilterState() as Record<string, unknown>,
     syncWithURL: true, // URL 쿼리 파라미터와 상태 동기화
     urlParamMapping: {
@@ -51,8 +77,9 @@ export const useFilters = (
     // filterClients는 필터 조건만 적용하면 됨
     customFieldFilter: (items, filters) => {
       const clients = items as unknown as Client[];
+      const safeFilters = normalizeFilterState(filters as Partial<FilterState>);
       // searchTerm은 usePageFilters.customFilter가 처리하므로 여기서는 빈 문자열
-      const result = filterClients(clients, '', filters as FilterState, {
+      const result = filterClients(clients, '', safeFilters, {
         clientsWithInstruments,
       });
       return result as unknown as Record<string, unknown>[];
@@ -89,6 +116,11 @@ export const useFilters = (
     };
   }, [baseFilters.filterOptions]);
 
+  const normalizedFilters = useMemo(
+    () => normalizeFilterState(baseFilters.filters as Partial<FilterState>),
+    [baseFilters.filters]
+  );
+
   // handleFilterChange는 updateFilterState를 사용하도록 래핑
   const handleFilterChange = <K extends keyof FilterState>(
     category: K,
@@ -117,7 +149,8 @@ export const useFilters = (
         >;
       }
 
-      const isCurrentlySelected = prevFilters.hasInstruments.includes(value);
+      const currentValues = asArray(prevFilters.hasInstruments);
+      const isCurrentlySelected = currentValues.includes(value);
       // If already selected, clear it; otherwise, set it (and clear the other)
       const updated: FilterState = {
         ...prevFilters,
@@ -176,7 +209,7 @@ export const useFilters = (
     sortOrder: baseFilters.sortOrder,
     showFilters: baseFilters.showFilters,
     setShowFilters: baseFilters.setShowFilters,
-    filters: baseFilters.filters as FilterState,
+    filters: normalizedFilters,
     setFilters: baseFilters.setFilters,
 
     // Computed values

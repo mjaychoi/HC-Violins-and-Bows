@@ -4,10 +4,42 @@
  */
 
 import { getSupabaseClient } from '@/lib/supabase-client';
+import type { Session } from '@supabase/supabase-js';
 
 type ApiFetchMeta = {
   idempotencyKey?: string;
 };
+
+const SESSION_CACHE_TTL = 5_000;
+let cachedSession: Session | null = null;
+let cachedSessionExpiresAt = 0;
+let cachedSessionPromise: Promise<Session | null> | null = null;
+
+async function getCachedSession(): Promise<Session | null> {
+  const now = Date.now();
+  if (cachedSession && now < cachedSessionExpiresAt) {
+    return cachedSession;
+  }
+
+  if (!cachedSessionPromise) {
+    cachedSessionPromise = (async () => {
+      const supabase = await getSupabaseClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      return session ?? null;
+    })();
+  }
+
+  try {
+    const session = await cachedSessionPromise;
+    cachedSession = session;
+    cachedSessionExpiresAt = Date.now() + SESSION_CACHE_TTL;
+    return session;
+  } finally {
+    cachedSessionPromise = null;
+  }
+}
 
 /**
  * Fetch with automatic authentication token injection
@@ -21,25 +53,24 @@ export async function apiFetch(
   options: RequestInit = {},
   meta?: ApiFetchMeta
 ): Promise<Response> {
-  const requestOptions: RequestInit = {
-    ...options,
-  };
+  // Start from caller-provided options
+  const requestOptions: RequestInit = { ...options };
 
+  // Apply idempotency key if provided
   if (meta?.idempotencyKey) {
-    const idempotencyHeaders = new Headers(requestOptions.headers);
-    idempotencyHeaders.set('Idempotency-Key', meta.idempotencyKey);
-    requestOptions.headers = idempotencyHeaders;
+    const h = new Headers(requestOptions.headers);
+    h.set('Idempotency-Key', meta.idempotencyKey);
+    requestOptions.headers = h;
   }
 
-  try {
-    // Get Supabase client to access session
-    const supabase = await getSupabaseClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+  // Prepare fetchOptions in outer scope so catch can use it
+  const fetchOptions: RequestInit = { ...requestOptions };
 
-    // Prepare headers
-    const headers = new Headers(requestOptions.headers);
+  try {
+    const session = await getCachedSession();
+
+    // Merge headers
+    const headers = new Headers(fetchOptions.headers);
 
     // Add Authorization header if session exists
     if (session?.access_token) {
@@ -51,13 +82,12 @@ export async function apiFetch(
       'content-type': 'Content-Type',
       authorization: 'Authorization',
     };
+
     const normalizedHeaders: Record<string, string> = {};
     headers.forEach((value, key) => {
       const canonicalKey = canonicalHeaderNames[key] ?? key;
       normalizedHeaders[canonicalKey] = value;
     });
-
-    const fetchOptions: RequestInit = { ...requestOptions };
 
     if (Object.keys(normalizedHeaders).length > 0) {
       fetchOptions.headers = normalizedHeaders;
@@ -73,6 +103,8 @@ export async function apiFetch(
       'Failed to get session for API fetch, attempting without auth:',
       error
     );
-    return fetch(url, requestOptions);
+
+    const hasOptions = Object.keys(fetchOptions).length > 0;
+    return hasOptions ? fetch(url, fetchOptions) : fetch(url);
   }
 }

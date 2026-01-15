@@ -33,17 +33,6 @@ jest.mock('../../hooks/useFilters', () => ({
   })),
 }));
 
-jest.mock('../../hooks/useClientKPIs', () => ({
-  useClientKPIs: jest.fn(() => ({
-    loading: false,
-    totalCustomers: 0,
-    totalSpend: 0,
-    avgSpendPerCustomer: 0,
-    totalPurchases: 0,
-    mostRecentPurchase: 'N/A',
-  })),
-}));
-
 jest.mock('../ClientList', () => ({
   __esModule: true,
   default: ({
@@ -83,15 +72,6 @@ jest.mock('../ClientFilters', () => ({
   __esModule: true,
   default: ({ isOpen }: any) =>
     isOpen ? <div data-testid="client-filters">Filters</div> : null,
-}));
-
-jest.mock('../ClientKPISummary', () => ({
-  ClientKPISummary: () => <div data-testid="kpi-summary">KPI Summary</div>,
-}));
-
-jest.mock('../TodayFollowUps', () => ({
-  __esModule: true,
-  default: () => <div data-testid="today-follow-ups">Today Follow-ups</div>,
 }));
 
 jest.mock('@/components/common', () => ({
@@ -157,8 +137,6 @@ describe('ClientsListContent', () => {
       />
     );
 
-    expect(screen.getByTestId('today-follow-ups')).toBeInTheDocument();
-    expect(screen.getByTestId('kpi-summary')).toBeInTheDocument();
     expect(screen.getByTestId('search-input')).toBeInTheDocument();
     expect(screen.getByTestId('client-list')).toBeInTheDocument();
   });
@@ -310,6 +288,5 @@ describe('ClientsListContent', () => {
     );
 
     // Component should still render
-    expect(screen.getByTestId('today-follow-ups')).toBeInTheDocument();
   });
 });

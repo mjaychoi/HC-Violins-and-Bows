@@ -61,12 +61,12 @@ describe('/api/connections', () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [mockConnection],
+          error: null,
+          count: 1,
+        }),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [mockConnection],
-        error: null,
-        count: 1,
-      });
 
       const mockSupabaseClient = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -78,6 +78,11 @@ describe('/api/connections', () => {
       const response = await GET(request);
       const json = await response.json();
 
+      expect(mockQuery.select).toHaveBeenCalledWith(
+        'id, client_id, instrument_id, relationship_type, notes, display_order, created_at',
+        { count: 'exact' }
+      );
+      expect(mockQuery.range).toHaveBeenCalledWith(0, 49);
       expect(response.status).toBe(200);
       expect(json.data).toEqual([mockConnection]);
       expect(json.count).toBe(1);
@@ -88,12 +93,12 @@ describe('/api/connections', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [mockConnection],
+          error: null,
+          count: 1,
+        }),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [mockConnection],
-        error: null,
-        count: 1,
-      });
 
       const mockSupabaseClient = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -117,12 +122,12 @@ describe('/api/connections', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [mockConnection],
+          error: null,
+          count: 1,
+        }),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [mockConnection],
-        error: null,
-        count: 1,
-      });
 
       const mockSupabaseClient = {
         from: jest.fn().mockReturnValue(mockQuery),

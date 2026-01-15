@@ -4,14 +4,67 @@ import { MaintenanceTask } from '@/types';
 import type { TaskType, TaskStatus, TaskPriority } from '@/types';
 import type { CalendarFilterOptions } from '../../types';
 
-// Mock useURLState to avoid URL dependency
-jest.mock('@/hooks/useURLState', () => ({
-  useURLState: jest.fn(() => ({
-    urlState: {},
-    updateURLState: jest.fn(),
-    clearURLState: jest.fn(),
-  })),
-}));
+// Mock useURLState so filters syncs behaves like real hook
+jest.mock('@/hooks/useURLState', () => {
+  const React: typeof import('react') = require('react');
+  return {
+    useURLState: jest.fn(() => {
+      const [urlState, setUrlState] = React.useState<
+        Record<string, string | string[] | null>
+      >({});
+      const updateURLState = React.useCallback(
+        (updates: Record<string, string | string[] | null | undefined>) => {
+          setUrlState((prevState: Record<string, string | string[] | null>) => {
+            const nextState = { ...prevState };
+            let hasChanges = false;
+
+            Object.entries(updates).forEach(([key, value]) => {
+              if (
+                value === null ||
+                value === undefined ||
+                (typeof value === 'string' && value === '')
+              ) {
+                if (Object.prototype.hasOwnProperty.call(nextState, key)) {
+                  delete nextState[key];
+                  hasChanges = true;
+                }
+                return;
+              }
+
+              const normalized = Array.isArray(value)
+                ? [...value]
+                : (value as string);
+
+              const existing = nextState[key];
+              const valueChanged =
+                Array.isArray(normalized) && Array.isArray(existing)
+                  ? normalized.length !== existing.length ||
+                    normalized.some((item, index) => item !== existing[index])
+                  : normalized !== existing;
+
+              if (valueChanged) {
+                nextState[key] = normalized;
+                hasChanges = true;
+              }
+            });
+
+            return hasChanges ? nextState : prevState;
+          });
+        },
+        []
+      );
+      const clearURLState = React.useCallback(() => {
+        setUrlState({});
+      }, []);
+
+      return {
+        urlState,
+        updateURLState,
+        clearURLState,
+      };
+    }),
+  };
+});
 
 const mockTasks: MaintenanceTask[] = [
   {

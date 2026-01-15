@@ -48,16 +48,19 @@ interface UseMaintenanceTasksReturn {
 }
 
 /**
- * FIXED: Loading states separated (fetch vs mutate) to prevent UX confusion
- * FIXED: Stale guard (reqIdRef) added to fetchTasks to prevent race conditions
- * FIXED: autoFetch option added - now fetches by default even without initialFilters
- * FIXED: createTask type matches interface declaration (removed 'client' from omit)
+ * FIXED:
+ * - fetch/mutate 로딩 분리
+ * - fetch 로딩은 counter로 관리 (여러 fetch가 겹쳐도 안정적으로 true/false 유지)
+ * - fetchTasks는 stale guard(reqIdRef) + counter를 함께 사용
+ * - enabledProp(initialFilters/autoFetch) backward compatibility 유지
+ * - StrictMode double-run 방지(개발) didFetchRef
  */
 export function useMaintenanceTasks(
   options: UseMaintenanceTasksOptions | TaskFilters = {}
 ): UseMaintenanceTasksReturn {
-  // Backward compatibility: if options is TaskFilters, treat as initialFilters
-  // Check if options is a UseMaintenanceTasksOptions object (has initialFilters or autoFetch property)
+  // Backward compatibility:
+  // - options가 { initialFilters, autoFetch } 형태면 그대로 사용
+  // - 아니면 TaskFilters로 보고 initialFilters로 래핑
   const opts: UseMaintenanceTasksOptions =
     options &&
     typeof options === 'object' &&
@@ -68,16 +71,17 @@ export function useMaintenanceTasks(
   const { initialFilters, autoFetch = true } = opts;
 
   const [tasks, setTasks] = useState<MaintenanceTask[]>([]);
-  const [loading, setLoading] = useState({ fetch: false, mutate: false });
+  const [loading, setLoading] = useState<{ fetch: boolean; mutate: boolean }>({
+    fetch: false,
+    mutate: false,
+  });
   const [error, setError] = useState<unknown>(null);
   const { handleError } = useErrorHandler();
 
-  // Stale guard for fetchTasks to prevent race conditions
+  // Stale guard for fetchTasks
   const fetchReqIdRef = useRef(0);
 
-  // FIXED: Counter pattern for fetch loading to handle overlapping fetch operations
-  // Multiple fetch functions (fetchTasks, fetchTaskById, fetchTasksByDateRange, etc.)
-  // all share the same loading.fetch state, so we need a counter to prevent race conditions
+  // Shared fetch loading counter
   const fetchCountRef = useRef(0);
   const startFetch = useCallback(() => {
     fetchCountRef.current += 1;
@@ -90,49 +94,46 @@ export function useMaintenanceTasks(
     }
   }, []);
 
-  // FIXED: Prevent StrictMode double-run in development
+  // StrictMode double-run guard (dev)
   const didFetchRef = useRef(false);
 
-  // FIXED: Added stale guard to prevent out-of-order responses from overwriting newer data
+  /**
+   * Fetch tasks (list)
+   * - stale guard로 최신 요청만 반영
+   * - fetch loading은 counter로 안전하게 관리
+   */
   const fetchTasks = useCallback(
     async (filters?: TaskFilters) => {
       const myId = ++fetchReqIdRef.current;
-      setLoading(prev => ({ ...prev, fetch: true }));
+      startFetch();
       setError(null);
 
       try {
-        const effectiveFilters = filters || initialFilters;
-        const { data, error } =
+        const effectiveFilters = filters ?? initialFilters;
+        const { data, error: svcError } =
           await dataService.fetchMaintenanceTasks(effectiveFilters);
 
-        // Stale guard: ignore if a newer request has started
-        if (myId !== fetchReqIdRef.current) {
-          return;
-        }
+        // ignore stale response
+        if (myId !== fetchReqIdRef.current) return;
 
-        if (error) {
-          setError(error);
-          handleError(error, 'Failed to fetch maintenance tasks');
+        if (svcError) {
+          setError(svcError);
+          handleError(svcError, 'Failed to fetch maintenance tasks');
           setTasks([]);
           return;
         }
 
-        setTasks(data || []);
+        setTasks(data ?? []);
       } catch (err) {
-        // Stale guard: ignore if a newer request has started
-        if (myId !== fetchReqIdRef.current) {
-          return;
-        }
+        if (myId !== fetchReqIdRef.current) return;
         setError(err);
         handleError(err, 'Failed to fetch maintenance tasks');
       } finally {
-        // Only clear loading if this is still the latest request
-        if (myId === fetchReqIdRef.current) {
-          endFetch();
-        }
+        // only endFetch if still latest request (prevents flicker)
+        if (myId === fetchReqIdRef.current) endFetch();
       }
     },
-    [initialFilters, handleError, endFetch]
+    [initialFilters, handleError, startFetch, endFetch]
   );
 
   const fetchTaskById = useCallback(
@@ -141,15 +142,16 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error } = await dataService.fetchMaintenanceTaskById(id);
+        const { data, error: svcError } =
+          await dataService.fetchMaintenanceTaskById(id);
 
-        if (error) {
-          setError(error);
-          handleError(error, 'Failed to fetch maintenance task');
+        if (svcError) {
+          setError(svcError);
+          handleError(svcError, 'Failed to fetch maintenance task');
           return null;
         }
 
-        return data;
+        return data ?? null;
       } catch (err) {
         setError(err);
         handleError(err, 'Failed to fetch maintenance task');
@@ -161,7 +163,6 @@ export function useMaintenanceTasks(
     [handleError, startFetch, endFetch]
   );
 
-  // FIXED: Type now matches interface - 'client' is included in Omit
   const createTask = useCallback(
     async (
       task: Omit<
@@ -173,11 +174,12 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error } = await dataService.createMaintenanceTask(task);
+        const { data, error: svcError } =
+          await dataService.createMaintenanceTask(task);
 
-        if (error) {
-          setError(error);
-          handleError(error, 'Failed to create maintenance task');
+        if (svcError) {
+          setError(svcError);
+          handleError(svcError, 'Failed to create maintenance task');
           return null;
         }
 
@@ -211,19 +213,17 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error } = await dataService.updateMaintenanceTask(
-          id,
-          updates
-        );
+        const { data, error: svcError } =
+          await dataService.updateMaintenanceTask(id, updates);
 
-        if (error) {
-          setError(error);
-          handleError(error, 'Failed to update maintenance task');
+        if (svcError) {
+          setError(svcError);
+          handleError(svcError, 'Failed to update maintenance task');
           return null;
         }
 
         if (data) {
-          setTasks(prev => prev.map(task => (task.id === id ? data : task)));
+          setTasks(prev => prev.map(t => (t.id === id ? data : t)));
         }
 
         return data ?? null;
@@ -244,14 +244,15 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { error } = await dataService.deleteMaintenanceTask(id);
-        if (error) {
-          setError(error);
-          handleError(error, 'Failed to delete maintenance task');
+        const { error: svcError } = await dataService.deleteMaintenanceTask(id);
+
+        if (svcError) {
+          setError(svcError);
+          handleError(svcError, 'Failed to delete maintenance task');
           return;
         }
 
-        setTasks(prev => prev.filter(task => task.id !== id));
+        setTasks(prev => prev.filter(t => t.id !== id));
       } catch (err) {
         setError(err);
         handleError(err, 'Failed to delete maintenance task');
@@ -264,37 +265,38 @@ export function useMaintenanceTasks(
 
   const fetchTasksByDateRange = useCallback(
     async (startDate: string, endDate: string): Promise<MaintenanceTask[]> => {
-      setLoading(prev => ({ ...prev, fetch: true }));
+      startFetch();
       setError(null);
 
       try {
-        const { data, error } = await dataService.fetchTasksByDateRange(
-          startDate,
-          endDate
-        );
+        const { data, error: svcError } =
+          await dataService.fetchTasksByDateRange(startDate, endDate);
 
-        if (error) {
-          setError(error);
-          handleError(error, 'Failed to fetch tasks by date range');
+        if (svcError) {
+          setError(svcError);
+          handleError(svcError, 'Failed to fetch tasks by date range');
           return [];
         }
 
-        const tasksResult = data || [];
-        setTasks(prevTasks => {
-          const existingIds = new Set(prevTasks.map(t => t.id));
-          const newTasks = tasksResult.filter(t => !existingIds.has(t.id));
-          return [...prevTasks, ...newTasks];
+        const tasksResult = data ?? [];
+
+        // Merge (add new only). If you want "update existing too", use Map merge like below.
+        setTasks(prev => {
+          const existingIds = new Set(prev.map(t => t.id));
+          const newOnes = tasksResult.filter(t => !existingIds.has(t.id));
+          return [...prev, ...newOnes];
         });
+
         return tasksResult;
       } catch (err) {
         setError(err);
         handleError(err, 'Failed to fetch tasks by date range');
         return [];
       } finally {
-        setLoading(prev => ({ ...prev, fetch: false }));
+        endFetch();
       }
     },
-    [handleError]
+    [handleError, startFetch, endFetch]
   );
 
   const fetchTasksByScheduledDate = useCallback(
@@ -303,24 +305,24 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error } =
+        const { data, error: svcError } =
           await dataService.fetchTasksByScheduledDate(date);
 
-        if (error) {
-          setError(error);
-          handleError(error, 'Failed to fetch tasks by scheduled date');
+        if (svcError) {
+          setError(svcError);
+          handleError(svcError, 'Failed to fetch tasks by scheduled date');
           return [];
         }
 
-        const tasksResult = data || [];
-        // FIXED: Merge updates to existing tasks instead of only adding new ones
-        setTasks(prevTasks => {
-          const map = new Map(prevTasks.map(t => [t.id, t]));
-          for (const t of tasksResult) {
-            map.set(t.id, t); // This will update existing tasks with new data
-          }
+        const tasksResult = data ?? [];
+
+        // Merge updates to existing tasks (update existing + add new)
+        setTasks(prev => {
+          const map = new Map(prev.map(t => [t.id, t]));
+          for (const t of tasksResult) map.set(t.id, t);
           return Array.from(map.values());
         });
+
         return tasksResult;
       } catch (err) {
         setError(err);
@@ -340,14 +342,15 @@ export function useMaintenanceTasks(
     setError(null);
 
     try {
-      const { data, error } = await dataService.fetchOverdueTasks();
-      if (error) {
-        setError(error);
-        handleError(error, 'Failed to fetch overdue tasks');
+      const { data, error: svcError } = await dataService.fetchOverdueTasks();
+
+      if (svcError) {
+        setError(svcError);
+        handleError(svcError, 'Failed to fetch overdue tasks');
         return [];
       }
 
-      return data || [];
+      return data ?? [];
     } catch (err) {
       setError(err);
       handleError(err, 'Failed to fetch overdue tasks');
@@ -357,8 +360,7 @@ export function useMaintenanceTasks(
     }
   }, [handleError, startFetch, endFetch]);
 
-  // FIXED: Now fetches by default even without initialFilters (autoFetch option)
-  // FIXED: Prevent StrictMode double-run in development (didFetchRef guard)
+  // autoFetch (default true) + StrictMode dev double-run guard
   useEffect(() => {
     if (!autoFetch || didFetchRef.current) return;
     didFetchRef.current = true;

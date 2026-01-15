@@ -185,7 +185,7 @@ describe('FilterGroup', () => {
     });
   });
 
-  it('shows "전체 선택" button when options.length > 2', () => {
+  it('shows "Select All" button when options.length > 2', () => {
     render(
       <FilterGroup
         title="Test Filter"
@@ -195,10 +195,12 @@ describe('FilterGroup', () => {
       />
     );
 
-    expect(screen.getByText('전체 선택')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /select all/i })
+    ).toBeInTheDocument();
   });
 
-  it('does not show "전체 선택" button when options.length <= 2', () => {
+  it('does not show "Select All" button when options.length <= 2', () => {
     render(
       <FilterGroup
         title="Test Filter"
@@ -208,10 +210,12 @@ describe('FilterGroup', () => {
       />
     );
 
-    expect(screen.queryByText('전체 선택')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /select all/i })
+    ).not.toBeInTheDocument();
   });
 
-  it('selects all options when "전체 선택" is clicked', () => {
+  it('selects all options when "Select All" is clicked', () => {
     render(
       <FilterGroup
         title="Test Filter"
@@ -221,7 +225,7 @@ describe('FilterGroup', () => {
       />
     );
 
-    const selectAllButton = screen.getByText('전체 선택');
+    const selectAllButton = screen.getByRole('button', { name: /select all/i });
     fireEvent.click(selectAllButton);
 
     // Should call onToggle for each unselected option
@@ -231,7 +235,7 @@ describe('FilterGroup', () => {
     });
   });
 
-  it('deselects all options when "전체 해제" is clicked', () => {
+  it('deselects all options when "Reset All" is clicked', () => {
     render(
       <FilterGroup
         title="Test Filter"
@@ -241,7 +245,9 @@ describe('FilterGroup', () => {
       />
     );
 
-    const deselectAllButton = screen.getByText('전체 해제');
+    const deselectAllButton = screen.getByRole('button', {
+      name: /reset all/i,
+    });
     fireEvent.click(deselectAllButton);
 
     // Should call onToggle for each selected option

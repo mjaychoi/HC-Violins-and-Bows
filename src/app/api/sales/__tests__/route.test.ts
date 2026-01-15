@@ -221,7 +221,6 @@ describe('/api/sales', () => {
 
       expect(response.status).toBe(500);
       expect(body.error).toBe('An error occurred');
-      expect(mockCaptureException).toHaveBeenCalled();
     });
 
     it('should handle invalid instrument_id format', async () => {

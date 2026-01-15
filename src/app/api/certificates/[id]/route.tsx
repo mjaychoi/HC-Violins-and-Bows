@@ -7,21 +7,27 @@ import { getSupabaseClient } from '@/lib/supabase-client';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
-import { ErrorSeverity, ErrorCodes, AppError } from '@/types/errors';
+import { ErrorSeverity, ErrorCodes } from '@/types/errors';
+import type { AppError } from '@/types/errors';
 import {
   createSafeErrorResponse,
   createLogErrorInfo,
 } from '@/utils/errorSanitization';
 import { validateUUID } from '@/utils/inputValidation';
 import { validateInstrument } from '@/utils/typeGuards';
-import { Instrument } from '@/types';
+import type { Instrument } from '@/types';
 
 // FIXED: Ensure Node.js runtime for PDF generation (Edge runtime breaks react-pdf)
 export const runtime = 'nodejs';
 
-// FIXED: React 19 compatibility - use renderToBuffer instead of renderToStream
-// React PDF's reconciler has issues with React 19's internal API changes in Next.js 15
-// renderToBuffer is more stable in this environment
+// Maximum PDF size in bytes (20MB) - prevents OOM from large PDFs
+const MAX_PDF_SIZE = 20 * 1024 * 1024;
+
+const nowMs = () =>
+  typeof globalThis.performance !== 'undefined'
+    ? globalThis.performance.now()
+    : Date.now();
+
 // FIXED: Promise cache to prevent race conditions on concurrent requests
 // In development, we invalidate cache to allow hot reloading
 let reactPdfLoader: Promise<{
@@ -35,56 +41,48 @@ let reactPdfLoader: Promise<{
 }> | null = null;
 
 async function loadReactPDF() {
-  // In development, always reload to allow hot reloading
   const isDev = process.env.NODE_ENV === 'development';
 
   if (!reactPdfLoader || isDev) {
     reactPdfLoader = (async () => {
-      // FIXED: React 19 compatibility - explicitly provide React to react-pdf
-      // React PDF's reconciler needs access to React's internal APIs
-      // In Next.js 15 server components, React may not be in global scope
+      // React 19 + Next.js 15 server env: make React available to react-pdf reconciler
       if (
         typeof global !== 'undefined' &&
         !(global as Record<string, unknown>).React
       ) {
-        // Type assertion to set React on global object
         (global as Record<string, unknown>).React = React;
       }
 
       const reactPdf = await import('@react-pdf/renderer');
-      // In development, always reload the component module
       const CertificateDocument = (
         await import('@/components/certificates/CertificateDocument')
       ).default;
+
       return {
         renderToBuffer: reactPdf.renderToBuffer,
         CertificateDocument,
       };
     })();
-    // In development, reset cache after a short delay to allow next request to reload
+
     if (isDev) {
       setTimeout(() => {
         reactPdfLoader = null;
       }, 100);
     }
   }
+
   return reactPdfLoader;
 }
 
-// Maximum PDF size in bytes (20MB) - prevents OOM from large PDFs
-const MAX_PDF_SIZE = 20 * 1024 * 1024;
-
 /**
  * Sanitize filename for safe use in Content-Disposition header
- * Removes dangerous characters and encodes special characters
  */
 function sanitizeFilename(input: string): string {
-  // Remove or replace dangerous characters (quotes, slashes, control chars)
   const safe = String(input)
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_') // Replace dangerous chars with underscore
-    .replace(/\s+/g, '_') // Replace spaces with underscore
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/\s+/g, '_')
     .trim()
-    .substring(0, 200); // Limit length
+    .substring(0, 200);
 
   return safe || 'certificate';
 }
@@ -95,67 +93,82 @@ function sanitizeFilename(input: string): string {
 function createContentDisposition(filename: string): string {
   const safeFilename = sanitizeFilename(filename);
   const baseFilename = `certificate-${safeFilename}.pdf`;
-
-  // RFC 5987 encoding for international characters
   const encoded = encodeURIComponent(baseFilename);
-
-  // Use both standard and extended format for maximum compatibility
   return `attachment; filename="${baseFilename}"; filename*=UTF-8''${encoded}`;
 }
 
-// FIXED: Removed pdfStreamToWebStream - using renderToBuffer instead for React 19 compatibility
+/**
+ * Build a URL-safe verify code
+ */
+function buildVerifyUrl(instrument: Instrument): string {
+  const serial = (instrument.serial_number ?? '').trim();
+  const baseId = serial || instrument.id.slice(0, 8).toUpperCase();
+  const year = new Date().getFullYear();
+  const code = `CERT-${baseId}-${year}`;
+
+  // Make it URL-safe
+  return `https://www.hcviolins.com/verify/${encodeURIComponent(code)}`;
+}
+
+/**
+ * Load logo as data URI if possible; otherwise fallback to absolute URL (best-effort).
+ * (react-pdf may or may not successfully fetch remote URLs depending on environment)
+ */
+async function resolveLogoSrc(): Promise<string | undefined> {
+  try {
+    const logoPath = path.join(process.cwd(), 'public', 'logo.png');
+    const logoBuf = await fs.readFile(logoPath);
+    return `data:image/png;base64,${logoBuf.toString('base64')}`;
+  } catch (e) {
+    // Fallback to absolute URL
+    const absoluteUrl =
+      process.env.NEXT_PUBLIC_LOGO_URL || 'https://www.hcviolins.com/logo.png';
+    console.warn(
+      'Failed to read logo from public folder; falling back to absolute URL:',
+      e instanceof Error ? e.message : String(e)
+    );
+    return absoluteUrl || undefined;
+  }
+}
 
 /**
  * GET /api/certificates/[id]
- * Generate and download PDF certificate for an instrument
  *
- * Security improvements:
- * - UUID validation
- * - Instrument existence check (with RLS if enabled)
- * - Filename sanitization to prevent header injection
- * - Memory-safe buffer generation
- * - Consistent error handling and logging with other APIs
- *
- * FIXED: Next.js 15+ route handlers receive params as Promise<{ id: string }>
- * TypeScript requires Promise type, but runtime-safe handling for compatibility
+ * NOTE: Next.js 15+ route handlers receive params as Promise<{ id: string }>
  */
 export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const startTime = performance.now();
-  // FIXED: Next.js 15+ route handlers: params is Promise<{ id: string }>
-  // Runtime-safe: handle both Promise and direct params for compatibility
+  const startTime = nowMs();
+  const durationMs = () => Math.round(nowMs() - startTime);
+
+  // params compatibility (Promise vs direct)
   const p: unknown = context.params;
   const params =
     typeof (p as { then?: unknown })?.then === 'function'
       ? await (p as Promise<{ id: string }>)
       : (p as { id: string });
+
   const { id } = params;
+  const routePath = `/api/certificates/${id}`;
 
   try {
-    // 1. Validate UUID format (consistent with other APIs)
+    // 1) Validate UUID
     if (!validateUUID(id)) {
-      const duration = Math.round(performance.now() - startTime);
-      logApiRequest(
-        'GET',
-        `/api/certificates/${id}`,
-        400,
-        duration,
-        'CertificatesAPI',
-        {
-          instrumentId: id,
-          error: true,
-          errorCode: 'INVALID_UUID',
-        }
-      );
+      logApiRequest('GET', routePath, 400, durationMs(), 'CertificatesAPI', {
+        instrumentId: id,
+        error: true,
+        errorCode: 'INVALID_UUID',
+      });
+
       return NextResponse.json(
         { error: 'Invalid instrument ID format' },
         { status: 400 }
       );
     }
 
-    // 2. Fetch instrument data and owner client (RLS will enforce permissions if enabled)
+    // 2) Fetch instrument
     const supabase = await getSupabaseClient();
     const { data: instrument, error } = await supabase
       .from('instruments')
@@ -163,19 +176,21 @@ export async function GET(
       .eq('id', id)
       .single();
 
-    // Fetch owner client if ownership exists
-    // instrument.ownership is a client_id (UUID), so fetch directly from clients table
+    // 2b) Optional owner fetch
     let ownerName: string | null = null;
-    if (
-      instrument &&
-      instrument.ownership &&
-      validateUUID(instrument.ownership)
-    ) {
+    type InstrumentWithOwnership = Instrument & { ownership?: unknown };
+    const ownershipValue = (instrument as InstrumentWithOwnership)?.ownership;
+    const ownerId =
+      typeof ownershipValue === 'string' && validateUUID(ownershipValue)
+        ? ownershipValue
+        : undefined;
+
+    if (instrument && ownerId) {
       try {
         const { data: ownerClient } = await supabase
           .from('clients')
           .select('first_name, last_name, email')
-          .eq('id', instrument.ownership)
+          .eq('id', ownerId)
           .maybeSingle();
 
         if (ownerClient) {
@@ -185,15 +200,12 @@ export async function GET(
             null;
         }
       } catch (ownerError) {
-        // Log but don't fail - owner name is optional
         console.warn(
           'Failed to fetch owner client for certificate:',
           ownerError instanceof Error ? ownerError.message : String(ownerError)
         );
       }
     }
-
-    const duration = Math.round(performance.now() - startTime);
 
     if (error || !instrument) {
       const appError = errorHandler.handleSupabaseError(
@@ -202,45 +214,39 @@ export async function GET(
       );
       const logInfo = createLogErrorInfo(appError);
 
-      logApiRequest(
-        'GET',
-        `/api/certificates/${id}`,
-        undefined,
-        duration,
-        'CertificatesAPI',
-        {
-          instrumentId: id,
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-          logMessage: logInfo.message,
-        }
-      );
+      // PGRST116: "No rows" (common not-found)
+      const errorWithCode = error as { code?: string } | null;
+      const status = errorWithCode?.code === 'PGRST116' ? 404 : 500;
+
+      logApiRequest('GET', routePath, status, durationMs(), 'CertificatesAPI', {
+        instrumentId: id,
+        error: true,
+        errorCode: appError.code,
+        logMessage: logInfo.message,
+      });
 
       captureException(
-        appError,
+        appError instanceof Error ? appError : new Error(String(appError)),
         'CertificatesAPI.GET',
-        { instrumentId: id, duration },
+        { instrumentId: id, status },
         ErrorSeverity.MEDIUM
       );
 
-      // Return 404 for not found, 500 for other errors
-      const status = error?.code === 'PGRST116' ? 404 : 500;
-      const safeError = createSafeErrorResponse(appError, status);
-      return NextResponse.json(safeError, { status });
+      return NextResponse.json(createSafeErrorResponse(appError, status), {
+        status,
+      });
     }
 
-    // 3. Validate instrument data structure
-    // FIXED: validateInstrument throws on error, so wrap in try-catch
+    // 3) Validate instrument structure
     let validatedInstrument: Instrument;
     try {
       validatedInstrument = validateInstrument(instrument);
-      // validatedInstrument is now guaranteed to be valid Instrument
     } catch (validationError) {
-      const duration = Math.round(performance.now() - startTime);
       const errorMessage =
         validationError instanceof Error
           ? validationError.message
           : 'Instrument data structure validation failed';
+
       const appError = errorHandler.createError(
         ErrorCodes.UNKNOWN_ERROR,
         'Invalid instrument data',
@@ -249,76 +255,45 @@ export async function GET(
       );
       const logInfo = createLogErrorInfo(appError);
 
-      logApiRequest(
-        'GET',
-        `/api/certificates/${id}`,
-        500,
-        duration,
-        'CertificatesAPI',
-        {
-          instrumentId: id,
-          error: true,
-          errorCode: appError.code,
-          logMessage: logInfo.message,
-        }
-      );
+      logApiRequest('GET', routePath, 500, durationMs(), 'CertificatesAPI', {
+        instrumentId: id,
+        error: true,
+        errorCode: appError.code,
+        logMessage: logInfo.message,
+      });
 
       captureException(
         appError,
         'CertificatesAPI.GET',
-        { instrumentId: id, duration },
+        { instrumentId: id },
         ErrorSeverity.HIGH
       );
 
-      const safeError = createSafeErrorResponse(appError, 500);
-      return NextResponse.json(safeError, { status: 500 });
+      return NextResponse.json(createSafeErrorResponse(appError, 500), {
+        status: 500,
+      });
     }
 
-    // 4. Load logo as data URI (server-side safe)
-    // FIXED: resolveLogoSrc returns string | null (never undefined)
-    // React PDF's Image component crashes if src is undefined/null
-    async function resolveLogoSrc(): Promise<string | null> {
-      // 1) Try local fs read -> data URL
-      try {
-        const logoPath = path.join(process.cwd(), 'public', 'logo.png');
-        const logoBuf = await fs.readFile(logoPath);
-        return `data:image/png;base64,${logoBuf.toString('base64')}`;
-      } catch (error) {
-        // 2) Try absolute URL (env-based if available)
-        const absoluteUrl =
-          process.env.NEXT_PUBLIC_LOGO_URL ||
-          'https://www.hcviolins.com/logo.png';
-        // Note: We return the URL but react-pdf may fail to fetch it
-        // If absolute URL also fails, we return null (Image won't render)
-        console.warn(
-          'Failed to read logo from public folder, will try absolute URL:',
-          error instanceof Error ? error.message : String(error)
-        );
-        // 3) Return null if all options fail (Image component won't render)
-        // In production, you might want to validate the absolute URL works
-        return absoluteUrl || null;
-      }
-    }
-
+    // 4) Resolve logo src
     const logoSrc = await resolveLogoSrc();
 
-    // 5. Load React PDF dynamically (fixes React 19 compatibility issues)
+    // 5) Load react-pdf
     const { renderToBuffer: renderToBufferFn, CertificateDocument: CertDoc } =
       await loadReactPDF();
 
-    // 6. Generate PDF buffer (renderToBuffer is more stable with React 19 + Next.js 15)
-    // FIXED: Type cast to satisfy renderToBuffer's DocumentProps requirement
-    // CertificateDocument returns a Document component, so this cast is safe
+    // 6) Generate PDF buffer
     const pdfBuffer = await renderToBufferFn(
       React.createElement(CertDoc, {
         instrument: validatedInstrument,
-        logoSrc: logoSrc || undefined, // Convert null to undefined for react-pdf
-        verifyUrl: `https://www.hcviolins.com/verify/CERT-${validatedInstrument.serial_number?.trim() || validatedInstrument.id.slice(0, 8).toUpperCase()}-${new Date().getFullYear()}`,
-        ownerName: ownerName || undefined, // Pass owner name if available
+        // NOTE: If react-pdf <Image> crashes on undefined, fix inside CertificateDocument:
+        // render <Image> only when logoSrc is truthy.
+        logoSrc,
+        verifyUrl: buildVerifyUrl(validatedInstrument),
+        ownerName: ownerName ?? undefined,
       }) as React.ReactElement<DocumentProps>
     );
 
-    // 7. Check PDF size before sending
+    // 7) Enforce size limit
     if (pdfBuffer.length > MAX_PDF_SIZE) {
       const appError = errorHandler.createError(
         ErrorCodes.FILE_TOO_LARGE,
@@ -327,51 +302,39 @@ export async function GET(
       );
       const logInfo = createLogErrorInfo(appError);
 
-      logApiRequest(
-        'GET',
-        `/api/certificates/${id}`,
-        413,
-        duration,
-        'CertificatesAPI',
-        {
-          instrumentId: id,
-          error: true,
-          logMessage: logInfo.message,
-          pdfSize: pdfBuffer.length,
-        }
-      );
+      logApiRequest('GET', routePath, 413, durationMs(), 'CertificatesAPI', {
+        instrumentId: id,
+        error: true,
+        errorCode: appError.code,
+        logMessage: logInfo.message,
+        pdfSize: pdfBuffer.length,
+      });
 
       captureException(
         appError,
         'CertificatesAPI.GET',
-        { instrumentId: id, pdfSize: pdfBuffer.length, duration },
+        { instrumentId: id, pdfSize: pdfBuffer.length },
         ErrorSeverity.HIGH
       );
 
-      const safeError = createSafeErrorResponse(appError, 413);
-      return NextResponse.json(safeError, { status: 413 });
+      return NextResponse.json(createSafeErrorResponse(appError, 413), {
+        status: 413,
+      });
     }
 
-    // 8. Create safe filename and return PDF
+    // 8) Return PDF
     const rawFilename =
       validatedInstrument.serial_number || validatedInstrument.id;
     const filename = sanitizeFilename(String(rawFilename));
 
-    logApiRequest(
-      'GET',
-      `/api/certificates/${id}`,
-      200,
-      duration,
-      'CertificatesAPI',
-      {
-        instrumentId: id,
-        serialNumber: validatedInstrument.serial_number,
-        pdfSize: pdfBuffer.length,
-      }
-    );
+    logApiRequest('GET', routePath, 200, durationMs(), 'CertificatesAPI', {
+      instrumentId: id,
+      serialNumber: validatedInstrument.serial_number,
+      pdfSize: pdfBuffer.length,
+    });
 
-    // FIXED: Convert Buffer to Uint8Array for NextResponse compatibility
     return new NextResponse(new Uint8Array(pdfBuffer), {
+      status: 200,
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': createContentDisposition(filename),
@@ -379,52 +342,37 @@ export async function GET(
       },
     });
   } catch (error) {
-    const duration = Math.round(performance.now() - startTime);
+    const err = error instanceof Error ? error : new Error(String(error));
 
-    // Check if it's a Supabase error or PDF generation error
-    let appError: AppError;
     const isSupabaseError =
       error &&
       typeof error === 'object' &&
-      ((error as { code?: string }).code?.startsWith('PGRST') ||
+      (((error as { code?: string }).code ?? '').startsWith('PGRST') ||
         (error as { name?: string }).name === 'PostgrestError');
 
-    if (isSupabaseError) {
-      // Supabase/PostgreSQL error
-      appError = errorHandler.handleSupabaseError(
-        error,
-        'Generate certificate PDF'
-      );
-    } else {
-      // PDF generation or other error
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
-            : 'Failed to generate PDF certificate';
-
-      appError = errorHandler.createError(
-        ErrorCodes.UNKNOWN_ERROR,
-        'PDF generation failed',
-        errorMessage,
-        {
-          instrumentId: id,
-          errorType: error instanceof Error ? error.name : typeof error,
-        }
-      );
-    }
+    const paramsId = params.id;
+    const appError: AppError = isSupabaseError
+      ? errorHandler.handleSupabaseError(error, 'Generate certificate PDF')
+      : errorHandler.createError(
+          ErrorCodes.UNKNOWN_ERROR,
+          'PDF generation failed',
+          err.message || 'Failed to generate PDF certificate',
+          {
+            instrumentId: paramsId,
+            errorType: err.name,
+          }
+        );
 
     const logInfo = createLogErrorInfo(appError);
 
     logApiRequest(
       'GET',
-      `/api/certificates/${id}`,
-      undefined,
-      duration,
+      `/api/certificates/${paramsId}`,
+      500,
+      durationMs(),
       'CertificatesAPI',
       {
-        instrumentId: id,
+        instrumentId: paramsId,
         error: true,
         errorCode: appError.code,
         logMessage: logInfo.message,
@@ -432,13 +380,14 @@ export async function GET(
     );
 
     captureException(
-      error instanceof Error ? error : new Error(String(error)),
+      err,
       'CertificatesAPI.GET',
-      { instrumentId: id, duration, logMessage: logInfo.message, appError },
+      { instrumentId: paramsId, logMessage: logInfo.message },
       ErrorSeverity.HIGH
     );
 
-    const safeError = createSafeErrorResponse(appError, 500);
-    return NextResponse.json(safeError, { status: 500 });
+    return NextResponse.json(createSafeErrorResponse(appError, 500), {
+      status: 500,
+    });
   }
 }

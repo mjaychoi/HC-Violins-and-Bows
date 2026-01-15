@@ -1,6 +1,8 @@
 // Global Jest setup (CommonJS)
 // NOTE: This file is loaded via setupFilesAfterEnv in jest.config.js
 
+require('whatwg-fetch');
+
 const React = require('react');
 require('@testing-library/jest-dom');
 

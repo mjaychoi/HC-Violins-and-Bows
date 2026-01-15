@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
-// captureException removed - withSentryRoute handles error reporting
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
@@ -13,6 +12,26 @@ import {
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 import type { User } from '@supabase/supabase-js';
+import type { ClientInstrument } from '@/types';
+
+const CONNECTION_SELECT_COLUMNS =
+  'id, client_id, instrument_id, relationship_type, notes, display_order, created_at';
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 100;
+
+function parsePage(input: string | null): number {
+  const parsed = Number.parseInt(input ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 1;
+
+  return parsed;
+}
+
+function parsePageSize(input: string | null): number {
+  if (!input) return DEFAULT_PAGE_SIZE;
+  const parsed = Number.parseInt(input, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_PAGE_SIZE;
+  return Math.min(parsed, MAX_PAGE_SIZE);
+}
 
 async function getHandler(request: NextRequest, _user: User) {
   void _user;
@@ -34,25 +53,14 @@ async function getHandler(request: NextRequest, _user: User) {
       );
       const ascending = searchParams.get('ascending') !== 'false';
 
-      // Pagination parameters
-      const page = searchParams.get('page')
-        ? Math.max(1, parseInt(searchParams.get('page')!, 10))
-        : undefined;
-      const pageSize = searchParams.get('pageSize')
-        ? Math.max(
-            1,
-            Math.min(100, parseInt(searchParams.get('pageSize')!, 10))
-          )
-        : undefined;
+      const page = parsePage(searchParams.get('page'));
+      const pageSize = searchParams.has('pageSize')
+        ? parsePageSize(searchParams.get('pageSize'))
+        : DEFAULT_PAGE_SIZE;
 
-      // Validate UUIDs early
       if (clientId && !validateUUID(clientId)) {
-        return {
-          payload: { error: 'Invalid client_id format' },
-          status: 400,
-        };
+        return { payload: { error: 'Invalid client_id format' }, status: 400 };
       }
-
       if (instrumentId && !validateUUID(instrumentId)) {
         return {
           payload: { error: 'Invalid instrument_id format' },
@@ -61,66 +69,40 @@ async function getHandler(request: NextRequest, _user: User) {
       }
 
       const supabase = getServerSupabase();
-      let query = supabase.from('client_instruments').select(
-        `
-          *,
-          client:clients(*),
-          instrument:instruments(*)
-        `,
-        { count: 'exact' }
-      );
+      let query = supabase
+        .from('client_instruments')
+        .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' });
 
-      if (clientId) {
-        query = query.eq('client_id', clientId);
-      }
+      if (clientId) query = query.eq('client_id', clientId);
+      if (instrumentId) query = query.eq('instrument_id', instrumentId);
 
-      if (instrumentId) {
-        query = query.eq('instrument_id', instrumentId);
-      }
-
-      // Order by display_order first (if available), then by the specified orderBy
-      // display_order is used for drag-and-drop reordering
-      // Note: display_order column may not exist if migration hasn't been run
-      // If the column doesn't exist, we'll fall back to just orderBy
-      // The migration file is: 20250115000003_add_connection_order.sql
+      // If you want display_order priority, add:
+      // query = query.order('display_order', { ascending: true });
       query = query.order(orderBy, { ascending });
 
-      // Apply pagination if provided
-      if (page && pageSize) {
-        const from = (page - 1) * pageSize;
-        const to = from + pageSize - 1;
-        query = query.range(from, to);
-      }
+      const offset = (page - 1) * pageSize;
+      const to = offset + pageSize - 1;
+      query = query.range(offset, to);
 
       let { data, error, count } = await query;
 
-      // If error is due to missing display_order column, retry without it
-      if (error && error.message?.includes('display_order does not exist')) {
-        // Retry query without display_order - this happens if migration hasn't been run
-        let retryQuery = supabase.from('client_instruments').select(
-          `
-            *,
-            client:clients(*),
-            instrument:instruments(*)
-          `,
-          { count: 'exact' }
-        );
+      // Retry only matters if you order/select by display_order somewhere.
+      if (
+        error &&
+        error.message?.toLowerCase().includes('display_order') &&
+        error.message?.toLowerCase().includes('does not exist')
+      ) {
+        let retryQuery = supabase
+          .from('client_instruments')
+          .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' });
 
-        if (clientId) {
-          retryQuery = retryQuery.eq('client_id', clientId);
-        }
-
-        if (instrumentId) {
+        if (clientId) retryQuery = retryQuery.eq('client_id', clientId);
+        if (instrumentId)
           retryQuery = retryQuery.eq('instrument_id', instrumentId);
-        }
 
         retryQuery = retryQuery.order(orderBy, { ascending });
 
-        if (page && pageSize) {
-          const from = (page - 1) * pageSize;
-          const to = from + pageSize - 1;
-          retryQuery = retryQuery.range(from, to);
-        }
+        retryQuery = retryQuery.range(offset, to);
 
         const retryResult = await retryQuery;
         data = retryResult.data;
@@ -165,13 +147,12 @@ async function postHandler(request: NextRequest, _user: User) {
     request,
     {
       method: 'POST',
-      path: '/api/connections',
+      path: 'ConnectionsAPI',
       context: 'ConnectionsAPI',
     },
     async () => {
       const body = await request.json();
 
-      // Validate request body using Zod schema
       const validationResult = safeValidate(
         body,
         validateCreateClientInstrument
@@ -185,7 +166,6 @@ async function postHandler(request: NextRequest, _user: User) {
         };
       }
 
-      // Use validated data instead of raw body
       const validatedInput = validationResult.data;
 
       const supabase = getServerSupabase();
@@ -201,11 +181,9 @@ async function postHandler(request: NextRequest, _user: User) {
         )
         .single();
 
-      if (error) {
+      if (error)
         throw errorHandler.handleSupabaseError(error, 'Create connection');
-      }
 
-      // Validate response data (with relations)
       const validatedResponse = validateClientInstrument(data);
 
       return {
@@ -231,16 +209,10 @@ async function patchHandler(request: NextRequest, _user: User) {
     },
     async () => {
       const body = await request.json();
-      const { id, ...updates } = body;
+      const { id, ...updates } = body || {};
 
-      if (!id) {
-        return {
-          payload: { error: 'Connection ID is required' },
-          status: 400,
-        };
-      }
-
-      // Validate UUID format
+      if (!id)
+        return { payload: { error: 'Connection ID is required' }, status: 400 };
       if (!validateUUID(id)) {
         return {
           payload: { error: 'Invalid connection ID format' },
@@ -248,7 +220,6 @@ async function patchHandler(request: NextRequest, _user: User) {
         };
       }
 
-      // Validate update data using partial schema
       const validationResult = safeValidate(
         updates,
         validatePartialClientInstrument
@@ -260,10 +231,13 @@ async function patchHandler(request: NextRequest, _user: User) {
         };
       }
 
+      // ✅ IMPORTANT: use validated updates, not raw updates
+      const validatedUpdates = validationResult.data;
+
       const supabase = getServerSupabase();
       const { data, error } = await supabase
         .from('client_instruments')
-        .update(updates)
+        .update(validatedUpdates)
         .eq('id', id)
         .select(
           `
@@ -274,11 +248,9 @@ async function patchHandler(request: NextRequest, _user: User) {
         )
         .single();
 
-      if (error) {
+      if (error)
         throw errorHandler.handleSupabaseError(error, 'Update connection');
-      }
 
-      // Validate response data (with relations)
       const validatedData = validateClientInstrument(data);
 
       return {
@@ -294,70 +266,41 @@ export const PATCH = withSentryRoute(withAuthRoute(patchHandler));
 async function deleteHandler(request: NextRequest, _user: User) {
   void _user;
 
-  const searchParams = request.nextUrl.searchParams;
-  const id = searchParams.get('id');
-
-  if (!id) {
-    return apiHandler(
-      request,
-      {
-        method: 'DELETE',
-        path: 'ConnectionsAPI',
-        context: 'ConnectionsAPI',
-      },
-      async () => ({
-        payload: { error: 'Connection ID is required' },
-        status: 400,
-      })
-    );
-  }
-
-  // Validate UUID format
-  if (!validateUUID(id)) {
-    return apiHandler(
-      request,
-      {
-        method: 'DELETE',
-        path: 'ConnectionsAPI',
-        context: 'ConnectionsAPI',
-      },
-      async () => ({
-        payload: { error: 'Invalid connection ID format' },
-        status: 400,
-      })
-    );
-  }
-
   return apiHandler(
     request,
     {
       method: 'DELETE',
       path: 'ConnectionsAPI',
       context: 'ConnectionsAPI',
-      metadata: { connectionId: id },
     },
     async () => {
+      const id = request.nextUrl.searchParams.get('id');
+
+      if (!id)
+        return { payload: { error: 'Connection ID is required' }, status: 400 };
+      if (!validateUUID(id)) {
+        return {
+          payload: { error: 'Invalid connection ID format' },
+          status: 400,
+        };
+      }
+
       const supabase = getServerSupabase();
       const { error } = await supabase
         .from('client_instruments')
         .delete()
         .eq('id', id);
 
-      if (error) {
+      if (error)
         throw errorHandler.handleSupabaseError(error, 'Delete connection');
-      }
 
-      return {
-        payload: { success: true },
-        metadata: { connectionId: id },
-      };
+      return { payload: { success: true }, metadata: { connectionId: id } };
     }
   );
 }
 
 export const DELETE = withSentryRoute(withAuthRoute(deleteHandler));
 
-// Batch update display_order for multiple connections
 async function putHandler(request: NextRequest, _user: User) {
   void _user;
 
@@ -370,26 +313,20 @@ async function putHandler(request: NextRequest, _user: User) {
     },
     async () => {
       const body = await request.json();
-      const { orders } = body; // Array of { id: string, display_order: number }
+      const { orders } = body || {};
 
       if (!Array.isArray(orders)) {
-        return {
-          payload: { error: 'orders must be an array' },
-          status: 400,
-        };
+        return { payload: { error: 'orders must be an array' }, status: 400 };
       }
 
       if (orders.length === 0) {
-        return {
-          payload: { data: [] },
-        };
+        return { payload: { data: [] } };
       }
 
-      // Validate all IDs and orders
       for (const order of orders) {
-        if (!order.id || !validateUUID(order.id)) {
+        if (!order?.id || !validateUUID(order.id)) {
           return {
-            payload: { error: `Invalid connection ID: ${order.id}` },
+            payload: { error: `Invalid connection ID: ${order?.id}` },
             status: 400,
           };
         }
@@ -405,29 +342,23 @@ async function putHandler(request: NextRequest, _user: User) {
 
       const supabase = getServerSupabase();
 
-      // Use a transaction-like approach: update all connections
-      // Since Supabase doesn't support transactions in JS client, we'll do sequential updates
-      // For better performance, we could use a stored procedure, but this is simpler
-      const updatePromises = orders.map(({ id, display_order }) =>
-        supabase
-          .from('client_instruments')
-          .update({ display_order })
-          .eq('id', id)
+      const results = await Promise.all(
+        orders.map(({ id, display_order }) =>
+          supabase
+            .from('client_instruments')
+            .update({ display_order })
+            .eq('id', id)
+        )
       );
 
-      const results = await Promise.all(updatePromises);
-
-      // Check for errors
-      const errors = results.filter(r => r.error);
-      if (errors.length > 0) {
-        const firstError = errors[0].error;
+      const firstErr = results.find(r => r.error)?.error;
+      if (firstErr) {
         throw errorHandler.handleSupabaseError(
-          firstError,
+          firstErr,
           'Batch update connection orders'
         );
       }
 
-      // Fetch updated connections
       const ids = orders.map(o => o.id);
       const { data, error: fetchError } = await supabase
         .from('client_instruments')
@@ -447,8 +378,11 @@ async function putHandler(request: NextRequest, _user: User) {
         );
       }
 
+      // validate each row if you want:
+      // const validated = (data || []).map(validateClientInstrument);
+
       return {
-        payload: { data: data || [] },
+        payload: { data: (data || []) as ClientInstrument[] },
         metadata: { orderCount: orders.length },
       };
     }

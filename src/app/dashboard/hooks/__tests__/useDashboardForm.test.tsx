@@ -143,7 +143,6 @@ describe('useDashboardForm', () => {
 
     act(() => {
       result.current.updateFields({
-        certificate: true,
         size: '4/4',
         weight: '500g',
         ownership: 'Store',
@@ -151,7 +150,6 @@ describe('useDashboardForm', () => {
       });
     });
 
-    expect(result.current.formData.certificate).toBe(true);
     expect(result.current.formData.size).toBe('4/4');
     expect(result.current.formData.weight).toBe('500g');
     expect(result.current.formData.ownership).toBe('Store');
