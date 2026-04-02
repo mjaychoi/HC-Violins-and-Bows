@@ -1,8 +1,12 @@
 import { NextRequest } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import {
   validateClientInstrument,
@@ -11,13 +15,17 @@ import {
   safeValidate,
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
-import type { User } from '@supabase/supabase-js';
 import type { ClientInstrument } from '@/types';
 
 const CONNECTION_SELECT_COLUMNS =
   'id, client_id, instrument_id, relationship_type, notes, display_order, created_at';
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
+const CONNECTION_DETAIL_SELECT = `
+  *,
+  client:clients(*),
+  instrument:instruments(*)
+`;
 
 function parsePage(input: string | null): number {
   const parsed = Number.parseInt(input ?? '', 10);
@@ -33,9 +41,34 @@ function parsePageSize(input: string | null): number {
   return Math.min(parsed, MAX_PAGE_SIZE);
 }
 
-async function getHandler(request: NextRequest, _user: User) {
-  void _user;
+function getConnectionConflictStatus(errorMessage: string): number {
+  if (
+    errorMessage.includes('not found') ||
+    errorMessage.includes('cannot be assigned') ||
+    errorMessage.includes('cannot be moved') ||
+    errorMessage.includes('Use the sales API')
+  ) {
+    return 409;
+  }
 
+  return 500;
+}
+
+async function fetchConnectionById(auth: AuthContext, connectionId: string) {
+  const { data, error } = await auth.userSupabase
+    .from('client_instruments')
+    .select(CONNECTION_DETAIL_SELECT)
+    .eq('id', connectionId)
+    .single();
+
+  if (error) {
+    throw errorHandler.handleSupabaseError(error, 'Fetch connection');
+  }
+
+  return validateClientInstrument(data);
+}
+
+async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -68,8 +101,7 @@ async function getHandler(request: NextRequest, _user: User) {
         };
       }
 
-      const supabase = getServerSupabase();
-      let query = supabase
+      let query = auth.userSupabase
         .from('client_instruments')
         .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' });
 
@@ -92,7 +124,7 @@ async function getHandler(request: NextRequest, _user: User) {
         error.message?.toLowerCase().includes('display_order') &&
         error.message?.toLowerCase().includes('does not exist')
       ) {
-        let retryQuery = supabase
+        let retryQuery = auth.userSupabase
           .from('client_instruments')
           .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' });
 
@@ -140,9 +172,7 @@ async function getHandler(request: NextRequest, _user: User) {
 
 export const GET = withSentryRoute(withAuthRoute(getHandler));
 
-async function postHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function postHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -151,6 +181,22 @@ async function postHandler(request: NextRequest, _user: User) {
       context: 'ConnectionsAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
 
       const validationResult = safeValidate(
@@ -168,23 +214,41 @@ async function postHandler(request: NextRequest, _user: User) {
 
       const validatedInput = validationResult.data;
 
-      const supabase = getServerSupabase();
-      const { data, error } = await supabase
-        .from('client_instruments')
-        .insert(validatedInput)
-        .select(
-          `
-          *,
-          client:clients(*),
-          instrument:instruments(*)
-        `
-        )
-        .single();
+      if (validatedInput.relationship_type === 'Sold') {
+        return {
+          payload: {
+            error:
+              'Sold relationship cannot be created directly. Use the sales API.',
+          },
+          status: 409,
+        };
+      }
 
-      if (error)
+      const { data: connectionId, error } = await auth.userSupabase.rpc(
+        'create_connection_atomic',
+        {
+          p_client_id: validatedInput.client_id,
+          p_instrument_id: validatedInput.instrument_id,
+          p_relationship_type: validatedInput.relationship_type,
+          p_notes: validatedInput.notes ?? null,
+        }
+      );
+
+      if (error || typeof connectionId !== 'string') {
+        const errorMessage =
+          error && typeof error.message === 'string'
+            ? error.message
+            : 'Failed to create connection';
+
+        const status = getConnectionConflictStatus(errorMessage);
+        if (status === 409) {
+          return { payload: { error: errorMessage }, status };
+        }
+
         throw errorHandler.handleSupabaseError(error, 'Create connection');
+      }
 
-      const validatedResponse = validateClientInstrument(data);
+      const validatedResponse = await fetchConnectionById(auth, connectionId);
 
       return {
         payload: { data: validatedResponse },
@@ -197,9 +261,7 @@ async function postHandler(request: NextRequest, _user: User) {
 
 export const POST = withSentryRoute(withAuthRoute(postHandler));
 
-async function patchHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function patchHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -208,6 +270,22 @@ async function patchHandler(request: NextRequest, _user: User) {
       context: 'ConnectionsAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
       const { id, ...updates } = body || {};
 
@@ -234,24 +312,29 @@ async function patchHandler(request: NextRequest, _user: User) {
       // ✅ IMPORTANT: use validated updates, not raw updates
       const validatedUpdates = validationResult.data;
 
-      const supabase = getServerSupabase();
-      const { data, error } = await supabase
-        .from('client_instruments')
-        .update(validatedUpdates)
-        .eq('id', id)
-        .select(
-          `
-          *,
-          client:clients(*),
-          instrument:instruments(*)
-        `
-        )
-        .single();
+      const { data: connectionId, error } = await auth.userSupabase.rpc(
+        'update_connection_atomic',
+        {
+          p_connection_id: id,
+          p_updates: validatedUpdates,
+        }
+      );
 
-      if (error)
+      if (error || typeof connectionId !== 'string') {
+        const errorMessage =
+          error && typeof error.message === 'string'
+            ? error.message
+            : 'Failed to update connection';
+
+        const status = getConnectionConflictStatus(errorMessage);
+        if (status === 409) {
+          return { payload: { error: errorMessage }, status };
+        }
+
         throw errorHandler.handleSupabaseError(error, 'Update connection');
+      }
 
-      const validatedData = validateClientInstrument(data);
+      const validatedData = await fetchConnectionById(auth, connectionId);
 
       return {
         payload: { data: validatedData },
@@ -263,9 +346,7 @@ async function patchHandler(request: NextRequest, _user: User) {
 
 export const PATCH = withSentryRoute(withAuthRoute(patchHandler));
 
-async function deleteHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function deleteHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -274,6 +355,22 @@ async function deleteHandler(request: NextRequest, _user: User) {
       context: 'ConnectionsAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
+          status: 403,
+        };
+      }
+
       const id = request.nextUrl.searchParams.get('id');
 
       if (!id)
@@ -285,14 +382,26 @@ async function deleteHandler(request: NextRequest, _user: User) {
         };
       }
 
-      const supabase = getServerSupabase();
-      const { error } = await supabase
-        .from('client_instruments')
-        .delete()
-        .eq('id', id);
+      const { data: connectionId, error } = await auth.userSupabase.rpc(
+        'delete_connection_atomic',
+        {
+          p_connection_id: id,
+        }
+      );
 
-      if (error)
+      if (error || typeof connectionId !== 'string') {
+        const errorMessage =
+          error && typeof error.message === 'string'
+            ? error.message
+            : 'Failed to delete connection';
+
+        const status = getConnectionConflictStatus(errorMessage);
+        if (status === 409) {
+          return { payload: { error: errorMessage }, status };
+        }
+
         throw errorHandler.handleSupabaseError(error, 'Delete connection');
+      }
 
       return { payload: { success: true }, metadata: { connectionId: id } };
     }
@@ -301,9 +410,7 @@ async function deleteHandler(request: NextRequest, _user: User) {
 
 export const DELETE = withSentryRoute(withAuthRoute(deleteHandler));
 
-async function putHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function putHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -312,6 +419,22 @@ async function putHandler(request: NextRequest, _user: User) {
       context: 'ConnectionsAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
       const { orders } = body || {};
 
@@ -340,11 +463,9 @@ async function putHandler(request: NextRequest, _user: User) {
         }
       }
 
-      const supabase = getServerSupabase();
-
       const results = await Promise.all(
         orders.map(({ id, display_order }) =>
-          supabase
+          auth.userSupabase
             .from('client_instruments')
             .update({ display_order })
             .eq('id', id)
@@ -360,7 +481,7 @@ async function putHandler(request: NextRequest, _user: User) {
       }
 
       const ids = orders.map(o => o.id);
-      const { data, error: fetchError } = await supabase
+      const { data, error: fetchError } = await auth.userSupabase
         .from('client_instruments')
         .select(
           `

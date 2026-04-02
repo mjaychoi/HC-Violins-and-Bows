@@ -298,7 +298,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await fetch(`/api/instruments?id=${id}`, {
+        const response = await apiFetch(`/api/instruments?id=${id}`, {
           method: 'DELETE',
         });
         if (!response.ok) {

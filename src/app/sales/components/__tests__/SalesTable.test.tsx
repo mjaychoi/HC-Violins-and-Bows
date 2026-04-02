@@ -5,6 +5,12 @@ import SalesTable from '../SalesTable';
 import { EnrichedSale, Instrument } from '@/types';
 import { SaleStatus } from '../../types';
 
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canManageSales: true,
+  })),
+}));
+
 // Mock Next.js Link
 jest.mock('next/link', () => {
   const MockLink = ({

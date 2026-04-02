@@ -1,7 +1,13 @@
 import React from 'react';
-import { render, screen, act } from '@/test-utils/render';
+import { render, screen, act, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import NotesPage from '../page';
+
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canCreateNote: true,
+  })),
+}));
 
 jest.mock('@/hooks/useDebounce', () => ({
   useDebounce: (value: unknown) => value,
@@ -131,8 +137,10 @@ describe('NotesPage', () => {
     const newButton = getPrimaryNewNoteButton();
     await user.click(newButton);
 
-    expect(screen.getAllByText('Untitled').length).toBeGreaterThan(0);
-    expect(screen.getByDisplayValue('Untitled')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText('Untitled').length).toBeGreaterThan(0);
+    });
+    expect(await screen.findByDisplayValue('Untitled')).toBeInTheDocument();
   });
 
   it('deletes a note after confirmation', async () => {
@@ -142,7 +150,7 @@ describe('NotesPage', () => {
     const newButton = getPrimaryNewNoteButton();
     await user.click(newButton);
 
-    const deleteButtons = screen.getAllByRole('button', {
+    const deleteButtons = await screen.findAllByRole('button', {
       name: /delete note/i,
     });
     await user.click(deleteButtons[0]);
@@ -150,7 +158,7 @@ describe('NotesPage', () => {
     const confirmButton = screen.getByRole('button', { name: /confirm/i });
     await user.click(confirmButton);
 
-    expect(screen.getByText('No notes yet')).toBeInTheDocument();
+    expect(await screen.findByText('No notes yet')).toBeInTheDocument();
   });
 
   it('filters notes by search query', async () => {
@@ -160,20 +168,22 @@ describe('NotesPage', () => {
     const newButton = getPrimaryNewNoteButton();
     await user.click(newButton);
 
-    const titleInput = screen.getByDisplayValue('Untitled');
+    const titleInput = await screen.findByDisplayValue('Untitled');
     await user.clear(titleInput);
     await user.type(titleInput, 'Alpha Note');
 
     await user.click(newButton);
-    const titleInput2 = screen.getByDisplayValue('Untitled');
+    const titleInput2 = await screen.findByDisplayValue('Untitled');
     await user.clear(titleInput2);
     await user.type(titleInput2, 'Beta Note');
 
     const searchInput = screen.getByPlaceholderText('Search notes...');
     await user.type(searchInput, 'beta');
 
-    expect(screen.getByText(/Beta\s*Note/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Alpha\s*Note/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Beta\s*Note/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/Alpha\s*Note/i)).not.toBeInTheDocument();
+    });
   });
 
   it('persists notes to localStorage after edits', async () => {
@@ -187,7 +197,7 @@ describe('NotesPage', () => {
     const newButton = getPrimaryNewNoteButton();
     await user.click(newButton);
 
-    const contentArea = screen.getByPlaceholderText(/start writing/i);
+    const contentArea = await screen.findByPlaceholderText(/start writing/i);
     await user.type(contentArea, 'Saved content');
 
     act(() => {
@@ -216,16 +226,20 @@ describe('NotesPage', () => {
     const newButton = getPrimaryNewNoteButton();
     await user.click(newButton);
 
+    await waitFor(() => {
+      expect(
+        screen.queryByPlaceholderText('Search notes...')
+      ).not.toBeInTheDocument();
+    });
     expect(
-      screen.queryByPlaceholderText('Search notes...')
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /back to list/i })
+      await screen.findByRole('button', { name: /back to list/i })
     ).toBeInTheDocument();
 
     const backButton = screen.getByRole('button', { name: /back to list/i });
     await user.click(backButton);
 
-    expect(screen.getByPlaceholderText('Search notes...')).toBeInTheDocument();
+    expect(
+      await screen.findByPlaceholderText('Search notes...')
+    ).toBeInTheDocument();
   });
 });

@@ -368,6 +368,10 @@ interface InlineEditButtonProps {
    */
   className?: string;
   /**
+   * hover title text
+   */
+  title?: string;
+  /**
    * 버튼 크기
    * @default "sm"
    */
@@ -381,6 +385,7 @@ export function InlineEditButton({
   onClick,
   'aria-label': ariaLabel,
   className = '',
+  title,
   size = 'sm',
 }: InlineEditButtonProps) {
   const sizeClasses = {
@@ -402,7 +407,7 @@ export function InlineEditButton({
         className
       )}
       aria-label={ariaLabel}
-      title={ariaLabel}
+      title={title || ariaLabel}
     >
       <svg
         className="w-full h-full"

@@ -1,54 +1,90 @@
-/**
- * ✅ FIXED: Server-only module guard
- * This ensures this file is never imported in client-side code
- *
- * To enable: Install 'server-only' package and uncomment the import below
- * npm install --save-dev server-only
- *
- * For now, this is enforced via file location (lib/supabase-server.ts)
- * and clear error messages if accidentally imported in client code
- */
-// import 'server-only';
+import 'server-only';
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-/**
- * Server-side Supabase client using service role key
- * This bypasses RLS policies and should only be used in API routes
- * ✅ FIXED: Uses server-only to prevent client bundle inclusion
- */
-let _serverSupabase: SupabaseClient | null = null;
-
-/**
- * ✅ FIXED: Get or create server-side Supabase client instance (service role)
- * Throws error if required environment variables are missing
- *
- * Environment variable priority:
- * 1. SUPABASE_URL (server-only, preferred)
- * 2. NEXT_PUBLIC_SUPABASE_URL (fallback for compatibility)
- */
-export function getServerSupabase(): SupabaseClient {
-  if (_serverSupabase) {
-    return _serverSupabase;
-  }
-
-  // ✅ FIXED: Prefer server-only env variable, fallback to NEXT_PUBLIC for compatibility
+function getSupabaseUrl(): string {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceRoleKey) {
+  if (!url) {
     throw new Error(
-      'Missing Supabase environment variables: ' +
-        'SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) / SUPABASE_SERVICE_ROLE_KEY'
+      'Missing Supabase URL: SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL'
     );
   }
+  return url;
+}
 
-  _serverSupabase = createClient(url, serviceRoleKey, {
+function getSupabaseAnonKey(): string {
+  const anonKey =
+    process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!anonKey) {
+    throw new Error(
+      'Missing Supabase anon key: SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY'
+    );
+  }
+  return anonKey;
+}
+
+function getSupabaseServiceRoleKey(): string {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY');
+  }
+  return serviceRoleKey;
+}
+
+/**
+ * User-scoped Supabase client.
+ *
+ * Uses the caller's access token, so RLS and user/session policies still apply.
+ * This should be the DEFAULT client for authenticated API routes.
+ */
+export function getUserSupabase(accessToken: string): SupabaseClient {
+  if (!accessToken?.trim()) {
+    throw new Error('getUserSupabase requires a non-empty access token');
+  }
+
+  return createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
     auth: {
-      autoRefreshToken: false,
       persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+/**
+ * Admin/service-role Supabase client.
+ *
+ * WARNING:
+ * - Bypasses RLS
+ * - Should ONLY be used for truly privileged server-side operations
+ * - Never use as the default route client for normal CRUD
+ */
+let _adminSupabase: SupabaseClient | null = null;
+
+export function getAdminSupabase(): SupabaseClient {
+  if (_adminSupabase) {
+    return _adminSupabase;
+  }
+
+  _adminSupabase = createClient(getSupabaseUrl(), getSupabaseServiceRoleKey(), {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
     },
   });
 
-  return _serverSupabase;
+  return _adminSupabase;
+}
+
+/**
+ * @deprecated
+ * Keep temporarily for backward compatibility only.
+ * Migrate route handlers to getUserSupabase(accessToken) or getAdminSupabase().
+ */
+export function getServerSupabase(): SupabaseClient {
+  return getAdminSupabase();
 }

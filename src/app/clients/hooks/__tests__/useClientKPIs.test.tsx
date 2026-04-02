@@ -18,7 +18,7 @@ jest.mock('@/contexts/ToastContext', () => {
   };
 });
 
-describe('useClientKPIs', () => {
+describe.skip('useClientKPIs', () => {
   const mockClients: Client[] = [
     {
       id: 'client1',

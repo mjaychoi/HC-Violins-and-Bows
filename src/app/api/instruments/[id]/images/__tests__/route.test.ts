@@ -1,35 +1,61 @@
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { validateUUID } from '@/utils/inputValidation';
 import { errorHandler } from '@/utils/errorHandler';
 
-jest.mock('@/lib/supabase-server');
 jest.mock('@/utils/inputValidation');
 jest.mock('@/utils/errorHandler');
-
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
->;
 const mockValidateUUID = validateUUID as jest.MockedFunction<
   typeof validateUUID
 >;
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
+let mockUserSupabase: any;
+
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute: (handler: any) => (request: NextRequest) =>
+      handler(request, {
+        user: { id: 'test-user' },
+        accessToken: 'test-token',
+        orgId: 'test-org',
+        clientId: 'test-client',
+        role: 'admin',
+        userSupabase: mockUserSupabase,
+        isTestBypass: true,
+      }),
+  };
+});
 
 describe('/api/instruments/[id]/images', () => {
   const mockInstrumentId = '123e4567-e89b-12d3-a456-426614174000';
-  const mockStorage = {
-    from: jest.fn().mockReturnValue({
-      createSignedUrl: jest.fn().mockResolvedValue({
-        data: { signedUrl: 'https://example.com/signed-image.jpg' },
-        error: null,
+
+  function makeSupabaseClient(imageQuery: unknown, instrumentExists = true) {
+    const instrumentQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({
+        data: instrumentExists ? { id: mockInstrumentId } : null,
+        error: instrumentExists ? null : { message: 'Instrument not found' },
       }),
-    }),
-  };
+    };
+
+    return {
+      from: jest.fn().mockImplementation((table: string) => {
+        if (table === 'instruments') return instrumentQuery;
+        if (table === 'instrument_images') return imageQuery;
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    } as any;
+  }
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockValidateUUID.mockReturnValue(true);
+    mockUserSupabase = {
+      from: jest.fn(),
+    };
     mockErrorHandler.handleSupabaseError = jest
       .fn()
       .mockImplementation((error: unknown) => {
@@ -66,12 +92,7 @@ describe('/api/instruments/[id]/images', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-        storage: mockStorage as unknown,
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = makeSupabaseClient(mockQuery);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/images`
@@ -107,12 +128,7 @@ describe('/api/instruments/[id]/images', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-        storage: mockStorage as unknown,
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = makeSupabaseClient(mockQuery);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/images`
@@ -142,7 +158,6 @@ describe('/api/instruments/[id]/images', () => {
       expect(response.status).toBe(400);
       expect(json.error).toBe('Invalid instrument ID format');
       // UUID validation happens before getServerSupabase is called
-      expect(mockGetServerSupabase).not.toHaveBeenCalled();
     });
 
     it('should handle database errors', async () => {
@@ -155,12 +170,7 @@ describe('/api/instruments/[id]/images', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-        storage: mockStorage as unknown,
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = makeSupabaseClient(mockQuery);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/images`
@@ -173,13 +183,10 @@ describe('/api/instruments/[id]/images', () => {
 
       expect(response.status).toBe(500);
       expect(json.error).toBe('Database error');
-      expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
     });
 
     it('should handle exceptions gracefully', async () => {
-      mockGetServerSupabase.mockImplementation(() => {
-        throw new Error('Connection failed');
-      });
+      mockUserSupabase = undefined;
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/images`
@@ -188,16 +195,10 @@ describe('/api/instruments/[id]/images', () => {
         params: Promise.resolve({ id: mockInstrumentId }),
       };
 
-      try {
-        const response = await GET(request, context);
-        const json = await response.json();
-        expect(response.status).toBe(500);
-        expect(json.error).toBe('Connection failed');
-      } catch {
-        // If error is thrown, it should be caught by the route handler
-        // So we check that errorHandler.handleSupabaseError was called
-        expect(errorHandler.handleSupabaseError).toHaveBeenCalled();
-      }
+      const response = await GET(request, context);
+      const json = await response.json();
+      expect(response.status).toBe(500);
+      expect(json.error).toContain('from');
     });
 
     it('should handle params as Promise in Next.js 15+ format', async () => {
@@ -220,12 +221,7 @@ describe('/api/instruments/[id]/images', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-        storage: mockStorage as unknown,
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = makeSupabaseClient(mockQuery);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/images`
@@ -260,12 +256,7 @@ describe('/api/instruments/[id]/images', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-        storage: mockStorage as unknown,
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = makeSupabaseClient(mockQuery);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/images`
@@ -302,12 +293,7 @@ describe('/api/instruments/[id]/images', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-        storage: mockStorage as unknown,
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = makeSupabaseClient(mockQuery);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/images`
@@ -356,12 +342,7 @@ describe('/api/instruments/[id]/images', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-        storage: mockStorage as unknown,
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = makeSupabaseClient(mockQuery);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/images`
@@ -394,12 +375,7 @@ describe('/api/instruments/[id]/images', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-        storage: mockStorage as unknown,
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = makeSupabaseClient(mockQuery);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/images`

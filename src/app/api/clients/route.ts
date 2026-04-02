@@ -1,14 +1,17 @@
 import { NextRequest } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 import { Logger } from '@/utils/logger';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import type { Client } from '@/types';
-import type { User } from '@supabase/supabase-js';
-import type { PostgrestError } from '@supabase/postgrest-js';
-import { logWarn, logDebug } from '@/utils/logger';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { logDebug } from '@/utils/logger';
 import {
   validateClient,
   validateClientArray,
@@ -37,39 +40,6 @@ type ListQuery = {
   rangeEnd?: number;
   search?: string;
 };
-
-function extractOrgId(user: User | undefined): string | undefined {
-  if (!user || typeof user !== 'object') return undefined;
-  const u = user as unknown as Record<string, unknown>;
-
-  const userMeta =
-    (u.user_metadata as Record<string, unknown> | undefined) ?? undefined;
-  const appMeta =
-    (u.app_metadata as Record<string, unknown> | undefined) ?? undefined;
-
-  const candidates = [
-    u.org_id,
-    u.organization_id,
-    u.orgId,
-    u.organizationId,
-    userMeta?.org_id,
-    userMeta?.organization_id,
-    appMeta?.org_id,
-    appMeta?.organization_id,
-  ];
-
-  for (const c of candidates) {
-    if (typeof c === 'string' && c.trim().length > 0) return c;
-  }
-  return undefined;
-}
-
-function isMissingColumnError(error: PostgrestError | null, column: string) {
-  if (!error) return false;
-  const haystack =
-    `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
-  return haystack.includes(`column "${column.toLowerCase()}" does not exist`);
-}
 
 /**
  * PostgREST filter-string safety:
@@ -116,13 +86,7 @@ function parseLimit(
   return parsed ?? DEFAULT_PAGE_SIZE;
 }
 
-function parseListQuery(
-  request: NextRequest,
-  user: User
-): {
-  q: ListQuery;
-  orgId?: string;
-} {
+function parseListQuery(request: NextRequest): { q: ListQuery } {
   const sp = request.nextUrl.searchParams;
 
   const orderBy = validateSortColumn('clients', sp.get('orderBy'));
@@ -150,7 +114,6 @@ function parseListQuery(
     ? parseLimit(sp.get('limit'), all)
     : undefined;
 
-  // baseLimit logic (keep same behavior)
   const baseLimit = !all
     ? (limitFromQuery ??
       (hasPageSize || hasPage
@@ -185,7 +148,6 @@ function parseListQuery(
       rangeEnd,
       search,
     },
-    orgId: extractOrgId(user),
   };
 }
 
@@ -204,69 +166,56 @@ function debugQueryResult(meta: Record<string, unknown>) {
   logDebug('[ClientsAPI] Raw query result', meta, 'ClientsAPI');
 }
 
-async function runClientsQueryWithOptionalOrg(args: {
-  q: ListQuery;
-  orgId?: string;
-}) {
-  const supabase = getServerSupabase();
+async function runClientsQuery(
+  supabase: SupabaseClient,
+  q: ListQuery,
+  orgId: string
+) {
+  let query = supabase
+    .from('clients')
+    .select(CLIENT_SELECT_COLUMNS, { count: 'exact' })
+    .eq('org_id', orgId);
 
-  const build = (applyOrgFilter: boolean) => {
-    let query = supabase
-      .from('clients')
-      .select(CLIENT_SELECT_COLUMNS, { count: 'exact' });
-
-    if (args.q.search) {
-      const s = args.q.search;
-      query = query.or(
-        `last_name.ilike.%${s}%,first_name.ilike.%${s}%,email.ilike.%${s}%`
-      );
-    }
-
-    if (applyOrgFilter && args.orgId) {
-      query = query.eq('org_id', args.orgId);
-    }
-
-    query = query.order(args.q.orderBy, { ascending: args.q.ascending });
-
-    if (
-      args.q.shouldApplyRange &&
-      args.q.rangeStart !== undefined &&
-      args.q.rangeEnd !== undefined
-    ) {
-      query = query.range(args.q.rangeStart, args.q.rangeEnd);
-    } else if (args.q.limit !== undefined) {
-      query = query.limit(args.q.limit);
-    }
-
-    return query;
-  };
-
-  // Try with org filter first
-  let result = await build(true);
-
-  // If schema doesn't have org_id, retry without it
-  if (isMissingColumnError(result.error, 'org_id')) {
-    logWarn(
-      '[ClientsAPI] org_id column missing, skipping org filter',
-      'ClientsAPI'
+  if (q.search) {
+    const s = q.search;
+    query = query.or(
+      `last_name.ilike.%${s}%,first_name.ilike.%${s}%,email.ilike.%${s}%`
     );
-    result = await build(false);
   }
 
-  return result;
+  query = query.order(q.orderBy, { ascending: q.ascending });
+
+  if (
+    q.shouldApplyRange &&
+    q.rangeStart !== undefined &&
+    q.rangeEnd !== undefined
+  ) {
+    query = query.range(q.rangeStart, q.rangeEnd);
+  } else if (q.limit !== undefined) {
+    query = query.limit(q.limit);
+  }
+
+  return query;
 }
 
 // -----------------------------
 // GET
 // -----------------------------
-async function getHandler(request: NextRequest, user: User) {
+async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     { method: 'GET', path: 'ClientsAPI', context: 'ClientsAPI' },
     async () => {
-      const { q, orgId } = parseListQuery(request, user);
+      const { q } = parseListQuery(request);
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
 
-      const result = await runClientsQueryWithOptionalOrg({ q, orgId });
+      const result = await runClientsQuery(auth.userSupabase, q, auth.orgId!);
       const { data, error, count } = result;
 
       debugQueryResult({
@@ -331,13 +280,19 @@ export const GET = withSentryRoute(withAuthRoute(getHandler));
 // -----------------------------
 // POST
 // -----------------------------
-async function postHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function postHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     { method: 'POST', path: 'ClientsAPI', context: 'ClientsAPI' },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
 
       const validation = safeValidate(body, validateCreateClient);
@@ -348,10 +303,9 @@ async function postHandler(request: NextRequest, _user: User) {
         };
       }
 
-      const supabase = getServerSupabase();
-      const { data, error } = await supabase
+      const { data, error } = await auth.userSupabase
         .from('clients')
-        .insert(validation.data)
+        .insert({ ...validation.data, org_id: auth.orgId! })
         .select()
         .single();
 
@@ -372,13 +326,27 @@ export const POST = withSentryRoute(withAuthRoute(postHandler));
 // -----------------------------
 // PATCH
 // -----------------------------
-async function patchHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function patchHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     { method: 'PATCH', path: 'ClientsAPI', context: 'ClientsAPI' },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
       const { id, ...updates } = body || {};
 
@@ -395,10 +363,10 @@ async function patchHandler(request: NextRequest, _user: User) {
         };
       }
 
-      const supabase = getServerSupabase();
-      const { data, error } = await supabase
+      // userSupabase + RLS (org_id = auth.org_id()) prevents cross-tenant writes
+      const { data, error } = await auth.userSupabase
         .from('clients')
-        .update(validation.data) // ✅ validated updates only
+        .update(validation.data)
         .eq('id', id)
         .select()
         .single();
@@ -416,21 +384,38 @@ export const PATCH = withSentryRoute(withAuthRoute(patchHandler));
 // -----------------------------
 // DELETE
 // -----------------------------
-async function deleteHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function deleteHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     { method: 'DELETE', path: 'ClientsAPI', context: 'ClientsAPI' },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
+          status: 403,
+        };
+      }
+
       const id = request.nextUrl.searchParams.get('id');
       if (!id)
         return { payload: { error: 'Client ID is required' }, status: 400 };
       if (!validateUUID(id))
         return { payload: { error: 'Invalid client ID format' }, status: 400 };
 
-      const supabase = getServerSupabase();
-      const { error } = await supabase.from('clients').delete().eq('id', id);
+      // userSupabase + RLS prevents cross-tenant deletes
+      const { error } = await auth.userSupabase
+        .from('clients')
+        .delete()
+        .eq('id', id);
       if (error) throw errorHandler.handleSupabaseError(error, 'Delete client');
 
       return { payload: { success: true }, metadata: { clientId: id } };

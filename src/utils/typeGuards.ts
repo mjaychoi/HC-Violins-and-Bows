@@ -24,22 +24,6 @@ export type ValidationResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
 
-export function validateInvoice(value: unknown): ValidationResult<Invoice> {
-  return { success: true, data: value as Invoice };
-}
-
-export function validatePartialInvoice(
-  value: unknown
-): ValidationResult<Partial<Invoice>> {
-  return { success: true, data: value as Partial<Invoice> };
-}
-
-export function validateCreateInvoice(
-  value: unknown
-): ValidationResult<CreateInvoiceInput> {
-  return { success: true, data: value as CreateInvoiceInput };
-}
-
 // ============================================================================
 // Zod Schemas
 // ============================================================================
@@ -105,6 +89,21 @@ export const dateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
  */
 export const uuidSchema = z.string().uuid();
 
+const invoiceStatusSchema = z.enum([
+  'draft',
+  'sent',
+  'paid',
+  'overdue',
+  'cancelled',
+]);
+
+const nullableTrimmedStringSchema = z.string().trim().nullable();
+
+function formatZodError(error: z.ZodError): string {
+  const errorMessages = error.issues?.map(issue => issue.message).join(', ');
+  return errorMessages || error.message || 'Validation failed';
+}
+
 /**
  * Instrument Schema
  */
@@ -118,6 +117,9 @@ export const instrumentSchema: z.ZodType<Instrument> = z
   .object({
     id: uuidSchema,
     status: instrumentStatusSchema,
+    reserved_reason: z.string().nullable().optional(),
+    reserved_by_user_id: uuidSchema.nullable().optional(),
+    reserved_connection_id: uuidSchema.nullable().optional(),
     maker: z.string().nullable(),
     type: z.string().nullable(),
     subtype: z.string().nullable(),
@@ -243,9 +245,139 @@ export const salesHistorySchema: z.ZodType<SalesHistory> = z.object({
   sale_date: dateStringSchema,
   notes: z.string().nullable(),
   created_at: z.string(),
+  entry_kind: z
+    .enum(['sale', 'refund', 'undo_refund', 'adjustment'])
+    .optional(),
+  adjustment_of_sale_id: uuidSchema.nullable().optional(),
   client: clientSchema.optional(),
   instrument: instrumentSchema.optional(),
 });
+
+const invoiceItemSchema = z.object({
+  id: uuidSchema,
+  invoice_id: uuidSchema,
+  instrument_id: uuidSchema.nullable(),
+  description: z.string().trim().min(1),
+  qty: z.number().finite().nonnegative(),
+  rate: z.number().finite(),
+  amount: z.number().finite(),
+  image_url: z
+    .union([z.string().trim().min(1), z.literal(''), z.null()])
+    .transform(v => (v === '' ? null : v)),
+  image_signed_url: z
+    .union([z.string().trim().url(), z.literal(''), z.null()])
+    .optional()
+    .transform(v => (v === '' ? null : v)),
+  display_order: z.number().int().nonnegative(),
+  created_at: z.string(),
+  instrument: instrumentSchema.nullable().optional(),
+});
+
+const invoiceBaseSchema = z.object({
+  id: uuidSchema,
+  invoice_number: z.string().nullable(),
+  status: invoiceStatusSchema,
+  invoice_date: dateStringSchema,
+  due_date: dateStringSchema.nullable(),
+  client_id: uuidSchema.nullable(),
+  subtotal: z.number().finite(),
+  tax: z.number().finite().nullable(),
+  total: z.number().finite(),
+  currency: z.string().trim().min(1),
+  notes: nullableTrimmedStringSchema.optional(),
+  created_at: z.string(),
+  updated_at: z.string().optional(),
+  business_name: nullableTrimmedStringSchema.optional(),
+  business_address: nullableTrimmedStringSchema.optional(),
+  business_phone: nullableTrimmedStringSchema.optional(),
+  business_email: z
+    .union([z.string().trim().email(), z.literal(''), z.null()])
+    .optional()
+    .transform(v => (v === '' ? null : v)),
+  bank_account_holder: nullableTrimmedStringSchema.optional(),
+  bank_name: nullableTrimmedStringSchema.optional(),
+  bank_swift_code: nullableTrimmedStringSchema.optional(),
+  bank_account_number: nullableTrimmedStringSchema.optional(),
+  default_conditions: nullableTrimmedStringSchema.optional(),
+  default_exchange_rate: nullableTrimmedStringSchema.optional(),
+  client: clientSchema.nullable().optional(),
+});
+
+const invoiceSchema = invoiceBaseSchema.extend({
+  items: z.array(invoiceItemSchema).optional(),
+  invoice_items: z.array(invoiceItemSchema).optional(),
+});
+
+const createInvoiceItemInputSchema = z.object({
+  instrument_id: uuidSchema.nullable(),
+  description: z.string().trim().min(1),
+  qty: z.number().finite().nonnegative(),
+  rate: z.number().finite(),
+  amount: z.number().finite(),
+  image_url: z
+    .union([z.string().trim().min(1), z.literal(''), z.null()])
+    .transform(v => (v === '' ? null : v)),
+  display_order: z.number().int().nonnegative(),
+});
+
+const createInvoiceSchema = z.object({
+  client_id: uuidSchema.nullable(),
+  invoice_date: dateStringSchema,
+  due_date: dateStringSchema.nullable(),
+  subtotal: z.number().finite(),
+  tax: z.number().finite().nullable(),
+  total: z.number().finite(),
+  currency: z.string().trim().min(1).optional(),
+  status: invoiceStatusSchema.optional(),
+  notes: nullableTrimmedStringSchema,
+  business_name: nullableTrimmedStringSchema.optional(),
+  business_address: nullableTrimmedStringSchema.optional(),
+  business_phone: nullableTrimmedStringSchema.optional(),
+  business_email: z
+    .union([z.string().trim().email(), z.literal(''), z.null()])
+    .optional()
+    .transform(v => (v === '' ? null : v)),
+  bank_account_holder: nullableTrimmedStringSchema.optional(),
+  bank_name: nullableTrimmedStringSchema.optional(),
+  bank_swift_code: nullableTrimmedStringSchema.optional(),
+  bank_account_number: nullableTrimmedStringSchema.optional(),
+  default_conditions: nullableTrimmedStringSchema.optional(),
+  default_exchange_rate: nullableTrimmedStringSchema.optional(),
+  items: z.array(createInvoiceItemInputSchema).optional(),
+});
+
+const partialInvoiceSchema = createInvoiceSchema.partial();
+
+export function validateInvoice(value: unknown): ValidationResult<Invoice> {
+  const result = invoiceSchema.safeParse(value);
+  if (!result.success) {
+    return { success: false, error: formatZodError(result.error) };
+  }
+
+  return { success: true, data: result.data };
+}
+
+export function validatePartialInvoice(
+  value: unknown
+): ValidationResult<Partial<CreateInvoiceInput>> {
+  const result = partialInvoiceSchema.safeParse(value);
+  if (!result.success) {
+    return { success: false, error: formatZodError(result.error) };
+  }
+
+  return { success: true, data: result.data };
+}
+
+export function validateCreateInvoice(
+  value: unknown
+): ValidationResult<CreateInvoiceInput> {
+  const result = createInvoiceSchema.safeParse(value);
+  if (!result.success) {
+    return { success: false, error: formatZodError(result.error) };
+  }
+
+  return { success: true, data: result.data };
+}
 
 /**
  * API Response Schema
@@ -550,6 +682,7 @@ export const partialInstrumentSchema = z
   .object({
     id: uuidSchema.optional(),
     status: instrumentStatusSchema.optional(),
+    reserved_reason: z.string().trim().min(1).nullable().optional(),
     maker: z.string().nullable().optional(),
     type: z.string().nullable().optional(),
     subtype: z.string().nullable().optional(),
@@ -615,6 +748,7 @@ export const createClientInstrumentSchema = z.object({
 export const createInstrumentSchema = z
   .object({
     status: instrumentStatusSchema,
+    reserved_reason: z.string().trim().min(1).nullable().optional(),
     maker: z.string().nullable(),
     type: z.string().nullable(),
     subtype: z.string().nullable(),
@@ -732,6 +866,10 @@ export const createSalesHistorySchema = z.object({
   sale_price: z.number(),
   sale_date: dateStringSchema,
   notes: z.string().nullable(),
+  entry_kind: z
+    .enum(['sale', 'refund', 'undo_refund', 'adjustment'])
+    .optional(),
+  adjustment_of_sale_id: uuidSchema.nullable().optional(),
 });
 
 export const partialSalesHistorySchema = z.object({
@@ -742,6 +880,10 @@ export const partialSalesHistorySchema = z.object({
   sale_date: dateStringSchema.optional(),
   notes: z.string().nullable().optional(),
   created_at: z.string().optional(),
+  entry_kind: z
+    .enum(['sale', 'refund', 'undo_refund', 'adjustment'])
+    .optional(),
+  adjustment_of_sale_id: uuidSchema.nullable().optional(),
   client: clientSchema.optional(),
   instrument: instrumentSchema.optional(),
 });

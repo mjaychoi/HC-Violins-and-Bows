@@ -21,9 +21,14 @@ import {
   getSupabaseClientSync,
 } from '@/lib/supabase-client';
 
+export type AuthRole = 'admin' | 'member';
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
+  role: AuthRole;
+  orgId: string | null;
+  hasOrgContext: boolean;
   loading: boolean;
   signUp: (
     email: string,
@@ -38,6 +43,65 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const defaultAuthContextValue: AuthContextType = {
+  user: null,
+  session: null,
+  role: 'member',
+  orgId: null,
+  hasOrgContext: false,
+  loading: true,
+  signUp: async () => ({ error: null }),
+  signIn: async () => ({ error: null }),
+  signOut: async () => undefined,
+  refreshSession: async () => undefined,
+};
+
+function extractOrgId(user: User | null): string | null {
+  if (!user) return null;
+
+  const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
+  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
+
+  const candidates = [
+    appMeta.org_id,
+    appMeta.orgId,
+    userMeta.org_id,
+    userMeta.orgId,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function extractRole(user: User | null): AuthRole {
+  if (!user) return 'member';
+
+  const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
+  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
+
+  const candidates = [
+    appMeta.role,
+    appMeta.app_role,
+    userMeta.role,
+    userMeta.app_role,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value !== 'string') continue;
+
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'admin') return 'admin';
+    if (normalized === 'member') return 'member';
+  }
+
+  return 'member';
+}
 
 function isInvalidRefreshTokenError(message?: string) {
   if (!message) return false;
@@ -58,6 +122,8 @@ function isNetworkishError(message: string) {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [role, setRole] = useState<AuthRole>('member');
+  const [orgId, setOrgId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Keep a single Supabase client instance for the lifetime of this provider.
@@ -78,10 +144,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return client;
   }, []);
 
-  const clearAuthState = useCallback(() => {
-    setSession(null);
-    setUser(null);
+  const applySessionState = useCallback((nextSession: Session | null) => {
+    const nextUser = nextSession?.user ?? null;
+    const nextOrgId = extractOrgId(nextUser);
+
+    setSession(nextSession);
+    setUser(nextUser);
+    setRole(extractRole(nextUser));
+    setOrgId(nextOrgId);
   }, []);
+
+  const clearAuthState = useCallback(() => {
+    applySessionState(null);
+  }, [applySessionState]);
 
   const handleInvalidRefreshToken = useCallback(
     async (where: string, err?: unknown) => {
@@ -132,8 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // But prevent initial loader from overriding later.
             initialLoadedRef.current = true;
 
-            setSession(newSession);
-            setUser(newSession?.user ?? null);
+            applySessionState(newSession);
             setLoading(false);
           }
         );
@@ -167,8 +241,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           userId: initialSession?.user?.id,
         });
 
-        setSession(initialSession);
-        setUser(initialSession?.user ?? null);
+        applySessionState(initialSession);
       } catch (err) {
         if (!mountedRef.current) return;
 
@@ -198,7 +271,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mountedRef.current = false;
       subscription?.unsubscribe();
     };
-  }, [ensureSupabase, handleInvalidRefreshToken, clearAuthState]);
+  }, [
+    ensureSupabase,
+    handleInvalidRefreshToken,
+    clearAuthState,
+    applySessionState,
+  ]);
 
   const signUp: AuthContextType['signUp'] = useCallback(
     async (email, password) => {
@@ -227,8 +305,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Note: Supabase signUp may not create a session if email confirmation is required.
         if (data.session) {
-          setSession(data.session);
-          setUser(data.user);
+          applySessionState(data.session);
         }
 
         logApiRequest('POST', 'auth/signup', 200, duration, 'AuthContext', {
@@ -243,7 +320,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: err as AuthError };
       }
     },
-    [ensureSupabase]
+    [ensureSupabase, applySessionState]
   );
 
   const signIn = useCallback<AuthContextType['signIn']>(
@@ -276,8 +353,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // onAuthStateChange will also fire; setting state here is okay but optional.
         if (data.session) {
-          setSession(data.session);
-          setUser(data.user);
+          applySessionState(data.session);
         }
 
         logApiRequest('POST', 'auth/signin', 200, duration, 'AuthContext', {
@@ -292,7 +368,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: err as AuthError };
       }
     },
-    [ensureSupabase]
+    [ensureSupabase, applySessionState]
   );
 
   const userId = user?.id;
@@ -364,8 +440,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const nextSession = data.session ?? null;
-      setSession(nextSession);
-      setUser(nextSession?.user ?? null);
+      applySessionState(nextSession);
 
       logApiRequest('POST', 'auth/refresh', 200, duration, 'AuthContext', {
         operation: 'refreshSession',
@@ -384,19 +459,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await handleInvalidRefreshToken('refreshSession-catch', err);
       }
     }
-  }, [ensureSupabase, handleInvalidRefreshToken]);
+  }, [ensureSupabase, handleInvalidRefreshToken, applySessionState]);
 
   const value = useMemo(
     () => ({
       user,
       session,
+      role,
+      orgId,
+      hasOrgContext: Boolean(orgId),
       loading,
       signUp,
       signIn,
       signOut,
       refreshSession,
     }),
-    [user, session, loading, signUp, signIn, signOut, refreshSession]
+    [
+      user,
+      session,
+      role,
+      orgId,
+      loading,
+      signUp,
+      signIn,
+      signOut,
+      refreshSession,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -406,4 +494,8 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
   return ctx;
+}
+
+export function useOptionalAuth() {
+  return useContext(AuthContext) ?? defaultAuthContextValue;
 }

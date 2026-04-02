@@ -4,6 +4,13 @@ import InvoiceList from '../InvoiceList';
 import { Invoice } from '@/types';
 
 // Mock dependencies
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canEditInvoice: true,
+    canDeleteInvoice: true,
+  })),
+}));
+
 jest.mock('@/components/common/OptimizedImage', () => {
   return function MockOptimizedImage({ src, alt }: any) {
     return <img src={src} alt={alt} data-testid="optimized-image" />;

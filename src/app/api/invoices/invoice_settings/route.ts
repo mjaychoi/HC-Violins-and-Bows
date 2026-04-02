@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { User } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
-import { getServerSupabase } from '@/lib/supabase-server';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { errorHandler } from '@/utils/errorHandler';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
@@ -10,23 +14,6 @@ import {
   createSafeErrorResponse,
   createLogErrorInfo,
 } from '@/utils/errorSanitization';
-
-function getOrgScopeFromUser(user: User | undefined): { orgId?: string } {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const anyUser = user as any;
-  const orgId =
-    anyUser?.org_id ??
-    anyUser?.organization_id ??
-    anyUser?.orgId ??
-    anyUser?.organizationId ??
-    anyUser?.user_metadata?.org_id ??
-    anyUser?.user_metadata?.organization_id ??
-    anyUser?.app_metadata?.org_id ??
-    anyUser?.app_metadata?.organization_id;
-
-  if (typeof orgId === 'string' && orgId.length > 0) return { orgId };
-  return {};
-}
 
 type InvoiceSettingsPayload = {
   business_name: string;
@@ -43,6 +30,9 @@ type InvoiceSettingsPayload = {
   default_exchange_rate: string;
   default_currency: string;
 };
+
+type InvoiceSettingsRow = Record<string, string | number | null>;
+type PostgrestErrorLike = { code?: string };
 
 // Explicit column list matching actual table structure
 // Note: default_exchange_rate is numeric type in DB, but we handle it as string in API
@@ -65,23 +55,20 @@ const INVOICE_SETTINGS_COLUMNS = [
 ].join(',');
 
 async function getOrCreateSettingsRow(
-  supabase: ReturnType<typeof getServerSupabase>,
-  orgId?: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<any> {
+  supabase: SupabaseClient,
+  orgId: string
+): Promise<InvoiceSettingsRow> {
   // 1) try select existing - explicitly select TEXT columns to avoid numeric type issues
 
-  let q = supabase
+  const q = supabase
     .from('invoice_settings')
     .select(INVOICE_SETTINGS_COLUMNS)
+    .eq('org_id', orgId)
     .limit(1);
-  if (orgId) q = q.eq('org_id', orgId);
 
   const { data, error } = await q.maybeSingle();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (error && (error as any).code !== 'PGRST116') throw error;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (data) return data as any;
+  if (error && (error as PostgrestErrorLike).code !== 'PGRST116') throw error;
+  if (data) return data as unknown as InvoiceSettingsRow;
 
   // 2) insert default row - match actual table column names
   // Note: default_exchange_rate is numeric, so use null instead of empty string
@@ -98,9 +85,7 @@ async function getOrCreateSettingsRow(
     default_exchange_rate: null, // numeric type - use null, not empty string
     default_currency: 'USD',
   };
-  if (orgId) {
-    insertPayload.org_id = orgId;
-  }
+  insertPayload.org_id = orgId;
 
   // Insert only the columns we know are TEXT type
   const { data: created, error: insErr } = await supabase
@@ -110,18 +95,25 @@ async function getOrCreateSettingsRow(
     .single();
 
   if (insErr) throw insErr;
-  return created;
+  return created as unknown as InvoiceSettingsRow;
 }
 
 export const GET = async (request: NextRequest) => {
   const handler = withSentryRoute(
-    withAuthRoute(async (_req: NextRequest, user: User) => {
+    withAuthRoute(async (_req: NextRequest, auth: AuthContext) => {
       try {
-        const supabase = getServerSupabase();
-        const { orgId } = getOrgScopeFromUser(user);
+        const orgContextError = requireOrgContext(auth);
+        if (orgContextError) {
+          return NextResponse.json(
+            { error: 'Organization context required' },
+            { status: 403 }
+          );
+        }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const row = (await getOrCreateSettingsRow(supabase, orgId)) as any;
+        const row = (await getOrCreateSettingsRow(
+          auth.userSupabase,
+          auth.orgId!
+        )) as InvoiceSettingsRow;
 
         // Map database column names to API field names for client compatibility
         const dbRow = row as Record<string, unknown>;
@@ -159,18 +151,31 @@ export const GET = async (request: NextRequest) => {
 
 export const PUT = async (request: NextRequest) => {
   const handler = withSentryRoute(
-    withAuthRoute(async (_req: NextRequest, user: User) => {
+    withAuthRoute(async (_req: NextRequest, auth: AuthContext) => {
       try {
+        const orgContextError = requireOrgContext(auth);
+        if (orgContextError) {
+          return NextResponse.json(
+            { error: 'Organization context required' },
+            { status: 403 }
+          );
+        }
+
+        const adminError = requireAdmin(auth);
+        if (adminError) {
+          return NextResponse.json(
+            { error: 'Admin role required' },
+            { status: 403 }
+          );
+        }
+
         const body = (await request.json()) as Partial<InvoiceSettingsPayload>;
-        const supabase = getServerSupabase();
-        const { orgId } = getOrgScopeFromUser(user);
 
         // ensure row exists
         const existing = (await getOrCreateSettingsRow(
-          supabase,
-          orgId
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        )) as any;
+          auth.userSupabase,
+          auth.orgId!
+        )) as InvoiceSettingsRow;
 
         // Map API field names to actual database column names
         // Convert default_exchange_rate from string to numeric if provided
@@ -199,11 +204,11 @@ export const PUT = async (request: NextRequest) => {
             body.default_currency ?? existing.default_currency ?? 'USD',
         };
 
-        const q = supabase
+        const q = auth.userSupabase
           .from('invoice_settings')
           .update(updatePayload)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .eq('id', (existing as any).id);
+          .eq('id', existing.id as string)
+          .eq('org_id', auth.orgId);
         const { data, error } = await q
           .select(INVOICE_SETTINGS_COLUMNS)
           .single();

@@ -15,6 +15,8 @@ export interface EmptyStateProps {
     label: string;
     onClick: () => void;
     icon?: React.ReactNode;
+    disabled?: boolean;
+    disabledReason?: string;
   };
   /** 필터가 활성화되어 있는지 여부 */
   hasActiveFilters?: boolean;
@@ -127,13 +129,16 @@ export default function EmptyState({
                   <button
                     type="button"
                     onClick={() => {
+                      if (actionButton.disabled) return;
                       if (guideSteps && guideSteps.length > 0) {
                         setShowGuideModal(true);
                       } else {
                         actionButton.onClick();
                       }
                     }}
-                    className="inline-flex items-center px-5 py-2.5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                    disabled={actionButton.disabled}
+                    title={actionButton.disabledReason}
+                    className="inline-flex items-center px-5 py-2.5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:cursor-not-allowed disabled:bg-blue-300 disabled:hover:bg-blue-300"
                   >
                     {actionButton.icon && (
                       <span className="mr-2">{actionButton.icon}</span>

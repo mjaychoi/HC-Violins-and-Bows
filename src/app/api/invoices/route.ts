@@ -1,11 +1,11 @@
+import { createHash } from 'crypto';
 import { NextRequest } from 'next/server';
-import type { User } from '@supabase/supabase-js';
-
-import { getServerSupabase } from '@/lib/supabase-server';
-import { errorHandler } from '@/utils/errorHandler';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import { requireOrgContext } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
+import { errorHandler } from '@/utils/errorHandler';
 
 import {
   validateInvoice,
@@ -25,6 +25,11 @@ import type { Invoice } from '@/types';
 import { logError, logWarn } from '@/utils/logger';
 import { normalizeInvoiceRecord } from '@/utils/invoiceNormalize';
 import type { CreateInvoiceInput } from './types';
+import {
+  toFinancialSnapshot,
+  validateInvoiceFinancials,
+} from './financialValidation';
+import { attachSignedUrlsToInvoice } from './imageUrls';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
@@ -32,47 +37,11 @@ const MAX_SEARCH_LEN = 200;
 
 type AnyRecord = Record<string, unknown>;
 
-type InvoiceStatus =
-  | 'draft'
-  | 'sent'
-  | 'paid'
-  | 'overdue'
-  | 'cancelled'
-  | 'void';
-
-// create payload 타입(validator가 보장해주지만, any 대신 명시)
+type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
 
 function clampInt(n: number, min: number, max: number): number {
   if (Number.isNaN(n)) return min;
   return Math.min(max, Math.max(min, n));
-}
-
-function getOrgScopeFromUser(user: User | undefined): {
-  orgId?: string;
-  scopeKey?: string;
-} {
-  // user metadata 구조가 프로젝트마다 달라서, 있으면 적용만 하도록 안전하게 처리
-  const u = user as unknown as AnyRecord;
-
-  const userMeta =
-    (u.user_metadata as unknown as AnyRecord | undefined) ?? undefined;
-  const appMeta =
-    (u.app_metadata as unknown as AnyRecord | undefined) ?? undefined;
-
-  const orgId =
-    u.org_id ??
-    u.organization_id ??
-    u.orgId ??
-    u.organizationId ??
-    userMeta?.org_id ??
-    userMeta?.organization_id ??
-    appMeta?.org_id ??
-    appMeta?.organization_id;
-
-  if (typeof orgId === 'string' && orgId.length > 0) {
-    return { orgId, scopeKey: 'org_id' };
-  }
-  return {};
 }
 
 function getErrorMessage(err: unknown): string {
@@ -90,7 +59,54 @@ function getErrorCode(err: unknown): string | undefined {
   return undefined;
 }
 
-async function getHandler(request: NextRequest, user: User) {
+function buildInvoiceMutationPayload(
+  input: Partial<CreateInvoiceInput>
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+
+  if (input.client_id !== undefined) payload.client_id = input.client_id;
+  if (input.invoice_date !== undefined)
+    payload.invoice_date = input.invoice_date;
+  if (input.due_date !== undefined) payload.due_date = input.due_date;
+  if (input.subtotal !== undefined) payload.subtotal = input.subtotal;
+  if (input.tax !== undefined) payload.tax = input.tax;
+  if (input.total !== undefined) payload.total = input.total;
+  if (input.currency !== undefined) payload.currency = input.currency;
+  if (input.status !== undefined) payload.status = input.status;
+  if (input.notes !== undefined) payload.notes = input.notes;
+  if (input.business_name !== undefined)
+    payload.business_name = input.business_name;
+  if (input.business_address !== undefined)
+    payload.business_address = input.business_address;
+  if (input.business_phone !== undefined)
+    payload.business_phone = input.business_phone;
+  if (input.business_email !== undefined)
+    payload.business_email = input.business_email;
+  if (input.bank_account_holder !== undefined)
+    payload.bank_account_holder = input.bank_account_holder;
+  if (input.bank_name !== undefined) payload.bank_name = input.bank_name;
+  if (input.bank_swift_code !== undefined)
+    payload.bank_swift_code = input.bank_swift_code;
+  if (input.bank_account_number !== undefined)
+    payload.bank_account_number = input.bank_account_number;
+  if (input.default_conditions !== undefined)
+    payload.default_conditions = input.default_conditions;
+  if (input.default_exchange_rate !== undefined)
+    payload.default_exchange_rate = input.default_exchange_rate;
+
+  return payload;
+}
+
+function buildInvoiceCreateRequestHash(
+  invoice: Record<string, unknown>,
+  items: CreateInvoiceInput['items']
+): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ invoice, items: items ?? [] }))
+    .digest('hex');
+}
+
+async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -100,6 +116,14 @@ async function getHandler(request: NextRequest, user: User) {
       metadata: {},
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
       try {
         const searchParams = request.nextUrl.searchParams;
 
@@ -161,13 +185,10 @@ async function getHandler(request: NextRequest, user: User) {
         const from = (page - 1) * pageSize;
         const to = from + pageSize - 1;
 
-        const supabase = getServerSupabase();
+        const orgId = auth.orgId!;
 
-        // ✅ any 대신 PostgrestFilterBuilder로 고정
-        const baseQuery = supabase
-          .from('invoices')
-          .select(
-            `
+        const baseQuery = auth.userSupabase.from('invoices').select(
+          `
             id,
             invoice_number,
             org_id,
@@ -185,50 +206,20 @@ async function getHandler(request: NextRequest, user: User) {
             clients (*),
             invoice_items (*)
             `,
-            { count: 'exact' }
-          )
-          .range(from, to);
+          { count: 'exact' }
+        );
 
         let query: typeof baseQuery = baseQuery;
 
-        // Optional scope enforcement (if org id exists)
-        const { orgId } = getOrgScopeFromUser(user);
-        if (orgId) {
-          query = query.eq('org_id', orgId);
-          logWarn(
-            'invoices.get.scoped',
-            `Filtering invoices by org_id=${orgId}`,
-            {
-              orgId,
-              userId: user?.id,
-              // Debug info to help diagnose org_id extraction issues
-              userMetadataKeys: user
-                ? Object.keys(
-                    (user as unknown as AnyRecord).user_metadata || {}
-                  )
-                : [],
-              appMetadataKeys: user
-                ? Object.keys((user as unknown as AnyRecord).app_metadata || {})
-                : [],
-            }
-          );
-        } else {
-          // If no orgId, log warning for debugging
-          logWarn(
-            'invoices.get.no_org_id',
-            'No org_id found in user context, returning all invoices (may be filtered by RLS)',
-            {
-              userId: user?.id,
-              // Debug info to help diagnose org_id extraction issues
-              userMetadata: user
-                ? (user as unknown as AnyRecord).user_metadata || {}
-                : {},
-              appMetadata: user
-                ? (user as unknown as AnyRecord).app_metadata || {}
-                : {},
-            }
-          );
-        }
+        query = query.eq('org_id', orgId);
+        logWarn(
+          'invoices.get.scoped',
+          `Filtering invoices by org_id=${orgId}`,
+          {
+            orgId,
+            userId: auth.user?.id,
+          }
+        );
 
         // Sorting whitelist
         const allowedSortColumns = new Set([
@@ -247,6 +238,7 @@ async function getHandler(request: NextRequest, user: User) {
         const ascending = sortDirection === 'asc';
 
         query = query.order(safeSortColumn, { ascending });
+        query = query.range(from, to);
 
         // Date filters
         if (rawFromDate) query = query.gte('invoice_date', rawFromDate);
@@ -269,7 +261,6 @@ async function getHandler(request: NextRequest, user: User) {
           'paid',
           'overdue',
           'cancelled',
-          'void',
         ]);
         if (status) {
           if (!validStatuses.has(status as InvoiceStatus)) {
@@ -331,7 +322,12 @@ async function getHandler(request: NextRequest, user: User) {
 
             const res = safeValidate(normalized, validateInvoice);
             if (res.success) {
-              validRows.push(res.data as Invoice);
+              validRows.push(
+                await attachSignedUrlsToInvoice(
+                  auth.userSupabase,
+                  res.data as Invoice
+                )
+              );
             } else {
               const id = normalized.id;
               if (typeof id === 'string') invalidRowIds.push(id);
@@ -388,7 +384,7 @@ async function getHandler(request: NextRequest, user: User) {
   );
 }
 
-async function postHandler(request: NextRequest, user: User) {
+async function postHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -398,6 +394,14 @@ async function postHandler(request: NextRequest, user: User) {
       metadata: {},
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
       let body: unknown;
       try {
         body = await request.json();
@@ -405,7 +409,6 @@ async function postHandler(request: NextRequest, user: User) {
         return { payload: { error: 'Invalid JSON body' }, status: 400 };
       }
 
-      // ✅ any 제거: body는 unknown 그대로
       const validationResult = safeValidate(body, validateCreateInvoice);
 
       if (!validationResult.success) {
@@ -415,193 +418,74 @@ async function postHandler(request: NextRequest, user: User) {
         };
       }
 
-      // ✅ validator가 보장한 shape를 명시 타입으로 받기
       const validatedInput = validationResult.data as CreateInvoiceInput;
 
       const { items } = validatedInput;
+      const idempotencyKey = request.headers.get('Idempotency-Key')?.trim();
 
-      const supabase = getServerSupabase();
-
-      // Get org scope from user (required for proper filtering on GET)
-      const { orgId } = getOrgScopeFromUser(user);
-
-      // ✅ Option B: Fallback to default org_id from environment variable (for development)
-      // In production with multi-tenancy, this should be removed and orgId must be required
-      const fallbackOrgId = process.env.DEFAULT_ORG_ID;
-
-      // Validate fallback org_id is a valid UUID if provided
-      let validatedFallbackOrgId: string | undefined;
-      if (fallbackOrgId) {
-        if (validateUUID(fallbackOrgId)) {
-          validatedFallbackOrgId = fallbackOrgId;
-        } else {
-          logWarn(
-            'invoices.post.invalid_fallback_org_id',
-            `DEFAULT_ORG_ID environment variable is not a valid UUID: ${fallbackOrgId}`,
-            {
-              fallbackOrgId,
-              userId: user?.id,
-            }
-          );
-          // Don't use invalid fallback, fall through to error
-        }
-      }
-
-      const effectiveOrgId = orgId ?? validatedFallbackOrgId;
-
-      // ✅ Ensure org_id is always set (required for proper filtering on GET)
-      // If org_id is missing and no fallback, return error to prevent "visible then disappears" issue
-      if (!effectiveOrgId) {
-        logWarn(
-          'invoices.post.no_org_id',
-          'No org_id found in user context and no DEFAULT_ORG_ID fallback',
-          {
-            userId: user?.id,
-            hasFallback: !!fallbackOrgId,
-            userMetadataKeys: user
-              ? Object.keys((user as unknown as AnyRecord).user_metadata || {})
-              : [],
-            appMetadataKeys: user
-              ? Object.keys((user as unknown as AnyRecord).app_metadata || {})
-              : [],
-          }
-        );
-        const errorMessage =
-          fallbackOrgId && !validatedFallbackOrgId
-            ? `Organization context missing. DEFAULT_ORG_ID environment variable is set but is not a valid UUID: "${fallbackOrgId}". Please set a valid UUID or configure org_id in user metadata.`
-            : 'Organization context missing. Cannot create invoice without organization context. Please set org_id in user metadata or configure a valid UUID for DEFAULT_ORG_ID environment variable.';
-
+      const financialError = validateInvoiceFinancials(
+        toFinancialSnapshot(validatedInput)
+      );
+      if (financialError) {
         return {
-          payload: {
-            error: errorMessage,
-          },
-          status: 403,
+          payload: { error: financialError },
+          status: 400,
         };
       }
 
-      // Log if using fallback (for debugging)
-      if (!orgId && fallbackOrgId) {
-        logWarn(
-          'invoices.post.using_fallback_org_id',
-          `Using DEFAULT_ORG_ID fallback: ${fallbackOrgId}`,
-          {
-            userId: user?.id,
-            fallbackOrgId,
-          }
-        );
-      }
-
-      const invoiceData: Record<string, unknown> = {
-        client_id: validatedInput.client_id,
-        invoice_date: validatedInput.invoice_date,
+      const invoiceData = buildInvoiceMutationPayload({
+        ...validatedInput,
         due_date: validatedInput.due_date ?? null,
-        subtotal: validatedInput.subtotal,
         tax: validatedInput.tax ?? null,
-        total: validatedInput.total,
         currency: validatedInput.currency || 'USD',
         status: validatedInput.status || 'draft',
         notes: validatedInput.notes ?? null,
-        org_id: effectiveOrgId, // ✅ Always set org_id (required for proper filtering on GET)
-      };
+      });
+      const requestHash = buildInvoiceCreateRequestHash(invoiceData, items);
 
-      // Include optional invoice settings fields if provided
-      if (validatedInput.business_name !== undefined)
-        invoiceData.business_name = validatedInput.business_name;
-      if (validatedInput.business_address !== undefined)
-        invoiceData.business_address = validatedInput.business_address;
-      if (validatedInput.business_phone !== undefined)
-        invoiceData.business_phone = validatedInput.business_phone;
-      if (validatedInput.business_email !== undefined)
-        invoiceData.business_email = validatedInput.business_email;
-      if (validatedInput.bank_account_holder !== undefined)
-        invoiceData.bank_account_holder = validatedInput.bank_account_holder;
-      if (validatedInput.bank_name !== undefined)
-        invoiceData.bank_name = validatedInput.bank_name;
-      if (validatedInput.bank_swift_code !== undefined)
-        invoiceData.bank_swift_code = validatedInput.bank_swift_code;
-      if (validatedInput.bank_account_number !== undefined)
-        invoiceData.bank_account_number = validatedInput.bank_account_number;
-      if (validatedInput.default_conditions !== undefined)
-        invoiceData.default_conditions = validatedInput.default_conditions;
-      if (validatedInput.default_exchange_rate !== undefined)
-        invoiceData.default_exchange_rate =
-          validatedInput.default_exchange_rate;
+      const rpcName = idempotencyKey
+        ? 'create_invoice_atomic_idempotent'
+        : 'create_invoice_atomic';
 
-      const { data: invoice, error: invoiceError } = await supabase
-        .from('invoices')
-        .insert(invoiceData)
-        .select(
-          `
-          id,
-          invoice_number,
-          client_id,
-          invoice_date,
-          due_date,
-          subtotal,
-          tax,
-          total,
-          currency,
-          status,
-          notes,
-          created_at,
-          updated_at,
-          clients (*),
-          invoice_items (*)
-        `
-        )
-        .single();
+      const rpcArgs = idempotencyKey
+        ? {
+            p_route_key: 'POST:/api/invoices',
+            p_idempotency_key: idempotencyKey,
+            p_request_hash: requestHash,
+            p_invoice: invoiceData,
+            p_items: Array.isArray(items) ? items : [],
+          }
+        : {
+            p_invoice: invoiceData,
+            p_items: Array.isArray(items) ? items : [],
+          };
+
+      const { data: invoiceId, error: invoiceError } =
+        await auth.userSupabase.rpc(rpcName, rpcArgs);
 
       if (invoiceError) {
+        const message = getErrorMessage(invoiceError);
+        if (
+          message.includes('Idempotency key reuse with different payload') ||
+          message.includes('Idempotent request is already in progress')
+        ) {
+          return {
+            payload: { error: message },
+            status: 409,
+          };
+        }
         throw errorHandler.handleSupabaseError(invoiceError, 'Create invoice');
       }
-
-      if (!invoice) {
+      if (typeof invoiceId !== 'string') {
         throw errorHandler.createError(
           ErrorCodes.DATABASE_ERROR,
-          'Failed to create invoice: No data returned from database',
-          'The invoice insert operation completed but no invoice data was returned',
+          'Failed to create invoice: No invoice id returned',
+          'The invoice creation RPC completed without returning an invoice id',
           { context: 'Create invoice' }
         );
       }
 
-      if (Array.isArray(items) && items.length > 0) {
-        const itemRows = items.map(item => {
-          const row: Record<string, unknown> = {
-            ...item,
-            invoice_id: (invoice as { id: string }).id,
-          };
-          // ✅ Set org_id on invoice_items if available (required for proper scoping)
-          if (orgId) {
-            row.org_id = orgId;
-          }
-          return row;
-        });
-
-        const { error: itemsError } = await supabase
-          .from('invoice_items')
-          .insert(itemRows);
-
-        if (itemsError) {
-          const { error: rollbackError } = await supabase
-            .from('invoices')
-            .delete()
-            .eq('id', (invoice as { id: string }).id);
-
-          if (rollbackError) {
-            logError(
-              'invoices.create.rollback_failed',
-              `invoiceId=${(invoice as { id: string }).id} rollbackError=${getErrorMessage(rollbackError)}`
-            );
-          }
-
-          throw errorHandler.handleSupabaseError(
-            itemsError,
-            'Create invoice items'
-          );
-        }
-      }
-
-      const { data: refreshed, error: refreshError } = await supabase
+      const { data: refreshed, error: refreshError } = await auth.userSupabase
         .from('invoices')
         .select(
           `
@@ -632,7 +516,7 @@ async function postHandler(request: NextRequest, user: User) {
           invoice_items (*)
         `
         )
-        .eq('id', (invoice as { id: string }).id)
+        .eq('id', invoiceId)
         .single();
 
       if (refreshError || !refreshed) {
@@ -651,7 +535,10 @@ async function postHandler(request: NextRequest, user: User) {
           invoiceValidationResult.error || 'Invalid invoice data'
         );
       }
-      const createdInvoice = invoiceValidationResult.data;
+      const createdInvoice = await attachSignedUrlsToInvoice(
+        auth.userSupabase,
+        invoiceValidationResult.data
+      );
 
       return {
         payload: { data: createdInvoice },

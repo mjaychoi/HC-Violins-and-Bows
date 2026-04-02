@@ -10,7 +10,7 @@ import { ErrorBoundary } from '@/components/common';
 function LoginRedirect() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, loading: authLoading } = useAuth();
+  const { user, hasOrgContext, loading: authLoading } = useAuth();
 
   // ✅ FIXED: Redirect if already logged in, preserving next parameter
   // ✅ FIXED: Use replace() to prevent history stack issues
@@ -18,6 +18,10 @@ function LoginRedirect() {
     if (!authLoading && user) {
       // ✅ FIXED: Check for next parameter to redirect to original destination
       const next = searchParams.get('next');
+      if (!hasOrgContext) {
+        router.replace('/onboarding/organization');
+        return;
+      }
       // ✅ 보안: open redirect 방지 (내부 경로만 허용)
       // - /dashboard 같은 내부 path만 허용하고, https://evil.com 같은 외부 이동은 차단
       const destination =
@@ -26,7 +30,7 @@ function LoginRedirect() {
           : '/dashboard';
       router.replace(destination);
     }
-  }, [user, authLoading, router, searchParams]);
+  }, [user, hasOrgContext, authLoading, router, searchParams]);
 
   return null;
 }

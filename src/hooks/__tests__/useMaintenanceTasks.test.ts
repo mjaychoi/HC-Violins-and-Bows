@@ -3,6 +3,7 @@ import { renderHook, act, waitFor } from '@/test-utils/render';
 import { useMaintenanceTasks } from '../useMaintenanceTasks';
 import { MaintenanceTask, TaskType, TaskStatus, TaskPriority } from '@/types';
 import { dataService } from '@/services/dataService';
+import { apiFetch } from '@/utils/apiFetch';
 
 // ✅ FIXED: ToastProvider도 export하도록 mock 수정
 jest.mock('@/contexts/ToastContext', () => {
@@ -23,6 +24,10 @@ jest.mock('@/utils/apiClient', () => ({
     update: jest.fn(),
     delete: jest.fn(),
   },
+}));
+
+jest.mock('@/utils/apiFetch', () => ({
+  apiFetch: jest.fn(),
 }));
 
 // Mock dataService
@@ -71,6 +76,7 @@ describe('useMaintenanceTasks', () => {
       data: [],
       error: null,
     });
+    (apiFetch as jest.Mock).mockReset();
   });
 
   describe('Initialization', () => {
@@ -294,9 +300,10 @@ describe('useMaintenanceTasks', () => {
         updated_at: '2024-01-01T00:00:00Z',
       };
 
-      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        data: createdTask,
-        error: null,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: jest.fn().mockResolvedValue({ data: createdTask }),
       });
 
       const { result } = renderHook(() =>
@@ -327,9 +334,11 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(createdTaskResult).toEqual(createdTask);
-      expect(dataService.createMaintenanceTask).toHaveBeenCalledWith(
-        newTaskData
-      );
+      expect(apiFetch).toHaveBeenCalledWith('/api/maintenance-tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTaskData),
+      });
     });
 
     it('should handle create task error', async () => {
@@ -353,9 +362,10 @@ describe('useMaintenanceTasks', () => {
       };
 
       const createError = new Error('Create failed');
-      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValue({
-        data: null,
-        error: createError,
+      (apiFetch as jest.Mock).mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: jest.fn().mockResolvedValue({ error: createError }),
       });
 
       const { result } = renderHook(() =>
@@ -389,21 +399,23 @@ describe('useMaintenanceTasks', () => {
         status: 'in_progress' as TaskStatus,
       };
 
-      (dataService.updateMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        data: updatedTask,
-        error: null,
-      });
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({ data: mockTask }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: updatedTask }),
+        });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
       );
 
       // First, manually set up tasks by creating one
-      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        data: mockTask,
-        error: null,
-      });
-
       await act(async () => {
         await result.current.createTask({
           instrument_id: mockTask.instrument_id,
@@ -466,29 +478,36 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(updatedTaskResult).toEqual(updatedTask);
-      expect(dataService.updateMaintenanceTask).toHaveBeenCalledWith('1', {
-        title: 'Updated Repair',
-        status: 'in_progress',
+      expect(apiFetch).toHaveBeenNthCalledWith(2, '/api/maintenance-tasks', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: '1',
+          title: 'Updated Repair',
+          status: 'in_progress',
+        }),
       });
     });
 
     it('should handle update task error', async () => {
       const updateError = new Error('Update failed');
-      (dataService.updateMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        data: null,
-        error: updateError,
-      });
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({ data: mockTask }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          json: jest.fn().mockResolvedValue({ error: updateError }),
+        });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
       );
 
       // First, manually set up tasks by creating one
-      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        data: mockTask,
-        error: null,
-      });
-
       await act(async () => {
         await result.current.createTask({
           instrument_id: mockTask.instrument_id,
@@ -551,20 +570,23 @@ describe('useMaintenanceTasks', () => {
 
   describe('deleteTask', () => {
     it('should delete task successfully', async () => {
-      (dataService.deleteMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        error: null,
-      });
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({ data: mockTask }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ success: true }),
+        });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
       );
 
       // First, manually set up tasks by creating one
-      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        data: mockTask,
-        error: null,
-      });
-
       await act(async () => {
         await result.current.createTask({
           instrument_id: mockTask.instrument_id,
@@ -619,25 +641,32 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      expect(dataService.deleteMaintenanceTask).toHaveBeenCalledWith('1');
+      expect(apiFetch).toHaveBeenNthCalledWith(
+        2,
+        '/api/maintenance-tasks?id=1',
+        { method: 'DELETE' }
+      );
     });
 
     it('should handle delete task error', async () => {
       const deleteError = new Error('Delete failed');
-      (dataService.deleteMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        error: deleteError,
-      });
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({ data: mockTask }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          json: jest.fn().mockResolvedValue({ error: deleteError }),
+        });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
       );
 
       // First, manually set up tasks by creating one
-      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        data: mockTask,
-        error: null,
-      });
-
       await act(async () => {
         await result.current.createTask({
           instrument_id: mockTask.instrument_id,
@@ -1174,21 +1203,23 @@ describe('useMaintenanceTasks', () => {
         title: 'Initial',
       };
 
-      (dataService.createMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        data: initialTask,
-        error: null,
-      });
-
       const updatedTask: MaintenanceTask = {
         ...initialTask,
         title: 'Updated',
         status: 'in_progress' as TaskStatus,
       };
 
-      (dataService.updateMaintenanceTask as jest.Mock).mockResolvedValueOnce({
-        data: updatedTask,
-        error: null,
-      });
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({ data: initialTask }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: updatedTask }),
+        });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })

@@ -29,6 +29,7 @@ import {
 import { logInfo } from '@/utils/logger';
 import { INTEREST_LEVELS } from '../constants';
 import dynamic from 'next/dynamic';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const MessageComposer = dynamic(
   () => import('@/components/messages/MessageComposer'),
@@ -103,6 +104,7 @@ const RELATIONSHIP_TAG_STYLES: Record<
 // Row Actions Component (Dropdown menu like Dashboard)
 const RowActions = memo(
   ({ onEdit, onDelete }: { onEdit: () => void; onDelete?: () => void }) => {
+    const { canManageClients } = usePermissions();
     // ✅ RowActions state - safe now that virtualization is removed
     const [isOpen, setIsOpen] = useState(false);
 
@@ -124,10 +126,13 @@ const RowActions = memo(
         <button
           onClick={e => {
             e.stopPropagation();
+            if (!canManageClients) return;
             setIsOpen(!isOpen);
           }}
-          className="p-1.5 rounded-md hover:bg-gray-50 transition-colors duration-200"
+          disabled={!canManageClients}
+          className="p-1.5 rounded-md hover:bg-gray-50 transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
           aria-label="More actions"
+          title={canManageClients ? 'More actions' : 'Admin only'}
           aria-expanded={isOpen}
         >
           <svg

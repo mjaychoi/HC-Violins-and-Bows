@@ -1,8 +1,27 @@
 import { NextRequest } from 'next/server';
 import { POST } from '../route';
-import { getSupabaseClient } from '@/lib/supabase-client';
+let mockUserSupabase: any;
 
-jest.mock('@/lib/supabase-client');
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute: (handler: any) => async (request: any, context?: any) =>
+      handler(
+        request,
+        {
+          user: { id: 'test-user' },
+          accessToken: 'test-token',
+          orgId: 'test-org',
+          clientId: 'test-client',
+          role: 'admin',
+          userSupabase: mockUserSupabase,
+          isTestBypass: true,
+        },
+        context
+      ),
+  };
+});
 jest.mock('@/utils/errorHandler', () => ({
   errorHandler: {
     handleSupabaseError: jest.fn(error => error),
@@ -19,13 +38,10 @@ jest.mock('@/utils/errorSanitization', () => ({
   createLogErrorInfo: jest.fn(error => ({ message: error.message })),
 }));
 
-const mockGetSupabaseClient = getSupabaseClient as jest.MockedFunction<
-  typeof getSupabaseClient
->;
-
 describe('/api/invoices/images', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUserSupabase = { storage: { from: jest.fn() } };
   });
 
   it('uploads image successfully', async () => {
@@ -51,20 +67,21 @@ describe('/api/invoices/images', () => {
       error: null,
     });
 
-    const mockGetPublicUrl = jest.fn().mockReturnValue({
-      data: { publicUrl: 'https://example.com/invoice-items/test-123.jpg' },
+    const mockCreateSignedUrl = jest.fn().mockResolvedValue({
+      data: { signedUrl: 'https://example.com/invoice-items/test-123.jpg' },
+      error: null,
     });
 
     const mockStorage = {
       from: jest.fn(() => ({
         upload: mockUpload,
-        getPublicUrl: mockGetPublicUrl,
+        createSignedUrl: mockCreateSignedUrl,
       })),
     };
 
-    mockGetSupabaseClient.mockResolvedValue({
+    mockUserSupabase = {
       storage: mockStorage as any,
-    } as any);
+    };
 
     const formData = new FormData();
     formData.append('file', mockFile);
@@ -80,10 +97,10 @@ describe('/api/invoices/images', () => {
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(data.success).toBe(true);
-    expect(data.publicUrl).toBe(
+    expect(data.signedUrl).toBe(
       'https://example.com/invoice-items/test-123.jpg'
     );
+    expect(data.filePath).toContain('test-org/test-user/invoice-item-');
     expect(mockUpload).toHaveBeenCalled();
   });
 
@@ -206,13 +223,16 @@ describe('/api/invoices/images', () => {
     const mockStorage = {
       from: jest.fn(() => ({
         upload: mockUpload,
-        getPublicUrl: jest.fn().mockReturnValue({ data: { publicUrl: '' } }),
+        createSignedUrl: jest.fn().mockResolvedValue({
+          data: { signedUrl: 'https://example.com/invoice-items/test-123.jpg' },
+          error: null,
+        }),
       })),
     };
 
-    mockGetSupabaseClient.mockResolvedValue({
+    mockUserSupabase = {
       storage: mockStorage as any,
-    } as any);
+    };
 
     const formData = new FormData();
     formData.append('file', mockFile);

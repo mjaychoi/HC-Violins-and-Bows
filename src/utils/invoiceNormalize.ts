@@ -93,6 +93,7 @@ function normalizeInvoiceItem(raw: unknown): InvoiceItem | null {
     rate,
     amount,
     image_url: (record.image_url as string | null) ?? null,
+    image_signed_url: (record.image_signed_url as string | null) ?? null,
     display_order: sanitizeNumber(record.display_order) ?? 0,
     created_at: createdAt,
     instrument: record.instrument as InvoiceItem['instrument'],

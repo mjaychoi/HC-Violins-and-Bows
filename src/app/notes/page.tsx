@@ -6,6 +6,7 @@ import { Input, Button } from '@/components/common/inputs';
 import { EmptyState } from '@/components/common';
 import { ConfirmDialog } from '@/components/common/modals';
 import { useDebounce } from '@/hooks/useDebounce';
+import { usePermissions } from '@/hooks/usePermissions';
 import { cn } from '@/utils/classNames';
 import { logError } from '@/utils/logger';
 const NOTES_STORAGE_KEY = 'notes_list';
@@ -20,6 +21,7 @@ interface Note {
 }
 
 export default function NotesPage() {
+  const { canCreateNote } = usePermissions();
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -135,6 +137,8 @@ export default function NotesPage() {
 
   // Create new note
   const handleCreateNote = useCallback(() => {
+    if (!canCreateNote) return;
+
     const newNote: Note = {
       id:
         typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -155,12 +159,16 @@ export default function NotesPage() {
       titleInputRef.current?.focus();
       titleInputRef.current?.select();
     }, 0);
-  }, [isDesktop]);
+  }, [isDesktop, canCreateNote]);
 
   // Delete note
-  const handleDeleteNote = useCallback((note: Note) => {
-    setDeleteConfirmNote(note);
-  }, []);
+  const handleDeleteNote = useCallback(
+    (note: Note) => {
+      if (!canCreateNote) return;
+      setDeleteConfirmNote(note);
+    },
+    [canCreateNote]
+  );
 
   const handleConfirmDelete = useCallback(() => {
     if (!deleteConfirmNote) return;
@@ -414,6 +422,8 @@ export default function NotesPage() {
               )}
               <Button
                 onClick={handleCreateNote}
+                disabled={!canCreateNote}
+                title={!canCreateNote ? 'Sign in required' : undefined}
                 className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm px-3 md:px-4 py-1.5 md:py-2"
               >
                 <svg
@@ -513,10 +523,12 @@ export default function NotesPage() {
                             label: 'Clear search',
                             onClick: handleClearSearch,
                           }
-                        : {
-                            label: 'Create your first note',
-                            onClick: handleCreateNote,
-                          }
+                        : canCreateNote
+                          ? {
+                              label: 'Create your first note',
+                              onClick: handleCreateNote,
+                            }
+                          : undefined
                     }
                   />
                 </div>
@@ -549,7 +561,11 @@ export default function NotesPage() {
                             e.stopPropagation();
                             handleDeleteNote(note);
                           }}
-                          className="text-gray-400 hover:text-red-600 transition-colors shrink-0 p-1"
+                          disabled={!canCreateNote}
+                          title={
+                            !canCreateNote ? 'Sign in required' : 'Delete note'
+                          }
+                          className="text-gray-400 hover:text-red-600 transition-colors shrink-0 p-1 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400"
                           aria-label="Delete note"
                         >
                           <svg
@@ -644,10 +660,14 @@ export default function NotesPage() {
                 <EmptyState
                   title="No note selected"
                   description="Create a new note or select one from the list"
-                  actionButton={{
-                    label: 'Create New Note',
-                    onClick: handleCreateNote,
-                  }}
+                  actionButton={
+                    canCreateNote
+                      ? {
+                          label: 'Create New Note',
+                          onClick: handleCreateNote,
+                        }
+                      : undefined
+                  }
                 />
               </div>
             )}

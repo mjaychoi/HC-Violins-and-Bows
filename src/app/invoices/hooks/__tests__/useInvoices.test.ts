@@ -119,7 +119,13 @@ describe('useInvoices', () => {
 
     const created = await result.current.createInvoice(newInvoice);
 
-    expect(created).toEqual(mockInvoices[0]);
+    expect(created).toEqual({
+      invoice: mockInvoices[0],
+      status: 'created',
+      message: 'Invoice created successfully.',
+      existingInvoiceId: 'inv-1',
+      shouldRefreshList: false,
+    });
     expect(apiFetch).toHaveBeenCalledWith(
       '/api/invoices',
       expect.objectContaining({
@@ -154,6 +160,45 @@ describe('useInvoices', () => {
     await expect(result.current.createInvoice(newInvoice)).rejects.toThrow();
 
     expect(mockHandleError).toHaveBeenCalled();
+  });
+
+  it('treats idempotency conflict as success and avoids generic error toast', async () => {
+    const newInvoice = {
+      client_id: 'client-1',
+      invoice_date: '2024-01-15',
+      due_date: null,
+      subtotal: 50000,
+      tax: null,
+      total: 50000,
+      currency: 'USD',
+      status: 'draft' as const,
+      notes: null,
+      items: [],
+    };
+
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      statusText: 'Conflict',
+      text: async () =>
+        JSON.stringify({
+          error: 'Idempotent request is already being processed',
+          existing_invoice_id: 'inv-existing',
+        }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+
+    const duplicateResult = await result.current.createInvoice(newInvoice);
+
+    expect(duplicateResult).toEqual({
+      invoice: null,
+      status: 'already_processed',
+      message: 'This request was already processed. Loading existing invoice.',
+      existingInvoiceId: 'inv-existing',
+      shouldRefreshList: false,
+    });
+    expect(mockHandleError).not.toHaveBeenCalled();
   });
 
   it('updates invoice successfully', async () => {

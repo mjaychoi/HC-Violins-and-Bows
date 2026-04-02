@@ -1,11 +1,10 @@
 import { NextRequest } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { validateDateString } from '@/utils/inputValidation';
-import type { User } from '@supabase/supabase-js';
 
 /**
  * Client sales summary aggregation endpoint
@@ -20,8 +19,7 @@ export interface ClientSalesSummary {
   first_purchase_date: string | null;
 }
 
-async function getHandler(request: NextRequest, _user: User) {
-  void _user;
+async function getHandler(request: NextRequest, auth: AuthContext) {
   const searchParams = request.nextUrl.searchParams;
   const fromDate = searchParams.get('fromDate') || undefined;
   const toDate = searchParams.get('toDate') || undefined;
@@ -35,10 +33,8 @@ async function getHandler(request: NextRequest, _user: User) {
       metadata: { fromDate, toDate },
     },
     async () => {
-      const supabase = getServerSupabase();
-
       // Build base query
-      let query = supabase
+      let query = auth.userSupabase
         .from('sales_history')
         .select('client_id, sale_price, sale_date', { count: 'exact' });
 

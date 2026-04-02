@@ -10,12 +10,14 @@ import {
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { useModalState } from '@/hooks/useModalState';
 import { SalesHistory, Client, Instrument } from '@/types';
+import { apiFetch } from '@/utils/apiFetch';
 
 // Mock hooks
 jest.mock('../hooks/useSalesHistory');
 jest.mock('@/hooks/useUnifiedData');
 jest.mock('@/hooks/useAppFeedback');
 jest.mock('@/hooks/useModalState');
+jest.mock('@/utils/apiFetch');
 
 // Mock components
 jest.mock('@/components/layout', () => ({
@@ -393,6 +395,7 @@ const mockUseAppFeedback = useAppFeedback as jest.MockedFunction<
 const mockUseModalState = useModalState as jest.MockedFunction<
   typeof useModalState
 >;
+const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;
 
 const mockClient: Client = {
   id: 'client-1',
@@ -451,6 +454,10 @@ describe('SalesPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSearchParamsGet.mockReturnValue(null);
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [mockSale] }),
+    } as Response);
 
     mockUseSalesHistory.mockReturnValue({
       sales: [mockSale],

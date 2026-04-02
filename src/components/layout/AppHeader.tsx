@@ -2,14 +2,19 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 
+export interface AppHeaderActionButton {
+  label: string;
+  onClick: () => void;
+  icon?: React.ReactNode;
+  visible?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
 interface AppHeaderProps {
   title: string;
   onToggleSidebar: () => void;
-  actionButton?: {
-    label: string;
-    onClick: () => void;
-    icon?: React.ReactNode;
-  };
+  actionButton?: AppHeaderActionButton;
   headerActions?: React.ReactNode;
 }
 
@@ -82,11 +87,13 @@ export default function AppHeader({
               </div>
             )}
 
-            {actionButton && (
+            {actionButton && actionButton.visible !== false && (
               <button
                 onClick={actionButton.onClick}
-                className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={actionButton.disabled}
+                className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300 disabled:hover:bg-blue-300"
                 aria-label={actionButton.label}
+                title={actionButton.disabledReason}
               >
                 <span className="h-4 w-4 flex shrink-0 items-center justify-center [&>svg]:h-4 [&>svg]:w-4">
                   {actionButton.icon || (

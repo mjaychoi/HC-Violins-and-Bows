@@ -1,18 +1,34 @@
 import { NextRequest } from 'next/server';
 import { GET, POST, PATCH } from '../route';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 
-jest.mock('@/lib/supabase-server');
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
+let mockUserSupabase: any;
 
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
->;
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute: (handler: any) => async (request: any, context?: any) =>
+      handler(
+        request,
+        {
+          user: { id: 'test-user' },
+          accessToken: 'test-token',
+          orgId: 'test-org',
+          clientId: 'test-client',
+          role: 'admin',
+          userSupabase: mockUserSupabase,
+          isTestBypass: true,
+        },
+        context
+      ),
+  };
+});
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
 const mockLogApiRequest = logApiRequest as jest.MockedFunction<
   typeof logApiRequest
@@ -23,14 +39,32 @@ const mockCaptureException = captureException as jest.MockedFunction<
 
 describe('/api/sales', () => {
   // Helper function to create a mock Supabase client
-  const createMockSupabaseClient = (fromMock: any) =>
+  const createMockSupabaseClient = (fromMock: any, rpcMock?: any) =>
     ({
       from: jest.fn().mockReturnValue(fromMock),
+      rpc: rpcMock || jest.fn(),
     }) as any;
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
+    const baseQuery = {
+      select: jest.fn().mockReturnThis(),
+      order: jest.fn().mockReturnThis(),
+      range: jest.fn().mockReturnThis(),
+      gte: jest.fn().mockReturnThis(),
+      lte: jest.fn().mockReturnThis(),
+      ilike: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      not: jest.fn().mockReturnThis(),
+      is: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: null, error: null }),
+    };
+    mockUserSupabase = {
+      from: jest.fn().mockReturnValue(baseQuery),
+      rpc: jest.fn(),
+    };
   });
 
   afterEach(() => {
@@ -94,7 +128,7 @@ describe('/api/sales', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       // range가 마지막에 호출되고 그 결과가 resolve되어야 함
       (mockQuery.range as jest.Mock).mockResolvedValue({
@@ -140,9 +174,7 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockQuery)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
       // range가 마지막에 호출되고 그 결과가 resolve되어야 함
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
@@ -169,9 +201,7 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockQuery)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
       // range가 마지막에 호출되고 그 결과가 resolve되어야 함
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
@@ -201,9 +231,7 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockQuery)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
       // range가 마지막에 호출되고 그 결과가 resolve되어야 함
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: null,
@@ -245,9 +273,7 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockQuery)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -315,7 +341,7 @@ describe('/api/sales', () => {
           return mockTotalsQuery as any;
         }),
       } as any;
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: mockData,
@@ -350,9 +376,7 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockQuery)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -380,9 +404,7 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockQuery)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -409,9 +431,7 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockQuery)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -437,9 +457,7 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockQuery)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -497,7 +515,7 @@ describe('/api/sales', () => {
           return mockTotalsQuery as any;
         }),
       } as any;
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       // Return invalid data that will fail validation
       (mockQuery.range as jest.Mock).mockResolvedValue({
@@ -536,7 +554,7 @@ describe('/api/sales', () => {
           throw new Error('Unexpected error');
         }),
       } as any;
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest('http://localhost:3000/api/sales?page=1');
       const response = await GET(request);
@@ -558,9 +576,7 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockQuery)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -588,9 +604,7 @@ describe('/api/sales', () => {
         eq: jest.fn().mockReturnThis(),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockQuery)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
       (mockQuery.range as jest.Mock).mockResolvedValue({
         data: [],
         error: null,
@@ -620,18 +634,20 @@ describe('/api/sales', () => {
         created_at: '2024-01-15T10:30:00Z',
       };
 
-      const mockInsert = {
-        insert: jest.fn().mockReturnThis(),
+      const mockSelectQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
           data: mockSale,
           error: null,
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockInsert)
-      );
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockSale.id,
+        error: null,
+      });
+      mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
@@ -649,12 +665,14 @@ describe('/api/sales', () => {
 
       expect(response.status).toBe(201);
       expect(body.data).toEqual(mockSale);
-      expect(mockInsert.insert).toHaveBeenCalledWith([
-        expect.objectContaining({
-          sale_price: 2500.0,
-          sale_date: '2024-01-15',
-        }),
-      ]);
+      expect(mockRpc).toHaveBeenCalledWith('create_sale_atomic', {
+        p_sale_price: 2500,
+        p_sale_date: '2024-01-15',
+        p_client_id: mockSale.client_id,
+        p_instrument_id: mockSale.instrument_id,
+        p_notes: 'Test sale',
+      });
+      expect(mockSelectQuery.eq).toHaveBeenCalledWith('id', mockSale.id);
     });
 
     it('should validate required fields', async () => {
@@ -700,18 +718,20 @@ describe('/api/sales', () => {
         created_at: '2024-01-15T10:30:00Z',
       };
 
-      const mockInsert = {
-        insert: jest.fn().mockReturnThis(),
+      const mockSelectQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
           data: mockSale,
           error: null,
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockInsert)
-      );
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockSale.id,
+        error: null,
+      });
+      mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
@@ -724,33 +744,24 @@ describe('/api/sales', () => {
       const response = await POST(request);
 
       expect(response.status).toBe(201);
-      expect(mockInsert.insert).toHaveBeenCalledWith([
-        expect.objectContaining({
-          sale_price: 2500.0,
-          sale_date: '2024-01-15',
-          client_id: null,
-          instrument_id: null,
-          notes: null,
-        }),
-      ]);
+      expect(mockRpc).toHaveBeenCalledWith('create_sale_atomic', {
+        p_sale_price: 2500,
+        p_sale_date: '2024-01-15',
+        p_client_id: null,
+        p_instrument_id: null,
+        p_notes: null,
+      });
     });
 
     it('should handle database error on insert', async () => {
       const mockError = { message: 'Database error', code: 'PGRST116' };
       const mockAppError = new Error('App error');
 
-      const mockInsert = {
-        insert: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: null,
-          error: mockError,
-        }),
-      };
-
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockInsert)
-      );
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: mockError,
+      });
+      mockUserSupabase = createMockSupabaseClient({}, mockRpc);
       mockErrorHandler.handleSupabaseError = jest
         .fn()
         .mockReturnValue(mockAppError);
@@ -792,18 +803,20 @@ describe('/api/sales', () => {
         created_at: '2024-01-15T10:30:00Z',
       };
 
-      const mockInsert = {
-        insert: jest.fn().mockReturnThis(),
+      const mockSelectQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
           data: mockSale,
           error: null,
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockInsert)
-      );
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockSale.id,
+        error: null,
+      });
+      mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
@@ -841,6 +854,17 @@ describe('/api/sales', () => {
   describe('PATCH', () => {
     it('should update a sale for refund', async () => {
       const saleId = '123e4567-e89b-12d3-a456-426614174000'; // Valid UUID
+      const originalSale = {
+        id: saleId,
+        instrument_id: '123e4567-e89b-12d3-a456-426614174001',
+        client_id: '123e4567-e89b-12d3-a456-426614174002',
+        sale_price: 2500.0,
+        sale_date: '2024-01-15',
+        notes: 'Original sale',
+        created_at: '2024-01-15T10:30:00Z',
+        entry_kind: 'sale',
+        adjustment_of_sale_id: null,
+      };
       const mockUpdatedSale = {
         id: saleId,
         instrument_id: '123e4567-e89b-12d3-a456-426614174001',
@@ -849,21 +873,39 @@ describe('/api/sales', () => {
         sale_date: '2024-01-15',
         notes: 'Refund issued on 2024-01-20',
         created_at: '2024-01-15T10:30:00Z',
+        entry_kind: 'refund',
+        adjustment_of_sale_id: saleId,
       };
 
-      const mockUpdate = {
-        update: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
+      const currentSaleQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: originalSale,
+          error: null,
+        }),
+      };
+      const adjustmentQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
           data: mockUpdatedSale,
           error: null,
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockUpdate)
-      );
+      let fromCallCount = 0;
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: '223e4567-e89b-12d3-a456-426614174000',
+        error: null,
+      });
+      mockUserSupabase = {
+        from: jest.fn().mockImplementation(() => {
+          fromCallCount += 1;
+          return fromCallCount === 1 ? currentSaleQuery : adjustmentQuery;
+        }),
+        rpc: mockRpc,
+      } as any;
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'PATCH',
@@ -879,11 +921,11 @@ describe('/api/sales', () => {
 
       expect(response.status).toBe(200);
       expect(body.data).toEqual(mockUpdatedSale);
-      expect(mockUpdate.update).toHaveBeenCalledWith({
-        sale_price: -2500.0,
-        notes: 'Refund issued on 2024-01-20',
+      expect(mockRpc).toHaveBeenCalledWith('create_sale_adjustment_atomic', {
+        p_source_sale_id: saleId,
+        p_adjustment_kind: 'refund',
+        p_notes: 'Refund issued on 2024-01-20',
       });
-      expect(mockUpdate.eq).toHaveBeenCalledWith('id', saleId);
     });
 
     it('should require id field', async () => {
@@ -917,66 +959,78 @@ describe('/api/sales', () => {
       expect(body.error).toBe('No fields to update.');
     });
 
-    it('should handle partial updates', async () => {
+    it('should reject direct sale amount rewrites', async () => {
       const saleId = '123e4567-e89b-12d3-a456-426614174000'; // Valid UUID
-      const mockUpdatedSale = {
+      const currentSale = {
         id: saleId,
         instrument_id: '123e4567-e89b-12d3-a456-426614174001',
         client_id: '123e4567-e89b-12d3-a456-426614174002',
-        sale_price: -2500.0,
+        sale_price: 2500.0,
         notes: 'Original notes',
         sale_date: '2024-01-15',
         created_at: '2024-01-15T10:30:00Z',
+        entry_kind: 'sale',
+        adjustment_of_sale_id: null,
       };
 
-      const mockUpdate = {
-        update: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
+      const mockFetch = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
-          data: mockUpdatedSale,
+          data: currentSale,
           error: null,
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockUpdate)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockFetch);
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'PATCH',
         body: JSON.stringify({
           id: saleId,
-          sale_price: -2500.0,
+          sale_price: 1800.0,
         }),
       });
 
       const response = await PATCH(request);
+      const body = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(mockUpdate.update).toHaveBeenCalledWith({
-        sale_price: -2500.0,
-      });
+      expect(response.status).toBe(409);
+      expect(body.error).toContain(
+        'Direct sale amount rewrites are not allowed'
+      );
     });
 
-    it('should handle database error on update', async () => {
+    it('should handle database error on adjustment creation', async () => {
       const saleId = '123e4567-e89b-12d3-a456-426614174000';
       const mockError = { message: 'Database error', code: 'PGRST116' };
       const mockAppError = new Error('App error');
+      const currentSale = {
+        id: saleId,
+        instrument_id: '123e4567-e89b-12d3-a456-426614174001',
+        client_id: '123e4567-e89b-12d3-a456-426614174002',
+        sale_price: 2500.0,
+        notes: 'Original notes',
+        sale_date: '2024-01-15',
+        created_at: '2024-01-15T10:30:00Z',
+        entry_kind: 'sale',
+        adjustment_of_sale_id: null,
+      };
 
-      const mockUpdate = {
-        update: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
+      const mockFetch = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
-          data: null,
-          error: mockError,
+          data: currentSale,
+          error: null,
         }),
       };
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockUpdate)
-      );
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: mockError,
+      });
+      mockUserSupabase = createMockSupabaseClient(mockFetch, mockRpc);
       mockErrorHandler.handleSupabaseError = jest
         .fn()
         .mockReturnValue(mockAppError);
@@ -1009,6 +1063,17 @@ describe('/api/sales', () => {
 
     it('should handle update with only notes', async () => {
       const saleId = '123e4567-e89b-12d3-a456-426614174000';
+      const currentSale = {
+        id: saleId,
+        instrument_id: '123e4567-e89b-12d3-a456-426614174001',
+        client_id: '123e4567-e89b-12d3-a456-426614174002',
+        sale_price: 2500.0,
+        notes: 'Original notes',
+        sale_date: '2024-01-15',
+        created_at: '2024-01-15T10:30:00Z',
+        entry_kind: 'sale',
+        adjustment_of_sale_id: null,
+      };
       const mockUpdatedSale = {
         id: saleId,
         instrument_id: '123e4567-e89b-12d3-a456-426614174001',
@@ -1017,21 +1082,30 @@ describe('/api/sales', () => {
         notes: 'Updated notes',
         sale_date: '2024-01-15',
         created_at: '2024-01-15T10:30:00Z',
+        entry_kind: 'sale',
+        adjustment_of_sale_id: null,
       };
 
-      const mockUpdate = {
-        update: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
+      const mockFetch = {
         select: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: mockUpdatedSale,
-          error: null,
-        }),
+        eq: jest.fn().mockReturnThis(),
+        single: jest
+          .fn()
+          .mockResolvedValueOnce({
+            data: currentSale,
+            error: null,
+          })
+          .mockResolvedValueOnce({
+            data: mockUpdatedSale,
+            error: null,
+          }),
       };
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: saleId,
+        error: null,
+      });
 
-      mockGetServerSupabase.mockReturnValue(
-        createMockSupabaseClient(mockUpdate)
-      );
+      mockUserSupabase = createMockSupabaseClient(mockFetch, mockRpc);
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'PATCH',
@@ -1045,10 +1119,53 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(mockUpdate.update).toHaveBeenCalledWith({
-        notes: 'Updated notes',
+      expect(mockRpc).toHaveBeenCalledWith('update_sale_notes_atomic', {
+        p_sale_id: saleId,
+        p_notes: 'Updated notes',
       });
       expect(body.data.notes).toBe('Updated notes');
+    });
+
+    it('should return current sale when submitted values do not change', async () => {
+      const saleId = '123e4567-e89b-12d3-a456-426614174000';
+      const currentSale = {
+        id: saleId,
+        instrument_id: '123e4567-e89b-12d3-a456-426614174001',
+        client_id: '123e4567-e89b-12d3-a456-426614174002',
+        sale_price: 2500.0,
+        notes: 'Original notes',
+        sale_date: '2024-01-15',
+        created_at: '2024-01-15T10:30:00Z',
+        entry_kind: 'sale',
+        adjustment_of_sale_id: null,
+      };
+
+      const mockFetch = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: currentSale,
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = createMockSupabaseClient(mockFetch);
+
+      const request = new NextRequest('http://localhost:3000/api/sales', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: saleId,
+          sale_price: 2500.0,
+        }),
+      });
+
+      const response = await PATCH(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(mockFetch.update).not.toHaveBeenCalled();
+      expect(body.data.sale_price).toBe(2500.0);
     });
 
     it('should handle invalid sale_price type in update', async () => {

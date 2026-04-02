@@ -1,19 +1,31 @@
 import { NextRequest } from 'next/server';
 import { GET, POST, PATCH, DELETE } from '../route';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 
-jest.mock('@/lib/supabase-server');
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 jest.mock('@/utils/typeGuards');
 jest.mock('@/utils/inputValidation');
-
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
->;
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
+let mockUserSupabase: any;
+
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute: (handler: any) => (request: NextRequest) =>
+      handler(request, {
+        user: { id: 'test-user' },
+        accessToken: 'test-token',
+        orgId: 'test-org',
+        clientId: 'test-client',
+        role: 'admin',
+        userSupabase: mockUserSupabase,
+        isTestBypass: true,
+      }),
+  };
+});
 
 // Mock typeGuards
 jest.mock('@/utils/typeGuards', () => {
@@ -64,6 +76,9 @@ describe('/api/clients', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
+    mockUserSupabase = {
+      from: jest.fn(),
+    };
   });
 
   afterEach(() => {
@@ -83,11 +98,9 @@ describe('/api/clients', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest('http://localhost/api/clients');
       const response = await GET(request);
@@ -113,11 +126,9 @@ describe('/api/clients', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/clients?search=John'
@@ -140,11 +151,9 @@ describe('/api/clients', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest('http://localhost/api/clients?limit=10');
       await GET(request);
@@ -164,11 +173,9 @@ describe('/api/clients', () => {
         count: 0,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',
         message: 'Database error',
@@ -194,11 +201,9 @@ describe('/api/clients', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest('http://localhost/api/clients');
       const response = await GET(request);
@@ -230,11 +235,9 @@ describe('/api/clients', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest('http://localhost/api/clients', {
         method: 'POST',
@@ -280,11 +283,9 @@ describe('/api/clients', () => {
         error: mockError,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: '23505',
         message: 'Duplicate key',
@@ -319,11 +320,9 @@ describe('/api/clients', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest('http://localhost/api/clients', {
         method: 'PATCH',
@@ -375,11 +374,9 @@ describe('/api/clients', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/clients?id=${mockClient.id}`
@@ -425,11 +422,9 @@ describe('/api/clients', () => {
         error: mockError,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: '23503',
         message: 'Foreign key constraint',

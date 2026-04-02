@@ -14,6 +14,7 @@ import { cn } from '@/utils/classNames';
 import { useSuccessToastContext } from '@/contexts/SuccessToastContext';
 import { useErrorContext } from '@/contexts/ErrorContext';
 import Link from 'next/link';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface InstrumentExpandedRowProps {
   instrument: Instrument;
@@ -46,6 +47,7 @@ export function InstrumentExpandedRow({
   ownerLabel,
   ownerClient,
 }: InstrumentExpandedRowProps) {
+  const { canUploadInstrumentMedia } = usePermissions();
   const [images, setImages] = useState<InstrumentImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -214,6 +216,7 @@ export function InstrumentExpandedRow({
   };
 
   const handleDeleteCertificate = async (file: CertificateFile) => {
+    if (!canUploadInstrumentMedia) return;
     if (!instrument?.id) return;
     setDeletingFile(file.name);
     try {
@@ -485,13 +488,23 @@ export function InstrumentExpandedRow({
                           </button>
                           <button
                             onClick={() =>
+                              canUploadInstrumentMedia &&
                               setShowDeleteConfirm({
                                 id: file.id,
                                 fileName: file.name,
                               })
                             }
                             aria-label={deleteLabel}
-                            disabled={isDownloading || isDeleting}
+                            title={
+                              canUploadInstrumentMedia
+                                ? deleteLabel
+                                : 'Admin only'
+                            }
+                            disabled={
+                              isDownloading ||
+                              isDeleting ||
+                              !canUploadInstrumentMedia
+                            }
                             className="px-3 py-1.5 bg-red-600 text-white text-xs rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                           >
                             {isDeleting ? (
@@ -564,7 +577,13 @@ export function InstrumentExpandedRow({
                           createdAt: null,
                         })
                       }
-                      disabled={deletingFile === showDeleteConfirm.fileName}
+                      title={
+                        canUploadInstrumentMedia ? undefined : 'Admin only'
+                      }
+                      disabled={
+                        deletingFile === showDeleteConfirm.fileName ||
+                        !canUploadInstrumentMedia
+                      }
                       className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {deletingFile === showDeleteConfirm.fileName

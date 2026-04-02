@@ -12,6 +12,12 @@ import { Client, ClientInstrument, Instrument } from '@/types';
 import { flushPromises } from '@/../tests/utils/flushPromises';
 
 // Mock dependencies
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canCreateClient: true,
+  })),
+}));
+
 jest.mock('@/hooks/useUnifiedData');
 jest.mock('@/hooks/useAppFeedback');
 jest.mock('@/hooks/useModalState');

@@ -8,7 +8,15 @@ import type { Session } from '@supabase/supabase-js';
 
 type ApiFetchMeta = {
   idempotencyKey?: string;
+  public?: boolean;
 };
+
+export class ApiFetchAuthError extends Error {
+  constructor(message = 'Session required') {
+    super(message);
+    this.name = 'ApiFetchAuthError';
+  }
+}
 
 const SESSION_CACHE_TTL = 5_000;
 let cachedSession: Session | null = null;
@@ -68,14 +76,18 @@ export async function apiFetch(
 
   try {
     const session = await getCachedSession();
+    if (!session?.access_token) {
+      if (meta?.public) {
+        const hasOptions = Object.keys(fetchOptions).length > 0;
+        return hasOptions ? fetch(url, fetchOptions) : fetch(url);
+      }
+
+      throw new ApiFetchAuthError('Session required');
+    }
 
     // Merge headers
     const headers = new Headers(fetchOptions.headers);
-
-    // Add Authorization header if session exists
-    if (session?.access_token) {
-      headers.set('Authorization', `Bearer ${session.access_token}`);
-    }
+    headers.set('Authorization', `Bearer ${session.access_token}`);
 
     // Normalize headers into a plain object for easier testing/inspection
     const canonicalHeaderNames: Record<string, string> = {
@@ -98,13 +110,13 @@ export async function apiFetch(
     const hasOptions = Object.keys(fetchOptions).length > 0;
     return hasOptions ? fetch(url, fetchOptions) : fetch(url);
   } catch (error) {
-    // If getting session fails, try fetch without auth (for public endpoints)
-    console.warn(
-      'Failed to get session for API fetch, attempting without auth:',
-      error
-    );
+    if (meta?.public) {
+      const hasOptions = Object.keys(fetchOptions).length > 0;
+      return hasOptions ? fetch(url, fetchOptions) : fetch(url);
+    }
 
-    const hasOptions = Object.keys(fetchOptions).length > 0;
-    return hasOptions ? fetch(url, fetchOptions) : fetch(url);
+    throw error instanceof ApiFetchAuthError
+      ? error
+      : new ApiFetchAuthError('Session required');
   }
 }

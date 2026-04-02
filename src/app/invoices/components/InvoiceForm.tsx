@@ -19,7 +19,9 @@ interface InvoiceFormItem {
   qty: number;
   rate: number;
   amount: number;
-  image_url: string | null;
+  image_url: string | null; // display URL (signed URL or blob URL)
+  image_storage_path?: string | null; // persisted storage key
+  image_signed_url?: string | null;
   imageFile?: File | null; // 업로드할 이미지 파일
   display_order: number;
 }
@@ -138,7 +140,9 @@ function InvoiceForm({
         qty: item.qty,
         rate: item.rate,
         amount: item.amount,
-        image_url: item.image_url,
+        image_url: item.image_signed_url || item.image_url,
+        image_storage_path: item.image_url,
+        image_signed_url: item.image_signed_url ?? item.image_url,
         display_order: item.display_order ?? index,
       }));
     }
@@ -189,7 +193,9 @@ function InvoiceForm({
             qty: item.qty,
             rate: item.rate,
             amount: item.amount,
-            image_url: item.image_url,
+            image_url: item.image_signed_url || item.image_url,
+            image_storage_path: item.image_url,
+            image_signed_url: item.image_signed_url ?? item.image_url,
             display_order: item.display_order ?? index,
           }))
         );
@@ -276,6 +282,8 @@ function InvoiceForm({
       rate: 0,
       amount: 0,
       image_url: null,
+      image_storage_path: null,
+      image_signed_url: null,
       display_order: items.length,
     };
     setItems(prev => [...prev, newItem]);
@@ -372,6 +380,8 @@ function InvoiceForm({
         // Create temporary preview URL for immediate display
         previewUrl = URL.createObjectURL(file);
         updateItem(itemId, 'image_url', previewUrl);
+        updateItem(itemId, 'image_signed_url', previewUrl);
+        updateItem(itemId, 'image_storage_path', null);
         updateItem(itemId, 'imageFile', file);
 
         // Upload to Supabase Storage
@@ -390,8 +400,10 @@ function InvoiceForm({
 
         const result = await response.json();
 
-        // Replace preview URL with actual public URL
-        updateItem(itemId, 'image_url', result.publicUrl);
+        // Replace preview URL with signed display URL while preserving the storage key for persistence
+        updateItem(itemId, 'image_url', result.signedUrl);
+        updateItem(itemId, 'image_signed_url', result.signedUrl);
+        updateItem(itemId, 'image_storage_path', result.filePath);
 
         // Clean up preview URL
         if (previewUrl) {
@@ -417,6 +429,8 @@ function InvoiceForm({
         }));
         // Clean up on error
         updateItem(itemId, 'image_url', null);
+        updateItem(itemId, 'image_signed_url', null);
+        updateItem(itemId, 'image_storage_path', null);
         updateItem(itemId, 'imageFile', null);
       } finally {
         setUploadingItemIds(prev => {
@@ -485,7 +499,7 @@ function InvoiceForm({
       qty: item.qty,
       rate: item.rate,
       amount: item.amount,
-      image_url: item.image_url,
+      image_url: item.image_storage_path ?? item.image_url,
       display_order: index,
     }));
 
@@ -798,6 +812,8 @@ function InvoiceForm({
                       type="button"
                       onClick={() => {
                         updateItem(item.id, 'image_url', null);
+                        updateItem(item.id, 'image_signed_url', null);
+                        updateItem(item.id, 'image_storage_path', null);
                         updateItem(item.id, 'imageFile', null);
                       }}
                       className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 text-xs"

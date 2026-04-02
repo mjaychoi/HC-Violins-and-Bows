@@ -23,7 +23,10 @@ import { apiFetch } from '@/utils/apiFetch';
 import dynamic from 'next/dynamic';
 import { useURLState } from '@/hooks/useURLState';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useLoadingState } from '@/hooks/useLoadingState';
+import { usePermissions } from '@/hooks/usePermissions';
 import { logError } from '@/utils/logger';
+import { useRouter } from 'next/navigation';
 const DEFAULT_SORT_COLUMN: InvoiceSortColumn = 'invoice_date';
 const DEFAULT_SORT_DIRECTION = 'desc';
 const INVOICE_SORT_COLUMNS_SET = new Set(INVOICE_SORT_COLUMNS);
@@ -42,6 +45,7 @@ const InvoiceSettingsModalDynamic = dynamic(
 );
 
 function InvoicesPageContent() {
+  const router = useRouter();
   const {
     invoices,
     page,
@@ -56,6 +60,11 @@ function InvoicesPageContent() {
     scopeInfo,
   } = useInvoices();
   const { showSuccess, handleError } = useAppFeedback();
+  const { canCreateInvoice, canManageInvoiceSettings } = usePermissions();
+  const {
+    submitting: isMutatingInvoice,
+    withSubmitting: withInvoiceSubmitting,
+  } = useLoadingState();
 
   const {
     sortColumn,
@@ -106,8 +115,10 @@ function InvoicesPageContent() {
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [highlightedInvoiceId, setHighlightedInvoiceId] = useState<
+    string | null
+  >(null);
 
   // Invoice settings state (for prefilling form)
   const [invoiceSettings, setInvoiceSettings] = useState<{
@@ -400,38 +411,67 @@ function InvoicesPageContent() {
   // Handle create/edit invoice
   const handleSubmitInvoice = useCallback(
     async (data: Parameters<typeof createInvoice>[0]) => {
-      setSubmitting(true);
-      try {
-        if (editingInvoice) {
-          await updateInvoice(editingInvoice.id, data);
-          showSuccess('Invoice updated successfully.');
-        } else {
-          await createInvoice(data);
-          showSuccess('Invoice created successfully.');
+      if (isMutatingInvoice) return;
+
+      await withInvoiceSubmitting(async () => {
+        try {
+          if (editingInvoice) {
+            await updateInvoice(editingInvoice.id, data);
+            showSuccess('Invoice updated successfully.');
+          } else {
+            const createResult = await createInvoice(data);
+            showSuccess(createResult.message);
+
+            if (createResult.status === 'already_processed') {
+              setIsModalOpen(false);
+              setEditingInvoice(null);
+
+              if (createResult.existingInvoiceId) {
+                router.push(`/invoices/${createResult.existingInvoiceId}`);
+                return;
+              }
+
+              const refreshedInvoices = await fetchInvoices({
+                page: 1,
+                pageSize: 10,
+                fromDate: fromDate || undefined,
+                toDate: toDate || undefined,
+                search: debouncedSearch || undefined,
+                status: status || undefined,
+                sortColumn: sortColumn || undefined,
+                sortDirection: sortDirection || undefined,
+              });
+
+              setPage(1);
+              setHighlightedInvoiceId(refreshedInvoices[0]?.id ?? null);
+              showSuccess('Loading existing invoice.');
+              return;
+            }
+
+            showSuccess('Invoice created successfully.');
+            setHighlightedInvoiceId(createResult.invoice?.id ?? null);
+          }
+
+          setIsModalOpen(false);
+          setEditingInvoice(null);
+
+          await fetchInvoices({
+            page,
+            pageSize: 10,
+            fromDate: fromDate || undefined,
+            toDate: toDate || undefined,
+            search: debouncedSearch || undefined,
+            status: status || undefined,
+            sortColumn: sortColumn || undefined,
+            sortDirection: sortDirection || undefined,
+          });
+        } catch (error) {
+          handleError(
+            error instanceof Error ? error.message : String(error),
+            editingInvoice ? 'Update invoice' : 'Create invoice'
+          );
         }
-
-        setIsModalOpen(false);
-        setEditingInvoice(null);
-
-        // Refresh list
-        await fetchInvoices({
-          page,
-          pageSize: 10,
-          fromDate: fromDate || undefined,
-          toDate: toDate || undefined,
-          search: debouncedSearch || undefined,
-          status: status || undefined,
-          sortColumn: sortColumn || undefined,
-          sortDirection: sortDirection || undefined,
-        });
-      } catch (error) {
-        handleError(
-          error instanceof Error ? error.message : String(error),
-          editingInvoice ? 'Update invoice' : 'Create invoice'
-        );
-      } finally {
-        setSubmitting(false);
-      }
+      });
     },
     [
       editingInvoice,
@@ -447,8 +487,22 @@ function InvoicesPageContent() {
       status,
       sortColumn,
       sortDirection,
+      isMutatingInvoice,
+      withInvoiceSubmitting,
+      router,
+      setPage,
     ]
   );
+
+  useEffect(() => {
+    if (!highlightedInvoiceId) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setHighlightedInvoiceId(null);
+    }, 4000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [highlightedInvoiceId]);
 
   // Handle edit
   const handleEditInvoice = useCallback((invoice: Invoice) => {
@@ -463,30 +517,31 @@ function InvoicesPageContent() {
 
   // Confirm delete
   const handleConfirmDelete = useCallback(async () => {
-    if (!confirmDeleteInvoice) return;
+    if (!confirmDeleteInvoice || isMutatingInvoice) return;
 
-    try {
-      await deleteInvoice(confirmDeleteInvoice.id);
-      showSuccess('Invoice deleted successfully.');
-      setConfirmDeleteInvoice(null);
+    await withInvoiceSubmitting(async () => {
+      try {
+        await deleteInvoice(confirmDeleteInvoice.id);
+        showSuccess('Invoice deleted successfully.');
+        setConfirmDeleteInvoice(null);
 
-      // Refresh list
-      await fetchInvoices({
-        page,
-        pageSize: 10,
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
-        search: debouncedSearch || undefined,
-        status: status || undefined,
-        sortColumn: sortColumn || undefined,
-        sortDirection: sortDirection || undefined,
-      });
-    } catch (error) {
-      handleError(
-        error instanceof Error ? error.message : String(error),
-        'Delete invoice'
-      );
-    }
+        await fetchInvoices({
+          page,
+          pageSize: 10,
+          fromDate: fromDate || undefined,
+          toDate: toDate || undefined,
+          search: debouncedSearch || undefined,
+          status: status || undefined,
+          sortColumn: sortColumn || undefined,
+          sortDirection: sortDirection || undefined,
+        });
+      } catch (error) {
+        handleError(
+          error instanceof Error ? error.message : String(error),
+          'Delete invoice'
+        );
+      }
+    });
   }, [
     confirmDeleteInvoice,
     deleteInvoice,
@@ -500,6 +555,8 @@ function InvoicesPageContent() {
     status,
     sortColumn,
     sortDirection,
+    isMutatingInvoice,
+    withInvoiceSubmitting,
   ]);
 
   // Handle download PDF
@@ -642,27 +699,35 @@ function InvoicesPageContent() {
     <ErrorBoundary>
       <AppLayout
         title="Invoices"
-        actionButton={{
-          label: 'Add Invoice',
-          onClick: handleAddInvoice,
-          icon: (
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-          ),
-        }}
+        actionButton={
+          canCreateInvoice
+            ? {
+                label: 'Add Invoice',
+                onClick: handleAddInvoice,
+                disabled: isMutatingInvoice,
+                disabledReason: isMutatingInvoice
+                  ? 'Please wait for the current submission to finish'
+                  : undefined,
+                icon: (
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                ),
+              }
+            : undefined
+        }
       >
         <div className="p-6 space-y-6">
           {/* Filters */}
@@ -678,12 +743,21 @@ function InvoicesPageContent() {
             onClearFilters={clearFilters}
             hasActiveFilters={hasActiveFilters}
             onOpenSettings={() => setIsSettingsModalOpen(true)}
+            settingsDisabled={!canManageInvoiceSettings || isMutatingInvoice}
+            settingsDisabledReason={
+              !canManageInvoiceSettings
+                ? 'Admin only'
+                : isMutatingInvoice
+                  ? 'Please wait for the current submission to finish'
+                  : undefined
+            }
           />
 
           {/* Invoice List */}
           <InvoiceList
             invoices={invoices}
             loading={loading}
+            highlightedInvoiceId={highlightedInvoiceId}
             onSort={handleSort}
             getSortState={getSortState}
             onEdit={handleEditInvoice}
@@ -710,7 +784,7 @@ function InvoicesPageContent() {
             isEditing={!!editingInvoice}
             invoiceSettings={invoiceSettings}
             onSubmit={handleSubmitInvoice}
-            submitting={submitting}
+            submitting={isMutatingInvoice}
           />
         )}
 
@@ -727,6 +801,7 @@ function InvoicesPageContent() {
           cancelLabel="Cancel"
           onConfirm={handleConfirmDelete}
           onCancel={() => setConfirmDeleteInvoice(null)}
+          submitting={isMutatingInvoice}
         />
 
         {/* Invoice Settings Modal */}

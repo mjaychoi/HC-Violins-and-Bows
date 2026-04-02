@@ -1,16 +1,32 @@
 import { NextRequest } from 'next/server';
 import { GET, POST, PATCH, DELETE, PUT } from '../route';
-import { getServerSupabase } from '@/lib/supabase-server';
-jest.mock('@/lib/supabase-server');
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 jest.mock('@/utils/typeGuards');
 jest.mock('@/utils/inputValidation');
+let mockUserSupabase: any;
 
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
->;
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute: (handler: any) => async (request: any, context?: any) =>
+      handler(
+        request,
+        {
+          user: { id: 'test-user' },
+          accessToken: 'test-token',
+          orgId: 'test-org',
+          clientId: 'test-client',
+          role: 'admin',
+          userSupabase: mockUserSupabase,
+          isTestBypass: true,
+        },
+        context
+      ),
+  };
+});
 // Mock typeGuards
 jest.mock('@/utils/typeGuards', () => {
   const actual = jest.requireActual('@/utils/typeGuards');
@@ -50,6 +66,7 @@ describe('/api/connections', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
+    mockUserSupabase = { from: jest.fn() };
   });
 
   afterEach(() => {
@@ -68,11 +85,7 @@ describe('/api/connections', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
 
       const request = new NextRequest('http://localhost/api/connections');
       const response = await GET(request);
@@ -100,11 +113,7 @@ describe('/api/connections', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
 
       const request = new NextRequest(
         `http://localhost/api/connections?client_id=${mockConnection.client_id}`
@@ -129,11 +138,7 @@ describe('/api/connections', () => {
         }),
       };
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
 
       const request = new NextRequest(
         `http://localhost/api/connections?instrument_id=${mockConnection.instrument_id}`
@@ -158,11 +163,7 @@ describe('/api/connections', () => {
         count: 10,
       });
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
 
       const request = new NextRequest(
         'http://localhost/api/connections?page=1&pageSize=5'
@@ -196,23 +197,27 @@ describe('/api/connections', () => {
       const createData = {
         client_id: mockConnection.client_id,
         instrument_id: mockConnection.instrument_id,
+        relationship_type: 'Owned',
       };
 
-      const mockQuery = {
-        insert: jest.fn().mockReturnThis(),
+      const mockFetchQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         single: jest.fn(),
       };
-      (mockQuery.single as jest.Mock).mockResolvedValue({
+      (mockFetchQuery.single as jest.Mock).mockResolvedValue({
         data: mockConnection,
         error: null,
       });
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockConnection.id,
+        error: null,
+      });
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockFetchQuery),
+        rpc: mockRpc,
+      };
 
       const request = new NextRequest('http://localhost/api/connections', {
         method: 'POST',
@@ -223,7 +228,12 @@ describe('/api/connections', () => {
 
       expect(response.status).toBe(201);
       expect(json.data).toBeDefined();
-      expect(mockQuery.insert).toHaveBeenCalled();
+      expect(mockRpc).toHaveBeenCalledWith('create_connection_atomic', {
+        p_client_id: mockConnection.client_id,
+        p_instrument_id: mockConnection.instrument_id,
+        p_relationship_type: 'Owned',
+        p_notes: null,
+      });
     });
 
     it('should return 400 for invalid data', async () => {
@@ -251,22 +261,24 @@ describe('/api/connections', () => {
       const updates = { display_order: 1 };
       const updatedConnection = { ...mockConnection, ...updates };
 
-      const mockQuery = {
-        update: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
+      const mockFetchQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         single: jest.fn(),
       };
-      (mockQuery.single as jest.Mock).mockResolvedValue({
+      (mockFetchQuery.single as jest.Mock).mockResolvedValue({
         data: updatedConnection,
         error: null,
       });
 
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockConnection.id,
+        error: null,
+      });
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockFetchQuery),
+        rpc: mockRpc,
+      };
 
       const request = new NextRequest('http://localhost/api/connections', {
         method: 'PATCH',
@@ -277,7 +289,10 @@ describe('/api/connections', () => {
 
       expect(response.status).toBe(200);
       expect(json.data).toBeDefined();
-      expect(mockQuery.update).toHaveBeenCalled();
+      expect(mockRpc).toHaveBeenCalledWith('update_connection_atomic', {
+        p_connection_id: mockConnection.id,
+        p_updates: updates,
+      });
     });
 
     it('should return 400 when id is missing', async () => {
@@ -295,19 +310,14 @@ describe('/api/connections', () => {
 
   describe('DELETE', () => {
     it('should delete a connection', async () => {
-      const mockQuery = {
-        delete: jest.fn().mockReturnThis(),
-        eq: jest.fn(),
-      };
-      (mockQuery.eq as jest.Mock).mockResolvedValue({
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockConnection.id,
         error: null,
       });
-
-      const mockSupabaseClient = {
-        from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
 
       const request = new NextRequest(
         `http://localhost/api/connections?id=${mockConnection.id}`
@@ -317,7 +327,9 @@ describe('/api/connections', () => {
 
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
-      expect(mockQuery.delete).toHaveBeenCalled();
+      expect(mockRpc).toHaveBeenCalledWith('delete_connection_atomic', {
+        p_connection_id: mockConnection.id,
+      });
     });
 
     it('should return 400 when id is missing', async () => {
@@ -359,7 +371,7 @@ describe('/api/connections', () => {
       });
 
       let callCount = 0;
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockImplementation(() => {
           callCount++;
           // First N calls are for updates (one per order), last call is for select
@@ -368,9 +380,7 @@ describe('/api/connections', () => {
           }
           return mockSelectQuery;
         }),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest('http://localhost/api/connections', {
         method: 'PUT',

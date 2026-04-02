@@ -1,17 +1,29 @@
 import { NextRequest } from 'next/server';
 import { GET, POST, PATCH, DELETE } from '../route';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 
-jest.mock('@/lib/supabase-server');
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
-
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
->;
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
+let mockUserSupabase: any;
+
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute: (handler: any) => (request: NextRequest) =>
+      handler(request, {
+        user: { id: 'test-user' },
+        accessToken: 'test-token',
+        orgId: 'test-org',
+        clientId: 'test-client',
+        role: 'admin',
+        userSupabase: mockUserSupabase,
+        isTestBypass: true,
+      }),
+  };
+});
 
 // Mock typeGuards
 jest.mock('@/utils/typeGuards', () => {
@@ -38,6 +50,7 @@ jest.mock('@/utils/typeGuards', () => {
 // Mock inputValidation
 jest.mock('@/utils/inputValidation', () => ({
   validateSortColumn: jest.fn((table, value) => value || 'created_at'),
+  validateDateString: jest.fn(value => /^\d{4}-\d{2}-\d{2}$/.test(value)),
   validateUUID: jest.fn(value =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       value
@@ -66,6 +79,9 @@ describe('/api/instruments', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
+    mockUserSupabase = {
+      from: jest.fn(),
+    };
   });
 
   afterEach(() => {
@@ -93,15 +109,13 @@ describe('/api/instruments', () => {
         }),
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest
           .fn()
           .mockImplementation((table: string) =>
             table === 'instrument_certificates' ? mockCertQuery : mockQuery
           ),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest('http://localhost/api/instruments');
       const response = await GET(request);
@@ -125,11 +139,9 @@ describe('/api/instruments', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/instruments?ownership=owned'
@@ -152,11 +164,9 @@ describe('/api/instruments', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/instruments?search=Stradivarius'
@@ -178,11 +188,9 @@ describe('/api/instruments', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/instruments?limit=10'
@@ -205,11 +213,9 @@ describe('/api/instruments', () => {
         count: 0,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',
         message: 'Database error',
@@ -250,11 +256,9 @@ describe('/api/instruments', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest('http://localhost/api/instruments', {
         method: 'POST',
@@ -304,11 +308,9 @@ describe('/api/instruments', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest('http://localhost/api/instruments', {
         method: 'PATCH',
@@ -348,6 +350,59 @@ describe('/api/instruments', () => {
       expect(response.status).toBe(400);
       expect(json.error).toBe('Invalid instrument ID format');
     });
+
+    it('should use atomic sale transition RPC for Sold status changes', async () => {
+      const stateQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            status: 'Available',
+            reserved_reason: null,
+            reserved_by_user_id: null,
+            reserved_connection_id: null,
+          },
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(stateQuery),
+        rpc: jest.fn().mockResolvedValue({
+          data: { ...mockInstrument, status: 'Sold' },
+          error: null,
+        }),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockInstrument.id,
+          status: 'Sold',
+          sale_transition: {
+            sale_price: 1500000,
+            sale_date: '2026-04-02',
+            client_id: '123e4567-e89b-12d3-a456-426614174111',
+            sales_note: 'Auto-created',
+          },
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data.status).toBe('Sold');
+      expect(mockUserSupabase.rpc).toHaveBeenCalledWith(
+        'update_instrument_sale_transition_atomic',
+        expect.objectContaining({
+          p_instrument_id: mockInstrument.id,
+          p_sale_price: 1500000,
+          p_sale_date: '2026-04-02',
+          p_client_id: '123e4567-e89b-12d3-a456-426614174111',
+          p_sales_note: 'Auto-created',
+        })
+      );
+    });
   });
 
   describe('DELETE', () => {
@@ -360,11 +415,9 @@ describe('/api/instruments', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments?id=${mockInstrument.id}`

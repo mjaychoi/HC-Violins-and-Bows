@@ -1,8 +1,15 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import '@testing-library/jest-dom';
+import userEvent from '@testing-library/user-event';
 import ClientList from '../ClientList';
 import { Client } from '@/types';
+
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canManageClients: true,
+  })),
+}));
 
 jest.mock('@/components/common', () => {
   const actual = jest.requireActual('@/components/common');
@@ -537,6 +544,7 @@ describe('ClientList', () => {
   });
 
   it('should handle save error without closing edit mode', async () => {
+    const user = userEvent.setup();
     const onUpdateClient = jest
       .fn()
       .mockRejectedValue(new Error('Update failed')) as jest.MockedFunction<
@@ -553,13 +561,13 @@ describe('ClientList', () => {
 
     // Enter edit mode
     const moreActionsButton = screen.getByLabelText('More actions');
-    fireEvent.click(moreActionsButton);
+    await user.click(moreActionsButton);
 
     await waitFor(() => {
       expect(screen.getByText('Edit')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText('Edit'));
+    await user.click(screen.getByText('Edit'));
 
     // Wait for edit mode to activate
     await waitFor(() => {
@@ -568,7 +576,7 @@ describe('ClientList', () => {
 
     // Try to save (will fail)
     const saveButton = screen.getByTitle('Save changes');
-    fireEvent.click(saveButton);
+    await user.click(saveButton);
 
     // Should still be in edit mode after error
     await waitFor(() => {

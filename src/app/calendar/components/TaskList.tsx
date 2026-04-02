@@ -42,6 +42,10 @@ interface TaskListProps {
   onResetFilters?: () => void;
   /** 작업 추가 CTA가 필요할 때 */
   onAddTask?: () => void;
+  canAddTask?: boolean;
+  addTaskDisabledReason?: string;
+  canManageTask?: boolean;
+  manageTaskDisabledReason?: string;
 }
 
 export default function TaskList({
@@ -53,6 +57,10 @@ export default function TaskList({
   hasActiveFilters = false,
   onResetFilters,
   onAddTask,
+  canAddTask = true,
+  addTaskDisabledReason,
+  canManageTask = true,
+  manageTaskDisabledReason,
 }: TaskListProps) {
   // 인라인 편집 훅 (priority와 status)
   const inlineEditPriority = useInlineEdit<MaintenanceTask>({
@@ -103,7 +111,12 @@ export default function TaskList({
         onResetFilters={hasActiveFilters ? onResetFilters : undefined}
         actionButton={
           !hasActiveFilters && onAddTask
-            ? { label: 'Add task', onClick: onAddTask }
+            ? {
+                label: 'Add task',
+                onClick: onAddTask,
+                disabled: !canAddTask,
+                disabledReason: addTaskDisabledReason,
+              }
             : undefined
         }
       />
@@ -191,11 +204,17 @@ export default function TaskList({
                                 )}
                                 onClick={e => {
                                   e.stopPropagation();
-                                  inlineEditPriority.startEditing(task.id, {
-                                    priority: task.priority,
-                                  });
+                                  if (canManageTask) {
+                                    inlineEditPriority.startEditing(task.id, {
+                                      priority: task.priority,
+                                    });
+                                  }
                                 }}
-                                title="Click to edit priority"
+                                title={
+                                  canManageTask
+                                    ? 'Click to edit priority'
+                                    : manageTaskDisabledReason
+                                }
                               >
                                 {task.priority}
                               </span>
@@ -239,11 +258,17 @@ export default function TaskList({
                                 )}
                                 onClick={e => {
                                   e.stopPropagation();
-                                  inlineEditStatus.startEditing(task.id, {
-                                    status: task.status,
-                                  });
+                                  if (canManageTask) {
+                                    inlineEditStatus.startEditing(task.id, {
+                                      status: task.status,
+                                    });
+                                  }
                                 }}
-                                title="Click to edit status"
+                                title={
+                                  canManageTask
+                                    ? 'Click to edit status'
+                                    : manageTaskDisabledReason
+                                }
                               >
                                 {getStatusLabel(task.status)}
                               </span>
@@ -428,7 +453,7 @@ export default function TaskList({
               </div>
 
               {/* Actions */}
-              {onTaskDelete && (
+              {onTaskDelete && canManageTask && (
                 <button
                   type="button"
                   onClick={e => {

@@ -18,6 +18,9 @@ NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
 # Supabase credentials (automatically available in Edge Functions)
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# Required invocation secret for cron/server-side callers only
+SEND_NOTIFICATIONS_SECRET=your_long_random_secret
 ```
 
 ### 2. Deploy the Function
@@ -49,11 +52,20 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url := 'https://your-project.supabase.co/functions/v1/send-notifications',
-    headers := '{"Authorization": "Bearer YOUR_ANON_KEY"}'::jsonb
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-send-notifications-secret', 'YOUR_SEND_NOTIFICATIONS_SECRET'
+    )
   );
   $$
 );
 ```
+
+Important:
+
+- Do not invoke this function with `anon` or user bearer tokens.
+- This function uses the service role internally and must only be called by trusted server-side automation.
+- The function rejects requests that do not include `x-send-notifications-secret`.
 
 ### 4. Configure Resend
 
@@ -103,11 +115,12 @@ You can test the function manually:
 
 ```bash
 # Using Supabase CLI
-supabase functions invoke send-notifications
+supabase functions invoke send-notifications \
+  --header "x-send-notifications-secret: $SEND_NOTIFICATIONS_SECRET"
 
 # Or via curl
 curl -X POST https://your-project.supabase.co/functions/v1/send-notifications \
-  -H "Authorization: Bearer YOUR_ANON_KEY"
+  -H "x-send-notifications-secret: $SEND_NOTIFICATIONS_SECRET"
 ```
 
 ## Troubleshooting
@@ -119,3 +132,4 @@ curl -X POST https://your-project.supabase.co/functions/v1/send-notifications \
   - User has `enabled = true` in `notification_settings`
   - User has a valid email in `auth.users`
   - Resend domain is verified (if using custom domain)
+- **401 Unauthorized**: Verify `SEND_NOTIFICATIONS_SECRET` matches the `x-send-notifications-secret` header sent by your cron or server

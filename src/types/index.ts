@@ -2,6 +2,9 @@
 export interface Instrument {
   id: string;
   status: 'Available' | 'Booked' | 'Sold' | 'Reserved' | 'Maintenance';
+  reserved_reason?: string | null;
+  reserved_by_user_id?: string | null;
+  reserved_connection_id?: string | null;
   maker: string | null;
   type: string | null;
   subtype: string | null;
@@ -152,6 +155,8 @@ export interface SalesHistory {
   sale_date: string; // YYYY-MM-DD
   notes: string | null;
   created_at: string;
+  entry_kind?: 'sale' | 'refund' | 'undo_refund' | 'adjustment';
+  adjustment_of_sale_id?: string | null;
   client?: Client;
   instrument?: Instrument;
 }
@@ -179,13 +184,7 @@ export interface TaskFilters {
 // Invoice Types (ADD)
 // =====================
 
-export type InvoiceStatus =
-  | 'draft'
-  | 'sent'
-  | 'paid'
-  | 'overdue'
-  | 'cancelled'
-  | 'void';
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
 
 export interface InvoiceItem {
   id: string;
@@ -196,6 +195,7 @@ export interface InvoiceItem {
   rate: number;
   amount: number;
   image_url: string | null;
+  image_signed_url?: string | null;
   display_order: number;
   created_at: string;
   instrument?: Instrument | null;

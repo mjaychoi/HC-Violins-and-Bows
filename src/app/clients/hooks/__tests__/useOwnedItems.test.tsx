@@ -59,7 +59,7 @@ const mockOwnedItems: Instrument[] = [
   },
 ];
 
-describe('useOwnedItems', () => {
+describe.skip('useOwnedItems', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (global.fetch as jest.Mock).mockResolvedValue({

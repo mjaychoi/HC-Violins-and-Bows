@@ -17,6 +17,69 @@ interface FetchInvoicesOptions {
   sortDirection?: 'asc' | 'desc';
 }
 
+export interface CreateInvoiceResult {
+  invoice: Invoice | null;
+  status: 'created' | 'already_processed';
+  message: string;
+  existingInvoiceId: string | null;
+  shouldRefreshList: boolean;
+}
+
+interface InvoiceCreateErrorPayload {
+  message?: string;
+  error?: string;
+  payload?: { error?: string };
+  data?: Record<string, unknown> | null;
+  existingInvoiceId?: string;
+  existing_invoice_id?: string;
+  invoiceId?: string;
+  invoice_id?: string;
+  resourceId?: string;
+  resource_id?: string;
+}
+
+function extractExistingInvoiceId(
+  payload: InvoiceCreateErrorPayload | null
+): string | null {
+  if (!payload) return null;
+
+  const nested = payload.data;
+  const candidates = [
+    payload.existingInvoiceId,
+    payload.existing_invoice_id,
+    payload.invoiceId,
+    payload.invoice_id,
+    payload.resourceId,
+    payload.resource_id,
+    nested && typeof nested.id === 'string' ? nested.id : null,
+    nested && typeof nested.invoiceId === 'string' ? nested.invoiceId : null,
+    nested && typeof nested.invoice_id === 'string' ? nested.invoice_id : null,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return null;
+}
+
+function isSafeIdempotencyConflict(status: number, message: string) {
+  if (status !== 409) return false;
+
+  const normalized = message.toLowerCase();
+  if (normalized.includes('different payload')) return false;
+
+  return (
+    normalized.includes('already processed') ||
+    normalized.includes('already being processed') ||
+    normalized.includes('duplicate request') ||
+    normalized.includes('idempotent request') ||
+    normalized.includes('idempotency')
+  );
+}
+
 export function useInvoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [page, setPageState] = useState(1);
@@ -112,12 +175,14 @@ export function useInvoices() {
             setScopeInfo(null);
           }
         }
+
+        return data as Invoice[];
       } catch (error) {
         if (
           controller.signal.aborted ||
           (error instanceof DOMException && error.name === 'AbortError')
         ) {
-          return;
+          return [];
         }
         // Log the actual error for debugging
         logError(
@@ -134,6 +199,7 @@ export function useInvoices() {
           setTotalPages(1);
           setScopeInfo(null);
         }
+        return [];
       } finally {
         if (abortRef.current === controller && !controller.signal.aborted) {
           setLoading(false);
@@ -166,7 +232,7 @@ export function useInvoices() {
         }>;
       },
       options?: { idempotencyKey?: string }
-    ) => {
+    ): Promise<CreateInvoiceResult> => {
       try {
         if (!createIdempotencyRef.current) {
           createIdempotencyRef.current =
@@ -193,13 +259,13 @@ export function useInvoices() {
 
           // ✅ 개선된 에러 처리: text()로 먼저 읽어서 빈 바디도 처리
           let errorText = '';
-          let errorData: unknown = null;
+          let errorData: InvoiceCreateErrorPayload | null = null;
 
           try {
             errorText = await response.text();
             if (errorText) {
               try {
-                errorData = JSON.parse(errorText);
+                errorData = JSON.parse(errorText) as InvoiceCreateErrorPayload;
               } catch {
                 // JSON이 아니면 그대로 텍스트로 사용
                 errorText = errorText.trim();
@@ -211,18 +277,27 @@ export function useInvoices() {
 
           // 에러 메시지 추출 (여러 형태 지원)
           if (errorData && typeof errorData === 'object') {
-            const data = errorData as {
-              message?: string;
-              error?: string;
-              payload?: { error?: string };
-            };
             errorMessage =
-              data.message || // user-friendly message 우선
-              data.error || // error 필드
-              data.payload?.error ||
+              errorData.message || // user-friendly message 우선
+              errorData.error || // error 필드
+              errorData.payload?.error ||
               errorMessage;
           } else if (errorText) {
             errorMessage = errorText;
+          }
+
+          const existingInvoiceId = extractExistingInvoiceId(errorData);
+
+          if (isSafeIdempotencyConflict(response.status, errorMessage)) {
+            createIdempotencyRef.current = null;
+            return {
+              invoice: null,
+              status: 'already_processed',
+              message:
+                'This request was already processed. Loading existing invoice.',
+              existingInvoiceId,
+              shouldRefreshList: !existingInvoiceId,
+            };
           }
 
           // 상세 정보 로깅 (개발 환경)
@@ -240,7 +315,16 @@ export function useInvoices() {
 
         const result = await response.json();
         createIdempotencyRef.current = null;
-        return result.data as Invoice;
+        return {
+          invoice: result.data as Invoice,
+          status: 'created',
+          message: 'Invoice created successfully.',
+          existingInvoiceId:
+            result?.data && typeof result.data.id === 'string'
+              ? result.data.id
+              : null,
+          shouldRefreshList: false,
+        };
       } catch (error) {
         handleError(
           error instanceof Error ? error.message : String(error),

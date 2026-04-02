@@ -45,6 +45,9 @@ describe('LoginPage', () => {
     mockUseAuth.mockReturnValue({
       user: null,
       session: null,
+      role: 'member',
+      orgId: null,
+      hasOrgContext: false,
       loading: false,
       signIn: mockSignIn,
       signUp: jest.fn(),
@@ -153,6 +156,9 @@ describe('LoginPage', () => {
     mockUseAuth.mockReturnValue({
       user: null,
       session: null,
+      role: 'member',
+      orgId: null,
+      hasOrgContext: false,
       loading: true,
       signIn: mockSignIn,
       signUp: jest.fn(),
@@ -170,6 +176,9 @@ describe('LoginPage', () => {
     mockUseAuth.mockReturnValue({
       user: mockUser,
       session: {} as any,
+      role: 'member',
+      orgId: 'org-1',
+      hasOrgContext: true,
       loading: false,
       signIn: mockSignIn,
       signUp: jest.fn(),
@@ -182,6 +191,28 @@ describe('LoginPage', () => {
     // LoginRedirect uses useEffect with router.replace, so wait for it to execute
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith('/dashboard');
+    });
+  });
+
+  it('should redirect logged-in users without org context to onboarding', async () => {
+    const mockUser = { id: '1', email: 'test@example.com' } as any;
+    mockUseAuth.mockReturnValue({
+      user: mockUser,
+      session: {} as any,
+      role: 'member',
+      orgId: null,
+      hasOrgContext: false,
+      loading: false,
+      signIn: mockSignIn,
+      signUp: jest.fn(),
+      signOut: jest.fn(),
+      refreshSession: jest.fn(),
+    } as any);
+
+    render(<LoginPage />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/onboarding/organization');
     });
   });
 

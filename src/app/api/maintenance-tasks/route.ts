@@ -1,7 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
-// captureException removed - withSentryRoute handles error reporting
 import {
   validateMaintenanceTask,
   validateMaintenanceTaskArray,
@@ -16,13 +14,15 @@ import {
   validateDateString,
 } from '@/utils/inputValidation';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
-import type { User } from '@supabase/supabase-js';
 
-async function getHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -53,8 +53,7 @@ async function getHandler(request: NextRequest, _user: User) {
           };
         }
 
-        const supabase = getServerSupabase();
-        const { data, error } = await supabase
+        const { data, error } = await auth.userSupabase
           .from('maintenance_tasks')
           .select('*', { count: 'exact' })
           .eq('id', id)
@@ -77,8 +76,7 @@ async function getHandler(request: NextRequest, _user: User) {
       }
 
       // 필터 적용
-      const supabase = getServerSupabase();
-      let query = supabase
+      let query = auth.userSupabase
         .from('maintenance_tasks')
         .select('*', { count: 'exact' });
 
@@ -200,9 +198,7 @@ async function getHandler(request: NextRequest, _user: User) {
 
 export const GET = withSentryRoute(withAuthRoute(getHandler));
 
-async function postHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function postHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -211,6 +207,14 @@ async function postHandler(request: NextRequest, _user: User) {
       context: 'MaintenanceTasksAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
 
       // Validate request body using create schema (without id, created_at, updated_at)
@@ -230,10 +234,9 @@ async function postHandler(request: NextRequest, _user: User) {
       // Use validated data instead of raw body
       const validatedInput = validationResult.data;
 
-      const supabase = getServerSupabase();
-      const { data, error } = await supabase
+      const { data, error } = await auth.userSupabase
         .from('maintenance_tasks')
-        .insert(validatedInput)
+        .insert({ ...validatedInput, org_id: auth.orgId! })
         .select()
         .single();
 
@@ -258,9 +261,7 @@ async function postHandler(request: NextRequest, _user: User) {
 
 export const POST = withSentryRoute(withAuthRoute(postHandler));
 
-async function patchHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function patchHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -269,6 +270,22 @@ async function patchHandler(request: NextRequest, _user: User) {
       context: 'MaintenanceTasksAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
       const { id, ...updates } = body;
 
@@ -299,10 +316,9 @@ async function patchHandler(request: NextRequest, _user: User) {
         };
       }
 
-      const supabase = getServerSupabase();
-      const { data, error } = await supabase
+      const { data, error } = await auth.userSupabase
         .from('maintenance_tasks')
-        .update(updates)
+        .update(validationResult.data)
         .eq('id', id)
         .select()
         .single();
@@ -327,9 +343,7 @@ async function patchHandler(request: NextRequest, _user: User) {
 
 export const PATCH = withSentryRoute(withAuthRoute(patchHandler));
 
-async function deleteHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function deleteHandler(request: NextRequest, auth: AuthContext) {
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get('id');
 
@@ -373,8 +387,23 @@ async function deleteHandler(request: NextRequest, _user: User) {
       metadata: { taskId: id },
     },
     async () => {
-      const supabase = getServerSupabase();
-      const { error } = await supabase
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
+          status: 403,
+        };
+      }
+
+      const { error } = await auth.userSupabase
         .from('maintenance_tasks')
         .delete()
         .eq('id', id);

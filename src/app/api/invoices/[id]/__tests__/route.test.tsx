@@ -1,11 +1,11 @@
 import React from 'react';
 import { NextRequest } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { validateUUID } from '@/utils/inputValidation';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import fs from 'fs/promises';
+let mockUserSupabase: any;
 
 // Mock React PDF before importing route
 const mockRenderToBufferFn = jest
@@ -27,16 +27,31 @@ jest.mock('@/components/invoices/InvoiceDocument', () => ({
   ),
 }));
 
-jest.mock('@/lib/supabase-server');
 jest.mock('@/utils/inputValidation');
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 jest.mock('fs/promises');
-
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
->;
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute: (handler: any) => async (request: any, context?: any) =>
+      handler(
+        request,
+        {
+          user: { id: 'test-user' },
+          accessToken: 'test-token',
+          orgId: 'test-org',
+          clientId: 'test-client',
+          role: 'admin',
+          userSupabase: mockUserSupabase,
+          isTestBypass: true,
+        },
+        context
+      ),
+  };
+});
 const mockValidateUUID = validateUUID as jest.MockedFunction<
   typeof validateUUID
 >;
@@ -94,6 +109,7 @@ describe('/api/invoices/[id]', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
+    mockUserSupabase = { from: jest.fn() };
     mockValidateUUID.mockReturnValue(true);
     mockRenderToBufferFn.mockClear();
     mockInvoiceDoc.mockClear();
@@ -195,7 +211,7 @@ describe('/api/invoices/[id]', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockFsReadFile.mockResolvedValue(mockLogoBuffer);
       mockRenderToBufferFn.mockResolvedValue(mockPdfBuffer);
 
@@ -253,10 +269,9 @@ describe('/api/invoices/[id]', () => {
       const mockInvoiceQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: null,
-          error: { code: 'PGRST116', message: 'Not found', status: 404 },
-        }),
+        single: jest.fn().mockReturnThis(),
+        data: null,
+        error: { code: 'PGRST116', message: 'Not found', status: 404 },
       };
 
       const mockSupabaseClient = {
@@ -268,7 +283,7 @@ describe('/api/invoices/[id]', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         `http://localhost/api/invoices/${mockSaleId}`
@@ -300,7 +315,7 @@ describe('/api/invoices/[id]', () => {
         from: jest.fn().mockReturnValue(mockSaleQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         `http://localhost/api/invoices/${mockSaleId}`
@@ -363,7 +378,7 @@ describe('/api/invoices/[id]', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockFsReadFile.mockResolvedValue(mockLogoBuffer);
       mockRenderToBufferFn.mockResolvedValue(mockPdfBuffer);
 
@@ -426,7 +441,7 @@ describe('/api/invoices/[id]', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockFsReadFile.mockResolvedValue(mockLogoBuffer);
       mockRenderToBufferFn.mockResolvedValue(mockPdfBuffer);
 
@@ -489,7 +504,7 @@ describe('/api/invoices/[id]', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockFsReadFile.mockRejectedValue(new Error('File not found'));
       mockRenderToBufferFn.mockResolvedValue(mockPdfBuffer);
 
@@ -558,7 +573,7 @@ describe('/api/invoices/[id]', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockFsReadFile.mockResolvedValue(mockLogoBuffer);
       mockRenderToBufferFn.mockResolvedValue(largePdfBuffer);
 
@@ -628,7 +643,7 @@ describe('/api/invoices/[id]', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockFsReadFile.mockResolvedValue(mockLogoBuffer);
       mockRenderToBufferFn.mockResolvedValue(mockPdfBuffer);
 
@@ -691,7 +706,7 @@ describe('/api/invoices/[id]', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockFsReadFile.mockResolvedValue(mockLogoBuffer);
       mockRenderToBufferFn.mockRejectedValue(
         new Error('PDF generation failed')

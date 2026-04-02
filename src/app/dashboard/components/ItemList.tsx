@@ -26,6 +26,7 @@ import RowActions from './RowActions';
 import { classNames, cn } from '@/utils/classNames';
 import { useInlineEdit } from '@/hooks/useInlineEdit';
 import { logInfo } from '@/utils/logger';
+import { apiFetch } from '@/utils/apiFetch';
 
 // FIXED: Use EnrichedInstrument type to avoid duplicate computation
 // Import from DashboardContent or define here - using explicit definition for clarity
@@ -875,7 +876,7 @@ const ItemList = memo(function ItemList({
                                 hasCertificate={Boolean(item.has_certificate)}
                                 onDownloadCertificate={async () => {
                                   try {
-                                    const res = await fetch(
+                                    const res = await apiFetch(
                                       `/api/certificates/${item.id}`
                                     );
                                     if (!res.ok) return;

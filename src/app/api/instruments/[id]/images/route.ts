@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 import { validateUUID } from '@/utils/inputValidation';
 import { InstrumentImage } from '@/types';
 import { getStorage } from '@/utils/storage';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
-import type { User } from '@supabase/supabase-js';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { logError } from '@/utils/logger';
 // Limits
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -30,9 +33,6 @@ const EXTENSION_MIME_TYPES: Record<string, string> = {
   webp: 'image/webp',
 };
 
-// Storage instance (singleton)
-const storage = getStorage();
-
 const getParams = async (context: { params: Promise<{ id: string }> }) => {
   const p: unknown = context.params;
   const params =
@@ -40,6 +40,13 @@ const getParams = async (context: { params: Promise<{ id: string }> }) => {
       ? await (p as Promise<{ id: string }>)
       : (p as { id: string });
   return params;
+};
+
+type UploadFileLike = {
+  name?: string;
+  type?: string;
+  size?: number;
+  arrayBuffer?: () => Promise<ArrayBuffer>;
 };
 
 /**
@@ -66,14 +73,41 @@ const getStoragePathFromPublicUrl = (url: string): string | null => {
   return null;
 };
 
+function getInstrumentImageStorageKey(
+  orgId: string,
+  instrumentId: string,
+  fileName: string
+): string {
+  return `${orgId}/${instrumentId}/${fileName}`;
+}
+
+async function ensureOwnedInstrument(
+  auth: AuthContext,
+  id: string
+): Promise<NextResponse | null> {
+  const { data: instrument, error } = await auth.userSupabase
+    .from('instruments')
+    .select('id')
+    .eq('id', id)
+    .single();
+
+  if (error || !instrument) {
+    return NextResponse.json(
+      { error: 'Instrument not found' },
+      { status: 404 }
+    );
+  }
+
+  return null;
+}
+
 async function getHandlerInternal(
   _request: NextRequest,
-  _user: User,
+  auth: AuthContext,
   id: string
 ) {
-  void _user;
-
   try {
+    const storage = getStorage();
     if (!validateUUID(id)) {
       return NextResponse.json(
         { error: 'Invalid instrument ID format' },
@@ -81,11 +115,15 @@ async function getHandlerInternal(
       );
     }
 
-    const supabase = getServerSupabase();
+    const orgContextError = requireOrgContext(auth);
+    if (orgContextError) return orgContextError;
+
+    const ownershipError = await ensureOwnedInstrument(auth, id);
+    if (ownershipError) return ownershipError;
 
     // Fetch images for the instrument
     // Explicitly select columns (excluding alt_text which may not exist in all schemas)
-    const { data, error } = await supabase
+    const { data, error } = await auth.userSupabase
       .from('instrument_images')
       .select(
         'id, instrument_id, image_url, file_name, file_size, mime_type, display_order, created_at'
@@ -104,7 +142,11 @@ async function getHandlerInternal(
       images.map(async image => {
         // If we have a stored filename, build the exact storage path
         if (image.file_name) {
-          const fileKey = `instruments/${id}/${image.file_name}`;
+          const fileKey = getInstrumentImageStorageKey(
+            auth.orgId!,
+            id,
+            image.file_name
+          );
           try {
             const signedUrl = storage.presignGet
               ? await storage.presignGet(fileKey, SIGNED_URL_TTL_SECONDS)
@@ -146,12 +188,11 @@ async function getHandlerInternal(
  */
 async function postHandlerInternal(
   request: NextRequest,
-  _user: User,
+  auth: AuthContext,
   id: string
 ) {
-  void _user;
-
   try {
+    const storage = getStorage();
     if (!validateUUID(id)) {
       return NextResponse.json(
         { error: 'Invalid instrument ID format' },
@@ -159,8 +200,25 @@ async function postHandlerInternal(
       );
     }
 
-    const formData = await request.formData();
-    const files = formData.getAll('images') as File[];
+    const orgContextError = requireOrgContext(auth);
+    if (orgContextError) return orgContextError;
+
+    const adminError = requireAdmin(auth);
+    if (adminError) return adminError;
+
+    const ownershipError = await ensureOwnedInstrument(auth, id);
+    if (ownershipError) return ownershipError;
+
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid multipart form data' },
+        { status: 400 }
+      );
+    }
+    const files = formData.getAll('images') as UploadFileLike[];
 
     if (!files || files.length === 0) {
       return NextResponse.json(
@@ -169,35 +227,22 @@ async function postHandlerInternal(
       );
     }
 
-    const supabase = getServerSupabase();
-
-    // Get current max display order
-    const { data: currentImages, error: imagesError } = await supabase
-      .from('instrument_images')
-      .select('display_order')
-      .eq('instrument_id', id);
-
-    if (imagesError) {
-      throw errorHandler.handleSupabaseError(
-        imagesError,
-        'Fetch instrument images'
-      );
-    }
-
-    const maxOrder = (currentImages || []).reduce(
-      (acc, img) => Math.max(acc, img.display_order || 0),
-      0
-    );
-
     const uploads: InstrumentImage[] = [];
-    let order = maxOrder + 1;
 
     for (const file of files) {
+      if (!file) {
+        return NextResponse.json(
+          { error: 'Invalid image file payload' },
+          { status: 400 }
+        );
+      }
+
       // Normalize type / infer from extension
       const mimeType = (file.type || '').toLowerCase();
       let normalizedType = mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
 
-      const extension = file.name.split('.').pop()?.toLowerCase() || '';
+      const originalFileName = typeof file.name === 'string' ? file.name : '';
+      const extension = originalFileName.split('.').pop()?.toLowerCase() || '';
       if (!ALLOWED_MIME_TYPES[normalizedType]) {
         const inferredType = EXTENSION_MIME_TYPES[extension];
         if (inferredType) normalizedType = inferredType;
@@ -210,9 +255,18 @@ async function postHandlerInternal(
         );
       }
 
-      if (file.size > MAX_FILE_SIZE) {
+      const fileSize = file.size ?? 0;
+
+      if (fileSize > MAX_FILE_SIZE) {
         return NextResponse.json(
           { error: 'Image file size must be less than 5MB' },
+          { status: 400 }
+        );
+      }
+
+      if (typeof file.arrayBuffer !== 'function' || !originalFileName) {
+        return NextResponse.json(
+          { error: 'Invalid image file payload' },
           { status: 400 }
         );
       }
@@ -223,7 +277,7 @@ async function postHandlerInternal(
       const fileExt = ALLOWED_MIME_TYPES[normalizedType];
 
       // Sanitize filename
-      const baseName = file.name.replace(/\.[^/.]+$/, '');
+      const baseName = originalFileName.replace(/\.[^/.]+$/, '');
       const safeName = baseName
         .replace(/[^a-zA-Z0-9.-]/g, '_')
         .replace(/\s+/g, '_');
@@ -232,7 +286,7 @@ async function postHandlerInternal(
       const fileNameBase = `${Date.now()}-${randomUUID()}-${safeName}`;
       const fileName = `${fileNameBase}.${fileExt}`;
 
-      const fileKey = `instruments/${id}/${fileName}`;
+      const fileKey = getInstrumentImageStorageKey(auth.orgId!, id, fileName);
 
       let storedKey: string;
       let storedFileName: string;
@@ -253,22 +307,16 @@ async function postHandlerInternal(
       // Store a public URL for fallback (even if bucket is private)
       const publicUrl = storage.getFileUrl(storedKey);
 
-      // Insert metadata row
-      // Note: alt_text column may not exist in all database schemas, so we only include fields that are guaranteed to exist
-      const { data: inserted, error: insertError } = await supabase
-        .from('instrument_images')
-        .insert({
-          instrument_id: id,
-          image_url: publicUrl,
-          file_name: storedFileName, // ✅ store full filename including extension
-          file_size: file.size,
-          mime_type: normalizedType,
-          display_order: order,
-        })
-        .select()
-        .single();
+      const { data: insertedId, error: insertError } =
+        await auth.userSupabase.rpc('create_instrument_image_metadata', {
+          p_instrument_id: id,
+          p_image_url: publicUrl,
+          p_file_name: storedFileName,
+          p_file_size: fileSize,
+          p_mime_type: normalizedType,
+        });
 
-      if (insertError) {
+      if (insertError || typeof insertedId !== 'string') {
         // Roll back storage upload to prevent orphan files
         try {
           await storage.deleteFile(storedKey);
@@ -283,6 +331,34 @@ async function postHandlerInternal(
         throw errorHandler.handleSupabaseError(
           insertError,
           'Save instrument image'
+        );
+      }
+
+      const { data: inserted, error: fetchInsertedError } =
+        await auth.userSupabase
+          .from('instrument_images')
+          .select('*')
+          .eq('id', insertedId)
+          .single();
+
+      if (fetchInsertedError || !inserted) {
+        try {
+          await auth.userSupabase
+            .from('instrument_images')
+            .delete()
+            .eq('id', insertedId);
+          await storage.deleteFile(storedKey);
+        } catch (cleanupError) {
+          logError(
+            'Failed to rollback image metadata fetch failure:',
+            cleanupError instanceof Error
+              ? cleanupError.message
+              : String(cleanupError)
+          );
+        }
+        throw errorHandler.handleSupabaseError(
+          fetchInsertedError,
+          'Fetch saved instrument image'
         );
       }
 
@@ -306,8 +382,6 @@ async function postHandlerInternal(
         ...(inserted as InstrumentImage),
         image_url: signedUrl,
       });
-
-      order += 1;
     }
 
     return NextResponse.json({ data: uploads });
@@ -353,18 +427,26 @@ async function postHandlerInternal(
  */
 async function deleteHandlerInternal(
   request: NextRequest,
-  _user: User,
+  auth: AuthContext,
   id: string
 ) {
-  void _user;
-
   try {
+    const storage = getStorage();
     if (!validateUUID(id)) {
       return NextResponse.json(
         { error: 'Invalid instrument ID format' },
         { status: 400 }
       );
     }
+
+    const orgContextError = requireOrgContext(auth);
+    if (orgContextError) return orgContextError;
+
+    const adminError = requireAdmin(auth);
+    if (adminError) return adminError;
+
+    const ownershipError = await ensureOwnedInstrument(auth, id);
+    if (ownershipError) return ownershipError;
 
     const url = new URL(request.url);
     const imageId = url.searchParams.get('imageId');
@@ -373,9 +455,7 @@ async function deleteHandlerInternal(
       return NextResponse.json({ error: 'Invalid image ID' }, { status: 400 });
     }
 
-    const supabase = getServerSupabase();
-
-    const { data: image, error: imageError } = await supabase
+    const { data: image, error: imageError } = await auth.userSupabase
       .from('instrument_images')
       .select('*')
       .eq('id', imageId)
@@ -390,7 +470,7 @@ async function deleteHandlerInternal(
     let fileKey: string | null = null;
 
     if (image.file_name) {
-      fileKey = `instruments/${id}/${image.file_name}`;
+      fileKey = getInstrumentImageStorageKey(auth.orgId!, id, image.file_name);
     } else if (image.image_url) {
       // Best-effort fallback for legacy public URLs
       const p = getStoragePathFromPublicUrl(image.image_url);
@@ -411,7 +491,7 @@ async function deleteHandlerInternal(
       }
     }
 
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await auth.userSupabase
       .from('instrument_images')
       .delete()
       .eq('id', imageId);
@@ -445,8 +525,8 @@ export async function GET(
   const { id } = await getParams(context);
 
   const handler = withSentryRoute(
-    withAuthRoute(async (req: NextRequest, user: User) => {
-      return getHandlerInternal(req, user, id);
+    withAuthRoute(async (req: NextRequest, auth: AuthContext) => {
+      return getHandlerInternal(req, auth, id);
     })
   );
 
@@ -461,8 +541,8 @@ export async function POST(
   const { id } = await getParams(context);
 
   const handler = withSentryRoute(
-    withAuthRoute(async (req: NextRequest, user: User) => {
-      return postHandlerInternal(req, user, id);
+    withAuthRoute(async (req: NextRequest, auth: AuthContext) => {
+      return postHandlerInternal(req, auth, id);
     })
   );
 
@@ -477,8 +557,8 @@ export async function DELETE(
   const { id } = await getParams(context);
 
   const handler = withSentryRoute(
-    withAuthRoute(async (req: NextRequest, user: User) => {
-      return deleteHandlerInternal(req, user, id);
+    withAuthRoute(async (req: NextRequest, auth: AuthContext) => {
+      return deleteHandlerInternal(req, auth, id);
     })
   );
 

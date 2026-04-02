@@ -14,6 +14,8 @@ interface CustomerListProps {
   onResetFilters?: () => void;
   /** 새 고객 추가 CTA가 필요할 때 */
   onAddCustomer?: () => void;
+  canAddCustomer?: boolean;
+  addCustomerDisabledReason?: string;
 }
 
 const formatAmount = (amount: number) =>
@@ -30,6 +32,8 @@ export const CustomerListComponent = ({
   hasActiveFilters = false,
   onResetFilters,
   onAddCustomer,
+  canAddCustomer = true,
+  addCustomerDisabledReason,
 }: CustomerListProps) => {
   const listRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -97,7 +101,12 @@ export const CustomerListComponent = ({
         onResetFilters={hasActiveFilters ? onResetFilters : undefined}
         actionButton={
           !hasActiveFilters && onAddCustomer
-            ? { label: 'Add customer', onClick: onAddCustomer }
+            ? {
+                label: 'Add customer',
+                onClick: onAddCustomer,
+                disabled: !canAddCustomer,
+                disabledReason: addCustomerDisabledReason,
+              }
             : undefined
         }
       />
