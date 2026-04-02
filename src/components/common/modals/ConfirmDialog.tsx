@@ -9,6 +9,8 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  submitting?: boolean;
+  submittingLabel?: string;
   /**
    * Destructive action 여부 (true면 Cancel에 기본 포커스)
    */
@@ -23,6 +25,8 @@ export default function ConfirmDialog({
   cancelLabel = 'Cancel',
   onConfirm,
   onCancel,
+  submitting = false,
+  submittingLabel = 'Working...',
   destructive = true,
 }: ConfirmDialogProps) {
   return (
@@ -39,6 +43,7 @@ export default function ConfirmDialog({
             type="button"
             onClick={onCancel}
             autoFocus={destructive}
+            disabled={submitting}
             className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
           >
             {cancelLabel}
@@ -47,9 +52,10 @@ export default function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             autoFocus={!destructive}
-            className="px-4 py-2 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+            disabled={submitting}
+            className="px-4 py-2 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-red-300 disabled:hover:bg-red-300"
           >
-            {confirmLabel}
+            {submitting ? submittingLabel : confirmLabel}
           </button>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { dataService } from '@/services/dataService';
 import type { MaintenanceTask, TaskFilters } from '@/types';
+import { apiFetch } from '@/utils/apiFetch';
 
 interface UseMaintenanceTasksOptions {
   initialFilters?: TaskFilters;
@@ -45,6 +46,31 @@ interface UseMaintenanceTasksReturn {
   ) => Promise<MaintenanceTask[]>;
   fetchTasksByScheduledDate: (date: string) => Promise<MaintenanceTask[]>;
   fetchOverdueTasks: () => Promise<MaintenanceTask[]>;
+}
+
+type JsonRecord = Record<string, unknown>;
+
+async function safeJson(res: Response): Promise<JsonRecord | null> {
+  try {
+    const json = await res.json();
+    if (json && typeof json === 'object') {
+      return json as JsonRecord;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function toError(body: JsonRecord | null, fallback: string): Error {
+  const candidate = body?.error;
+  if (candidate instanceof Error) {
+    return candidate;
+  }
+  if (typeof candidate === 'string' && candidate.trim()) {
+    return new Error(candidate);
+  }
+  return new Error(fallback);
 }
 
 /**
@@ -174,15 +200,24 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error: svcError } =
-          await dataService.createMaintenanceTask(task);
+        const res = await apiFetch('/api/maintenance-tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(task),
+        });
+        const body = await safeJson(res);
 
-        if (svcError) {
-          setError(svcError);
-          handleError(svcError, 'Failed to create maintenance task');
+        if (!res.ok) {
+          const requestError = toError(
+            body,
+            `Failed to create maintenance task (${res.status})`
+          );
+          setError(requestError);
+          handleError(requestError, 'Failed to create maintenance task');
           return null;
         }
 
+        const data = (body?.data as MaintenanceTask | undefined) ?? null;
         if (data) {
           setTasks(prev => [data, ...prev]);
         }
@@ -213,15 +248,24 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error: svcError } =
-          await dataService.updateMaintenanceTask(id, updates);
+        const res = await apiFetch('/api/maintenance-tasks', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, ...updates }),
+        });
+        const body = await safeJson(res);
 
-        if (svcError) {
-          setError(svcError);
-          handleError(svcError, 'Failed to update maintenance task');
+        if (!res.ok) {
+          const requestError = toError(
+            body,
+            `Failed to update maintenance task (${res.status})`
+          );
+          setError(requestError);
+          handleError(requestError, 'Failed to update maintenance task');
           return null;
         }
 
+        const data = (body?.data as MaintenanceTask | undefined) ?? null;
         if (data) {
           setTasks(prev => prev.map(t => (t.id === id ? data : t)));
         }
@@ -244,11 +288,18 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { error: svcError } = await dataService.deleteMaintenanceTask(id);
+        const res = await apiFetch(`/api/maintenance-tasks?id=${id}`, {
+          method: 'DELETE',
+        });
+        const body = await safeJson(res);
 
-        if (svcError) {
-          setError(svcError);
-          handleError(svcError, 'Failed to delete maintenance task');
+        if (!res.ok) {
+          const requestError = toError(
+            body,
+            `Failed to delete maintenance task (${res.status})`
+          );
+          setError(requestError);
+          handleError(requestError, 'Failed to delete maintenance task');
           return;
         }
 

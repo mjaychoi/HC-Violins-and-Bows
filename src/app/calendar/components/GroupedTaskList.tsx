@@ -52,6 +52,10 @@ interface GroupedTaskListProps {
   onResetFilters?: () => void;
   /** 작업 추가 CTA가 필요할 때 */
   onAddTask?: () => void;
+  canAddTask?: boolean;
+  addTaskDisabledReason?: string;
+  canManageTask?: boolean;
+  manageTaskDisabledReason?: string;
 }
 interface GroupedTasks {
   date: string;
@@ -70,6 +74,10 @@ export default function GroupedTaskList({
   hasActiveFilters = false,
   onResetFilters,
   onAddTask,
+  canAddTask = true,
+  addTaskDisabledReason,
+  canManageTask = true,
+  manageTaskDisabledReason,
 }: GroupedTaskListProps) {
   // onTaskEdit is optional, default to onTaskClick if not provided
   const handleTaskEdit = onTaskEdit || onTaskClick;
@@ -177,7 +185,12 @@ export default function GroupedTaskList({
         onResetFilters={hasActiveFilters ? onResetFilters : undefined}
         actionButton={
           !hasActiveFilters && onAddTask
-            ? { label: 'Add task', onClick: onAddTask }
+            ? {
+                label: 'Add task',
+                onClick: onAddTask,
+                disabled: !canAddTask,
+                disabledReason: addTaskDisabledReason,
+              }
             : undefined
         }
       />
@@ -207,7 +220,8 @@ export default function GroupedTaskList({
                   : undefined;
                 const isExpanded = expandedTasks.has(task.id);
                 // Show menu if at least one action is available
-                const hasMenu = Boolean(handleTaskEdit || onTaskDelete);
+                const hasMenu =
+                  canManageTask && Boolean(handleTaskEdit || onTaskDelete);
 
                 return (
                   <div key={task.id} data-testid={`task-${task.id}`}>
@@ -226,8 +240,14 @@ export default function GroupedTaskList({
                               onViewDetails={() => {
                                 toggleTaskExpanded(task.id);
                               }}
-                              onEdit={handleTaskEdit}
-                              onDelete={onTaskDelete}
+                              onEdit={
+                                canManageTask ? handleTaskEdit : undefined
+                              }
+                              onDelete={
+                                canManageTask ? onTaskDelete : undefined
+                              }
+                              editDisabledReason={manageTaskDisabledReason}
+                              deleteDisabledReason={manageTaskDisabledReason}
                             />
                           </div>
                         )}
@@ -240,6 +260,8 @@ export default function GroupedTaskList({
                           client={client}
                           onTaskClick={() => toggleTaskExpanded(task.id)}
                           onTaskUpdate={onTaskUpdate}
+                          canManageTask={canManageTask}
+                          manageTaskDisabledReason={manageTaskDisabledReason}
                         />
                         {hasMenu && (
                           <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20">
@@ -248,8 +270,14 @@ export default function GroupedTaskList({
                               onViewDetails={() => {
                                 toggleTaskExpanded(task.id);
                               }}
-                              onEdit={handleTaskEdit}
-                              onDelete={onTaskDelete}
+                              onEdit={
+                                canManageTask ? handleTaskEdit : undefined
+                              }
+                              onDelete={
+                                canManageTask ? onTaskDelete : undefined
+                              }
+                              editDisabledReason={manageTaskDisabledReason}
+                              deleteDisabledReason={manageTaskDisabledReason}
                             />
                           </div>
                         )}

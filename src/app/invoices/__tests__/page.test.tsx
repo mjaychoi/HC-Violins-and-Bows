@@ -5,6 +5,13 @@ import { Invoice } from '@/types';
 
 const originalCreateElement = document.createElement.bind(document);
 
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canCreateInvoice: true,
+    canManageInvoiceSettings: true,
+  })),
+}));
+
 // Mock InvoiceModal component first
 jest.mock('../components/InvoiceModal', () => ({
   __esModule: true,

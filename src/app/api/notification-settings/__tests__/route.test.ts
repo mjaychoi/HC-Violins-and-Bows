@@ -1,29 +1,32 @@
 import { NextRequest } from 'next/server';
 import { GET, POST } from '../route';
-import { getServerSupabase } from '@/lib/supabase-server';
+let mockUserSupabase: any;
 
-jest.mock('@/lib/supabase-server');
 jest.mock('@/app/api/_utils/withSentryRoute', () => ({
   withSentryRoute: (fn: unknown) => fn,
 }));
 jest.mock('@/app/api/_utils/withAuthRoute', () => ({
-  withAuthRoute: (handler: (req: unknown, user: unknown) => unknown) => {
+  withAuthRoute: (handler: (req: unknown, auth: unknown) => unknown) => {
     return (req: unknown) => {
-      const TEST_USER = { id: 'test-user-id' } as any;
-      return handler(req, TEST_USER);
+      return handler(req, {
+        user: { id: 'test-user-id' },
+        accessToken: 'test-token',
+        orgId: 'test-org',
+        clientId: 'test-client',
+        role: 'admin',
+        userSupabase: mockUserSupabase,
+        isTestBypass: true,
+      });
     };
   },
 }));
-
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
->;
 
 describe('/api/notification-settings', () => {
   const mockUserId = 'test-user-id'; // matches TEST_USER.id from withAuthRoute mock
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUserSupabase = { from: jest.fn() };
   });
 
   describe('GET', () => {
@@ -49,11 +52,9 @@ describe('/api/notification-settings', () => {
         }),
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/notification-settings'
@@ -62,7 +63,7 @@ describe('/api/notification-settings', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
-      expect(json).toEqual(mockSettings);
+      expect(json.data).toEqual(mockSettings);
       expect(mockQuery.eq).toHaveBeenCalledWith('user_id', mockUserId);
     });
 
@@ -76,11 +77,9 @@ describe('/api/notification-settings', () => {
         }),
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/notification-settings'
@@ -89,14 +88,14 @@ describe('/api/notification-settings', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
-      expect(json.user_id).toBe(mockUserId);
-      expect(json.email_notifications).toBe(true);
-      expect(json.notification_time).toBe('09:00');
-      expect(json.days_before_due).toEqual([3, 1]);
-      expect(json.enabled).toBe(true);
-      expect(json.last_notification_sent_at).toBeNull();
-      expect(json.created_at).toBeDefined();
-      expect(json.updated_at).toBeDefined();
+      expect(json.data.user_id).toBe(mockUserId);
+      expect(json.data.email_notifications).toBe(true);
+      expect(json.data.notification_time).toBe('09:00');
+      expect(json.data.days_before_due).toEqual([3, 1]);
+      expect(json.data.enabled).toBe(true);
+      expect(json.data.last_notification_sent_at).toBeNull();
+      expect(json.data.created_at).toBeDefined();
+      expect(json.data.updated_at).toBeDefined();
     });
 
     it('should return 500 when database error occurs (non-PGRST116)', async () => {
@@ -109,11 +108,9 @@ describe('/api/notification-settings', () => {
         }),
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/notification-settings'
@@ -154,11 +151,9 @@ describe('/api/notification-settings', () => {
         }),
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockUpsertQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/notification-settings',
@@ -171,7 +166,7 @@ describe('/api/notification-settings', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
-      expect(json).toEqual(mockCreatedSettings);
+      expect(json.data).toEqual(mockCreatedSettings);
       expect(mockUpsertQuery.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           user_id: mockUserId,
@@ -210,11 +205,9 @@ describe('/api/notification-settings', () => {
         }),
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockUpsertQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/notification-settings',
@@ -227,10 +220,10 @@ describe('/api/notification-settings', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
-      expect(json.email_notifications).toBe(false);
-      expect(json.notification_time).toBe('14:30');
-      expect(json.days_before_due).toEqual([7, 3]);
-      expect(json.enabled).toBe(false);
+      expect(json.data.email_notifications).toBe(false);
+      expect(json.data.notification_time).toBe('14:30');
+      expect(json.data.days_before_due).toEqual([7, 3]);
+      expect(json.data.enabled).toBe(false);
     });
 
     it('should use default values when fields are omitted', async () => {
@@ -259,11 +252,9 @@ describe('/api/notification-settings', () => {
         }),
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockUpsertQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/notification-settings',
@@ -276,10 +267,10 @@ describe('/api/notification-settings', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
-      expect(json.email_notifications).toBe(true);
-      expect(json.notification_time).toBe('12:00');
-      expect(json.days_before_due).toEqual([3, 1]);
-      expect(json.enabled).toBe(true);
+      expect(json.data.email_notifications).toBe(true);
+      expect(json.data.notification_time).toBe('12:00');
+      expect(json.data.days_before_due).toEqual([3, 1]);
+      expect(json.data.enabled).toBe(true);
       expect(mockUpsertQuery.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           email_notifications: true,
@@ -296,11 +287,9 @@ describe('/api/notification-settings', () => {
         notification_time: '25:00', // Invalid: hour > 23
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn(),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/notification-settings',
@@ -314,7 +303,7 @@ describe('/api/notification-settings', () => {
 
       expect(response.status).toBe(400);
       expect(json.error).toBe('Invalid notification_time format. Use HH:MM');
-      expect(mockSupabaseClient.from).not.toHaveBeenCalled();
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it('should return 400 for invalid notification_time format (minutes)', async () => {
@@ -322,11 +311,9 @@ describe('/api/notification-settings', () => {
         notification_time: '12:60', // Invalid: minutes >= 60
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn(),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/notification-settings',
@@ -347,11 +334,9 @@ describe('/api/notification-settings', () => {
         days_before_due: 'not an array',
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn(),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/notification-settings',
@@ -365,7 +350,7 @@ describe('/api/notification-settings', () => {
 
       expect(response.status).toBe(400);
       expect(json.error).toBe('days_before_due must be an array');
-      expect(mockSupabaseClient.from).not.toHaveBeenCalled();
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it('should accept valid notification_time formats', async () => {
@@ -390,11 +375,9 @@ describe('/api/notification-settings', () => {
           }),
         };
 
-        const mockSupabaseClient = {
+        mockUserSupabase = {
           from: jest.fn().mockReturnValue(mockUpsertQuery),
         } as any;
-
-        mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
         const request = new NextRequest(
           'http://localhost/api/notification-settings',
@@ -426,11 +409,9 @@ describe('/api/notification-settings', () => {
         }),
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockUpsertQuery),
       } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         'http://localhost/api/notification-settings',

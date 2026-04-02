@@ -32,9 +32,14 @@ const makeReq = (
 ) => new NextRequest(url, init);
 
 describe('withAuthRoute', () => {
-  const mockHandler = jest.fn(async (_req: NextRequest, user: any) => {
+  const mockHandler = jest.fn(async (_req: NextRequest, auth: any) => {
     return NextResponse.json(
-      { success: true, userId: user.id },
+      {
+        success: true,
+        userId: auth.user.id,
+        role: auth.role,
+        orgId: auth.orgId,
+      },
       { status: 200 }
     );
   });
@@ -76,13 +81,18 @@ describe('withAuthRoute', () => {
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
       expect(json.userId).toBe('test-user');
+      expect(json.role).toBe('admin');
+      expect(json.orgId).toBe('test-org');
       expect(mockHandler).toHaveBeenCalledWith(
         request,
-        expect.objectContaining({ id: 'test-user' })
+        expect.objectContaining({
+          user: expect.objectContaining({ id: 'test-user' }),
+          role: 'admin',
+          orgId: 'test-org',
+        })
       );
 
-      // In NODE_ENV=test we never create supabase client
-      expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockCreateClient).toHaveBeenCalled();
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
   });
@@ -98,11 +108,8 @@ describe('withAuthRoute', () => {
       // In production, bypass is ignored and it should attempt auth => return 401.
       // Provide a deterministic supabase mock so behavior doesn't depend on undefined mocks.
       const mockAuth = {
-        getSession: jest.fn().mockResolvedValue({
-          data: {
-            session: null,
-            user: null,
-          },
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
           error: { message: 'Invalid token' },
         }),
       };
@@ -123,16 +130,13 @@ describe('withAuthRoute', () => {
       // benign invalid token => should not capture
       expect(mockCaptureException).not.toHaveBeenCalled();
       expect(mockCreateClient).toHaveBeenCalled();
-      expect(mockAuth.getSession).toHaveBeenCalled();
+      expect(mockAuth.getUser).toHaveBeenCalled();
     });
 
     it('should not bypass auth even with bypass header in production', async () => {
       const mockAuth = {
-        getSession: jest.fn().mockResolvedValue({
-          data: {
-            session: null,
-            user: null,
-          },
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
           error: { message: 'Invalid token' },
         }),
       };
@@ -152,7 +156,7 @@ describe('withAuthRoute', () => {
 
       expect(mockCaptureException).not.toHaveBeenCalled();
       expect(mockCreateClient).toHaveBeenCalled();
-      expect(mockAuth.getSession).toHaveBeenCalled();
+      expect(mockAuth.getUser).toHaveBeenCalled();
     });
 
     it.skip('should require valid auth token in production', async () => {
@@ -193,9 +197,12 @@ describe('withAuthRoute', () => {
 
     it('should bypass auth with E2E_BYPASS_AUTH env var', async () => {
       process.env.E2E_BYPASS_AUTH = 'true';
+      process.env.E2E_BYPASS_SECRET = 'secret';
 
       const wrappedHandler = withAuthRoute(mockHandler);
-      const request = makeReq();
+      const request = makeReq('http://localhost/api/test', {
+        headers: { 'x-e2e-bypass-secret': 'secret' },
+      });
 
       const response = await wrappedHandler(request);
       const json = await response.json();
@@ -203,19 +210,28 @@ describe('withAuthRoute', () => {
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
       expect(json.userId).toBe('test-user');
+      expect(json.role).toBe('admin');
 
       expect(mockHandler).toHaveBeenCalledWith(
         request,
-        expect.objectContaining({ id: 'test-user' })
+        expect.objectContaining({
+          user: expect.objectContaining({ id: 'test-user' }),
+          role: 'admin',
+        })
       );
-      expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockCreateClient).toHaveBeenCalled();
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
 
     it('should bypass auth with x-e2e-bypass header', async () => {
+      process.env.E2E_BYPASS_SECRET = 'secret';
+
       const wrappedHandler = withAuthRoute(mockHandler);
       const request = makeReq('http://localhost/api/test', {
-        headers: { 'x-e2e-bypass': '1' },
+        headers: {
+          'x-e2e-bypass': '1',
+          'x-e2e-bypass-secret': 'secret',
+        },
       });
 
       const response = await wrappedHandler(request);
@@ -225,7 +241,7 @@ describe('withAuthRoute', () => {
       expect(json.success).toBe(true);
       expect(json.userId).toBe('test-user');
 
-      expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockCreateClient).toHaveBeenCalled();
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
 
@@ -233,11 +249,8 @@ describe('withAuthRoute', () => {
       delete process.env.E2E_BYPASS_AUTH;
 
       const mockAuth = {
-        getSession: jest.fn().mockResolvedValue({
-          data: {
-            session: null,
-            user: null,
-          },
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
           error: { message: 'Invalid token' },
         }),
       };
@@ -258,7 +271,7 @@ describe('withAuthRoute', () => {
       // Benign auth failure
       expect(mockCaptureException).not.toHaveBeenCalled();
       expect(mockCreateClient).toHaveBeenCalled();
-      expect(mockAuth.getSession).toHaveBeenCalled();
+      expect(mockAuth.getUser).toHaveBeenCalled();
     });
   });
 
@@ -368,7 +381,7 @@ describe('withAuthRoute', () => {
 
     it('should handle getUser throwing an error (non-benign => capture)', async () => {
       const mockAuth = {
-        getSession: jest.fn().mockRejectedValue(new Error('Network error')),
+        getUser: jest.fn().mockRejectedValue(new Error('Network error')),
       };
       mockCreateClient.mockReturnValue({ auth: mockAuth } as any);
 
@@ -387,17 +400,19 @@ describe('withAuthRoute', () => {
       // Network errors should be captured
       expect(mockCaptureException).toHaveBeenCalled();
       expect(mockCreateClient).toHaveBeenCalled();
-      expect(mockAuth.getSession).toHaveBeenCalled();
+      expect(mockAuth.getUser).toHaveBeenCalled();
     });
 
-    it.skip('should successfully authenticate valid user', async () => {
-      const mockUser = { id: 'user-123', email: 'user@example.com' };
+    it('should successfully authenticate valid user', async () => {
+      const mockUser = {
+        id: 'user-123',
+        email: 'user@example.com',
+        app_metadata: { org_id: 'org-123', role: 'admin' },
+        user_metadata: {},
+      };
       const mockAuth = {
-        getSession: jest.fn().mockResolvedValue({
-          data: {
-            session: { user: mockUser },
-            user: mockUser,
-          },
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: mockUser },
           error: null,
         }),
       };
@@ -414,10 +429,19 @@ describe('withAuthRoute', () => {
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
       expect(json.userId).toBe('user-123');
+      expect(json.role).toBe('admin');
+      expect(json.orgId).toBe('org-123');
 
-      expect(mockHandler).toHaveBeenCalledWith(request, mockUser);
+      expect(mockHandler).toHaveBeenCalledWith(
+        request,
+        expect.objectContaining({
+          user: expect.objectContaining({ id: 'user-123' }),
+          role: 'admin',
+          orgId: 'org-123',
+        })
+      );
       expect(mockCreateClient).toHaveBeenCalled();
-      expect(mockAuth.getSession).toHaveBeenCalled();
+      expect(mockAuth.getUser).toHaveBeenCalled();
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
 
@@ -460,7 +484,7 @@ describe('withAuthRoute', () => {
 
     it('should return 401 when getUser throws an error', async () => {
       const mockAuth = {
-        getSession: jest.fn().mockRejectedValue(new Error('Network timeout')),
+        getUser: jest.fn().mockRejectedValue(new Error('Network timeout')),
       };
       mockCreateClient.mockReturnValue({ auth: mockAuth } as any);
 

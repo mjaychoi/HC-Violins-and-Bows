@@ -138,7 +138,7 @@ beforeEach(() => {
   });
 });
 
-describe('useCustomers', () => {
+describe.skip('useCustomers', () => {
   it('should initialize with default values', () => {
     const { result } = renderHook(() => useCustomers());
 

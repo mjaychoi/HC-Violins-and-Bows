@@ -1,9 +1,7 @@
 import { NextRequest } from 'next/server';
 import { GET, POST, PATCH, DELETE } from '../route';
-import { getServerSupabase } from '@/lib/supabase-server';
 // errorHandler is mocked but not directly used in tests
 
-jest.mock('@/lib/supabase-server');
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
@@ -11,9 +9,28 @@ jest.mock('@/utils/typeGuards');
 jest.mock('@/utils/inputValidation');
 jest.mock('@/utils/dateParsing');
 
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
->;
+let mockUserSupabase: any;
+
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute: (handler: any) => async (request: any, context?: any) =>
+      handler(
+        request,
+        {
+          user: { id: 'test-user' },
+          accessToken: 'test-token',
+          orgId: 'test-org',
+          clientId: 'test-client',
+          role: 'admin',
+          userSupabase: mockUserSupabase,
+          isTestBypass: true,
+        },
+        context
+      ),
+  };
+});
 
 // Mock typeGuards
 jest.mock('@/utils/typeGuards', () => {
@@ -73,6 +90,23 @@ describe('/api/maintenance-tasks', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
+    const baseQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      in: jest.fn().mockReturnThis(),
+      or: jest.fn().mockReturnThis(),
+      order: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      update: jest.fn().mockReturnThis(),
+      insert: jest.fn().mockReturnThis(),
+      delete: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: mockTask, error: null }),
+      maybeSingle: jest.fn().mockResolvedValue({ data: mockTask, error: null }),
+    };
+    (baseQuery.order as jest.Mock).mockImplementation(() => baseQuery);
+    mockUserSupabase = {
+      from: jest.fn().mockReturnValue(baseQuery),
+    };
   });
 
   afterEach(() => {
@@ -91,11 +125,9 @@ describe('/api/maintenance-tasks', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest('http://localhost/api/maintenance-tasks');
       const response = await GET(request);
@@ -117,11 +149,9 @@ describe('/api/maintenance-tasks', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         `http://localhost/api/maintenance-tasks?id=${mockTask.id}`
@@ -159,11 +189,9 @@ describe('/api/maintenance-tasks', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         `http://localhost/api/maintenance-tasks?instrument_id=${mockTask.instrument_id}`
@@ -188,11 +216,9 @@ describe('/api/maintenance-tasks', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks?status=pending'
@@ -214,11 +240,9 @@ describe('/api/maintenance-tasks', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks?task_type=repair'
@@ -240,11 +264,9 @@ describe('/api/maintenance-tasks', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks?scheduled_date=2024-01-25'
@@ -283,11 +305,9 @@ describe('/api/maintenance-tasks', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks?startDate=2024-01-01&endDate=2024-01-31'
@@ -316,11 +336,9 @@ describe('/api/maintenance-tasks', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks?overdue=true'
@@ -346,11 +364,9 @@ describe('/api/maintenance-tasks', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks?priority=high'
@@ -372,11 +388,9 @@ describe('/api/maintenance-tasks', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks?search=string'
@@ -425,11 +439,9 @@ describe('/api/maintenance-tasks', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks',
@@ -485,11 +497,9 @@ describe('/api/maintenance-tasks', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks',
@@ -550,11 +560,9 @@ describe('/api/maintenance-tasks', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         `http://localhost/api/maintenance-tasks?id=${mockTask.id}`

@@ -1,10 +1,4 @@
-export type InvoiceStatus =
-  | 'draft'
-  | 'sent'
-  | 'paid'
-  | 'overdue'
-  | 'cancelled'
-  | 'void';
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
 
 export interface InvoiceItemInput {
   instrument_id: string | null;
@@ -38,3 +32,8 @@ export interface CreateInvoiceInput {
   default_exchange_rate?: string | null;
   items?: InvoiceItemInput[];
 }
+
+export type InvoiceFinancialSnapshot = Pick<
+  CreateInvoiceInput,
+  'subtotal' | 'tax' | 'total' | 'items'
+>;

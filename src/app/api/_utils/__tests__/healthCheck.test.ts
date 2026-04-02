@@ -1,10 +1,10 @@
 import { checkMigrations } from '../healthCheck';
-import { getServerSupabase } from '@/lib/supabase-server';
+import { getAdminSupabase } from '@/lib/supabase-server';
 
 jest.mock('@/lib/supabase-server');
 
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
+const mockGetAdminSupabase = getAdminSupabase as jest.MockedFunction<
+  typeof getAdminSupabase
 >;
 
 describe('healthCheck', () => {
@@ -26,7 +26,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 
@@ -57,7 +57,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 
@@ -83,7 +83,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 
@@ -107,7 +107,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 
@@ -130,7 +130,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 
@@ -157,7 +157,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 
@@ -167,7 +167,7 @@ describe('healthCheck', () => {
     });
 
     it('should return unhealthy when exception is thrown', async () => {
-      mockGetServerSupabase.mockImplementation(() => {
+      mockGetAdminSupabase.mockImplementation(() => {
         throw new Error('Connection error');
       });
 
@@ -194,7 +194,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 
@@ -217,7 +217,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 
@@ -243,7 +243,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 
@@ -266,7 +266,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 
@@ -288,7 +288,7 @@ describe('healthCheck', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const result = await checkMigrations();
 

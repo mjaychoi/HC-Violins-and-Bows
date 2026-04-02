@@ -10,6 +10,7 @@ import { ConfirmDialog, EmptyState } from '@/components/common';
 import type { Invoice, InvoiceStatus } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
+import { usePermissions } from '@/hooks/usePermissions';
 import OptimizedImage from '@/components/common/OptimizedImage';
 import { cn } from '@/utils/classNames';
 import InvoiceSettingsPanel from '../components/InvoiceSettingsPanel';
@@ -48,7 +49,6 @@ const statusColors: Record<InvoiceStatus, string> = {
   paid: 'bg-green-100 text-green-800',
   overdue: 'bg-red-100 text-red-800',
   cancelled: 'bg-gray-100 text-gray-500',
-  void: 'bg-gray-50 text-gray-400',
 };
 
 export default function InvoiceDetailPage() {
@@ -59,6 +59,8 @@ export default function InvoiceDetailPage() {
 
   const router = useRouter();
   const { showSuccess, handleError } = useAppFeedback();
+  const { canEditInvoice, canDeleteInvoice, canManageInvoiceSettings } =
+    usePermissions();
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const pdfIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -242,14 +244,16 @@ export default function InvoiceDetailPage() {
             </Link> */}
             <Button
               variant="secondary"
-              disabled={submitting}
+              disabled={submitting || !canEditInvoice}
+              title={!canEditInvoice ? 'Admin only' : undefined}
               onClick={() => setIsModalOpen(true)}
             >
               Edit
             </Button>
             <Button
               variant="danger"
-              disabled={submitting}
+              disabled={submitting || !canDeleteInvoice}
+              title={!canDeleteInvoice ? 'Admin only' : undefined}
               onClick={() => setConfirmDeleteOpen(true)}
             >
               Delete
@@ -258,13 +262,15 @@ export default function InvoiceDetailPage() {
         </div>
 
         {/* Invoice Settings (prefilled & editable, same page) */}
-        <InvoiceSettingsPanel
-          onSaved={() => {
-            if (pdfIframeRef.current) {
-              pdfIframeRef.current.src = `/api/invoices/${invoice.id}/pdf?inline=true&ts=${Date.now()}`;
-            }
-          }}
-        />
+        {canManageInvoiceSettings && (
+          <InvoiceSettingsPanel
+            onSaved={() => {
+              if (pdfIframeRef.current) {
+                pdfIframeRef.current.src = `/api/invoices/${invoice.id}/pdf?inline=true&ts=${Date.now()}`;
+              }
+            }}
+          />
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
@@ -316,10 +322,12 @@ export default function InvoiceDetailPage() {
                       className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border border-gray-200 rounded-lg p-4"
                     >
                       <div className="flex items-start gap-4">
-                        {item.image_url && (
+                        {(item.image_signed_url || item.image_url) && (
                           <div className="w-20 h-20 shrink-0">
                             <OptimizedImage
-                              src={item.image_url}
+                              src={
+                                item.image_signed_url || item.image_url || ''
+                              }
                               alt={item.description}
                               width={80}
                               height={80}

@@ -141,15 +141,18 @@ describe('useClients - state', () => {
 
     expect(result.current.loading.any).toBe(false);
 
-    const createPromise = result.current.createClient({
-      first_name: 'Jane',
-      last_name: 'Smith',
-      contact_number: '987-654-3210',
-      email: 'jane@example.com',
-      tags: ['Musician'],
-      interest: 'Passive',
-      note: 'New client',
-      client_number: null,
+    let createPromise!: Promise<Client | null>;
+    await act(async () => {
+      createPromise = result.current.createClient({
+        first_name: 'Jane',
+        last_name: 'Smith',
+        contact_number: '987-654-3210',
+        email: 'jane@example.com',
+        tags: ['Musician'],
+        interest: 'Passive',
+        note: 'New client',
+        client_number: null,
+      });
     });
 
     await waitFor(() => {

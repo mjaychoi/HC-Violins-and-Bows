@@ -9,9 +9,11 @@ jest.mock('@/contexts/AuthContext', () => ({
   useAuth: jest.fn(),
 }));
 
+const mockReplace = jest.fn();
+
 jest.mock('next/navigation', () => ({
   usePathname: () => '/dashboard',
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace }),
 }));
 
 jest.mock('../AppHeader', () => ({
@@ -30,20 +32,29 @@ describe('AppLayout', () => {
   const useAuth = jest.requireMock('@/contexts/AuthContext')
     .useAuth as jest.Mock;
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('shows loading state while checking auth', () => {
-    useAuth.mockReturnValue({ user: null, loading: true });
+    useAuth.mockReturnValue({
+      user: null,
+      loading: true,
+      hasOrgContext: false,
+    });
     render(
       <AppLayout title="Dashboard">
         <div>content</div>
       </AppLayout>
     );
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.getByText('Checking your session...')).toBeInTheDocument();
   });
 
   it('renders layout when authenticated', async () => {
     useAuth.mockReturnValue({
       user: { email: 'test@example.com' },
       loading: false,
+      hasOrgContext: true,
     });
     render(
       <AppLayout title="Dashboard">
@@ -56,5 +67,31 @@ describe('AppLayout', () => {
     );
     expect(screen.getByText('Sidebar path: /dashboard')).toBeInTheDocument();
     expect(screen.getByText('content')).toBeInTheDocument();
+  });
+
+  it('redirects authenticated users without org context before rendering content', async () => {
+    useAuth.mockReturnValue({
+      user: { email: 'test@example.com' },
+      loading: false,
+      hasOrgContext: false,
+    });
+
+    render(
+      <AppLayout title="Dashboard">
+        <div>content</div>
+      </AppLayout>
+    );
+
+    expect(
+      screen.getByText('Redirecting you to the right place...')
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith(
+        '/onboarding/organization?next=%2Fdashboard'
+      );
+    });
+
+    expect(screen.queryByText('content')).not.toBeInTheDocument();
   });
 });

@@ -3,6 +3,12 @@ import { render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import RowActions from '../RowActions';
 
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canManageInstruments: true,
+  })),
+}));
+
 describe('RowActions', () => {
   const mockOnEdit = jest.fn();
   const mockOnDelete = jest.fn();

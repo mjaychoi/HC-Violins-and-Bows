@@ -9,6 +9,7 @@ import { TableSkeleton, EmptyState, Pagination } from '@/components/common';
 import { Button } from '@/components/common/inputs';
 import { getButtonVariantClasses } from '@/utils/colorTokens';
 import OptimizedImage from '@/components/common/OptimizedImage';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface InvoiceListProps {
   invoices: Invoice[];
@@ -29,6 +30,7 @@ interface InvoiceListProps {
   onPageChange?: (page: number) => void;
   emptyTitle?: string;
   emptyDescription?: string;
+  highlightedInvoiceId?: string | null;
 }
 
 const statusColors: Record<string, string> = {
@@ -56,10 +58,12 @@ function InvoiceList({
   onPageChange,
   emptyTitle,
   emptyDescription,
+  highlightedInvoiceId = null,
 }: InvoiceListProps) {
   const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(
     null
   );
+  const { canEditInvoice, canDeleteInvoice } = usePermissions();
 
   if (loading) {
     return <TableSkeleton rows={8} columns={8} />;
@@ -189,7 +193,9 @@ function InvoiceList({
                   <tr
                     className={cn(
                       classNames.tableRow,
-                      'cursor-pointer hover:bg-blue-50/30 transition-colors'
+                      'cursor-pointer hover:bg-blue-50/30 transition-colors',
+                      highlightedInvoiceId === invoice.id &&
+                        'bg-emerald-50 ring-2 ring-inset ring-emerald-200'
                     )}
                     onClick={() =>
                       setExpandedInvoiceId(isExpanded ? null : invoice.id)
@@ -271,24 +277,44 @@ function InvoiceList({
                             Download PDF
                           </Button>
                         )}
-                        {onEdit && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => onEdit(invoice)}
-                          >
-                            Edit
-                          </Button>
-                        )}
-                        {onDelete && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => onDelete(invoice)}
-                          >
-                            Delete
-                          </Button>
-                        )}
+                        {onEdit &&
+                          (canEditInvoice ? (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => onEdit(invoice)}
+                            >
+                              Edit
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled
+                              title="Admin only"
+                            >
+                              Edit
+                            </Button>
+                          ))}
+                        {onDelete &&
+                          (canDeleteInvoice ? (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => onDelete(invoice)}
+                            >
+                              Delete
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled
+                              title="Admin only"
+                            >
+                              Delete
+                            </Button>
+                          ))}
                       </div>
                     </td>
                   </tr>
@@ -305,10 +331,14 @@ function InvoiceList({
                                 key={item.id || idx}
                                 className="flex items-center gap-4 p-3 bg-white rounded-lg border border-gray-200"
                               >
-                                {item.image_url && (
+                                {(item.image_signed_url || item.image_url) && (
                                   <div className="flex-shrink-0">
                                     <OptimizedImage
-                                      src={item.image_url}
+                                      src={
+                                        item.image_signed_url ||
+                                        item.image_url ||
+                                        ''
+                                      }
                                       alt={item.description}
                                       width={80}
                                       height={80}

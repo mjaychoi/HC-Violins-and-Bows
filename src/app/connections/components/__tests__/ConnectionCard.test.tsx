@@ -2,6 +2,12 @@ import { fireEvent, render, screen } from '@/test-utils/render';
 import { ConnectionCard } from '../ConnectionCard';
 import { ClientInstrument } from '@/types';
 
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canManageConnections: true,
+  })),
+}));
+
 const connection: ClientInstrument = {
   id: 'c1',
   client_id: 'client1',

@@ -13,6 +13,7 @@ import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { logInfo } from '@/utils/logger';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useFilterSort } from '@/hooks/useFilterSort';
+import { usePermissions } from '@/hooks/usePermissions';
 import { AppLayout } from '@/components/layout';
 import { ErrorBoundary, TableSkeleton } from '@/components/common';
 import {
@@ -80,6 +81,7 @@ function ConnectedClientsPageContent() {
   // Error handling
   const { handleError } = useErrorHandler();
   const { showSuccess } = useAppFeedback();
+  const { canCreateConnection, canManageConnections } = usePermissions();
 
   // Custom hooks
   const {
@@ -462,27 +464,31 @@ function ConnectedClientsPageContent() {
     <ErrorBoundary>
       <AppLayout
         title="Connected Clients"
-        actionButton={{
-          label: 'Add Connection',
-          onClick: () => setShowConnectionModal(true),
-          icon: (
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-          ),
-        }}
+        actionButton={
+          canManageConnections
+            ? {
+                label: 'Add Connection',
+                onClick: () => setShowConnectionModal(true),
+                icon: (
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                ),
+              }
+            : undefined
+        }
       >
         <div className="p-6">
           {/* Search Bar */}
@@ -567,26 +573,30 @@ function ConnectedClientsPageContent() {
                   <EmptyState
                     title="No connections"
                     description="Get started by creating your first client-item connection."
-                    actionButton={{
-                      label: 'Create Connection',
-                      onClick: () => setShowConnectionModal(true),
-                      icon: (
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          aria-hidden="true"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                          />
-                        </svg>
-                      ),
-                    }}
+                    actionButton={
+                      canCreateConnection
+                        ? {
+                            label: 'Create Connection',
+                            onClick: () => setShowConnectionModal(true),
+                            icon: (
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                                />
+                              </svg>
+                            ),
+                          }
+                        : undefined
+                    }
                     guideSteps={[
                       '클라이언트와 악기를 선택하세요',
                       '관계 타입을 선택하세요 (Owned, Interested, Booked 등)',

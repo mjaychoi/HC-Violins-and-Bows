@@ -1,10 +1,13 @@
 import { NextRequest } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 import { captureException } from '@/utils/monitoring';
-// captureException removed - withSentryRoute handles error reporting
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import {
   validateSalesHistory,
@@ -18,13 +21,46 @@ import {
   sanitizeSearchTerm,
   validateDateString,
 } from '@/utils/inputValidation';
-import type { User } from '@supabase/supabase-js';
 
 const PAGE_SIZE = 10;
+const SALES_SELECT_COLUMNS = `
+  id,
+  instrument_id,
+  client_id,
+  sale_price,
+  sale_date,
+  notes,
+  created_at,
+  entry_kind,
+  adjustment_of_sale_id
+`;
 
-async function getHandler(request: NextRequest, _user: User) {
-  void _user;
+function isSaleConflict(message: string): boolean {
+  return (
+    message.includes('already') ||
+    message.includes('not found') ||
+    message.includes('Only ') ||
+    message.includes('Direct sale amount rewrites are not allowed')
+  );
+}
 
+async function fetchSaleById(auth: AuthContext, saleId: string) {
+  const query = auth.userSupabase
+    .from('sales_history')
+    .select(SALES_SELECT_COLUMNS)
+    .eq('id', saleId);
+
+  const scopedQuery = auth.orgId ? query.eq('org_id', auth.orgId) : query;
+  const { data, error } = await scopedQuery.single();
+
+  if (error) {
+    throw errorHandler.handleSupabaseError(error, 'Fetch sale');
+  }
+
+  return validateSalesHistory(data);
+}
+
+async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -75,19 +111,9 @@ async function getHandler(request: NextRequest, _user: User) {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
 
-      const supabase = getServerSupabase();
-      let query = supabase.from('sales_history').select(
-        `
-          id,
-          instrument_id,
-          client_id,
-          sale_price,
-          sale_date,
-          notes,
-          created_at
-        `,
-        { count: 'exact' }
-      );
+      let query = auth.userSupabase
+        .from('sales_history')
+        .select(SALES_SELECT_COLUMNS, { count: 'exact' });
 
       // 날짜 필터링: 검증 및 순서 처리
       let fromFilter = fromDate;
@@ -184,7 +210,9 @@ async function getHandler(request: NextRequest, _user: User) {
         // 전체 필터링된 데이터를 가져와서 totals 계산
         // 효율성을 위해 sale_price만 선택
         // ✅ FIXED: Supabase queries are immutable, must reassign chain results
-        let totalsQuery = supabase.from('sales_history').select('sale_price');
+        let totalsQuery = auth.userSupabase
+          .from('sales_history')
+          .select('sale_price');
 
         // 동일한 필터 적용
         if (
@@ -313,9 +341,7 @@ async function getHandler(request: NextRequest, _user: User) {
 
 export const GET = withSentryRoute(withAuthRoute(getHandler));
 
-async function postHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function postHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -324,6 +350,14 @@ async function postHandler(request: NextRequest, _user: User) {
       context: 'SalesAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
       const { sale_price, sale_date, client_id, instrument_id, notes } = body;
 
@@ -387,19 +421,41 @@ async function postHandler(request: NextRequest, _user: User) {
         };
       }
 
-      const supabase = getServerSupabase();
-      const { data, error } = await supabase
+      const { data: saleId, error: createError } = await auth.userSupabase.rpc(
+        'create_sale_atomic',
+        {
+          p_sale_price: parsedPrice,
+          p_sale_date: sale_date,
+          p_client_id: client_id || null,
+          p_instrument_id: instrument_id || null,
+          p_notes: notes || null,
+        }
+      );
+
+      if (createError || typeof saleId !== 'string') {
+        const errorMessage =
+          createError && typeof createError.message === 'string'
+            ? createError.message
+            : 'Failed to create sale';
+
+        if (
+          errorMessage.includes('already sold') ||
+          errorMessage.includes('completed sale record') ||
+          errorMessage.includes('Instrument not found')
+        ) {
+          return {
+            payload: { error: errorMessage },
+            status: 409,
+          };
+        }
+
+        throw errorHandler.handleSupabaseError(createError, 'Create sale');
+      }
+
+      const { data, error } = await auth.userSupabase
         .from('sales_history')
-        .insert([
-          {
-            sale_price: parsedPrice,
-            sale_date,
-            client_id: client_id || null,
-            instrument_id: instrument_id || null,
-            notes: notes || null,
-          },
-        ])
-        .select()
+        .select(SALES_SELECT_COLUMNS)
+        .eq('id', saleId)
         .single();
 
       if (error) {
@@ -420,9 +476,7 @@ async function postHandler(request: NextRequest, _user: User) {
 
 export const POST = withSentryRoute(withAuthRoute(postHandler));
 
-async function patchHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function patchHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -431,6 +485,22 @@ async function patchHandler(request: NextRequest, _user: User) {
       context: 'SalesAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
       const { id, sale_price, notes } = body;
 
@@ -481,35 +551,107 @@ async function patchHandler(request: NextRequest, _user: User) {
         };
       }
 
-      const updateData: Record<string, unknown> = {};
-      if (normalizedPrice !== undefined) {
-        updateData.sale_price = normalizedPrice;
-      }
-      if (notes !== undefined) {
-        updateData.notes = notes;
-      }
-
-      if (Object.keys(updateData).length === 0) {
+      if (normalizedPrice === undefined && notes === undefined) {
         return {
           payload: { error: 'No fields to update.' },
           status: 400,
         };
       }
 
-      const supabase = getServerSupabase();
-      const { data, error } = await supabase
-        .from('sales_history')
-        .update(updateData)
-        .eq('id', id)
-        .select()
-        .single();
+      const currentSale = await fetchSaleById(auth, id);
+      const hasPriceChange =
+        normalizedPrice !== undefined &&
+        normalizedPrice !== currentSale.sale_price;
+      const noteOnlyUpdate =
+        !hasPriceChange && notes !== undefined && notes !== currentSale.notes;
 
-      if (error) {
-        throw errorHandler.handleSupabaseError(error, 'Update sale');
+      if (hasPriceChange) {
+        const isRefundRequest =
+          currentSale.sale_price > 0 &&
+          normalizedPrice === -Math.abs(currentSale.sale_price);
+        const isUndoRefundRequest =
+          currentSale.sale_price < 0 &&
+          normalizedPrice === Math.abs(currentSale.sale_price);
+
+        if (!isRefundRequest && !isUndoRefundRequest) {
+          return {
+            payload: {
+              error:
+                'Direct sale amount rewrites are not allowed. Record an adjustment instead.',
+            },
+            status: 409,
+          };
+        }
+
+        const adjustmentKind = isRefundRequest ? 'refund' : 'undo_refund';
+        const { data: adjustmentId, error } = await auth.userSupabase.rpc(
+          'create_sale_adjustment_atomic',
+          {
+            p_source_sale_id: id,
+            p_adjustment_kind: adjustmentKind,
+            p_notes: notes ?? currentSale.notes ?? null,
+          }
+        );
+
+        if (error || typeof adjustmentId !== 'string') {
+          const errorMessage =
+            error && typeof error.message === 'string'
+              ? error.message
+              : 'Failed to create sale adjustment';
+
+          if (isSaleConflict(errorMessage)) {
+            return {
+              payload: { error: errorMessage },
+              status: 409,
+            };
+          }
+
+          throw errorHandler.handleSupabaseError(
+            error,
+            'Create sale adjustment'
+          );
+        }
+
+        const adjustmentSale = await fetchSaleById(auth, adjustmentId);
+
+        return {
+          payload: { data: adjustmentSale },
+          metadata: { id: adjustmentId },
+        };
       }
 
-      // Validate response data
-      const validatedData = validateSalesHistory(data);
+      if (!noteOnlyUpdate) {
+        return {
+          payload: { data: currentSale },
+          metadata: { id },
+        };
+      }
+
+      const { data: updatedSaleId, error } = await auth.userSupabase.rpc(
+        'update_sale_notes_atomic',
+        {
+          p_sale_id: id,
+          p_notes: notes ?? null,
+        }
+      );
+
+      if (error || typeof updatedSaleId !== 'string') {
+        const errorMessage =
+          error && typeof error.message === 'string'
+            ? error.message
+            : 'Failed to update sale notes';
+
+        if (isSaleConflict(errorMessage)) {
+          return {
+            payload: { error: errorMessage },
+            status: 409,
+          };
+        }
+
+        throw errorHandler.handleSupabaseError(error, 'Update sale notes');
+      }
+
+      const validatedData = await fetchSaleById(auth, updatedSaleId);
 
       return {
         payload: { data: validatedData },

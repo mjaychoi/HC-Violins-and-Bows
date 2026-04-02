@@ -9,6 +9,7 @@ jest.mock('@/components/common/inputs', () => {
       value,
       onChange,
       placeholder,
+      debounceMs,
       ...props
     }: {
       value: string;
@@ -17,6 +18,7 @@ jest.mock('@/components/common/inputs', () => {
       debounceMs?: number;
     }) => (
       <div>
+        {void debounceMs}
         <input
           data-testid="search-input"
           value={value}

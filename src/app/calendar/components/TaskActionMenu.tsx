@@ -9,6 +9,8 @@ interface TaskActionMenuProps {
   onMarkComplete?: (task: MaintenanceTask) => void;
   onEdit?: (task: MaintenanceTask) => void;
   onDelete?: (task: MaintenanceTask) => void;
+  editDisabledReason?: string;
+  deleteDisabledReason?: string;
 }
 
 function TaskActionMenu({
@@ -17,6 +19,8 @@ function TaskActionMenu({
   onMarkComplete,
   onEdit,
   onDelete,
+  editDisabledReason,
+  deleteDisabledReason,
 }: TaskActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -121,6 +125,7 @@ function TaskActionMenu({
                 e.stopPropagation();
                 handleAction(() => onEdit(task));
               }}
+              title={editDisabledReason}
               className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
             >
               Edit
@@ -136,6 +141,7 @@ function TaskActionMenu({
                   e.stopPropagation();
                   handleAction(() => onDelete(task));
                 }}
+                title={deleteDisabledReason}
                 className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
               >
                 Delete

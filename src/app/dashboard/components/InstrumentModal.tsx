@@ -12,6 +12,7 @@ import {
 import { apiFetch } from '@/utils/apiFetch';
 import { useSuccessToastContext } from '@/contexts/SuccessToastContext';
 import { useErrorContext } from '@/contexts/ErrorContext';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface InstrumentModalProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ export default function InstrumentModal({
   onClose,
   instrument,
 }: InstrumentModalProps) {
+  const { canUploadInstrumentMedia } = usePermissions();
   const modalRef = useRef<HTMLDivElement>(null);
   const [images, setImages] = useState<InstrumentImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
@@ -171,6 +173,7 @@ export default function InstrumentModal({
   };
 
   const handleDeleteCertificate = async (file: CertificateFile) => {
+    if (!canUploadInstrumentMedia) return;
     if (!instrument?.id) return;
     // Use id as key if available, otherwise fall back to name
     const fileKey = file.id || file.name;
@@ -484,12 +487,22 @@ export default function InstrumentModal({
                             </button>
                             <button
                               onClick={() =>
+                                canUploadInstrumentMedia &&
                                 setShowDeleteConfirm({
                                   id: file.id,
                                   fileName: file.name,
                                 })
                               }
-                              disabled={isDownloading || isDeleting}
+                              title={
+                                canUploadInstrumentMedia
+                                  ? 'Delete certificate'
+                                  : 'Admin only'
+                              }
+                              disabled={
+                                isDownloading ||
+                                isDeleting ||
+                                !canUploadInstrumentMedia
+                              }
                               className="px-3 py-1.5 bg-red-600 text-white text-xs rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                             >
                               {isDeleting ? (
@@ -567,9 +580,14 @@ export default function InstrumentModal({
                             createdAt: null,
                           })
                         }
+                        title={
+                          canUploadInstrumentMedia ? undefined : 'Admin only'
+                        }
                         disabled={
                           deletingFile ===
-                          (showDeleteConfirm.id || showDeleteConfirm.fileName)
+                            (showDeleteConfirm.id ||
+                              showDeleteConfirm.fileName) ||
+                          !canUploadInstrumentMedia
                         }
                         className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >

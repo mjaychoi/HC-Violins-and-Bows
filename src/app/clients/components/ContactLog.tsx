@@ -5,6 +5,7 @@ import { ContactLog, ContactType, ContactPurpose } from '@/types';
 import { formatDisplayDate } from '@/utils/dateParsing';
 import { todayLocalYMD } from '@/utils/dateParsing';
 import { Button } from '@/components/common/inputs';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface ContactLogProps {
   clientId: string;
@@ -50,6 +51,7 @@ export default function ContactLogComponent({
   onDeleteContact,
   loading = false,
 }: ContactLogProps) {
+  const { canCreateContactLog, canManageContactLogs } = usePermissions();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -62,6 +64,7 @@ export default function ContactLogComponent({
   });
 
   const handleAdd = useCallback(async () => {
+    if (!canCreateContactLog) return;
     if (!formData.content.trim()) return;
 
     await onAddContact({
@@ -86,10 +89,11 @@ export default function ContactLogComponent({
       purpose: null,
     });
     setIsAdding(false);
-  }, [clientId, instrumentId, formData, onAddContact]);
+  }, [canCreateContactLog, clientId, instrumentId, formData, onAddContact]);
 
   const handleUpdate = useCallback(
     async (id: string) => {
+      if (!canManageContactLogs) return;
       await onUpdateContact(id, {
         contact_type: formData.contact_type,
         subject: formData.subject || null,
@@ -108,20 +112,24 @@ export default function ContactLogComponent({
         purpose: null,
       });
     },
-    [formData, onUpdateContact]
+    [canManageContactLogs, formData, onUpdateContact]
   );
 
-  const startEdit = useCallback((log: ContactLog) => {
-    setEditingId(log.id);
-    setFormData({
-      contact_type: log.contact_type,
-      subject: log.subject || '',
-      content: log.content,
-      contact_date: log.contact_date,
-      next_follow_up_date: log.next_follow_up_date || '',
-      purpose: log.purpose,
-    });
-  }, []);
+  const startEdit = useCallback(
+    (log: ContactLog) => {
+      if (!canManageContactLogs) return;
+      setEditingId(log.id);
+      setFormData({
+        contact_type: log.contact_type,
+        subject: log.subject || '',
+        content: log.content,
+        contact_date: log.contact_date,
+        next_follow_up_date: log.next_follow_up_date || '',
+        purpose: log.purpose,
+      });
+    },
+    [canManageContactLogs]
+  );
 
   const sortedLogs = [...contactLogs].sort((a, b) => {
     return b.contact_date.localeCompare(a.contact_date);
@@ -138,7 +146,10 @@ export default function ContactLogComponent({
             size="sm"
             variant="secondary"
             onClick={() => setIsAdding(true)}
-            disabled={loading}
+            disabled={loading || !canCreateContactLog}
+            title={
+              !canCreateContactLog ? 'Organization access required' : undefined
+            }
           >
             + Add Contact
           </Button>
@@ -282,8 +293,15 @@ export default function ContactLogComponent({
               type="button"
               size="sm"
               onClick={handleAdd}
-              disabled={!formData.content.trim() || loading}
+              disabled={
+                !formData.content.trim() || loading || !canCreateContactLog
+              }
               loading={loading}
+              title={
+                !canCreateContactLog
+                  ? 'Organization access required'
+                  : undefined
+              }
             >
               Add
             </Button>
@@ -444,8 +462,13 @@ export default function ContactLogComponent({
                         type="button"
                         size="sm"
                         onClick={() => handleUpdate(log.id)}
-                        disabled={!formData.content.trim() || loading}
+                        disabled={
+                          !formData.content.trim() ||
+                          loading ||
+                          !canManageContactLogs
+                        }
                         loading={loading}
+                        title={!canManageContactLogs ? 'Admin only' : undefined}
                       >
                         Save
                       </Button>
@@ -491,17 +514,21 @@ export default function ContactLogComponent({
                         <button
                           type="button"
                           onClick={() => startEdit(log)}
-                          className="text-xs text-gray-400 hover:text-blue-600"
-                          title="Edit"
+                          disabled={!canManageContactLogs}
+                          className="text-xs text-gray-400 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400"
+                          title={canManageContactLogs ? 'Edit' : 'Admin only'}
                         >
                           ✏️
                         </button>
                         <button
                           type="button"
-                          onClick={() => onDeleteContact(log.id)}
-                          className="text-xs text-gray-400 hover:text-red-600"
-                          title="Delete"
-                          disabled={loading}
+                          onClick={() => {
+                            if (!canManageContactLogs) return;
+                            onDeleteContact(log.id);
+                          }}
+                          className="text-xs text-gray-400 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400"
+                          title={canManageContactLogs ? 'Delete' : 'Admin only'}
+                          disabled={loading || !canManageContactLogs}
                         >
                           🗑️
                         </button>

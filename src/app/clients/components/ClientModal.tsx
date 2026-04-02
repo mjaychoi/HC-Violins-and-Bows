@@ -17,6 +17,7 @@ import FollowUpButton from './FollowUpButton';
 import { useContactLogs } from '../hooks/useContactLogs';
 import { useClientsContactInfo } from '../hooks/useClientsContactInfo';
 import dynamic from 'next/dynamic';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const MessageComposer = dynamic(
   () => import('@/components/messages/MessageComposer'),
@@ -79,6 +80,7 @@ export default function ClientModal({
   onViewInputChange,
   onUpdateViewFormData,
 }: ClientModalProps) {
+  const { canManageClients, canManageConnections } = usePermissions();
   // Close modal with ESC key and outside click
   const modalRef = useRef<HTMLDivElement>(null);
   useOutsideClose(modalRef, {
@@ -279,7 +281,9 @@ export default function ClientModal({
                   <button
                     type="button"
                     onClick={onToggleInstrumentSearch}
-                    className="text-sm text-blue-600 hover:text-blue-800"
+                    disabled={!canManageConnections}
+                    title={!canManageConnections ? 'Admin only' : undefined}
+                    className="text-sm text-blue-600 hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-blue-600"
                   >
                     {showInstrumentSearch ? 'Hide Search' : 'Add Instrument'}
                   </button>
@@ -321,10 +325,17 @@ export default function ClientModal({
                               </div>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  onAddInstrument(instrument.id, 'Interested')
+                                onClick={() => {
+                                  if (!canManageConnections) return;
+                                  onAddInstrument(instrument.id, 'Interested');
+                                }}
+                                disabled={!canManageConnections}
+                                title={
+                                  !canManageConnections
+                                    ? 'Admin only'
+                                    : undefined
                                 }
-                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                className="text-blue-600 hover:text-blue-800 text-sm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-blue-600"
                               >
                                 Add
                               </button>
@@ -355,8 +366,15 @@ export default function ClientModal({
                         </div>
                         <button
                           type="button"
-                          onClick={() => onRemoveInstrument(relationship.id)}
-                          className="text-red-600 hover:text-red-800 text-sm"
+                          onClick={() => {
+                            if (!canManageConnections) return;
+                            onRemoveInstrument(relationship.id);
+                          }}
+                          disabled={!canManageConnections}
+                          title={
+                            !canManageConnections ? 'Admin only' : undefined
+                          }
+                          className="text-red-600 hover:text-red-800 text-sm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-red-600"
                         >
                           Remove
                         </button>
@@ -374,7 +392,8 @@ export default function ClientModal({
               <div className="pt-4 border-t border-gray-200 flex space-x-3">
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || !canManageClients}
+                  title={!canManageClients ? 'Admin only' : undefined}
                   className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? 'Saving...' : 'Save Changes'}
@@ -553,7 +572,9 @@ export default function ClientModal({
                   </h4>
                   <button
                     onClick={onToggleInstrumentSearch}
-                    className="text-sm text-blue-600 hover:text-blue-800"
+                    disabled={!canManageConnections}
+                    title={!canManageConnections ? 'Admin only' : undefined}
+                    className="text-sm text-blue-600 hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-blue-600"
                   >
                     {showInstrumentSearch ? 'Hide Search' : 'Add Instrument'}
                   </button>
@@ -594,10 +615,17 @@ export default function ClientModal({
                                 </div>
                               </div>
                               <button
-                                onClick={() =>
-                                  onAddInstrument(instrument.id, 'Interested')
+                                onClick={() => {
+                                  if (!canManageConnections) return;
+                                  onAddInstrument(instrument.id, 'Interested');
+                                }}
+                                disabled={!canManageConnections}
+                                title={
+                                  !canManageConnections
+                                    ? 'Admin only'
+                                    : undefined
                                 }
-                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                className="text-blue-600 hover:text-blue-800 text-sm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-blue-600"
                               >
                                 Add
                               </button>
@@ -663,8 +691,15 @@ export default function ClientModal({
                           </div>
                         </div>
                         <button
-                          onClick={() => onRemoveInstrument(relationship.id)}
-                          className="text-red-600 hover:text-red-800 text-sm ml-2"
+                          onClick={() => {
+                            if (!canManageConnections) return;
+                            onRemoveInstrument(relationship.id);
+                          }}
+                          disabled={!canManageConnections}
+                          title={
+                            !canManageConnections ? 'Admin only' : undefined
+                          }
+                          className="text-red-600 hover:text-red-800 text-sm ml-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-red-600"
                         >
                           Remove
                         </button>
@@ -687,12 +722,16 @@ export default function ClientModal({
             <div className="flex space-x-3">
               <button
                 onClick={onEdit}
+                disabled={!canManageClients}
+                title={!canManageClients ? 'Admin only' : undefined}
                 className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 Edit
               </button>
               <button
                 onClick={onDelete}
+                disabled={!canManageClients}
+                title={!canManageClients ? 'Admin only' : undefined}
                 className="flex-1 bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
               >
                 Delete

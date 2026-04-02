@@ -10,6 +10,9 @@ import { flushPromises } from '@/../tests/utils/flushPromises';
 
 // Mock fetch
 global.fetch = jest.fn();
+jest.mock('@/utils/apiFetch', () => ({
+  apiFetch: (...args: Parameters<typeof fetch>) => fetch(...args),
+}));
 
 // Mock next/navigation
 jest.mock('next/navigation', () => ({

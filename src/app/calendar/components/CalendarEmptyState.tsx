@@ -8,6 +8,8 @@ interface CalendarEmptyStateProps {
   hasActiveFilters: boolean;
   onResetFilters: () => void;
   onOpenNewTask: () => void;
+  canCreateTask?: boolean;
+  createTaskDisabledReason?: string;
   resultCount?: number;
   // Filter summary for better UX
   activeFilters?: {
@@ -22,6 +24,8 @@ export default function CalendarEmptyState({
   hasActiveFilters,
   onResetFilters,
   onOpenNewTask,
+  canCreateTask = true,
+  createTaskDisabledReason,
   resultCount = 0,
   activeFilters,
 }: CalendarEmptyStateProps) {
@@ -121,7 +125,9 @@ export default function CalendarEmptyState({
 
           <button
             onClick={onOpenNewTask}
-            className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors"
+            disabled={!canCreateTask}
+            title={createTaskDisabledReason}
+            className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors disabled:cursor-not-allowed disabled:bg-blue-300 disabled:hover:bg-blue-300"
           >
             {/* FIXED: Decorative SVG hidden from screen readers */}
             <svg

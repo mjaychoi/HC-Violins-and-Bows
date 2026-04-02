@@ -11,6 +11,8 @@ import {
 } from '@/components/common';
 
 import { useAppFeedback } from '@/hooks/useAppFeedback';
+import { useLoadingState } from '@/hooks/useLoadingState';
+import { usePermissions } from '@/hooks/usePermissions';
 
 import { useDashboardModal } from './hooks/useDashboardModal';
 import { useDashboardData } from './hooks/useDashboardData';
@@ -19,6 +21,7 @@ import { ItemForm, DashboardContent } from './components';
 import { useSalesHistory } from '@/app/sales/hooks/useSalesHistory';
 import { generateSampleInstruments } from './utils/sampleData';
 import { logDebug } from '@/utils/logger';
+import { apiFetch } from '@/utils/apiFetch';
 
 import type {
   Instrument,
@@ -38,6 +41,9 @@ type EnrichedInstrument = Instrument & { clients: ClientInstrument[] };
 
 export default function DashboardPage() {
   const { showSuccess, handleError } = useAppFeedback();
+  const { canCreateInstrument, canCreateSale } = usePermissions();
+  const { submitting: isSubmittingSale, withSubmitting: withSaleSubmitting } =
+    useLoadingState();
 
   // --- Sale modal state ---
   const [showSaleModal, setShowSaleModal] = useState(false);
@@ -111,7 +117,7 @@ export default function DashboardPage() {
       try {
         const url =
           '/api/sales?page=1&pageSize=100&sortColumn=sale_date&sortDirection=desc';
-        const response = await fetch(url, { signal: ac.signal });
+        const response = await apiFetch(url, { signal: ac.signal });
 
         if (!response.ok) {
           // 선택 기능이라 에러는 조용히 무시 (dev만 로그)
@@ -228,34 +234,42 @@ export default function DashboardPage() {
       payload: Omit<SalesHistory, 'id' | 'created_at'>,
       options?: { instrumentStatusUpdated?: boolean; instrumentId?: string }
     ) => {
-      try {
-        const result = await createSale(payload);
-        if (!result) return;
+      if (isSubmittingSale) return;
 
-        const messages: string[] = ['판매 기록이 추가되었습니다'];
-        const links: Array<{ label: string; href: string }> = [];
+      await withSaleSubmitting(async () => {
+        try {
+          const result = await createSale(payload);
+          if (!result) return;
 
-        if (options?.instrumentStatusUpdated && options?.instrumentId) {
-          messages.push("악기 상태가 'Sold'로 변경되었습니다");
-          links.push({
-            label: '악기 보기',
-            href: `/dashboard?instrumentId=${options.instrumentId}`,
-          });
+          const messages: string[] = ['판매 기록이 추가되었습니다'];
+          const links: Array<{ label: string; href: string }> = [];
+
+          if (options?.instrumentStatusUpdated && options?.instrumentId) {
+            messages.push("악기 상태가 'Sold'로 변경되었습니다");
+            links.push({
+              label: '악기 보기',
+              href: `/dashboard?instrumentId=${options.instrumentId}`,
+            });
+          }
+
+          const message = messages.join(' / ');
+          showSuccess(message + '.', links.length > 0 ? links : undefined);
+
+          setShowSaleModal(false);
+          setSelectedInstrumentForSale(null);
+          setSelectedClientForSale(null);
+        } catch (error) {
+          handleError(error, '판매 기록 생성 실패');
         }
-
-        // 한국어 문장 합치기: join(' / ') 같이 중립 구분자 추천
-        const message = messages.join(' / ');
-        showSuccess(message + '.', links.length > 0 ? links : undefined);
-
-        setShowSaleModal(false);
-        setSelectedInstrumentForSale(null);
-        setSelectedClientForSale(null);
-      } catch (error) {
-        handleError(error, '판매 기록 생성 실패');
-      }
+      });
     },
-    [createSale, showSuccess, handleError]
+    [createSale, showSuccess, handleError, isSubmittingSale, withSaleSubmitting]
   );
+
+  const handleOpenSaleModal = useCallback(() => {
+    if (isSubmittingSale) return;
+    setShowSaleModal(true);
+  }, [isSubmittingSale]);
 
   const handleItemFormSubmit = useCallback(
     async (formData: Partial<InstrumentFormData>) => {
@@ -328,34 +342,75 @@ export default function DashboardPage() {
     <ErrorBoundary>
       <AppLayout
         title="Dashboard"
-        actionButton={{
-          label: 'Add Item',
-          onClick: handleAddItem,
-          icon: (
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-          ),
-        }}
+        actionButton={
+          canCreateInstrument
+            ? {
+                label: 'Add Item',
+                onClick: handleAddItem,
+                disabled: submitting.hasAnySubmitting,
+                disabledReason: submitting.hasAnySubmitting
+                  ? 'Please wait for the current submission to finish'
+                  : undefined,
+                icon: (
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                ),
+              }
+            : undefined
+        }
         headerActions={
-          <NotificationBadge
-            overdue={notificationBadge.overdue}
-            upcoming={notificationBadge.upcoming}
-            today={notificationBadge.today}
-            onClick={notificationBadge.onClick}
-          />
+          <div className="flex items-center gap-2">
+            {canCreateSale && (
+              <button
+                type="button"
+                onClick={handleOpenSaleModal}
+                disabled={isSubmittingSale}
+                title={
+                  isSubmittingSale
+                    ? 'Please wait for the current submission to finish'
+                    : 'Record a new sale'
+                }
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
+                </svg>
+                <span className="hidden sm:inline">New Sale</span>
+                <span className="sm:hidden">Sale</span>
+              </button>
+            )}
+            <NotificationBadge
+              overdue={notificationBadge.overdue}
+              upcoming={notificationBadge.upcoming}
+              today={notificationBadge.today}
+              onClick={notificationBadge.onClick}
+            />
+          </div>
         }
       >
         <DashboardContent
@@ -391,17 +446,20 @@ export default function DashboardPage() {
           cancelLabel="Cancel"
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
+          submitting={submitting.hasAnySubmitting}
+          submittingLabel="Deleting..."
         />
 
         <SaleForm
           isOpen={showSaleModal}
           onClose={() => {
+            if (isSubmittingSale) return;
             setShowSaleModal(false);
             setSelectedInstrumentForSale(null);
             setSelectedClientForSale(null);
           }}
           onSubmit={handleSaleSubmit}
-          submitting={submitting.hasAnySubmitting}
+          submitting={isSubmittingSale || submitting.hasAnySubmitting}
           initialInstrument={selectedInstrumentForSale}
           initialClient={selectedClientForSale}
           autoUpdateInstrumentStatus={true}

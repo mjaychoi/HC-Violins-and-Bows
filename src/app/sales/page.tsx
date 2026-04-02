@@ -29,6 +29,7 @@ import {
   useEnrichedSales,
 } from './hooks';
 import dynamic from 'next/dynamic';
+import { useLoadingState } from '@/hooks/useLoadingState';
 
 // Dynamic imports for large components to reduce initial bundle size
 const SalesCharts = dynamic(() => import('./components/SalesCharts'), {
@@ -130,6 +131,8 @@ function SalesPageContent() {
     undoRefund,
   } = useSalesHistory();
   const { showSuccess, handleError } = useAppFeedback();
+  const { submitting: isMutatingSales, withSubmitting: withSalesSubmitting } =
+    useLoadingState();
 
   // Confirmation dialog state
   const [confirmRefundSale, setConfirmRefundSale] =
@@ -314,23 +317,25 @@ function SalesPageContent() {
 
   // Confirm refund
   const handleConfirmRefund = useCallback(async () => {
-    if (!confirmRefundSale) return;
-    const note = `Refund issued on ${new Date().toISOString()}`;
-    const updated = await refundSale(confirmRefundSale, note);
-    if (updated) {
-      showSuccess('Sale marked as refunded.');
-      setConfirmRefundSale(null);
-      // FIXED: Refresh with current filters to update KPI totals
-      await fetchSales({
-        fromDate: from || undefined,
-        toDate: to || undefined,
-        page,
-        search: search || undefined,
-        hasClient: hasClient !== null ? hasClient : undefined,
-        sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
-        sortDirection,
-      });
-    }
+    if (!confirmRefundSale || isMutatingSales) return;
+
+    await withSalesSubmitting(async () => {
+      const note = `Refund issued on ${new Date().toISOString()}`;
+      const updated = await refundSale(confirmRefundSale, note);
+      if (updated) {
+        showSuccess('Sale marked as refunded.');
+        setConfirmRefundSale(null);
+        await fetchSales({
+          fromDate: from || undefined,
+          toDate: to || undefined,
+          page,
+          search: search || undefined,
+          hasClient: hasClient !== null ? hasClient : undefined,
+          sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
+          sortDirection,
+        });
+      }
+    });
   }, [
     confirmRefundSale,
     refundSale,
@@ -343,6 +348,8 @@ function SalesPageContent() {
     hasClient,
     sortColumn,
     sortDirection,
+    isMutatingSales,
+    withSalesSubmitting,
   ]);
 
   // Request undo refund (shows confirmation dialog)
@@ -352,23 +359,25 @@ function SalesPageContent() {
 
   // Confirm undo refund
   const handleConfirmUndoRefund = useCallback(async () => {
-    if (!confirmUndoRefundSale) return;
-    const note = `Refund undone on ${new Date().toISOString()}`;
-    const updated = await undoRefund(confirmUndoRefundSale, note);
-    if (updated) {
-      showSuccess('Refund has been undone.');
-      setConfirmUndoRefundSale(null);
-      // FIXED: Refresh with current filters to update KPI totals
-      await fetchSales({
-        fromDate: from || undefined,
-        toDate: to || undefined,
-        page,
-        search: search || undefined,
-        hasClient: hasClient !== null ? hasClient : undefined,
-        sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
-        sortDirection,
-      });
-    }
+    if (!confirmUndoRefundSale || isMutatingSales) return;
+
+    await withSalesSubmitting(async () => {
+      const note = `Refund undone on ${new Date().toISOString()}`;
+      const updated = await undoRefund(confirmUndoRefundSale, note);
+      if (updated) {
+        showSuccess('Refund has been undone.');
+        setConfirmUndoRefundSale(null);
+        await fetchSales({
+          fromDate: from || undefined,
+          toDate: to || undefined,
+          page,
+          search: search || undefined,
+          hasClient: hasClient !== null ? hasClient : undefined,
+          sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
+          sortDirection,
+        });
+      }
+    });
   }, [
     confirmUndoRefundSale,
     undoRefund,
@@ -381,6 +390,8 @@ function SalesPageContent() {
     hasClient,
     sortColumn,
     sortDirection,
+    isMutatingSales,
+    withSalesSubmitting,
   ]);
 
   const statusForSale = useCallback(
@@ -473,7 +484,7 @@ function SalesPageContent() {
         }
       }
 
-      const response = await fetch(`/api/sales?${params.toString()}`);
+      const response = await apiFetch(`/api/sales?${params.toString()}`);
       const result = await response.json();
 
       if (!response.ok) {
@@ -705,6 +716,8 @@ function SalesPageContent() {
           cancelLabel="Cancel"
           onConfirm={handleConfirmRefund}
           onCancel={() => setConfirmRefundSale(null)}
+          submitting={isMutatingSales}
+          submittingLabel="Issuing refund..."
         />
 
         {/* Undo Refund Confirmation Dialog */}
@@ -716,6 +729,8 @@ function SalesPageContent() {
           cancelLabel="Cancel"
           onConfirm={handleConfirmUndoRefund}
           onCancel={() => setConfirmUndoRefundSale(null)}
+          submitting={isMutatingSales}
+          submittingLabel="Restoring sale..."
         />
       </AppLayout>
     </ErrorBoundary>

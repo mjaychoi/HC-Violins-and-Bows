@@ -327,15 +327,16 @@ export class ApiClient {
       const supabase = await getSupabaseClient();
       const dbTable = this.getDbTable(table) as DbTableOf<K>;
 
-      const response: PostgrestSingleResponse<DbTableInfo<K>['Row']> =
-        await supabase
-          .from(dbTable)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .update(payload as any)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .eq('id' as any, id as any)
-          .select()
-          .single();
+      const response = (await supabase
+        .from(dbTable)
+        // Supabase's generated generic signatures for update() are not stable
+        // across our mapped table aliases, so keep the boundary typed here.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .update(payload as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .eq('id', id as any)
+        .select()
+        .single()) as PostgrestSingleResponse<DbTableInfo<K>['Row']>;
 
       const { data, error } = response;
       const duration = Math.round(nowMs() - startTime);

@@ -30,10 +30,12 @@ import { useModalState } from '@/hooks/useModalState';
 import { AppLayout } from '@/components/layout';
 import { ErrorBoundary, ConfirmDialog } from '@/components/common';
 import React, { useState } from 'react';
+import { usePermissions } from '@/hooks/usePermissions';
 
 export default function ClientsPage() {
   // Error/Success handling
   const { handleError, showSuccess } = useAppFeedback();
+  const { canCreateClient } = usePermissions();
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
 
   // Track newly created client for scroll/highlight feedback
@@ -281,27 +283,35 @@ export default function ClientsPage() {
     <ErrorBoundary>
       <AppLayout
         title="Clients"
-        actionButton={{
-          label: 'Add Client',
-          onClick: openModal,
-          icon: (
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-          ),
-        }}
+        actionButton={
+          canCreateClient
+            ? {
+                label: 'Add Client',
+                onClick: openModal,
+                disabled: submitting.hasAnySubmitting,
+                disabledReason: submitting.hasAnySubmitting
+                  ? 'Please wait for the current submission to finish'
+                  : undefined,
+                icon: (
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                ),
+              }
+            : undefined
+        }
       >
         {loading.hasAnyLoading ? (
           <div className="p-6">

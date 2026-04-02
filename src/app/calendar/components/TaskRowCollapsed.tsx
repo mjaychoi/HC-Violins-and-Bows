@@ -34,6 +34,8 @@ interface TaskRowCollapsedProps {
     id: string,
     updates: MaintenanceTaskUpdatePayload
   ) => Promise<MaintenanceTask | null>;
+  canManageTask?: boolean;
+  manageTaskDisabledReason?: string;
 }
 
 // Instrument icon helper
@@ -56,6 +58,8 @@ function TaskRowCollapsed({
   client,
   onTaskClick,
   onTaskUpdate,
+  canManageTask = true,
+  manageTaskDisabledReason,
 }: TaskRowCollapsedProps) {
   // 인라인 편집 훅
   const inlineEditPriority = useInlineEdit<MaintenanceTask>({
@@ -209,14 +213,22 @@ function TaskRowCollapsed({
                 <div
                   onClick={e => {
                     e.stopPropagation();
-                    if (onTaskUpdate) {
+                    if (onTaskUpdate && canManageTask) {
                       inlineEditStatus.startEditing(task.id, {
                         status: task.status,
                       });
                     }
                   }}
-                  className="cursor-pointer hover:opacity-80 transition-opacity"
-                  title="Click to edit status"
+                  className={
+                    canManageTask
+                      ? 'cursor-pointer hover:opacity-80 transition-opacity'
+                      : 'cursor-not-allowed opacity-60'
+                  }
+                  title={
+                    canManageTask
+                      ? 'Click to edit status'
+                      : manageTaskDisabledReason
+                  }
                 >
                   <StatusPill
                     task={task}
@@ -260,14 +272,22 @@ function TaskRowCollapsed({
             <div
               onClick={e => {
                 e.stopPropagation();
-                if (onTaskUpdate) {
+                if (onTaskUpdate && canManageTask) {
                   inlineEditPriority.startEditing(task.id, {
                     priority: task.priority,
                   });
                 }
               }}
-              className="cursor-pointer hover:opacity-80 transition-opacity"
-              title="Click to edit priority"
+              className={
+                canManageTask
+                  ? 'cursor-pointer hover:opacity-80 transition-opacity'
+                  : 'cursor-not-allowed opacity-60'
+              }
+              title={
+                canManageTask
+                  ? 'Click to edit priority'
+                  : manageTaskDisabledReason
+              }
             >
               <PriorityPill priority={task.priority} />
             </div>

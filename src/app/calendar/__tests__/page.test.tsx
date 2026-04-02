@@ -6,6 +6,10 @@ import { MaintenanceTask } from '@/types';
 import { format } from 'date-fns';
 import React from 'react';
 
+jest.mock('@/utils/apiFetch', () => ({
+  apiFetch: (...args: Parameters<typeof fetch>) => fetch(...args),
+}));
+
 // Mock next/navigation
 jest.mock('next/navigation', () => ({
   __esModule: true,

@@ -1,17 +1,36 @@
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
-import { getSupabaseClient } from '@/lib/supabase-client';
 import { errorHandler } from '@/utils/errorHandler';
 import fs from 'fs/promises';
 import React from 'react';
+let mockUserSupabase: any;
 
-jest.mock('@/lib/supabase-client');
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 jest.mock('@/utils/typeGuards');
 jest.mock('@/utils/inputValidation');
 jest.mock('fs/promises');
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute: (handler: any) => async (request: any, context?: any) =>
+      handler(
+        request,
+        {
+          user: { id: 'test-user' },
+          accessToken: 'test-token',
+          orgId: 'test-org',
+          clientId: 'test-client',
+          role: 'admin',
+          userSupabase: mockUserSupabase,
+          isTestBypass: true,
+        },
+        context
+      ),
+  };
+});
 
 // Mock React PDF before importing route
 const mockRenderToBufferFn = jest.fn().mockResolvedValue(Buffer.from('pdf'));
@@ -27,9 +46,6 @@ jest.mock('@/components/certificates/CertificateDocument', () => ({
   default: () => mockCertDoc(),
 }));
 
-const mockGetSupabaseClient = getSupabaseClient as jest.MockedFunction<
-  typeof getSupabaseClient
->;
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
 const mockReadFile = fs.readFile as jest.MockedFunction<typeof fs.readFile>;
 
@@ -69,6 +85,7 @@ describe('/api/certificates/[id]', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
+    mockUserSupabase = { from: jest.fn() };
     mockRenderToBufferFn.mockClear();
     mockCertDoc.mockClear();
     // Reset to default successful response
@@ -113,7 +130,7 @@ describe('/api/certificates/[id]', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockReadFile.mockResolvedValue(mockLogoBuffer);
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',
@@ -176,7 +193,7 @@ describe('/api/certificates/[id]', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',
         message: 'Not found',
@@ -232,7 +249,7 @@ describe('/api/certificates/[id]', () => {
         }),
       } as any;
 
-      mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockReadFile.mockResolvedValue(mockLogoBuffer);
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',
@@ -283,7 +300,7 @@ describe('/api/certificates/[id]', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockReadFile.mockRejectedValue(new Error('File not found'));
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',
@@ -335,7 +352,7 @@ describe('/api/certificates/[id]', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockReadFile.mockResolvedValue(mockLogoBuffer);
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',
@@ -378,7 +395,7 @@ describe('/api/certificates/[id]', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const { validateInstrument } = require('@/utils/typeGuards');
       (validateInstrument as jest.Mock).mockImplementation(() => {
@@ -418,7 +435,7 @@ describe('/api/certificates/[id]', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockReadFile.mockResolvedValue(mockLogoBuffer);
 
       mockRenderToBufferFn.mockRejectedValue(
@@ -466,7 +483,7 @@ describe('/api/certificates/[id]', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockReadFile.mockResolvedValue(mockLogoBuffer);
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',
@@ -517,7 +534,7 @@ describe('/api/certificates/[id]', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockReadFile.mockResolvedValue(mockLogoBuffer);
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',
@@ -563,7 +580,7 @@ describe('/api/certificates/[id]', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
       mockReadFile.mockResolvedValue(mockLogoBuffer);
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',

@@ -1,18 +1,18 @@
 import { NextRequest } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
-// captureException removed - withSentryRoute handles error reporting
 import type { ContactLog, Client, Instrument } from '@/types';
-import type { User } from '@supabase/supabase-js';
 import { validateUUID } from '@/utils/inputValidation';
 import { todayLocalYMD } from '@/utils/dateParsing';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 
-async function getHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -31,10 +31,11 @@ async function getHandler(request: NextRequest, _user: User) {
       const followUpDate = searchParams.get('followUpDate'); // 오늘 연락해야 할 사람 필터
       const followUpDue = searchParams.get('followUpDue') === 'true'; // 오늘 및 지난 Follow-up 필터
 
-      const supabase = getServerSupabase();
       // FIXED: Use separate queries to avoid Supabase relationship issues
       // Fetch contact logs first, then enrich with client and instrument data
-      let query = supabase.from('contact_logs').select('*', { count: 'exact' });
+      let query = auth.userSupabase
+        .from('contact_logs')
+        .select('*', { count: 'exact' });
 
       // Filter by client_id(s) - support both single and batch
       if (clientIdsParam) {
@@ -122,7 +123,7 @@ async function getHandler(request: NextRequest, _user: User) {
       const instrumentsMap = new Map<string, Instrument>();
 
       if (clientIdSet.size > 0) {
-        const { data: clientsData } = await supabase
+        const { data: clientsData } = await auth.userSupabase
           .from('clients')
           .select('*')
           .in('id', Array.from(clientIdSet));
@@ -134,7 +135,7 @@ async function getHandler(request: NextRequest, _user: User) {
       }
 
       if (instrumentIds.size > 0) {
-        const { data: instrumentsData } = await supabase
+        const { data: instrumentsData } = await auth.userSupabase
           .from('instruments')
           .select('*')
           .in('id', Array.from(instrumentIds));
@@ -181,8 +182,7 @@ async function getHandler(request: NextRequest, _user: User) {
 
 export const GET = withSentryRoute(withAuthRoute(getHandler));
 
-async function postHandler(request: NextRequest, _user: User) {
-  void _user;
+async function postHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -191,6 +191,14 @@ async function postHandler(request: NextRequest, _user: User) {
       context: 'ContactsAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required', success: false },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
       const {
         client_id,
@@ -202,6 +210,24 @@ async function postHandler(request: NextRequest, _user: User) {
         next_follow_up_date,
         purpose,
       } = body;
+      const normalizedContactType =
+        typeof contact_type === 'string'
+          ? contact_type.trim().toLowerCase().replace(/\s+/g, '_')
+          : '';
+      const dbContactType =
+        normalizedContactType === 'call' ? 'phone' : normalizedContactType;
+      const normalizedContent =
+        typeof content === 'string' && content.trim().length > 0
+          ? content.trim()
+          : typeof purpose === 'string' && purpose.trim().length > 0
+            ? purpose.trim()
+            : typeof subject === 'string' && subject.trim().length > 0
+              ? subject.trim()
+              : null;
+      const normalizedContactDate =
+        typeof contact_date === 'string' && contact_date.trim().length > 0
+          ? contact_date
+          : todayLocalYMD();
 
       // Validation
       if (!client_id || !validateUUID(client_id)) {
@@ -212,9 +238,9 @@ async function postHandler(request: NextRequest, _user: User) {
       }
 
       if (
-        !contact_type ||
+        !dbContactType ||
         !['email', 'phone', 'meeting', 'note', 'follow_up'].includes(
-          contact_type
+          dbContactType
         )
       ) {
         return {
@@ -223,20 +249,9 @@ async function postHandler(request: NextRequest, _user: User) {
         };
       }
 
-      if (
-        !content ||
-        typeof content !== 'string' ||
-        content.trim().length === 0
-      ) {
+      if (!normalizedContent) {
         return {
           payload: { error: 'Content is required', success: false },
-          status: 400,
-        };
-      }
-
-      if (!contact_date) {
-        return {
-          payload: { error: 'contact_date is required', success: false },
           status: 400,
         };
       }
@@ -249,19 +264,18 @@ async function postHandler(request: NextRequest, _user: User) {
         };
       }
 
-      const supabase = getServerSupabase();
-
-      const { data, error } = await supabase
+      const { data, error } = await auth.userSupabase
         .from('contact_logs')
         .insert({
           client_id,
           instrument_id: instrument_id || null,
-          contact_type,
+          contact_type: dbContactType,
           subject: subject || null,
-          content: content.trim(),
-          contact_date,
+          content: normalizedContent,
+          contact_date: normalizedContactDate,
           next_follow_up_date: next_follow_up_date || null,
           purpose: purpose || null,
+          org_id: auth.orgId!,
         })
         .select(
           `
@@ -284,7 +298,7 @@ async function postHandler(request: NextRequest, _user: User) {
         status: 201,
         metadata: {
           client_id,
-          contact_type,
+          contact_type: dbContactType,
         },
       };
     }
@@ -293,8 +307,7 @@ async function postHandler(request: NextRequest, _user: User) {
 
 export const POST = withSentryRoute(withAuthRoute(postHandler));
 
-async function patchHandler(request: NextRequest, _user: User) {
-  void _user;
+async function patchHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
     {
@@ -303,6 +316,22 @@ async function patchHandler(request: NextRequest, _user: User) {
       context: 'ContactsAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required', success: false },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required', success: false },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
       const { id, ...updates } = body;
 
@@ -355,9 +384,7 @@ async function patchHandler(request: NextRequest, _user: User) {
       if (updates.contact_type !== undefined)
         cleanUpdates.contact_type = updates.contact_type;
 
-      const supabase = getServerSupabase();
-
-      const { data, error } = await supabase
+      const { data, error } = await auth.userSupabase
         .from('contact_logs')
         .update(cleanUpdates)
         .eq('id', id)
@@ -387,9 +414,7 @@ async function patchHandler(request: NextRequest, _user: User) {
 
 export const PATCH = withSentryRoute(withAuthRoute(patchHandler));
 
-async function deleteHandler(request: NextRequest, _user: User) {
-  void _user;
-
+async function deleteHandler(request: NextRequest, auth: AuthContext) {
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get('id');
 
@@ -417,9 +442,23 @@ async function deleteHandler(request: NextRequest, _user: User) {
       metadata: { id },
     },
     async () => {
-      const supabase = getServerSupabase();
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required', success: false },
+          status: 403,
+        };
+      }
 
-      const { error } = await supabase
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required', success: false },
+          status: 403,
+        };
+      }
+
+      const { error } = await auth.userSupabase
         .from('contact_logs')
         .delete()
         .eq('id', id);

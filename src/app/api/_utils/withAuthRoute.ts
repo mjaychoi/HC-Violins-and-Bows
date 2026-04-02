@@ -1,12 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, type User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
+
+import { getUserSupabase } from '@/lib/supabase-server';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
 
-type AuthedHandler = (request: NextRequest, user: User) => Promise<Response>;
+export interface AuthContext {
+  user: User;
+  accessToken: string;
+  orgId: string | null;
+  clientId: string | null;
+  role: 'admin' | 'member';
+  userSupabase: ReturnType<typeof getUserSupabase>;
+  isTestBypass: boolean;
+}
+
+type AuthedHandler = (
+  request: NextRequest,
+  auth: AuthContext
+) => Promise<Response>;
 
 interface AuthResult {
   user: User | null;
+  accessToken: string | null;
+  orgId: string | null;
+  clientId: string | null;
+  role: 'admin' | 'member';
   error: Error | null;
 }
 
@@ -19,13 +38,6 @@ function extractBearerToken(authHeader: string | null): string {
   return match?.[1]?.trim() ?? '';
 }
 
-/**
- * 공통 인증 유틸: Authorization 헤더 또는 쿠키 기반 토큰으로 user를 얻는다.
- * - Authorization: Bearer <access_token>
- * - 쿠키 키는 환경별로 다를 수 있어 최소한의 fallback만 둠
- *
- * ⚠️ 장기적으로는 supabase auth helper(서버) 사용 권장
- */
 function getHeaderValue(request: NextRequest, key: string): string | null {
   try {
     const headers = request.headers as
@@ -57,15 +69,94 @@ function getCookieValue(request: NextRequest, key: string): string | null {
   }
 }
 
+function hasValidE2EBypassSecret(request: NextRequest): boolean {
+  const expectedSecret = process.env.E2E_BYPASS_SECRET?.trim();
+  if (!expectedSecret) return false;
+
+  const providedSecret =
+    getHeaderValue(request, 'x-e2e-bypass-secret') ??
+    getHeaderValue(request, 'X-E2E-BYPASS-SECRET') ??
+    '';
+
+  return providedSecret.trim() === expectedSecret;
+}
+
+/**
+ * Pull org/client scope from known places.
+ *
+ * Keep this tolerant because projects often move these between
+ * app_metadata, user_metadata, and custom claims.
+ */
+function extractOrgId(user: User): string | null {
+  const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
+  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
+
+  const candidates = [
+    appMeta.org_id,
+    appMeta.orgId,
+    userMeta.org_id,
+    userMeta.orgId,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function extractClientId(user: User): string | null {
+  const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
+  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
+
+  const candidates = [
+    appMeta.client_id,
+    appMeta.clientId,
+    userMeta.client_id,
+    userMeta.clientId,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function extractRole(user: User): 'admin' | 'member' {
+  const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
+  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
+
+  const candidates = [
+    appMeta.role,
+    appMeta.app_role,
+    userMeta.role,
+    userMeta.app_role,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value !== 'string') continue;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'admin') return 'admin';
+    if (normalized === 'member') return 'member';
+  }
+
+  return 'member';
+}
+
 async function getUserFromRequest(request: NextRequest): Promise<AuthResult> {
   try {
     const rawHeader =
       getHeaderValue(request, 'authorization') ??
       getHeaderValue(request, 'Authorization') ??
       '';
+
     const bearerToken = extractBearerToken(rawHeader);
 
-    // Cookie fallbacks (환경에 따라 다를 수 있음)
     const cookieToken =
       getCookieValue(request, 'sb-access-token') ||
       getCookieValue(request, 'sb:access-token') ||
@@ -75,93 +166,151 @@ async function getUserFromRequest(request: NextRequest): Promise<AuthResult> {
     const token = (bearerToken || cookieToken).trim();
 
     if (!token) {
-      return { user: null, error: new Error('Missing authorization token') };
-    }
-
-    const supabaseUrl =
-      process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const anonKey =
-      process.env.SUPABASE_ANON_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    if (!supabaseUrl || !anonKey) {
       return {
         user: null,
-        error: new Error(
-          'Supabase env vars are missing (SUPABASE_URL / SUPABASE_ANON_KEY)'
-        ),
+        accessToken: null,
+        orgId: null,
+        clientId: null,
+        role: 'member',
+        error: new Error('Missing authorization token'),
       };
     }
 
-    const userSupabase = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const userSupabase = getUserSupabase(token);
+    const {
+      data: { user },
+      error,
+    } = await userSupabase.auth.getUser();
 
-    const { data, error } = await userSupabase.auth.getSession();
-
-    const sessionUser = data?.session?.user ?? null;
-
-    if (error || !sessionUser) {
+    if (error || !user) {
       return {
         user: null,
+        accessToken: null,
+        orgId: null,
+        clientId: null,
+        role: 'member',
         error: new Error(error?.message || 'Invalid token'),
       };
     }
 
-    return { user: sessionUser, error: null };
+    return {
+      user,
+      accessToken: token,
+      orgId: extractOrgId(user),
+      clientId: extractClientId(user),
+      role: extractRole(user),
+      error: null,
+    };
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    return { user: null, error: err };
+    return {
+      user: null,
+      accessToken: null,
+      orgId: null,
+      clientId: null,
+      role: 'member',
+      error: err,
+    };
   }
 }
 
-/**
- * API 라우트용 인증 미들웨어
- * - 유효한 Supabase 사용자 세션이 없으면 401 반환
- * - 유효한 경우 user 객체를 핸들러에 함께 전달
- * - 테스트 및 E2E 환경에서는 명시적인 플래그/헤더로 우회 가능
- * - 프로덕션 환경에서는 절대 우회 불가
- */
 const TEST_USER: User = {
   id: 'test-user',
   aud: 'authenticated',
   role: 'authenticated',
   email: 'test@example.com',
   created_at: new Date(0).toISOString(),
-  app_metadata: {},
+  app_metadata: {
+    org_id: 'test-org',
+    client_id: 'test-client',
+  },
   user_metadata: {},
 } as User;
 
+function buildTestAuthContext(): AuthContext {
+  const accessToken = 'test-access-token';
+
+  return {
+    user: TEST_USER,
+    accessToken,
+    orgId: 'test-org',
+    clientId: 'test-client',
+    role: 'admin',
+    userSupabase: getUserSupabase(accessToken),
+    isTestBypass: true,
+  };
+}
+
+export function createOrgContextRequiredResponse(): NextResponse {
+  return NextResponse.json(
+    { error: 'Organization context required' },
+    { status: 403 }
+  );
+}
+
+export function createAdminRequiredResponse(): NextResponse {
+  return NextResponse.json({ error: 'Admin role required' }, { status: 403 });
+}
+
+export function requireOrgContext(auth: AuthContext): NextResponse | null {
+  if (auth.orgId) return null;
+  return createOrgContextRequiredResponse();
+}
+
+export function requireAdmin(auth: AuthContext): NextResponse | null {
+  if (auth.role === 'admin') return null;
+  return createAdminRequiredResponse();
+}
+
+/**
+ * API route auth middleware
+ *
+ * What it guarantees:
+ * - valid Supabase user session is required
+ * - auth context is passed to the route
+ * - route gets a USER-SCOPED Supabase client by default
+ *
+ * What it does NOT guarantee:
+ * - resource ownership checks
+ * - domain-specific authorization rules
+ *
+ * Route handlers must still verify that requested resources
+ * belong to the authenticated user's allowed scope.
+ */
 export function withAuthRoute(
   handler: AuthedHandler
 ): (request: NextRequest) => Promise<Response> {
   return async (request: NextRequest) => {
     const isProd = process.env.NODE_ENV === 'production';
 
-    // 1) Jest 유닛 테스트 환경에서는 항상 우회
     if (process.env.NODE_ENV === 'test') {
-      return handler(request, TEST_USER);
+      return handler(request, buildTestAuthContext());
     }
 
-    // 2) 프로덕션에서는 절대 우회 불가
-    if (!isProd && process.env.E2E_BYPASS_AUTH === 'true') {
-      return handler(request, TEST_USER);
+    if (
+      !isProd &&
+      process.env.E2E_BYPASS_AUTH === 'true' &&
+      hasValidE2EBypassSecret(request)
+    ) {
+      return handler(request, buildTestAuthContext());
     }
 
-    // 3) 비프로덕션 환경에서만 허용하는 헤더 기반 우회
-    if (!isProd && getHeaderValue(request, 'x-e2e-bypass') === '1') {
-      return handler(request, TEST_USER);
+    if (
+      !isProd &&
+      getHeaderValue(request, 'x-e2e-bypass') === '1' &&
+      hasValidE2EBypassSecret(request)
+    ) {
+      return handler(request, buildTestAuthContext());
     }
 
-    const { user, error } = await getUserFromRequest(request);
+    const { user, accessToken, orgId, clientId, role, error } =
+      await getUserFromRequest(request);
 
-    if (!user || error) {
+    if (!user || !accessToken || error) {
       if (error) {
         const msg = error.message || '';
         const lower = msg.toLowerCase();
 
-        // "예상 가능한" 인증 실패는 noisy하므로 모니터링 제외
         const isBenignAuthError =
           msg === 'Missing authorization token' ||
           msg === 'Invalid token' ||
@@ -191,6 +340,16 @@ export function withAuthRoute(
       );
     }
 
-    return handler(request, user);
+    const auth: AuthContext = {
+      user,
+      accessToken,
+      orgId,
+      clientId,
+      role,
+      userSupabase: getUserSupabase(accessToken),
+      isTestBypass: false,
+    };
+
+    return handler(request, auth);
   };
 }

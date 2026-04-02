@@ -2,6 +2,12 @@ import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import ItemList from '../ItemList';
 import { Instrument, ClientInstrument } from '@/types';
 
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canManageInstruments: true,
+  })),
+}));
+
 jest.mock('@/components/common', () => ({
   ListSkeleton: () => <div>Loading...</div>,
   EmptyState: ({

@@ -1,18 +1,34 @@
 import { NextRequest } from 'next/server';
 import { GET, POST, PATCH, DELETE } from '../route';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 
-jest.mock('@/lib/supabase-server');
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 jest.mock('@/utils/inputValidation');
 jest.mock('@/utils/dateParsing');
+let mockUserSupabase: any;
 
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
->;
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute: (handler: any) => async (request: any, context?: any) =>
+      handler(
+        request,
+        {
+          user: { id: 'test-user' },
+          accessToken: 'test-token',
+          orgId: 'test-org',
+          clientId: 'test-client',
+          role: 'admin',
+          userSupabase: mockUserSupabase,
+          isTestBypass: true,
+        },
+        context
+      ),
+  };
+});
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
 
 // Mock inputValidation
@@ -50,6 +66,9 @@ describe('/api/contacts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
+    mockUserSupabase = {
+      from: jest.fn(),
+    };
   });
 
   afterEach(() => {
@@ -95,16 +114,14 @@ describe('/api/contacts', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn((table: string) => {
           if (table === 'contact_logs') return mockContactLogsQuery;
           if (table === 'clients') return mockClientsQuery;
           if (table === 'instruments') return mockInstrumentsQuery;
           return mockContactLogsQuery;
         }),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest('http://localhost/api/contacts');
       const response = await GET(request);
@@ -133,11 +150,9 @@ describe('/api/contacts', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         `http://localhost/api/contacts?clientId=${mockContactLog.client_id}`
@@ -166,11 +181,9 @@ describe('/api/contacts', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         `http://localhost/api/contacts?clientIds=${clientIds.join(',')}`
@@ -192,11 +205,9 @@ describe('/api/contacts', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const instrumentId = '123e4567-e89b-12d3-a456-426614174002';
       const request = new NextRequest(
@@ -220,11 +231,9 @@ describe('/api/contacts', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/contacts?fromDate=2024-01-01&toDate=2024-01-31'
@@ -249,11 +258,9 @@ describe('/api/contacts', () => {
         count: 1,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/contacts?followUpDue=true'
@@ -296,11 +303,9 @@ describe('/api/contacts', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'POST',
@@ -384,11 +389,9 @@ describe('/api/contacts', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'PATCH',
@@ -427,11 +430,9 @@ describe('/api/contacts', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'PATCH',
@@ -460,11 +461,9 @@ describe('/api/contacts', () => {
         error: null,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         `http://localhost/api/contacts?id=${mockContactLog.id}`
@@ -510,11 +509,9 @@ describe('/api/contacts', () => {
         error: mockError,
       });
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
         code: 'PGRST116',
         message: 'Database error',

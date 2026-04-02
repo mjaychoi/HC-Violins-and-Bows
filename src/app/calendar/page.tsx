@@ -9,6 +9,7 @@ import {
 } from '@/hooks/useUnifiedData';
 import { useModalState } from '@/hooks/useModalState';
 import { usePageNotifications } from '@/hooks/usePageNotifications';
+import { usePermissions } from '@/hooks/usePermissions';
 // Import useAppFeedback after other hooks to avoid webpack module loading issues
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { AppLayout } from '@/components/layout';
@@ -21,6 +22,7 @@ import {
 import { Button } from '@/components/common/inputs';
 import type { MaintenanceTask, ContactLog } from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
+import { apiFetch } from '@/utils/apiFetch';
 import { useCalendarNavigation, useCalendarView } from './hooks';
 import {
   CALENDAR_MESSAGES,
@@ -44,6 +46,7 @@ const TaskModal = dynamic(() => import('./components/TaskModal'), {
 
 export default function CalendarPage() {
   const { handleError, showSuccess } = useAppFeedback();
+  const { canCreateTask, canManageTasks } = usePermissions();
 
   // FIXED: useUnifiedData is now called at root layout level
   // Use specific hooks to read data (they don't trigger fetches)
@@ -60,7 +63,7 @@ export default function CalendarPage() {
 
     const fetchFollowUps = async () => {
       try {
-        const response = await fetch('/api/contacts?hasFollowUp=true');
+        const response = await apiFetch('/api/contacts?hasFollowUp=true');
         const payload = await response.json();
 
         if (!response.ok) {
@@ -426,6 +429,35 @@ export default function CalendarPage() {
     <ErrorBoundary>
       <AppLayout
         title="Calendar"
+        actionButton={
+          canCreateTask
+            ? {
+                label: 'Add Task',
+                onClick: handleOpenNewTask,
+                disabled: loading.mutate,
+                disabledReason: loading.mutate
+                  ? 'Please wait for the current submission to finish'
+                  : undefined,
+                icon: (
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                ),
+              }
+            : undefined
+        }
         headerActions={
           notificationBadge.overdue +
             notificationBadge.upcoming +
@@ -457,6 +489,14 @@ export default function CalendarPage() {
           onEventResize={handleEventResize}
           draggingEventId={draggingEventId}
           onOpenNewTask={handleOpenNewTask}
+          canCreateTask={canCreateTask && !loading.mutate}
+          createTaskDisabledReason={
+            loading.mutate
+              ? 'Please wait for the current submission to finish'
+              : undefined
+          }
+          canManageTask={canManageTasks}
+          manageTaskDisabledReason="Admin only"
           onTaskUpdate={updateTask}
         />
 
@@ -484,6 +524,8 @@ export default function CalendarPage() {
           cancelLabel={CALENDAR_CONFIRM_MESSAGES.DELETE_CANCEL_LABEL}
           onConfirm={handleConfirmDeleteTask}
           onCancel={() => setConfirmDeleteTask(null)}
+          submitting={loading.mutate}
+          submittingLabel="Deleting..."
         />
       </AppLayout>
     </ErrorBoundary>

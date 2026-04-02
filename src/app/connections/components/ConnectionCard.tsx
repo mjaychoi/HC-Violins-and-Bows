@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import { ClientInstrument } from '@/types';
 import { getRelationshipTypeStyle } from '../utils/relationshipStyles';
 import { getRelationshipAccentColor } from '@/utils/colorTokens';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface ConnectionCardProps {
   connection: ClientInstrument;
@@ -31,6 +32,7 @@ export const ConnectionCard = memo(function ConnectionCard({
   onEdit,
   showCreatedAt = false,
 }: ConnectionCardProps) {
+  const { canManageConnections } = usePermissions();
   const relationshipStyle = useMemo(
     () => getRelationshipTypeStyle(connection.relationship_type),
     [connection.relationship_type]
@@ -152,10 +154,12 @@ export const ConnectionCard = memo(function ConnectionCard({
             type="button"
             onClick={e => {
               e.stopPropagation();
+              if (!canManageConnections) return;
               onEdit(connection);
             }}
-            className="text-gray-400 hover:text-blue-500 transition-all duration-200 lg:opacity-0 lg:group-hover:opacity-100 hover:scale-110 p-2 lg:p-0"
-            title="Edit connection"
+            disabled={!canManageConnections}
+            className="text-gray-400 hover:text-blue-500 transition-all duration-200 lg:opacity-0 lg:group-hover:opacity-100 hover:scale-110 p-2 lg:p-0 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:scale-100"
+            title={canManageConnections ? 'Edit connection' : 'Admin only'}
             aria-label="Edit connection"
           >
             <svg
@@ -178,10 +182,12 @@ export const ConnectionCard = memo(function ConnectionCard({
             type="button"
             onClick={e => {
               e.stopPropagation();
+              if (!canManageConnections) return;
               onDelete(connection);
             }}
-            className="text-gray-400 hover:text-red-500 transition-all duration-200 lg:opacity-0 lg:group-hover:opacity-100 hover:scale-110 p-2 lg:p-0"
-            title="Delete connection"
+            disabled={!canManageConnections}
+            className="text-gray-400 hover:text-red-500 transition-all duration-200 lg:opacity-0 lg:group-hover:opacity-100 hover:scale-110 p-2 lg:p-0 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:scale-100"
+            title={canManageConnections ? 'Delete connection' : 'Admin only'}
             aria-label="Delete connection"
           >
             <svg

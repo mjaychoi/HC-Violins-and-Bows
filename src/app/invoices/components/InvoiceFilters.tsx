@@ -44,6 +44,8 @@ interface InvoiceFiltersProps {
   hasActiveFilters: boolean;
 
   onOpenSettings?: () => void;
+  settingsDisabled?: boolean;
+  settingsDisabledReason?: string;
 }
 
 export default function InvoiceFilters({
@@ -58,6 +60,8 @@ export default function InvoiceFilters({
   onClearFilters,
   hasActiveFilters,
   onOpenSettings,
+  settingsDisabled = false,
+  settingsDisabledReason,
 }: InvoiceFiltersProps) {
   const statusSelectProps = buildFilterSelect({
     value: status,
@@ -106,9 +110,10 @@ export default function InvoiceFilters({
               <button
                 type="button"
                 onClick={onOpenSettings}
+                disabled={settingsDisabled}
                 className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
                 aria-label="Invoice settings"
-                title="Invoice Settings"
+                title={settingsDisabledReason || 'Invoice Settings'}
               >
                 <svg
                   className="w-5 h-5"

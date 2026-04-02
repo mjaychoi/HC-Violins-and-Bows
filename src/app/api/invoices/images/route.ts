@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
-import { getSupabaseClient } from '@/lib/supabase-client';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
@@ -10,9 +9,16 @@ import {
   createLogErrorInfo,
 } from '@/utils/errorSanitization';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
-import type { User } from '@supabase/supabase-js';
-import { getStorageConfig } from '@/utils/storage/config';
+import {
+  createInvoiceImageSignedUrl,
+  INVOICE_IMAGE_BUCKET,
+} from '../imageUrls';
 
 export const runtime = 'nodejs';
 
@@ -111,17 +117,16 @@ const detectMimeTypeFromSignature = (buffer: Buffer): string | null => {
  * POST /api/invoices/images
  * Upload an image for invoice item to Supabase Storage
  */
-async function postHandler(request: NextRequest, user: User) {
+async function postHandler(request: NextRequest, auth: AuthContext) {
   const startTime = performance.now();
-  const storageBasePrefix = getStorageConfig().storageBasePrefix;
-
-  const withStoragePrefix = (path: string) => {
-    if (!storageBasePrefix) return path;
-    const safePrefix = storageBasePrefix.replace(/^\/+|\/+$/g, '');
-    return `${safePrefix}/${path}`;
-  };
 
   try {
+    const orgContextError = requireOrgContext(auth);
+    if (orgContextError) return orgContextError;
+
+    const adminError = requireAdmin(auth);
+    if (adminError) return adminError;
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
@@ -178,12 +183,11 @@ async function postHandler(request: NextRequest, user: User) {
     const timestamp = Date.now();
     const fileId = randomUUID();
     const fileName = `invoice-item-${timestamp}-${fileId}.${fileExt}`;
-    const filePath = withStoragePrefix(`invoice-items/${user.id}/${fileName}`);
+    const filePath = `${auth.orgId}/${auth.user.id}/${fileName}`;
 
-    // Upload to Supabase Storage
-    const supabase = await getSupabaseClient();
-    const { error: uploadError } = await supabase.storage
-      .from('invoices')
+    // Upload with the caller's user-scoped Supabase client so storage auth stays session-bound.
+    const { error: uploadError } = await auth.userSupabase.storage
+      .from(INVOICE_IMAGE_BUCKET)
       .upload(filePath, buffer, {
         contentType: resolvedType,
         upsert: false,
@@ -196,10 +200,14 @@ async function postHandler(request: NextRequest, user: User) {
       );
     }
 
-    // Get public URL
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from('invoices').getPublicUrl(filePath);
+    const signedUrl = await createInvoiceImageSignedUrl(
+      auth.userSupabase,
+      filePath
+    );
+
+    if (!signedUrl) {
+      throw new Error('Failed to create signed URL for uploaded image');
+    }
 
     const duration = Math.round(performance.now() - startTime);
     logApiRequest(
@@ -218,7 +226,7 @@ async function postHandler(request: NextRequest, user: User) {
     return NextResponse.json({
       success: true,
       filePath,
-      publicUrl,
+      signedUrl,
       message: 'Image uploaded successfully',
     });
   } catch (error) {

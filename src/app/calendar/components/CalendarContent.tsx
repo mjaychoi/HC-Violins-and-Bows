@@ -81,6 +81,10 @@ interface CalendarContentProps {
   }) => Promise<void> | void;
   draggingEventId?: string | null;
   onOpenNewTask: () => void;
+  canCreateTask?: boolean;
+  createTaskDisabledReason?: string;
+  canManageTask?: boolean;
+  manageTaskDisabledReason?: string;
 }
 
 function CalendarContentInner({
@@ -101,6 +105,10 @@ function CalendarContentInner({
   onEventResize,
   draggingEventId,
   onOpenNewTask,
+  canCreateTask = true,
+  createTaskDisabledReason,
+  canManageTask = true,
+  manageTaskDisabledReason,
 }: CalendarContentProps) {
   // onTaskEdit is optional, so we need to handle it
   const handleTaskEdit = onTaskEdit || onTaskClick;
@@ -531,7 +539,9 @@ function CalendarContentInner({
 
             <button
               onClick={onOpenNewTask}
-              className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={!canCreateTask}
+              title={createTaskDisabledReason}
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300 disabled:hover:bg-blue-300"
               aria-label="Add new task"
             >
               <svg
@@ -626,6 +636,8 @@ function CalendarContentInner({
           hasActiveFilters={hasActiveFilters}
           onResetFilters={resetFiltersAndUpdate}
           onOpenNewTask={onOpenNewTask}
+          canCreateTask={canCreateTask}
+          createTaskDisabledReason={createTaskDisabledReason}
           resultCount={filteredTasks.length}
           activeFilters={{
             status: filterStatus,
@@ -693,6 +705,11 @@ function CalendarContentInner({
               onTaskDelete={onTaskDelete}
               onTaskEdit={handleTaskEdit}
               onTaskUpdate={onTaskUpdate}
+              onAddTask={onOpenNewTask}
+              canAddTask={canCreateTask}
+              addTaskDisabledReason={createTaskDisabledReason}
+              canManageTask={canManageTask}
+              manageTaskDisabledReason={manageTaskDisabledReason}
             />
             {showPagination && (
               <div className="mt-6 border-t border-gray-200 pt-4">

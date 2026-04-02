@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface RowActionsProps {
   onEdit: () => void;
@@ -20,6 +21,7 @@ function RowActions({
   currentStatus,
   itemId,
 }: RowActionsProps) {
+  const { canManageInstruments } = usePermissions();
   const [isOpen, setIsOpen] = useState(false);
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -51,10 +53,13 @@ function RowActions({
         ref={triggerRef}
         onClick={e => {
           e.stopPropagation();
+          if (!canManageInstruments) return;
           setIsOpen(!isOpen);
         }}
-        className="p-2 rounded-md hover:bg-gray-50 transition-colors duration-200"
+        disabled={!canManageInstruments}
+        className="p-2 rounded-md hover:bg-gray-50 transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
         aria-label="More actions"
+        title={canManageInstruments ? 'More actions' : 'Admin only'}
         aria-haspopup="menu"
         aria-controls={menuId}
         aria-expanded={isOpen}
@@ -104,6 +109,7 @@ function RowActions({
                 onEdit();
                 setIsOpen(false);
               }}
+              title={canManageInstruments ? undefined : 'Admin only'}
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
             >
               <svg
@@ -154,6 +160,7 @@ function RowActions({
                 onDelete();
                 setIsOpen(false);
               }}
+              title={canManageInstruments ? undefined : 'Admin only'}
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 transition-colors duration-200"
             >
               <svg

@@ -3,11 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { DocumentProps } from '@react-pdf/renderer';
 import fs from 'fs/promises';
 import path from 'path';
-import type { User } from '@supabase/supabase-js';
-
-import { getServerSupabase } from '@/lib/supabase-server';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import { requireOrgContext } from '@/app/api/_utils/withAuthRoute';
 
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest, logWarn } from '@/utils/logger';
@@ -24,6 +23,7 @@ import {
   normalizeSupabaseClientJoin,
   normalizeSupabaseInvoiceItemsJoin,
 } from '@/utils/invoiceNormalize';
+import { attachSignedUrlsToInvoiceItems } from '../../imageUrls';
 
 // FIXED: Ensure Node.js runtime for PDF generation (Edge runtime breaks react-pdf)
 export const runtime = 'nodejs';
@@ -105,23 +105,6 @@ const BANKING_INFO = {
   accountNumber: process.env.NEXT_PUBLIC_BANK_ACCOUNT || '',
 };
 
-function getOrgScopeFromUser(user: User | undefined): { orgId?: string } {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const anyUser = user as any;
-  const orgId =
-    anyUser?.org_id ??
-    anyUser?.organization_id ??
-    anyUser?.orgId ??
-    anyUser?.organizationId ??
-    anyUser?.user_metadata?.org_id ??
-    anyUser?.user_metadata?.organization_id ??
-    anyUser?.app_metadata?.org_id ??
-    anyUser?.app_metadata?.organization_id;
-
-  if (typeof orgId === 'string' && orgId.length > 0) return { orgId };
-  return {};
-}
-
 // Load logo as base64, fallback to absolute URL
 async function resolveLogoSrc(): Promise<string | null> {
   try {
@@ -152,8 +135,8 @@ export async function GET(
   const { id } = await context.params;
 
   const handler = withSentryRoute(
-    withAuthRoute(async (req, user) => {
-      return generateInvoicePdfResponse(req, user, id);
+    withAuthRoute(async (req, auth) => {
+      return generateInvoicePdfResponse(req, auth, id);
     })
   );
 
@@ -162,13 +145,35 @@ export async function GET(
 
 async function generateInvoicePdfResponse(
   req: NextRequest,
-  user: User,
+  auth: AuthContext,
   id: string
 ): Promise<Response> {
   const startTime = performance.now();
 
   try {
     const inline = new URL(req.url).searchParams.get('inline') === 'true';
+    const orgContextError = requireOrgContext(auth);
+
+    if (orgContextError) {
+      const duration = Math.round(performance.now() - startTime);
+      logApiRequest(
+        'GET',
+        `/api/invoices/${id}/pdf`,
+        403,
+        duration,
+        'InvoicesAPI',
+        {
+          invoiceId: id,
+          error: true,
+          errorCode: 'ORG_CONTEXT_REQUIRED',
+        }
+      );
+
+      return NextResponse.json(
+        { error: 'Organization context required' },
+        { status: 403 }
+      );
+    }
 
     // 1) Validate UUID
     if (!validateUUID(id)) {
@@ -193,13 +198,12 @@ async function generateInvoicePdfResponse(
     }
 
     // 2) Fetch invoice (optionally scoped)
-    const supabase = getServerSupabase();
-    const { orgId } = getOrgScopeFromUser(user);
+    const orgId = auth.orgId!;
 
     // NOTE: some supabase typings can be annoying about conditional chaining;
     // use `any` for safe conditional org scoping without blowing up TS.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let query: any = supabase
+    let query: any = auth.userSupabase
       .from('invoices')
       .select(
         `
@@ -213,10 +217,7 @@ async function generateInvoicePdfResponse(
       )
       .eq('id', id);
 
-    if (orgId) {
-      // If org_id column doesn't exist, Supabase will error -> handled below
-      query = query.eq('org_id', orgId);
-    }
+    query = query.eq('org_id', orgId);
 
     const { data: invoice, error: invoiceError } = await query.single();
 
@@ -345,12 +346,20 @@ async function generateInvoicePdfResponse(
     const normalizedItems = normalizeSupabaseInvoiceItemsJoin(
       invoiceRecord.invoice_items ?? invoiceRecord.items
     );
-    normalizedInvoice.items = normalizedItems.map(item => ({
+    const hydratedItems = await attachSignedUrlsToInvoiceItems(
+      auth.userSupabase,
+      normalizedItems.map(item => ({
+        ...item,
+        image_signed_url: null,
+      }))
+    );
+
+    normalizedInvoice.items = (hydratedItems ?? []).map(item => ({
       description: item.description,
       qty: item.qty,
       rate: item.rate,
       amount: item.amount,
-      image_url: item.image_url,
+      image_url: item.image_signed_url || item.image_url,
       item_number: item.instrument?.serial_number || null,
     }));
 

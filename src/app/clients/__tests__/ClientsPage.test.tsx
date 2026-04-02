@@ -2,6 +2,13 @@ import '@testing-library/jest-dom';
 import { render, screen, act, waitFor } from '@/test-utils/render';
 // ✅ FIXED: user-event 타입 문제 해결을 위해 명시적 import
 import userEvent from '@testing-library/user-event';
+
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canCreateClient: true,
+  })),
+}));
+
 jest.mock('next/dynamic', () => {
   // Type definitions for mock components (inside jest.mock due to hoisting)
   interface MockClientListProps {
@@ -523,9 +530,8 @@ describe('ClientsPage', () => {
   it('should render the add client button', async () => {
     render(<ClientsPage />);
 
-    // ✅ FIXED: 불필요한 flushPromises 제거 - find를 사용하여 자동 대기
     const addButton = await screen.findByRole('button', {
-      name: /add|new|create/i,
+      name: /add client/i,
     });
     expect(addButton).toBeInTheDocument();
   });
@@ -681,15 +687,14 @@ describe('ClientsPage', () => {
     const user = userEvent.setup();
     render(<ClientsPage />);
 
-    // ✅ FIXED: 불필요한 flushPromises 제거
     const addButton = await screen.findByRole('button', {
-      name: /add|new|create/i,
+      name: /add client/i,
     });
     await user.click(addButton);
 
-    // ✅ FIXED: userEvent.click이 자동으로 상태 업데이트를 처리
-    // This would open the client form modal
-    expect(addButton).toBeInTheDocument();
+    await waitFor(() => {
+      expect(addButton).toBeInTheDocument();
+    });
   });
 
   it('should handle client deletion', async () => {

@@ -376,7 +376,8 @@ describe('InvoiceForm', () => {
     apiFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
-        publicUrl: 'https://example.com/uploaded-image.jpg',
+        filePath: 'org-1/user-1/invoice-item-test.jpg',
+        signedUrl: 'https://example.com/uploaded-image.jpg',
       }),
     });
 

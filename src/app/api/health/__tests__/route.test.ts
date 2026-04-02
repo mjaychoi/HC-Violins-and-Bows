@@ -17,7 +17,6 @@ describe('/api/health', () => {
 
     expect(body.status).toBe('ok');
     expect(body.version).toBeDefined();
-    expect(body.uptimeSeconds).toBeGreaterThanOrEqual(0);
-    expect(body.environment).toBeDefined();
+    expect(body.timestamp).toBeDefined();
   });
 });

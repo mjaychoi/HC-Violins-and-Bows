@@ -16,6 +16,7 @@ import {
   InlineEditActions,
   InlineEditButton,
 } from '@/components/common/InlineEditFields';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // FIXED: Helper to parse YYYY-MM-DD as UTC to avoid timezone shifts
 import { formatDisplayDate } from '@/utils/dateParsing';
@@ -68,6 +69,7 @@ function SalesTable({
   onResetFilters,
   onUpdateSale,
 }: SalesTableProps) {
+  const { canManageSales } = usePermissions();
   // 인라인 편집 훅 (sale_price와 status)
   const inlineEditPrice = useInlineEdit<SalesHistory>({
     onSave: async (id, data) => {
@@ -260,12 +262,16 @@ function SalesTable({
                           {currency.format(Math.abs(sale.sale_price))}
                         </span>
                         <InlineEditButton
-                          onClick={() =>
+                          onClick={() => {
+                            if (!canManageSales) return;
                             inlineEditPrice.startEditing(sale.id, {
                               sale_price: sale.sale_price,
-                            })
-                          }
+                            });
+                          }}
                           aria-label="Edit sale price"
+                          title={
+                            canManageSales ? 'Edit sale price' : 'Admin only'
+                          }
                           size="sm"
                         />
                       </div>
@@ -309,12 +315,16 @@ function SalesTable({
                           <StatusBadge status={status} />
                         </div>
                         <InlineEditButton
-                          onClick={() =>
+                          onClick={() => {
+                            if (!canManageSales) return;
                             inlineEditStatus.startEditing(sale.id, {
                               status: status,
-                            })
-                          }
+                            });
+                          }}
                           aria-label="Edit sale status"
+                          title={
+                            canManageSales ? 'Edit sale status' : 'Admin only'
+                          }
                           size="sm"
                         />
                       </div>
@@ -353,11 +363,11 @@ function SalesTable({
                         <Button
                           type="button"
                           onClick={() => onRefund(sale)}
-                          disabled={loading}
+                          disabled={loading || !canManageSales}
                           size="sm"
                           variant="secondary"
                           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-700 bg-white hover:bg-red-50 border border-red-300 hover:border-red-400"
-                          title="Issue refund"
+                          title={canManageSales ? 'Issue refund' : 'Admin only'}
                         >
                           <svg
                             className="w-3.5 h-3.5"
@@ -378,11 +388,11 @@ function SalesTable({
                         <Button
                           type="button"
                           onClick={() => onUndoRefund(sale)}
-                          disabled={loading}
+                          disabled={loading || !canManageSales}
                           size="sm"
                           variant="success"
                           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100"
-                          title="Undo refund"
+                          title={canManageSales ? 'Undo refund' : 'Admin only'}
                         >
                           <svg
                             className="w-3.5 h-3.5"

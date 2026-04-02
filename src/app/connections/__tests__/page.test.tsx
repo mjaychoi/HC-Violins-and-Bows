@@ -1,6 +1,14 @@
 import { render, screen, fireEvent, waitFor, act } from '@/test-utils/render';
 import ConnectedClientsPage from '../page';
 import { RelationshipType, ClientInstrument } from '@/types';
+
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(() => ({
+    canCreateConnection: true,
+    canManageConnections: true,
+  })),
+}));
+
 // Type definitions for mock components
 interface ConfirmDialogProps {
   isOpen: boolean;

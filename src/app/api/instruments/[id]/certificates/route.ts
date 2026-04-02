@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { validateUUID } from '@/utils/inputValidation';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
-import type { User } from '@supabase/supabase-js';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { getStorage } from '@/utils/storage';
 import { errorHandler } from '@/utils/errorHandler';
 import { logError, logInfo } from '@/utils/logger';
@@ -21,6 +24,26 @@ const isMissingTableError = (error: unknown) => {
   );
 };
 
+function sanitizeCertificateFilename(filename: string): string {
+  return filename.replace(/[^a-zA-Z0-9.-]/g, '_').replace(/\s+/g, '_');
+}
+
+function getCertificateStorageKey(
+  orgId: string,
+  instrumentId: string,
+  filename: string,
+  timestamp = Date.now()
+): string {
+  return `${orgId}/${instrumentId}/${timestamp}_${sanitizeCertificateFilename(
+    filename
+  )}`;
+}
+
+function getStorageFilename(fileKey: string): string {
+  const pathParts = fileKey.split('/');
+  return pathParts[pathParts.length - 1] || fileKey;
+}
+
 // Note: S3Storage doesn't have list functionality, so we rely on metadata table only
 
 /**
@@ -29,11 +52,9 @@ const isMissingTableError = (error: unknown) => {
  */
 async function getHandlerInternal(
   request: NextRequest,
-  _user: User,
+  auth: AuthContext,
   id: string
 ) {
-  void _user;
-
   try {
     // Validate UUID
     if (!validateUUID(id)) {
@@ -43,10 +64,8 @@ async function getHandlerInternal(
       );
     }
 
-    const supabase = getServerSupabase();
-
     // Check if instrument exists
-    const { data: instrument, error: instrumentError } = await supabase
+    const { data: instrument, error: instrumentError } = await auth.userSupabase
       .from('instruments')
       .select('id, serial_number')
       .eq('id', id)
@@ -59,7 +78,10 @@ async function getHandlerInternal(
       );
     }
 
-    const { data: certRows, error: certError } = await supabase
+    const orgContextError = requireOrgContext(auth);
+    if (orgContextError) return orgContextError;
+
+    const { data: certRows, error: certError } = await auth.userSupabase
       .from('instrument_certificates')
       .select(
         'id, storage_path, original_name, mime_type, size, created_at, version, is_primary'
@@ -82,7 +104,7 @@ async function getHandlerInternal(
             logError('Failed to generate presigned URL:', presignError);
             logInfo('signedUrl:', signedUrl);
           }
-          const name = row.original_name || fileKey.split('/').pop() || fileKey;
+          const name = row.original_name || getStorageFilename(fileKey);
           return {
             id: row.id,
             name,
@@ -130,7 +152,7 @@ async function getHandlerInternal(
  */
 async function postHandlerInternal(
   request: NextRequest,
-  user: User,
+  auth: AuthContext,
   id: string
 ) {
   try {
@@ -170,9 +192,13 @@ async function postHandlerInternal(
       );
     }
 
-    const supabase = getServerSupabase();
+    const orgContextError = requireOrgContext(auth);
+    if (orgContextError) return orgContextError;
 
-    const { data: instrument, error: instrumentError } = await supabase
+    const adminError = requireAdmin(auth);
+    if (adminError) return adminError;
+
+    const { data: instrument, error: instrumentError } = await auth.userSupabase
       .from('instruments')
       .select('id, serial_number')
       .eq('id', id)
@@ -188,11 +214,7 @@ async function postHandlerInternal(
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const timestamp = Date.now();
-    const safeFilename = file.name
-      .replace(/[^a-zA-Z0-9.-]/g, '_')
-      .replace(/\s+/g, '_');
-    const fileKey = `certificates/${id}/${timestamp}_${safeFilename}`;
+    const fileKey = getCertificateStorageKey(auth.orgId!, id, file.name);
 
     // Validate file before upload
     storage.validateFile(file.name, 'application/pdf', file.size);
@@ -212,66 +234,39 @@ async function postHandlerInternal(
     }
 
     let insertedId: string | null = null;
-    const { data: existingRows, error: existingError } = await supabase
-      .from('instrument_certificates')
-      .select('id, version, is_primary')
-      .eq('instrument_id', id);
+    const { data: createdCertificateId, error: insertError } =
+      await auth.userSupabase.rpc('create_instrument_certificate_metadata', {
+        p_instrument_id: id,
+        p_storage_path: fileKey,
+        p_original_name: file.name,
+        p_mime_type: 'application/pdf',
+        p_size: file.size,
+        p_created_by: auth.user.id,
+      });
 
-    if (!existingError && Array.isArray(existingRows)) {
-      const maxVersion = existingRows.reduce(
-        (acc, row) => Math.max(acc, row.version || 0),
-        0
-      );
-      const hasPrimary = existingRows.some(row => row.is_primary);
-
-      const { data: insertedRow, error: insertError } = await supabase
-        .from('instrument_certificates')
-        .insert({
-          instrument_id: id,
-          storage_path: fileKey,
-          original_name: file.name,
-          mime_type: 'application/pdf',
-          size: file.size,
-          created_by: user.id,
-          is_primary: !hasPrimary,
-          version: maxVersion + 1,
-        })
-        .select('id')
-        .single();
-
-      if (insertError) {
-        try {
-          await storage.deleteFile(fileKey);
-        } catch (deleteError) {
-          logError('Failed to rollback file upload:', deleteError);
-        }
-        throw errorHandler.handleSupabaseError(
-          insertError,
-          'Save certificate metadata'
-        );
-      }
-
-      insertedId = insertedRow?.id || null;
-    } else if (existingError && !isMissingTableError(existingError)) {
+    if (insertError) {
       try {
         await storage.deleteFile(fileKey);
       } catch (deleteError) {
         logError('Failed to rollback file upload:', deleteError);
       }
       throw errorHandler.handleSupabaseError(
-        existingError,
-        'Read certificate metadata'
+        insertError,
+        'Save certificate metadata'
       );
     }
 
-    const { error: updateError } = await supabase
+    insertedId =
+      typeof createdCertificateId === 'string' ? createdCertificateId : null;
+
+    const { error: updateError } = await auth.userSupabase
       .from('instruments')
       .update({ certificate: true })
       .eq('id', id);
 
     if (updateError) {
       if (insertedId) {
-        await supabase
+        await auth.userSupabase
           .from('instrument_certificates')
           .delete()
           .eq('id', insertedId);
@@ -323,7 +318,7 @@ async function postHandlerInternal(
  */
 async function putHandlerInternal(
   request: NextRequest,
-  _user: User,
+  auth: AuthContext,
   id: string
 ) {
   try {
@@ -372,10 +367,14 @@ async function putHandlerInternal(
       );
     }
 
-    const supabase = getServerSupabase();
+    const orgContextError = requireOrgContext(auth);
+    if (orgContextError) return orgContextError;
+
+    const adminError = requireAdmin(auth);
+    if (adminError) return adminError;
 
     // Find certificate by fileName in metadata table
-    const { data: certRows, error: certError } = await supabase
+    const { data: certRows, error: certError } = await auth.userSupabase
       .from('instrument_certificates')
       .select('storage_path')
       .eq('instrument_id', id)
@@ -388,10 +387,9 @@ async function putHandlerInternal(
       );
     }
 
-    const existing = certRows?.find(row => {
-      const pathParts = row.storage_path.split('/');
-      return pathParts[pathParts.length - 1] === fileName;
-    });
+    const existing = certRows?.find(
+      row => getStorageFilename(row.storage_path) === fileName
+    );
 
     if (!existing) {
       return NextResponse.json(
@@ -400,7 +398,8 @@ async function putHandlerInternal(
       );
     }
 
-    const fileKey = existing.storage_path;
+    const oldFileKey = existing.storage_path;
+    const fileKey = getCertificateStorageKey(auth.orgId!, id, file.name);
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -408,7 +407,7 @@ async function putHandlerInternal(
     // Validate file before upload
     storage.validateFile(file.name, 'application/pdf', file.size);
 
-    // Upload to storage (replace existing file)
+    // Upload replacement to the org-prefixed path so new storage RLS applies.
     try {
       await storage.saveFile(buffer, fileKey, 'application/pdf');
     } catch (uploadError) {
@@ -422,18 +421,35 @@ async function putHandlerInternal(
       );
     }
 
-    const { error: updateMetaError } = await supabase
+    const { error: updateMetaError } = await auth.userSupabase
       .from('instrument_certificates')
       .update({
+        storage_path: fileKey,
         original_name: file.name,
         mime_type: 'application/pdf',
         size: file.size,
       })
       .eq('instrument_id', id)
-      .eq('storage_path', fileKey);
+      .eq('storage_path', oldFileKey);
 
     if (updateMetaError && !isMissingTableError(updateMetaError)) {
+      try {
+        await storage.deleteFile(fileKey);
+      } catch (deleteError) {
+        logError(
+          'Failed to rollback replaced certificate upload:',
+          deleteError
+        );
+      }
       logError('Certificate metadata update error:', updateMetaError);
+    }
+
+    if (oldFileKey !== fileKey) {
+      try {
+        await storage.deleteFile(oldFileKey);
+      } catch (deleteError) {
+        logError('Failed to delete legacy certificate path:', deleteError);
+      }
     }
 
     let signedUrl = '';
@@ -474,7 +490,7 @@ async function putHandlerInternal(
  */
 async function deleteHandlerInternal(
   request: NextRequest,
-  _user: User,
+  auth: AuthContext,
   id: string
 ) {
   try {
@@ -496,9 +512,7 @@ async function deleteHandlerInternal(
       );
     }
 
-    const supabase = getServerSupabase();
-
-    const { data: instrument, error: instrumentError } = await supabase
+    const { data: instrument, error: instrumentError } = await auth.userSupabase
       .from('instruments')
       .select('id')
       .eq('id', id)
@@ -514,7 +528,7 @@ async function deleteHandlerInternal(
     let filePath: string | null = null;
 
     if (certificateId) {
-      const { data: certRow, error: certError } = await supabase
+      const { data: certRow, error: certError } = await auth.userSupabase
         .from('instrument_certificates')
         .select()
         .eq('id', certificateId)
@@ -536,7 +550,7 @@ async function deleteHandlerInternal(
 
     if (!filePath && fileName) {
       // Find certificate by fileName in metadata table
-      const { data: certRows, error: certError } = await supabase
+      const { data: certRows, error: certError } = await auth.userSupabase
         .from('instrument_certificates')
         .select('storage_path')
         .eq('instrument_id', id);
@@ -548,10 +562,9 @@ async function deleteHandlerInternal(
         );
       }
 
-      const existing = certRows?.find(row => {
-        const pathParts = row.storage_path.split('/');
-        return pathParts[pathParts.length - 1] === fileName;
-      });
+      const existing = certRows?.find(
+        row => getStorageFilename(row.storage_path) === fileName
+      );
 
       if (!existing) {
         return NextResponse.json(
@@ -578,7 +591,7 @@ async function deleteHandlerInternal(
     }
 
     if (certificateId) {
-      const { error: deleteMetaError } = await supabase
+      const { error: deleteMetaError } = await auth.userSupabase
         .from('instrument_certificates')
         .delete()
         .eq('id', certificateId)
@@ -588,7 +601,7 @@ async function deleteHandlerInternal(
         logError('Certificate metadata delete error:', deleteMetaError);
       }
     } else {
-      const { error: deleteMetaError } = await supabase
+      const { error: deleteMetaError } = await auth.userSupabase
         .from('instrument_certificates')
         .delete()
         .eq('instrument_id', id)
@@ -600,14 +613,14 @@ async function deleteHandlerInternal(
     }
 
     // Check if any certificates remain using metadata table
-    const { data: remainingCerts } = await supabase
+    const { data: remainingCerts } = await auth.userSupabase
       .from('instrument_certificates')
       .select('id')
       .eq('instrument_id', id)
       .limit(1);
 
     if (!remainingCerts || remainingCerts.length === 0) {
-      const { error: updateError } = await supabase
+      const { error: updateError } = await auth.userSupabase
         .from('instruments')
         .update({ certificate: false })
         .eq('id', id);
@@ -650,8 +663,8 @@ export async function GET(
 
   // Wrap handler with auth and sentry
   const handler = withSentryRoute(
-    withAuthRoute(async (req: NextRequest, user: User) => {
-      return getHandlerInternal(req, user, id);
+    withAuthRoute(async (req: NextRequest, auth: AuthContext) => {
+      return getHandlerInternal(req, auth, id);
     })
   );
 
@@ -671,8 +684,8 @@ export async function POST(
   const { id } = params;
 
   const handler = withSentryRoute(
-    withAuthRoute(async (req: NextRequest, user: User) => {
-      return postHandlerInternal(req, user, id);
+    withAuthRoute(async (req: NextRequest, auth: AuthContext) => {
+      return postHandlerInternal(req, auth, id);
     })
   );
 
@@ -692,8 +705,8 @@ export async function PUT(
   const { id } = params;
 
   const handler = withSentryRoute(
-    withAuthRoute(async (req: NextRequest, user: User) => {
-      return putHandlerInternal(req, user, id);
+    withAuthRoute(async (req: NextRequest, auth: AuthContext) => {
+      return putHandlerInternal(req, auth, id);
     })
   );
 
@@ -713,8 +726,8 @@ export async function DELETE(
   const { id } = params;
 
   const handler = withSentryRoute(
-    withAuthRoute(async (req: NextRequest, user: User) => {
-      return deleteHandlerInternal(req, user, id);
+    withAuthRoute(async (req: NextRequest, auth: AuthContext) => {
+      return deleteHandlerInternal(req, auth, id);
     })
   );
 

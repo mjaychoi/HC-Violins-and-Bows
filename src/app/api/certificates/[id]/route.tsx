@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { DocumentProps } from '@react-pdf/renderer';
 import fs from 'fs/promises';
 import path from 'path';
-import { getSupabaseClient } from '@/lib/supabase-client';
+import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
@@ -133,24 +135,14 @@ async function resolveLogoSrc(): Promise<string | undefined> {
 
 /**
  * GET /api/certificates/[id]
- *
- * NOTE: Next.js 15+ route handlers receive params as Promise<{ id: string }>
  */
-export async function GET(
-  _request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+async function getHandlerInternal(
+  request: NextRequest,
+  auth: AuthContext,
+  id: string
 ) {
   const startTime = nowMs();
   const durationMs = () => Math.round(nowMs() - startTime);
-
-  // params compatibility (Promise vs direct)
-  const p: unknown = context.params;
-  const params =
-    typeof (p as { then?: unknown })?.then === 'function'
-      ? await (p as Promise<{ id: string }>)
-      : (p as { id: string });
-
-  const { id } = params;
   const routePath = `/api/certificates/${id}`;
 
   try {
@@ -169,8 +161,7 @@ export async function GET(
     }
 
     // 2) Fetch instrument
-    const supabase = await getSupabaseClient();
-    const { data: instrument, error } = await supabase
+    const { data: instrument, error } = await auth.userSupabase
       .from('instruments')
       .select('*')
       .eq('id', id)
@@ -187,7 +178,7 @@ export async function GET(
 
     if (instrument && ownerId) {
       try {
-        const { data: ownerClient } = await supabase
+        const { data: ownerClient } = await auth.userSupabase
           .from('clients')
           .select('first_name, last_name, email')
           .eq('id', ownerId)
@@ -350,7 +341,7 @@ export async function GET(
       (((error as { code?: string }).code ?? '').startsWith('PGRST') ||
         (error as { name?: string }).name === 'PostgrestError');
 
-    const paramsId = params.id;
+    const paramsId = id;
     const appError: AppError = isSupabaseError
       ? errorHandler.handleSupabaseError(error, 'Generate certificate PDF')
       : errorHandler.createError(
@@ -390,4 +381,25 @@ export async function GET(
       status: 500,
     });
   }
+}
+
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const p: unknown = context.params;
+  const params =
+    typeof (p as { then?: unknown })?.then === 'function'
+      ? await (p as Promise<{ id: string }>)
+      : (p as { id: string });
+
+  const { id } = params;
+
+  const handler = withSentryRoute(
+    withAuthRoute(async (req: NextRequest, auth: AuthContext) => {
+      return getHandlerInternal(req, auth, id);
+    })
+  );
+
+  return handler(request);
 }

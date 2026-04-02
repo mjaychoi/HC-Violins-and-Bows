@@ -1,4 +1,4 @@
-import { getServerSupabase } from '@/lib/supabase-server';
+import { getAdminSupabase } from '@/lib/supabase-server';
 
 export interface MigrationCheckResult {
   display_order: boolean;
@@ -13,7 +13,9 @@ export interface MigrationCheckResult {
  */
 export async function checkMigrations(): Promise<MigrationCheckResult> {
   try {
-    const supabase = getServerSupabase();
+    // Intentionally privileged: migration diagnostics must not depend on caller RLS.
+    // This helper is only used by the reduced /api/health endpoint.
+    const supabase = getAdminSupabase();
 
     // Try selecting the column. If the column doesn't exist, Postgres/PostgREST will error.
     const { error } = await supabase

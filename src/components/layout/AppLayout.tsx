@@ -4,18 +4,14 @@ import { useSidebarState } from '@/hooks/useSidebarState';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-import AppHeader from './AppHeader';
+import { useEffect, useMemo } from 'react';
+import AppHeader, { type AppHeaderActionButton } from './AppHeader';
 import AppSidebar from './AppSidebar';
 
 interface AppLayoutProps {
   title: string;
   children: React.ReactNode;
-  actionButton?: {
-    label: string;
-    onClick: () => void;
-    icon?: React.ReactNode;
-  };
+  actionButton?: AppHeaderActionButton;
   headerActions?: React.ReactNode;
 }
 
@@ -27,37 +23,67 @@ export default function AppLayout({
 }: AppLayoutProps) {
   const { isExpanded, toggleSidebar } = useSidebarState();
   const pathname = usePathname();
-  const { user, loading } = useAuth();
+  const { user, loading, hasOrgContext } = useAuth();
   const router = useRouter();
 
-  // ✅ FIXED: matchMedia 훅으로 변경 (리렌더/이벤트 줄이기)
-  // ✅ FIXED: redirect는 AppLayout에서만 처리 (단일 책임 원칙)
-  // ProtectedRoute와 중복 방지: AppLayout이 모든 보호된 페이지의 인증 체크를 담당
-  useEffect(() => {
-    if (!loading && !user) {
-      // ✅ FIXED: Use replace() instead of push() to prevent history stack issues
-      // ✅ FIXED: Preserve destination page via next query parameter
+  const redirectTarget = useMemo(() => {
+    if (loading) return null;
+    if (!user) {
       const next = encodeURIComponent(pathname || '/');
-      router.replace(`/?next=${next}`);
+      return `/?next=${next}`;
     }
-  }, [user, loading, router, pathname]);
+    if (!hasOrgContext) {
+      const next = encodeURIComponent(pathname || '/dashboard');
+      return `/onboarding/organization?next=${next}`;
+    }
+    return null;
+  }, [hasOrgContext, loading, pathname, user]);
 
-  // Show loading state while checking auth
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
+  useEffect(() => {
+    if (redirectTarget) {
+      router.replace(redirectTarget);
+    }
+  }, [redirectTarget, router]);
+
+  const renderBlockingShell = (message: string) => (
+    <div className="min-h-screen bg-gray-50">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl items-start gap-6 px-6 py-8">
+        <div className="hidden w-64 shrink-0 rounded-2xl border border-gray-200 bg-white p-4 lg:block">
+          <div className="mb-4 h-6 w-32 animate-pulse rounded bg-gray-200" />
+          <div className="space-y-3">
+            <div className="h-10 animate-pulse rounded-xl bg-gray-100" />
+            <div className="h-10 animate-pulse rounded-xl bg-gray-100" />
+            <div className="h-10 animate-pulse rounded-xl bg-gray-100" />
+            <div className="h-10 animate-pulse rounded-xl bg-gray-100" />
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5">
+            <div className="space-y-2">
+              <div className="h-7 w-40 animate-pulse rounded bg-gray-200" />
+              <div className="h-4 w-56 animate-pulse rounded bg-gray-100" />
+            </div>
+            <div className="h-9 w-28 animate-pulse rounded-lg bg-gray-200" />
+          </div>
+          <div className="px-6 py-10">
+            <div className="max-w-md space-y-4">
+              <div className="h-4 w-48 animate-pulse rounded bg-gray-100" />
+              <div className="h-4 w-64 animate-pulse rounded bg-gray-100" />
+              <div className="h-4 w-56 animate-pulse rounded bg-gray-100" />
+            </div>
+            <p className="mt-8 text-sm text-gray-500">{message}</p>
+          </div>
+        </div>
       </div>
-    );
+    </div>
+  );
+
+  if (loading) {
+    return renderBlockingShell('Checking your session...');
   }
 
-  // ✅ FIXED: Show "Redirecting..." UI instead of null to prevent blank screen
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Redirecting...</div>
-      </div>
-    );
+  if (redirectTarget) {
+    return renderBlockingShell('Redirecting you to the right place...');
   }
 
   return (

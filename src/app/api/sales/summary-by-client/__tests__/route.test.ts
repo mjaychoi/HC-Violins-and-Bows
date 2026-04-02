@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GET } from '../route';
-import { getServerSupabase } from '@/lib/supabase-server';
 import { errorHandler } from '@/utils/errorHandler';
 import { validateDateString } from '@/utils/inputValidation';
 
-jest.mock('@/lib/supabase-server');
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/inputValidation');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
+let mockUserSupabase: any;
+
 jest.mock('@/app/api/_utils/apiHandler', () => ({
   apiHandler: jest.fn(async (_request, _options, handler) => {
     try {
@@ -27,18 +27,24 @@ jest.mock('@/app/api/_utils/apiHandler', () => ({
 jest.mock('@/app/api/_utils/withSentryRoute', () => ({
   withSentryRoute: (fn: unknown) => fn,
 }));
-jest.mock('@/app/api/_utils/withAuthRoute', () => ({
-  withAuthRoute: (handler: (req: unknown, user: unknown) => unknown) => {
-    return (req: unknown) => {
-      const TEST_USER = { id: 'test-user-id' } as any;
-      return handler(req, TEST_USER);
-    };
-  },
-}));
+jest.mock('@/app/api/_utils/withAuthRoute', () => {
+  const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
+  return {
+    ...actual,
+    withAuthRoute:
+      (handler: (req: unknown, auth: unknown) => unknown) => (req: unknown) =>
+        handler(req, {
+          user: { id: 'test-user-id' },
+          accessToken: 'test-token',
+          orgId: 'test-org',
+          clientId: 'test-client',
+          role: 'admin',
+          userSupabase: mockUserSupabase,
+          isTestBypass: true,
+        }),
+  };
+});
 
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
->;
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
 const mockValidateDateString = validateDateString as jest.MockedFunction<
   typeof validateDateString
@@ -47,6 +53,7 @@ const mockValidateDateString = validateDateString as jest.MockedFunction<
 describe('/api/sales/summary-by-client', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUserSupabase = { from: jest.fn() };
     mockValidateDateString.mockImplementation(date => {
       return typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date);
     });
@@ -90,11 +97,9 @@ describe('/api/sales/summary-by-client', () => {
         not: mockNot,
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client'
@@ -142,11 +147,9 @@ describe('/api/sales/summary-by-client', () => {
         not: mockNot,
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client'
@@ -191,11 +194,9 @@ describe('/api/sales/summary-by-client', () => {
         not: mockNot,
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client'
@@ -237,11 +238,9 @@ describe('/api/sales/summary-by-client', () => {
         not: mockNot,
       };
 
-      const mockSupabaseClient = {
+      mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
-
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      };
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client'
@@ -281,7 +280,7 @@ describe('/api/sales/summary-by-client', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client'
@@ -313,7 +312,7 @@ describe('/api/sales/summary-by-client', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client'
@@ -352,7 +351,7 @@ describe('/api/sales/summary-by-client', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client?fromDate=2024-01-01&toDate=2024-01-31'
@@ -390,7 +389,7 @@ describe('/api/sales/summary-by-client', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client?fromDate=invalid&toDate=invalid'
@@ -426,7 +425,7 @@ describe('/api/sales/summary-by-client', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client?fromDate=2024-01-01'
@@ -462,7 +461,7 @@ describe('/api/sales/summary-by-client', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client?toDate=2024-01-31'
@@ -503,7 +502,7 @@ describe('/api/sales/summary-by-client', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client'
@@ -541,7 +540,7 @@ describe('/api/sales/summary-by-client', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client'
@@ -588,7 +587,7 @@ describe('/api/sales/summary-by-client', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockUserSupabase = mockSupabaseClient;
 
       const request = new NextRequest(
         'http://localhost/api/sales/summary-by-client'
