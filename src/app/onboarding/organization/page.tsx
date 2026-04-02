@@ -1,11 +1,29 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function OrganizationOnboardingPage() {
+function OrganizationOnboardingFallback() {
+  return (
+    <div className="min-h-screen bg-gray-50 px-6 py-16">
+      <div className="mx-auto max-w-3xl rounded-3xl border border-gray-200 bg-white p-10 shadow-sm">
+        <div className="h-6 w-40 animate-pulse rounded bg-gray-200" />
+        <div className="mt-6 h-10 w-3/4 animate-pulse rounded bg-gray-100" />
+        <div className="mt-4 h-4 w-full animate-pulse rounded bg-gray-100" />
+        <div className="mt-3 h-4 w-5/6 animate-pulse rounded bg-gray-100" />
+        <div className="mt-10 grid gap-4 md:grid-cols-3">
+          <div className="h-40 animate-pulse rounded-2xl bg-gray-100" />
+          <div className="h-40 animate-pulse rounded-2xl bg-gray-100" />
+          <div className="h-40 animate-pulse rounded-2xl bg-gray-100" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrganizationOnboardingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading, hasOrgContext, role, signOut } = useAuth();
@@ -27,21 +45,7 @@ export default function OrganizationOnboardingPage() {
   }, [hasOrgContext, loading, nextDestination, router, user]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 px-6 py-16">
-        <div className="mx-auto max-w-3xl rounded-3xl border border-gray-200 bg-white p-10 shadow-sm">
-          <div className="h-6 w-40 animate-pulse rounded bg-gray-200" />
-          <div className="mt-6 h-10 w-3/4 animate-pulse rounded bg-gray-100" />
-          <div className="mt-4 h-4 w-full animate-pulse rounded bg-gray-100" />
-          <div className="mt-3 h-4 w-5/6 animate-pulse rounded bg-gray-100" />
-          <div className="mt-10 grid gap-4 md:grid-cols-3">
-            <div className="h-40 animate-pulse rounded-2xl bg-gray-100" />
-            <div className="h-40 animate-pulse rounded-2xl bg-gray-100" />
-            <div className="h-40 animate-pulse rounded-2xl bg-gray-100" />
-          </div>
-        </div>
-      </div>
-    );
+    return <OrganizationOnboardingFallback />;
   }
 
   if (!user || hasOrgContext) {
@@ -159,5 +163,13 @@ export default function OrganizationOnboardingPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function OrganizationOnboardingPage() {
+  return (
+    <Suspense fallback={<OrganizationOnboardingFallback />}>
+      <OrganizationOnboardingPageContent />
+    </Suspense>
   );
 }
