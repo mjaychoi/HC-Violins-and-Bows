@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { checkMigrations } from '@/app/api/_utils/healthCheck';
 
+// This is a health check endpoint for the API.
 export async function GET() {
   const result = await checkMigrations();
 
