@@ -9,7 +9,7 @@ STABLE
 AS $$
   SELECT COALESCE(
     (auth.jwt() -> 'app_metadata' ->> 'org_id'),
-    (auth.jwt() -> 'user_metadata' ->> 'org_id'),
+    (auth.jwt() -> 'app_metadata' ->> 'organization_id'),
     (auth.jwt() ->> 'org_id')
   )::uuid
 $$;

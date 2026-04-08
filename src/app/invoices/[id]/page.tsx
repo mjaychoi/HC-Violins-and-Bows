@@ -63,6 +63,12 @@ export default function InvoiceDetailPage() {
     usePermissions();
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [fetchState, setFetchState] = useState<
+    'loading' | 'success' | 'not_found' | 'error'
+  >('loading');
+  const [fetchErrorMessage, setFetchErrorMessage] = useState<string | null>(
+    null
+  );
   const pdfIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -71,22 +77,41 @@ export default function InvoiceDetailPage() {
   const fetchInvoice = useCallback(async () => {
     if (!invoiceId) {
       setInvoice(null);
+      setFetchState('not_found');
+      setFetchErrorMessage(null);
       setLoading(false);
       return;
     }
     setLoading(true);
+    setFetchState('loading');
+    setFetchErrorMessage(null);
     try {
       const response = await apiFetch(`/api/invoices/${invoiceId}`);
-      const result = await response.json();
+      const result = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(result?.error || 'Failed to fetch invoice');
+        const message =
+          result?.message || result?.error || 'Failed to fetch invoice';
+
+        if (response.status === 404) {
+          setInvoice(null);
+          setFetchState('not_found');
+          setFetchErrorMessage(null);
+          return;
+        }
+
+        throw new Error(message);
       }
 
       setInvoice(result.data as Invoice);
+      setFetchState('success');
     } catch (error) {
       handleError(error, 'Fetch invoice');
       setInvoice(null);
+      setFetchState('error');
+      setFetchErrorMessage(
+        error instanceof Error ? error.message : 'Failed to load invoice'
+      );
     } finally {
       setLoading(false);
     }
@@ -185,7 +210,35 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  if (!invoice) {
+  if (fetchState === 'error') {
+    return (
+      <AppLayout title="Invoice">
+        <div className="p-6">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-6 py-8">
+            <h2 className="text-lg font-semibold text-red-800">
+              Failed to load invoice
+            </h2>
+            <p className="mt-2 text-sm text-red-700">
+              {fetchErrorMessage || 'The invoice could not be loaded.'}
+            </p>
+            <div className="mt-4 flex gap-3">
+              <Button variant="secondary" onClick={() => void fetchInvoice()}>
+                Retry
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => router.push('/invoices')}
+              >
+                Back to invoices
+              </Button>
+            </div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (fetchState === 'not_found' || !invoice) {
     return (
       <AppLayout title="Invoice">
         <div className="p-6">

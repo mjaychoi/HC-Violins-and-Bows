@@ -18,12 +18,14 @@ interface ConnectionsState {
   connections: ClientInstrument[];
   loading: boolean;
   submitting: boolean;
+  error: unknown | null;
   lastUpdated: Date | null;
 }
 
 type ConnectionsAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_SUBMITTING'; payload: boolean }
+  | { type: 'SET_ERROR'; payload: unknown | null }
   | { type: 'SET_CONNECTIONS'; payload: ClientInstrument[] }
   | { type: 'ADD_CONNECTION'; payload: ClientInstrument }
   | {
@@ -38,6 +40,7 @@ const initialState: ConnectionsState = {
   connections: [],
   loading: false,
   submitting: false,
+  error: null,
   lastUpdated: null,
 };
 
@@ -50,8 +53,15 @@ function connectionsReducer(
       return { ...state, loading: action.payload };
     case 'SET_SUBMITTING':
       return { ...state, submitting: action.payload };
+    case 'SET_ERROR':
+      return { ...state, error: action.payload };
     case 'SET_CONNECTIONS':
-      return { ...state, connections: action.payload, lastUpdated: new Date() };
+      return {
+        ...state,
+        connections: action.payload,
+        error: null,
+        lastUpdated: new Date(),
+      };
     case 'ADD_CONNECTION':
       return {
         ...state,
@@ -165,6 +175,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
 
       return deduped(async () => {
         dispatch({ type: 'SET_LOADING', payload: true });
+        dispatch({ type: 'SET_ERROR', payload: null });
         try {
           const res = await apiFetch(
             '/api/connections?orderBy=created_at&ascending=false'
@@ -193,6 +204,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
             dispatch({ type: 'SET_CONNECTIONS', payload: next });
           }
         } catch (err) {
+          dispatch({ type: 'SET_ERROR', payload: err });
           handleError(err, 'Fetch connections');
         } finally {
           dispatch({ type: 'SET_LOADING', payload: false });
@@ -353,6 +365,7 @@ export function useConnections() {
     connections: state.connections,
     loading: state.loading,
     submitting: state.submitting,
+    error: state.error,
     lastUpdated: state.lastUpdated,
     ...actions,
   };

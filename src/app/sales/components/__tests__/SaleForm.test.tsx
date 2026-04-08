@@ -6,10 +6,14 @@ import {
   useUnifiedClients,
   useUnifiedInstruments,
 } from '@/hooks/useUnifiedData';
+import { apiFetch } from '@/utils/apiFetch';
 
 jest.mock('@/hooks/useUnifiedData');
 jest.mock('@/hooks/useOutsideClose', () => ({
   useOutsideClose: jest.fn(),
+}));
+jest.mock('@/utils/apiFetch', () => ({
+  apiFetch: jest.fn(),
 }));
 
 const mockUseUnifiedClients = useUnifiedClients as jest.MockedFunction<
@@ -18,6 +22,7 @@ const mockUseUnifiedClients = useUnifiedClients as jest.MockedFunction<
 const mockUseUnifiedInstruments = useUnifiedInstruments as jest.MockedFunction<
   typeof useUnifiedInstruments
 >;
+const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;
 
 const mockClient = {
   id: 'client-1',
@@ -58,6 +63,7 @@ describe('SaleForm', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockApiFetch.mockReset();
 
     mockUseUnifiedClients.mockReturnValue({
       clients: [baseClient],
@@ -437,6 +443,43 @@ describe('SaleForm', () => {
     await user.click(closeButton);
 
     expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it('does not mutate instrument status before sale creation when submission fails', async () => {
+    const user = userEvent.setup();
+    const rejectingOnSubmit = jest
+      .fn()
+      .mockRejectedValue(new Error('Sale create failed'));
+
+    render(
+      <SaleForm
+        isOpen={true}
+        onClose={mockOnClose}
+        onSubmit={rejectingOnSubmit}
+        submitting={false}
+        initialInstrument={{ ...mockInstrument, status: 'Available' }}
+        autoUpdateInstrumentStatus={true}
+      />
+    );
+
+    const dateInput = screen.getByLabelText(/Date/i) as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: '2024-01-15' } });
+
+    const submitButton = screen.getByText('Save Sale');
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(rejectingOnSubmit).toHaveBeenCalled();
+    });
+
+    expect(mockApiFetch).not.toHaveBeenCalledWith(
+      '/api/instruments',
+      expect.anything(),
+      expect.anything()
+    );
+    expect(
+      screen.queryByText(/Sale recorded successfully/i)
+    ).not.toBeInTheDocument();
   });
 
   it('should disable submit button when submitting', () => {

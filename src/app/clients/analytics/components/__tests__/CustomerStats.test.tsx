@@ -105,6 +105,7 @@ describe('CustomerStats', () => {
     const customerWithoutPurchases: CustomerWithPurchases = {
       ...mockCustomer1,
       purchases: [],
+      lastPurchaseAt: null,
     };
     const { container } = render(
       <CustomerStats customers={[customerWithoutPurchases]} />

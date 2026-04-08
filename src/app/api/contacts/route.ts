@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { errorHandler } from '@/utils/errorHandler';
 import type { ContactLog, Client, Instrument } from '@/types';
-import { validateUUID } from '@/utils/inputValidation';
+import { validateDateString, validateUUID } from '@/utils/inputValidation';
 import { todayLocalYMD } from '@/utils/dateParsing';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
@@ -11,6 +11,22 @@ import {
 } from '@/app/api/_utils/withAuthRoute';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
+import { logError } from '@/utils/logger';
+
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 200;
+const MAX_CLIENT_IDS = 50;
+
+function parsePage(input: string | null): number {
+  const parsed = Number.parseInt(input ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function parsePageSize(input: string | null): number {
+  const parsed = Number.parseInt(input ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_PAGE_SIZE;
+  return Math.min(parsed, MAX_PAGE_SIZE);
+}
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
@@ -21,31 +37,68 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       context: 'ContactsAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required', success: false },
+          status: 403,
+        };
+      }
+
       const searchParams = request.nextUrl.searchParams;
       const clientId = searchParams.get('clientId');
       const clientIdsParam = searchParams.get('clientIds'); // Batch query: comma-separated UUIDs
       const instrumentId = searchParams.get('instrumentId');
       const fromDate = searchParams.get('fromDate');
       const toDate = searchParams.get('toDate');
+      const page = parsePage(searchParams.get('page'));
+      const pageSize = parsePageSize(searchParams.get('pageSize'));
       const hasFollowUp = searchParams.get('hasFollowUp') === 'true';
       const followUpDate = searchParams.get('followUpDate'); // 오늘 연락해야 할 사람 필터
       const followUpDue = searchParams.get('followUpDue') === 'true'; // 오늘 및 지난 Follow-up 필터
+
+      const batchClientIds = clientIdsParam
+        ? clientIdsParam
+            .split(',')
+            .map(id => id.trim())
+            .filter(id => validateUUID(id))
+        : [];
+
+      if (fromDate && !validateDateString(fromDate)) {
+        return {
+          payload: { error: 'Invalid fromDate format', success: false },
+          status: 400,
+        };
+      }
+
+      if (toDate && !validateDateString(toDate)) {
+        return {
+          payload: { error: 'Invalid toDate format', success: false },
+          status: 400,
+        };
+      }
+
+      if (batchClientIds.length > MAX_CLIENT_IDS) {
+        return {
+          payload: {
+            error: `clientIds cannot exceed ${MAX_CLIENT_IDS} IDs`,
+            success: false,
+          },
+          status: 400,
+        };
+      }
 
       // FIXED: Use separate queries to avoid Supabase relationship issues
       // Fetch contact logs first, then enrich with client and instrument data
       let query = auth.userSupabase
         .from('contact_logs')
-        .select('*', { count: 'exact' });
+        .select('*', { count: 'exact' })
+        .eq('org_id', auth.orgId!);
 
       // Filter by client_id(s) - support both single and batch
       if (clientIdsParam) {
-        // Batch query: parse comma-separated UUIDs
-        const ids = clientIdsParam
-          .split(',')
-          .map(id => id.trim())
-          .filter(id => validateUUID(id));
-        if (ids.length > 0) {
-          query = query.in('client_id', ids);
+        if (batchClientIds.length > 0) {
+          query = query.in('client_id', batchClientIds);
         }
       } else if (clientId && validateUUID(clientId)) {
         // Single client query (backward compatibility)
@@ -92,16 +145,18 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         query = query.order('contact_date', { ascending: false });
       }
 
-      const { data: logs, error, count } = await query;
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+
+      const { data: logs, error, count } = await query.range(from, to);
 
       // 개발 환경에서 더 자세한 에러 정보 로깅
       if (error && process.env.NODE_ENV === 'development') {
-        console.error('[ContactsAPI.GET] Supabase error:', {
-          error,
-          message: error.message,
+        logError('contacts.get.supabase_error', error, 'ContactsAPI', {
+          code: error.code,
           details: error.details,
           hint: error.hint,
-          code: error.code,
+          path: request.nextUrl.pathname,
         });
       }
 
@@ -126,6 +181,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         const { data: clientsData } = await auth.userSupabase
           .from('clients')
           .select('*')
+          .eq('org_id', auth.orgId!)
           .in('id', Array.from(clientIdSet));
         if (clientsData) {
           clientsData.forEach((client: Client) => {
@@ -138,6 +194,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         const { data: instrumentsData } = await auth.userSupabase
           .from('instruments')
           .select('*')
+          .eq('org_id', auth.orgId!)
           .in('id', Array.from(instrumentIds));
         if (instrumentsData) {
           instrumentsData.forEach((instrument: Instrument) => {
@@ -159,6 +216,9 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         payload: {
           data: enrichedLogs,
           count: count || 0,
+          total: count || 0,
+          page,
+          pageSize,
           success: true,
         },
         metadata: {
@@ -172,6 +232,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           hasFollowUp,
           followUpDate,
           followUpDue,
+          page,
+          pageSize,
           recordCount: enrichedLogs?.length || 0,
           totalCount: count || 0,
         },
@@ -262,6 +324,71 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           payload: { error: 'Invalid instrument_id format', success: false },
           status: 400,
         };
+      }
+
+      if (!validateDateString(normalizedContactDate)) {
+        return {
+          payload: { error: 'Invalid contact_date format', success: false },
+          status: 400,
+        };
+      }
+
+      if (next_follow_up_date && !validateDateString(next_follow_up_date)) {
+        return {
+          payload: {
+            error: 'Invalid next_follow_up_date format',
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
+      const { data: clientRecord, error: clientError } = await auth.userSupabase
+        .from('clients')
+        .select('id')
+        .eq('id', client_id)
+        .eq('org_id', auth.orgId!)
+        .maybeSingle();
+
+      if (clientError) {
+        throw errorHandler.handleSupabaseError(clientError, 'Fetch client');
+      }
+
+      if (!clientRecord) {
+        return {
+          payload: {
+            error: 'Client not found in organization',
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
+      if (instrument_id) {
+        const { data: instrumentRecord, error: instrumentError } =
+          await auth.userSupabase
+            .from('instruments')
+            .select('id')
+            .eq('id', instrument_id)
+            .eq('org_id', auth.orgId!)
+            .maybeSingle();
+
+        if (instrumentError) {
+          throw errorHandler.handleSupabaseError(
+            instrumentError,
+            'Fetch instrument'
+          );
+        }
+
+        if (!instrumentRecord) {
+          return {
+            payload: {
+              error: 'Instrument not found in organization',
+              success: false,
+            },
+            status: 400,
+          };
+        }
       }
 
       const { data, error } = await auth.userSupabase
@@ -358,6 +485,32 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       }
 
       if (
+        updates.contact_date !== undefined &&
+        updates.contact_date !== null &&
+        !validateDateString(updates.contact_date)
+      ) {
+        return {
+          payload: { error: 'Invalid contact_date format', success: false },
+          status: 400,
+        };
+      }
+
+      if (
+        updates.next_follow_up_date !== undefined &&
+        updates.next_follow_up_date !== null &&
+        updates.next_follow_up_date !== '' &&
+        !validateDateString(updates.next_follow_up_date)
+      ) {
+        return {
+          payload: {
+            error: 'Invalid next_follow_up_date format',
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
+      if (
         updates.contact_type &&
         !['email', 'phone', 'meeting', 'note', 'follow_up'].includes(
           updates.contact_type
@@ -388,6 +541,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         .from('contact_logs')
         .update(cleanUpdates)
         .eq('id', id)
+        .eq('org_id', auth.orgId!)
         .select(
           `
           *,
@@ -458,19 +612,26 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const { error } = await auth.userSupabase
+      const { error, count } = await auth.userSupabase
         .from('contact_logs')
-        .delete()
-        .eq('id', id);
+        .delete({ count: 'exact' })
+        .eq('id', id)
+        .eq('org_id', auth.orgId!);
 
       if (error) {
         throw errorHandler.handleSupabaseError(error, 'Delete contact log');
       }
 
+      if (!count || count === 0) {
+        return {
+          payload: { error: 'Contact log not found', success: false },
+          status: 404,
+          metadata: { id },
+        };
+      }
+
       return {
-        payload: {
-          success: true,
-        },
+        payload: { success: true },
         metadata: { id },
       };
     }

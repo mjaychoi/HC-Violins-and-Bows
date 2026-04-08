@@ -10,6 +10,19 @@ const mockUseClientSalesData = useClientSalesData as jest.MockedFunction<
   typeof useClientSalesData
 >;
 
+function buildSalesDataMock(
+  overrides: Partial<ReturnType<typeof useClientSalesData>> = {}
+): ReturnType<typeof useClientSalesData> {
+  return {
+    totalSpend: 0,
+    purchaseCount: 0,
+    lastPurchaseDate: '—',
+    loading: false,
+    status: 'empty',
+    ...overrides,
+  };
+}
+
 describe('ClientRowExpand', () => {
   const mockClientId = 'client-123';
 
@@ -18,12 +31,13 @@ describe('ClientRowExpand', () => {
   });
 
   it('renders loading skeleton when loading', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 0,
-      purchaseCount: 0,
-      lastPurchaseDate: 'N/A',
-      loading: true,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        lastPurchaseDate: 'N/A',
+        loading: true,
+        status: 'loading',
+      })
+    );
 
     const { container } = render(
       <table>
@@ -38,12 +52,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('renders sales data when loaded', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 5000,
-      purchaseCount: 3,
-      lastPurchaseDate: '2024-01-15',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: 5000,
+        purchaseCount: 3,
+        lastPurchaseDate: '2024-01-15',
+        status: 'success',
+      })
+    );
 
     render(
       <table>
@@ -62,12 +78,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('formats currency amounts correctly', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 1234567,
-      purchaseCount: 10,
-      lastPurchaseDate: '2024-01-20',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: 1234567,
+        purchaseCount: 10,
+        lastPurchaseDate: '2024-01-20',
+        status: 'success',
+      })
+    );
 
     render(
       <table>
@@ -81,12 +99,7 @@ describe('ClientRowExpand', () => {
   });
 
   it('handles zero values', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 0,
-      purchaseCount: 0,
-      lastPurchaseDate: '—',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(buildSalesDataMock());
 
     render(
       <table>
@@ -102,12 +115,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('calls useClientSalesData with correct clientId', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 1000,
-      purchaseCount: 1,
-      lastPurchaseDate: '2024-01-10',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: 1000,
+        purchaseCount: 1,
+        lastPurchaseDate: '2024-01-10',
+        status: 'success',
+      })
+    );
 
     render(
       <table>
@@ -121,12 +136,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('renders correct structure with grid layout', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 2000,
-      purchaseCount: 2,
-      lastPurchaseDate: '2024-01-12',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: 2000,
+        purchaseCount: 2,
+        lastPurchaseDate: '2024-01-12',
+        status: 'success',
+      })
+    );
 
     const { container } = render(
       <table>
@@ -147,12 +164,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('renders table row structure with correct colspan', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 1000,
-      purchaseCount: 1,
-      lastPurchaseDate: '2024-01-10',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: 1000,
+        purchaseCount: 1,
+        lastPurchaseDate: '2024-01-10',
+        status: 'success',
+      })
+    );
 
     const { container } = render(
       <table>
@@ -172,12 +191,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('handles large currency amounts correctly', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 999999999,
-      purchaseCount: 100,
-      lastPurchaseDate: '2024-01-20',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: 999999999,
+        purchaseCount: 100,
+        lastPurchaseDate: '2024-01-20',
+        status: 'success',
+      })
+    );
 
     render(
       <table>
@@ -192,12 +213,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('handles negative currency amounts (if applicable)', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: -1000, // Refunds could create negative amounts
-      purchaseCount: 5,
-      lastPurchaseDate: '2024-01-15',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: -1000,
+        purchaseCount: 5,
+        lastPurchaseDate: '2024-01-15',
+        status: 'success',
+      })
+    );
 
     render(
       <table>
@@ -212,12 +235,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('handles empty lastPurchaseDate gracefully', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 5000,
-      purchaseCount: 3,
-      lastPurchaseDate: '',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: 5000,
+        purchaseCount: 3,
+        lastPurchaseDate: '',
+        status: 'success',
+      })
+    );
 
     render(
       <table>
@@ -236,12 +261,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('handles null lastPurchaseDate gracefully', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 5000,
-      purchaseCount: 3,
-      lastPurchaseDate: null as any,
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: 5000,
+        purchaseCount: 3,
+        lastPurchaseDate: null as any,
+        status: 'success',
+      })
+    );
 
     render(
       <table>
@@ -255,12 +282,13 @@ describe('ClientRowExpand', () => {
   });
 
   it('renders loading skeleton with correct structure', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 0,
-      purchaseCount: 0,
-      lastPurchaseDate: 'N/A',
-      loading: true,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        lastPurchaseDate: 'N/A',
+        loading: true,
+        status: 'loading',
+      })
+    );
 
     const { container } = render(
       <table>
@@ -283,12 +311,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('displays all three metrics in separate cards', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 7500,
-      purchaseCount: 15,
-      lastPurchaseDate: '2024-01-25',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: 7500,
+        purchaseCount: 15,
+        lastPurchaseDate: '2024-01-25',
+        status: 'success',
+      })
+    );
 
     render(
       <table>
@@ -310,12 +340,14 @@ describe('ClientRowExpand', () => {
   });
 
   it('handles very small currency amounts', () => {
-    mockUseClientSalesData.mockReturnValue({
-      totalSpend: 1,
-      purchaseCount: 1,
-      lastPurchaseDate: '2024-01-01',
-      loading: false,
-    });
+    mockUseClientSalesData.mockReturnValue(
+      buildSalesDataMock({
+        totalSpend: 1,
+        purchaseCount: 1,
+        lastPurchaseDate: '2024-01-01',
+        status: 'success',
+      })
+    );
 
     render(
       <table>

@@ -34,7 +34,10 @@ jest.mock('@/utils/monitoring', () => ({
   captureException: jest.fn(),
 }));
 jest.mock('@/utils/errorSanitization', () => ({
-  createSafeErrorResponse: jest.fn(error => ({ error: error.message })),
+  createSafeErrorResponse: jest.fn(error => ({
+    message: error.message,
+    retryable: true,
+  })),
   createLogErrorInfo: jest.fn(error => ({ message: error.message })),
 }));
 
@@ -76,10 +79,22 @@ describe('/api/invoices/images', () => {
       from: jest.fn(() => ({
         upload: mockUpload,
         createSignedUrl: mockCreateSignedUrl,
+        remove: jest.fn().mockResolvedValue({ data: null, error: null }),
       })),
     };
 
+    const mockTrackingQuery = {
+      upsert: jest.fn().mockResolvedValue({
+        data: null,
+        error: null,
+      }),
+    };
+
     mockUserSupabase = {
+      from: jest.fn((table: string) => {
+        if (table === 'invoice_image_uploads') return mockTrackingQuery;
+        throw new Error(`Unexpected table ${table}`);
+      }),
       storage: mockStorage as any,
     };
 
@@ -100,8 +115,18 @@ describe('/api/invoices/images', () => {
     expect(data.signedUrl).toBe(
       'https://example.com/invoice-items/test-123.jpg'
     );
-    expect(data.filePath).toContain('test-org/test-user/invoice-item-');
+    expect(data.filePath).toContain('test-org/invoice-item-');
+    expect(data.filePath.split('/')).toHaveLength(2);
     expect(mockUpload).toHaveBeenCalled();
+    expect(mockUpload.mock.calls[0][0].split('/')).toHaveLength(2);
+    expect(mockTrackingQuery.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        org_id: 'test-org',
+        uploaded_by_user_id: 'test-user',
+        file_path: data.filePath,
+      }),
+      { onConflict: 'org_id,file_path' }
+    );
   });
 
   it('rejects non-image files', async () => {
@@ -136,7 +161,10 @@ describe('/api/invoices/images', () => {
     const data = await response.json();
 
     expect(response.status).toBe(400);
-    expect(data.error).toContain('image');
+    expect(data).toMatchObject({
+      message: expect.stringContaining('image'),
+      retryable: false,
+    });
   });
 
   it('rejects files larger than 10MB', async () => {
@@ -177,7 +205,10 @@ describe('/api/invoices/images', () => {
     const data = await response.json();
 
     expect(response.status).toBe(400);
-    expect(data.error).toContain('size');
+    expect(data).toMatchObject({
+      message: expect.stringContaining('size'),
+      retryable: false,
+    });
   });
 
   it('returns error when no file is provided', async () => {
@@ -194,7 +225,10 @@ describe('/api/invoices/images', () => {
     const data = await response.json();
 
     expect(response.status).toBe(400);
-    expect(data.error).toContain('No file provided');
+    expect(data).toMatchObject({
+      message: 'No file provided',
+      retryable: false,
+    });
   });
 
   it('handles upload errors', async () => {
@@ -227,10 +261,12 @@ describe('/api/invoices/images', () => {
           data: { signedUrl: 'https://example.com/invoice-items/test-123.jpg' },
           error: null,
         }),
+        remove: jest.fn().mockResolvedValue({ data: null, error: null }),
       })),
     };
 
     mockUserSupabase = {
+      from: jest.fn(),
       storage: mockStorage as any,
     };
 

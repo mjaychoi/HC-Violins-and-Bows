@@ -4,6 +4,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/utils/apiFetch';
 
+const INVOICE_SETTINGS_API_PATH = '/api/invoices/invoice_settings';
+
 export type InvoiceSettings = {
   business_name: string;
   business_address: string;
@@ -44,7 +46,7 @@ export function useInvoiceSettings() {
   const fetchSettings = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/api/invoice-settings');
+      const res = await apiFetch(INVOICE_SETTINGS_API_PATH);
       const json = await res.json();
       const data = json?.data ?? {};
 
@@ -87,7 +89,7 @@ export function useInvoiceSettings() {
             : null,
         };
 
-        const res = await apiFetch('/api/invoice-settings', {
+        const res = await apiFetch(INVOICE_SETTINGS_API_PATH, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(payload),

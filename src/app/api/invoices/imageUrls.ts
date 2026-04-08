@@ -3,6 +3,7 @@ import { logWarn } from '@/utils/logger';
 
 export const INVOICE_IMAGE_BUCKET = 'invoices';
 export const INVOICE_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 15;
+export const INVOICE_IMAGE_STORAGE_PATH_SEGMENTS = 2;
 
 type UserScopedSupabase = {
   storage: {
@@ -53,10 +54,51 @@ function extractInvoiceStoragePathFromUrl(value: string): string | null {
   return null;
 }
 
-function normalizeInvoiceImageReference(value: string | null): string | null {
+export function normalizeInvoiceImageReference(
+  value: string | null
+): string | null {
   if (!value || typeof value !== 'string') return null;
   if (!isAbsoluteUrl(value)) return value.trim() || null;
   return extractInvoiceStoragePathFromUrl(value);
+}
+
+export function buildInvoiceImageStoragePath(
+  orgId: string,
+  fileName: string
+): string {
+  return `${orgId.trim()}/${fileName.trim()}`;
+}
+
+export function getInvoiceImageStoragePathSegmentCount(path: string): number {
+  return path
+    .split('/')
+    .map(segment => segment.trim())
+    .filter(Boolean).length;
+}
+
+export function matchesInvoiceImageStoragePolicyShape(path: string): boolean {
+  return (
+    getInvoiceImageStoragePathSegmentCount(path) ===
+    INVOICE_IMAGE_STORAGE_PATH_SEGMENTS
+  );
+}
+
+export function extractInvoiceImageStoragePaths(
+  items:
+    | Array<{
+        image_url?: string | null;
+      }>
+    | undefined
+    | null
+): string[] {
+  if (!items || items.length === 0) return [];
+
+  const paths = items
+    .map(item => normalizeInvoiceImageReference(item.image_url ?? null))
+    .filter((path): path is string => Boolean(path))
+    .filter(matchesInvoiceImageStoragePolicyShape);
+
+  return [...new Set(paths)];
 }
 
 export function isInvoiceImageStoragePath(

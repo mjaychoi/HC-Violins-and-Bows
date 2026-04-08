@@ -7,6 +7,7 @@ import { getStorage } from '@/utils/storage';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import { createApiErrorResponse } from '@/app/api/_utils/apiErrors';
 import {
   requireAdmin,
   requireOrgContext,
@@ -33,13 +34,12 @@ const EXTENSION_MIME_TYPES: Record<string, string> = {
   webp: 'image/webp',
 };
 
-const getParams = async (context: { params: Promise<{ id: string }> }) => {
-  const p: unknown = context.params;
-  const params =
-    typeof (p as { then?: unknown })?.then === 'function'
-      ? await (p as Promise<{ id: string }>)
-      : (p as { id: string });
-  return params;
+const getParams = async (context?: { params?: Promise<{ id: string }> }) => {
+  if (!context?.params) {
+    return { id: '' };
+  }
+
+  return await context.params;
 };
 
 type UploadFileLike = {
@@ -81,21 +81,34 @@ function getInstrumentImageStorageKey(
   return `${orgId}/${instrumentId}/${fileName}`;
 }
 
+function stripInstrumentScope<T extends { instruments?: unknown }>(
+  row: T
+): Omit<T, 'instruments'> {
+  const rest = { ...row };
+  delete rest.instruments;
+  return rest;
+}
+
 async function ensureOwnedInstrument(
   auth: AuthContext,
   id: string
 ): Promise<NextResponse | null> {
+  if (!auth.orgId) {
+    return createApiErrorResponse(
+      { message: 'Organization context required' },
+      403
+    );
+  }
+
   const { data: instrument, error } = await auth.userSupabase
     .from('instruments')
     .select('id')
     .eq('id', id)
+    .eq('org_id', auth.orgId!)
     .single();
 
   if (error || !instrument) {
-    return NextResponse.json(
-      { error: 'Instrument not found' },
-      { status: 404 }
-    );
+    return createApiErrorResponse({ message: 'Instrument not found' }, 404);
   }
 
   return null;
@@ -109,9 +122,9 @@ async function getHandlerInternal(
   try {
     const storage = getStorage();
     if (!validateUUID(id)) {
-      return NextResponse.json(
-        { error: 'Invalid instrument ID format' },
-        { status: 400 }
+      return createApiErrorResponse(
+        { message: 'Invalid instrument ID format' },
+        400
       );
     }
 
@@ -126,16 +139,19 @@ async function getHandlerInternal(
     const { data, error } = await auth.userSupabase
       .from('instrument_images')
       .select(
-        'id, instrument_id, image_url, file_name, file_size, mime_type, display_order, created_at'
+        'id, instrument_id, image_url, file_name, file_size, mime_type, display_order, created_at, instruments!inner(org_id)'
       )
       .eq('instrument_id', id)
+      .eq('instruments.org_id', auth.orgId!)
       .order('display_order', { ascending: true });
 
     if (error) {
       throw errorHandler.handleSupabaseError(error, 'Fetch instrument images');
     }
 
-    const images = (data || []) as InstrumentImage[];
+    const images = (
+      (data || []) as Array<InstrumentImage & { instruments?: unknown }>
+    ).map(image => stripInstrumentScope(image));
 
     // Attach signed URLs (preferred for private buckets)
     const signedImages = await Promise.all(
@@ -170,14 +186,14 @@ async function getHandlerInternal(
 
     return NextResponse.json({ data: signedImages });
   } catch (error) {
-    return NextResponse.json(
+    return createApiErrorResponse(
       {
-        error:
+        message:
           error instanceof Error
             ? error.message
             : 'Failed to fetch instrument images',
       },
-      { status: 500 }
+      500
     );
   }
 }
@@ -193,18 +209,19 @@ async function postHandlerInternal(
 ) {
   try {
     const storage = getStorage();
-    if (!validateUUID(id)) {
-      return NextResponse.json(
-        { error: 'Invalid instrument ID format' },
-        { status: 400 }
-      );
-    }
 
     const orgContextError = requireOrgContext(auth);
     if (orgContextError) return orgContextError;
 
     const adminError = requireAdmin(auth);
     if (adminError) return adminError;
+
+    if (!validateUUID(id)) {
+      return createApiErrorResponse(
+        { message: 'Invalid instrument ID format' },
+        400
+      );
+    }
 
     const ownershipError = await ensureOwnedInstrument(auth, id);
     if (ownershipError) return ownershipError;
@@ -213,79 +230,109 @@ async function postHandlerInternal(
     try {
       formData = await request.formData();
     } catch {
-      return NextResponse.json(
-        { error: 'Invalid multipart form data' },
-        { status: 400 }
+      return createApiErrorResponse(
+        { message: 'Invalid multipart form data' },
+        400
       );
     }
     const files = formData.getAll('images') as UploadFileLike[];
 
     if (!files || files.length === 0) {
-      return NextResponse.json(
-        { error: 'No image files provided' },
-        { status: 400 }
+      return createApiErrorResponse(
+        { message: 'No image files provided' },
+        400
       );
     }
 
-    const uploads: InstrumentImage[] = [];
-
+    // Validate all files before touching storage or DB
     for (const file of files) {
       if (!file) {
-        return NextResponse.json(
-          { error: 'Invalid image file payload' },
-          { status: 400 }
+        return createApiErrorResponse(
+          { message: 'Invalid image file payload' },
+          400
         );
       }
 
-      // Normalize type / infer from extension
       const mimeType = (file.type || '').toLowerCase();
       let normalizedType = mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
-
       const originalFileName = typeof file.name === 'string' ? file.name : '';
       const extension = originalFileName.split('.').pop()?.toLowerCase() || '';
       if (!ALLOWED_MIME_TYPES[normalizedType]) {
         const inferredType = EXTENSION_MIME_TYPES[extension];
         if (inferredType) normalizedType = inferredType;
       }
-
       if (!ALLOWED_MIME_TYPES[normalizedType]) {
-        return NextResponse.json(
-          { error: 'Unsupported image type' },
-          { status: 400 }
+        return createApiErrorResponse(
+          { message: 'Unsupported image type' },
+          400
         );
       }
+      if ((file.size ?? 0) > MAX_FILE_SIZE) {
+        return createApiErrorResponse(
+          { message: 'Image file size must be less than 5MB' },
+          400
+        );
+      }
+      if (typeof file.arrayBuffer !== 'function' || !originalFileName) {
+        return createApiErrorResponse(
+          { message: 'Invalid image file payload' },
+          400
+        );
+      }
+    }
 
+    // Tracks every committed (storage + DB) write so we can undo them all on failure.
+    const committed: Array<{ storedKey: string; insertedId: string }> = [];
+
+    async function rollbackAll() {
+      for (const { storedKey, insertedId } of committed) {
+        try {
+          await auth.userSupabase
+            .from('instrument_images')
+            .delete()
+            .eq('id', insertedId);
+        } catch (e) {
+          logError(
+            'rollback: failed to delete DB record',
+            { insertedId },
+            e instanceof Error ? e.message : String(e)
+          );
+        }
+        try {
+          await storage.deleteFile(storedKey);
+        } catch (e) {
+          logError(
+            'rollback: failed to delete storage file',
+            { storedKey },
+            e instanceof Error ? e.message : String(e)
+          );
+        }
+      }
+    }
+
+    const uploads: InstrumentImage[] = [];
+
+    for (const file of files) {
+      const mimeType = (file.type || '').toLowerCase();
+      let normalizedType = mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
+      const originalFileName = typeof file.name === 'string' ? file.name : '';
+      const extension = originalFileName.split('.').pop()?.toLowerCase() || '';
+      if (!ALLOWED_MIME_TYPES[normalizedType]) {
+        const inferredType = EXTENSION_MIME_TYPES[extension];
+        if (inferredType) normalizedType = inferredType;
+      }
       const fileSize = file.size ?? 0;
 
-      if (fileSize > MAX_FILE_SIZE) {
-        return NextResponse.json(
-          { error: 'Image file size must be less than 5MB' },
-          { status: 400 }
-        );
-      }
-
-      if (typeof file.arrayBuffer !== 'function' || !originalFileName) {
-        return NextResponse.json(
-          { error: 'Invalid image file payload' },
-          { status: 400 }
-        );
-      }
-
-      const arrayBuffer = await file.arrayBuffer();
+      const arrayBuffer = await file.arrayBuffer!();
       const buffer = Buffer.from(arrayBuffer);
-
       const fileExt = ALLOWED_MIME_TYPES[normalizedType];
 
-      // Sanitize filename
       const baseName = originalFileName.replace(/\.[^/.]+$/, '');
       const safeName = baseName
         .replace(/[^a-zA-Z0-9.-]/g, '_')
         .replace(/\s+/g, '_');
-
-      // Generate a unique stored filename
       const fileNameBase = `${Date.now()}-${randomUUID()}-${safeName}`;
       const fileName = `${fileNameBase}.${fileExt}`;
-
       const fileKey = getInstrumentImageStorageKey(auth.orgId!, id, fileName);
 
       let storedKey: string;
@@ -295,6 +342,7 @@ async function postHandlerInternal(
         storedKey = await storage.saveFile(buffer, fileKey, normalizedType);
         storedFileName = storedKey.split('/').pop() ?? fileName;
       } catch (uploadError) {
+        await rollbackAll();
         throw new Error(
           `Failed to upload image: ${
             uploadError instanceof Error
@@ -304,7 +352,6 @@ async function postHandlerInternal(
         );
       }
 
-      // Store a public URL for fallback (even if bucket is private)
       const publicUrl = storage.getFileUrl(storedKey);
 
       const { data: insertedId, error: insertError } =
@@ -317,52 +364,44 @@ async function postHandlerInternal(
         });
 
       if (insertError || typeof insertedId !== 'string') {
-        // Roll back storage upload to prevent orphan files
+        // This file's storage write has no matching DB record yet — clean it up
+        // before rolling back prior committed files.
         try {
           await storage.deleteFile(storedKey);
-        } catch (deleteError) {
+        } catch (e) {
           logError(
-            'Failed to rollback file upload:',
-            deleteError instanceof Error
-              ? deleteError.message
-              : String(deleteError)
+            'rollback: failed to delete orphaned storage file',
+            { storedKey },
+            e instanceof Error ? e.message : String(e)
           );
         }
+        await rollbackAll();
         throw errorHandler.handleSupabaseError(
           insertError,
           'Save instrument image'
         );
       }
 
+      // Storage + DB are now both committed for this file.
+      committed.push({ storedKey, insertedId });
+
       const { data: inserted, error: fetchInsertedError } =
         await auth.userSupabase
           .from('instrument_images')
-          .select('*')
+          .select('*, instruments!inner(org_id)')
           .eq('id', insertedId)
+          .eq('instrument_id', id)
+          .eq('instruments.org_id', auth.orgId!)
           .single();
 
       if (fetchInsertedError || !inserted) {
-        try {
-          await auth.userSupabase
-            .from('instrument_images')
-            .delete()
-            .eq('id', insertedId);
-          await storage.deleteFile(storedKey);
-        } catch (cleanupError) {
-          logError(
-            'Failed to rollback image metadata fetch failure:',
-            cleanupError instanceof Error
-              ? cleanupError.message
-              : String(cleanupError)
-          );
-        }
+        await rollbackAll();
         throw errorHandler.handleSupabaseError(
           fetchInsertedError,
           'Fetch saved instrument image'
         );
       }
 
-      // Return a signed URL for immediate display
       let signedUrl: string;
       try {
         signedUrl = storage.presignGet
@@ -379,7 +418,9 @@ async function postHandlerInternal(
       }
 
       uploads.push({
-        ...(inserted as InstrumentImage),
+        ...stripInstrumentScope(
+          inserted as InstrumentImage & { instruments?: unknown }
+        ),
         image_url: signedUrl,
       });
     }
@@ -409,14 +450,14 @@ async function postHandlerInternal(
       error instanceof Error ? error.message : String(error)
     );
 
-    return NextResponse.json(
+    return createApiErrorResponse(
       {
-        error: errorMessage,
+        message: errorMessage,
         ...(process.env.NODE_ENV === 'development' && errorDetails
           ? { details: errorDetails }
           : {}),
       },
-      { status: 500 }
+      500
     );
   }
 }
@@ -432,18 +473,19 @@ async function deleteHandlerInternal(
 ) {
   try {
     const storage = getStorage();
-    if (!validateUUID(id)) {
-      return NextResponse.json(
-        { error: 'Invalid instrument ID format' },
-        { status: 400 }
-      );
-    }
 
     const orgContextError = requireOrgContext(auth);
     if (orgContextError) return orgContextError;
 
     const adminError = requireAdmin(auth);
     if (adminError) return adminError;
+
+    if (!validateUUID(id)) {
+      return createApiErrorResponse(
+        { message: 'Invalid instrument ID format' },
+        400
+      );
+    }
 
     const ownershipError = await ensureOwnedInstrument(auth, id);
     if (ownershipError) return ownershipError;
@@ -452,49 +494,48 @@ async function deleteHandlerInternal(
     const imageId = url.searchParams.get('imageId');
 
     if (!imageId || !validateUUID(imageId)) {
-      return NextResponse.json({ error: 'Invalid image ID' }, { status: 400 });
+      return createApiErrorResponse({ message: 'Invalid image ID' }, 400);
     }
 
     const { data: image, error: imageError } = await auth.userSupabase
       .from('instrument_images')
-      .select('*')
+      .select('*, instruments!inner(org_id)')
       .eq('id', imageId)
       .eq('instrument_id', id)
+      .eq('instruments.org_id', auth.orgId!)
       .single();
 
     if (imageError || !image) {
-      return NextResponse.json({ error: 'Image not found' }, { status: 404 });
+      return createApiErrorResponse({ message: 'Image not found' }, 404);
     }
 
-    // ✅ Prefer file_name (stable even if image_url is signed)
     let fileKey: string | null = null;
 
     if (image.file_name) {
       fileKey = getInstrumentImageStorageKey(auth.orgId!, id, image.file_name);
     } else if (image.image_url) {
-      // Best-effort fallback for legacy public URLs
       const p = getStoragePathFromPublicUrl(image.image_url);
       fileKey = p || null;
     }
 
-    if (fileKey) {
-      try {
-        await storage.deleteFile(fileKey);
-      } catch (deleteError) {
-        logError(
-          'Failed to delete file from storage:',
-          deleteError instanceof Error
-            ? deleteError.message
-            : String(deleteError)
-        );
-        // Continue with DB deletion even if storage deletion fails
-      }
+    if (!fileKey) {
+      logError(
+        'Instrument image deletion blocked: storage key could not be resolved',
+        `imageId=${imageId} instrumentId=${id}`
+      );
+      return createApiErrorResponse(
+        { message: 'Image storage key could not be resolved' },
+        409
+      );
     }
 
+    // 1) DB record 먼저 삭제
     const { error: deleteError } = await auth.userSupabase
       .from('instrument_images')
       .delete()
-      .eq('id', imageId);
+      .eq('id', imageId)
+      .eq('instrument_id', id)
+      .eq('org_id', auth.orgId!);
 
     if (deleteError) {
       throw errorHandler.handleSupabaseError(
@@ -503,16 +544,28 @@ async function deleteHandlerInternal(
       );
     }
 
+    // 2) storage 삭제는 best-effort
+    try {
+      await storage.deleteFile(fileKey);
+    } catch (storageDeleteError) {
+      logError(
+        'Storage delete failed after DB delete',
+        storageDeleteError instanceof Error
+          ? storageDeleteError.message
+          : String(storageDeleteError)
+      );
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json(
+    return createApiErrorResponse(
       {
-        error:
+        message:
           error instanceof Error
             ? error.message
             : 'Failed to delete instrument image',
       },
-      { status: 500 }
+      500
     );
   }
 }

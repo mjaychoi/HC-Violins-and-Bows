@@ -152,6 +152,7 @@ describe('useInvoices', () => {
 
     (apiFetch as jest.Mock).mockResolvedValueOnce({
       ok: false,
+      text: async () => JSON.stringify({ error: 'Create failed' }),
       json: async () => ({ error: 'Create failed' }),
     });
 

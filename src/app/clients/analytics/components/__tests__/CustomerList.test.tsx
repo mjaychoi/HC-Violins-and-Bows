@@ -76,6 +76,26 @@ describe('CustomerList', () => {
     expect(screen.getByText(/no customers yet/i)).toBeInTheDocument();
   });
 
+  it('should render error state instead of empty state when load fails', () => {
+    const onRetry = jest.fn();
+
+    render(
+      <CustomerList
+        customers={[]}
+        selectedId={null}
+        onSelect={mockOnSelect}
+        status="error"
+        onRetry={onRetry}
+      />
+    );
+
+    expect(screen.getByText(/failed to load customers/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no customers yet/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(onRetry).toHaveBeenCalled();
+  });
+
   it('should render customer list', () => {
     render(
       <CustomerList

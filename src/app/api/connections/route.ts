@@ -55,10 +55,15 @@ function getConnectionConflictStatus(errorMessage: string): number {
 }
 
 async function fetchConnectionById(auth: AuthContext, connectionId: string) {
+  if (!auth.orgId) {
+    throw new Error('Organization context required for connection lookup');
+  }
+
   const { data, error } = await auth.userSupabase
     .from('client_instruments')
     .select(CONNECTION_DETAIL_SELECT)
     .eq('id', connectionId)
+    .eq('org_id', auth.orgId)
     .single();
 
   if (error) {
@@ -77,6 +82,14 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       context: 'ConnectionsAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
       const searchParams = request.nextUrl.searchParams;
       const clientId = searchParams.get('client_id') || undefined;
       const instrumentId = searchParams.get('instrument_id') || undefined;
@@ -103,7 +116,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       let query = auth.userSupabase
         .from('client_instruments')
-        .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' });
+        .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' })
+        .eq('org_id', auth.orgId!);
 
       if (clientId) query = query.eq('client_id', clientId);
       if (instrumentId) query = query.eq('instrument_id', instrumentId);
@@ -126,7 +140,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       ) {
         let retryQuery = auth.userSupabase
           .from('client_instruments')
-          .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' });
+          .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' })
+          .eq('org_id', auth.orgId!);
 
         if (clientId) retryQuery = retryQuery.eq('client_id', clientId);
         if (instrumentId)
@@ -463,21 +478,19 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
         }
       }
 
-      const results = await Promise.all(
-        orders.map(({ id, display_order }) =>
-          auth.userSupabase
-            .from('client_instruments')
-            .update({ display_order })
-            .eq('id', id)
-        )
+      const { error: reorderError } = await auth.userSupabase.rpc(
+        'reorder_connections_atomic',
+        { p_orders: orders }
       );
 
-      const firstErr = results.find(r => r.error)?.error;
-      if (firstErr) {
-        throw errorHandler.handleSupabaseError(
-          firstErr,
-          'Batch update connection orders'
-        );
+      if (reorderError) {
+        return {
+          payload: {
+            error: 'Failed to reorder connections',
+            error_code: 'CONNECTION_REORDER_FAILED',
+          },
+          status: 500,
+        };
       }
 
       const ids = orders.map(o => o.id);
@@ -490,7 +503,8 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
             instrument:instruments(*)
           `
         )
-        .in('id', ids);
+        .in('id', ids)
+        .eq('org_id', auth.orgId!);
 
       if (fetchError) {
         throw errorHandler.handleSupabaseError(

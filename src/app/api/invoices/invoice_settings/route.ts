@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
@@ -7,25 +7,17 @@ import {
   requireAdmin,
   requireOrgContext,
 } from '@/app/api/_utils/withAuthRoute';
-import { errorHandler } from '@/utils/errorHandler';
-import { captureException } from '@/utils/monitoring';
-import { ErrorSeverity } from '@/types/errors';
-import {
-  createSafeErrorResponse,
-  createLogErrorInfo,
-} from '@/utils/errorSanitization';
+import { apiHandler } from '@/app/api/_utils/apiHandler';
 
 type InvoiceSettingsPayload = {
   business_name: string;
   address: string;
   phone: string;
   email: string;
-
   bank_account_holder: string;
   bank_name: string;
   bank_swift_code: string;
   bank_account_number: string;
-
   default_conditions: string;
   default_exchange_rate: string;
   default_currency: string;
@@ -34,218 +26,233 @@ type InvoiceSettingsPayload = {
 type InvoiceSettingsRow = Record<string, string | number | null>;
 type PostgrestErrorLike = { code?: string };
 
-// Explicit column list matching actual table structure
-// Note: default_exchange_rate is numeric type in DB, but we handle it as string in API
+function parseExchangeRateInput(
+  value: unknown
+): { ok: true; value: number | null } | { ok: false; message: string } {
+  if (value === undefined) {
+    return { ok: true, value: null };
+  }
+
+  if (typeof value !== 'string') {
+    return {
+      ok: false,
+      message: 'default_exchange_rate must be a string',
+    };
+  }
+
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return { ok: true, value: null };
+  }
+
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) {
+    return {
+      ok: false,
+      message: 'default_exchange_rate must be a valid number',
+    };
+  }
+
+  return { ok: true, value: parsed };
+}
+
 const INVOICE_SETTINGS_COLUMNS = [
   'id',
   'org_id',
   'business_name',
-  'business_address', // Actual column name in DB
-  'business_phone', // Actual column name in DB
-  'business_email', // Actual column name in DB
+  'business_address',
+  'business_phone',
+  'business_email',
   'bank_account_holder',
   'bank_name',
   'bank_swift_code',
   'bank_account_number',
   'default_conditions',
-  'default_exchange_rate', // numeric type in DB
+  'default_exchange_rate',
   'default_currency',
   'created_at',
   'updated_at',
 ].join(',');
 
+function mapInvoiceSettingsRow(row: InvoiceSettingsRow) {
+  const dbRow = row as Record<string, unknown>;
+  return {
+    ...dbRow,
+    address: (dbRow.business_address as string) ?? '',
+    phone: (dbRow.business_phone as string) ?? '',
+    email: (dbRow.business_email as string) ?? '',
+    default_exchange_rate:
+      dbRow.default_exchange_rate != null
+        ? String(dbRow.default_exchange_rate)
+        : '',
+  };
+}
+
 async function getOrCreateSettingsRow(
   supabase: SupabaseClient,
   orgId: string
 ): Promise<InvoiceSettingsRow> {
-  // 1) try select existing - explicitly select TEXT columns to avoid numeric type issues
-
-  const q = supabase
-    .from('invoice_settings')
-    .select(INVOICE_SETTINGS_COLUMNS)
-    .eq('org_id', orgId)
-    .limit(1);
-
-  const { data, error } = await q.maybeSingle();
-  if (error && (error as PostgrestErrorLike).code !== 'PGRST116') throw error;
-  if (data) return data as unknown as InvoiceSettingsRow;
-
-  // 2) insert default row - match actual table column names
-  // Note: default_exchange_rate is numeric, so use null instead of empty string
   const insertPayload: Record<string, string | number | null> = {
+    org_id: orgId,
     business_name: '',
-    business_address: null, // Actual column name
-    business_phone: null, // Actual column name
-    business_email: null, // Actual column name
+    business_address: null,
+    business_phone: null,
+    business_email: null,
     bank_account_holder: null,
     bank_name: null,
     bank_swift_code: null,
     bank_account_number: null,
     default_conditions: null,
-    default_exchange_rate: null, // numeric type - use null, not empty string
+    default_exchange_rate: null,
     default_currency: 'USD',
   };
-  insertPayload.org_id = orgId;
 
-  // Insert only the columns we know are TEXT type
-  const { data: created, error: insErr } = await supabase
+  const { error: upsertError } = await supabase
     .from('invoice_settings')
-    .insert(insertPayload)
-    .select(INVOICE_SETTINGS_COLUMNS)
-    .single();
+    .upsert(insertPayload, {
+      onConflict: 'org_id',
+      ignoreDuplicates: true,
+    });
 
-  if (insErr) throw insErr;
-  return created as unknown as InvoiceSettingsRow;
+  if (upsertError && (upsertError as PostgrestErrorLike).code !== '23505') {
+    throw upsertError;
+  }
+
+  const { data, error } = await supabase
+    .from('invoice_settings')
+    .select(INVOICE_SETTINGS_COLUMNS)
+    .eq('org_id', orgId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error && (error as PostgrestErrorLike).code !== 'PGRST116') throw error;
+  if (data) return data as unknown as InvoiceSettingsRow;
+
+  throw new Error('Invoice settings row was not available after upsert');
 }
 
-export const GET = async (request: NextRequest) => {
-  const handler = withSentryRoute(
-    withAuthRoute(async (_req: NextRequest, auth: AuthContext) => {
-      try {
-        const orgContextError = requireOrgContext(auth);
-        if (orgContextError) {
-          return NextResponse.json(
-            { error: 'Organization context required' },
-            { status: 403 }
-          );
-        }
-
-        const row = (await getOrCreateSettingsRow(
-          auth.userSupabase,
-          auth.orgId!
-        )) as InvoiceSettingsRow;
-
-        // Map database column names to API field names for client compatibility
-        const dbRow = row as Record<string, unknown>;
-        const mappedRow = {
-          ...dbRow,
-          address: (dbRow.business_address as string) ?? '',
-          phone: (dbRow.business_phone as string) ?? '',
-          email: (dbRow.business_email as string) ?? '',
-          // Convert numeric to string for API compatibility
-          default_exchange_rate:
-            dbRow.default_exchange_rate != null
-              ? String(dbRow.default_exchange_rate)
-              : '',
+async function getHandler(request: NextRequest, auth: AuthContext) {
+  return apiHandler(
+    request,
+    {
+      method: 'GET',
+      path: 'InvoiceSettingsAPI',
+      context: 'InvoiceSettingsAPI',
+    },
+    async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
         };
-
-        return NextResponse.json({ data: mappedRow }, { status: 200 });
-      } catch (error) {
-        const appError = errorHandler.handleSupabaseError(
-          error || new Error('Failed to load invoice settings'),
-          'Load invoice settings'
-        );
-        const safe = createSafeErrorResponse(appError, 500);
-        captureException(
-          appError,
-          'InvoiceSettingsAPI.GET',
-          {},
-          ErrorSeverity.MEDIUM
-        );
-        return NextResponse.json(safe, { status: 500 });
       }
-    })
+
+      const row = await getOrCreateSettingsRow(auth.userSupabase, auth.orgId!);
+
+      return {
+        payload: { data: mapInvoiceSettingsRow(row) },
+      };
+    }
   );
-  return handler(request);
-};
+}
 
-export const PUT = async (request: NextRequest) => {
-  const handler = withSentryRoute(
-    withAuthRoute(async (_req: NextRequest, auth: AuthContext) => {
-      try {
-        const orgContextError = requireOrgContext(auth);
-        if (orgContextError) {
-          return NextResponse.json(
-            { error: 'Organization context required' },
-            { status: 403 }
-          );
-        }
+async function putHandler(request: NextRequest, auth: AuthContext) {
+  return apiHandler(
+    request,
+    {
+      method: 'PUT',
+      path: 'InvoiceSettingsAPI',
+      context: 'InvoiceSettingsAPI',
+    },
+    async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
 
-        const adminError = requireAdmin(auth);
-        if (adminError) {
-          return NextResponse.json(
-            { error: 'Admin role required' },
-            { status: 403 }
-          );
-        }
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: {
+            error: 'Admin role required',
+            error_code: 'ADMIN_REQUIRED',
+          },
+          status: 403,
+        };
+      }
 
-        const body = (await request.json()) as Partial<InvoiceSettingsPayload>;
+      const body = (await request
+        .json()
+        .catch(() => null)) as Partial<InvoiceSettingsPayload> | null;
+      if (!body || typeof body !== 'object') {
+        return {
+          payload: { error: 'Invalid JSON body' },
+          status: 400,
+        };
+      }
 
-        // ensure row exists
-        const existing = (await getOrCreateSettingsRow(
-          auth.userSupabase,
-          auth.orgId!
-        )) as InvoiceSettingsRow;
+      const existing = await getOrCreateSettingsRow(
+        auth.userSupabase,
+        auth.orgId!
+      );
+      const exchangeRateInput = parseExchangeRateInput(
+        body.default_exchange_rate
+      );
 
-        // Map API field names to actual database column names
-        // Convert default_exchange_rate from string to numeric if provided
-        const updatePayload: Record<string, string | number | null> = {
-          business_name: body.business_name ?? existing.business_name ?? '',
-          business_address: body.address ?? existing.business_address ?? null,
-          business_phone: body.phone ?? existing.business_phone ?? null,
-          business_email: body.email ?? existing.business_email ?? null,
+      if (!exchangeRateInput.ok) {
+        return {
+          payload: { error: exchangeRateInput.message },
+          status: 400,
+        };
+      }
 
-          bank_account_holder:
-            body.bank_account_holder ?? existing.bank_account_holder ?? null,
-          bank_name: body.bank_name ?? existing.bank_name ?? null,
-          bank_swift_code:
-            body.bank_swift_code ?? existing.bank_swift_code ?? null,
-          bank_account_number:
-            body.bank_account_number ?? existing.bank_account_number ?? null,
-
-          default_conditions:
-            body.default_conditions ?? existing.default_conditions ?? null,
-          default_exchange_rate: body.default_exchange_rate
-            ? body.default_exchange_rate.trim() === ''
-              ? null
-              : parseFloat(body.default_exchange_rate)
+      const updatePayload: Record<string, string | number | null> = {
+        business_name: body.business_name ?? existing.business_name ?? '',
+        business_address: body.address ?? existing.business_address ?? null,
+        business_phone: body.phone ?? existing.business_phone ?? null,
+        business_email: body.email ?? existing.business_email ?? null,
+        bank_account_holder:
+          body.bank_account_holder ?? existing.bank_account_holder ?? null,
+        bank_name: body.bank_name ?? existing.bank_name ?? null,
+        bank_swift_code:
+          body.bank_swift_code ?? existing.bank_swift_code ?? null,
+        bank_account_number:
+          body.bank_account_number ?? existing.bank_account_number ?? null,
+        default_conditions:
+          body.default_conditions ?? existing.default_conditions ?? null,
+        default_exchange_rate:
+          body.default_exchange_rate !== undefined
+            ? exchangeRateInput.value
             : (existing.default_exchange_rate ?? null),
-          default_currency:
-            body.default_currency ?? existing.default_currency ?? 'USD',
-        };
+        default_currency:
+          body.default_currency ?? existing.default_currency ?? 'USD',
+      };
 
-        const q = auth.userSupabase
-          .from('invoice_settings')
-          .update(updatePayload)
-          .eq('id', existing.id as string)
-          .eq('org_id', auth.orgId);
-        const { data, error } = await q
-          .select(INVOICE_SETTINGS_COLUMNS)
-          .single();
-        if (error) throw error;
-        if (!data) throw new Error('No data returned after update');
+      const { data, error } = await auth.userSupabase
+        .from('invoice_settings')
+        .update(updatePayload)
+        .eq('id', existing.id as string)
+        .eq('org_id', auth.orgId!)
+        .select(INVOICE_SETTINGS_COLUMNS)
+        .single();
 
-        // Map database column names to API field names for client compatibility
-        const dbRow = data as unknown as Record<string, unknown>;
-        const mappedData = {
-          ...dbRow,
-          address: (dbRow.business_address as string) ?? '',
-          phone: (dbRow.business_phone as string) ?? '',
-          email: (dbRow.business_email as string) ?? '',
-          // Convert numeric to string for API compatibility
-          default_exchange_rate:
-            dbRow.default_exchange_rate != null
-              ? String(dbRow.default_exchange_rate)
-              : '',
-        };
-
-        return NextResponse.json({ data: mappedData }, { status: 200 });
-      } catch (error) {
-        const appError = errorHandler.handleSupabaseError(
-          error || new Error('Failed to update invoice settings'),
-          'Update invoice settings'
-        );
-        const logInfo = createLogErrorInfo(appError);
-        captureException(
-          appError,
-          'InvoiceSettingsAPI.PUT',
-          { logMessage: logInfo.message },
-          ErrorSeverity.MEDIUM
-        );
-        const safe = createSafeErrorResponse(appError, 500);
-        return NextResponse.json(safe, { status: 500 });
+      if (error) throw error;
+      if (!data) {
+        throw new Error('No data returned after update');
       }
-    })
+
+      return {
+        payload: {
+          data: mapInvoiceSettingsRow(data as unknown as InvoiceSettingsRow),
+        },
+      };
+    }
   );
-  return handler(request);
-};
+}
+
+export const GET = withSentryRoute(withAuthRoute(getHandler));
+export const PUT = withSentryRoute(withAuthRoute(putHandler));

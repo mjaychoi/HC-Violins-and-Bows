@@ -112,6 +112,25 @@ describe('InvoiceList', () => {
     expect(screen.getByText(/no invoices yet/i)).toBeInTheDocument();
   });
 
+  it('shows error state instead of empty state when loading fails', () => {
+    const onRetry = jest.fn();
+
+    render(
+      <InvoiceList
+        {...baseProps}
+        invoices={[]}
+        status="error"
+        onRetry={onRetry}
+      />
+    );
+
+    expect(screen.getByText(/failed to load invoices/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(onRetry).toHaveBeenCalled();
+  });
+
   it('honors custom empty title/description', () => {
     render(
       <InvoiceList

@@ -1,8 +1,4 @@
 // Utility functions exports
-// NOTE: apiClient and supabaseHelpers are NOT exported here to prevent dependency leakage
-// Import them directly from their modules when needed:
-//   import { apiClient } from '@/utils/apiClient';
-//   import { escapeILike } from '@/utils/supabaseHelpers';
 
 export * from './validationUtils';
 export * from './inputValidation';

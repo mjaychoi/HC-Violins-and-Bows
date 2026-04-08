@@ -1,3 +1,8 @@
+-- DO NOT APPLY IN PRODUCTION.
+-- Archived legacy SQL bundle kept for reference only.
+-- This file was removed from supabase/migrations because it contains
+-- permissive legacy policy definitions and is not a deployable migration.
+
 -- ============================================
 -- HC-V Single Combined Migration (Idempotent)
 -- Safe to re-run
@@ -714,8 +719,6 @@ BEGIN
         jwt_claims->>'organization_id',
         jwt_claims->>'orgId',
         jwt_claims->>'organizationId',
-        jwt_claims->'user_metadata'->>'org_id',
-        jwt_claims->'user_metadata'->>'organization_id',
         jwt_claims->'app_metadata'->>'org_id',
         jwt_claims->'app_metadata'->>'organization_id'
       );

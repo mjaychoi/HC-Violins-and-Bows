@@ -8,6 +8,7 @@ import {
   createSafeErrorResponse,
   createLogErrorInfo,
 } from '@/utils/errorSanitization';
+import { createApiErrorResponse } from '@/app/api/_utils/apiErrors';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
 import {
@@ -16,9 +17,11 @@ import {
 } from '@/app/api/_utils/withAuthRoute';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import {
+  buildInvoiceImageStoragePath,
   createInvoiceImageSignedUrl,
   INVOICE_IMAGE_BUCKET,
 } from '../imageUrls';
+import { recordInvoiceImageUpload } from '../imageUploadTracking';
 
 export const runtime = 'nodejs';
 
@@ -131,16 +134,16 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
     const file = formData.get('file') as File;
 
     if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      return createApiErrorResponse({ message: 'No file provided' }, 400);
     }
 
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
+      return createApiErrorResponse(
         {
-          error: `File size must be less than ${MAX_FILE_SIZE / 1024 / 1024}MB`,
+          message: `File size must be less than ${MAX_FILE_SIZE / 1024 / 1024}MB`,
         },
-        { status: 400 }
+        400
       );
     }
 
@@ -164,16 +167,16 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           : '';
 
     if (!resolvedType) {
-      return NextResponse.json(
-        { error: 'File must be a supported image type' },
-        { status: 400 }
+      return createApiErrorResponse(
+        { message: 'File must be a supported image type' },
+        400
       );
     }
 
     if (!isValidImageSignature(buffer, resolvedType)) {
-      return NextResponse.json(
-        { error: 'Invalid image file content' },
-        { status: 400 }
+      return createApiErrorResponse(
+        { message: 'Invalid image file content' },
+        400
       );
     }
 
@@ -183,7 +186,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
     const timestamp = Date.now();
     const fileId = randomUUID();
     const fileName = `invoice-item-${timestamp}-${fileId}.${fileExt}`;
-    const filePath = `${auth.orgId}/${auth.user.id}/${fileName}`;
+    const filePath = buildInvoiceImageStoragePath(auth.orgId!, fileName);
 
     // Upload with the caller's user-scoped Supabase client so storage auth stays session-bound.
     const { error: uploadError } = await auth.userSupabase.storage
@@ -197,6 +200,23 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       throw errorHandler.handleSupabaseError(
         uploadError,
         'Upload invoice item image'
+      );
+    }
+
+    const { error: trackingError } = await recordInvoiceImageUpload(
+      auth.userSupabase,
+      auth.orgId!,
+      auth.user.id,
+      filePath
+    );
+
+    if (trackingError) {
+      await auth.userSupabase.storage
+        .from(INVOICE_IMAGE_BUCKET)
+        .remove([filePath]);
+      throw errorHandler.handleSupabaseError(
+        trackingError,
+        'Record invoice image upload'
       );
     }
 

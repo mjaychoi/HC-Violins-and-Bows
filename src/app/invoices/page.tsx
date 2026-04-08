@@ -48,6 +48,7 @@ function InvoicesPageContent() {
   const router = useRouter();
   const {
     invoices,
+    status: invoicesStatus,
     page,
     totalCount,
     totalPages,
@@ -134,6 +135,11 @@ function InvoicesPageContent() {
     default_exchange_rate?: string;
     default_currency?: string;
   } | null>(null);
+  const [invoiceSettingsStatus, setInvoiceSettingsStatus] = useState<
+    'idle' | 'loading' | 'success' | 'error'
+  >('idle');
+  const [invoiceSettingsErrorMessage, setInvoiceSettingsErrorMessage] =
+    useState<string | null>(null);
 
   // Confirmation dialog state
   const [confirmDeleteInvoice, setConfirmDeleteInvoice] =
@@ -408,6 +414,29 @@ function InvoicesPageContent() {
     ? `Invoices are scoped to ${orgScopeTarget}. If you expect to see invoices, make sure your user metadata/org_id agreement matches the records (see docs/ORG_ID_SETUP.md for setup steps).${scopeInfo?.reason ? ` Reason: ${scopeInfo.reason}.` : ''}`
     : undefined;
 
+  const refreshInvoiceList = useCallback(
+    async (targetPage: number) =>
+      fetchInvoices({
+        page: targetPage,
+        pageSize: 10,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        search: debouncedSearch || undefined,
+        status: status || undefined,
+        sortColumn: sortColumn || undefined,
+        sortDirection: sortDirection || undefined,
+      }),
+    [
+      fetchInvoices,
+      fromDate,
+      toDate,
+      debouncedSearch,
+      status,
+      sortColumn,
+      sortDirection,
+    ]
+  );
+
   // Handle create/edit invoice
   const handleSubmitInvoice = useCallback(
     async (data: Parameters<typeof createInvoice>[0]) => {
@@ -417,54 +446,65 @@ function InvoicesPageContent() {
         try {
           if (editingInvoice) {
             await updateInvoice(editingInvoice.id, data);
-            showSuccess('Invoice updated successfully.');
-          } else {
-            const createResult = await createInvoice(data);
-            showSuccess(createResult.message);
-
-            if (createResult.status === 'already_processed') {
+            try {
+              await refreshInvoiceList(page);
+              showSuccess('Invoice updated successfully.');
               setIsModalOpen(false);
               setEditingInvoice(null);
+            } catch (refreshError) {
+              handleError(
+                refreshError instanceof Error
+                  ? `Invoice was updated, but the invoice list failed to refresh. ${refreshError.message}`
+                  : 'Invoice was updated, but the invoice list failed to refresh.',
+                'Update invoice partially completed'
+              );
+            }
+          } else {
+            const createResult = await createInvoice(data);
 
+            if (createResult.status === 'already_processed') {
               if (createResult.existingInvoiceId) {
+                showSuccess(createResult.message);
+                setIsModalOpen(false);
+                setEditingInvoice(null);
                 router.push(`/invoices/${createResult.existingInvoiceId}`);
                 return;
               }
 
-              const refreshedInvoices = await fetchInvoices({
-                page: 1,
-                pageSize: 10,
-                fromDate: fromDate || undefined,
-                toDate: toDate || undefined,
-                search: debouncedSearch || undefined,
-                status: status || undefined,
-                sortColumn: sortColumn || undefined,
-                sortDirection: sortDirection || undefined,
-              });
-
-              setPage(1);
-              setHighlightedInvoiceId(refreshedInvoices[0]?.id ?? null);
-              showSuccess('Loading existing invoice.');
+              try {
+                const refreshedInvoices = await refreshInvoiceList(1);
+                setPage(1);
+                setHighlightedInvoiceId(refreshedInvoices[0]?.id ?? null);
+                showSuccess(createResult.message);
+                setIsModalOpen(false);
+                setEditingInvoice(null);
+              } catch (refreshError) {
+                handleError(
+                  refreshError instanceof Error
+                    ? `${createResult.message} However, the invoice list failed to refresh. ${refreshError.message}`
+                    : `${createResult.message} However, the invoice list failed to refresh.`,
+                  'Create invoice partially completed'
+                );
+              }
               return;
             }
 
-            showSuccess('Invoice created successfully.');
-            setHighlightedInvoiceId(createResult.invoice?.id ?? null);
+            try {
+              await refreshInvoiceList(page);
+              setHighlightedInvoiceId(createResult.invoice?.id ?? null);
+              showSuccess(createResult.message);
+              setIsModalOpen(false);
+              setEditingInvoice(null);
+            } catch (refreshError) {
+              handleError(
+                refreshError instanceof Error
+                  ? `${createResult.message} However, the invoice list failed to refresh. ${refreshError.message}`
+                  : `${createResult.message} However, the invoice list failed to refresh.`,
+                'Create invoice partially completed'
+              );
+            }
+            return;
           }
-
-          setIsModalOpen(false);
-          setEditingInvoice(null);
-
-          await fetchInvoices({
-            page,
-            pageSize: 10,
-            fromDate: fromDate || undefined,
-            toDate: toDate || undefined,
-            search: debouncedSearch || undefined,
-            status: status || undefined,
-            sortColumn: sortColumn || undefined,
-            sortDirection: sortDirection || undefined,
-          });
         } catch (error) {
           handleError(
             error instanceof Error ? error.message : String(error),
@@ -479,14 +519,8 @@ function InvoicesPageContent() {
       updateInvoice,
       showSuccess,
       handleError,
-      fetchInvoices,
+      refreshInvoiceList,
       page,
-      fromDate,
-      toDate,
-      debouncedSearch,
-      status,
-      sortColumn,
-      sortDirection,
       isMutatingInvoice,
       withInvoiceSubmitting,
       router,
@@ -522,19 +556,18 @@ function InvoicesPageContent() {
     await withInvoiceSubmitting(async () => {
       try {
         await deleteInvoice(confirmDeleteInvoice.id);
-        showSuccess('Invoice deleted successfully.');
         setConfirmDeleteInvoice(null);
-
-        await fetchInvoices({
-          page,
-          pageSize: 10,
-          fromDate: fromDate || undefined,
-          toDate: toDate || undefined,
-          search: debouncedSearch || undefined,
-          status: status || undefined,
-          sortColumn: sortColumn || undefined,
-          sortDirection: sortDirection || undefined,
-        });
+        try {
+          await refreshInvoiceList(page);
+          showSuccess('Invoice deleted successfully.');
+        } catch (refreshError) {
+          handleError(
+            refreshError instanceof Error
+              ? `Invoice was deleted, but the invoice list failed to refresh. ${refreshError.message}`
+              : 'Invoice was deleted, but the invoice list failed to refresh.',
+            'Delete invoice partially completed'
+          );
+        }
       } catch (error) {
         handleError(
           error instanceof Error ? error.message : String(error),
@@ -547,14 +580,8 @@ function InvoicesPageContent() {
     deleteInvoice,
     showSuccess,
     handleError,
-    fetchInvoices,
+    refreshInvoiceList,
     page,
-    fromDate,
-    toDate,
-    debouncedSearch,
-    status,
-    sortColumn,
-    sortDirection,
     isMutatingInvoice,
     withInvoiceSubmitting,
   ]);
@@ -650,44 +677,62 @@ function InvoicesPageContent() {
   const handleCloseModal = useCallback(() => {
     setIsModalOpen(false);
     setEditingInvoice(null);
+    setInvoiceSettingsStatus('idle');
+    setInvoiceSettingsErrorMessage(null);
   }, []);
+
+  const loadInvoiceSettingsForCreate = useCallback(async () => {
+    setInvoiceSettingsStatus('loading');
+    setInvoiceSettingsErrorMessage(null);
+    try {
+      const res = await apiFetch('/api/invoices/invoice_settings');
+
+      if (!res.ok) {
+        let errorMessage = 'Failed to load invoice settings';
+        try {
+          const errorData = await res.json();
+          errorMessage = errorData.message || errorData.error || errorMessage;
+        } catch {
+          errorMessage = `HTTP ${res.status}: ${res.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const json = await res.json();
+      const data = json.data || {};
+      setInvoiceSettings({
+        business_name: data.business_name,
+        address: data.address,
+        phone: data.phone,
+        email: data.email,
+        bank_account_holder: data.bank_account_holder,
+        bank_name: data.bank_name,
+        bank_swift_code: data.bank_swift_code,
+        bank_account_number: data.bank_account_number,
+        default_conditions: data.default_conditions,
+        default_exchange_rate: data.default_exchange_rate,
+        default_currency: data.default_currency,
+      });
+      setInvoiceSettingsStatus('success');
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to load invoice settings';
+      logError('Failed to load invoice settings:', message);
+      setInvoiceSettings(null);
+      setInvoiceSettingsStatus('error');
+      setInvoiceSettingsErrorMessage(message);
+      handleError(message, 'Load invoice settings');
+    }
+  }, [handleError]);
 
   // Load invoice settings when modal opens
   useEffect(() => {
     if (isModalOpen && !editingInvoice) {
-      // Load invoice settings to prefill form
-      const loadSettings = async () => {
-        try {
-          const res = await apiFetch('/api/invoices/invoice_settings');
-          if (res.ok) {
-            const json = await res.json();
-            const data = json.data || {};
-            // Map API response to invoiceSettings format (API already maps business_address -> address, etc.)
-            setInvoiceSettings({
-              business_name: data.business_name,
-              address: data.address,
-              phone: data.phone,
-              email: data.email,
-              bank_account_holder: data.bank_account_holder,
-              bank_name: data.bank_name,
-              bank_swift_code: data.bank_swift_code,
-              bank_account_number: data.bank_account_number,
-              default_conditions: data.default_conditions,
-              default_exchange_rate: data.default_exchange_rate,
-              default_currency: data.default_currency,
-            });
-          }
-        } catch (error) {
-          // Silently fail - settings are optional
-          logError(
-            'Failed to load invoice settings:',
-            error instanceof Error ? error.message : String(error)
-          );
-        }
-      };
-      void loadSettings();
+      void loadInvoiceSettingsForCreate();
     }
-  }, [isModalOpen, editingInvoice]);
+  }, [isModalOpen, editingInvoice, loadInvoiceSettingsForCreate]);
 
   // Handle add new invoice
   const handleAddInvoice = useCallback(() => {
@@ -757,6 +802,7 @@ function InvoicesPageContent() {
           <InvoiceList
             invoices={invoices}
             loading={loading}
+            status={invoicesStatus}
             highlightedInvoiceId={highlightedInvoiceId}
             onSort={handleSort}
             getSortState={getSortState}
@@ -770,6 +816,18 @@ function InvoicesPageContent() {
             totalCount={totalCount}
             pageSize={10}
             onPageChange={setPage}
+            onRetry={() => {
+              void fetchInvoices({
+                page,
+                pageSize: 10,
+                fromDate: fromDate || undefined,
+                toDate: toDate || undefined,
+                search: debouncedSearch || undefined,
+                status: status || undefined,
+                sortColumn: sortColumn || undefined,
+                sortDirection: sortDirection || undefined,
+              });
+            }}
             emptyTitle={orgScopeEmptyTitle}
             emptyDescription={orgScopeEmptyDescription}
           />
@@ -783,6 +841,11 @@ function InvoicesPageContent() {
             invoice={editingInvoice}
             isEditing={!!editingInvoice}
             invoiceSettings={invoiceSettings}
+            settingsStatus={editingInvoice ? 'success' : invoiceSettingsStatus}
+            settingsErrorMessage={invoiceSettingsErrorMessage}
+            onRetrySettingsLoad={() => {
+              void loadInvoiceSettingsForCreate();
+            }}
             onSubmit={handleSubmitInvoice}
             submitting={isMutatingInvoice}
           />

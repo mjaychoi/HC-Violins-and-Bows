@@ -21,8 +21,23 @@ jest.mock('../components/InvoiceModal', () => ({
     onSubmit,
     invoice,
     isEditing,
+    settingsStatus,
+    settingsErrorMessage,
+    onRetrySettingsLoad,
   }: any) {
     if (!isOpen) return null;
+    if (!isEditing && settingsStatus === 'loading') {
+      return <div data-testid="invoice-modal">Loading invoice defaults...</div>;
+    }
+    if (!isEditing && settingsStatus === 'error') {
+      return (
+        <div data-testid="invoice-modal">
+          <div>Failed to load invoice defaults</div>
+          <div>{settingsErrorMessage}</div>
+          <button onClick={onRetrySettingsLoad}>Retry settings</button>
+        </div>
+      );
+    }
     return (
       <div data-testid="invoice-modal">
         <button onClick={onClose}>Close Modal</button>
@@ -380,6 +395,26 @@ describe('InvoicesPage', () => {
   });
 
   it('opens modal when add invoice is clicked', async () => {
+    const { apiFetch } = require('@/utils/apiFetch');
+    apiFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          business_name: 'HC Violins',
+          address: 'Seoul',
+          phone: '010-0000-0000',
+          email: 'hello@example.com',
+          bank_account_holder: 'HC Violins',
+          bank_name: 'Bank',
+          bank_swift_code: 'SWIFT',
+          bank_account_number: '123',
+          default_conditions: 'Net 30',
+          default_exchange_rate: '1.0',
+          default_currency: 'USD',
+        },
+      }),
+    });
+
     const user = userEvent.setup();
     render(<InvoicesPage />);
 
@@ -388,6 +423,49 @@ describe('InvoicesPage', () => {
 
     expect(screen.getByTestId('invoice-modal')).toBeInTheDocument();
     expect(screen.getByText('Creating new invoice')).toBeInTheDocument();
+  });
+
+  it('blocks create flow with retryable error UI when invoice settings fail to load', async () => {
+    const { apiFetch } = require('@/utils/apiFetch');
+    apiFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Server Error',
+        json: async () => ({ message: 'Settings unavailable' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            business_name: 'HC Violins',
+            address: 'Seoul',
+            phone: '',
+            email: '',
+            bank_account_holder: '',
+            bank_name: '',
+            bank_swift_code: '',
+            bank_account_number: '',
+            default_conditions: '',
+            default_exchange_rate: '',
+            default_currency: 'USD',
+          },
+        }),
+      });
+
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+
+    await user.click(screen.getByText('Add Invoice'));
+
+    expect(
+      await screen.findByText('Failed to load invoice defaults')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Creating new invoice')).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('Retry settings'));
+
+    expect(await screen.findByText('Creating new invoice')).toBeInTheDocument();
   });
 
   it('opens edit modal from invoice list action', async () => {

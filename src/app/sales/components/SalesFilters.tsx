@@ -16,6 +16,8 @@ interface SalesFiltersProps {
   onExportCSV: () => void;
   isExportingCSV?: boolean;
   hasData: boolean;
+  canExportCSV?: boolean;
+  exportDisabledReason?: string;
 }
 
 export default function SalesFilters({
@@ -32,6 +34,8 @@ export default function SalesFilters({
   onExportCSV,
   isExportingCSV = false,
   hasData,
+  canExportCSV = true,
+  exportDisabledReason,
 }: SalesFiltersProps) {
   const hasActiveFilters = !!(search || from || to);
   const filtersPanelId = 'sales-filters-panel';
@@ -226,9 +230,15 @@ export default function SalesFilters({
             <button
               type="button"
               onClick={onExportCSV}
-              disabled={!hasData || isExportingCSV}
+              disabled={!canExportCSV || !hasData || isExportingCSV}
               className="h-10 px-4 text-sm font-medium rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              title="Export to CSV"
+              title={
+                !canExportCSV
+                  ? exportDisabledReason || 'Admin only'
+                  : !hasData
+                    ? 'No sales data to export'
+                    : 'Export to CSV'
+              }
             >
               {isExportingCSV ? (
                 <>

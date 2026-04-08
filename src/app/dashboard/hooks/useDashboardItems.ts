@@ -5,7 +5,8 @@
  * All production code should use `useDashboardData` → `useUnifiedDashboard`.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { getSupabaseClient } from '@/lib/supabase-client';
+import { apiFetch } from '@/utils/apiFetch';
+import { handleApiResponse } from '@/utils/handleApiResponse';
 import {
   Instrument,
   InstrumentImage,
@@ -13,17 +14,6 @@ import {
   Client,
   RelationshipType,
 } from '@/types';
-import type { Database } from '@/types/database';
-
-type ClientInstrumentRow =
-  Database['public']['Tables']['client_instruments']['Row'];
-type ClientRow = Database['public']['Tables']['clients']['Row'];
-type InstrumentRow = Database['public']['Tables']['instruments']['Row'];
-
-type ClientInstrumentJoinedRow = ClientInstrumentRow & {
-  client?: ClientRow | null;
-  item?: InstrumentRow | null;
-};
 
 type ClientInstrumentJoined = Omit<
   ClientInstrument,
@@ -52,14 +42,16 @@ const RELATIONSHIP_TYPES: RelationshipType[] = [
   'Owned',
 ];
 
-function ensureInstrumentStatus(value: string | null): Instrument['status'] {
+function ensureInstrumentStatus(
+  value: Instrument['status'] | string | null
+): Instrument['status'] {
   if (value && INSTRUMENT_STATUSES.includes(value as Instrument['status'])) {
     return value as Instrument['status'];
   }
   return 'Available';
 }
 
-function normalizeInstrumentRow(row: InstrumentRow): Instrument {
+function normalizeInstrumentRow(row: Instrument): Instrument {
   return {
     id: row.id,
     status: ensureInstrumentStatus(row.status),
@@ -82,7 +74,7 @@ function normalizeInstrumentRow(row: InstrumentRow): Instrument {
   };
 }
 
-function normalizeClientRow(row: ClientRow): Client {
+function normalizeClientRow(row: Client): Client {
   return {
     id: row.id,
     last_name: row.last_name,
@@ -101,23 +93,34 @@ function normalizeClientRow(row: ClientRow): Client {
 }
 
 function normalizeClientRelationships(
-  rows: ClientInstrumentJoinedRow[]
+  rows: ClientInstrument[],
+  clients: Client[],
+  instruments: Instrument[]
 ): ClientInstrumentJoined[] {
+  const clientMap = new Map(clients.map(client => [client.id, client]));
+  const instrumentMap = new Map(
+    instruments.map(instrument => [instrument.id, instrument])
+  );
+
   return rows
     .filter(row => Boolean(row.client_id) && Boolean(row.instrument_id))
     .map(row => {
       const normalizedClient = row.client
         ? normalizeClientRow(row.client)
-        : null;
-      const normalizedInstrument = row.item
-        ? normalizeInstrumentRow(row.item)
-        : null;
+        : row.client_id
+          ? (clientMap.get(row.client_id) ?? null)
+          : null;
+      const normalizedInstrument = row.instrument
+        ? normalizeInstrumentRow(row.instrument)
+        : row.instrument_id
+          ? (instrumentMap.get(row.instrument_id) ?? null)
+          : null;
       return {
         id: row.id,
-        client_id: row.client_id as string,
-        instrument_id: row.instrument_id as string,
+        client_id: row.client_id,
+        instrument_id: row.instrument_id,
         notes: row.notes ?? null,
-        display_order: row.display_order,
+        display_order: row.display_order ?? undefined,
         relationship_type: RELATIONSHIP_TYPES.includes(
           row.relationship_type as RelationshipType
         )
@@ -129,6 +132,15 @@ function normalizeClientRelationships(
         item: normalizedInstrument,
       };
     });
+}
+
+async function fetchDashboardCollection<T>(
+  url: string,
+  fallbackMessage: string
+): Promise<T[]> {
+  const res = await apiFetch(url);
+  const payload = await handleApiResponse<T[]>(res, fallbackMessage);
+  return Array.isArray(payload) ? payload : [];
 }
 
 export function useDashboardItems() {
@@ -160,16 +172,24 @@ export function useDashboardItems() {
 
   const fetchItemsWithClients = useCallback(async () => {
     try {
-      const supabase = await getSupabaseClient();
-      const { data, error } = await supabase.from('client_instruments').select(`
-          *,
-          client:clients(*),
-          item:instruments(*)
-        `);
+      const [connections, clients, instruments] = await Promise.all([
+        fetchDashboardCollection<ClientInstrument>(
+          '/api/connections?orderBy=created_at&ascending=false&pageSize=100',
+          'Failed to fetch connections'
+        ),
+        fetchDashboardCollection<Client>(
+          '/api/clients?orderBy=created_at&ascending=false&all=true',
+          'Failed to fetch clients'
+        ),
+        fetchDashboardCollection<Instrument>(
+          '/api/instruments?orderBy=created_at&ascending=false&all=true',
+          'Failed to fetch instruments'
+        ),
+      ]);
 
-      if (error) throw error;
-      const rows = (data || []) as ClientInstrumentJoinedRow[];
-      setClientRelationships(normalizeClientRelationships(rows));
+      setClientRelationships(
+        normalizeClientRelationships(connections, clients, instruments)
+      );
     } catch (error) {
       logError(
         'Error fetching client relationships',
@@ -185,31 +205,15 @@ export function useDashboardItems() {
     const startTime = performance.now();
 
     try {
-      const supabase = await getSupabaseClient();
-      const { data, error } = await supabase
-        .from('instruments')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const data = await fetchDashboardCollection<Instrument>(
+        '/api/instruments?orderBy=created_at&ascending=false&all=true',
+        'Failed to fetch instruments'
+      );
       const duration = Math.round(performance.now() - startTime);
-
-      if (error) {
-        logApiRequest(
-          'GET',
-          'supabase://instruments',
-          undefined,
-          duration,
-          'useDashboardItems',
-          {
-            operation: 'fetchItems',
-            error: true,
-          }
-        );
-        throw error;
-      }
 
       logApiRequest(
         'GET',
-        'supabase://instruments',
+        '/api/instruments',
         200,
         duration,
         'useDashboardItems',
@@ -242,32 +246,20 @@ export function useDashboardItems() {
       const startTime = performance.now();
 
       try {
-        const supabase = await getSupabaseClient();
-        const { data, error } = await supabase
-          .from('instruments')
-          .insert([itemData])
-          .select()
-          .single();
+        const res = await apiFetch('/api/instruments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(itemData),
+        });
+        const data = await handleApiResponse<Instrument>(
+          res,
+          'Failed to create instrument'
+        );
         const duration = Math.round(performance.now() - startTime);
-
-        if (error) {
-          logApiRequest(
-            'POST',
-            'supabase://instruments',
-            undefined,
-            duration,
-            'useDashboardItems',
-            {
-              operation: 'createItem',
-              error: true,
-            }
-          );
-          throw error;
-        }
 
         logApiRequest(
           'POST',
-          'supabase://instruments',
+          '/api/instruments',
           201,
           duration,
           'useDashboardItems',
@@ -299,34 +291,20 @@ export function useDashboardItems() {
       const startTime = performance.now();
 
       try {
-        const supabase = await getSupabaseClient();
-        const { data, error } = await supabase
-          .from('instruments')
-          .update(itemData)
-          .eq('id', id)
-          .select()
-          .single();
+        const res = await apiFetch('/api/instruments', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, ...itemData }),
+        });
+        const data = await handleApiResponse<Instrument>(
+          res,
+          'Failed to update instrument'
+        );
         const duration = Math.round(performance.now() - startTime);
-
-        if (error) {
-          logApiRequest(
-            'PATCH',
-            `supabase://instruments/${id}`,
-            undefined,
-            duration,
-            'useDashboardItems',
-            {
-              operation: 'updateItem',
-              id,
-              error: true,
-            }
-          );
-          throw error;
-        }
 
         logApiRequest(
           'PATCH',
-          `supabase://instruments/${id}`,
+          '/api/instruments',
           200,
           duration,
           'useDashboardItems',
@@ -361,33 +339,22 @@ export function useDashboardItems() {
     const startTime = performance.now();
 
     try {
-      const supabase = await getSupabaseClient();
-      const { error } = await supabase
-        .from('instruments')
-        .delete()
-        .eq('id', id);
+      const res = await apiFetch(
+        `/api/instruments?id=${encodeURIComponent(id)}`,
+        {
+          method: 'DELETE',
+        }
+      );
+      await handleApiResponse<{ success: boolean }>(
+        res,
+        'Failed to delete instrument'
+      );
       const duration = Math.round(performance.now() - startTime);
-
-      if (error) {
-        logApiRequest(
-          'DELETE',
-          `supabase://instruments/${id}`,
-          undefined,
-          duration,
-          'useDashboardItems',
-          {
-            operation: 'deleteItem',
-            id,
-            error: true,
-          }
-        );
-        throw error;
-      }
 
       logApiRequest(
         'DELETE',
-        `supabase://instruments/${id}`,
-        204,
+        '/api/instruments',
+        200,
         duration,
         'useDashboardItems',
         {

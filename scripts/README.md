@@ -63,6 +63,12 @@ DATABASE_PASSWORD=your_database_password  # 선택사항 (자동 실행용)
 - `migrate.sh` - Supabase CLI 마이그레이션 스크립트 (Shell)
 - `migration-maintenance-tasks.sql` - 마이그레이션 SQL 파일
 
+## Production Safety
+
+- 배포 가능한 마이그레이션은 `supabase/migrations/` 아래의 timestamp-prefixed 파일만 허용됩니다.
+- `supabase/migrations_archive/` 아래의 레거시 SQL 번들은 참고용 보관 파일이며 production에 적용하면 안 됩니다.
+- 특히 `unified.sql`, `secondary.sql`, `add_organizations_table.sql` 같은 비버전 SQL 번들은 deploy path에서 제외되었습니다.
+
 ## 문제 해결
 
 ### 에러: "DATABASE_PASSWORD 환경 변수가 필요합니다"

@@ -7,14 +7,19 @@ import { apiFetch } from '@/utils/apiFetch';
 export function useOwnedItems() {
   const [ownedItems, setOwnedItems] = useState<Instrument[]>([]);
   const [loadingOwnedItems, setLoadingOwnedItems] = useState(false);
+  const [status, setStatus] = useState<
+    'loading' | 'success' | 'empty' | 'error'
+  >('empty');
 
   // ✅ FIXED: AbortController로 레이스 컨디션 방지
   const abortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
 
   // ✅ FIXED: clientId별 간단 캐시 (재클릭 UX 개선)
   const cacheRef = useRef<Map<string, Instrument[]>>(new Map());
 
   const fetchOwnedItems = useCallback(async (client: Client) => {
+    const requestId = ++requestIdRef.current;
     // 이전 요청 취소
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -30,10 +35,14 @@ export function useOwnedItems() {
     const cached = cacheRef.current.get(cacheKey);
     if (cached) {
       setOwnedItems(cached);
+      setStatus(cached.length > 0 ? 'success' : 'empty');
+      setLoadingOwnedItems(false);
       return;
     }
 
     try {
+      setOwnedItems([]);
+      setStatus('loading');
       setLoadingOwnedItems(true);
       // Use API route instead of direct Supabase client to reduce bundle size
       const params = new URLSearchParams({
@@ -53,12 +62,20 @@ export function useOwnedItems() {
       const result = await response.json();
       const items = result.data || [];
 
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
       // 캐시에 저장
       cacheRef.current.set(cacheKey, items);
       setOwnedItems(items);
+      setStatus(items.length > 0 ? 'success' : 'empty');
     } catch (e: unknown) {
       // AbortError는 정상적인 취소이므로 무시
       if (e instanceof Error && e.name === 'AbortError') {
+        return;
+      }
+      if (requestId !== requestIdRef.current) {
         return;
       }
       logError('Error fetching owned items', e, 'useOwnedItems', {
@@ -67,19 +84,26 @@ export function useOwnedItems() {
         operation: 'fetchOwnedItems',
       });
       setOwnedItems([]);
+      setStatus('error');
     } finally {
-      setLoadingOwnedItems(false);
+      if (requestId === requestIdRef.current) {
+        setLoadingOwnedItems(false);
+      }
     }
   }, []);
 
   const clearOwnedItems = useCallback(() => {
+    requestIdRef.current += 1;
+    abortRef.current?.abort();
     setOwnedItems([]);
+    setStatus('empty');
     // 캐시는 유지 (재사용 가능)
   }, []);
 
   return {
     ownedItems,
     loadingOwnedItems,
+    status,
     fetchOwnedItems,
     clearOwnedItems,
   };

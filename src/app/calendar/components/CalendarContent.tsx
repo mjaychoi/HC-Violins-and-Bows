@@ -24,6 +24,7 @@ import { TableSkeleton, Pagination } from '@/components/common';
 import { Button } from '@/components/common/inputs';
 import type { ExtendedView } from './CalendarView';
 import type { CalendarViewMode } from '../hooks/useCalendarView';
+
 // Dynamic import for CalendarView (includes react-big-calendar and react-dnd)
 // This significantly reduces initial bundle size for calendar page
 const CalendarView = dynamic(() => import('./CalendarView'), {
@@ -85,6 +86,8 @@ interface CalendarContentProps {
   createTaskDisabledReason?: string;
   canManageTask?: boolean;
   manageTaskDisabledReason?: string;
+  fetchError?: unknown;
+  onRetry?: () => void;
 }
 
 function CalendarContentInner({
@@ -109,24 +112,22 @@ function CalendarContentInner({
   createTaskDisabledReason,
   canManageTask = true,
   manageTaskDisabledReason,
+  fetchError,
+  onRetry,
 }: CalendarContentProps) {
-  // onTaskEdit is optional, so we need to handle it
   const handleTaskEdit = onTaskEdit || onTaskClick;
-  // Filters drawer state for calendar view
   const [filtersOpen, setFiltersOpen] = React.useState(false);
-  // Refs for focus management
   const filtersToggleRef = React.useRef<HTMLButtonElement>(null);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const isListView = view === 'list';
   const isCalendarView = view !== 'list';
-  // Calendar tasks (maps, filter options)
+
   const taskData = useCalendarTasks({
     tasks,
     instruments,
     clients,
   });
 
-  // Calendar filters
   const {
     filteredTasks,
     paginatedTasks,
@@ -142,7 +143,6 @@ function CalendarContentInner({
     filterOptions: taskData.filterOptions,
   });
 
-  // Alias for cleaner code
   const {
     filterStatus,
     filterOwnership,
@@ -165,20 +165,13 @@ function CalendarContentInner({
     resetFilters,
   } = filterState;
 
-  // Calculate summary stats with ALL tasks (not filtered)
-  // FIXED: Stats should always show totals from all tasks, not filtered subset
   const summaryStats = useMemo(() => {
     return calculateSummaryStats(tasks);
   }, [tasks]);
 
-  // Determine active filter preset based on current filter state
-  // Simplified: only check dateRange + filterStatus (not hasActiveFilters)
-  const activePreset = useMemo(():
-    | 'all'
-    | 'overdue'
-    | 'today'
-    | 'upcoming'
-    | null => {
+  const activePreset = useMemo<
+    'all' | 'overdue' | 'today' | 'upcoming' | null
+  >(() => {
     const today = parseYMDLocal(todayLocalYMD())!;
     const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
     const todayStr = fmt(today);
@@ -186,7 +179,6 @@ function CalendarContentInner({
     const tomorrowStr = fmt(addDays(today, 1));
     const nextWeekStr = fmt(addDays(today, 7));
 
-    // Check if "all" (no dateRange or both from/to are null, and no filterStatus)
     if (
       !dateRange ||
       (!dateRange.from && !dateRange.to && filterStatus === 'all')
@@ -194,7 +186,6 @@ function CalendarContentInner({
       return 'all';
     }
 
-    // Check if "today"
     if (
       dateRange.from === todayStr &&
       dateRange.to === todayStr &&
@@ -203,7 +194,6 @@ function CalendarContentInner({
       return 'today';
     }
 
-    // Check if "overdue"
     if (
       dateRange.to === yesterdayStr &&
       !dateRange.from &&
@@ -212,7 +202,6 @@ function CalendarContentInner({
       return 'overdue';
     }
 
-    // Check if "upcoming" (next 7 days)
     if (
       dateRange.from === tomorrowStr &&
       dateRange.to === nextWeekStr &&
@@ -221,7 +210,7 @@ function CalendarContentInner({
       return 'upcoming';
     }
 
-    return null; // Custom filter active
+    return null;
   }, [dateRange, filterStatus]);
 
   const resetFiltersAndUpdate = useCallback(() => {
@@ -229,19 +218,15 @@ function CalendarContentInner({
     navigation.setSelectedDate(null);
   }, [resetFilters, navigation]);
 
-  // Apply preset filter - reset once, then set specific values
   const applyPreset = useCallback(
     (preset: 'all' | 'overdue' | 'today' | 'upcoming') => {
       const today = parseYMDLocal(todayLocalYMD())!;
       const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
 
-      // Reset filters once at the start
       resetFilters();
       navigation.setSelectedDate(null);
 
-      // Then set preset-specific values
       if (preset === 'all') {
-        // Already reset, nothing more to do
         return;
       }
 
@@ -257,7 +242,6 @@ function CalendarContentInner({
         return;
       }
 
-      // upcoming
       setDateRange({
         from: fmt(addDays(today, 1)),
         to: fmt(addDays(today, 7)),
@@ -266,7 +250,6 @@ function CalendarContentInner({
     [resetFilters, navigation, setDateRange, setFilterStatus]
   );
 
-  // Handle summary card clicks to apply filters
   const handleSummaryCardClick = useCallback(
     (status: 'all' | 'overdue' | 'today' | 'upcoming') => {
       applyPreset(status);
@@ -274,10 +257,8 @@ function CalendarContentInner({
     [applyPreset]
   );
 
-  // Focus management: when filters drawer opens, focus search input
   React.useEffect(() => {
     if (filtersOpen && isCalendarView && searchInputRef.current) {
-      // Small delay to ensure CalendarFilters is rendered
       const timer = setTimeout(() => {
         searchInputRef.current?.focus();
       }, 100);
@@ -285,12 +266,31 @@ function CalendarContentInner({
     }
   }, [filtersOpen, isCalendarView]);
 
-  const isEmptyState = !loading.fetch && filteredTasks.length === 0;
+  const fetchErrorMessage = useMemo(() => {
+    if (fetchError instanceof Error) {
+      return fetchError.message;
+    }
+
+    if (
+      typeof fetchError === 'object' &&
+      fetchError !== null &&
+      'message' in fetchError
+    ) {
+      const message = (fetchError as { message?: unknown }).message;
+      if (typeof message === 'string') {
+        return message;
+      }
+    }
+
+    return 'An unexpected error occurred. Please try again.';
+  }, [fetchError]);
+
+  const isEmptyState =
+    !loading.fetch && !fetchError && filteredTasks.length === 0;
   const showPagination = totalPages > 1 && isListView;
 
   return (
     <div className="p-6 pb-14">
-      {/* Sticky Mini Toolbar - always visible for list view */}
       {isListView && (
         <div className="sticky top-0 z-10 bg-white border-b border-gray-200 mb-4 -mx-6 px-6 py-3 shadow-sm">
           <div className="flex items-center justify-between gap-4">
@@ -310,7 +310,6 @@ function CalendarContentInner({
               </h2>
             </div>
             <div className="flex items-center gap-2">
-              {/* Quick filter pills */}
               <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
                 <button
                   type="button"
@@ -364,12 +363,9 @@ function CalendarContentInner({
         </div>
       )}
 
-      {/* Compressed Header: Navigation + Summary Pills in one line */}
       <div className="mb-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          {/* Left: Navigation + Date */}
           <div className="flex items-center gap-3">
-            {/* Navigation buttons */}
             <div className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white px-1 py-0.5">
               <button
                 onClick={navigation.handlePrevious}
@@ -411,7 +407,6 @@ function CalendarContentInner({
               </button>
             </div>
 
-            {/* Date label */}
             <h1 className="text-base font-semibold tracking-tight text-gray-900 whitespace-nowrap">
               {getViewRangeLabel(
                 navigation.calendarView,
@@ -419,10 +414,8 @@ function CalendarContentInner({
               )}
             </h1>
 
-            {/* Divider */}
             <div className="hidden md:block h-6 w-px bg-gray-300" />
 
-            {/* Summary Pills */}
             <CalendarSummary
               total={summaryStats.total}
               overdue={summaryStats.overdue}
@@ -432,9 +425,7 @@ function CalendarContentInner({
               onOpenFilters={() => {
                 const newValue = !filtersOpen;
                 setFiltersOpen(newValue);
-                // Focus management: when opening, focus search input; when closing, return to toggle button
                 if (newValue && isCalendarView) {
-                  // Delay to ensure CalendarFilters is rendered
                   setTimeout(() => {
                     searchInputRef.current?.focus();
                   }, 0);
@@ -449,7 +440,6 @@ function CalendarContentInner({
             />
           </div>
 
-          {/* Right: Today / View Toggle / New Task Button */}
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               onClick={navigation.handleGoToToday}
@@ -565,7 +555,6 @@ function CalendarContentInner({
         </div>
       </div>
 
-      {/* Filters Drawer - hidden by default, shown when filtersOpen */}
       {filtersOpen && isCalendarView && (
         <div className="mb-4" id="calendar-filters">
           <CalendarFilters
@@ -596,7 +585,6 @@ function CalendarContentInner({
         </div>
       )}
 
-      {/* Filters - always visible for list view */}
       {isListView && (
         <div className="mb-4" id="calendar-filters">
           <CalendarFilters
@@ -626,10 +614,27 @@ function CalendarContentInner({
         </div>
       )}
 
-      {/* Calendar or List View */}
       {loading.fetch ? (
         <div className="rounded-lg bg-white p-6 shadow-sm border border-gray-200">
           <TableSkeleton rows={8} columns={4} />
+        </div>
+      ) : fetchError ? (
+        <div className="rounded-lg bg-white p-6 shadow-sm border border-red-200">
+          <div className="text-center py-8">
+            <p className="text-red-700 font-medium mb-1">
+              Failed to load maintenance tasks
+            </p>
+            <p className="text-red-500 text-sm mb-4">{fetchErrorMessage}</p>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={() => void onRetry()}
+                className="px-4 py-2 bg-red-600 text-white rounded-md text-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         </div>
       ) : isEmptyState ? (
         <CalendarEmptyState

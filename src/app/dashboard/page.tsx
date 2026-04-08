@@ -41,7 +41,8 @@ type EnrichedInstrument = Instrument & { clients: ClientInstrument[] };
 
 export default function DashboardPage() {
   const { showSuccess, handleError } = useAppFeedback();
-  const { canCreateInstrument, canCreateSale } = usePermissions();
+  const { canCreateInstrument, canCreateSale, createSaleDisabledReason } =
+    usePermissions();
   const { submitting: isSubmittingSale, withSubmitting: withSaleSubmitting } =
     useLoadingState();
 
@@ -64,14 +65,38 @@ export default function DashboardPage() {
     clientRelationships,
     clients,
     loading,
+    errors,
     submitting,
     handleCreateItem,
     handleUpdateItem,
     handleUpdateItemInline,
     handleDeleteItem,
+    reloadDashboard,
   } = useDashboardData();
 
   const clientsLoading = loading.clients;
+  const hasBootstrapError =
+    errors.hasAnyError && !loading.hasAnyLoading && instruments.length === 0;
+
+  const dashboardErrorMessage = useMemo(() => {
+    const firstError =
+      errors.instruments || errors.clients || errors.connections || null;
+
+    if (firstError instanceof Error && firstError.message) {
+      return firstError.message;
+    }
+
+    if (
+      firstError &&
+      typeof firstError === 'object' &&
+      'message' in firstError &&
+      typeof (firstError as { message?: unknown }).message === 'string'
+    ) {
+      return (firstError as { message: string }).message;
+    }
+
+    return 'Failed to load dashboard data.';
+  }, [errors.clients, errors.connections, errors.instruments]);
 
   // ✅ 개선 1) enrichedItems: 캐스팅 제거 + O(1) map
   const enrichedItems = useMemo<EnrichedInstrument[]>(() => {
@@ -241,19 +266,8 @@ export default function DashboardPage() {
           const result = await createSale(payload);
           if (!result) return;
 
-          const messages: string[] = ['판매 기록이 추가되었습니다'];
-          const links: Array<{ label: string; href: string }> = [];
-
-          if (options?.instrumentStatusUpdated && options?.instrumentId) {
-            messages.push("악기 상태가 'Sold'로 변경되었습니다");
-            links.push({
-              label: '악기 보기',
-              href: `/dashboard?instrumentId=${options.instrumentId}`,
-            });
-          }
-
-          const message = messages.join(' / ');
-          showSuccess(message + '.', links.length > 0 ? links : undefined);
+          void options;
+          showSuccess('판매 기록이 추가되었습니다.');
 
           setShowSaleModal(false);
           setSelectedInstrumentForSale(null);
@@ -303,12 +317,16 @@ export default function DashboardPage() {
         }
       }
 
-      if (successCount > 0) {
+      if (successCount > 0 && errorCount === 0) {
         showSuccess(
           `예시 데이터 ${successCount}개가 성공적으로 추가되었습니다.`
         );
       }
-      if (errorCount > 0) {
+      if (successCount > 0 && errorCount > 0) {
+        showSuccess(
+          `예시 데이터 ${successCount}개가 추가되었지만 ${errorCount}개는 실패했습니다.`
+        );
+      } else if (errorCount > 0) {
         handleError(
           new Error(`일부 예시 데이터 추가 실패 (${errorCount}개)`),
           '예시 데이터 로드'
@@ -373,15 +391,17 @@ export default function DashboardPage() {
         }
         headerActions={
           <div className="flex items-center gap-2">
-            {canCreateSale && (
+            {(canCreateSale || createSaleDisabledReason) && (
               <button
                 type="button"
-                onClick={handleOpenSaleModal}
-                disabled={isSubmittingSale}
+                onClick={canCreateSale ? handleOpenSaleModal : undefined}
+                disabled={isSubmittingSale || !canCreateSale}
                 title={
                   isSubmittingSale
                     ? 'Please wait for the current submission to finish'
-                    : 'Record a new sale'
+                    : !canCreateSale
+                      ? createSaleDisabledReason
+                      : 'Record a new sale'
                 }
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -413,19 +433,41 @@ export default function DashboardPage() {
           </div>
         }
       >
-        <DashboardContent
-          enrichedItems={enrichedItems}
-          clients={clients}
-          clientRelationships={clientRelationships}
-          clientsLoading={clientsLoading}
-          loading={loading}
-          onDeleteClick={item => handleRequestDelete(item.id)}
-          onUpdateItemInline={handleUpdateItemInline}
-          onAddClick={handleAddItem}
-          newlyCreatedItemId={newlyCreatedItemId}
-          onNewlyCreatedItemShown={() => setNewlyCreatedItemId(null)}
-          onLoadSampleData={handleLoadSampleData}
-        />
+        {hasBootstrapError ? (
+          <div className="p-6">
+            <div className="rounded-xl border border-red-200 bg-red-50 p-6">
+              <h2 className="text-lg font-semibold text-red-900">
+                Failed to load dashboard
+              </h2>
+              <p className="mt-2 text-sm text-red-800">
+                {dashboardErrorMessage}
+              </p>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => void reloadDashboard()}
+                  className="inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <DashboardContent
+            enrichedItems={enrichedItems}
+            clients={clients}
+            clientRelationships={clientRelationships}
+            clientsLoading={clientsLoading}
+            loading={loading}
+            onDeleteClick={item => handleRequestDelete(item.id)}
+            onUpdateItemInline={handleUpdateItemInline}
+            onAddClick={handleAddItem}
+            newlyCreatedItemId={newlyCreatedItemId}
+            onNewlyCreatedItemShown={() => setNewlyCreatedItemId(null)}
+            onLoadSampleData={handleLoadSampleData}
+          />
+        )}
 
         <ItemForm
           isOpen={isModalOpen}

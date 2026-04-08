@@ -202,9 +202,9 @@ describe('errorSanitization', () => {
     it('should create safe error response', () => {
       const error = new Error('api_key: secret123');
       const result = createSafeErrorResponse(error, 400);
-      expect(result.statusCode).toBe(400);
       expect(result.message).not.toContain('secret123');
-      expect(result.error).toBe('An error occurred');
+      expect(result.retryable).toBe(false);
+      expect(result.error_code).toBeUndefined();
     });
 
     it('should include details in development', () => {

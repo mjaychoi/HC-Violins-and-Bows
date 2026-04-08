@@ -80,6 +80,7 @@ const baseProps = {
   isOpen: true,
   onClose: jest.fn(),
   onSubmit: jest.fn(),
+  onRetryInstrumentLinks: jest.fn(),
   submitting: false,
 };
 
@@ -256,6 +257,115 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
       // instruments가 전달되어야 함
       const callArgs = mockOnSubmit.mock.calls[0];
       expect(callArgs[1]).toEqual(mockInstruments);
+    });
+  });
+
+  it('partial success 시 retry affordance를 보여준다', async () => {
+    const mockOnSubmit = jest.fn().mockResolvedValue({
+      status: 'partial_success',
+      clientId: 'client-123',
+      failedLinks: [
+        {
+          instrument: {
+            id: '1',
+            status: 'Available' as const,
+            maker: 'Stradivari',
+            type: 'Violin',
+            subtype: null,
+            year: 1700,
+            certificate: true,
+            size: '4/4',
+            weight: '500g',
+            price: 1000000,
+            ownership: 'Museum',
+            note: 'Famous violin',
+            serial_number: null,
+            created_at: '2023-01-01T00:00:00Z',
+          },
+          relationshipType: 'Interested' as const,
+        },
+      ],
+    });
+    const mockOnRetryInstrumentLinks = jest.fn().mockResolvedValue({
+      status: 'full_success',
+    });
+
+    const mockUseFormState = jest.mocked(
+      require('@/hooks/useFormState')
+    ).useFormState;
+
+    mockUseFormState.mockReturnValue({
+      formData: {
+        last_name: 'Doe',
+        first_name: 'John',
+        contact_number: '1234567890',
+        email: 'john@example.com',
+        tags: [],
+        interest: '',
+        note: '',
+        client_number: '',
+      },
+      updateField: jest.fn(),
+      resetForm: jest.fn(),
+    });
+
+    const mockUseDataState = jest.mocked(
+      require('@/hooks/useDataState')
+    ).useDataState;
+
+    mockUseDataState.mockReturnValue({
+      data: [
+        {
+          instrument: {
+            id: '1',
+            status: 'Available' as const,
+            maker: 'Stradivari',
+            type: 'Violin',
+            subtype: null,
+            year: 1700,
+            certificate: true,
+            size: '4/4',
+            weight: '500g',
+            price: 1000000,
+            ownership: 'Museum',
+            note: 'Famous violin',
+            serial_number: null,
+            created_at: '2023-01-01T00:00:00Z',
+          },
+          relationshipType: 'Interested' as const,
+        },
+      ],
+      addItem: jest.fn(),
+      removeItem: jest.fn(),
+      clearData: jest.fn(),
+      setItems: jest.fn(),
+    });
+
+    render(
+      <ClientForm
+        {...baseProps}
+        onSubmit={mockOnSubmit}
+        onRetryInstrumentLinks={mockOnRetryInstrumentLinks}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /add client/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Client created, but some instrument links failed')
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /retry failed links/i })
+    );
+
+    await waitFor(() => {
+      expect(mockOnRetryInstrumentLinks).toHaveBeenCalledWith(
+        'client-123',
+        expect.any(Array)
+      );
     });
   });
 

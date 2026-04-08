@@ -1,3 +1,8 @@
+-- DO NOT APPLY IN PRODUCTION.
+-- Archived legacy SQL bundle kept for reference only.
+-- This file was removed from supabase/migrations because it contains
+-- permissive legacy policy definitions and is not a deployable migration.
+
 -- ============================================
 -- Organizations Table Migration
 -- ============================================
@@ -130,4 +135,3 @@ END $$;
 
 -- Add comment
 COMMENT ON TABLE public.organizations IS 'Stores organization information for multi-tenancy support';
-

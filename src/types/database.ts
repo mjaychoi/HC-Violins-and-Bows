@@ -631,6 +631,7 @@ export type Database = {
           enabled: boolean | null;
           last_notification_sent_at: string | null;
           notification_time: string | null;
+          org_id: string;
           updated_at: string | null;
           user_id: string;
         };
@@ -641,6 +642,7 @@ export type Database = {
           enabled?: boolean | null;
           last_notification_sent_at?: string | null;
           notification_time?: string | null;
+          org_id: string;
           updated_at?: string | null;
           user_id: string;
         };
@@ -651,10 +653,19 @@ export type Database = {
           enabled?: boolean | null;
           last_notification_sent_at?: string | null;
           notification_time?: string | null;
+          org_id?: string;
           updated_at?: string | null;
           user_id?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'notification_settings_org_id_fkey';
+            columns: ['org_id'];
+            isOneToOne: false;
+            referencedRelation: 'organizations';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       organizations: {
         Row: {

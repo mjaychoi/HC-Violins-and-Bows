@@ -8,10 +8,12 @@ interface CustomerListProps {
   customers: CustomerWithPurchases[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  status?: 'loading' | 'success' | 'empty' | 'error';
   /** 필터/검색 활성 여부 (빈 상태 카피/버튼 제어) */
   hasActiveFilters?: boolean;
   /** 필터/검색 리셋 핸들러 */
   onResetFilters?: () => void;
+  onRetry?: () => void;
   /** 새 고객 추가 CTA가 필요할 때 */
   onAddCustomer?: () => void;
   canAddCustomer?: boolean;
@@ -29,8 +31,10 @@ export const CustomerListComponent = ({
   customers,
   selectedId,
   onSelect,
+  status = 'success',
   hasActiveFilters = false,
   onResetFilters,
+  onRetry,
   onAddCustomer,
   canAddCustomer = true,
   addCustomerDisabledReason,
@@ -84,6 +88,28 @@ export const CustomerListComponent = ({
     buttonRefs.current = buttonRefs.current.slice(0, customers.length);
   }, [customers.length]);
 
+  if (status === 'error') {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 px-6 py-8 text-center">
+        <h3 className="text-lg font-semibold text-red-800">
+          Failed to load customers
+        </h3>
+        <p className="mt-2 text-sm text-red-700">
+          Customer analytics could not be loaded. Try again.
+        </p>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-4 inline-flex items-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
+
   if (!customers.length) {
     return (
       <EmptyState
@@ -136,10 +162,12 @@ export const CustomerListComponent = ({
         const fullName =
           `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
           'Unnamed';
-        const totalSpend = customer.purchases.reduce(
-          (sum: number, p: { amount: number }) => sum + p.amount,
-          0
-        );
+        const totalSpend =
+          customer.totalSpend ??
+          customer.purchases.reduce(
+            (sum: number, p: { amount: number }) => sum + p.amount,
+            0
+          );
         // ✅ Use lastPurchaseAt for display (already formatted in useCustomers)
         const recentDate = formatDateForDisplay(customer.lastPurchaseAt);
         // ✅ Tags are already normalized in useCustomers

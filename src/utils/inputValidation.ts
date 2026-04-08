@@ -178,6 +178,27 @@ export function sanitizeEmail(email: string | null | undefined): string | null {
 }
 
 /**
+ * PostgREST filter-string safety for `or()` / `ilike` search terms.
+ */
+export function sanitizeSearchForOrIlike(
+  input: string | null | undefined
+): string | undefined {
+  const s = (input ?? '').trim();
+  if (s.length < 2) return undefined;
+
+  const cleaned = s
+    .replace(/[%_]/g, ' ')
+    .replace(/[(),]/g, ' ')
+    .replace(/['"\\]/g, ' ')
+    .replace(/[\x00-\x1F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 96);
+
+  return cleaned.length >= 2 ? cleaned : undefined;
+}
+
+/**
  * Sanitize search term for safe use
  * NOTE: Removing % _ \ can break legitimate searches (e.g., "50% off", "A_B test").
  * Instead, handle SQL escaping at the query level (Supabase ilike handles this).

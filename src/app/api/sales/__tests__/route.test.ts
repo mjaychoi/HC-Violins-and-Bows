@@ -8,6 +8,7 @@ jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 let mockUserSupabase: any;
+let mockAuthContext: any;
 
 jest.mock('@/app/api/_utils/withAuthRoute', () => {
   const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
@@ -17,13 +18,8 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
       handler(
         request,
         {
-          user: { id: 'test-user' },
-          accessToken: 'test-token',
-          orgId: 'test-org',
-          clientId: 'test-client',
-          role: 'admin',
+          ...mockAuthContext,
           userSupabase: mockUserSupabase,
-          isTestBypass: true,
         },
         context
       ),
@@ -54,6 +50,8 @@ describe('/api/sales', () => {
       range: jest.fn().mockReturnThis(),
       gte: jest.fn().mockReturnThis(),
       lte: jest.fn().mockReturnThis(),
+      gt: jest.fn().mockReturnThis(),
+      lt: jest.fn().mockReturnThis(),
       ilike: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
       not: jest.fn().mockReturnThis(),
@@ -65,6 +63,15 @@ describe('/api/sales', () => {
       from: jest.fn().mockReturnValue(baseQuery),
       rpc: jest.fn(),
     };
+    mockAuthContext = {
+      user: { id: 'test-user' },
+      accessToken: 'test-token',
+      orgId: 'test-org',
+      clientId: 'test-client',
+      role: 'admin',
+      userSupabase: mockUserSupabase,
+      isTestBypass: false,
+    };
   });
 
   afterEach(() => {
@@ -72,6 +79,127 @@ describe('/api/sales', () => {
   });
 
   describe('GET', () => {
+    it('should deny export mode for non-admin users', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        role: 'member',
+      };
+
+      const request = new NextRequest(
+        'http://localhost:3000/api/sales?export=true&pageSize=5000'
+      );
+      const response = await GET(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body).toMatchObject({
+        message: 'Admin role required',
+        error_code: 'ADMIN_REQUIRED',
+        retryable: false,
+      });
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('should allow standard paginated listing for non-admin users', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        role: 'member',
+      };
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [],
+          error: null,
+          count: 0,
+        }),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        is: jest.fn().mockReturnThis(),
+      };
+
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
+
+      const request = new NextRequest('http://localhost:3000/api/sales?page=1');
+      const response = await GET(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.pagination).toEqual({
+        page: 1,
+        pageSize: 10,
+        totalCount: 0,
+        totalPages: 1,
+      });
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    });
+
+    it('should reject GET when org context is missing', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        orgId: null,
+      };
+
+      const request = new NextRequest('http://localhost:3000/api/sales?page=1');
+      const response = await GET(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body).toMatchObject({
+        message: 'Organization context required',
+        retryable: false,
+      });
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('should allow export mode for admin users and enforce server-side cap', async () => {
+      const mockData = [
+        {
+          id: '123e4567-e89b-12d3-a456-426614174000',
+          instrument_id: '123e4567-e89b-12d3-a456-426614174001',
+          client_id: '123e4567-e89b-12d3-a456-426614174002',
+          sale_price: 2500.0,
+          sale_date: '2024-01-15',
+          notes: 'Export sale',
+          created_at: '2024-01-15T10:30:00Z',
+        },
+      ];
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({
+          data: mockData,
+          error: null,
+          count: 1,
+        }),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        is: jest.fn().mockReturnThis(),
+      };
+
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
+
+      const request = new NextRequest(
+        'http://localhost:3000/api/sales?export=true&pageSize=6000'
+      );
+      const response = await GET(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data).toEqual(mockData);
+      expect(body.pagination).toBeUndefined();
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockQuery.limit).toHaveBeenCalledWith(5000);
+    });
+
     it('should return paginated sales data', async () => {
       const mockData = [
         {
@@ -84,7 +212,7 @@ describe('/api/sales', () => {
           created_at: '2024-01-15T10:30:00Z',
         },
       ];
-      const mockCount = 1;
+      const mockCount = 2;
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
@@ -92,39 +220,57 @@ describe('/api/sales', () => {
         range: jest.fn().mockReturnThis(),
         gte: jest.fn().mockReturnThis(),
         lte: jest.fn().mockReturnThis(),
+        gt: jest.fn().mockReturnThis(),
+        lt: jest.fn().mockReturnThis(),
         ilike: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         not: jest.fn().mockReturnThis(),
         is: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
+        single: jest.fn(),
       };
 
-      // totalsQuery를 위한 별도 mockQuery 생성 (sale_price만 select)
-      const mockTotalsQuery = {
+      const mockPositiveTotalsQuery = {
         select: jest.fn().mockReturnThis(),
         gte: jest.fn().mockReturnThis(),
         lte: jest.fn().mockReturnThis(),
+        gt: jest.fn().mockReturnThis(),
         ilike: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         not: jest.fn().mockReturnThis(),
         is: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue({
-          data: mockData.map((s: any) => ({ sale_price: s.sale_price })),
+        single: jest.fn().mockResolvedValue({
+          data: { revenue: 2500, avg_ticket: 2500 },
           error: null,
         }),
       };
 
-      // supabase.from이 두 번 호출됨: 메인 쿼리와 totalsQuery
+      const mockRefundTotalsQuery = {
+        select: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        lt: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        is: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { refund_total: -500 },
+          error: null,
+        }),
+      };
+
       let callCount = 0;
       const mockSupabaseClient = {
         from: jest.fn().mockImplementation(() => {
           callCount++;
-          // 첫 번째 호출: 메인 쿼리 (range 사용)
           if (callCount === 1) {
             return mockQuery as any;
           }
-          // 두 번째 호출: totalsQuery (limit 사용)
-          return mockTotalsQuery as any;
+          if (callCount === 2) {
+            return mockPositiveTotalsQuery as any;
+          }
+          return mockRefundTotalsQuery as any;
         }),
       } as any;
 
@@ -149,6 +295,24 @@ describe('/api/sales', () => {
         totalCount: mockCount,
         totalPages: 1,
       });
+      expect(body.totals).toEqual({
+        revenue: 2500,
+        refund: 500,
+        avgTicket: 2500,
+        count: 2,
+        refundRate: 16.7,
+      });
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockPositiveTotalsQuery.eq).toHaveBeenCalledWith(
+        'org_id',
+        'test-org'
+      );
+      expect(mockRefundTotalsQuery.eq).toHaveBeenCalledWith(
+        'org_id',
+        'test-org'
+      );
+      expect(mockPositiveTotalsQuery.single).toHaveBeenCalled();
+      expect(mockRefundTotalsQuery.single).toHaveBeenCalled();
       expect(mockLogApiRequest).toHaveBeenCalledWith(
         'GET',
         '/api/sales',
@@ -158,7 +322,7 @@ describe('/api/sales', () => {
         expect.objectContaining({
           page: 1,
           recordCount: 1,
-          totalCount: 1,
+          totalCount: 2,
         })
       );
     });
@@ -248,7 +412,9 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(500);
-      expect(body.error).toBe('An error occurred');
+      expect(body.message).toBe(
+        'Server error occurred. Please try again later.'
+      );
     });
 
     it('should handle invalid instrument_id format', async () => {
@@ -259,7 +425,7 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toBe('Invalid instrument_id format');
+      expect(body.message).toBe('Invalid instrument_id format');
     });
 
     it('should handle invalid date format', async () => {
@@ -308,29 +474,46 @@ describe('/api/sales', () => {
         range: jest.fn().mockReturnThis(),
         gte: jest.fn().mockReturnThis(),
         lte: jest.fn().mockReturnThis(),
+        gt: jest.fn().mockReturnThis(),
+        lt: jest.fn().mockReturnThis(),
         ilike: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         not: jest.fn().mockReturnThis(),
         is: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
+        single: jest.fn(),
       };
 
-      // totalsQuery를 위한 별도 mockQuery 생성
-      const mockTotalsQuery = {
+      const mockPositiveTotalsQuery = {
         select: jest.fn().mockReturnThis(),
         gte: jest.fn().mockReturnThis(),
         lte: jest.fn().mockReturnThis(),
+        gt: jest.fn().mockReturnThis(),
         ilike: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         not: jest.fn().mockReturnThis(),
         is: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue({
-          data: mockData.map((s: any) => ({ sale_price: s.sale_price })),
+        single: jest.fn().mockResolvedValue({
+          data: { revenue: 6000, avg_ticket: 1200 },
           error: null,
         }),
       };
 
-      // supabase.from이 두 번 호출됨: 메인 쿼리와 totalsQuery
+      const mockRefundTotalsQuery = {
+        select: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        lt: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        is: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { refund_total: 0 },
+          error: null,
+        }),
+      };
+
       let callCount = 0;
       const mockSupabaseClient = {
         from: jest.fn().mockImplementation(() => {
@@ -338,7 +521,10 @@ describe('/api/sales', () => {
           if (callCount === 1) {
             return mockQuery as any;
           }
-          return mockTotalsQuery as any;
+          if (callCount === 2) {
+            return mockPositiveTotalsQuery as any;
+          }
+          return mockRefundTotalsQuery as any;
         }),
       } as any;
       mockUserSupabase = mockSupabaseClient;
@@ -482,29 +668,46 @@ describe('/api/sales', () => {
         range: jest.fn().mockReturnThis(),
         gte: jest.fn().mockReturnThis(),
         lte: jest.fn().mockReturnThis(),
+        gt: jest.fn().mockReturnThis(),
+        lt: jest.fn().mockReturnThis(),
         ilike: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         not: jest.fn().mockReturnThis(),
         is: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
+        single: jest.fn(),
       };
 
-      // totalsQuery를 위한 별도 mockQuery 생성
-      const mockTotalsQuery = {
+      const mockPositiveTotalsQuery = {
         select: jest.fn().mockReturnThis(),
         gte: jest.fn().mockReturnThis(),
         lte: jest.fn().mockReturnThis(),
+        gt: jest.fn().mockReturnThis(),
         ilike: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         not: jest.fn().mockReturnThis(),
         is: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue({
-          data: [{ sale_price: 1000 }],
+        single: jest.fn().mockResolvedValue({
+          data: { revenue: 1000, avg_ticket: 1000 },
           error: null,
         }),
       };
 
-      // supabase.from이 두 번 호출됨: 메인 쿼리와 totalsQuery
+      const mockRefundTotalsQuery = {
+        select: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        lt: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        is: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { refund_total: 0 },
+          error: null,
+        }),
+      };
+
       let callCount = 0;
       const mockSupabaseClient = {
         from: jest.fn().mockImplementation(() => {
@@ -512,7 +715,10 @@ describe('/api/sales', () => {
           if (callCount === 1) {
             return mockQuery as any;
           }
-          return mockTotalsQuery as any;
+          if (callCount === 2) {
+            return mockPositiveTotalsQuery as any;
+          }
+          return mockRefundTotalsQuery as any;
         }),
       } as any;
       mockUserSupabase = mockSupabaseClient;
@@ -561,7 +767,9 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(500);
-      expect(body.error).toBe('An error occurred');
+      expect(body.message).toBe(
+        'Server error occurred. Please try again later.'
+      );
       expect(mockCaptureException).toHaveBeenCalled();
     });
 
@@ -623,7 +831,46 @@ describe('/api/sales', () => {
   });
 
   describe('POST', () => {
-    it('should create a new sale', async () => {
+    it('should reject sale creation for non-admin users without partial writes', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        role: 'member',
+      };
+
+      const mockSelectQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+
+      const mockRpc = jest.fn();
+      mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
+
+      const request = new NextRequest('http://localhost:3000/api/sales', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-member-blocked' },
+        body: JSON.stringify({
+          sale_price: 2500.0,
+          sale_date: '2024-01-15',
+          notes: 'Blocked member sale',
+        }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body).toMatchObject({
+        message: 'Admin role required',
+        error_code: 'ADMIN_REQUIRED',
+        retryable: false,
+      });
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+      expect(mockSelectQuery.select).not.toHaveBeenCalled();
+    });
+
+    it('should create a new sale for admin users', async () => {
       const mockSale = {
         id: '123e4567-e89b-12d3-a456-426614174000',
         instrument_id: '123e4567-e89b-12d3-a456-426614174001',
@@ -651,6 +898,7 @@ describe('/api/sales', () => {
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-1' },
         body: JSON.stringify({
           sale_price: 2500.0,
           sale_date: '2024-01-15',
@@ -665,7 +913,10 @@ describe('/api/sales', () => {
 
       expect(response.status).toBe(201);
       expect(body.data).toEqual(mockSale);
-      expect(mockRpc).toHaveBeenCalledWith('create_sale_atomic', {
+      expect(mockRpc).toHaveBeenCalledWith('create_sale_atomic_idempotent', {
+        p_route_key: 'POST:/api/sales',
+        p_idempotency_key: 'sale-key-1',
+        p_request_hash: expect.any(String),
         p_sale_price: 2500,
         p_sale_date: '2024-01-15',
         p_client_id: mockSale.client_id,
@@ -673,11 +924,13 @@ describe('/api/sales', () => {
         p_notes: 'Test sale',
       });
       expect(mockSelectQuery.eq).toHaveBeenCalledWith('id', mockSale.id);
+      expect(mockSelectQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
     it('should validate required fields', async () => {
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-2' },
         body: JSON.stringify({
           sale_price: 2500.0,
           // sale_date missing
@@ -688,12 +941,13 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toBe('Sale price and date are required.');
+      expect(body.message).toBe('Sale price and date are required.');
     });
 
     it('should validate sale_price is a number', async () => {
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-3' },
         body: JSON.stringify({
           sale_price: 'not-a-number',
           sale_date: '2024-01-15',
@@ -704,7 +958,7 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toBe('Sale price must be a number.');
+      expect(body.message).toBe('Sale price must be a number.');
     });
 
     it('should handle null optional fields', async () => {
@@ -735,6 +989,7 @@ describe('/api/sales', () => {
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-4' },
         body: JSON.stringify({
           sale_price: 2500.0,
           sale_date: '2024-01-15',
@@ -744,7 +999,10 @@ describe('/api/sales', () => {
       const response = await POST(request);
 
       expect(response.status).toBe(201);
-      expect(mockRpc).toHaveBeenCalledWith('create_sale_atomic', {
+      expect(mockRpc).toHaveBeenCalledWith('create_sale_atomic_idempotent', {
+        p_route_key: 'POST:/api/sales',
+        p_idempotency_key: 'sale-key-4',
+        p_request_hash: expect.any(String),
         p_sale_price: 2500,
         p_sale_date: '2024-01-15',
         p_client_id: null,
@@ -768,6 +1026,7 @@ describe('/api/sales', () => {
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-5' },
         body: JSON.stringify({
           sale_price: 2500.0,
           sale_date: '2024-01-15',
@@ -778,13 +1037,16 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(500);
-      expect(body.error).toBe('An error occurred');
+      expect(body.message).toBe(
+        'Server error occurred. Please try again later.'
+      );
       expect(mockCaptureException).toHaveBeenCalled();
     });
 
     it('should handle invalid JSON body', async () => {
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-6' },
         body: 'invalid json',
       });
 
@@ -820,6 +1082,7 @@ describe('/api/sales', () => {
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-7' },
         body: JSON.stringify({
           sale_price: -500.0,
           sale_date: '2024-01-15',
@@ -837,6 +1100,7 @@ describe('/api/sales', () => {
     it('should validate sale_date format', async () => {
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-8' },
         body: JSON.stringify({
           sale_price: 2500.0,
           sale_date: 'invalid-date',
@@ -847,11 +1111,305 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toContain('sale_date must be a valid date string');
+      expect(body.message).toContain('sale_date must be a valid date string');
+    });
+
+    it('should require an idempotency key', async () => {
+      const request = new NextRequest('http://localhost:3000/api/sales', {
+        method: 'POST',
+        body: JSON.stringify({
+          sale_price: 2500.0,
+          sale_date: '2024-01-15',
+        }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.message).toBe('Idempotency key is required.');
+    });
+
+    it('should return the same sale on retry with the same idempotency key', async () => {
+      const mockSale = {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        instrument_id: null,
+        client_id: null,
+        sale_price: 2500.0,
+        sale_date: '2024-01-15',
+        notes: 'Manual sale',
+        created_at: '2024-01-15T10:30:00Z',
+      };
+
+      const mockSelectQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: mockSale,
+          error: null,
+        }),
+      };
+
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockSale.id,
+        error: null,
+      });
+      mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
+
+      const makeRequest = () =>
+        new NextRequest('http://localhost:3000/api/sales', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': 'retry-key-1' },
+          body: JSON.stringify({
+            sale_price: 2500.0,
+            sale_date: '2024-01-15',
+            notes: 'Manual sale',
+          }),
+        });
+
+      const firstResponse = await POST(makeRequest());
+      const secondResponse = await POST(makeRequest());
+      const firstBody = await firstResponse.json();
+      const secondBody = await secondResponse.json();
+
+      expect(firstResponse.status).toBe(201);
+      expect(secondResponse.status).toBe(201);
+      expect(firstBody.data).toEqual(mockSale);
+      expect(secondBody.data).toEqual(mockSale);
+      expect(mockSelectQuery.eq).toHaveBeenCalledWith('id', mockSale.id);
+      expect(mockSelectQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockRpc).toHaveBeenNthCalledWith(
+        1,
+        'create_sale_atomic_idempotent',
+        expect.objectContaining({
+          p_route_key: 'POST:/api/sales',
+          p_idempotency_key: 'retry-key-1',
+          p_request_hash: expect.any(String),
+          p_sale_price: 2500,
+          p_sale_date: '2024-01-15',
+          p_client_id: null,
+          p_instrument_id: null,
+          p_notes: 'Manual sale',
+        })
+      );
+      expect(mockRpc).toHaveBeenNthCalledWith(
+        2,
+        'create_sale_atomic_idempotent',
+        expect.objectContaining({
+          p_route_key: 'POST:/api/sales',
+          p_idempotency_key: 'retry-key-1',
+          p_request_hash: expect.any(String),
+          p_sale_price: 2500,
+          p_sale_date: '2024-01-15',
+          p_client_id: null,
+          p_instrument_id: null,
+          p_notes: 'Manual sale',
+        })
+      );
+      expect(mockRpc.mock.calls[0][1].p_request_hash).toBe(
+        mockRpc.mock.calls[1][1].p_request_hash
+      );
+    });
+
+    it('should not return a sale outside the caller org on readback', async () => {
+      const saleId = '123e4567-e89b-12d3-a456-426614174000';
+      const mockError = { message: 'Not found', code: 'PGRST116' };
+      const mockAppError = new Error('App error');
+
+      const mockSelectQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: null,
+          error: mockError,
+        }),
+      };
+
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: saleId,
+        error: null,
+      });
+      mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
+      mockErrorHandler.handleSupabaseError = jest
+        .fn()
+        .mockReturnValue(mockAppError);
+
+      const request = new NextRequest('http://localhost:3000/api/sales', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-org-scope' },
+        body: JSON.stringify({
+          sale_price: 2500.0,
+          sale_date: '2024-01-15',
+        }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(body.message).toBe(
+        'Server error occurred. Please try again later.'
+      );
+      expect(mockSelectQuery.eq).toHaveBeenCalledWith('id', saleId);
+      expect(mockSelectQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    });
+
+    it('should create a new sale for a different idempotency key', async () => {
+      const firstSale = {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        instrument_id: '123e4567-e89b-12d3-a456-426614174001',
+        client_id: '123e4567-e89b-12d3-a456-426614174002',
+        sale_price: 2500.0,
+        sale_date: '2024-01-15',
+        notes: 'Instrument sale',
+        created_at: '2024-01-15T10:30:00Z',
+      };
+      const secondSale = {
+        ...firstSale,
+        id: '223e4567-e89b-12d3-a456-426614174000',
+      };
+
+      const mockSelectQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest
+          .fn()
+          .mockResolvedValueOnce({
+            data: firstSale,
+            error: null,
+          })
+          .mockResolvedValueOnce({
+            data: secondSale,
+            error: null,
+          }),
+      };
+
+      const mockRpc = jest
+        .fn()
+        .mockResolvedValueOnce({ data: firstSale.id, error: null })
+        .mockResolvedValueOnce({ data: secondSale.id, error: null });
+      mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
+
+      const firstResponse = await POST(
+        new NextRequest('http://localhost:3000/api/sales', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': 'sale-key-a' },
+          body: JSON.stringify({
+            sale_price: 2500.0,
+            sale_date: '2024-01-15',
+            client_id: firstSale.client_id,
+            instrument_id: firstSale.instrument_id,
+            notes: 'Instrument sale',
+          }),
+        })
+      );
+      const secondResponse = await POST(
+        new NextRequest('http://localhost:3000/api/sales', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': 'sale-key-b' },
+          body: JSON.stringify({
+            sale_price: 2500.0,
+            sale_date: '2024-01-15',
+            client_id: firstSale.client_id,
+            instrument_id: firstSale.instrument_id,
+            notes: 'Instrument sale',
+          }),
+        })
+      );
+
+      const firstBody = await firstResponse.json();
+      const secondBody = await secondResponse.json();
+
+      expect(firstResponse.status).toBe(201);
+      expect(secondResponse.status).toBe(201);
+      expect(firstBody.data.id).toBe(firstSale.id);
+      expect(secondBody.data.id).toBe(secondSale.id);
+      expect(mockRpc).toHaveBeenNthCalledWith(
+        1,
+        'create_sale_atomic_idempotent',
+        expect.objectContaining({ p_idempotency_key: 'sale-key-a' })
+      );
+      expect(mockRpc).toHaveBeenNthCalledWith(
+        2,
+        'create_sale_atomic_idempotent',
+        expect.objectContaining({ p_idempotency_key: 'sale-key-b' })
+      );
+      expect(mockRpc.mock.calls[0][1].p_request_hash).toBe(
+        mockRpc.mock.calls[1][1].p_request_hash
+      );
     });
   });
 
   describe('PATCH', () => {
+    it('should scope sale fetches by auth org', async () => {
+      const saleId = '123e4567-e89b-12d3-a456-426614174000';
+      const currentSale = {
+        id: saleId,
+        instrument_id: '123e4567-e89b-12d3-a456-426614174001',
+        client_id: '123e4567-e89b-12d3-a456-426614174002',
+        sale_price: 2500.0,
+        notes: 'Original notes',
+        sale_date: '2024-01-15',
+        created_at: '2024-01-15T10:30:00Z',
+        entry_kind: 'sale',
+        adjustment_of_sale_id: null,
+      };
+
+      const mockFetch = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: currentSale,
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = createMockSupabaseClient(mockFetch);
+      mockAuthContext = {
+        ...mockAuthContext,
+        orgId: 'org-123',
+        userSupabase: mockUserSupabase,
+      };
+
+      const request = new NextRequest('http://localhost:3000/api/sales', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: saleId,
+          sale_price: 2500.0,
+        }),
+      });
+
+      const response = await PATCH(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.sale_price).toBe(2500.0);
+      expect(mockFetch.eq).toHaveBeenNthCalledWith(1, 'id', saleId);
+      expect(mockFetch.eq).toHaveBeenNthCalledWith(2, 'org_id', 'org-123');
+    });
+
+    it('should fail closed when org context is missing', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        orgId: null,
+      };
+
+      const request = new NextRequest('http://localhost:3000/api/sales', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: '123e4567-e89b-12d3-a456-426614174000',
+          sale_price: 2500.0,
+        }),
+      });
+
+      const response = await PATCH(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body.message).toBe('Organization context required');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should update a sale for refund', async () => {
       const saleId = '123e4567-e89b-12d3-a456-426614174000'; // Valid UUID
       const originalSale = {
@@ -940,7 +1498,7 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toBe('Sale ID is required.');
+      expect(body.message).toBe('Sale ID is required.');
     });
 
     it('should require at least one field to update', async () => {
@@ -956,7 +1514,7 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toBe('No fields to update.');
+      expect(body.message).toBe('No fields to update.');
     });
 
     it('should reject direct sale amount rewrites', async () => {
@@ -996,7 +1554,7 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(409);
-      expect(body.error).toContain(
+      expect(body.message).toContain(
         'Direct sale amount rewrites are not allowed'
       );
     });
@@ -1047,7 +1605,9 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(500);
-      expect(body.error).toBe('An error occurred');
+      expect(body.message).toBe(
+        'Server error occurred. Please try again later.'
+      );
       expect(mockCaptureException).toHaveBeenCalled();
     });
 
@@ -1182,7 +1742,7 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toContain('Sale price must be a number');
+      expect(body.message).toContain('Sale price must be a number');
     });
 
     it('should handle invalid UUID format in PATCH', async () => {
@@ -1198,7 +1758,7 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toBe('Invalid sale ID format');
+      expect(body.message).toBe('Invalid sale ID format');
     });
   });
 });

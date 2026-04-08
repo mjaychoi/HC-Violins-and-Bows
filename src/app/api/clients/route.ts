@@ -207,16 +207,15 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
     { method: 'GET', path: 'ClientsAPI', context: 'ClientsAPI' },
     async () => {
       const { q } = parseListQuery(request);
-      const orgContextError = requireOrgContext(auth);
-      if (orgContextError) {
+      if (!auth.orgId) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
 
-      const result = await runClientsQuery(auth.userSupabase, q, auth.orgId!);
-      const { data, error, count } = result;
+      const query = runClientsQuery(auth.userSupabase, q, auth.orgId!);
+      const { data, error, count } = await query;
 
       debugQueryResult({
         dataLength: data?.length ?? 0,
@@ -289,6 +288,14 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       if (orgContextError) {
         return {
           payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
           status: 403,
         };
       }
@@ -368,6 +375,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         .from('clients')
         .update(validation.data)
         .eq('id', id)
+        .eq('org_id', auth.orgId!)
         .select()
         .single();
 
@@ -412,11 +420,19 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
         return { payload: { error: 'Invalid client ID format' }, status: 400 };
 
       // userSupabase + RLS prevents cross-tenant deletes
-      const { error } = await auth.userSupabase
+      const { error, count } = await auth.userSupabase
         .from('clients')
-        .delete()
-        .eq('id', id);
-      if (error) throw errorHandler.handleSupabaseError(error, 'Delete client');
+        .delete({ count: 'exact' })
+        .eq('id', id)
+        .eq('org_id', auth.orgId!);
+
+      if (error) {
+        throw errorHandler.handleSupabaseError(error, 'Delete client');
+      }
+
+      if (!count || count === 0) {
+        return { payload: { error: 'Client not found' }, status: 404 };
+      }
 
       return { payload: { success: true }, metadata: { clientId: id } };
     }

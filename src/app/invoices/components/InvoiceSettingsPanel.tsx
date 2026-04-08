@@ -42,6 +42,9 @@ export default function InvoiceSettingsPanel({
 }) {
   const { showSuccess, handleError } = useAppFeedback();
   const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<InvoiceSettings>(empty);
 
@@ -52,6 +55,7 @@ export default function InvoiceSettingsPanel({
 
   const load = useCallback(async () => {
     setLoading(true);
+    setStatus('loading');
     try {
       const res = await apiFetch('/api/invoices/invoice_settings');
 
@@ -90,11 +94,13 @@ export default function InvoiceSettingsPanel({
         ...empty,
         ...(json.data || {}),
       });
+      setStatus('success');
     } catch (e) {
       logError(
         'Failed to load invoice settings:',
         e instanceof Error ? e.message : String(e)
       );
+      setStatus('error');
       handleError(
         e instanceof Error ? e.message : String(e),
         'Load invoice settings'
@@ -153,6 +159,22 @@ export default function InvoiceSettingsPanel({
     return (
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <div className="text-sm text-gray-600">Loading invoice settings...</div>
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+        <div className="text-sm font-semibold text-red-800">
+          Failed to load invoice settings
+        </div>
+        <div className="mt-1 text-sm text-red-700">
+          Invoice settings could not be loaded. Try again.
+        </div>
+        <Button className="mt-4" onClick={() => void load()}>
+          Retry
+        </Button>
       </div>
     );
   }

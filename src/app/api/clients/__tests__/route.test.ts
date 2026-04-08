@@ -268,7 +268,7 @@ describe('/api/clients', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toContain('Invalid client data');
+      expect(json.message).toContain('Invalid client data');
     });
 
     it('should handle Supabase errors on create', async () => {
@@ -334,6 +334,8 @@ describe('/api/clients', () => {
       expect(response.status).toBe(200);
       expect(json.data).toBeDefined();
       expect(mockQuery.update).toHaveBeenCalled();
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockClient.id);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
     it('should return 400 when id is missing', async () => {
@@ -345,7 +347,10 @@ describe('/api/clients', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Client ID is required');
+      expect(json).toMatchObject({
+        message: 'Client ID is required',
+        retryable: false,
+      });
     });
 
     it('should return 400 for invalid UUID', async () => {
@@ -360,7 +365,10 @@ describe('/api/clients', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Invalid client ID format');
+      expect(json).toMatchObject({
+        message: 'Invalid client ID format',
+        retryable: false,
+      });
     });
   });
 
@@ -368,11 +376,10 @@ describe('/api/clients', () => {
     it('should delete a client', async () => {
       const mockQuery = {
         delete: jest.fn().mockReturnThis(),
-        eq: jest.fn(),
-      };
-      (mockQuery.eq as jest.Mock).mockResolvedValue({
         error: null,
-      });
+        count: 1,
+        eq: jest.fn().mockReturnThis(),
+      };
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -387,6 +394,8 @@ describe('/api/clients', () => {
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
       expect(mockQuery.delete).toHaveBeenCalled();
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockClient.id);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
     it('should return 400 when id is missing', async () => {
@@ -395,7 +404,7 @@ describe('/api/clients', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Client ID is required');
+      expect(json.message).toBe('Client ID is required');
     });
 
     it('should return 400 for invalid UUID', async () => {
@@ -409,18 +418,16 @@ describe('/api/clients', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Invalid client ID format');
+      expect(json.message).toBe('Invalid client ID format');
     });
 
     it('should handle Supabase errors on delete', async () => {
       const mockError = { message: 'Foreign key constraint', code: '23503' };
       const mockQuery = {
         delete: jest.fn().mockReturnThis(),
-        eq: jest.fn(),
-      };
-      (mockQuery.eq as jest.Mock).mockResolvedValue({
         error: mockError,
-      });
+        eq: jest.fn().mockReturnThis(),
+      };
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),

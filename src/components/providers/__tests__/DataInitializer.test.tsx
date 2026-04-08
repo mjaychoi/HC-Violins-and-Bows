@@ -92,7 +92,8 @@ describe('DataInitializer', () => {
     );
 
     expect(mockLogInfo).toHaveBeenCalledWith(
-      expect.stringContaining('[DataInitializer]')
+      'DataInitializer mounted',
+      'DataInitializer'
     );
   });
 

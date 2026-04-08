@@ -1,3 +1,8 @@
+-- DO NOT APPLY IN PRODUCTION.
+-- Archived legacy SQL bundle kept for reference only.
+-- This file was removed from supabase/migrations because it contains
+-- permissive legacy policy definitions and is not a deployable migration.
+
 -- =========================================================
 -- CONTACT_LOGS + INVOICES ORG_ID DEBUG (Single Combined)
 -- Safe to re-run (idempotent-ish)

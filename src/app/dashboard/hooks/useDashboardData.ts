@@ -23,8 +23,12 @@ export const useDashboardData = () => {
     instruments,
     clients,
     loading,
+    errors,
     submitting,
     clientRelationships,
+    fetchClients,
+    fetchInstruments,
+    fetchConnections,
     createInstrument,
     updateInstrument,
     deleteInstrument,
@@ -194,6 +198,14 @@ export const useDashboardData = () => {
     [deleteInstrument, showSuccess, handleError]
   );
 
+  const reloadDashboard = useCallback(async () => {
+    await Promise.all([
+      fetchClients({ force: true }),
+      fetchInstruments(),
+      fetchConnections({ force: true }),
+    ]);
+  }, [fetchClients, fetchInstruments, fetchConnections]);
+
   return {
     // Data
     instruments,
@@ -202,6 +214,7 @@ export const useDashboardData = () => {
 
     // Loading states
     loading,
+    errors,
     submitting,
 
     // CRUD operations
@@ -209,5 +222,6 @@ export const useDashboardData = () => {
     handleUpdateItem,
     handleUpdateItemInline,
     handleDeleteItem,
+    reloadDashboard,
   };
 };

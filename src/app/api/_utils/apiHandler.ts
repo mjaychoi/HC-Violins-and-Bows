@@ -5,6 +5,14 @@ import { createSafeErrorResponse } from '@/utils/errorSanitization';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
 import type { AppError } from '@/types/errors';
+import {
+  isApiErrorLikePayload,
+  normalizeApiErrorPayload,
+} from '@/app/api/_utils/apiErrors';
+import {
+  getOrCreateRequestId,
+  withRequestIdHeader,
+} from '@/app/api/_utils/requestContext';
 
 export interface ApiHandlerMeta {
   method: string;
@@ -24,7 +32,7 @@ export type ApiOk<T> = {
 };
 
 export type ApiErr = {
-  payload: { error: string };
+  payload: Record<string, unknown>;
   status?: number;
   metadata?: Record<string, unknown>;
 };
@@ -160,42 +168,47 @@ export async function apiHandler(
 ): Promise<NextResponse> {
   const startTime = now();
   const path = request.nextUrl.pathname;
+  const requestId = getOrCreateRequestId(request);
 
   try {
     const result = await fn(request);
     const duration = Math.round(now() - startTime);
-    const payload = result.payload;
-    const isErrorPayload =
-      payload &&
-      typeof payload === 'object' &&
-      'error' in payload &&
-      typeof (payload as { error?: unknown }).error === 'string';
-
     const status =
       typeof result.status === 'number' &&
       result.status >= 200 &&
       result.status < 600
         ? result.status
-        : isErrorPayload
+        : isApiErrorLikePayload(result.payload)
           ? 400
           : 200;
+    const isErrorPayload = status >= 400;
+    const payload = isErrorPayload
+      ? normalizeApiErrorPayload(result.payload, status)
+      : result.payload;
 
     logApiRequest(meta.method, path, status, duration, meta.context, {
       ...meta.metadata,
       ...result.metadata,
       routeKey: meta.path, // 정규화 키
+      requestId,
       error: isErrorPayload,
       errorMessage: isErrorPayload
-        ? (payload as { error: string }).error
+        ? (payload as { message?: string }).message
         : undefined,
     });
 
-    return NextResponse.json(payload, { status });
+    return withRequestIdHeader(
+      NextResponse.json(payload, { status }),
+      requestId
+    );
   } catch (error) {
     const duration = Math.round(now() - startTime);
 
     if (process.env.NODE_ENV === 'test') {
       console.error('API handler error', error);
+      if (error instanceof Error && error.stack) {
+        console.error(error.stack);
+      }
     }
 
     // ✅ supabase가 아닌 에러까지 supabase로 뭉개지지 않도록 정규화
@@ -206,6 +219,7 @@ export async function apiHandler(
     logApiRequest(meta.method, path, status, duration, meta.context, {
       ...meta.metadata,
       routeKey: meta.path,
+      requestId,
       error: true,
       errorCode: appError.code,
     });
@@ -219,12 +233,16 @@ export async function apiHandler(
         status,
         path,
         method: meta.method,
+        requestId,
       }),
       ErrorSeverity.MEDIUM
     );
 
-    return NextResponse.json(createSafeErrorResponse(appError, status), {
-      status,
-    });
+    return withRequestIdHeader(
+      NextResponse.json(createSafeErrorResponse(appError, status), {
+        status,
+      }),
+      requestId
+    );
   }
 }

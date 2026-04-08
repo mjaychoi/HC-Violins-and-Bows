@@ -227,6 +227,66 @@ describe('AuthContext', () => {
     expect(mockRefreshSession).toHaveBeenCalled();
   });
 
+  it('ignores malicious user_metadata org and role in session state', async () => {
+    const mockSession = {
+      user: {
+        id: 'user-1',
+        email: 'test@example.com',
+        app_metadata: { org_id: 'org-from-app-meta', role: 'member' },
+        user_metadata: { org_id: 'evil-org', role: 'admin' },
+      },
+      access_token: 'token',
+    };
+
+    mockGetSession.mockResolvedValue({
+      data: { session: mockSession },
+      error: null,
+    });
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider>{children}</AuthProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.orgId).toBe('org-from-app-meta');
+    expect(result.current.role).toBe('member');
+  });
+
+  it('fails closed when only user_metadata carries org and role claims', async () => {
+    const mockSession = {
+      user: {
+        id: 'user-1',
+        email: 'test@example.com',
+        app_metadata: {},
+        user_metadata: { org_id: 'evil-org', role: 'admin' },
+      },
+      access_token: 'token',
+    };
+
+    mockGetSession.mockResolvedValue({
+      data: { session: mockSession },
+      error: null,
+    });
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider>{children}</AuthProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.orgId).toBeNull();
+    expect(result.current.role).toBe('member');
+  });
+
   it('handles invalid refresh token error during loadInitialSession', async () => {
     mockGetSession.mockResolvedValue({
       data: { session: null },

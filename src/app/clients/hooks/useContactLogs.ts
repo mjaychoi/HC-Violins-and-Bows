@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { addDays, format } from 'date-fns';
 import { ContactLog } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
@@ -12,22 +12,38 @@ interface UseContactLogsOptions {
   autoFetch?: boolean;
 }
 
+type ContactLogsStatus = 'loading' | 'success' | 'empty' | 'error';
+
 export function useContactLogs({
   clientId,
   instrumentId,
   autoFetch = true,
 }: UseContactLogsOptions = {}) {
   const [contactLogs, setContactLogs] = useState<ContactLog[]>([]);
-  const { loading, submitting, withSubmitting } = useLoadingState();
+  const [status, setStatus] = useState<ContactLogsStatus>('empty');
+  const { loading, submitting, withSubmitting, setLoading } = useLoadingState();
   const { handleError } = useErrorHandler();
+  const requestIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchContactLogs = useCallback(async () => {
     if (!clientId) {
+      requestIdRef.current += 1;
+      abortRef.current?.abort();
       setContactLogs([]);
+      setStatus('empty');
+      setLoading(false);
       return;
     }
 
+    const requestId = ++requestIdRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
+      setLoading(true);
+      setStatus('loading');
       const params = new URLSearchParams();
       params.set('clientId', clientId);
       if (instrumentId) {
@@ -35,24 +51,69 @@ export function useContactLogs({
       }
 
       // ✅ FIXED: Use apiFetch to include authentication headers
-      const response = await apiFetch(`/api/contacts?${params.toString()}`);
+      const response = await apiFetch(`/api/contacts?${params.toString()}`, {
+        signal: controller.signal,
+      });
       const result = await response.json();
 
       if (!response.ok) {
         throw new Error(result.error || 'Failed to fetch contact logs');
       }
 
-      setContactLogs(result.data || []);
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
+      const nextLogs = result.data || [];
+      setContactLogs(nextLogs);
+      setStatus(nextLogs.length > 0 ? 'success' : 'empty');
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
+
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
+      setContactLogs([]);
+      setStatus('error');
       handleError(error, 'Fetch contact logs');
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
-  }, [clientId, instrumentId, handleError]);
+  }, [clientId, instrumentId, handleError, setLoading]);
+
+  useEffect(() => {
+    requestIdRef.current += 1;
+    abortRef.current?.abort();
+
+    if (!clientId) {
+      setContactLogs([]);
+      setStatus('empty');
+      setLoading(false);
+      return;
+    }
+
+    setContactLogs([]);
+    setStatus(autoFetch ? 'loading' : 'empty');
+    setLoading(autoFetch);
+  }, [clientId, instrumentId, autoFetch, setLoading]);
 
   useEffect(() => {
     if (autoFetch && clientId) {
       fetchContactLogs();
     }
   }, [autoFetch, clientId, fetchContactLogs]);
+
+  useEffect(() => {
+    return () => {
+      requestIdRef.current += 1;
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const addContact = useCallback(
     async (
@@ -246,6 +307,7 @@ export function useContactLogs({
 
   return {
     contactLogs,
+    status,
     loading,
     submitting,
     fetchContactLogs,

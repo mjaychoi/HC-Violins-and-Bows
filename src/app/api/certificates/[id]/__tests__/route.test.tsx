@@ -4,6 +4,7 @@ import { errorHandler } from '@/utils/errorHandler';
 import fs from 'fs/promises';
 import React from 'react';
 let mockUserSupabase: any;
+let mockAuthContext: any;
 
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
@@ -19,13 +20,8 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
       handler(
         request,
         {
-          user: { id: 'test-user' },
-          accessToken: 'test-token',
-          orgId: 'test-org',
-          clientId: 'test-client',
-          role: 'admin',
+          ...mockAuthContext,
           userSupabase: mockUserSupabase,
-          isTestBypass: true,
         },
         context
       ),
@@ -86,6 +82,15 @@ describe('/api/certificates/[id]', () => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
     mockUserSupabase = { from: jest.fn() };
+    mockAuthContext = {
+      user: { id: 'test-user' },
+      accessToken: 'test-token',
+      orgId: 'test-org',
+      clientId: 'test-client',
+      role: 'admin',
+      userSupabase: mockUserSupabase,
+      isTestBypass: false,
+    };
     mockRenderToBufferFn.mockClear();
     mockCertDoc.mockClear();
     // Reset to default successful response
@@ -175,7 +180,8 @@ describe('/api/certificates/[id]', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Invalid instrument ID format');
+      expect(json.message).toBe('Invalid instrument ID format');
+      expect(response.headers.get('x-request-id')).toBeTruthy();
     });
 
     it('should return 404 when instrument not found', async () => {
@@ -208,6 +214,65 @@ describe('/api/certificates/[id]', () => {
       const response = await GET(request, context);
 
       expect(response.status).toBe(404);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    });
+
+    it('should return 403 when org context is missing', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        orgId: null,
+      };
+
+      const request = new NextRequest(
+        `http://localhost/api/certificates/${mockInstrument.id}`
+      );
+      const context = {
+        params: Promise.resolve({ id: mockInstrument.id }),
+      };
+      const response = await GET(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.message).toBe('Organization context required');
+      expect(json.error_code).toBe('ORG_CONTEXT_REQUIRED');
+      expect(response.headers.get('x-request-id')).toBeTruthy();
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('should return 404 when instrument exists outside the caller org', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+      (mockQuery.single as jest.Mock).mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'Not found' },
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      };
+      mockAuthContext = {
+        ...mockAuthContext,
+        userSupabase: mockUserSupabase,
+      };
+      mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
+        code: 'PGRST116',
+        message: 'Not found',
+      });
+
+      const request = new NextRequest(
+        `http://localhost/api/certificates/${mockInstrument.id}`
+      );
+      const context = {
+        params: Promise.resolve({ id: mockInstrument.id }),
+      };
+      const response = await GET(request, context);
+
+      expect(response.status).toBe(404);
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockInstrument.id);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
     it.skip('should fetch owner client when ownership exists', async () => {
@@ -281,6 +346,7 @@ describe('/api/certificates/[id]', () => {
         'id',
         instrumentWithOwner.ownership
       );
+      expect(ownerQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
     it.skip('should handle logo read failure gracefully', async () => {

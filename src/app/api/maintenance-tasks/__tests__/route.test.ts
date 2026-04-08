@@ -10,6 +10,7 @@ jest.mock('@/utils/inputValidation');
 jest.mock('@/utils/dateParsing');
 
 let mockUserSupabase: any;
+let mockAuthContext: any;
 
 jest.mock('@/app/api/_utils/withAuthRoute', () => {
   const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
@@ -19,13 +20,8 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
       handler(
         request,
         {
-          user: { id: 'test-user' },
-          accessToken: 'test-token',
-          orgId: 'test-org',
-          clientId: 'test-client',
-          role: 'admin',
+          ...mockAuthContext,
           userSupabase: mockUserSupabase,
-          isTestBypass: true,
         },
         context
       ),
@@ -107,6 +103,15 @@ describe('/api/maintenance-tasks', () => {
     mockUserSupabase = {
       from: jest.fn().mockReturnValue(baseQuery),
     };
+    mockAuthContext = {
+      user: { id: 'test-user' },
+      accessToken: 'test-token',
+      orgId: 'test-org',
+      clientId: 'test-client',
+      role: 'admin',
+      userSupabase: mockUserSupabase,
+      isTestBypass: false,
+    };
   });
 
   afterEach(() => {
@@ -117,6 +122,7 @@ describe('/api/maintenance-tasks', () => {
     it('should return maintenance tasks', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
       };
       (mockQuery.order as jest.Mock).mockResolvedValue({
@@ -136,6 +142,25 @@ describe('/api/maintenance-tasks', () => {
       expect(response.status).toBe(200);
       expect(json.data).toEqual([mockTask]);
       expect(json.count).toBe(1);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    });
+
+    it('should reject GET when org context is missing', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        orgId: null,
+      };
+
+      const request = new NextRequest('http://localhost/api/maintenance-tasks');
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json).toMatchObject({
+        message: 'Organization context required',
+        retryable: false,
+      });
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it('should fetch task by id', async () => {
@@ -161,6 +186,7 @@ describe('/api/maintenance-tasks', () => {
 
       expect(response.status).toBe(200);
       expect(json.data).toEqual(mockTask);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
     it('should return 400 for invalid task id format', async () => {
@@ -174,7 +200,10 @@ describe('/api/maintenance-tasks', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Invalid task ID format');
+      expect(json).toMatchObject({
+        message: 'Invalid task ID format',
+        retryable: false,
+      });
     });
 
     it('should filter by instrument_id', async () => {
@@ -258,11 +287,13 @@ describe('/api/maintenance-tasks', () => {
         eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [mockTask],
-        error: null,
-        count: 1,
-      });
+      (mockQuery.order as jest.Mock)
+        .mockImplementationOnce(() => mockQuery)
+        .mockResolvedValue({
+          data: [mockTask],
+          error: null,
+          count: 1,
+        });
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -287,7 +318,7 @@ describe('/api/maintenance-tasks', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toContain('Invalid scheduled_date format');
+      expect(json.message).toContain('Invalid scheduled_date format');
     });
 
     it('should filter by date range', async () => {
@@ -326,6 +357,7 @@ describe('/api/maintenance-tasks', () => {
     it('should filter by overdue', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         in: jest.fn().mockReturnThis(),
         or: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
@@ -379,6 +411,7 @@ describe('/api/maintenance-tasks', () => {
     it('should filter by search term', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         or: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
       };
@@ -411,7 +444,7 @@ describe('/api/maintenance-tasks', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Invalid instrument_id format');
+      expect(json.message).toBe('Invalid instrument_id format');
     });
   });
 
@@ -477,7 +510,7 @@ describe('/api/maintenance-tasks', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toContain('Invalid maintenance task data');
+      expect(json.message).toContain('Invalid maintenance task data');
     });
   });
 
@@ -513,6 +546,8 @@ describe('/api/maintenance-tasks', () => {
 
       expect(response.status).toBe(200);
       expect(json.data).toBeDefined();
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockTask.id);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
       expect(mockQuery.update).toHaveBeenCalled();
     });
 
@@ -528,7 +563,7 @@ describe('/api/maintenance-tasks', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Task ID is required');
+      expect(json.message).toBe('Task ID is required');
     });
 
     it('should return 400 for invalid UUID', async () => {
@@ -546,7 +581,7 @@ describe('/api/maintenance-tasks', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Invalid task ID format');
+      expect(json.message).toBe('Invalid task ID format');
     });
   });
 
@@ -554,11 +589,10 @@ describe('/api/maintenance-tasks', () => {
     it('should delete a maintenance task', async () => {
       const mockQuery = {
         delete: jest.fn().mockReturnThis(),
-        eq: jest.fn(),
-      };
-      (mockQuery.eq as jest.Mock).mockResolvedValue({
         error: null,
-      });
+        count: 1,
+        eq: jest.fn().mockReturnThis(),
+      };
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -572,6 +606,8 @@ describe('/api/maintenance-tasks', () => {
 
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockTask.id);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
       expect(mockQuery.delete).toHaveBeenCalled();
     });
 
@@ -581,7 +617,7 @@ describe('/api/maintenance-tasks', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Task ID is required');
+      expect(json.message).toBe('Task ID is required');
     });
 
     it('should return 400 for invalid UUID', async () => {
@@ -595,7 +631,7 @@ describe('/api/maintenance-tasks', () => {
       const json = await response.json();
 
       expect(response.status).toBe(400);
-      expect(json.error).toBe('Invalid task ID format');
+      expect(json.message).toBe('Invalid task ID format');
     });
   });
 });

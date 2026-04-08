@@ -110,7 +110,11 @@ export default function ClientModal({
   });
 
   // Contact info for summary
-  const { getContactInfo } = useClientsContactInfo({
+  const {
+    getContactInfo,
+    status: contactInfoStatus,
+    refetch: refetchContactInfo,
+  } = useClientsContactInfo({
     clientIds: client?.id ? [client.id] : [],
     enabled: isOpen && !!client?.id,
   });
@@ -470,71 +474,98 @@ export default function ClientModal({
               </div>
 
               {/* Contact Summary */}
-              {client && contactInfo && (
+              {client && (
                 <div className="pt-4 border-t border-gray-200">
                   <h4 className="text-sm font-semibold text-gray-900 mb-3">
                     Contact Summary
                   </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3">
-                      <div className="text-xs font-medium text-gray-500 mb-1">
-                        Recent Contact
+                  {contactInfoStatus === 'error' ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                      <div className="text-sm font-medium text-red-800">
+                        Failed to load contact summary
                       </div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {contactInfo.lastContactDateDisplay ? (
-                          <>
-                            {contactInfo.lastContactDateDisplay}
-                            {contactInfo.daysSinceLastContact !== null && (
-                              <span className="ml-2 text-xs font-normal text-gray-500">
-                                ({contactInfo.daysSinceLastContact} days ago)
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-gray-400">None</span>
-                        )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          refetchContactInfo();
+                        }}
+                        className="mt-2 inline-flex items-center rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : contactInfo ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3">
+                        <div className="text-xs font-medium text-gray-500 mb-1">
+                          Recent Contact
+                        </div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {contactInfo.lastContactDateDisplay ? (
+                            <>
+                              {contactInfo.lastContactDateDisplay}
+                              {contactInfo.daysSinceLastContact !== null && (
+                                <span className="ml-2 text-xs font-normal text-gray-500">
+                                  ({contactInfo.daysSinceLastContact} days ago)
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-gray-400">
+                              No contact history
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3">
+                        <div className="text-xs font-medium text-gray-500 mb-1">
+                          Next Contact
+                        </div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {contactInfo.nextFollowUpDateDisplay ? (
+                            <span
+                              className={
+                                contactInfo.isOverdue
+                                  ? 'text-red-600'
+                                  : contactInfo.daysUntilFollowUp !== null &&
+                                      contactInfo.daysUntilFollowUp <= 3
+                                    ? 'text-amber-600'
+                                    : ''
+                              }
+                            >
+                              {contactInfo.nextFollowUpDateDisplay}
+                              {contactInfo.daysUntilFollowUp !== null && (
+                                <span className="ml-2 text-xs font-normal text-gray-500">
+                                  (
+                                  {contactInfo.daysUntilFollowUp < 0
+                                    ? `${Math.abs(contactInfo.daysUntilFollowUp)} days overdue`
+                                    : contactInfo.daysUntilFollowUp === 0
+                                      ? 'Today'
+                                      : `${contactInfo.daysUntilFollowUp} days later`}
+                                  )
+                                </span>
+                              )}
+                              {contactInfo.isOverdue && (
+                                <span className="ml-2 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                                  overdue
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">
+                              No follow-up scheduled
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="bg-gray-50 rounded-lg border border-gray-200 px-4 py-3">
-                      <div className="text-xs font-medium text-gray-500 mb-1">
-                        Next Contact
-                      </div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {contactInfo.nextFollowUpDateDisplay ? (
-                          <span
-                            className={
-                              contactInfo.isOverdue
-                                ? 'text-red-600'
-                                : contactInfo.daysUntilFollowUp !== null &&
-                                    contactInfo.daysUntilFollowUp <= 3
-                                  ? 'text-amber-600'
-                                  : ''
-                            }
-                          >
-                            {contactInfo.nextFollowUpDateDisplay}
-                            {contactInfo.daysUntilFollowUp !== null && (
-                              <span className="ml-2 text-xs font-normal text-gray-500">
-                                (
-                                {contactInfo.daysUntilFollowUp < 0
-                                  ? `${Math.abs(contactInfo.daysUntilFollowUp)} days overdue`
-                                  : contactInfo.daysUntilFollowUp === 0
-                                    ? 'Today'
-                                    : `${contactInfo.daysUntilFollowUp} days later`}
-                                )
-                              </span>
-                            )}
-                            {contactInfo.isOverdue && (
-                              <span className="ml-2 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                                overdue
-                              </span>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">None</span>
-                        )}
-                      </div>
+                  ) : (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                      {contactInfoStatus === 'loading'
+                        ? 'Loading contact summary...'
+                        : 'No contact history'}
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 

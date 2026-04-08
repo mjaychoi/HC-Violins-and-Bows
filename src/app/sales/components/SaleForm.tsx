@@ -9,7 +9,6 @@ import {
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import { logInfo } from '@/utils/logger';
 import { todayLocalYMD } from '@/utils/dateParsing';
-import { apiFetch } from '@/utils/apiFetch';
 import { modalStyles } from '@/components/common/modals/modalStyles';
 import { ModalHeader } from '@/components/common/modals/ModalHeader';
 
@@ -177,50 +176,15 @@ export default function SaleForm({
     };
 
     try {
-      let instrumentStatusUpdated = false;
-      let updatedInstrumentId: string | undefined;
-      let statusUpdateFailed = false;
-
-      // 판매 기록 저장 후 악기 상태 자동 업데이트
-      if (
-        autoUpdateInstrumentStatus &&
-        formData.instrument_id &&
-        parsedPrice > 0
-      ) {
-        try {
-          const response = await apiFetch('/api/instruments', {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              id: formData.instrument_id,
-              status: 'Sold',
-            }),
-          });
-
-          if (response.ok) {
-            instrumentStatusUpdated = true;
-            updatedInstrumentId = formData.instrument_id;
-          } else {
-            console.warn('Failed to update instrument status to Sold');
-            statusUpdateFailed = true;
-          }
-        } catch (error) {
-          console.warn('Failed to update instrument status:', error);
-          statusUpdateFailed = true;
-          // 에러가 발생해도 판매 기록은 성공했으므로 계속 진행
-        }
-      }
-
+      void autoUpdateInstrumentStatus;
       await onSubmit(payload, {
-        instrumentStatusUpdated,
-        instrumentId: updatedInstrumentId,
+        instrumentStatusUpdated: false,
+        instrumentId: undefined,
       });
 
       // UX: Show success state instead of immediately closing
       setSuccess(true);
-      setInstrumentStatusUpdateFailed(statusUpdateFailed);
+      setInstrumentStatusUpdateFailed(false);
     } catch {
       // Error handling is done by parent
       setSuccess(false);

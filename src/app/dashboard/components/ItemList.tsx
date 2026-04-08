@@ -26,7 +26,9 @@ import RowActions from './RowActions';
 import { classNames, cn } from '@/utils/classNames';
 import { useInlineEdit } from '@/hooks/useInlineEdit';
 import { logInfo } from '@/utils/logger';
-import { apiFetch } from '@/utils/apiFetch';
+import { useSuccessToastContext } from '@/contexts/SuccessToastContext';
+import { useErrorContext } from '@/contexts/ErrorContext';
+import { downloadCertificatePdf } from '../utils/certificateDownload';
 
 // FIXED: Use EnrichedInstrument type to avoid duplicate computation
 // Import from DashboardContent or define here - using explicit definition for clarity
@@ -94,6 +96,8 @@ const ItemList = memo(function ItemList({
   onNewlyCreatedItemShown,
   onLoadSampleData,
 }: ItemListProps) {
+  const { showSuccess } = useSuccessToastContext();
+  const { handleError } = useErrorContext();
   // 인라인 편집 훅 사용
   type EditData = {
     id: string;
@@ -875,41 +879,23 @@ const ItemList = memo(function ItemList({
                                 itemId={item.id}
                                 hasCertificate={Boolean(item.has_certificate)}
                                 onDownloadCertificate={async () => {
-                                  try {
-                                    const res = await apiFetch(
-                                      `/api/certificates/${item.id}`
-                                    );
-                                    if (!res.ok) return;
-                                    const blob = await res.blob();
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = url;
+                                  const rawFilename =
+                                    item.serial_number || item.id;
+                                  const safe = String(rawFilename)
+                                    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+                                    .replace(/\s+/g, '_')
+                                    .trim()
+                                    .substring(0, 200);
 
-                                    const rawFilename =
-                                      item.serial_number || item.id;
-                                    const safe = String(rawFilename)
-                                      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
-                                      .replace(/\s+/g, '_')
-                                      .trim()
-                                      .substring(0, 200);
-
-                                    if (safe)
-                                      a.download = `certificate-${safe}.pdf`;
-
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    a.remove();
-                                    URL.revokeObjectURL(url);
-                                  } catch (error) {
-                                    if (
-                                      process.env.NODE_ENV === 'development'
-                                    ) {
-                                      console.error(
-                                        'Failed to download certificate:',
-                                        error
-                                      );
-                                    }
-                                  }
+                                  await downloadCertificatePdf({
+                                    url: `/api/certificates/${item.id}`,
+                                    downloadFileName: safe
+                                      ? `certificate-${safe}.pdf`
+                                      : 'certificate.pdf',
+                                    errorContext: 'CertificateDownload',
+                                    showSuccess,
+                                    handleError,
+                                  });
                                 }}
                               />
                             </div>
