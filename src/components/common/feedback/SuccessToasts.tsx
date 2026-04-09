@@ -24,6 +24,7 @@ export default function SuccessToasts({
         <SuccessToast
           key={toast.id}
           message={toast.message}
+          variant={toast.variant}
           links={toast.links}
           onClose={() => onRemove(toast.id)}
         />

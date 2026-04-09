@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 interface UseModalStateOptions {
   initialOpen?: boolean;
@@ -28,6 +29,8 @@ export function useModalState<T = unknown>(
   const [isOpen, setIsOpen] = useState(initialOpen);
   const [isEditing, setIsEditing] = useState(initialEditing);
   const [selectedItem, setSelectedItem] = useState<T | null>(null);
+  const { tenantIdentityKey } = useTenantIdentity();
+  const hasMountedRef = useRef(false);
 
   const openModal = useCallback(() => {
     setIsOpen(true);
@@ -63,6 +66,16 @@ export function useModalState<T = unknown>(
 
   // resetModal is identical to closeModal - kept for API convenience
   const resetModal = closeModal;
+
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    setIsOpen(false);
+    setIsEditing(false);
+    setSelectedItem(null);
+  }, [tenantIdentityKey]);
 
   return {
     isOpen,

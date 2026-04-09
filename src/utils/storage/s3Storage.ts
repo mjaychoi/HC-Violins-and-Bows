@@ -128,28 +128,6 @@ function isAwsError(
 }
 
 /**
- * Bounded cache for file hashes (prevents memory growth)
- */
-class BoundedMap<K, V> extends Map<K, V> {
-  private maxSize: number;
-
-  constructor(maxSize: number = 1000) {
-    super();
-    this.maxSize = maxSize;
-  }
-
-  set(key: K, value: V): this {
-    if (this.size >= this.maxSize && !this.has(key)) {
-      const firstKey = this.keys().next().value;
-      if (firstKey !== undefined) {
-        this.delete(firstKey);
-      }
-    }
-    return super.set(key, value);
-  }
-}
-
-/**
  * Lazy load AWS SDK (server-only)
  */
 async function loadAwsSdk(): Promise<AwsSdk> {
@@ -215,14 +193,11 @@ export class S3Storage implements Storage {
   private sdk: AwsSdk | null = null;
   private bucket: string;
   private config: ReturnType<typeof getStorageConfig>;
-  // Process-local cache to prevent duplicate uploads within the same instance.
-  private fileHashes: Map<string, string>;
   private initPromise: Promise<void> | null = null;
 
   constructor(client?: AwsS3Client, sdk?: AwsSdk) {
     this.config = getStorageConfig();
     this.bucket = this.config.s3Bucket!;
-    this.fileHashes = new BoundedMap<string, string>(1000);
 
     if (client && sdk) {
       // Dependency injection for testing
@@ -301,13 +276,6 @@ export class S3Storage implements Storage {
 
     const fileHash = calculateFileHash(fileContent);
 
-    if (this.fileHashes.has(fileHash)) {
-      logInfo(
-        `File with hash ${fileHash.slice(0, 16)} already exists, skipping upload`
-      );
-      return this.fileHashes.get(fileHash)!;
-    }
-
     try {
       const metadata = getFileMetadata(fileContent, fileKey, contentType);
 
@@ -327,7 +295,6 @@ export class S3Storage implements Storage {
       const command = new this.sdk!.PutObjectCommand(commandInput);
 
       await this.s3Client!.send(command);
-      this.fileHashes.set(fileHash, fileKey);
 
       logInfo(
         `File saved successfully - key: ${fileKey}, hash: ${fileHash.slice(0, 16)}, size: ${metadata.size} bytes`
@@ -388,14 +355,6 @@ export class S3Storage implements Storage {
       });
 
       await this.s3Client!.send(command);
-
-      // Remove from hash cache
-      for (const [hash, cachedKey] of this.fileHashes.entries()) {
-        if (cachedKey === fileKey) {
-          this.fileHashes.delete(hash);
-          break;
-        }
-      }
 
       logInfo(`File deleted successfully from S3: ${fileKey}`);
       return true;

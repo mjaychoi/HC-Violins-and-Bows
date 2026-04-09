@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import InstrumentModal from '../InstrumentModal';
 import { Instrument } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
+import { useAppFeedback } from '@/hooks/useAppFeedback';
 
 // Mock dependencies
 jest.mock('@/hooks/useOutsideClose');
@@ -15,36 +16,12 @@ jest.mock('@/components/common/OptimizedImage', () => ({
   ),
 }));
 const mockShowSuccess = jest.fn();
+const mockShowWarning = jest.fn();
 const mockHandleError = jest.fn();
 
-jest.mock('@/contexts/SuccessToastContext', () => {
-  const actual = jest.requireActual('@/contexts/SuccessToastContext');
-  return {
-    ...actual,
-    useSuccessToastContext: () => ({
-      showSuccess: mockShowSuccess,
-      toasts: [],
-      removeToast: jest.fn(),
-    }),
-  };
-});
-jest.mock('@/contexts/ErrorContext', () => {
-  const actual = jest.requireActual('@/contexts/ErrorContext');
-  return {
-    ...actual,
-    useErrorContext: () => ({
-      handleError: mockHandleError,
-      errors: [],
-      addError: jest.fn(),
-      removeError: jest.fn(),
-      clearErrors: jest.fn(),
-      handleErrorWithRetry: jest.fn(),
-      getErrorStats: jest.fn(() => new Map()),
-      getErrorCount: jest.fn(() => 0),
-      getRecoverySuggestions: jest.fn(() => []),
-    }),
-  };
-});
+jest.mock('@/hooks/useAppFeedback', () => ({
+  useAppFeedback: jest.fn(),
+}));
 jest.mock('@/hooks/usePermissions', () => ({
   usePermissions: jest.fn(() => ({
     canUploadInstrumentMedia: true,
@@ -129,6 +106,11 @@ describe('InstrumentModal', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (useAppFeedback as jest.Mock).mockReturnValue({
+      showSuccess: mockShowSuccess,
+      showWarning: mockShowWarning,
+      handleError: mockHandleError,
+    });
     mockApiFetch.mockResolvedValue({
       ok: true,
       headers: {
@@ -396,5 +378,69 @@ describe('InstrumentModal', () => {
     expect(
       screen.queryByText('No certificate files uploaded yet.')
     ).not.toBeInTheDocument();
+  });
+
+  it('shows warning when certificate delete returns partial_success', async () => {
+    const user = userEvent.setup();
+
+    mockApiFetchByUrl({
+      '/api/instruments/inst-1/images': { data: [] },
+      '/api/instruments/inst-1/certificates': {
+        data: [
+          {
+            id: 'cert-1',
+            name: '1234567890_cert-1.pdf',
+            path: '/certificates/cert-1.pdf',
+            size: 1024,
+            createdAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      '/api/instruments/inst-1/certificates?id=cert-1': {
+        ok: true,
+        json: async () => ({
+          result: 'partial_success',
+          message:
+            'Certificate removed from the app, but storage cleanup failed.',
+        }),
+      },
+    });
+
+    render(
+      <InstrumentModal
+        isOpen={true}
+        onClose={mockOnClose}
+        instrument={mockInstrument}
+      />
+    );
+
+    const deleteButtons = await screen.findAllByRole('button', {
+      name: /^delete$/i,
+    });
+    await user.click(deleteButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText('Delete Certificate')).toBeInTheDocument();
+    });
+
+    const confirmButton = screen
+      .getAllByRole('button')
+      .filter(
+        btn =>
+          btn.textContent === 'Delete' && btn.className.includes('bg-red-600')
+      );
+
+    if (confirmButton.length > 0) {
+      await user.click(confirmButton[confirmButton.length - 1]);
+    }
+
+    await waitFor(() => {
+      expect(mockShowWarning).toHaveBeenCalledWith(
+        'Certificate removed from the app, but storage cleanup failed.'
+      );
+      expect(mockShowSuccess).not.toHaveBeenCalledWith(
+        'Certificate deleted successfully'
+      );
+    });
   });
 });

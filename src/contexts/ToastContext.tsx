@@ -58,6 +58,7 @@ interface ToastContextValue {
   // Success toasts
   toasts: Toast[];
   showSuccess: (message: string, links?: ToastLink[]) => void;
+  showWarning: (message: string, links?: ToastLink[]) => void;
   removeToast: (id: string) => void;
 }
 
@@ -112,6 +113,7 @@ function ToastContextWrapper({
     // Success toasts
     toasts: successToastContext.toasts,
     showSuccess: successToastContext.showSuccess,
+    showWarning: successToastContext.showWarning,
     removeToast: successToastContext.removeToast,
   };
 
@@ -192,6 +194,7 @@ export function useToastContext() {
         getRecoverySuggestions: () => [],
         toasts: [],
         showSuccess: () => {},
+        showWarning: () => {},
         removeToast: () => {},
       } as ToastContextValue;
     }
@@ -235,6 +238,7 @@ export function useToast() {
   return {
     toasts: successToastContext.toasts,
     showSuccess: successToastContext.showSuccess,
+    showWarning: successToastContext.showWarning,
     removeToast: successToastContext.removeToast,
     SuccessToasts: () => null, // ✅ FIXED: 더 이상 사용하지 않음 (ToastHost가 자동 렌더링)
   };

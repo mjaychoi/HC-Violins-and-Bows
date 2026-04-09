@@ -5,15 +5,17 @@ import LoginPage from '../page';
 import { useAuth } from '@/contexts/AuthContext';
 
 // Mock next/navigation
+const mockSearchParams = new URLSearchParams();
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
-  useSearchParams: jest.fn(() => new URLSearchParams()),
+  useSearchParams: jest.fn(() => mockSearchParams),
 }));
 
 // Mock AuthContext
-jest.mock('@/contexts/AuthContext', () => ({
-  useAuth: jest.fn(),
-}));
+jest.mock('@/contexts/AuthContext', () => {
+  const actual = jest.requireActual('@/contexts/AuthContext');
+  return { ...actual, useAuth: jest.fn() };
+});
 
 // Mock useLoadingState
 jest.mock('@/hooks/useLoadingState', () => ({
@@ -33,6 +35,7 @@ const mockReplace = jest.fn();
 describe('LoginPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSearchParams.delete('next');
     mockUseRouter.mockReturnValue({
       push: mockPush,
       replace: mockReplace,
@@ -212,7 +215,34 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith('/onboarding/organization');
+      expect(mockReplace).toHaveBeenCalledWith(
+        '/onboarding/organization?next=%2Fdashboard'
+      );
+    });
+  });
+
+  it('should preserve next parameter when redirecting logged-in users without org context', async () => {
+    mockSearchParams.set('next', '/sales');
+    const mockUser = { id: '1', email: 'test@example.com' } as any;
+    mockUseAuth.mockReturnValue({
+      user: mockUser,
+      session: {} as any,
+      role: 'member',
+      orgId: null,
+      hasOrgContext: false,
+      loading: false,
+      signIn: mockSignIn,
+      signUp: jest.fn(),
+      signOut: jest.fn(),
+      refreshSession: jest.fn(),
+    } as any);
+
+    render(<LoginPage />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith(
+        '/onboarding/organization?next=%2Fsales'
+      );
     });
   });
 

@@ -22,6 +22,7 @@ export type Database = {
           id: string;
           instrument_id: string | null;
           notes: string | null;
+          org_id: string | null;
           relationship_type: string;
         };
         Insert: {
@@ -31,6 +32,7 @@ export type Database = {
           id?: string;
           instrument_id?: string | null;
           notes?: string | null;
+          org_id?: string | null;
           relationship_type?: string;
         };
         Update: {
@@ -40,6 +42,7 @@ export type Database = {
           id?: string;
           instrument_id?: string | null;
           notes?: string | null;
+          org_id?: string | null;
           relationship_type?: string;
         };
         Relationships: [
@@ -61,6 +64,7 @@ export type Database = {
       };
       clients: {
         Row: {
+          address: string | null;
           client_number: string | null;
           contact_number: string | null;
           created_at: string | null;
@@ -70,9 +74,13 @@ export type Database = {
           interest: string | null;
           last_name: string | null;
           note: string | null;
+          org_id: string | null;
+          status: string | null;
           tags: string[] | null;
+          type: string | null;
         };
         Insert: {
+          address?: string | null;
           client_number?: string | null;
           contact_number?: string | null;
           created_at?: string | null;
@@ -82,9 +90,13 @@ export type Database = {
           interest?: string | null;
           last_name?: string | null;
           note?: string | null;
+          org_id?: string | null;
+          status?: string | null;
           tags?: string[] | null;
+          type?: string | null;
         };
         Update: {
+          address?: string | null;
           client_number?: string | null;
           contact_number?: string | null;
           created_at?: string | null;
@@ -94,7 +106,10 @@ export type Database = {
           interest?: string | null;
           last_name?: string | null;
           note?: string | null;
+          org_id?: string | null;
+          status?: string | null;
           tags?: string[] | null;
+          type?: string | null;
         };
         Relationships: [];
       };
@@ -109,6 +124,7 @@ export type Database = {
           id: string;
           instrument_id: string | null;
           next_follow_up_date: string | null;
+          org_id: string | null;
           purpose: string | null;
           subject: string | null;
           updated_at: string | null;
@@ -123,6 +139,7 @@ export type Database = {
           id?: string;
           instrument_id?: string | null;
           next_follow_up_date?: string | null;
+          org_id?: string | null;
           purpose?: string | null;
           subject?: string | null;
           updated_at?: string | null;
@@ -137,6 +154,7 @@ export type Database = {
           id?: string;
           instrument_id?: string | null;
           next_follow_up_date?: string | null;
+          org_id?: string | null;
           purpose?: string | null;
           subject?: string | null;
           updated_at?: string | null;
@@ -166,6 +184,7 @@ export type Database = {
           instrument_id: string | null;
           is_primary: boolean | null;
           mime_type: string | null;
+          org_id: string | null;
           original_name: string | null;
           size: number | null;
           storage_path: string;
@@ -178,6 +197,7 @@ export type Database = {
           instrument_id?: string | null;
           is_primary?: boolean | null;
           mime_type?: string | null;
+          org_id?: string | null;
           original_name?: string | null;
           size?: number | null;
           storage_path: string;
@@ -190,6 +210,7 @@ export type Database = {
           instrument_id?: string | null;
           is_primary?: boolean | null;
           mime_type?: string | null;
+          org_id?: string | null;
           original_name?: string | null;
           size?: number | null;
           storage_path?: string;
@@ -215,6 +236,8 @@ export type Database = {
           image_url: string;
           instrument_id: string | null;
           mime_type: string;
+          org_id: string | null;
+          storage_key: string | null;
         };
         Insert: {
           created_at?: string | null;
@@ -225,6 +248,8 @@ export type Database = {
           image_url: string;
           instrument_id?: string | null;
           mime_type: string;
+          org_id?: string | null;
+          storage_key?: string | null;
         };
         Update: {
           created_at?: string | null;
@@ -235,6 +260,8 @@ export type Database = {
           image_url?: string;
           instrument_id?: string | null;
           mime_type?: string;
+          org_id?: string | null;
+          storage_key?: string | null;
         };
         Relationships: [
           {
@@ -260,8 +287,12 @@ export type Database = {
           maker: string | null;
           note: string | null;
           notes: string | null;
+          org_id: string | null;
           ownership: string | null;
           price: number | null;
+          reserved_by_user_id: string | null;
+          reserved_connection_id: string | null;
+          reserved_reason: string | null;
           serial_number: string | null;
           size: string | null;
           status: string | null;
@@ -284,8 +315,12 @@ export type Database = {
           maker?: string | null;
           note?: string | null;
           notes?: string | null;
+          org_id?: string | null;
           ownership?: string | null;
           price?: number | null;
+          reserved_by_user_id?: string | null;
+          reserved_connection_id?: string | null;
+          reserved_reason?: string | null;
           serial_number?: string | null;
           size?: string | null;
           status?: string | null;
@@ -308,8 +343,12 @@ export type Database = {
           maker?: string | null;
           note?: string | null;
           notes?: string | null;
+          org_id?: string | null;
           ownership?: string | null;
           price?: number | null;
+          reserved_by_user_id?: string | null;
+          reserved_connection_id?: string | null;
+          reserved_reason?: string | null;
           serial_number?: string | null;
           size?: string | null;
           status?: string | null;
@@ -555,6 +594,7 @@ export type Database = {
           id: string;
           instrument_id: string | null;
           notes: string | null;
+          org_id: string | null;
           personal_due_date: string | null;
           priority: string | null;
           received_date: string;
@@ -576,6 +616,7 @@ export type Database = {
           id?: string;
           instrument_id?: string | null;
           notes?: string | null;
+          org_id?: string | null;
           personal_due_date?: string | null;
           priority?: string | null;
           received_date: string;
@@ -597,6 +638,7 @@ export type Database = {
           id?: string;
           instrument_id?: string | null;
           notes?: string | null;
+          org_id?: string | null;
           personal_due_date?: string | null;
           priority?: string | null;
           received_date?: string;
@@ -631,7 +673,7 @@ export type Database = {
           enabled: boolean | null;
           last_notification_sent_at: string | null;
           notification_time: string | null;
-          org_id: string;
+          org_id: string | null;
           updated_at: string | null;
           user_id: string;
         };
@@ -642,7 +684,7 @@ export type Database = {
           enabled?: boolean | null;
           last_notification_sent_at?: string | null;
           notification_time?: string | null;
-          org_id: string;
+          org_id?: string | null;
           updated_at?: string | null;
           user_id: string;
         };
@@ -653,19 +695,11 @@ export type Database = {
           enabled?: boolean | null;
           last_notification_sent_at?: string | null;
           notification_time?: string | null;
-          org_id?: string;
+          org_id?: string | null;
           updated_at?: string | null;
           user_id?: string;
         };
-        Relationships: [
-          {
-            foreignKeyName: 'notification_settings_org_id_fkey';
-            columns: ['org_id'];
-            isOneToOne: false;
-            referencedRelation: 'organizations';
-            referencedColumns: ['id'];
-          },
-        ];
+        Relationships: [];
       };
       organizations: {
         Row: {
@@ -690,29 +724,38 @@ export type Database = {
       };
       sales_history: {
         Row: {
+          adjustment_of_sale_id: string | null;
           client_id: string | null;
           created_at: string | null;
+          entry_kind: string | null;
           id: string;
           instrument_id: string | null;
           notes: string | null;
+          org_id: string | null;
           sale_date: string;
           sale_price: number;
         };
         Insert: {
+          adjustment_of_sale_id?: string | null;
           client_id?: string | null;
           created_at?: string | null;
+          entry_kind?: string | null;
           id?: string;
           instrument_id?: string | null;
           notes?: string | null;
+          org_id?: string | null;
           sale_date: string;
           sale_price: number;
         };
         Update: {
+          adjustment_of_sale_id?: string | null;
           client_id?: string | null;
           created_at?: string | null;
+          entry_kind?: string | null;
           id?: string;
           instrument_id?: string | null;
           notes?: string | null;
+          org_id?: string | null;
           sale_date?: string;
           sale_price?: number;
         };
@@ -731,9 +774,122 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      create_connection_atomic: {
+        Args: {
+          p_client_id: string;
+          p_instrument_id: string;
+          p_relationship_type: string;
+          p_notes?: string | null;
+        };
+        Returns: string;
+      };
+      create_instrument_certificate_metadata: {
+        Args: {
+          p_instrument_id: string;
+          p_storage_path: string;
+          p_original_name: string;
+          p_mime_type: string;
+          p_size: number;
+          p_created_by: string;
+        };
+        Returns: string;
+      };
+      create_instrument_image_metadata: {
+        Args: {
+          p_instrument_id: string;
+          p_image_url: string;
+          p_storage_key: string;
+          p_file_name: string;
+          p_file_size: number;
+          p_mime_type: string;
+        };
+        Returns: string;
+      };
+      create_invoice_atomic: {
+        Args: {
+          p_invoice: Json;
+          p_items: Json;
+        };
+        Returns: string;
+      };
+      create_invoice_atomic_idempotent: {
+        Args: {
+          p_route_key: string;
+          p_idempotency_key: string;
+          p_request_hash: string;
+          p_invoice: Json;
+          p_items: Json;
+        };
+        Returns: string;
+      };
+      create_sale_adjustment_atomic: {
+        Args: {
+          p_source_sale_id: string;
+          p_adjustment_kind: string;
+          p_notes?: string | null;
+        };
+        Returns: string;
+      };
+      create_sale_atomic_idempotent: {
+        Args: {
+          p_route_key: string;
+          p_idempotency_key: string;
+          p_request_hash: string;
+          p_sale_price: number;
+          p_sale_date: string;
+          p_client_id?: string | null;
+          p_instrument_id?: string | null;
+          p_notes?: string | null;
+        };
+        Returns: string;
+      };
+      delete_connection_atomic: {
+        Args: {
+          p_connection_id: string;
+        };
+        Returns: string;
+      };
       generate_invoice_number: { Args: never; Returns: string };
+      reorder_connections_atomic: {
+        Args: {
+          p_orders: Json;
+        };
+        Returns: undefined;
+      };
       show_limit: { Args: never; Returns: number };
       show_trgm: { Args: { '': string }; Returns: string[] };
+      update_connection_atomic: {
+        Args: {
+          p_connection_id: string;
+          p_updates: Json;
+        };
+        Returns: string;
+      };
+      update_instrument_sale_transition_atomic: {
+        Args: {
+          p_instrument_id: string;
+          p_sale_price: number;
+          p_sale_date: string;
+          p_client_id?: string | null;
+          p_sales_note?: string | null;
+        };
+        Returns: Json;
+      };
+      update_invoice_atomic: {
+        Args: {
+          p_invoice_id: string;
+          p_invoice: Json;
+          p_items?: Json | null;
+        };
+        Returns: undefined;
+      };
+      update_sale_notes_atomic: {
+        Args: {
+          p_sale_id: string;
+          p_notes?: string | null;
+        };
+        Returns: string;
+      };
     };
     Enums: {
       [_ in never]: never;

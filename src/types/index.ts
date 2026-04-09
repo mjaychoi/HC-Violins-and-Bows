@@ -28,6 +28,7 @@ export interface InstrumentImage {
   id: string;
   instrument_id: string;
   image_url: string;
+  storage_key?: string | null;
   alt_text: string | null;
   file_name: string;
   file_size: number;

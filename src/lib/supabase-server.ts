@@ -1,6 +1,25 @@
-import 'server-only';
+import {
+  createClient,
+  type SupabaseClient,
+  type User,
+} from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
+import {
+  readSupabaseAuthSession,
+  SUPABASE_AUTH_STORAGE_KEY,
+} from '@/lib/supabase-auth-cookie';
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+type AppSupabaseClient = SupabaseClient<Database>;
+
+type CookieStoreLike = {
+  getAll(): Array<{ name: string; value: string }>;
+};
+
+export interface CookieBackedAuthResult {
+  accessToken: string;
+  user: User;
+  userSupabase: AppSupabaseClient;
+}
 
 function getSupabaseUrl(): string {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -31,18 +50,12 @@ function getSupabaseServiceRoleKey(): string {
   return serviceRoleKey;
 }
 
-/**
- * User-scoped Supabase client.
- *
- * Uses the caller's access token, so RLS and user/session policies still apply.
- * This should be the DEFAULT client for authenticated API routes.
- */
-export function getUserSupabase(accessToken: string): SupabaseClient {
+export function getUserSupabase(accessToken: string): AppSupabaseClient {
   if (!accessToken?.trim()) {
     throw new Error('getUserSupabase requires a non-empty access token');
   }
 
-  return createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
+  return createClient<Database>(getSupabaseUrl(), getSupabaseAnonKey(), {
     global: {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -55,27 +68,57 @@ export function getUserSupabase(accessToken: string): SupabaseClient {
   });
 }
 
-/**
- * Admin/service-role Supabase client.
- *
- * WARNING:
- * - Bypasses RLS
- * - Should ONLY be used for truly privileged server-side operations
- * - Never use as the default route client for normal CRUD
- */
-let _adminSupabase: SupabaseClient | null = null;
+export function getAccessTokenFromCookies(
+  cookies: CookieStoreLike,
+  storageKey: string = SUPABASE_AUTH_STORAGE_KEY
+): string | null {
+  const session = readSupabaseAuthSession(cookies, storageKey);
+  return session?.access_token?.trim() || null;
+}
 
-export function getAdminSupabase(): SupabaseClient {
+export async function getCookieBackedAuth(
+  cookies: CookieStoreLike,
+  storageKey: string = SUPABASE_AUTH_STORAGE_KEY
+): Promise<CookieBackedAuthResult | null> {
+  const accessToken = getAccessTokenFromCookies(cookies, storageKey);
+  if (!accessToken) {
+    return null;
+  }
+
+  const userSupabase = getUserSupabase(accessToken);
+  const {
+    data: { user },
+    error,
+  } = await userSupabase.auth.getUser();
+
+  if (error || !user) {
+    return null;
+  }
+
+  return {
+    accessToken,
+    user,
+    userSupabase,
+  };
+}
+
+let _adminSupabase: AppSupabaseClient | null = null;
+
+export function getAdminSupabase(): AppSupabaseClient {
   if (_adminSupabase) {
     return _adminSupabase;
   }
 
-  _adminSupabase = createClient(getSupabaseUrl(), getSupabaseServiceRoleKey(), {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
+  _adminSupabase = createClient<Database>(
+    getSupabaseUrl(),
+    getSupabaseServiceRoleKey(),
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
 
   return _adminSupabase;
 }

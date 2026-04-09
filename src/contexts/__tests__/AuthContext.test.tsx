@@ -1,4 +1,5 @@
 import { renderHook, act, waitFor } from '@/test-utils/render';
+import { renderHook as renderHookWithoutProviders } from '@testing-library/react';
 import { AuthProvider, useAuth } from '../AuthContext';
 import { useRouter } from 'next/navigation';
 import { logError, logApiRequest } from '@/utils/logger';
@@ -76,11 +77,11 @@ describe('AuthContext', () => {
   });
 
   it('should throw error when useAuth is used outside provider', () => {
-    // Suppress console.error for this test
+    // Use raw renderHook (no TestProviders wrapper) to test the no-provider guard.
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
     expect(() => {
-      renderHook(() => useAuth());
+      renderHookWithoutProviders(() => useAuth());
     }).toThrow('useAuth must be used within an AuthProvider');
 
     consoleSpy.mockRestore();

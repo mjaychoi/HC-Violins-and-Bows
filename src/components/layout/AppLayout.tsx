@@ -3,10 +3,12 @@
 import { useSidebarState } from '@/hooks/useSidebarState';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo } from 'react';
 import AppHeader, { type AppHeaderActionButton } from './AppHeader';
 import AppSidebar from './AppSidebar';
+import { buildOnboardingRedirect } from '@/utils/authRedirect';
 
 interface AppLayoutProps {
   title: string;
@@ -24,26 +26,19 @@ export default function AppLayout({
   const { isExpanded, toggleSidebar } = useSidebarState();
   const pathname = usePathname();
   const { user, loading, hasOrgContext } = useAuth();
+  const { isTenantTransitioning } = useTenantIdentity();
   const router = useRouter();
 
-  const redirectTarget = useMemo(() => {
-    if (loading) return null;
-    if (!user) {
-      const next = encodeURIComponent(pathname || '/');
-      return `/?next=${next}`;
-    }
-    if (!hasOrgContext) {
-      const next = encodeURIComponent(pathname || '/dashboard');
-      return `/onboarding/organization?next=${next}`;
-    }
-    return null;
+  const orgRedirectTarget = useMemo(() => {
+    if (loading || !user || hasOrgContext) return null;
+    return buildOnboardingRedirect(pathname || '/dashboard');
   }, [hasOrgContext, loading, pathname, user]);
 
   useEffect(() => {
-    if (redirectTarget) {
-      router.replace(redirectTarget);
+    if (orgRedirectTarget) {
+      router.replace(orgRedirectTarget);
     }
-  }, [redirectTarget, router]);
+  }, [orgRedirectTarget, router]);
 
   const renderBlockingShell = (message: string) => (
     <div className="min-h-screen bg-gray-50">
@@ -82,8 +77,16 @@ export default function AppLayout({
     return renderBlockingShell('Checking your session...');
   }
 
-  if (redirectTarget) {
-    return renderBlockingShell('Redirecting you to the right place...');
+  if (isTenantTransitioning) {
+    return renderBlockingShell('Refreshing your workspace...');
+  }
+
+  if (!user) {
+    return renderBlockingShell('Restoring access...');
+  }
+
+  if (orgRedirectTarget) {
+    return renderBlockingShell('Redirecting you to organization setup...');
   }
 
   return (

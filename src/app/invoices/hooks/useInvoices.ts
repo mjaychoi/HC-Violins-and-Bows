@@ -17,12 +17,35 @@ interface FetchInvoicesOptions {
   sortDirection?: 'asc' | 'desc';
 }
 
+interface InvoiceListDiagnostics {
+  partial: boolean;
+  droppedCount: number;
+  returnedCount: number;
+  warning?: string;
+}
+
 export interface CreateInvoiceResult {
   invoice: Invoice | null;
-  status: 'created' | 'already_processed';
+  result: 'full_success' | 'partial_success' | 'already_processed';
   message: string;
   existingInvoiceId: string | null;
   shouldRefreshList: boolean;
+  imageTracking?: InvoiceImageTracking | null;
+}
+
+export interface InvoiceImageTracking {
+  status: 'not_requested' | 'claimed' | 'partial' | 'failed';
+  requestedCount: number;
+  claimedCount: number;
+  missingCount: number;
+  missingPaths: string[];
+}
+
+export interface UpdateInvoiceResult {
+  invoice: Invoice;
+  result: 'full_success' | 'partial_success';
+  message: string;
+  imageTracking: InvoiceImageTracking | null;
 }
 
 interface InvoiceCreateErrorPayload {
@@ -93,6 +116,12 @@ export function useInvoices() {
     orgId?: string | null;
     reason?: string;
   } | null>(null);
+  const [listDiagnostics, setListDiagnostics] =
+    useState<InvoiceListDiagnostics>({
+      partial: false,
+      droppedCount: 0,
+      returnedCount: 0,
+    });
   const [loading, setLoading] = useState(false);
   const { handleError } = useErrorHandler();
   const abortRef = useRef<AbortController | null>(null);
@@ -111,6 +140,11 @@ export function useInvoices() {
       setLoading(true);
       setStatus('loading');
       setScopeInfo(null);
+      setListDiagnostics({
+        partial: false,
+        droppedCount: 0,
+        returnedCount: 0,
+      });
       const currentPage = options.page || page;
 
       try {
@@ -148,16 +182,31 @@ export function useInvoices() {
         const rawCount =
           typeof result.count === 'number' ? result.count : undefined;
         const safeCount = typeof rawCount === 'number' ? rawCount : data.length;
+        const partial = result.partial === true;
+        const droppedCount =
+          typeof result.droppedCount === 'number' ? result.droppedCount : 0;
+        const returnedCount =
+          typeof result.returnedCount === 'number'
+            ? result.returnedCount
+            : data.length;
+        const warning =
+          typeof result.warning === 'string' ? result.warning : undefined;
 
         if (abortRef.current === controller && !controller.signal.aborted) {
           setInvoices(data);
-          setStatus(data.length > 0 ? 'success' : 'empty');
+          setStatus(data.length > 0 || partial ? 'success' : 'empty');
           setTotalCount(safeCount);
           setTotalPages(
             typeof result.totalPages === 'number'
               ? result.totalPages
               : Math.max(1, Math.ceil(safeCount / (options.pageSize || 10)))
           );
+          setListDiagnostics({
+            partial,
+            droppedCount,
+            returnedCount,
+            warning,
+          });
 
           const scopePayload = result.scope;
           if (
@@ -204,6 +253,11 @@ export function useInvoices() {
           setTotalCount(0);
           setTotalPages(1);
           setScopeInfo(null);
+          setListDiagnostics({
+            partial: false,
+            droppedCount: 0,
+            returnedCount: 0,
+          });
         }
         return [];
       } finally {
@@ -298,7 +352,7 @@ export function useInvoices() {
             createIdempotencyRef.current = null;
             return {
               invoice: null,
-              status: 'already_processed',
+              result: 'already_processed',
               message:
                 'This request was already processed. Loading existing invoice.',
               existingInvoiceId,
@@ -323,13 +377,23 @@ export function useInvoices() {
         createIdempotencyRef.current = null;
         return {
           invoice: result.data as Invoice,
-          status: 'created',
-          message: 'Invoice created successfully.',
+          result:
+            result.result === 'partial_success'
+              ? 'partial_success'
+              : 'full_success',
+          message:
+            typeof result.message === 'string' && result.message.trim()
+              ? result.message
+              : 'Invoice created successfully.',
           existingInvoiceId:
             result?.data && typeof result.data.id === 'string'
               ? result.data.id
               : null,
           shouldRefreshList: false,
+          imageTracking:
+            result?.imageTracking && typeof result.imageTracking === 'object'
+              ? (result.imageTracking as InvoiceImageTracking)
+              : null,
         };
       } catch (error) {
         createIdempotencyRef.current = null;
@@ -366,7 +430,7 @@ export function useInvoices() {
           display_order: number;
         }>;
       }>
-    ) => {
+    ): Promise<UpdateInvoiceResult> => {
       try {
         // Filter out undefined values to avoid validation errors
         // Keep null values as they are valid for nullable fields
@@ -388,7 +452,21 @@ export function useInvoices() {
         }
 
         const result = await response.json();
-        return result.data as Invoice;
+        return {
+          invoice: result.data as Invoice,
+          result:
+            result.result === 'partial_success'
+              ? 'partial_success'
+              : 'full_success',
+          message:
+            typeof result.message === 'string' && result.message.trim()
+              ? result.message
+              : 'Invoice updated successfully.',
+          imageTracking:
+            result?.imageTracking && typeof result.imageTracking === 'object'
+              ? (result.imageTracking as InvoiceImageTracking)
+              : null,
+        };
       } catch (error) {
         handleError(
           error instanceof Error ? error.message : String(error),
@@ -437,5 +515,6 @@ export function useInvoices() {
     deleteInvoice,
     setPage,
     scopeInfo,
+    listDiagnostics,
   };
 }

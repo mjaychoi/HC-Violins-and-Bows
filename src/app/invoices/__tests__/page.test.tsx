@@ -12,6 +12,13 @@ jest.mock('@/hooks/usePermissions', () => ({
   })),
 }));
 
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: jest.fn(() => ({
+    tenantIdentityKey: 'tenant-test',
+    isTenantTransitioning: false,
+  })),
+}));
+
 // Mock InvoiceModal component first
 jest.mock('../components/InvoiceModal', () => ({
   __esModule: true,
@@ -74,6 +81,7 @@ jest.mock('@/hooks/useURLState', () => ({
 jest.mock('@/hooks/useAppFeedback', () => ({
   useAppFeedback: jest.fn(() => ({
     showSuccess: jest.fn(),
+    showWarning: jest.fn(),
     handleError: jest.fn(),
   })),
 }));
@@ -200,8 +208,20 @@ const mockInvoice: Invoice = {
 
 describe('InvoicesPage', () => {
   const mockFetchInvoices = jest.fn();
-  const mockCreateInvoice = jest.fn().mockResolvedValue(mockInvoice);
-  const mockUpdateInvoice = jest.fn().mockResolvedValue(mockInvoice);
+  const mockCreateInvoice = jest.fn().mockResolvedValue({
+    invoice: mockInvoice,
+    result: 'full_success',
+    message: 'Invoice created successfully.',
+    existingInvoiceId: mockInvoice.id,
+    shouldRefreshList: false,
+    imageTracking: null,
+  });
+  const mockUpdateInvoice = jest.fn().mockResolvedValue({
+    invoice: mockInvoice,
+    result: 'full_success',
+    message: 'Invoice updated successfully.',
+    imageTracking: null,
+  });
   const mockDeleteInvoice = jest.fn().mockResolvedValue(true);
   const mockSetPage = jest.fn();
   const mockHandleSort = jest.fn();
@@ -213,6 +233,7 @@ describe('InvoicesPage', () => {
   const mockSetSortDirection = jest.fn();
   const mockUpdateURLState = jest.fn();
   const mockShowSuccess = jest.fn();
+  const mockShowWarning = jest.fn();
   const mockHandleError = jest.fn();
 
   beforeEach(() => {
@@ -232,6 +253,12 @@ describe('InvoicesPage', () => {
       totalCount: 1,
       totalPages: 1,
       loading: false,
+      listDiagnostics: {
+        partial: false,
+        droppedCount: 0,
+        returnedCount: 1,
+        warning: undefined,
+      },
       fetchInvoices: mockFetchInvoices,
       createInvoice: mockCreateInvoice,
       updateInvoice: mockUpdateInvoice,
@@ -259,6 +286,7 @@ describe('InvoicesPage', () => {
     const { useAppFeedback } = require('@/hooks/useAppFeedback');
     useAppFeedback.mockReturnValue({
       showSuccess: mockShowSuccess,
+      showWarning: mockShowWarning,
       handleError: mockHandleError,
     });
   });
@@ -650,6 +678,102 @@ describe('InvoicesPage', () => {
     await waitFor(() => {
       expect(mockCreateInvoice).toHaveBeenCalled();
     });
+  });
+
+  it('shows partial-success message for create and still closes modal', async () => {
+    const { apiFetch } = require('@/utils/apiFetch');
+    apiFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          business_name: 'HC Violins',
+          address: 'Seoul',
+          phone: '010-0000-0000',
+          email: 'hello@example.com',
+          bank_account_holder: 'HC Violins',
+          bank_name: 'Bank',
+          bank_swift_code: 'SWIFT',
+          bank_account_number: '123',
+          default_conditions: 'Net 30',
+          default_exchange_rate: '1.0',
+          default_currency: 'USD',
+        },
+      }),
+    });
+
+    mockCreateInvoice.mockResolvedValueOnce({
+      invoice: mockInvoice,
+      result: 'partial_success',
+      message: 'Invoice created, but some item images were not linked.',
+      existingInvoiceId: mockInvoice.id,
+      shouldRefreshList: false,
+      imageTracking: {
+        status: 'partial',
+        requestedCount: 2,
+        claimedCount: 1,
+        missingCount: 1,
+        missingPaths: ['org/file-a.jpg'],
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+
+    await user.click(screen.getByText('Add Invoice'));
+    expect(await screen.findByTestId('invoice-modal')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Submit Invoice'));
+
+    await waitFor(() => {
+      expect(mockShowWarning).toHaveBeenCalledWith(
+        'Invoice created, but some item images were not linked.'
+      );
+    });
+
+    expect(screen.queryByTestId('invoice-modal')).not.toBeInTheDocument();
+    expect(mockShowSuccess).not.toHaveBeenCalledWith(
+      'Invoice created successfully.'
+    );
+    expect(mockShowSuccess).not.toHaveBeenCalledWith(
+      'Invoice created, but some item images were not linked.'
+    );
+  });
+
+  it('shows partial-success message for update and still closes modal', async () => {
+    mockUpdateInvoice.mockResolvedValueOnce({
+      invoice: { ...mockInvoice, notes: 'updated' },
+      result: 'partial_success',
+      message: 'Invoice updated, but some item images were not linked.',
+      imageTracking: {
+        status: 'failed',
+        requestedCount: 2,
+        claimedCount: 0,
+        missingCount: 2,
+        missingPaths: ['org/file-a.jpg', 'org/file-b.jpg'],
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+
+    await user.click(screen.getByText('Edit INV0000001'));
+    expect(await screen.findByTestId('invoice-modal')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Submit Invoice'));
+
+    await waitFor(() => {
+      expect(mockShowWarning).toHaveBeenCalledWith(
+        'Invoice updated, but some item images were not linked.'
+      );
+    });
+
+    expect(screen.queryByTestId('invoice-modal')).not.toBeInTheDocument();
+    expect(mockShowSuccess).not.toHaveBeenCalledWith(
+      'Invoice updated successfully.'
+    );
+    expect(mockShowSuccess).not.toHaveBeenCalledWith(
+      'Invoice updated, but some item images were not linked.'
+    );
   });
 
   it.skip('handles invoice update', async () => {

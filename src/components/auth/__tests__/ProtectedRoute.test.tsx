@@ -12,9 +12,10 @@ jest.mock('next/navigation', () => ({
 
 // Mock AuthContext
 const mockUseAuth = jest.fn();
-jest.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => mockUseAuth(),
-}));
+jest.mock('@/contexts/AuthContext', () => {
+  const actual = jest.requireActual('@/contexts/AuthContext');
+  return { ...actual, useAuth: () => mockUseAuth() };
+});
 
 describe('ProtectedRoute', () => {
   beforeEach(() => {

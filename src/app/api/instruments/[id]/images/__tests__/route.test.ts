@@ -175,7 +175,7 @@ describe('/api/instruments/[id]/images', () => {
       expect(json.data).toEqual(mockImages);
       // ✅ 변경: alt_text 컬럼이 없으므로 명시적 컬럼 리스트 사용
       expect(mockQuery.select).toHaveBeenCalledWith(
-        'id, instrument_id, image_url, file_name, file_size, mime_type, display_order, created_at, instruments!inner(org_id)'
+        'id, instrument_id, image_url, storage_key, file_name, file_size, mime_type, display_order, created_at, instruments!inner(org_id)'
       );
       expect(mockQuery.eq).toHaveBeenCalledWith(
         'instrument_id',
@@ -487,6 +487,88 @@ describe('/api/instruments/[id]/images', () => {
       });
     });
 
+    it('uses persisted storage_key for signed URLs instead of reconstructing from file_name', async () => {
+      const storedKey = `other-org/${mockInstrumentId}/actual-key.jpg`;
+      const mockImages = [
+        {
+          id: 'img-1',
+          instrument_id: mockInstrumentId,
+          image_url: 'https://storage.example.com/legacy-wrong-key.jpg',
+          storage_key: storedKey,
+          file_name: 'reconstructed-would-be-wrong.jpg',
+          display_order: 0,
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ];
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockResolvedValue({
+          data: mockImages,
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = makeSupabaseClient(mockQuery);
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments/${mockInstrumentId}/images`
+      );
+      const context = {
+        params: Promise.resolve({ id: mockInstrumentId }),
+      };
+      const response = await GET(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(mockStorage.presignGet).toHaveBeenCalledWith(storedKey, 600);
+      expect(json.data[0].image_url).toBe(
+        `https://presigned.example.com/${storedKey}`
+      );
+    });
+
+    it('falls back to parsing legacy image_url when storage_key is absent', async () => {
+      const legacyKey = `test-org/${mockInstrumentId}/legacy-key.jpg`;
+      const mockImages = [
+        {
+          id: 'img-1',
+          instrument_id: mockInstrumentId,
+          image_url: `https://bucket.s3.us-east-1.amazonaws.com/${legacyKey}`,
+          storage_key: null,
+          file_name: 'legacy-key.jpg',
+          display_order: 0,
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ];
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockResolvedValue({
+          data: mockImages,
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = makeSupabaseClient(mockQuery);
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments/${mockInstrumentId}/images`
+      );
+      const context = {
+        params: Promise.resolve({ id: mockInstrumentId }),
+      };
+      const response = await GET(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(mockStorage.presignGet).toHaveBeenCalledWith(legacyKey, 600);
+      expect(json.data[0].image_url).toBe(
+        `https://presigned.example.com/${legacyKey}`
+      );
+    });
+
     it('should handle large number of images', async () => {
       const mockImages = Array.from({ length: 100 }, (_, i) => ({
         id: `img-${i}`,
@@ -572,6 +654,12 @@ describe('/api/instruments/[id]/images', () => {
       expect(res.status).toBe(200);
       expect(json.data).toHaveLength(1);
       expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+      expect(mockUserSupabase.rpc).toHaveBeenCalledWith(
+        'create_instrument_image_metadata',
+        expect.objectContaining({
+          p_storage_key: `org/${mockInstrumentId}/file.jpg`,
+        })
+      );
     });
 
     it('3-file upload: failure on 2nd file rolls back 1st file (storage + DB)', async () => {
@@ -803,18 +891,24 @@ describe('/api/instruments/[id]/images', () => {
       const image = {
         id: mockImageId,
         instrument_id: mockInstrumentId,
+        storage_key: `canonical/${mockImageId}.jpg`,
         file_name: 'photo.jpg',
         image_url: null,
       };
       mockUserSupabase = makeDeleteSupabaseClient(image);
-      mockStorage.deleteFile.mockResolvedValue(undefined);
+      mockStorage.deleteFile.mockResolvedValue(true);
 
       const res = await DELETE(makeDeleteRequest(mockImageId), idCtx);
       const json = await res.json();
 
       expect(res.status).toBe(200);
-      expect(json.success).toBe(true);
+      expect(json.result).toBe('full_success');
+      expect(json.message).toBe('Image deleted successfully.');
+      expect(json.cleanup).toEqual({ storageDeleted: true });
       expect(mockStorage.deleteFile).toHaveBeenCalledTimes(1);
+      expect(mockStorage.deleteFile).toHaveBeenCalledWith(
+        `canonical/${mockImageId}.jpg`
+      );
       const deleteChain = mockUserSupabase.from.mock.results
         .filter((result: any) => result.value?.delete)
         .at(-1)?.value;
@@ -848,10 +942,11 @@ describe('/api/instruments/[id]/images', () => {
       );
     });
 
-    it('storage delete fails → returns 200 (best-effort storage cleanup)', async () => {
+    it('storage delete fails → returns partial_success instead of silent success', async () => {
       const image = {
         id: mockImageId,
         instrument_id: mockInstrumentId,
+        storage_key: `canonical/${mockImageId}.jpg`,
         file_name: 'photo.jpg',
         image_url: null,
       };
@@ -900,15 +995,23 @@ describe('/api/instruments/[id]/images', () => {
       const json = await res.json();
 
       expect(res.status).toBe(200);
-      expect(json.success).toBe(true);
+      expect(json.result).toBe('partial_success');
+      expect(json.message).toBe(
+        'Image removed from the app, but storage cleanup failed.'
+      );
+      expect(json.cleanup).toEqual({ storageDeleted: false });
       // DB delete MUST have been called (it happens before storage)
       expect(deleteDbMock).toHaveBeenCalled();
+      expect(mockStorage.deleteFile).toHaveBeenCalledWith(
+        `canonical/${mockImageId}.jpg`
+      );
     });
 
     it('image with no file_name and no resolvable storage path returns 409 and preserves DB metadata', async () => {
       const image = {
         id: mockImageId,
         instrument_id: mockInstrumentId,
+        storage_key: null,
         file_name: null,
         image_url: 'https://some-cdn.example.com/image.jpg',
       };
@@ -921,6 +1024,28 @@ describe('/api/instruments/[id]/images', () => {
       expect(res.status).toBe(409);
       expect(json.message).toBe('Image storage key could not be resolved');
       expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('legacy row without storage_key still deletes via parsed image_url', async () => {
+      const legacyKey = `test-org/${mockInstrumentId}/legacy-delete.jpg`;
+      const image = {
+        id: mockImageId,
+        instrument_id: mockInstrumentId,
+        storage_key: null,
+        file_name: null,
+        image_url: `https://bucket.s3.us-east-1.amazonaws.com/${legacyKey}`,
+      };
+      mockUserSupabase = makeDeleteSupabaseClient(image);
+      mockStorage.deleteFile.mockResolvedValue(true);
+
+      const res = await DELETE(makeDeleteRequest(mockImageId), idCtx);
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.result).toBe('full_success');
+      expect(json.message).toBe('Image deleted successfully.');
+      expect(json.cleanup).toEqual({ storageDeleted: true });
+      expect(mockStorage.deleteFile).toHaveBeenCalledWith(legacyKey);
     });
   });
 });

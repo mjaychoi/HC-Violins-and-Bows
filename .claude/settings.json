@@ -1,5 +1,17 @@
 {
   "permissions": {
-    "allow": ["Read(//Users/soyeonhong/**)"]
+    "allow": [
+      "Read(//Users/soyeonhong/**)",
+      "Bash(git -C /Users/soyeonhong/HC-Violins-and-Bows log --oneline --all -20)",
+      "Bash(git -C /Users/soyeonhong/HC-Violins-and-Bows log --name-status --oneline -10)",
+      "Bash(grep -l \"org_id\" /Users/soyeonhong/HC-Violins-and-Bows/supabase/migrations/*.sql)",
+      "Bash(grep -h \"CREATE OR REPLACE FUNCTION\" /Users/soyeonhong/HC-Violins-and-Bows/supabase/migrations/*.sql)",
+      "Bash(git -C /Users/soyeonhong/HC-Violins-and-Bows log --oneline -- src/types/database.ts)",
+      "Bash(git -C /Users/soyeonhong/HC-Violins-and-Bows log --format=\"%H %ai %s\" -- src/types/database.ts)",
+      "Bash(grep -n \"partial\" /Users/soyeonhong/HC-Violins-and-Bows/src/app/invoices/components/*.tsx)",
+      "Bash(npm run:*)",
+      "Bash(xxd /Users/soyeonhong/HC-Violins-and-Bows/src/types/database.ts)",
+      "Bash(git checkout:*)"
+    ]
   }
 }

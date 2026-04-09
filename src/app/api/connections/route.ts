@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import type { Json } from '@/types/database';
 import { errorHandler } from '@/utils/errorHandler';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
@@ -331,7 +332,9 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         'update_connection_atomic',
         {
           p_connection_id: id,
-          p_updates: validatedUpdates,
+          // ClientInstrument relation fields (client, instrument) are stripped by validation;
+          // remaining fields are JSON-serializable. Cast is safe here.
+          p_updates: validatedUpdates as unknown as Json,
         }
       );
 

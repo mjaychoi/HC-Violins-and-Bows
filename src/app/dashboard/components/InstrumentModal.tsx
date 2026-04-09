@@ -10,8 +10,7 @@ import {
   formatFileSize,
 } from '../utils/dashboardUtils';
 import { apiFetch } from '@/utils/apiFetch';
-import { useSuccessToastContext } from '@/contexts/SuccessToastContext';
-import { useErrorContext } from '@/contexts/ErrorContext';
+import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { usePermissions } from '@/hooks/usePermissions';
 import { downloadCertificatePdf } from '../utils/certificateDownload';
 
@@ -54,8 +53,7 @@ export default function InstrumentModal({
     id?: string;
     fileName: string;
   } | null>(null);
-  const { showSuccess } = useSuccessToastContext();
-  const { handleError } = useErrorContext();
+  const { showSuccess, showWarning, handleError } = useAppFeedback();
   const hasCertificate = Boolean(instrument?.has_certificate);
 
   // Request ID counters to handle concurrent requests
@@ -219,7 +217,19 @@ export default function InstrumentModal({
         return;
       }
 
-      showSuccess('Certificate deleted successfully');
+      const result = (await response.json()) as {
+        result?: 'full_success' | 'partial_success';
+        message?: string;
+      };
+
+      if (result.result === 'partial_success') {
+        showWarning(
+          result.message ||
+            'Deleted from the app, but storage cleanup failed. Please contact support if needed.'
+        );
+      } else {
+        showSuccess(result.message || 'Certificate deleted successfully');
+      }
       // Refresh certificate list
       await fetchCertificates(instrument.id);
       setShowDeleteConfirm(null);

@@ -2,7 +2,8 @@
  * Supabase 마이그레이션 통합 스크립트
  *
  * 이 스크립트는 다음 방법을 순서대로 시도합니다:
- * 1. PostgreSQL 직접 연결 (DATABASE_PASSWORD가 있으면)
+ * 1. PostgreSQL 연결 (권장: DATABASE_URL에 Transaction Pooler 연결 문자열 사용)
+ * 2. PostgreSQL 직접 연결 (DATABASE_PASSWORD가 있으면 direct host fallback 사용)
  * 2. Supabase CLI (설치되어 있으면)
  * 3. 실패 시 수동 실행 안내
  */
@@ -33,6 +34,29 @@ interface MigrationOptions {
   verbose?: boolean;
 }
 
+function getProjectRefFromSupabaseUrl(supabaseUrl: string): string {
+  const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1];
+  if (!projectRef) {
+    throw new Error('프로젝트 참조를 찾을 수 없습니다.');
+  }
+  return projectRef;
+}
+
+function buildDirectConnectionString(
+  projectRef: string,
+  dbPassword: string
+): string {
+  return `postgresql://postgres:${encodeURIComponent(
+    dbPassword
+  )}@db.${projectRef}.supabase.co:5432/postgres`;
+}
+
+function sanitizeConnectionString(rawConnectionString: string): string {
+  const url = new URL(rawConnectionString);
+  url.searchParams.delete('sslmode');
+  return url.toString();
+}
+
 async function migrate(options: MigrationOptions = {}) {
   const { method = 'auto', verbose = false } = options;
 
@@ -41,6 +65,7 @@ async function migrate(options: MigrationOptions = {}) {
 
     // 환경 변수 확인
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const databaseUrl = process.env.DATABASE_URL;
     const dbPassword = process.env.DATABASE_PASSWORD;
 
     if (!supabaseUrl) {
@@ -49,15 +74,13 @@ async function migrate(options: MigrationOptions = {}) {
       );
     }
 
-    const projectRef = supabaseUrl.match(
-      /https:\/\/([^.]+)\.supabase\.co/
-    )?.[1];
-    if (!projectRef) {
-      throw new Error('프로젝트 참조를 찾을 수 없습니다.');
-    }
+    const projectRef = getProjectRefFromSupabaseUrl(supabaseUrl);
 
     info('📦 프로젝트:', projectRef);
     info('📋 Supabase URL:', supabaseUrl);
+    if (databaseUrl) {
+      info('📋 DATABASE_URL 감지됨: pooler/direct override 사용');
+    }
     info('');
 
     // 마이그레이션 파일 읽기
@@ -73,9 +96,13 @@ async function migrate(options: MigrationOptions = {}) {
     info('✅ 마이그레이션 파일 읽기 완료\n');
 
     // 방법 선택
-    if (method === 'postgres' || (method === 'auto' && dbPassword)) {
+    if (
+      method === 'postgres' ||
+      (method === 'auto' && (databaseUrl || dbPassword))
+    ) {
       await migrateWithPostgreSQL(
         projectRef,
+        databaseUrl,
         dbPassword,
         migrationSQL,
         verbose
@@ -124,113 +151,92 @@ async function migrate(options: MigrationOptions = {}) {
  */
 async function migrateWithPostgreSQL(
   projectRef: string,
+  databaseUrl: string | undefined,
   dbPassword: string | undefined,
   migrationSQL: string,
   verbose: boolean
 ): Promise<void> {
-  if (!dbPassword) {
-    throw new Error('DATABASE_PASSWORD 환경 변수가 필요합니다.');
+  if (!databaseUrl && !dbPassword) {
+    throw new Error(
+      'DATABASE_URL 또는 DATABASE_PASSWORD 환경 변수가 필요합니다.'
+    );
   }
 
   info('🔐 PostgreSQL 직접 연결을 통한 마이그레이션 시도...\n');
 
   let client: Client | null = null;
-  const regions = ['us-east-1', 'us-west-1', 'eu-west-1', 'ap-southeast-1'];
+  try {
+    const rawConnectionString =
+      databaseUrl ??
+      buildDirectConnectionString(projectRef, dbPassword as string);
+    const connectionString = sanitizeConnectionString(rawConnectionString);
 
-  for (const region of regions) {
+    if (verbose) {
+      info(
+        databaseUrl
+          ? '🔌 DATABASE_URL로 직접 연결 시도...'
+          : '🔌 Supabase direct host로 연결 시도...'
+      );
+    }
+
+    client = new Client({
+      connectionString,
+      ssl: {
+        rejectUnauthorized: false,
+      },
+    });
+
+    await client.connect();
+    info('✅ 데이터베이스 연결 성공!\n');
+
+    if (verbose) {
+      info('📝 마이그레이션 SQL 전체를 한 번에 실행 중...\n');
+    }
+
     try {
-      const connectionString = `postgresql://postgres.${projectRef}:${encodeURIComponent(
-        dbPassword
-      )}@aws-0-${region}.pooler.supabase.com:6543/postgres?sslmode=require`;
-
+      await client.query(migrationSQL);
       if (verbose) {
-        info(`🔌 ${region} 지역 연결 시도...`);
+        info('✅ 마이그레이션 SQL 실행 완료');
       }
-
-      client = new Client({
-        connectionString: connectionString,
-        ssl: {
-          rejectUnauthorized: false,
-        },
-      });
-
-      await client.connect();
-      info(`✅ ${region} 지역 연결 성공!\n`);
-
-      // SQL 문 파싱 및 실행
-      const statements = parseSQL(migrationSQL);
-
-      if (verbose) {
-        info(`📝 ${statements.length}개의 SQL 문 실행 중...\n`);
-      }
-
-      for (let i = 0; i < statements.length; i++) {
-        const statement = statements[i];
-        if (!statement || statement.trim().length === 0) continue;
-
-        try {
-          await client.query(statement);
-          if (verbose) {
-            info(`✅ ${i + 1}/${statements.length} 완료`);
-          }
-        } catch (error: unknown) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          if (
-            errorMessage.includes('already exists') ||
-            errorMessage.includes('duplicate')
-          ) {
-            if (verbose) {
-              info(`⚠️  ${i + 1}/${statements.length} 건너뜀 (이미 존재)`);
-            }
-          } else {
-            throw error;
-          }
-        }
-      }
-
-      info('\n✅ 마이그레이션 완료!');
-      info('🎉 maintenance_tasks 테이블이 생성되었습니다.');
-      info('📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n');
-
-      await client.end();
-      return;
     } catch (error: unknown) {
-      if (client) {
-        try {
-          await client.end();
-        } catch {
-          // ignore
-        }
-        client = null;
-      }
-
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       if (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED')
+        errorMessage.includes('already exists') ||
+        errorMessage.includes('duplicate')
       ) {
+        info('⚠️  마이그레이션 중 이미 존재하는 객체가 감지되었습니다.');
         if (verbose) {
-          info(`⚠️  ${region} 지역 연결 실패, 다음 지역 시도...\n`);
+          info(`   상세: ${errorMessage}`);
         }
-        continue;
-      } else if (
-        error &&
-        typeof error === 'object' &&
-        'message' in error &&
-        typeof error.message === 'string' &&
-        error.message.includes('password authentication failed')
-      ) {
-        info(`❌ 비밀번호 인증 실패\n`);
-        break;
       } else {
         throw error;
       }
     }
-  }
 
-  throw new Error('모든 지역에 대한 연결 시도가 실패했습니다.');
+    info('\n✅ 마이그레이션 완료!');
+    info('🎉 maintenance_tasks 테이블이 생성되었습니다.');
+    info('📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n');
+  } catch (error: unknown) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'message' in error &&
+      typeof error.message === 'string' &&
+      error.message.includes('password authentication failed')
+    ) {
+      info('❌ 비밀번호 인증 실패\n');
+    }
+    throw error;
+  } finally {
+    if (client) {
+      try {
+        await client.end();
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 /**
@@ -324,22 +330,6 @@ async function checkSupabaseCLI(): Promise<boolean> {
 }
 
 /**
- * SQL 문 파싱
- */
-function parseSQL(sql: string): string[] {
-  return sql
-    .split(';')
-    .map(s => s.trim())
-    .filter(
-      s =>
-        s.length > 0 &&
-        !s.startsWith('--') &&
-        !s.startsWith('COMMENT') &&
-        !s.startsWith('COMMENT ON')
-    );
-}
-
-/**
  * 수동 실행 안내
  */
 function showManualInstructions(
@@ -352,22 +342,34 @@ function showManualInstructions(
   info('');
   info('자동 마이그레이션이 불가능합니다. 다음 방법 중 하나를 사용하세요:');
   info('');
-  info('방법 1: Supabase 대시보드 (가장 빠름, 추천)');
+  info('방법 1: Transaction Pooler 연결 문자열 사용 (가장 쉬움, 추천)');
+  info('──────────────────────────────────────────────────────');
+  info('1. Supabase Dashboard > Connect > Transaction Pooler 선택');
+  info(
+    `2. 연결 문자열 복사: postgresql://postgres.${projectRef}:[YOUR-PASSWORD]@aws-0-us-east-2.pooler.supabase.com:6543/postgres`
+  );
+  info('3. .env.local에 추가:');
+  info(
+    `   DATABASE_URL=postgresql://postgres.${projectRef}:[YOUR-PASSWORD]@aws-0-us-east-2.pooler.supabase.com:6543/postgres`
+  );
+  info('4. npm run migrate 실행');
+  info('');
+  info('방법 2: Supabase 대시보드 SQL Editor 사용');
   info('──────────────────────────────────────────────────────');
   info(`1. https://supabase.com/dashboard/project/${projectRef}/sql/new 접속`);
   info('2. migration-maintenance-tasks.sql 파일 내용 복사');
   info('3. SQL Editor에 붙여넣기');
   info('4. "Run" 버튼 클릭 (Ctrl+Enter / Cmd+Enter)');
   info('');
-  info('방법 2: 데이터베이스 비밀번호 사용 (자동 실행)');
+  info('방법 3: direct host + 데이터베이스 비밀번호 사용');
   info('──────────────────────────────────────────────────────');
   info('1. Supabase Dashboard > Settings > Database 접속');
-  info('2. "Database password" 확인');
+  info('2. "Database password" 확인 후 direct connection 사용');
   info('3. .env.local에 추가:');
   info('   DATABASE_PASSWORD=your_password');
   info('4. npm run migrate 실행');
   info('');
-  info('방법 3: Supabase CLI 사용');
+  info('방법 4: Supabase CLI 사용');
   info('──────────────────────────────────────────────────────');
   info('1. brew install supabase/tap/supabase (또는 npm install -g supabase)');
   info('2. supabase login');

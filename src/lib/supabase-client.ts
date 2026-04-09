@@ -1,5 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import {
+  createBrowserCookieStorage,
+  SUPABASE_AUTH_STORAGE_KEY,
+} from '@/lib/supabase-auth-cookie';
 
 type AppSupabaseClient = SupabaseClient<Database>;
 
@@ -10,6 +14,10 @@ type GlobalWithClient = typeof globalThis & {
 };
 
 let cachedClient: AppSupabaseClient | null = null;
+
+function isBrowser(): boolean {
+  return typeof window !== 'undefined';
+}
 
 function getEnv() {
   return {
@@ -31,12 +39,18 @@ function setGlobalClient(client: AppSupabaseClient | null): void {
   (globalThis as GlobalWithClient)[GLOBAL_KEY] = client;
 }
 
+function getGlobalClient(): AppSupabaseClient | null {
+  return (globalThis as GlobalWithClient)[GLOBAL_KEY] ?? null;
+}
+
 function buildClient(url: string, key: string): AppSupabaseClient {
   return createClient<Database>(url, key, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: false,
+      storageKey: SUPABASE_AUTH_STORAGE_KEY,
+      storage: createBrowserCookieStorage(SUPABASE_AUTH_STORAGE_KEY),
     },
     global: {
       fetch: (...args) => fetch(...args),
@@ -45,6 +59,20 @@ function buildClient(url: string, key: string): AppSupabaseClient {
 }
 
 function initialize(): AppSupabaseClient | null {
+  if (cachedClient) {
+    return cachedClient;
+  }
+
+  const globalClient = getGlobalClient();
+  if (globalClient) {
+    cachedClient = globalClient;
+    return globalClient;
+  }
+
+  if (!isBrowser()) {
+    return null;
+  }
+
   const { url, key } = getEnv();
 
   if (!url || !key) {
@@ -73,6 +101,9 @@ export async function getSupabaseClient(): Promise<AppSupabaseClient> {
   const client = getSupabaseClientSync();
 
   if (!client) {
+    if (!isBrowser()) {
+      throw new Error('Supabase browser client is unavailable on the server');
+    }
     throw new Error('Missing Supabase environment variables');
   }
 

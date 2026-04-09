@@ -8,6 +8,7 @@ import {
   requireOrgContext,
 } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
+import type { Tables, TablesInsert, TablesUpdate } from '@/types/database';
 
 type InvoiceSettingsPayload = {
   business_name: string;
@@ -23,8 +24,10 @@ type InvoiceSettingsPayload = {
   default_currency: string;
 };
 
-type InvoiceSettingsRow = Record<string, string | number | null>;
+type InvoiceSettingsRow = Tables<'invoice_settings'>;
 type PostgrestErrorLike = { code?: string };
+type InvoiceSettingsInsertRow = TablesInsert<'invoice_settings'>;
+type InvoiceSettingsUpdateRow = TablesUpdate<'invoice_settings'>;
 
 function parseExchangeRateInput(
   value: unknown
@@ -75,15 +78,14 @@ const INVOICE_SETTINGS_COLUMNS = [
 ].join(',');
 
 function mapInvoiceSettingsRow(row: InvoiceSettingsRow) {
-  const dbRow = row as Record<string, unknown>;
   return {
-    ...dbRow,
-    address: (dbRow.business_address as string) ?? '',
-    phone: (dbRow.business_phone as string) ?? '',
-    email: (dbRow.business_email as string) ?? '',
+    ...row,
+    address: row.business_address ?? '',
+    phone: row.business_phone ?? '',
+    email: row.business_email ?? '',
     default_exchange_rate:
-      dbRow.default_exchange_rate != null
-        ? String(dbRow.default_exchange_rate)
+      row.default_exchange_rate != null
+        ? String(row.default_exchange_rate)
         : '',
   };
 }
@@ -92,7 +94,7 @@ async function getOrCreateSettingsRow(
   supabase: SupabaseClient,
   orgId: string
 ): Promise<InvoiceSettingsRow> {
-  const insertPayload: Record<string, string | number | null> = {
+  const insertPayload: InvoiceSettingsInsertRow = {
     org_id: orgId,
     business_name: '',
     business_address: null,
@@ -210,7 +212,7 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const updatePayload: Record<string, string | number | null> = {
+      const updatePayload: InvoiceSettingsUpdateRow = {
         business_name: body.business_name ?? existing.business_name ?? '',
         business_address: body.address ?? existing.business_address ?? null,
         business_phone: body.phone ?? existing.business_phone ?? null,

@@ -9,9 +9,10 @@ jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
 }));
 
-jest.mock('@/contexts/AuthContext', () => ({
-  useAuth: jest.fn(),
-}));
+jest.mock('@/contexts/AuthContext', () => {
+  const actual = jest.requireActual('@/contexts/AuthContext');
+  return { ...actual, useAuth: jest.fn() };
+});
 
 jest.mock('@/hooks/useLoadingState', () => ({
   useLoadingState: jest.fn(() => ({

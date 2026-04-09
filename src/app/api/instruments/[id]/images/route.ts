@@ -73,6 +73,21 @@ const getStoragePathFromPublicUrl = (url: string): string | null => {
   return null;
 };
 
+function resolveLegacyStorageKey(
+  storageKey: string | null | undefined,
+  imageUrl: string | null | undefined
+): string | null {
+  if (typeof storageKey === 'string' && storageKey.trim()) {
+    return storageKey.trim();
+  }
+
+  if (typeof imageUrl === 'string' && imageUrl.trim()) {
+    return getStoragePathFromPublicUrl(imageUrl.trim());
+  }
+
+  return null;
+}
+
 function getInstrumentImageStorageKey(
   orgId: string,
   instrumentId: string,
@@ -139,7 +154,7 @@ async function getHandlerInternal(
     const { data, error } = await auth.userSupabase
       .from('instrument_images')
       .select(
-        'id, instrument_id, image_url, file_name, file_size, mime_type, display_order, created_at, instruments!inner(org_id)'
+        'id, instrument_id, image_url, storage_key, file_name, file_size, mime_type, display_order, created_at, instruments!inner(org_id)'
       )
       .eq('instrument_id', id)
       .eq('instruments.org_id', auth.orgId!)
@@ -156,13 +171,13 @@ async function getHandlerInternal(
     // Attach signed URLs (preferred for private buckets)
     const signedImages = await Promise.all(
       images.map(async image => {
-        // If we have a stored filename, build the exact storage path
-        if (image.file_name) {
-          const fileKey = getInstrumentImageStorageKey(
-            auth.orgId!,
-            id,
-            image.file_name
-          );
+        const fileKey = resolveLegacyStorageKey(
+          (image as InstrumentImage & { storage_key?: string | null })
+            .storage_key,
+          image.image_url
+        );
+
+        if (fileKey) {
           try {
             const signedUrl = storage.presignGet
               ? await storage.presignGet(fileKey, SIGNED_URL_TTL_SECONDS)
@@ -358,6 +373,7 @@ async function postHandlerInternal(
         await auth.userSupabase.rpc('create_instrument_image_metadata', {
           p_instrument_id: id,
           p_image_url: publicUrl,
+          p_storage_key: storedKey,
           p_file_name: storedFileName,
           p_file_size: fileSize,
           p_mime_type: normalizedType,
@@ -419,7 +435,8 @@ async function postHandlerInternal(
 
       uploads.push({
         ...stripInstrumentScope(
-          inserted as InstrumentImage & { instruments?: unknown }
+          // DB row lacks alt_text (added by domain type); safe cast since we never read alt_text here
+          inserted as unknown as InstrumentImage & { instruments?: unknown }
         ),
         image_url: signedUrl,
       });
@@ -509,14 +526,7 @@ async function deleteHandlerInternal(
       return createApiErrorResponse({ message: 'Image not found' }, 404);
     }
 
-    let fileKey: string | null = null;
-
-    if (image.file_name) {
-      fileKey = getInstrumentImageStorageKey(auth.orgId!, id, image.file_name);
-    } else if (image.image_url) {
-      const p = getStoragePathFromPublicUrl(image.image_url);
-      fileKey = p || null;
-    }
+    const fileKey = resolveLegacyStorageKey(image.storage_key, image.image_url);
 
     if (!fileKey) {
       logError(
@@ -544,19 +554,40 @@ async function deleteHandlerInternal(
       );
     }
 
-    // 2) storage 삭제는 best-effort
+    let storageDeleted = false;
+
+    // 2) storage 삭제는 best-effort이지만 결과는 payload에 반영
     try {
-      await storage.deleteFile(fileKey);
+      storageDeleted = Boolean(await storage.deleteFile(fileKey));
     } catch (storageDeleteError) {
-      logError(
-        'Storage delete failed after DB delete',
-        storageDeleteError instanceof Error
-          ? storageDeleteError.message
-          : String(storageDeleteError)
-      );
+      logError('Storage delete failed after DB delete', {
+        instrumentId: id,
+        imageId,
+        fileKey,
+        error:
+          storageDeleteError instanceof Error
+            ? storageDeleteError.message
+            : String(storageDeleteError),
+      });
     }
 
-    return NextResponse.json({ success: true });
+    if (!storageDeleted) {
+      return NextResponse.json({
+        result: 'partial_success',
+        message: 'Image removed from the app, but storage cleanup failed.',
+        cleanup: {
+          storageDeleted: false,
+        },
+      });
+    }
+
+    return NextResponse.json({
+      result: 'full_success',
+      message: 'Image deleted successfully.',
+      cleanup: {
+        storageDeleted: true,
+      },
+    });
   } catch (error) {
     return createApiErrorResponse(
       {

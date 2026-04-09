@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Client } from '@/types';
 import { useDataState } from '@/hooks/useDataState';
 import { logError } from '@/utils/logger';
 import { apiFetch } from '@/utils/apiFetch';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 // Removed direct supabase import to reduce bundle size - using API routes instead
 
 export function useDashboardClients() {
@@ -29,6 +30,7 @@ export function useDashboardClients() {
   const requestIdRef = useRef(0);
   const clientSearchRequestIdRef = useRef(0);
   const ownershipSearchRequestIdRef = useRef(0);
+  const { tenantIdentityKey } = useTenantIdentity();
 
   // FIXED: Single shared search function to avoid duplication
   // Use API route instead of direct Supabase client to reduce bundle size
@@ -152,6 +154,22 @@ export function useDashboardClients() {
   const clearOwnershipClient = () => {
     setSelectedOwnershipClient(null);
   };
+
+  useEffect(() => {
+    requestIdRef.current += 1;
+    clientSearchRequestIdRef.current += 1;
+    ownershipSearchRequestIdRef.current += 1;
+    setShowClientSearch(false);
+    setClientSearchTerm('');
+    setIsSearchingClients(false);
+    setSelectedClientsForNew([]);
+    setShowOwnershipSearch(false);
+    setOwnershipSearchTerm('');
+    setIsSearchingOwnership(false);
+    setSelectedOwnershipClient(null);
+    setSearchResults([]);
+    setOwnershipSearchResults([]);
+  }, [setOwnershipSearchResults, setSearchResults, tenantIdentityKey]);
 
   return {
     // Client search states

@@ -1,10 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Instrument } from '@/types';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 export function useInstrumentView() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedInstrument, setSelectedInstrument] =
     useState<Instrument | null>(null);
+  const { tenantIdentityKey } = useTenantIdentity();
 
   const openInstrumentView = useCallback((instrument: Instrument) => {
     setSelectedInstrument(instrument);
@@ -15,6 +17,10 @@ export function useInstrumentView() {
     setShowViewModal(false);
     setSelectedInstrument(null);
   }, []);
+
+  useEffect(() => {
+    closeInstrumentView();
+  }, [closeInstrumentView, tenantIdentityKey]);
 
   return {
     showViewModal,

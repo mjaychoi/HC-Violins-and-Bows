@@ -22,6 +22,7 @@ import {
 
 import { ErrorCodes } from '@/types/errors';
 import type { Invoice } from '@/types';
+import type { Json } from '@/types/database';
 import { logError, logWarn } from '@/utils/logger';
 import { normalizeInvoiceRecord } from '@/utils/invoiceNormalize';
 import type { CreateInvoiceInput } from './types';
@@ -37,8 +38,10 @@ const MAX_PAGE_SIZE = 100;
 const MAX_SEARCH_LEN = 200;
 
 type AnyRecord = Record<string, unknown>;
+type JsonObject = { [key: string]: Json | undefined };
 
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+type InvoiceMutationResult = 'full_success' | 'partial_success';
 
 function clampInt(n: number, min: number, max: number): number {
   if (Number.isNaN(n)) return min;
@@ -62,8 +65,8 @@ function getErrorCode(err: unknown): string | undefined {
 
 function buildInvoiceMutationPayload(
   input: Partial<CreateInvoiceInput>
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {};
+): JsonObject {
+  const payload: JsonObject = {};
 
   if (input.client_id !== undefined) payload.client_id = input.client_id;
   if (input.invoice_date !== undefined)
@@ -98,6 +101,20 @@ function buildInvoiceMutationPayload(
   return payload;
 }
 
+function toInvoiceItemsJson(
+  items: CreateInvoiceInput['items'] | null | undefined
+): Json {
+  return (items ?? []).map(item => ({
+    instrument_id: item.instrument_id,
+    description: item.description,
+    qty: item.qty,
+    rate: item.rate,
+    amount: item.amount,
+    image_url: item.image_url,
+    display_order: item.display_order,
+  }));
+}
+
 function buildInvoiceCreateRequestHash(
   invoice: Record<string, unknown>,
   items: CreateInvoiceInput['items']
@@ -105,6 +122,48 @@ function buildInvoiceCreateRequestHash(
   return createHash('sha256')
     .update(JSON.stringify({ invoice, items: items ?? [] }))
     .digest('hex');
+}
+
+function getInvoiceMutationResult(
+  imageTracking: Awaited<ReturnType<typeof claimInvoiceImageUploads>>
+): InvoiceMutationResult {
+  return imageTracking.status === 'partial' || imageTracking.status === 'failed'
+    ? 'partial_success'
+    : 'full_success';
+}
+
+function getCreateInvoiceMessage(result: InvoiceMutationResult): string {
+  return result === 'partial_success'
+    ? 'Invoice created, but some item images were not linked.'
+    : 'Invoice created successfully.';
+}
+
+function buildInvoiceSearchFilter(search: string): string {
+  const escaped = escapePostgrestFilterValue(search);
+  const filters = [
+    `invoice_number.ilike.%${escaped}%`,
+    `notes.ilike.%${escaped}%`,
+    `clients.first_name.ilike.%${escaped}%`,
+    `clients.last_name.ilike.%${escaped}%`,
+  ];
+
+  const nameParts = search
+    .split(/\s+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  if (nameParts.length >= 2) {
+    const [first, second] = nameParts;
+    const escapedFirst = escapePostgrestFilterValue(first);
+    const escapedSecond = escapePostgrestFilterValue(second);
+
+    filters.push(
+      `and(clients.first_name.ilike.%${escapedFirst}%,clients.last_name.ilike.%${escapedSecond}%)`,
+      `and(clients.first_name.ilike.%${escapedSecond}%,clients.last_name.ilike.%${escapedFirst}%)`
+    );
+  }
+
+  return filters.join(',');
 }
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
@@ -275,14 +334,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
         // Search filter (safe OR)
         if (search) {
-          const escaped = escapePostgrestFilterValue(search);
-          query = query.or(
-            [
-              `invoice_number.ilike.%${escaped}%`,
-              `notes.ilike.%${escaped}%`,
-              `clients.name.ilike.%${escaped}%`,
-            ].join(',')
-          );
+          query = query.or(buildInvoiceSearchFilter(search));
         }
 
         const { data, error, count } = await query;
@@ -355,6 +407,9 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
 
         const totalCount = typeof count === 'number' ? count : rawRows.length;
+        const returnedCount = validRows.length;
+        const droppedCount = invalidCount;
+        const partial = droppedCount > 0;
         const scopePayload = orgId
           ? { enforced: true }
           : { enforced: false, reason: 'RLS or upstream scoping' };
@@ -363,6 +418,12 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           payload: {
             data: validRows,
             count: totalCount,
+            returnedCount,
+            droppedCount,
+            partial,
+            ...(partial
+              ? { warning: 'Some invoices could not be displayed.' }
+              : {}),
             scope: scopePayload,
           },
           status: 200,
@@ -454,11 +515,11 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
             p_idempotency_key: idempotencyKey,
             p_request_hash: requestHash,
             p_invoice: invoiceData,
-            p_items: Array.isArray(items) ? items : [],
+            p_items: toInvoiceItemsJson(items),
           }
         : {
             p_invoice: invoiceData,
-            p_items: Array.isArray(items) ? items : [],
+            p_items: toInvoiceItemsJson(items),
           };
 
       const { data: invoiceId, error: invoiceError } =
@@ -562,9 +623,15 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         createdInvoice.id,
         items
       );
+      const result = getInvoiceMutationResult(imageTracking);
 
       return {
-        payload: { data: createdInvoice },
+        payload: {
+          data: createdInvoice,
+          result,
+          message: getCreateInvoiceMessage(result),
+          imageTracking,
+        },
         status: 201,
         metadata: {
           invoiceId: createdInvoice.id,

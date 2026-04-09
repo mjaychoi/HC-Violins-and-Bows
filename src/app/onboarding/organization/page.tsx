@@ -4,6 +4,10 @@ import { Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  buildLoginRedirect,
+  getSafeNextDestination,
+} from '@/utils/authRedirect';
 
 function OrganizationOnboardingFallback() {
   return (
@@ -27,22 +31,22 @@ function OrganizationOnboardingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading, hasOrgContext, role, signOut } = useAuth();
-  const next = searchParams.get('next');
-  const nextDestination =
-    next && next.startsWith('/') && !next.startsWith('//')
-      ? decodeURIComponent(next)
-      : '/dashboard';
+  const nextDestination = getSafeNextDestination(
+    searchParams.get('next'),
+    '/dashboard'
+  );
+  const loginRedirect = buildLoginRedirect(nextDestination);
 
   useEffect(() => {
     if (!loading && !user) {
-      router.replace('/');
+      router.replace(loginRedirect);
       return;
     }
 
     if (!loading && user && hasOrgContext) {
       router.replace(nextDestination);
     }
-  }, [hasOrgContext, loading, nextDestination, router, user]);
+  }, [hasOrgContext, loading, loginRedirect, nextDestination, router, user]);
 
   if (loading) {
     return <OrganizationOnboardingFallback />;
@@ -151,7 +155,7 @@ function OrganizationOnboardingPageContent() {
         <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-gray-200 pt-6">
           <button
             type="button"
-            onClick={() => router.replace('/')}
+            onClick={() => router.replace(loginRedirect)}
             className="inline-flex h-10 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             Back to sign in

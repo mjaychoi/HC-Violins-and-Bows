@@ -1,6 +1,11 @@
-import { renderHook as rtlRenderHook, waitFor } from '@testing-library/react';
+import {
+  act,
+  renderHook as rtlRenderHook,
+  waitFor,
+} from '@testing-library/react';
 import React from 'react';
 import {
+  __resetUnifiedDataGlobalsForTests,
   useUnifiedData,
   useUnifiedClients,
   useUnifiedInstruments,
@@ -12,12 +17,18 @@ import {
 } from '../useUnifiedData';
 import { Client, Instrument, ClientInstrument } from '@/types';
 
-jest.mock('@/contexts/AuthContext', () => ({
-  useAuth: jest.fn(() => ({
-    user: { id: 'mock-user' },
-    loading: false,
-  })),
-}));
+jest.mock('@/contexts/AuthContext', () => {
+  const actual = jest.requireActual('@/contexts/AuthContext');
+  return {
+    ...actual,
+    useAuth: jest.fn(() => ({
+      user: { id: 'mock-user' },
+      session: { access_token: 'token-a' },
+      orgId: 'org-a',
+      loading: false,
+    })),
+  };
+});
 
 // Mock DataContext
 // Export for use in jest.mock factory functions
@@ -56,7 +67,16 @@ const mockActions = {
   updateConnection: jest.fn().mockResolvedValue(null),
   deleteConnection: jest.fn().mockResolvedValue(true),
   invalidateCache: jest.fn(),
-  resetState: jest.fn(),
+  resetState: jest.fn(() => {
+    mockState.clients = [];
+    mockState.instruments = [];
+    mockState.connections = [];
+    mockState.lastUpdated = {
+      clients: null,
+      instruments: null,
+      connections: null,
+    };
+  }),
 };
 
 let mockUseAuth: jest.MockedFunction<any>;
@@ -90,11 +110,14 @@ describe('useUnifiedData', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    __resetUnifiedDataGlobalsForTests();
 
     const authContextModule = require('@/contexts/AuthContext');
     mockUseAuth = authContextModule.useAuth;
     mockUseAuth.mockReturnValue({
       user: { id: 'mock-user' },
+      session: { access_token: 'token-a' },
+      orgId: 'org-a',
       loading: false,
     });
 
@@ -136,6 +159,7 @@ describe('useUnifiedData', () => {
         clients: mockState.clients,
         loading: mockState.loading.clients,
         submitting: mockState.submitting.clients,
+        error: null,
         lastUpdated: mockState.lastUpdated.clients,
       },
       actions: {
@@ -144,7 +168,7 @@ describe('useUnifiedData', () => {
         updateClient: mockActions.updateClient,
         deleteClient: mockActions.deleteClient,
         invalidateCache: jest.fn(),
-        resetState: jest.fn(),
+        resetState: mockActions.resetState,
       },
     }));
     mockUseInstrumentsContext.mockImplementation(() => ({
@@ -152,6 +176,7 @@ describe('useUnifiedData', () => {
         instruments: mockState.instruments,
         loading: mockState.loading.instruments,
         submitting: mockState.submitting.instruments,
+        error: null,
         lastUpdated: mockState.lastUpdated.instruments,
       },
       actions: {
@@ -160,7 +185,7 @@ describe('useUnifiedData', () => {
         updateInstrument: mockActions.updateInstrument,
         deleteInstrument: mockActions.deleteInstrument,
         invalidateCache: jest.fn(),
-        resetState: jest.fn(),
+        resetState: mockActions.resetState,
       },
     }));
     mockUseConnectionsContext.mockImplementation(() => ({
@@ -168,6 +193,7 @@ describe('useUnifiedData', () => {
         connections: mockState.connections,
         loading: mockState.loading.connections,
         submitting: mockState.submitting.connections,
+        error: null,
         lastUpdated: mockState.lastUpdated.connections,
       },
       actions: {
@@ -176,7 +202,7 @@ describe('useUnifiedData', () => {
         updateConnection: mockActions.updateConnection,
         deleteConnection: mockActions.deleteConnection,
         invalidateCache: jest.fn(),
-        resetState: jest.fn(),
+        resetState: mockActions.resetState,
       },
     }));
 
@@ -250,6 +276,132 @@ describe('useUnifiedData', () => {
 
       expect(result.current.submitting.instruments).toBe(true);
       expect(result.current.submitting.any).toBe(true);
+    });
+
+    it('hard-resets tenant-scoped state and refetches when tenant identity changes', async () => {
+      mockState.clients = [
+        {
+          id: 'client-a',
+          first_name: 'Alice',
+          last_name: 'TenantA',
+          email: null,
+          contact_number: null,
+          tags: [],
+          interest: '',
+          note: '',
+          client_number: null,
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ];
+      mockState.instruments = [
+        {
+          id: 'inst-a',
+          maker: 'Maker A',
+          type: 'Violin',
+          subtype: null,
+          serial_number: null,
+          year: null,
+          ownership: null,
+          size: null,
+          weight: null,
+          note: null,
+          price: null,
+          certificate: false,
+          status: 'Available',
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ];
+      mockState.connections = [
+        {
+          id: 'conn-a',
+          client_id: 'client-a',
+          instrument_id: 'inst-a',
+          relationship_type: 'Interested',
+          notes: null,
+          display_order: 0,
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ];
+      mockState.lastUpdated = {
+        clients: new Date(),
+        instruments: new Date(),
+        connections: new Date(),
+      };
+
+      const { rerender } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      await waitFor(() => {
+        expect(mockActions.resetState).toHaveBeenCalledTimes(3);
+      });
+
+      expect(mockState.clients).toEqual([]);
+      expect(mockState.instruments).toEqual([]);
+      expect(mockState.connections).toEqual([]);
+
+      mockUseAuth.mockReturnValue({
+        user: { id: 'mock-user' },
+        session: { access_token: 'token-b' },
+        orgId: 'org-b',
+        loading: false,
+      });
+
+      await act(async () => {
+        rerender();
+      });
+
+      await waitFor(() => {
+        expect(mockActions.resetState).toHaveBeenCalledTimes(6);
+      });
+
+      await waitFor(() => {
+        expect(mockActions.fetchClients).toHaveBeenCalled();
+        expect(mockActions.fetchInstruments).toHaveBeenCalled();
+        expect(mockActions.fetchConnections).toHaveBeenCalled();
+      });
+    });
+
+    it('masks stale cached arrays while tenant identity is transitioning', async () => {
+      mockState.clients = [
+        {
+          id: 'client-a',
+          first_name: 'Alice',
+          last_name: 'TenantA',
+          email: null,
+          contact_number: null,
+          tags: [],
+          interest: '',
+          note: '',
+          client_number: null,
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ];
+
+      mockUseAuth.mockReturnValue({
+        user: { id: 'mock-user' },
+        session: { access_token: 'token-a' },
+        orgId: 'org-a',
+        loading: false,
+      });
+
+      rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      mockUseAuth.mockReturnValue({
+        user: { id: 'mock-user' },
+        session: { access_token: 'token-b' },
+        orgId: 'org-b',
+        loading: false,
+      });
+
+      const { result } = rtlRenderHook(() => useUnifiedClients(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      expect(result.current.clients).toEqual([]);
+      expect(result.current.loading.hasAnyLoading).toBe(true);
     });
 
     // FIXED: useUnifiedData uses global refs to prevent duplicate fetches

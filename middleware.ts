@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getCookieBackedAuth } from '@/lib/supabase-server';
 
 // ---------------------------------------------------------------------------
 // RATE LIMITING
@@ -65,7 +66,7 @@ const PUBLIC_PAGE_PREFIXES = ['/signup', '/customer', '/onboarding'];
 // API routes have their own auth via withAuthRoute — no middleware redirect needed.
 const API_PREFIX = '/api';
 
-export function middleware(request: NextRequest): NextResponse {
+export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
   // ------------------------------------------------------------------
@@ -122,18 +123,11 @@ export function middleware(request: NextRequest): NextResponse {
   }
 
   // ------------------------------------------------------------------
-  // 5. Protected pages — require auth token cookie
-  //
-  // This is a token-presence check only. Full JWT validation still
-  // happens server-side inside withAuthRoute for every API call.
-  // Cookie names match the ones checked in withAuthRoute.ts.
+  // 5. Protected pages — require a valid cookie-backed Supabase session
   // ------------------------------------------------------------------
-  const token =
-    request.cookies.get('sb-access-token')?.value ||
-    request.cookies.get('sb:access-token')?.value ||
-    request.cookies.get('sb-token')?.value;
+  const auth = await getCookieBackedAuth(request.cookies);
 
-  if (!token) {
+  if (!auth) {
     const url = request.nextUrl.clone();
     url.pathname = '/';
     // Preserve destination so the login page can redirect back after sign-in.

@@ -14,16 +14,20 @@ export interface ToastLink {
   href: string;
 }
 
+export type ToastVariant = 'success' | 'warning';
+
 export interface Toast {
   id: string;
   message: string;
   timestamp: Date;
   links?: ToastLink[];
+  variant: ToastVariant;
 }
 
 interface SuccessToastContextValue {
   toasts: Toast[];
   showSuccess: (message: string, links?: ToastLink[]) => void;
+  showWarning: (message: string, links?: ToastLink[]) => void;
   removeToast: (id: string) => void;
 }
 
@@ -37,15 +41,33 @@ export function SuccessToastProvider({ children }: { children: ReactNode }) {
   // ✅ FIXED: useRef로 카운터를 관리하여 안정적인 ID 생성 (Math.random() 제거)
   const toastIdCounterRef = useRef(0);
 
-  const showSuccess = useCallback((message: string, links?: ToastLink[]) => {
-    const toast: Toast = {
-      id: `toast-${Date.now()}-${++toastIdCounterRef.current}`,
-      message,
-      timestamp: new Date(),
-      links,
-    };
-    setToasts(prev => [...prev, toast]);
-  }, []);
+  const showToast = useCallback(
+    (variant: ToastVariant, message: string, links?: ToastLink[]) => {
+      const toast: Toast = {
+        id: `toast-${Date.now()}-${++toastIdCounterRef.current}`,
+        message,
+        timestamp: new Date(),
+        links,
+        variant,
+      };
+      setToasts(prev => [...prev, toast]);
+    },
+    []
+  );
+
+  const showSuccess = useCallback(
+    (message: string, links?: ToastLink[]) => {
+      showToast('success', message, links);
+    },
+    [showToast]
+  );
+
+  const showWarning = useCallback(
+    (message: string, links?: ToastLink[]) => {
+      showToast('warning', message, links);
+    },
+    [showToast]
+  );
 
   const removeToast = useCallback((id: string) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
@@ -54,6 +76,7 @@ export function SuccessToastProvider({ children }: { children: ReactNode }) {
   const value: SuccessToastContextValue = {
     toasts,
     showSuccess,
+    showWarning,
     removeToast,
   };
 

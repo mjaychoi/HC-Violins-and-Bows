@@ -5,8 +5,16 @@ jest.mock('@/hooks/useSidebarState', () => ({
   useSidebarState: () => ({ isExpanded: true, toggleSidebar: jest.fn() }),
 }));
 
-jest.mock('@/contexts/AuthContext', () => ({
-  useAuth: jest.fn(),
+jest.mock('@/contexts/AuthContext', () => {
+  const actual = jest.requireActual('@/contexts/AuthContext');
+  return { ...actual, useAuth: jest.fn() };
+});
+
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: jest.fn(() => ({
+    tenantIdentityKey: 'test-key',
+    isTenantTransitioning: false,
+  })),
 }));
 
 const mockReplace = jest.fn();
@@ -83,7 +91,7 @@ describe('AppLayout', () => {
     );
 
     expect(
-      screen.getByText('Redirecting you to the right place...')
+      screen.getByText('Redirecting you to organization setup...')
     ).toBeInTheDocument();
 
     await waitFor(() => {
@@ -93,5 +101,22 @@ describe('AppLayout', () => {
     });
 
     expect(screen.queryByText('content')).not.toBeInTheDocument();
+  });
+
+  it('shows fallback shell instead of client-side login redirect when user is missing', () => {
+    useAuth.mockReturnValue({
+      user: null,
+      loading: false,
+      hasOrgContext: false,
+    });
+
+    render(
+      <AppLayout title="Dashboard">
+        <div>content</div>
+      </AppLayout>
+    );
+
+    expect(screen.getByText('Restoring access...')).toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 });

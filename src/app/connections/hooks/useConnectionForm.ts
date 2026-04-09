@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ClientInstrument } from '@/types';
 import { useModalState } from '@/hooks/useModalState';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 export function useConnectionForm() {
   const {
@@ -18,6 +19,7 @@ export function useConnectionForm() {
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
   const [connectionSearchTerm, setConnectionSearchTerm] = useState('');
+  const { tenantIdentityKey } = useTenantIdentity();
 
   const resetForm = () => {
     setSelectedClient('');
@@ -31,6 +33,10 @@ export function useConnectionForm() {
   const close = () => {
     resetForm();
   };
+
+  useEffect(() => {
+    resetForm();
+  }, [tenantIdentityKey]);
 
   return {
     // Form states

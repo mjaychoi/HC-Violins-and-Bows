@@ -1,11 +1,21 @@
-import { fireEvent, render, screen } from '@/test-utils/render';
+import { fireEvent, render, screen, waitFor } from '@/test-utils/render';
 import AppHeader from '../AppHeader';
 
-jest.mock('@/contexts/AuthContext', () => ({
-  useAuth: jest.fn().mockReturnValue({
-    user: { email: 'user@example.com' },
-    signOut: jest.fn(),
-  }),
+const mockReplace = jest.fn();
+
+jest.mock('@/contexts/AuthContext', () => {
+  const actual = jest.requireActual('@/contexts/AuthContext');
+  return {
+    ...actual,
+    useAuth: jest.fn().mockReturnValue({
+      user: { email: 'user@example.com' },
+      signOut: jest.fn(),
+    }),
+  };
+});
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: mockReplace }),
 }));
 
 describe('AppHeader', () => {
@@ -18,7 +28,7 @@ describe('AppHeader', () => {
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
   });
 
-  it('shows user email and triggers sign out', () => {
+  it('shows user email and triggers sign out', async () => {
     const useAuth = jest.requireMock('@/contexts/AuthContext')
       .useAuth as jest.Mock;
     const signOutMock = jest.fn();
@@ -30,6 +40,9 @@ describe('AppHeader', () => {
     render(<AppHeader title="Header" onToggleSidebar={jest.fn()} />);
     fireEvent.click(screen.getByLabelText('Sign out'));
     expect(signOutMock).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/');
+    });
   });
 
   it('fires action button callback', () => {

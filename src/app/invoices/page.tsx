@@ -59,8 +59,9 @@ function InvoicesPageContent() {
     deleteInvoice,
     setPage,
     scopeInfo,
+    listDiagnostics,
   } = useInvoices();
-  const { showSuccess, handleError } = useAppFeedback();
+  const { showSuccess, showWarning, handleError } = useAppFeedback();
   const { canCreateInvoice, canManageInvoiceSettings } = usePermissions();
   const {
     submitting: isMutatingInvoice,
@@ -445,10 +446,14 @@ function InvoicesPageContent() {
       await withInvoiceSubmitting(async () => {
         try {
           if (editingInvoice) {
-            await updateInvoice(editingInvoice.id, data);
+            const updateResult = await updateInvoice(editingInvoice.id, data);
             try {
               await refreshInvoiceList(page);
-              showSuccess('Invoice updated successfully.');
+              if (updateResult.result === 'partial_success') {
+                showWarning(updateResult.message);
+              } else {
+                showSuccess(updateResult.message);
+              }
               setIsModalOpen(false);
               setEditingInvoice(null);
             } catch (refreshError) {
@@ -462,7 +467,7 @@ function InvoicesPageContent() {
           } else {
             const createResult = await createInvoice(data);
 
-            if (createResult.status === 'already_processed') {
+            if (createResult.result === 'already_processed') {
               if (createResult.existingInvoiceId) {
                 showSuccess(createResult.message);
                 setIsModalOpen(false);
@@ -492,7 +497,11 @@ function InvoicesPageContent() {
             try {
               await refreshInvoiceList(page);
               setHighlightedInvoiceId(createResult.invoice?.id ?? null);
-              showSuccess(createResult.message);
+              if (createResult.result === 'partial_success') {
+                showWarning(createResult.message);
+              } else {
+                showSuccess(createResult.message);
+              }
               setIsModalOpen(false);
               setEditingInvoice(null);
             } catch (refreshError) {
@@ -518,6 +527,7 @@ function InvoicesPageContent() {
       createInvoice,
       updateInvoice,
       showSuccess,
+      showWarning,
       handleError,
       refreshInvoiceList,
       page,
@@ -803,6 +813,10 @@ function InvoicesPageContent() {
             invoices={invoices}
             loading={loading}
             status={invoicesStatus}
+            partial={listDiagnostics.partial}
+            droppedCount={listDiagnostics.droppedCount}
+            returnedCount={listDiagnostics.returnedCount}
+            warning={listDiagnostics.warning}
             highlightedInvoiceId={highlightedInvoiceId}
             onSort={handleSort}
             getSortState={getSortState}

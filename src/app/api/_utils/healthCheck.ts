@@ -499,11 +499,19 @@ function buildPartialFailureResult(params: {
 export async function checkMigrations(): Promise<MigrationCheckResult> {
   try {
     const supabase = getAdminSupabase();
+    // Cast to allow querying system/internal schemas not in the public schema type manifest.
+    // These are admin-only health check queries: supabase_migrations, pg_proc, pg_policies.
+    const sysSupa = supabase as typeof supabase & {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      schema: (name: string) => any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      from: (table: string) => any;
+    };
 
     const migrationClient =
       typeof supabase.schema === 'function'
-        ? supabase.schema('supabase_migrations')
-        : supabase;
+        ? sysSupa.schema('supabase_migrations')
+        : sysSupa;
 
     const { data: migrationRows, error: migrationError } = await migrationClient
       .from('schema_migrations')
@@ -521,7 +529,7 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
       version => !appliedVersions.has(version)
     );
 
-    const { data: functionRows, error: functionError } = await supabase
+    const { data: functionRows, error: functionError } = await sysSupa
       .from('pg_proc')
       .select('proname, prosrc')
       .in('proname', [...REQUIRED_FUNCTIONS]);
@@ -537,7 +545,7 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
     );
     const invalidHelpers = getInvalidHelpers(functionMap);
 
-    const { data: policyRows, error: policyError } = await supabase
+    const { data: policyRows, error: policyError } = await sysSupa
       .from('pg_policies')
       .select('policyname, schemaname, tablename, qual, with_check')
       .in('policyname', POLICY_NAMES_TO_CHECK);

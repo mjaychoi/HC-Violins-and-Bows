@@ -1,12 +1,14 @@
 import React from 'react';
 import Link from 'next/link';
 import type { ToastLink } from '@/contexts/ToastContext';
+import type { ToastVariant } from '@/contexts/SuccessToastContext';
 
 interface SuccessToastProps {
   message: string;
   onClose: () => void;
   autoClose?: boolean;
   links?: ToastLink[];
+  variant?: ToastVariant;
 }
 
 export default function SuccessToast({
@@ -14,6 +16,7 @@ export default function SuccessToast({
   onClose,
   autoClose = true,
   links,
+  variant = 'success',
 }: SuccessToastProps) {
   const [isVisible, setIsVisible] = React.useState(true);
   const closeTimerRef = React.useRef<number | null>(null);
@@ -37,9 +40,22 @@ export default function SuccessToast({
 
   if (!isVisible) return null;
 
+  const variantStyles =
+    variant === 'warning'
+      ? {
+          container: 'border-amber-500',
+          icon: 'text-amber-600',
+          focus: 'focus:ring-amber-500',
+        }
+      : {
+          container: 'border-emerald-500',
+          icon: 'text-emerald-600',
+          focus: 'focus:ring-emerald-500',
+        };
+
   return (
     <div
-      className="max-w-sm w-full bg-white shadow-lg rounded-lg pointer-events-auto border-l-4 border-emerald-500 overflow-hidden animate-in slide-in-from-right"
+      className={`max-w-sm w-full bg-white shadow-lg rounded-lg pointer-events-auto border-l-4 overflow-hidden animate-in slide-in-from-right ${variantStyles.container}`}
       role="status"
       aria-live="polite"
       aria-atomic="true"
@@ -47,17 +63,26 @@ export default function SuccessToast({
       <div className="p-4 flex items-start">
         <div className="shrink-0">
           <svg
-            className="h-5 w-5 text-emerald-600"
+            className={`h-5 w-5 ${variantStyles.icon}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M5 13l4 4L19 7"
-            />
+            {variant === 'warning' ? (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v4m0 4h.01M10.29 3.86l-7.5 13A1 1 0 003.67 18h16.66a1 1 0 00.88-1.5l-7.5-13a1 1 0 00-1.74 0z"
+              />
+            ) : (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5 13l4 4L19 7"
+              />
+            )}
           </svg>
         </div>
         <div className="ml-3 flex-1">
@@ -82,7 +107,7 @@ export default function SuccessToast({
         </div>
         <button
           onClick={handleClose}
-          className="ml-4 shrink-0 inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+          className={`ml-4 shrink-0 inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 ${variantStyles.focus}`}
           aria-label="Close"
         >
           <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">

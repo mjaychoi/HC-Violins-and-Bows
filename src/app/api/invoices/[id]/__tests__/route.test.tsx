@@ -32,6 +32,40 @@ jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 jest.mock('fs/promises');
+jest.mock('@/utils/typeGuards', () => ({
+  validateInvoice: jest.fn((value: unknown) => ({
+    success: true,
+    data: value,
+  })),
+  validatePartialInvoice: jest.fn(),
+  safeValidate: jest.fn((value: unknown) => ({
+    success: true,
+    data: value ?? {},
+  })),
+}));
+jest.mock('@/utils/invoiceNormalize', () => ({
+  normalizeInvoiceRecord: jest.fn((value: unknown) => ({
+    normalized: value,
+    metadata: {},
+  })),
+}));
+jest.mock('@/app/api/invoices/imageUrls', () => ({
+  attachSignedUrlsToInvoice: jest.fn(
+    async (_supabase: unknown, invoice: unknown) => invoice
+  ),
+}));
+jest.mock('@/app/api/invoices/imageUploadTracking', () => ({
+  claimInvoiceImageUploads: jest.fn(async () => ({
+    status: 'claimed',
+    requestedCount: 0,
+    claimedCount: 0,
+    missingCount: 0,
+    missingPaths: [],
+  })),
+}));
+jest.mock('@/app/api/invoices/financialValidation', () => ({
+  validateInvoiceFinancials: jest.fn(() => null),
+}));
 jest.mock('@/app/api/_utils/withAuthRoute', () => {
   const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
   return {
@@ -67,6 +101,11 @@ const mockFsReadFile = fs.readFile as jest.MockedFunction<typeof fs.readFile>;
 async function loadInvoiceHandler() {
   const invoiceModule = await import('../route');
   return invoiceModule.GET;
+}
+
+async function loadUpdateHandler() {
+  const invoiceModule = await import('../route');
+  return invoiceModule.PUT;
 }
 
 async function loadPdfHandler() {
@@ -729,6 +768,197 @@ describe('/api/invoices/[id]', () => {
       expect(response.headers.get('x-request-id')).toBeTruthy();
       expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
       expect(mockCaptureException).toHaveBeenCalled();
+    });
+  });
+
+  describe('PUT', () => {
+    const mockInvoiceId = '123e4567-e89b-12d3-a456-426614174099';
+    const updatedInvoice = {
+      id: mockInvoiceId,
+      invoice_number: 'INV-100',
+      client_id: '123e4567-e89b-12d3-a456-426614174001',
+      invoice_date: '2026-04-03',
+      due_date: '2026-04-10',
+      subtotal: 100,
+      tax: 0,
+      total: 100,
+      currency: 'USD',
+      status: 'paid',
+      notes: 'Updated',
+      created_at: '2026-04-03T00:00:00.000Z',
+      updated_at: '2026-04-04T00:00:00.000Z',
+      clients: null,
+      invoice_items: [],
+    };
+
+    function buildUpdateSupabase() {
+      const currentInvoiceQuery: {
+        eq: jest.Mock;
+        single: jest.Mock;
+        select?: jest.Mock;
+      } = {
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            subtotal: 100,
+            tax: 0,
+            total: 100,
+            invoice_items: [],
+          },
+          error: null,
+        }),
+      };
+
+      const updatedInvoiceQuery: {
+        eq: jest.Mock;
+        single: jest.Mock;
+        select?: jest.Mock;
+      } = {
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: updatedInvoice,
+          error: null,
+        }),
+      };
+
+      currentInvoiceQuery.select = jest
+        .fn()
+        .mockReturnValue(currentInvoiceQuery);
+      updatedInvoiceQuery.select = jest
+        .fn()
+        .mockReturnValue(updatedInvoiceQuery);
+
+      const from = jest.fn((table: string) => {
+        if (table !== 'invoices') {
+          throw new Error(`Unexpected table: ${table}`);
+        }
+
+        return {
+          select: jest.fn((selection: string) => {
+            if (selection.includes('subtotal, tax, total, invoice_items')) {
+              return currentInvoiceQuery;
+            }
+
+            return updatedInvoiceQuery;
+          }),
+        };
+      });
+
+      return {
+        rpc: jest.fn().mockResolvedValue({ error: null }),
+        from,
+        currentInvoiceQuery,
+        updatedInvoiceQuery,
+      };
+    }
+
+    it('returns full_success payload when image tracking is claimed', async () => {
+      const supabase = buildUpdateSupabase();
+      mockUserSupabase = {
+        rpc: supabase.rpc,
+        from: supabase.from,
+      };
+
+      const {
+        claimInvoiceImageUploads,
+      } = require('@/app/api/invoices/imageUploadTracking');
+      claimInvoiceImageUploads.mockResolvedValueOnce({
+        status: 'claimed',
+        requestedCount: 1,
+        claimedCount: 1,
+        missingCount: 0,
+        missingPaths: [],
+      });
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            status: 'paid',
+            notes: 'Updated',
+          }),
+        }
+      );
+      const context = {
+        params: Promise.resolve({ id: mockInvoiceId }),
+      };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data.id).toBe(mockInvoiceId);
+      expect(json.result).toBe('full_success');
+      expect(json.message).toBe('Invoice updated successfully.');
+      expect(json.imageTracking).toEqual({
+        status: 'claimed',
+        requestedCount: 1,
+        claimedCount: 1,
+        missingCount: 0,
+        missingPaths: [],
+      });
+      expect(mockUserSupabase.rpc).toHaveBeenCalledWith(
+        'update_invoice_atomic',
+        expect.objectContaining({
+          p_invoice_id: mockInvoiceId,
+        })
+      );
+      expect(supabase.updatedInvoiceQuery.eq).toHaveBeenCalledWith(
+        'org_id',
+        'test-org'
+      );
+    });
+
+    it('returns partial_success payload when image tracking fails partially', async () => {
+      const supabase = buildUpdateSupabase();
+      mockUserSupabase = {
+        rpc: supabase.rpc,
+        from: supabase.from,
+      };
+
+      const {
+        claimInvoiceImageUploads,
+      } = require('@/app/api/invoices/imageUploadTracking');
+      claimInvoiceImageUploads.mockResolvedValueOnce({
+        status: 'failed',
+        requestedCount: 2,
+        claimedCount: 0,
+        missingCount: 2,
+        missingPaths: ['org/file-a.jpg', 'org/file-b.jpg'],
+      });
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            status: 'paid',
+          }),
+        }
+      );
+      const context = {
+        params: Promise.resolve({ id: mockInvoiceId }),
+      };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.result).toBe('partial_success');
+      expect(json.message).toBe(
+        'Invoice updated, but some item images were not linked.'
+      );
+      expect(json.imageTracking).toEqual({
+        status: 'failed',
+        requestedCount: 2,
+        claimedCount: 0,
+        missingCount: 2,
+        missingPaths: ['org/file-a.jpg', 'org/file-b.jpg'],
+      });
+      expect(json.data.id).toBe(mockInvoiceId);
     });
   });
 });

@@ -13,7 +13,13 @@
  * - ✅ return shape 유지(호환) + deprecated any 필드 유지
  */
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react';
 
 import { useClientsContext } from '@/contexts/ClientsContext';
 import { useInstrumentsContext } from '@/contexts/InstrumentsContext';
@@ -24,6 +30,7 @@ import {
   useConnections,
 } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { getTenantIdentityKey } from '@/utils/tenantIdentity';
 
 import type {
   RelationshipType,
@@ -51,20 +58,9 @@ const ongoing = {
   connections: { current: null as Promise<void> | null },
 };
 
-// track which auth identity these globals correspond to
-const globalAuthKeyRef = { current: null as string | null };
+const globalTenantIdentityKeyRef = { current: null as string | null };
 
-function getAuthKey(user: unknown): string | null {
-  // 프로젝트의 user shape 모르니 안전하게: id/sub/email 중 하나
-  if (!user || typeof user !== 'object') return null;
-  const u = user as Record<string, unknown>;
-  const id = typeof u.id === 'string' ? u.id : null;
-  const sub = typeof u.sub === 'string' ? u.sub : null;
-  const email = typeof u.email === 'string' ? u.email : null;
-  return id ?? sub ?? email ?? null;
-}
-
-function resetGlobalsForAuthChange() {
+function resetGlobalsForTenantChange() {
   globalFetched.clients.current = false;
   globalFetched.instruments.current = false;
   globalFetched.connections.current = false;
@@ -72,6 +68,35 @@ function resetGlobalsForAuthChange() {
   ongoing.clients.current = null;
   ongoing.instruments.current = null;
   ongoing.connections.current = null;
+}
+
+export function __resetUnifiedDataGlobalsForTests() {
+  globalTenantIdentityKeyRef.current = null;
+  resetGlobalsForTenantChange();
+}
+
+function useTenantScopeGuard() {
+  const { user, session, orgId, loading } = useAuth();
+
+  const tenantIdentityKey = useMemo(
+    () =>
+      getTenantIdentityKey({
+        user,
+        orgId,
+        session,
+        loading,
+      }),
+    [loading, orgId, session, user]
+  );
+
+  return {
+    tenantIdentityKey,
+    isTenantTransitioning:
+      loading ||
+      (Boolean(user) &&
+        globalTenantIdentityKeyRef.current !== null &&
+        globalTenantIdentityKeyRef.current !== tenantIdentityKey),
+  };
 }
 
 // unified data hook - manage all data in one place
@@ -85,7 +110,17 @@ export function useUnifiedData() {
   const instrumentsContext = useInstrumentsContext();
   const connectionsContext = useConnectionsContext();
 
-  const { user, loading: authLoading } = useAuth();
+  const { user, session, orgId, loading: authLoading } = useAuth();
+  const tenantIdentityKey = useMemo(
+    () =>
+      getTenantIdentityKey({
+        user,
+        orgId,
+        session,
+        loading: authLoading,
+      }),
+    [authLoading, orgId, session, user]
+  );
 
   const state = useMemo(
     () => ({
@@ -160,28 +195,17 @@ export function useUnifiedData() {
   actionsRef.current = actions;
   stateRef.current = state;
 
-  /**
-   * Auth identity 변경 시 전역 상태 리셋
-   * - 로그아웃/로그인/계정 변경에서 기존 전역 fetched=true가 남아있는 문제 방지
-   */
-  useEffect(() => {
-    const authKey = getAuthKey(user);
+  useLayoutEffect(() => {
     if (authLoading) return;
 
-    if (!authKey) {
-      // logged out
-      if (globalAuthKeyRef.current !== null) {
-        globalAuthKeyRef.current = null;
-        resetGlobalsForAuthChange();
-      }
+    if (globalTenantIdentityKeyRef.current === tenantIdentityKey) {
       return;
     }
 
-    if (globalAuthKeyRef.current !== authKey) {
-      globalAuthKeyRef.current = authKey;
-      resetGlobalsForAuthChange();
-    }
-  }, [user, authLoading]);
+    globalTenantIdentityKeyRef.current = tenantIdentityKey;
+    resetGlobalsForTenantChange();
+    actionsRef.current.resetState();
+  }, [authLoading, tenantIdentityKey]);
 
   /**
    * initial data loading
@@ -190,10 +214,10 @@ export function useUnifiedData() {
    *   (중복 방지는 ongoing promise로 해결)
    */
   useEffect(() => {
-    if (authLoading || !user) {
+    if (authLoading || !tenantIdentityKey || !user) {
       if (process.env.NODE_ENV === 'development') {
         logInfo(
-          '[useUnifiedData] Not authenticated or auth loading, skipping fetch'
+          '[useUnifiedData] Tenant identity unavailable or auth loading, skipping fetch'
         );
       }
       return;
@@ -239,6 +263,7 @@ export function useUnifiedData() {
 
     const load = async () => {
       const a = actionsRef.current;
+      const fetchTenantIdentityKey = tenantIdentityKey;
 
       const runOne = async (
         key: 'clients' | 'instruments' | 'connections',
@@ -265,8 +290,12 @@ export function useUnifiedData() {
         ongoing[key].current = (async () => {
           try {
             await fetchFn();
-            // ✅ mark fetched only on success
-            globalFetched[key].current = true;
+            if (
+              !cancelled &&
+              globalTenantIdentityKeyRef.current === fetchTenantIdentityKey
+            ) {
+              globalFetched[key].current = true;
+            }
           } catch (e) {
             // 실패 시 fetched는 false 유지 → 다음 렌더에서 재시도 가능
             globalFetched[key].current = false;
@@ -295,7 +324,7 @@ export function useUnifiedData() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user]);
+  }, [authLoading, tenantIdentityKey, user]);
 
   const hasAnyLoading =
     state.loading.clients ||
@@ -309,21 +338,22 @@ export function useUnifiedData() {
     Boolean(state.errors.clients) ||
     Boolean(state.errors.instruments) ||
     Boolean(state.errors.connections);
+  const { isTenantTransitioning } = useTenantScopeGuard();
 
   return {
     // state
-    clients: state.clients,
-    instruments: state.instruments,
-    connections: state.connections,
+    clients: isTenantTransitioning ? [] : state.clients,
+    instruments: isTenantTransitioning ? [] : state.instruments,
+    connections: isTenantTransitioning ? [] : state.connections,
 
     // loading
     loading: {
-      clients: state.loading.clients,
-      instruments: state.loading.instruments,
-      connections: state.loading.connections,
+      clients: isTenantTransitioning ? true : state.loading.clients,
+      instruments: isTenantTransitioning ? true : state.loading.instruments,
+      connections: isTenantTransitioning ? true : state.loading.connections,
       // @deprecated Use hasAnyLoading instead
-      any: hasAnyLoading,
-      hasAnyLoading,
+      any: isTenantTransitioning ? true : hasAnyLoading,
+      hasAnyLoading: isTenantTransitioning ? true : hasAnyLoading,
     },
     errors: {
       clients: state.errors.clients,
@@ -357,13 +387,15 @@ export function useUnifiedData() {
 
 export function useUnifiedClients() {
   const clientsHook = useClients();
+  const { isTenantTransitioning } = useTenantScopeGuard();
   return {
     ...clientsHook,
+    clients: isTenantTransitioning ? [] : clientsHook.clients,
     loading: {
-      clients: clientsHook.loading,
+      clients: isTenantTransitioning ? true : clientsHook.loading,
       // @deprecated Use hasAnyLoading instead
-      any: clientsHook.loading,
-      hasAnyLoading: clientsHook.loading,
+      any: isTenantTransitioning ? true : clientsHook.loading,
+      hasAnyLoading: isTenantTransitioning ? true : clientsHook.loading,
     },
     submitting: {
       clients: clientsHook.submitting,
@@ -375,11 +407,25 @@ export function useUnifiedClients() {
 }
 
 export function useUnifiedInstruments() {
-  return useInstruments();
+  const instrumentsHook = useInstruments();
+  const { isTenantTransitioning } = useTenantScopeGuard();
+
+  return {
+    ...instrumentsHook,
+    instruments: isTenantTransitioning ? [] : instrumentsHook.instruments,
+    loading: isTenantTransitioning ? true : instrumentsHook.loading,
+  };
 }
 
 export function useUnifiedConnections() {
-  return useConnections();
+  const connectionsHook = useConnections();
+  const { isTenantTransitioning } = useTenantScopeGuard();
+
+  return {
+    ...connectionsHook,
+    connections: isTenantTransitioning ? [] : connectionsHook.connections,
+    loading: isTenantTransitioning ? true : connectionsHook.loading,
+  };
 }
 
 // ----------------------------
@@ -471,11 +517,6 @@ export function useUnifiedDashboard() {
       );
   }, [state.connections, state.clients, state.instruments]);
 
-  const instrumentRelationships = useMemo(
-    () => clientRelationships,
-    [clientRelationships]
-  );
-
   const hasAnyLoading =
     state.loading.instruments ||
     state.loading.clients ||
@@ -486,22 +527,29 @@ export function useUnifiedDashboard() {
     Boolean(state.errors.instruments) ||
     Boolean(state.errors.clients) ||
     Boolean(state.errors.connections);
+  const { isTenantTransitioning } = useTenantScopeGuard();
+  const safeClients = isTenantTransitioning ? [] : state.clients;
+  const safeInstruments = isTenantTransitioning ? [] : state.instruments;
+  const safeConnections = isTenantTransitioning ? [] : state.connections;
+  const safeClientRelationships = isTenantTransitioning
+    ? []
+    : clientRelationships;
 
   return {
-    instruments: state.instruments,
-    connections: state.connections,
-    clients: state.clients,
+    instruments: safeInstruments,
+    connections: safeConnections,
+    clients: safeClients,
 
-    clientRelationships,
-    instrumentRelationships,
+    clientRelationships: safeClientRelationships,
+    instrumentRelationships: safeClientRelationships,
 
     loading: {
-      instruments: state.loading.instruments,
-      clients: state.loading.clients,
-      connections: state.loading.connections,
+      instruments: isTenantTransitioning ? true : state.loading.instruments,
+      clients: isTenantTransitioning ? true : state.loading.clients,
+      connections: isTenantTransitioning ? true : state.loading.connections,
       // @deprecated Use hasAnyLoading instead
-      any: hasAnyLoading,
-      hasAnyLoading,
+      any: isTenantTransitioning ? true : hasAnyLoading,
+      hasAnyLoading: isTenantTransitioning ? true : hasAnyLoading,
     },
     errors: {
       instruments: state.errors.instruments,
@@ -596,19 +644,20 @@ export function useConnectedClientsData() {
     state.loading.clients ||
     state.loading.instruments ||
     state.loading.connections;
+  const { isTenantTransitioning } = useTenantScopeGuard();
 
   return {
-    clients: state.clients,
-    instruments: state.instruments,
-    connections: state.connections,
+    clients: isTenantTransitioning ? [] : state.clients,
+    instruments: isTenantTransitioning ? [] : state.instruments,
+    connections: isTenantTransitioning ? [] : state.connections,
 
     loading: {
-      clients: state.loading.clients,
-      instruments: state.loading.instruments,
-      connections: state.loading.connections,
+      clients: isTenantTransitioning ? true : state.loading.clients,
+      instruments: isTenantTransitioning ? true : state.loading.instruments,
+      connections: isTenantTransitioning ? true : state.loading.connections,
       // @deprecated Use hasAnyLoading instead
-      any: hasAnyLoading,
-      hasAnyLoading,
+      any: isTenantTransitioning ? true : hasAnyLoading,
+      hasAnyLoading: isTenantTransitioning ? true : hasAnyLoading,
     },
 
     submitting: {
@@ -637,12 +686,16 @@ export function useUnifiedSearch() {
   const clients = clientsContext.state.clients;
   const instruments = instrumentsContext.state.instruments;
   const connections = connectionsContext.state.connections;
+  const { isTenantTransitioning } = useTenantScopeGuard();
+  const safeClients = isTenantTransitioning ? [] : clients;
+  const safeInstruments = isTenantTransitioning ? [] : instruments;
+  const safeConnections = isTenantTransitioning ? [] : connections;
 
   const searchAll = useCallback(
     (query: string) => {
       const lowerQuery = query.toLowerCase();
 
-      const filteredClients = clients.filter(
+      const filteredClients = safeClients.filter(
         (client: Client) =>
           (client.first_name || '').toLowerCase().includes(lowerQuery) ||
           (client.last_name || '').toLowerCase().includes(lowerQuery) ||
@@ -650,14 +703,14 @@ export function useUnifiedSearch() {
           (client.client_number || '').toLowerCase().includes(lowerQuery)
       );
 
-      const filteredInstruments = instruments.filter(
+      const filteredInstruments = safeInstruments.filter(
         (instrument: Instrument) =>
           (instrument.maker || '').toLowerCase().includes(lowerQuery) ||
           (instrument.type || '').toLowerCase().includes(lowerQuery) ||
           (instrument.serial_number || '').toLowerCase().includes(lowerQuery)
       );
 
-      const filteredConnections = connections.filter(
+      const filteredConnections = safeConnections.filter(
         (connection: ClientInstrument) =>
           (connection.notes || '').toLowerCase().includes(lowerQuery) ||
           connection.relationship_type.toLowerCase().includes(lowerQuery)
@@ -673,14 +726,14 @@ export function useUnifiedSearch() {
           filteredConnections.length,
       };
     },
-    [clients, instruments, connections]
+    [safeClients, safeConnections, safeInstruments]
   );
 
   return {
     searchAll,
-    clients,
-    instruments,
-    connections,
+    clients: safeClients,
+    instruments: safeInstruments,
+    connections: safeConnections,
   };
 }
 
@@ -721,7 +774,7 @@ export function useUnifiedCache() {
     clientsContext.actions.resetState();
     instrumentsContext.actions.resetState();
     connectionsContext.actions.resetState();
-    resetGlobalsForAuthChange();
+    resetGlobalsForTenantChange();
   }, [
     clientsContext.actions,
     instrumentsContext.actions,

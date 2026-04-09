@@ -45,6 +45,7 @@ CREATE TABLE instrument_images (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   instrument_id UUID REFERENCES instruments(id) ON DELETE CASCADE,
   image_url TEXT NOT NULL,
+  storage_key TEXT,
   file_name TEXT NOT NULL,
   file_size INTEGER NOT NULL,
   mime_type TEXT NOT NULL,

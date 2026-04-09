@@ -51,6 +51,9 @@ describe('useInvoices', () => {
       json: async () => ({
         data: mockInvoices,
         count: 1,
+        returnedCount: 1,
+        droppedCount: 0,
+        partial: false,
         totalPages: 1,
         scope: { enforced: true, orgId: 'org-1' },
       }),
@@ -68,6 +71,12 @@ describe('useInvoices', () => {
       expect(result.current.scopeInfo).toEqual({
         enforced: true,
         orgId: 'org-1',
+      });
+      expect(result.current.listDiagnostics).toEqual({
+        partial: false,
+        droppedCount: 0,
+        returnedCount: 1,
+        warning: undefined,
       });
     });
 
@@ -96,6 +105,70 @@ describe('useInvoices', () => {
     });
   });
 
+  it('tracks partial invoice list results when some rows are dropped', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: mockInvoices,
+        count: 3,
+        returnedCount: 1,
+        droppedCount: 2,
+        partial: true,
+        warning: 'Some invoices could not be displayed.',
+        totalPages: 1,
+        scope: { enforced: true, orgId: 'org-1' },
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+
+    await act(async () =>
+      result.current.fetchInvoices({ page: 1, pageSize: 10 })
+    );
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('success');
+      expect(result.current.totalCount).toBe(3);
+      expect(result.current.invoices).toHaveLength(1);
+      expect(result.current.listDiagnostics).toEqual({
+        partial: true,
+        droppedCount: 2,
+        returnedCount: 1,
+        warning: 'Some invoices could not be displayed.',
+      });
+    });
+  });
+
+  it('keeps partial-empty distinct from normal empty when all rows are dropped', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: [],
+        count: 4,
+        returnedCount: 0,
+        droppedCount: 4,
+        partial: true,
+        warning: 'Some invoices could not be displayed.',
+        totalPages: 1,
+        scope: { enforced: true, orgId: 'org-1' },
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+
+    await act(async () =>
+      result.current.fetchInvoices({ page: 1, pageSize: 10 })
+    );
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('success');
+      expect(result.current.invoices).toEqual([]);
+      expect(result.current.totalCount).toBe(4);
+      expect(result.current.listDiagnostics.partial).toBe(true);
+      expect(result.current.listDiagnostics.droppedCount).toBe(4);
+    });
+  });
+
   it('creates invoice successfully', async () => {
     const newInvoice = {
       client_id: 'client-1',
@@ -112,7 +185,18 @@ describe('useInvoices', () => {
 
     (apiFetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ data: mockInvoices[0] }),
+      json: async () => ({
+        data: mockInvoices[0],
+        result: 'full_success',
+        message: 'Invoice created successfully.',
+        imageTracking: {
+          status: 'claimed',
+          requestedCount: 1,
+          claimedCount: 1,
+          missingCount: 0,
+          missingPaths: [],
+        },
+      }),
     });
 
     const { result } = renderHook(() => useInvoices());
@@ -121,10 +205,17 @@ describe('useInvoices', () => {
 
     expect(created).toEqual({
       invoice: mockInvoices[0],
-      status: 'created',
+      result: 'full_success',
       message: 'Invoice created successfully.',
       existingInvoiceId: 'inv-1',
       shouldRefreshList: false,
+      imageTracking: {
+        status: 'claimed',
+        requestedCount: 1,
+        claimedCount: 1,
+        missingCount: 0,
+        missingPaths: [],
+      },
     });
     expect(apiFetch).toHaveBeenCalledWith(
       '/api/invoices',
@@ -194,7 +285,7 @@ describe('useInvoices', () => {
 
     expect(duplicateResult).toEqual({
       invoice: null,
-      status: 'already_processed',
+      result: 'already_processed',
       message: 'This request was already processed. Loading existing invoice.',
       existingInvoiceId: 'inv-existing',
       shouldRefreshList: false,
@@ -210,14 +301,27 @@ describe('useInvoices', () => {
 
     (apiFetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ data: { ...mockInvoices[0], ...updateData } }),
+      json: async () => ({
+        data: { ...mockInvoices[0], ...updateData },
+        result: 'full_success',
+        message: 'Invoice updated successfully.',
+        imageTracking: {
+          status: 'claimed',
+          requestedCount: 1,
+          claimedCount: 1,
+          missingCount: 0,
+          missingPaths: [],
+        },
+      }),
     });
 
     const { result } = renderHook(() => useInvoices());
 
     const updated = await result.current.updateInvoice('inv-1', updateData);
 
-    expect(updated.status).toBe('paid');
+    expect(updated.invoice.status).toBe('paid');
+    expect(updated.result).toBe('full_success');
+    expect(updated.message).toBe('Invoice updated successfully.');
     expect(apiFetch).toHaveBeenCalledWith(
       '/api/invoices/inv-1',
       expect.objectContaining({
@@ -225,6 +329,75 @@ describe('useInvoices', () => {
         body: JSON.stringify(updateData),
       })
     );
+  });
+
+  it('returns partial_success when create succeeds but image linking is incomplete', async () => {
+    const newInvoice = {
+      client_id: 'client-1',
+      invoice_date: '2024-01-15',
+      due_date: null,
+      subtotal: 50000,
+      tax: null,
+      total: 50000,
+      currency: 'USD',
+      status: 'draft' as const,
+      notes: null,
+      items: [],
+    };
+
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: mockInvoices[0],
+        result: 'partial_success',
+        message: 'Invoice created, but some item images were not linked.',
+        imageTracking: {
+          status: 'partial',
+          requestedCount: 2,
+          claimedCount: 1,
+          missingCount: 1,
+          missingPaths: ['org/file-a.jpg'],
+        },
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+    const created = await result.current.createInvoice(newInvoice);
+
+    expect(created.result).toBe('partial_success');
+    expect(created.message).toBe(
+      'Invoice created, but some item images were not linked.'
+    );
+    expect(created.imageTracking?.missingCount).toBe(1);
+  });
+
+  it('returns partial_success when update succeeds but image linking is incomplete', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: { ...mockInvoices[0], status: 'paid' },
+        result: 'partial_success',
+        message: 'Invoice updated, but some item images were not linked.',
+        imageTracking: {
+          status: 'failed',
+          requestedCount: 2,
+          claimedCount: 0,
+          missingCount: 2,
+          missingPaths: ['org/file-a.jpg', 'org/file-b.jpg'],
+        },
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+    const updated = await result.current.updateInvoice('inv-1', {
+      status: 'paid',
+    });
+
+    expect(updated.result).toBe('partial_success');
+    expect(updated.message).toBe(
+      'Invoice updated, but some item images were not linked.'
+    );
+    expect(updated.imageTracking?.missingCount).toBe(2);
   });
 
   it('handles update invoice error', async () => {
@@ -283,7 +456,14 @@ describe('useInvoices', () => {
   it('includes query parameters in fetch', async () => {
     (apiFetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ data: [], count: 0, totalPages: 0 }),
+      json: async () => ({
+        data: [],
+        count: 0,
+        returnedCount: 0,
+        droppedCount: 0,
+        partial: false,
+        totalPages: 0,
+      }),
     });
 
     const { result } = renderHook(() => useInvoices());

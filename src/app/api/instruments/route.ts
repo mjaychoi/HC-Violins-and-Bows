@@ -13,6 +13,7 @@ import {
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 import { Instrument } from '@/types';
+import type { TablesInsert, TablesUpdate } from '@/types/database';
 
 type InstrumentUpdateInput = Partial<
   Omit<Instrument, 'id' | 'created_at' | 'updated_at'>
@@ -25,6 +26,27 @@ type InstrumentUpdateInput = Partial<
     sales_note?: string | null;
   };
 };
+
+type InstrumentInsertRow = TablesInsert<'instruments'>;
+type InstrumentUpdateRow = TablesUpdate<'instruments'>;
+
+function toInstrumentInsertRow(
+  input: Omit<Instrument, 'id' | 'created_at' | 'updated_at'> & {
+    org_id: string;
+    reserved_by_user_id: string | null;
+    reserved_connection_id: string | null;
+  }
+): InstrumentInsertRow {
+  const { has_certificate: _hasCertificate, ...rest } = input;
+  return rest;
+}
+
+function toInstrumentUpdateRow(
+  input: Partial<Instrument>
+): InstrumentUpdateRow {
+  const { has_certificate: _hasCertificate, ...rest } = input;
+  return rest;
+}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -164,7 +186,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const instrumentInsert = {
+      const instrumentInsert = toInstrumentInsertRow({
         ...validationResult.data,
         org_id: auth.orgId,
         reserved_reason:
@@ -174,7 +196,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         reserved_by_user_id:
           validationResult.data.status === 'Reserved' ? auth.user.id : null,
         reserved_connection_id: null,
-      };
+      });
 
       const { data, error } = await auth.userSupabase
         .from('instruments')
@@ -285,7 +307,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         }
 
         const reservedUpdateResult = buildReservedStateUpdate(
-          current.status,
+          (current.status ?? 'Available') as Instrument['status'],
           current.reserved_reason,
           current.reserved_by_user_id,
           current.reserved_connection_id,
@@ -316,7 +338,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
       const { data, error } = await auth.userSupabase
         .from('instruments')
-        .update(validationResult.data)
+        .update(toInstrumentUpdateRow(validationResult.data))
         .eq('id', id)
         .eq('org_id', orgId)
         .select()
