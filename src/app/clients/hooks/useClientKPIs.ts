@@ -3,6 +3,7 @@ import { Client, SalesHistory } from '@/types';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { getMostRecentDate } from '@/utils/dateParsing';
 import { apiFetch } from '@/utils/apiFetch';
+import type { ClientSalesSummary } from '@/app/clients/analytics/hooks/useCustomers';
 
 export interface ClientKPIs {
   totalCustomers: number;
@@ -24,12 +25,12 @@ export function useClientKPIs(
   const enabled = opts?.enabled ?? true;
   const { handleError } = useErrorHandler();
   const [loading, setLoading] = useState(false);
-  const [salesByClient, setSalesByClient] = useState<
-    Map<string, SalesHistory[]>
+  const [salesSummaryByClient, setSalesSummaryByClient] = useState<
+    Map<string, ClientSalesSummary>
   >(new Map());
   const hasFetchedRef = useRef(false);
 
-  // Fetch all sales history and group by client_id
+  // Fetch summarized sales metrics instead of loading the full sales dataset.
   const fetchSalesHistory = useCallback(async () => {
     // Prevent duplicate fetches
     if (hasFetchedRef.current) {
@@ -40,28 +41,22 @@ export function useClientKPIs(
       setLoading(true);
       hasFetchedRef.current = true;
 
-      // Fetch all sales (up to 10k limit for KPI calculation)
-      const response = await apiFetch('/api/sales?page=1&pageSize=10000');
+      const response = await apiFetch('/api/sales/summary-by-client');
       const result = await response.json();
 
       if (!response.ok) {
-        throw result.error || new Error('Failed to fetch sales history');
+        throw result.error || new Error('Failed to fetch sales summary');
       }
 
-      const sales = (result.data || []) as SalesHistory[];
-
-      // Group sales by client_id
-      const grouped = new Map<string, SalesHistory[]>();
-      sales.forEach(sale => {
-        if (sale.client_id) {
-          const existing = grouped.get(sale.client_id) || [];
-          existing.push(sale);
-          grouped.set(sale.client_id, existing);
-        }
+      const summaryData = (result.data || []) as ClientSalesSummary[];
+      const summaryMap = new Map<string, ClientSalesSummary>();
+      summaryData.forEach(summary => {
+        summaryMap.set(summary.client_id, summary);
       });
 
-      setSalesByClient(grouped);
+      setSalesSummaryByClient(summaryMap);
     } catch (error) {
+      setSalesSummaryByClient(new Map());
       handleError(error, 'Failed to fetch sales for KPIs');
       // Reset flag on error so it can retry
       hasFetchedRef.current = false;
@@ -87,15 +82,14 @@ export function useClientKPIs(
     const allPurchaseDates: string[] = [];
 
     clients.forEach(client => {
-      const clientSales = salesByClient.get(client.id) || [];
-      clientSales.forEach(sale => {
-        // Only count positive sales (completed purchases)
-        if (sale.sale_price > 0) {
-          totalSpend += sale.sale_price;
-          totalPurchases += 1;
-          allPurchaseDates.push(sale.sale_date);
-        }
-      });
+      const summary = salesSummaryByClient.get(client.id);
+      if (!summary) return;
+
+      totalSpend += summary.total_spend || 0;
+      totalPurchases += summary.purchase_count || 0;
+      if (summary.last_purchase_date) {
+        allPurchaseDates.push(summary.last_purchase_date);
+      }
     });
 
     const avgSpendPerCustomer =
@@ -110,7 +104,7 @@ export function useClientKPIs(
       mostRecentPurchase,
       loading,
     };
-  }, [clients, salesByClient, loading]);
+  }, [clients, salesSummaryByClient, loading]);
 
   return kpis();
 }
@@ -123,16 +117,26 @@ export function useClientSalesData(clientId: string | null) {
   const { handleError } = useErrorHandler();
   const [sales, setSales] = useState<SalesHistory[]>([]);
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<
+    'loading' | 'success' | 'empty' | 'error'
+  >('empty');
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     if (!clientId) {
+      requestIdRef.current += 1;
       setSales([]);
+      setStatus('empty');
+      setLoading(false);
       return;
     }
 
     const fetchClientSales = async () => {
+      const requestId = ++requestIdRef.current;
       try {
+        setSales([]);
         setLoading(true);
+        setStatus('loading');
         // ✅ FIXED: Use client_id parameter for server-side filtering (much more efficient)
         // ✅ FIXED: Use apiFetch to include authentication headers
         const response = await apiFetch(
@@ -146,12 +150,22 @@ export function useClientSalesData(clientId: string | null) {
 
         // ✅ Server already filtered, no need to filter client-side
         const clientSales = (result.data || []) as SalesHistory[];
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
         setSales(clientSales);
+        setStatus(clientSales.length > 0 ? 'success' : 'empty');
       } catch (error) {
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
         handleError(error, 'Failed to fetch client sales');
         setSales([]);
+        setStatus('error');
       } finally {
-        setLoading(false);
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+        }
       }
     };
 
@@ -174,5 +188,6 @@ export function useClientSalesData(clientId: string | null) {
     purchaseCount,
     lastPurchaseDate: lastPurchaseDate || '—',
     loading,
+    status,
   };
 }

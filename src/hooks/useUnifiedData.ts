@@ -97,6 +97,11 @@ export function useUnifiedData() {
         instruments: instrumentsContext.state.loading,
         connections: connectionsContext.state.loading,
       },
+      errors: {
+        clients: clientsContext.state.error,
+        instruments: instrumentsContext.state.error,
+        connections: connectionsContext.state.error,
+      },
       submitting: {
         clients: clientsContext.state.submitting,
         instruments: instrumentsContext.state.submitting,
@@ -300,6 +305,10 @@ export function useUnifiedData() {
     state.submitting.clients ||
     state.submitting.instruments ||
     state.submitting.connections;
+  const hasAnyError =
+    Boolean(state.errors.clients) ||
+    Boolean(state.errors.instruments) ||
+    Boolean(state.errors.connections);
 
   return {
     // state
@@ -315,6 +324,13 @@ export function useUnifiedData() {
       // @deprecated Use hasAnyLoading instead
       any: hasAnyLoading,
       hasAnyLoading,
+    },
+    errors: {
+      clients: state.errors.clients,
+      instruments: state.errors.instruments,
+      connections: state.errors.connections,
+      any: hasAnyError,
+      hasAnyError,
     },
 
     // submitting
@@ -384,6 +400,11 @@ export function useUnifiedDashboard() {
         clients: clientsContext.state.loading,
         instruments: instrumentsContext.state.loading,
         connections: connectionsContext.state.loading,
+      },
+      errors: {
+        clients: clientsContext.state.error,
+        instruments: instrumentsContext.state.error,
+        connections: connectionsContext.state.error,
       },
       submitting: {
         clients: clientsContext.state.submitting,
@@ -461,6 +482,10 @@ export function useUnifiedDashboard() {
     state.loading.connections;
   const hasAnySubmitting =
     state.submitting.instruments || state.submitting.connections;
+  const hasAnyError =
+    Boolean(state.errors.instruments) ||
+    Boolean(state.errors.clients) ||
+    Boolean(state.errors.connections);
 
   return {
     instruments: state.instruments,
@@ -477,6 +502,13 @@ export function useUnifiedDashboard() {
       // @deprecated Use hasAnyLoading instead
       any: hasAnyLoading,
       hasAnyLoading,
+    },
+    errors: {
+      instruments: state.errors.instruments,
+      clients: state.errors.clients,
+      connections: state.errors.connections,
+      any: hasAnyError,
+      hasAnyError,
     },
 
     submitting: {

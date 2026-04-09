@@ -2,9 +2,13 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useErrorHandler } from '@/contexts/ToastContext';
-import { dataService } from '@/services/dataService';
 import type { MaintenanceTask, TaskFilters } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
+import { handleApiResponse } from '@/utils/handleApiResponse';
+import {
+  buildMaintenanceTaskQuery,
+  type MaintenanceTaskQuery,
+} from '@/types/api/maintenanceTasks';
 
 interface UseMaintenanceTasksOptions {
   initialFilters?: TaskFilters;
@@ -48,29 +52,38 @@ interface UseMaintenanceTasksReturn {
   fetchOverdueTasks: () => Promise<MaintenanceTask[]>;
 }
 
-type JsonRecord = Record<string, unknown>;
+const MAINTENANCE_TASKS_CACHE_TTL_MS = 30_000;
 
-async function safeJson(res: Response): Promise<JsonRecord | null> {
-  try {
-    const json = await res.json();
-    if (json && typeof json === 'object') {
-      return json as JsonRecord;
-    }
-    return null;
-  } catch {
+type MaintenanceTasksCacheEntry = {
+  data: MaintenanceTask[];
+  expiresAt: number;
+};
+
+const maintenanceTasksReadCache = new Map<string, MaintenanceTasksCacheEntry>();
+
+function getCachedMaintenanceTasks(cacheKey: string) {
+  const entry = maintenanceTasksReadCache.get(cacheKey);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    maintenanceTasksReadCache.delete(cacheKey);
     return null;
   }
+  return entry.data;
 }
 
-function toError(body: JsonRecord | null, fallback: string): Error {
-  const candidate = body?.error;
-  if (candidate instanceof Error) {
-    return candidate;
-  }
-  if (typeof candidate === 'string' && candidate.trim()) {
-    return new Error(candidate);
-  }
-  return new Error(fallback);
+function setCachedMaintenanceTasks(cacheKey: string, data: MaintenanceTask[]) {
+  maintenanceTasksReadCache.set(cacheKey, {
+    data,
+    expiresAt: Date.now() + MAINTENANCE_TASKS_CACHE_TTL_MS,
+  });
+}
+
+function invalidateMaintenanceTasksCache() {
+  maintenanceTasksReadCache.clear();
+}
+
+export function __resetMaintenanceTasksReadCacheForTests() {
+  maintenanceTasksReadCache.clear();
 }
 
 /**
@@ -123,6 +136,16 @@ export function useMaintenanceTasks(
   // StrictMode double-run guard (dev)
   const didFetchRef = useRef(false);
 
+  const mergeTasksIntoState = useCallback((nextTasks: MaintenanceTask[]) => {
+    setTasks(prev => {
+      const map = new Map(prev.map(task => [task.id, task]));
+      for (const task of nextTasks) {
+        map.set(task.id, task);
+      }
+      return Array.from(map.values());
+    });
+  }, []);
+
   /**
    * Fetch tasks (list)
    * - stale guard로 최신 요청만 반영
@@ -136,24 +159,43 @@ export function useMaintenanceTasks(
 
       try {
         const effectiveFilters = filters ?? initialFilters;
-        const { data, error: svcError } =
-          await dataService.fetchMaintenanceTasks(effectiveFilters);
+        const query: MaintenanceTaskQuery = {
+          instrument_id: effectiveFilters?.instrument_id,
+          status: effectiveFilters?.status,
+          task_type: effectiveFilters?.task_type,
+          priority: effectiveFilters?.priority,
+          search: effectiveFilters?.search,
+          start_date: effectiveFilters?.date_from,
+          end_date: effectiveFilters?.date_to,
+        };
+        const queryString = buildMaintenanceTaskQuery(query);
+        const requestUrl = `/api/maintenance-tasks${queryString}`;
+        const cacheKey = `list:${queryString}`;
+        const cachedTasks = getCachedMaintenanceTasks(cacheKey);
+
+        if (cachedTasks) {
+          if (myId !== fetchReqIdRef.current) return;
+          setTasks(cachedTasks);
+          return;
+        }
+
+        const res = await apiFetch(requestUrl);
 
         // ignore stale response
         if (myId !== fetchReqIdRef.current) return;
 
-        if (svcError) {
-          setError(svcError);
-          handleError(svcError, 'Failed to fetch maintenance tasks');
-          setTasks([]);
-          return;
-        }
-
-        setTasks(data ?? []);
+        const data = await handleApiResponse<MaintenanceTask[]>(
+          res,
+          `Failed to fetch maintenance tasks (${res.status})`
+        );
+        const nextTasks = data ?? [];
+        setTasks(nextTasks);
+        setCachedMaintenanceTasks(cacheKey, nextTasks);
       } catch (err) {
         if (myId !== fetchReqIdRef.current) return;
         setError(err);
         handleError(err, 'Failed to fetch maintenance tasks');
+        setTasks([]);
       } finally {
         // only endFetch if still latest request (prevents flicker)
         if (myId === fetchReqIdRef.current) endFetch();
@@ -168,16 +210,23 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error: svcError } =
-          await dataService.fetchMaintenanceTaskById(id);
-
-        if (svcError) {
-          setError(svcError);
-          handleError(svcError, 'Failed to fetch maintenance task');
-          return null;
+        const queryString = buildMaintenanceTaskQuery({ id });
+        const cacheKey = `detail:${queryString}`;
+        const cachedTasks = getCachedMaintenanceTasks(cacheKey);
+        if (cachedTasks && cachedTasks[0]) {
+          return cachedTasks[0];
         }
 
-        return data ?? null;
+        const res = await apiFetch(`/api/maintenance-tasks${queryString}`);
+        const task =
+          (await handleApiResponse<MaintenanceTask | null>(
+            res,
+            `Failed to fetch maintenance task (${res.status})`
+          )) ?? null;
+        if (task) {
+          setCachedMaintenanceTasks(cacheKey, [task]);
+        }
+        return task;
       } catch (err) {
         setError(err);
         handleError(err, 'Failed to fetch maintenance task');
@@ -205,20 +254,13 @@ export function useMaintenanceTasks(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(task),
         });
-        const body = await safeJson(res);
-
-        if (!res.ok) {
-          const requestError = toError(
-            body,
+        const data =
+          (await handleApiResponse<MaintenanceTask | null>(
+            res,
             `Failed to create maintenance task (${res.status})`
-          );
-          setError(requestError);
-          handleError(requestError, 'Failed to create maintenance task');
-          return null;
-        }
-
-        const data = (body?.data as MaintenanceTask | undefined) ?? null;
+          )) ?? null;
         if (data) {
+          invalidateMaintenanceTasksCache();
           setTasks(prev => [data, ...prev]);
         }
 
@@ -226,7 +268,7 @@ export function useMaintenanceTasks(
       } catch (err) {
         setError(err);
         handleError(err, 'Failed to create maintenance task');
-        return null;
+        throw err;
       } finally {
         setLoading(prev => ({ ...prev, mutate: false }));
       }
@@ -253,20 +295,13 @@ export function useMaintenanceTasks(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, ...updates }),
         });
-        const body = await safeJson(res);
-
-        if (!res.ok) {
-          const requestError = toError(
-            body,
+        const data =
+          (await handleApiResponse<MaintenanceTask | null>(
+            res,
             `Failed to update maintenance task (${res.status})`
-          );
-          setError(requestError);
-          handleError(requestError, 'Failed to update maintenance task');
-          return null;
-        }
-
-        const data = (body?.data as MaintenanceTask | undefined) ?? null;
+          )) ?? null;
         if (data) {
+          invalidateMaintenanceTasksCache();
           setTasks(prev => prev.map(t => (t.id === id ? data : t)));
         }
 
@@ -274,7 +309,7 @@ export function useMaintenanceTasks(
       } catch (err) {
         setError(err);
         handleError(err, 'Failed to update maintenance task');
-        return null;
+        throw err;
       } finally {
         setLoading(prev => ({ ...prev, mutate: false }));
       }
@@ -288,25 +323,23 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const res = await apiFetch(`/api/maintenance-tasks?id=${id}`, {
-          method: 'DELETE',
-        });
-        const body = await safeJson(res);
+        const res = await apiFetch(
+          `/api/maintenance-tasks${buildMaintenanceTaskQuery({ id })}`,
+          {
+            method: 'DELETE',
+          }
+        );
+        await handleApiResponse<null>(
+          res,
+          `Failed to delete maintenance task (${res.status})`
+        );
 
-        if (!res.ok) {
-          const requestError = toError(
-            body,
-            `Failed to delete maintenance task (${res.status})`
-          );
-          setError(requestError);
-          handleError(requestError, 'Failed to delete maintenance task');
-          return;
-        }
-
+        invalidateMaintenanceTasksCache();
         setTasks(prev => prev.filter(t => t.id !== id));
       } catch (err) {
         setError(err);
         handleError(err, 'Failed to delete maintenance task');
+        throw err;
       } finally {
         setLoading(prev => ({ ...prev, mutate: false }));
       }
@@ -320,23 +353,26 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error: svcError } =
-          await dataService.fetchTasksByDateRange(startDate, endDate);
-
-        if (svcError) {
-          setError(svcError);
-          handleError(svcError, 'Failed to fetch tasks by date range');
-          return [];
+        const queryString = buildMaintenanceTaskQuery({
+          start_date: startDate,
+          end_date: endDate,
+        });
+        const cacheKey = `range:${queryString}`;
+        const cachedTasks = getCachedMaintenanceTasks(cacheKey);
+        if (cachedTasks) {
+          mergeTasksIntoState(cachedTasks);
+          return cachedTasks;
         }
 
-        const tasksResult = data ?? [];
+        const res = await apiFetch(`/api/maintenance-tasks${queryString}`);
+        const tasksResult =
+          (await handleApiResponse<MaintenanceTask[]>(
+            res,
+            `Failed to fetch tasks by date range (${res.status})`
+          )) ?? [];
 
-        // Merge (add new only). If you want "update existing too", use Map merge like below.
-        setTasks(prev => {
-          const existingIds = new Set(prev.map(t => t.id));
-          const newOnes = tasksResult.filter(t => !existingIds.has(t.id));
-          return [...prev, ...newOnes];
-        });
+        mergeTasksIntoState(tasksResult);
+        setCachedMaintenanceTasks(cacheKey, tasksResult);
 
         return tasksResult;
       } catch (err) {
@@ -347,7 +383,7 @@ export function useMaintenanceTasks(
         endFetch();
       }
     },
-    [handleError, startFetch, endFetch]
+    [handleError, startFetch, endFetch, mergeTasksIntoState]
   );
 
   const fetchTasksByScheduledDate = useCallback(
@@ -356,23 +392,25 @@ export function useMaintenanceTasks(
       setError(null);
 
       try {
-        const { data, error: svcError } =
-          await dataService.fetchTasksByScheduledDate(date);
-
-        if (svcError) {
-          setError(svcError);
-          handleError(svcError, 'Failed to fetch tasks by scheduled date');
-          return [];
+        const queryString = buildMaintenanceTaskQuery({
+          scheduled_date: date,
+        });
+        const cacheKey = `scheduled:${queryString}`;
+        const cachedTasks = getCachedMaintenanceTasks(cacheKey);
+        if (cachedTasks) {
+          mergeTasksIntoState(cachedTasks);
+          return cachedTasks;
         }
 
-        const tasksResult = data ?? [];
+        const res = await apiFetch(`/api/maintenance-tasks${queryString}`);
+        const tasksResult =
+          (await handleApiResponse<MaintenanceTask[]>(
+            res,
+            `Failed to fetch tasks by scheduled date (${res.status})`
+          )) ?? [];
 
-        // Merge updates to existing tasks (update existing + add new)
-        setTasks(prev => {
-          const map = new Map(prev.map(t => [t.id, t]));
-          for (const t of tasksResult) map.set(t.id, t);
-          return Array.from(map.values());
-        });
+        mergeTasksIntoState(tasksResult);
+        setCachedMaintenanceTasks(cacheKey, tasksResult);
 
         return tasksResult;
       } catch (err) {
@@ -383,7 +421,7 @@ export function useMaintenanceTasks(
         endFetch();
       }
     },
-    [handleError, startFetch, endFetch]
+    [handleError, startFetch, endFetch, mergeTasksIntoState]
   );
 
   const fetchOverdueTasks = useCallback(async (): Promise<
@@ -393,15 +431,23 @@ export function useMaintenanceTasks(
     setError(null);
 
     try {
-      const { data, error: svcError } = await dataService.fetchOverdueTasks();
-
-      if (svcError) {
-        setError(svcError);
-        handleError(svcError, 'Failed to fetch overdue tasks');
-        return [];
+      const queryString = buildMaintenanceTaskQuery({
+        overdue: true,
+      });
+      const cacheKey = `overdue:${queryString}`;
+      const cachedTasks = getCachedMaintenanceTasks(cacheKey);
+      if (cachedTasks) {
+        return cachedTasks;
       }
 
-      return data ?? [];
+      const res = await apiFetch(`/api/maintenance-tasks${queryString}`);
+      const tasksResult =
+        (await handleApiResponse<MaintenanceTask[]>(
+          res,
+          `Failed to fetch overdue tasks (${res.status})`
+        )) ?? [];
+      setCachedMaintenanceTasks(cacheKey, tasksResult);
+      return tasksResult;
     } catch (err) {
       setError(err);
       handleError(err, 'Failed to fetch overdue tasks');

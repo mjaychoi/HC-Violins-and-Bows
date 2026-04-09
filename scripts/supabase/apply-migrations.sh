@@ -7,17 +7,17 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+ACTIVE_MIGRATIONS_DIR="$ROOT_DIR/supabase/migrations"
 
 echo "Running SQL migrations against: $DATABASE_URL"
 
 shopt -s nullglob
 SQL_FILES=(
-  "$ROOT_DIR"/*.sql
-  "$ROOT_DIR"/migrations/*.sql
+  "$ACTIVE_MIGRATIONS_DIR"/[0-9]*_*.sql
 )
 
 if [[ ${#SQL_FILES[@]} -eq 0 ]]; then
-  echo "No SQL files found. Place *.sql in repo root or migrations/" >&2
+  echo "No deployable timestamped SQL files found under supabase/migrations/" >&2
   exit 0
 fi
 
@@ -27,4 +27,3 @@ for sql in "${SQL_FILES[@]}"; do
 done
 
 echo "All migrations applied successfully."
-

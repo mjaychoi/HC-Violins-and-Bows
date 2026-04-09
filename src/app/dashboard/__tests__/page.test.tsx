@@ -5,6 +5,7 @@ import { useDashboardFilters, useDashboardForm } from '../hooks';
 import { useModalState } from '@/hooks/useModalState';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useErrorHandler } from '@/contexts/ToastContext';
+import { usePermissions } from '@/hooks/usePermissions';
 
 jest.mock('@/hooks/useUnifiedData', () => ({
   useUnifiedData: jest.fn(() => {
@@ -34,6 +35,9 @@ jest.mock('@/hooks/useModalState', () => ({
 jest.mock('@/hooks/useLoadingState', () => ({
   useLoadingState: jest.fn(),
 }));
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: jest.fn(),
+}));
 // ✅ FIXED: ToastProvider도 export하도록 mock 수정
 jest.mock('@/contexts/ToastContext', () => {
   const actual = jest.requireActual('@/contexts/ToastContext');
@@ -45,14 +49,18 @@ jest.mock('@/contexts/ToastContext', () => {
   };
 });
 jest.mock('@/components/layout', () => ({
-  AppLayout: ({ children }: any) => (
-    <div data-testid="app-layout">{children}</div>
+  AppLayout: ({ children, headerActions }: any) => (
+    <div data-testid="app-layout">
+      {headerActions}
+      {children}
+    </div>
   ),
 }));
 jest.mock('@/components/common', () => ({
   ErrorBoundary: ({ children }: any) => (
     <div data-testid="error-boundary">{children}</div>
   ),
+  NotificationBadge: () => <div data-testid="notification-badge" />,
   ConfirmDialog: ({ onConfirm }: any) => {
     // Auto-confirm in tests
     onConfirm?.();
@@ -116,6 +124,10 @@ const mockInstrument = {
   created_at: '2024',
 };
 
+const mockUsePermissions = usePermissions as jest.MockedFunction<
+  typeof usePermissions
+>;
+
 describe('DashboardPage', () => {
   const resetForm = jest.fn();
   const openModal = jest.fn();
@@ -123,6 +135,9 @@ describe('DashboardPage', () => {
   const deleteInstrument = jest.fn().mockResolvedValue(undefined);
   const createInstrument = jest.fn().mockResolvedValue(undefined);
   const updateInstrument = jest.fn().mockResolvedValue(true);
+  const fetchClients = jest.fn().mockResolvedValue(undefined);
+  const fetchInstruments = jest.fn().mockResolvedValue(undefined);
+  const fetchConnections = jest.fn().mockResolvedValue(undefined);
   const handleError = jest.fn();
   const withSubmitting = jest.fn(async (cb: any) => await cb());
   const ErrorToasts = () => <div>errors</div>;
@@ -132,9 +147,30 @@ describe('DashboardPage', () => {
     (useUnifiedDashboard as jest.Mock).mockReturnValue({
       instruments: [mockInstrument],
       clients: [],
-      loading: { any: false },
-      submitting: { any: false },
+      loading: {
+        clients: false,
+        instruments: false,
+        connections: false,
+        any: false,
+        hasAnyLoading: false,
+      },
+      errors: {
+        clients: null,
+        instruments: null,
+        connections: null,
+        any: false,
+        hasAnyError: false,
+      },
+      submitting: {
+        instruments: false,
+        connections: false,
+        any: false,
+        hasAnySubmitting: false,
+      },
       clientRelationships: [],
+      fetchClients,
+      fetchInstruments,
+      fetchConnections,
       createInstrument,
       updateInstrument,
       deleteInstrument,
@@ -182,6 +218,31 @@ describe('DashboardPage', () => {
       ErrorToasts,
       handleError,
     });
+
+    mockUsePermissions.mockReturnValue({
+      canCreateSale: true,
+      canCreateInvoice: true,
+      canCreateInstrument: true,
+      canCreateTask: true,
+      canCreateContactLog: true,
+      canCreateNote: true,
+      canCreateConnection: true,
+      canManageContactLogs: true,
+      canManageTasks: true,
+      canManageSales: true,
+      canExportSales: true,
+      canEditInvoice: true,
+      canDeleteInvoice: true,
+      canManageInvoiceSettings: true,
+      canDeleteConnection: true,
+      canManageConnections: true,
+      canManageInstruments: true,
+      canUploadInstrumentMedia: true,
+      canManageClients: true,
+      canCreateClient: true,
+      createSaleDisabledReason: undefined,
+      exportSalesDisabledReason: undefined,
+    } as any);
   });
 
   afterEach(() => {
@@ -208,5 +269,67 @@ describe('DashboardPage', () => {
 
     fireEvent.click(screen.getByText('delete'));
     expect(deleteInstrument).toHaveBeenCalledWith('1');
+  });
+
+  it('shows disabled new sale action with a permission reason for non-admin users', () => {
+    mockUsePermissions.mockReturnValue({
+      ...mockUsePermissions.mock.results.at(-1)?.value,
+      canCreateSale: false,
+      createSaleDisabledReason: 'Admin only',
+    } as any);
+
+    render(<DashboardPage />);
+
+    const button = screen.getByText('New Sale').closest('button');
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'Admin only');
+  });
+
+  it('renders explicit dashboard error state instead of empty UI and retries bootstrap fetches', async () => {
+    (useUnifiedDashboard as jest.Mock).mockReturnValue({
+      instruments: [],
+      clients: [],
+      loading: {
+        clients: false,
+        instruments: false,
+        connections: false,
+        any: false,
+        hasAnyLoading: false,
+      },
+      errors: {
+        clients: null,
+        instruments: new Error('Fetch instruments failed'),
+        connections: null,
+        any: true,
+        hasAnyError: true,
+      },
+      submitting: {
+        instruments: false,
+        connections: false,
+        any: false,
+        hasAnySubmitting: false,
+      },
+      clientRelationships: [],
+      fetchClients,
+      fetchInstruments,
+      fetchConnections,
+      createInstrument,
+      updateInstrument,
+      deleteInstrument,
+    });
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Failed to load dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Fetch instruments failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('dashboard-content')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => {
+      expect(fetchClients).toHaveBeenCalledWith({ force: true });
+      expect(fetchInstruments).toHaveBeenCalled();
+      expect(fetchConnections).toHaveBeenCalledWith({ force: true });
+    });
   });
 });

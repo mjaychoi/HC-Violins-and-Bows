@@ -4,6 +4,8 @@ import { todayLocalYMD, formatDisplayDate } from '@/utils/dateParsing';
 import { differenceInDays, parseISO, isValid } from 'date-fns';
 import { apiFetch } from '@/utils/apiFetch';
 
+type ContactInfoStatus = 'loading' | 'success' | 'empty' | 'error';
+
 export interface ClientContactInfo {
   clientId: string;
   lastContactDate: string | null; // YYYY-MM-DD
@@ -28,6 +30,7 @@ export function useClientsContactInfo({
     Map<string, ClientContactInfo>
   >(new Map());
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<ContactInfoStatus>('empty');
   const [refetchIndex, setRefetchIndex] = useState(0);
 
   // Normalize clientIds to string for comparison (avoid array reference issues)
@@ -36,6 +39,7 @@ export function useClientsContactInfo({
     [clientIds]
   );
   const prevClientIdsKeyRef = useRef<string>('');
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     // Only fetch if clientIds actually changed (by comparing normalized string)
@@ -46,10 +50,14 @@ export function useClientsContactInfo({
 
     if (!enabled || clientIds.length === 0) {
       setContactInfoMap(new Map());
+      setStatus('empty');
+      setLoading(false);
       return;
     }
 
-    let cancelled = false;
+    const requestId = ++requestIdRef.current;
+    setContactInfoMap(new Map());
+    setStatus('loading');
 
     const fetchContactInfo = async () => {
       setLoading(true);
@@ -66,7 +74,7 @@ export function useClientsContactInfo({
         const allLogs: ContactLog[] = [];
 
         for (const batch of batches) {
-          if (cancelled) return;
+          if (requestId !== requestIdRef.current) return;
 
           try {
             // Use batch endpoint: /api/contacts?clientIds=id1,id2,id3
@@ -83,12 +91,11 @@ export function useClientsContactInfo({
               allLogs.push(...(result.data as ContactLog[]));
             }
           } catch (error) {
-            console.error(`Failed to fetch contact logs for batch:`, error);
             throw error;
           }
         }
 
-        if (cancelled) return;
+        if (requestId !== requestIdRef.current) return;
 
         // Process logs to extract contact info per client
         const infoMap = new Map<string, ClientContactInfo>();
@@ -187,17 +194,17 @@ export function useClientsContactInfo({
           });
         }
 
-        if (!cancelled) {
-          setContactInfoMap(infoMap);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error('Failed to fetch contact info:', error);
-          // Set empty map on error
-          setContactInfoMap(new Map());
-        }
+        if (requestId !== requestIdRef.current) return;
+
+        setContactInfoMap(infoMap);
+        setStatus(infoMap.size > 0 ? 'success' : 'empty');
+      } catch {
+        if (requestId !== requestIdRef.current) return;
+
+        setContactInfoMap(new Map());
+        setStatus('error');
       } finally {
-        if (!cancelled) {
+        if (requestId === requestIdRef.current) {
           setLoading(false);
         }
       }
@@ -206,7 +213,7 @@ export function useClientsContactInfo({
     fetchContactInfo();
 
     return () => {
-      cancelled = true;
+      requestIdRef.current += 1;
     };
     // We intentionally omit `clientIds` from the dependency list above because
     // `clientIdsKey` already tracks the sorted values. This prevents effect
@@ -231,6 +238,7 @@ export function useClientsContactInfo({
     contactInfoMap,
     getContactInfo,
     loading,
+    status,
     refetch,
   };
 }

@@ -51,6 +51,10 @@ export default function InvoiceSettingsModal({
   const { showSuccess, handleError } = useAppFeedback();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
   const [form, setForm] = useState<InvoiceSettings>(empty);
 
   const currencies = useMemo(
@@ -60,6 +64,8 @@ export default function InvoiceSettingsModal({
 
   const load = useCallback(async () => {
     setLoading(true);
+    setStatus('loading');
+    setLoadErrorMessage(null);
     try {
       const res = await apiFetch('/api/invoices/invoice_settings');
 
@@ -98,15 +104,13 @@ export default function InvoiceSettingsModal({
         ...empty,
         ...(json.data || {}),
       });
+      setStatus('success');
     } catch (e) {
-      logError(
-        'Failed to load invoice settings:',
-        e instanceof Error ? e.message : String(e)
-      );
-      handleError(
-        e instanceof Error ? e.message : String(e),
-        'Load invoice settings'
-      );
+      const message = e instanceof Error ? e.message : String(e);
+      logError('Failed to load invoice settings:', message);
+      setStatus('error');
+      setLoadErrorMessage(message);
+      handleError(message, 'Load invoice settings');
     } finally {
       setLoading(false);
     }
@@ -172,6 +176,24 @@ export default function InvoiceSettingsModal({
       <div className="space-y-6">
         {loading ? (
           <div className="text-center py-8 text-gray-500">Loading...</div>
+        ) : status === 'error' ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+            <div className="text-sm font-semibold text-red-800">
+              Failed to load invoice settings
+            </div>
+            <div className="mt-1 text-sm text-red-700">
+              {loadErrorMessage ||
+                'Invoice settings could not be loaded. Retry before editing them.'}
+            </div>
+            <div className="mt-4 flex justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={onClose}>
+                Close
+              </Button>
+              <Button type="button" onClick={() => void load()}>
+                Retry
+              </Button>
+            </div>
+          </div>
         ) : (
           <>
             <div>

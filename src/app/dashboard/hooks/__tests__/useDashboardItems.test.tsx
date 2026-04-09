@@ -1,18 +1,14 @@
 import { renderHook, act, waitFor } from '@/test-utils/render';
 import { useDashboardItems } from '../useDashboardItems';
-import { Instrument, InstrumentImage, ClientInstrument } from '@/types';
+import { Instrument, InstrumentImage, ClientInstrument, Client } from '@/types';
 import {
   withNormalizedDefaults,
   NormalizedRowDefaults,
 } from '@/test/fixtures/rows';
+import { apiFetch } from '@/utils/apiFetch';
 
-// Mock dependencies
-const mockSupabaseClient = {
-  from: jest.fn(),
-};
-
-jest.mock('@/lib/supabase-client', () => ({
-  getSupabaseClient: jest.fn(() => Promise.resolve(mockSupabaseClient)),
+jest.mock('@/utils/apiFetch', () => ({
+  apiFetch: jest.fn(),
 }));
 
 jest.mock('@/utils/logger', () => ({
@@ -21,6 +17,8 @@ jest.mock('@/utils/logger', () => ({
 }));
 
 type NormalizedInstrument = Instrument & NormalizedRowDefaults;
+
+const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;
 
 const mockInstrument: NormalizedInstrument = withNormalizedDefaults<Instrument>(
   {
@@ -42,32 +40,59 @@ const mockInstrument: NormalizedInstrument = withNormalizedDefaults<Instrument>(
   }
 );
 
+const mockClient: Client = {
+  id: 'client1',
+  first_name: 'Jane',
+  last_name: 'Doe',
+  contact_number: '123',
+  email: 'jane@example.com',
+  tags: [],
+  interest: null,
+  note: null,
+  client_number: 'C-001',
+  created_at: '2024-01-01T00:00:00Z',
+};
+
+const mockConnection: ClientInstrument = {
+  id: 'rel1',
+  client_id: 'client1',
+  instrument_id: 'inst1',
+  relationship_type: 'Owned',
+  notes: null,
+  display_order: 1,
+  created_at: '2024-01-01T00:00:00Z',
+};
+
+function jsonResponse(body: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify(body), {
+    status: init?.status ?? 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 describe('useDashboardItems', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockApiFetch.mockImplementation(async url => {
+      if (
+        url === '/api/instruments?orderBy=created_at&ascending=false&all=true'
+      ) {
+        return jsonResponse({ data: [] });
+      }
+      if (
+        url ===
+        '/api/connections?orderBy=created_at&ascending=false&pageSize=100'
+      ) {
+        return jsonResponse({ data: [] });
+      }
+      if (url === '/api/clients?orderBy=created_at&ascending=false&all=true') {
+        return jsonResponse({ data: [] });
+      }
+      return jsonResponse({ data: null });
+    });
   });
 
   it('should initialize with default values', async () => {
-    const mockSelect = jest.fn().mockReturnValue({
-      order: jest.fn().mockResolvedValue({
-        data: [],
-        error: null,
-      }),
-    });
-    const mockClientInstrumentsSelect = jest.fn().mockResolvedValue({
-      data: [],
-      error: null,
-    });
-    mockSupabaseClient.from.mockImplementation((table: string) => {
-      if (table === 'instruments') {
-        return { select: mockSelect };
-      }
-      if (table === 'client_instruments') {
-        return { select: mockClientInstrumentsSelect };
-      }
-      return { select: jest.fn() };
-    });
-
     const { result } = renderHook(() => useDashboardItems());
 
     expect(result.current.loading).toBe(true);
@@ -81,27 +106,35 @@ describe('useDashboardItems', () => {
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
     });
+
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/instruments?orderBy=created_at&ascending=false&all=true'
+    );
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/connections?orderBy=created_at&ascending=false&pageSize=100'
+    );
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/clients?orderBy=created_at&ascending=false&all=true'
+    );
   });
 
-  it.skip('should fetch items on mount', async () => {
-    const mockSelect = jest.fn().mockReturnValue({
-      order: jest.fn().mockResolvedValue({
-        data: [mockInstrument],
-        error: null,
-      }),
-    });
-    const mockClientInstrumentsSelect = jest.fn().mockResolvedValue({
-      data: [],
-      error: null,
-    });
-    mockSupabaseClient.from.mockImplementation((table: string) => {
-      if (table === 'instruments') {
-        return { select: mockSelect };
+  it('should fetch items on mount', async () => {
+    mockApiFetch.mockImplementation(async url => {
+      if (
+        url === '/api/instruments?orderBy=created_at&ascending=false&all=true'
+      ) {
+        return jsonResponse({ data: [mockInstrument] });
       }
-      if (table === 'client_instruments') {
-        return { select: mockClientInstrumentsSelect };
+      if (
+        url ===
+        '/api/connections?orderBy=created_at&ascending=false&pageSize=100'
+      ) {
+        return jsonResponse({ data: [mockConnection] });
       }
-      return { select: jest.fn() };
+      if (url === '/api/clients?orderBy=created_at&ascending=false&all=true') {
+        return jsonResponse({ data: [mockClient] });
+      }
+      return jsonResponse({ data: [] });
     });
 
     const { result } = renderHook(() => useDashboardItems());
@@ -111,17 +144,31 @@ describe('useDashboardItems', () => {
     });
 
     expect(result.current.items).toHaveLength(1);
-    expect(result.current.items[0]).toEqual(mockInstrument);
+    expect(result.current.items[0]).toMatchObject({
+      id: mockInstrument.id,
+      maker: mockInstrument.maker,
+      type: mockInstrument.type,
+      price: mockInstrument.price,
+      status: mockInstrument.status,
+      serial_number: mockInstrument.serial_number,
+    });
+    expect(result.current.clientRelationships).toHaveLength(1);
+    expect(result.current.clientRelationships[0]).toMatchObject({
+      id: 'rel1',
+      client: mockClient,
+      instrument: mockInstrument,
+    });
   });
 
   it('should handle fetch items error', async () => {
-    const mockSelect = jest.fn().mockReturnValue({
-      order: jest.fn().mockResolvedValue({
-        data: null,
-        error: new Error('Fetch failed'),
-      }),
+    mockApiFetch.mockImplementation(async url => {
+      if (
+        url === '/api/instruments?orderBy=created_at&ascending=false&all=true'
+      ) {
+        return jsonResponse({ error: 'Fetch failed' }, { status: 500 });
+      }
+      return jsonResponse({ data: [] });
     });
-    mockSupabaseClient.from.mockReturnValue({ select: mockSelect });
 
     const { result } = renderHook(() => useDashboardItems());
 
@@ -140,35 +187,26 @@ describe('useDashboardItems', () => {
       type: 'Cello',
       status: 'Available',
     };
-    const mockInsert = jest.fn().mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        single: jest.fn().mockResolvedValue({
-          data: newInstrument,
-          error: null,
-        }),
-      }),
-    });
-    const mockSelect = jest.fn().mockReturnValue({
-      order: jest.fn().mockResolvedValue({
-        data: [],
-        error: null,
-      }),
-    });
-    const mockClientInstrumentsSelect = jest.fn().mockResolvedValue({
-      data: [],
-      error: null,
-    });
-    mockSupabaseClient.from.mockImplementation((table: string) => {
-      if (table === 'instruments') {
-        return {
-          select: mockSelect,
-          insert: mockInsert,
-        };
+
+    mockApiFetch.mockImplementation(async (url, options) => {
+      if (
+        url === '/api/instruments?orderBy=created_at&ascending=false&all=true'
+      ) {
+        return jsonResponse({ data: [] });
       }
-      if (table === 'client_instruments') {
-        return { select: mockClientInstrumentsSelect };
+      if (
+        url ===
+        '/api/connections?orderBy=created_at&ascending=false&pageSize=100'
+      ) {
+        return jsonResponse({ data: [] });
       }
-      return { select: jest.fn() };
+      if (url === '/api/clients?orderBy=created_at&ascending=false&all=true') {
+        return jsonResponse({ data: [] });
+      }
+      if (url === '/api/instruments' && options?.method === 'POST') {
+        return jsonResponse({ data: newInstrument }, { status: 201 });
+      }
+      return jsonResponse({ data: null });
     });
 
     const { result } = renderHook(() => useDashboardItems());
@@ -195,43 +233,37 @@ describe('useDashboardItems', () => {
       expect(created).toEqual(newInstrument);
     });
 
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/instruments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+    });
     expect(result.current.items).toHaveLength(1);
     expect(result.current.submitting).toBe(false);
   });
 
   it('should update item', async () => {
     const updatedInstrument = { ...mockInstrument, price: 150000 };
-    const mockUpdate = jest.fn().mockReturnValue({
-      eq: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          single: jest.fn().mockResolvedValue({
-            data: updatedInstrument,
-            error: null,
-          }),
-        }),
-      }),
-    });
-    const mockSelect = jest.fn().mockReturnValue({
-      order: jest.fn().mockResolvedValue({
-        data: [mockInstrument],
-        error: null,
-      }),
-    });
-    const mockClientInstrumentsSelect = jest.fn().mockResolvedValue({
-      data: [],
-      error: null,
-    });
-    mockSupabaseClient.from.mockImplementation((table: string) => {
-      if (table === 'instruments') {
-        return {
-          select: mockSelect,
-          update: mockUpdate,
-        };
+
+    mockApiFetch.mockImplementation(async (url, options) => {
+      if (
+        url === '/api/instruments?orderBy=created_at&ascending=false&all=true'
+      ) {
+        return jsonResponse({ data: [mockInstrument] });
       }
-      if (table === 'client_instruments') {
-        return { select: mockClientInstrumentsSelect };
+      if (
+        url ===
+        '/api/connections?orderBy=created_at&ascending=false&pageSize=100'
+      ) {
+        return jsonResponse({ data: [] });
       }
-      return { select: jest.fn() };
+      if (url === '/api/clients?orderBy=created_at&ascending=false&all=true') {
+        return jsonResponse({ data: [] });
+      }
+      if (url === '/api/instruments' && options?.method === 'PATCH') {
+        return jsonResponse({ data: updatedInstrument });
+      }
+      return jsonResponse({ data: null });
     });
 
     const { result } = renderHook(() => useDashboardItems());
@@ -247,37 +279,35 @@ describe('useDashboardItems', () => {
       expect(updated).toEqual(updatedInstrument);
     });
 
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/instruments', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'inst1', price: 150000 }),
+    });
     expect(result.current.items[0].price).toBe(150000);
     expect(result.current.submitting).toBe(false);
   });
 
   it('should delete item', async () => {
-    const mockDelete = jest.fn().mockReturnValue({
-      eq: jest.fn().mockResolvedValue({
-        error: null,
-      }),
-    });
-    const mockSelect = jest.fn().mockReturnValue({
-      order: jest.fn().mockResolvedValue({
-        data: [mockInstrument],
-        error: null,
-      }),
-    });
-    const mockClientInstrumentsSelect = jest.fn().mockResolvedValue({
-      data: [],
-      error: null,
-    });
-    mockSupabaseClient.from.mockImplementation((table: string) => {
-      if (table === 'instruments') {
-        return {
-          select: mockSelect,
-          delete: mockDelete,
-        };
+    mockApiFetch.mockImplementation(async (url, options) => {
+      if (
+        url === '/api/instruments?orderBy=created_at&ascending=false&all=true'
+      ) {
+        return jsonResponse({ data: [mockInstrument] });
       }
-      if (table === 'client_instruments') {
-        return { select: mockClientInstrumentsSelect };
+      if (
+        url ===
+        '/api/connections?orderBy=created_at&ascending=false&pageSize=100'
+      ) {
+        return jsonResponse({ data: [] });
       }
-      return { select: jest.fn() };
+      if (url === '/api/clients?orderBy=created_at&ascending=false&all=true') {
+        return jsonResponse({ data: [] });
+      }
+      if (url === '/api/instruments?id=inst1' && options?.method === 'DELETE') {
+        return jsonResponse({ data: { success: true } });
+      }
+      return jsonResponse({ data: null });
     });
 
     const { result } = renderHook(() => useDashboardItems());
@@ -290,11 +320,18 @@ describe('useDashboardItems', () => {
       await result.current.deleteItem('inst1');
     });
 
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/instruments?id=inst1', {
+      method: 'DELETE',
+    });
     expect(result.current.items).toHaveLength(0);
   });
 
-  it('should manage item images', () => {
+  it('should manage item images', async () => {
     const { result } = renderHook(() => useDashboardItems());
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
 
     const mockImage: InstrumentImage = {
       id: 'img1',
@@ -322,11 +359,15 @@ describe('useDashboardItems', () => {
     expect(result.current.itemImages).toHaveLength(0);
   });
 
-  it('should manage client relationships', () => {
+  it('should manage client relationships', async () => {
     const { result } = renderHook(() => useDashboardItems());
 
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
     const mockRelationship: ClientInstrument = {
-      id: 'rel1',
+      id: 'rel2',
       client_id: 'c1',
       instrument_id: 'inst1',
       relationship_type: 'Owned',
@@ -342,14 +383,18 @@ describe('useDashboardItems', () => {
     expect(result.current.clientRelationships[0]).toEqual(mockRelationship);
 
     act(() => {
-      result.current.removeClientRelationship('rel1');
+      result.current.removeClientRelationship('rel2');
     });
 
     expect(result.current.clientRelationships).toHaveLength(0);
   });
 
-  it('should update uploadingImages state', () => {
+  it('should update uploadingImages state', async () => {
     const { result } = renderHook(() => useDashboardItems());
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
 
     act(() => {
       result.current.setUploadingImages(true);
@@ -358,8 +403,12 @@ describe('useDashboardItems', () => {
     expect(result.current.uploadingImages).toBe(true);
   });
 
-  it('should update imagesToDelete state', () => {
+  it('should update imagesToDelete state', async () => {
     const { result } = renderHook(() => useDashboardItems());
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
 
     act(() => {
       result.current.setImagesToDelete(['img1', 'img2']);

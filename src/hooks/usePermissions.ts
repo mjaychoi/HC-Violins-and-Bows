@@ -10,9 +10,16 @@ export function usePermissions() {
     const isReady = !loading && Boolean(user);
     const canUseOrgScopedFeatures = isReady && hasOrgContext;
     const canUseAdminOrgFeatures = canUseOrgScopedFeatures && role === 'admin';
+    const adminOnlyReason = !isReady
+      ? 'Checking permissions'
+      : !hasOrgContext
+        ? 'Organization context required'
+        : role !== 'admin'
+          ? 'Admin only'
+          : undefined;
 
     return {
-      canCreateSale: canUseOrgScopedFeatures,
+      canCreateSale: canUseAdminOrgFeatures,
       canCreateInvoice: canUseOrgScopedFeatures,
       canCreateInstrument: canUseOrgScopedFeatures,
       canCreateTask: canUseOrgScopedFeatures,
@@ -22,6 +29,7 @@ export function usePermissions() {
       canManageContactLogs: canUseAdminOrgFeatures,
       canManageTasks: canUseAdminOrgFeatures,
       canManageSales: canUseAdminOrgFeatures,
+      canExportSales: canUseAdminOrgFeatures,
       canEditInvoice: canUseAdminOrgFeatures,
       canDeleteInvoice: canUseAdminOrgFeatures,
       canManageInvoiceSettings: canUseAdminOrgFeatures,
@@ -31,6 +39,14 @@ export function usePermissions() {
       canUploadInstrumentMedia: canUseAdminOrgFeatures,
       canManageClients: canUseAdminOrgFeatures,
       canCreateClient: canUseOrgScopedFeatures,
+      createSaleDisabledReason:
+        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
+          ? undefined
+          : adminOnlyReason,
+      exportSalesDisabledReason:
+        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
+          ? undefined
+          : adminOnlyReason,
     };
   }, [loading, user, role, hasOrgContext]);
 }

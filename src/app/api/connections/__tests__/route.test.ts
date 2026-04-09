@@ -6,6 +6,7 @@ jest.mock('@/utils/monitoring');
 jest.mock('@/utils/typeGuards');
 jest.mock('@/utils/inputValidation');
 let mockUserSupabase: any;
+let mockAuthContext: any;
 
 jest.mock('@/app/api/_utils/withAuthRoute', () => {
   const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
@@ -15,13 +16,8 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
       handler(
         request,
         {
-          user: { id: 'test-user' },
-          accessToken: 'test-token',
-          orgId: 'test-org',
-          clientId: 'test-client',
-          role: 'admin',
+          ...mockAuthContext,
           userSupabase: mockUserSupabase,
-          isTestBypass: true,
         },
         context
       ),
@@ -66,7 +62,16 @@ describe('/api/connections', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
-    mockUserSupabase = { from: jest.fn() };
+    mockUserSupabase = { from: jest.fn(), rpc: jest.fn() };
+    mockAuthContext = {
+      user: { id: 'test-user' },
+      accessToken: 'test-token',
+      orgId: 'test-org',
+      clientId: 'test-client',
+      role: 'admin',
+      userSupabase: mockUserSupabase,
+      isTestBypass: false,
+    };
   });
 
   afterEach(() => {
@@ -77,6 +82,7 @@ describe('/api/connections', () => {
     it('should return connections', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
         range: jest.fn().mockResolvedValue({
           data: [mockConnection],
@@ -95,10 +101,26 @@ describe('/api/connections', () => {
         'id, client_id, instrument_id, relationship_type, notes, display_order, created_at',
         { count: 'exact' }
       );
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
       expect(mockQuery.range).toHaveBeenCalledWith(0, 49);
       expect(response.status).toBe(200);
       expect(json.data).toEqual([mockConnection]);
       expect(json.count).toBe(1);
+    });
+
+    it('should reject GET when org context is missing', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        orgId: null,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections');
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.error).toBe('Organization context required');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it('should filter by client_id', async () => {
@@ -154,6 +176,7 @@ describe('/api/connections', () => {
     it('should apply pagination', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
         range: jest.fn().mockReturnThis(),
       };
@@ -343,43 +366,32 @@ describe('/api/connections', () => {
   });
 
   describe('PUT', () => {
-    it('should batch update display_order', async () => {
+    it('should reorder connections atomically via RPC', async () => {
       const orders = [
         { id: '123e4567-e89b-12d3-a456-426614174000', display_order: 0 },
         { id: '123e4567-e89b-12d3-a456-426614174001', display_order: 1 },
       ];
 
-      // Mock update queries (one for each order)
-      const mockUpdateQuery = {
-        update: jest.fn().mockReturnThis(),
-        eq: jest.fn(),
-      };
-      (mockUpdateQuery.eq as jest.Mock).mockResolvedValue({ error: null });
-
-      // Mock select query for final fetch
       const mockSelectQuery = {
         select: jest.fn().mockReturnThis(),
-        in: jest.fn(),
-      };
-      (mockSelectQuery.in as jest.Mock).mockResolvedValue({
+        eq: jest.fn().mockReturnThis(),
         data: orders.map(o => ({
           ...mockConnection,
           id: o.id,
           display_order: o.display_order,
         })),
         error: null,
-      });
+        in: jest.fn(),
+      };
+      (mockSelectQuery.in as jest.Mock).mockReturnValue(mockSelectQuery);
 
-      let callCount = 0;
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: null,
+      });
       mockUserSupabase = {
-        from: jest.fn().mockImplementation(() => {
-          callCount++;
-          // First N calls are for updates (one per order), last call is for select
-          if (callCount <= orders.length) {
-            return mockUpdateQuery;
-          }
-          return mockSelectQuery;
-        }),
+        from: jest.fn().mockReturnValue(mockSelectQuery),
+        rpc: mockRpc,
       };
 
       const request = new NextRequest('http://localhost/api/connections', {
@@ -392,6 +404,46 @@ describe('/api/connections', () => {
       expect(response.status).toBe(200);
       expect(json.data).toBeDefined();
       expect(json.data).toHaveLength(2);
+      expect(mockRpc).toHaveBeenCalledWith('reorder_connections_atomic', {
+        p_orders: orders,
+      });
+      expect(mockSelectQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockSelectQuery.in).toHaveBeenCalledWith(
+        'id',
+        orders.map(order => order.id)
+      );
+    });
+
+    it('should return 500 and skip follow-up fetch when atomic reorder fails', async () => {
+      const orders = [
+        { id: '123e4567-e89b-12d3-a456-426614174000', display_order: 0 },
+        { id: '123e4567-e89b-12d3-a456-426614174001', display_order: 1 },
+      ];
+
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Connection not found in organization' },
+      });
+
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'PUT',
+        body: JSON.stringify({ orders }),
+      });
+      const response = await PUT(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(json.error).toBe('Failed to reorder connections');
+      expect(json.error_code).toBe('CONNECTION_REORDER_FAILED');
+      expect(mockRpc).toHaveBeenCalledWith('reorder_connections_atomic', {
+        p_orders: orders,
+      });
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it('should return 400 when orders is not an array', async () => {

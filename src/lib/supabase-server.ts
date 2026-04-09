@@ -79,12 +79,3 @@ export function getAdminSupabase(): SupabaseClient {
 
   return _adminSupabase;
 }
-
-/**
- * @deprecated
- * Keep temporarily for backward compatibility only.
- * Migrate route handlers to getUserSupabase(accessToken) or getAdminSupabase().
- */
-export function getServerSupabase(): SupabaseClient {
-  return getAdminSupabase();
-}

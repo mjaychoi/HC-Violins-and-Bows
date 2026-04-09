@@ -130,6 +130,7 @@ jest.mock('../components/ClientForm', () => {
     isOpen,
     onClose,
     onSubmit,
+    onRetryInstrumentLinks: _onRetryInstrumentLinks, // eslint-disable-line @typescript-eslint/no-unused-vars
     submitting: _submitting, // eslint-disable-line @typescript-eslint/no-unused-vars
   }: {
     isOpen: boolean;
@@ -140,7 +141,14 @@ jest.mock('../components/ClientForm', () => {
         instrument: Instrument;
         relationshipType: ClientInstrument['relationship_type'];
       }>
-    ) => Promise<void>;
+    ) => Promise<unknown>;
+    onRetryInstrumentLinks: (
+      clientId: string,
+      instruments: Array<{
+        instrument: Instrument;
+        relationshipType: ClientInstrument['relationship_type'];
+      }>
+    ) => Promise<unknown>;
     submitting: boolean;
   }) {
     if (!isOpen) return null;
@@ -162,6 +170,46 @@ jest.mock('../components/ClientForm', () => {
           }
         >
           Submit
+        </button>
+        <button
+          data-testid="submit-form-with-instruments-btn"
+          onClick={() =>
+            onSubmit(
+              {
+                first_name: 'New',
+                last_name: 'Client',
+                email: 'new@example.com',
+                contact_number: null,
+                tags: [],
+                interest: '',
+                note: '',
+                client_number: null,
+              },
+              [
+                {
+                  instrument: {
+                    id: 'inst-123',
+                    maker: 'Maker',
+                    type: 'Violin',
+                    subtype: null,
+                    year: 2020,
+                    certificate: false,
+                    size: null,
+                    weight: null,
+                    price: 1000,
+                    ownership: null,
+                    note: null,
+                    serial_number: null,
+                    status: 'Available',
+                    created_at: '2024-01-01T00:00:00Z',
+                  },
+                  relationshipType: 'Interested',
+                },
+              ]
+            )
+          }
+        >
+          Submit With Instruments
         </button>
         <button data-testid="close-form-btn" onClick={onClose}>
           Close
@@ -503,12 +551,8 @@ describe('ClientsPage', () => {
         expect(mockCreateClient).toHaveBeenCalled();
       });
 
-      await waitFor(() => {
-        expect(mockCloseModal).toHaveBeenCalled();
-      });
-
       expect(mockShowSuccess).toHaveBeenCalledWith(
-        'Client added successfully.'
+        'Client created successfully'
       );
     });
 
@@ -568,12 +612,22 @@ describe('ClientsPage', () => {
         closeModal: mockCloseModal,
       } as any);
 
+      const user = userEvent.setup();
       render(<ClientsPage />);
 
-      // Test that handleSubmit can accept instruments parameter
-      // This is tested indirectly through the component's behavior
-      // The actual form submission with instruments would be tested in ClientForm tests
-      expect(mockCreateClient).toBeDefined();
+      await user.click(screen.getByTestId('submit-form-with-instruments-btn'));
+
+      await waitFor(() => {
+        expect(mockAddInstrumentRelationship).toHaveBeenCalledWith(
+          '3',
+          'inst-123',
+          'Interested'
+        );
+      });
+
+      expect(mockShowSuccess).toHaveBeenCalledWith(
+        'Client and instrument links created successfully'
+      );
     });
 
     it('should handle error during client creation', async () => {
@@ -594,17 +648,45 @@ describe('ClientsPage', () => {
       await waitFor(() => {
         expect(mockHandleError).toHaveBeenCalledWith(
           error,
-          'Failed to create client'
+          'Client creation failed'
         );
       });
     });
 
-    it('should handle instrument relationship error during creation', async () => {
-      // This test verifies error handling when instrument relationships fail
-      // The actual form submission with instruments would be tested in ClientForm tests
-      // This test ensures the error handler is properly set up
-      expect(mockHandleError).toBeDefined();
-      expect(mockAddInstrumentRelationship).toBeDefined();
+    it('should show partial success when instrument relationship creation fails', async () => {
+      const user = userEvent.setup();
+      const newClient: Client = {
+        id: '3',
+        first_name: 'New',
+        last_name: 'Client',
+        email: 'new@example.com',
+        contact_number: '',
+        tags: [],
+        interest: '',
+        note: '',
+        client_number: 'CL003',
+        created_at: '2023-01-03T00:00:00Z',
+      };
+      mockCreateClient.mockResolvedValue(newClient);
+      mockAddInstrumentRelationship.mockRejectedValueOnce(
+        new Error('Link failed')
+      );
+      mockUseModalState.mockReturnValue({
+        isOpen: true,
+        openModal: mockOpenModal,
+        closeModal: mockCloseModal,
+      } as any);
+
+      render(<ClientsPage />);
+
+      await user.click(screen.getByTestId('submit-form-with-instruments-btn'));
+
+      await waitFor(() => {
+        expect(mockShowSuccess).toHaveBeenCalledWith(
+          'Client created, but some instrument links failed'
+        );
+      });
+      expect(mockCloseModal).not.toHaveBeenCalled();
     });
   });
 

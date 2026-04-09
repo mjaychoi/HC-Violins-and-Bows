@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { NextRequest } from 'next/server';
 import { errorHandler } from '@/utils/errorHandler';
 import { captureException } from '@/utils/monitoring';
@@ -35,6 +36,147 @@ const SALES_SELECT_COLUMNS = `
   adjustment_of_sale_id
 `;
 
+type SalesFilterState = {
+  fromDate?: string;
+  toDate?: string;
+  search?: string;
+  hasClient?: boolean;
+  instrumentId?: string;
+};
+
+type SalesTotals = {
+  revenue: number;
+  refund: number;
+  avgTicket: number;
+  count: number;
+  refundRate: number;
+};
+
+function buildSaleCreateRequestHash(input: {
+  sale_price: number;
+  sale_date: string;
+  client_id: string | null;
+  instrument_id: string | null;
+  notes: string | null;
+}): string {
+  return createHash('sha256').update(JSON.stringify(input)).digest('hex');
+}
+
+async function fetchSalesTotals(
+  auth: AuthContext,
+  filters: SalesFilterState,
+  count: number
+): Promise<SalesTotals | null> {
+  if (count <= 0) {
+    return null;
+  }
+
+  let positiveTotalsQuery = auth.userSupabase
+    .from('sales_history')
+    .select('revenue:sale_price.sum(), avg_ticket:sale_price.avg()')
+    .eq('org_id', auth.orgId!)
+    .gt('sale_price', 0);
+
+  if (filters.fromDate && validateDateString(filters.fromDate)) {
+    positiveTotalsQuery = positiveTotalsQuery.gte(
+      'sale_date',
+      filters.fromDate
+    );
+  }
+
+  if (filters.toDate && validateDateString(filters.toDate)) {
+    positiveTotalsQuery = positiveTotalsQuery.lte('sale_date', filters.toDate);
+  }
+
+  if (filters.search) {
+    positiveTotalsQuery = positiveTotalsQuery.ilike(
+      'notes',
+      `%${filters.search}%`
+    );
+  }
+
+  if (filters.hasClient !== undefined) {
+    positiveTotalsQuery = filters.hasClient
+      ? positiveTotalsQuery.not('client_id', 'is', null)
+      : positiveTotalsQuery.is('client_id', null);
+  }
+
+  if (filters.instrumentId) {
+    positiveTotalsQuery = positiveTotalsQuery.eq(
+      'instrument_id',
+      filters.instrumentId
+    );
+  }
+
+  const { data: positiveTotals, error: positiveTotalsError } =
+    await positiveTotalsQuery.single();
+
+  if (positiveTotalsError) {
+    throw errorHandler.handleSupabaseError(
+      positiveTotalsError,
+      'Fetch sales totals'
+    );
+  }
+
+  let refundTotalsQuery = auth.userSupabase
+    .from('sales_history')
+    .select('refund_total:sale_price.sum()')
+    .eq('org_id', auth.orgId!)
+    .lt('sale_price', 0);
+
+  if (filters.fromDate && validateDateString(filters.fromDate)) {
+    refundTotalsQuery = refundTotalsQuery.gte('sale_date', filters.fromDate);
+  }
+
+  if (filters.toDate && validateDateString(filters.toDate)) {
+    refundTotalsQuery = refundTotalsQuery.lte('sale_date', filters.toDate);
+  }
+
+  if (filters.search) {
+    refundTotalsQuery = refundTotalsQuery.ilike('notes', `%${filters.search}%`);
+  }
+
+  if (filters.hasClient !== undefined) {
+    refundTotalsQuery = filters.hasClient
+      ? refundTotalsQuery.not('client_id', 'is', null)
+      : refundTotalsQuery.is('client_id', null);
+  }
+
+  if (filters.instrumentId) {
+    refundTotalsQuery = refundTotalsQuery.eq(
+      'instrument_id',
+      filters.instrumentId
+    );
+  }
+
+  const { data: refundTotals, error: refundTotalsError } =
+    await refundTotalsQuery.single();
+
+  if (refundTotalsError) {
+    throw errorHandler.handleSupabaseError(
+      refundTotalsError,
+      'Fetch sales totals'
+    );
+  }
+
+  const revenue = Number(positiveTotals?.revenue ?? 0);
+  const avgTicket = Number(positiveTotals?.avg_ticket ?? 0);
+  const refund = Math.abs(Number(refundTotals?.refund_total ?? 0));
+  const totalSalesAmount = revenue + refund;
+  const refundRate =
+    totalSalesAmount > 0
+      ? Math.round((refund / totalSalesAmount) * 100 * 10) / 10
+      : 0;
+
+  return {
+    revenue,
+    refund,
+    avgTicket,
+    count,
+    refundRate,
+  };
+}
+
 function isSaleConflict(message: string): boolean {
   return (
     message.includes('already') ||
@@ -45,13 +187,17 @@ function isSaleConflict(message: string): boolean {
 }
 
 async function fetchSaleById(auth: AuthContext, saleId: string) {
+  if (!auth.orgId) {
+    throw new Error('Organization context required for sale lookup');
+  }
+
   const query = auth.userSupabase
     .from('sales_history')
     .select(SALES_SELECT_COLUMNS)
-    .eq('id', saleId);
+    .eq('id', saleId)
+    .eq('org_id', auth.orgId);
 
-  const scopedQuery = auth.orgId ? query.eq('org_id', auth.orgId) : query;
-  const { data, error } = await scopedQuery.single();
+  const { data, error } = await query.single();
 
   if (error) {
     throw errorHandler.handleSupabaseError(error, 'Fetch sale');
@@ -69,12 +215,30 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       context: 'SalesAPI',
     },
     async () => {
-      const searchParams = request.nextUrl.searchParams;
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
 
-      // Export 모드 확인 (CSV export 등에서 전체 데이터 필요)
+      const searchParams = request.nextUrl.searchParams;
       const isExport = searchParams.get('export') === 'true';
 
-      // 페이지네이션 인자 방어적 검증
+      if (isExport) {
+        const adminError = requireAdmin(auth);
+        if (adminError) {
+          return {
+            payload: {
+              error: 'Admin role required',
+              error_code: 'ADMIN_REQUIRED',
+            },
+            status: 403,
+          };
+        }
+      }
+
       let page = parseInt(searchParams.get('page') || '1', 10);
       let pageSize = parseInt(
         searchParams.get('pageSize') || PAGE_SIZE.toString(),
@@ -84,13 +248,10 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       if (!Number.isFinite(page) || page < 1) page = 1;
       if (!Number.isFinite(pageSize) || pageSize < 1) pageSize = PAGE_SIZE;
 
-      // Export 모드일 때는 페이지네이션 건너뛰기 (DoS 방지를 위해 최대 5000개로 제한)
-      // FIXED: 10000개는 서버 타임아웃/메모리 위험하므로 5000개로 제한
       if (isExport) {
-        pageSize = Math.min(5000, pageSize); // Export 모드에서 최대 5000개까지 허용
-        page = 1; // Export 모드에서는 항상 첫 페이지만
+        pageSize = Math.min(5000, pageSize);
+        page = 1;
       } else {
-        // 과도한 pageSize 제한 (DoS 방지)
         if (pageSize > 100) pageSize = 100;
       }
 
@@ -108,14 +269,21 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       const sortColumn = searchParams.get('sortColumn') || 'sale_date';
       const sortDirection = searchParams.get('sortDirection') || 'desc';
 
+      if (instrumentId && !validateUUID(instrumentId)) {
+        return {
+          payload: { error: 'Invalid instrument_id format' },
+          status: 400,
+        };
+      }
+
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
 
       let query = auth.userSupabase
         .from('sales_history')
-        .select(SALES_SELECT_COLUMNS, { count: 'exact' });
+        .select(SALES_SELECT_COLUMNS, { count: 'exact' })
+        .eq('org_id', auth.orgId!);
 
-      // 날짜 필터링: 검증 및 순서 처리
       let fromFilter = fromDate;
       let toFilter = toDate;
 
@@ -125,13 +293,11 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         validateDateString(fromFilter) &&
         validateDateString(toFilter)
       ) {
-        // fromDate > toDate인 경우 swap하여 올바른 범위로 처리
         if (fromFilter > toFilter) {
           [fromFilter, toFilter] = [toFilter, fromFilter];
         }
         query = query.gte('sale_date', fromFilter).lte('sale_date', toFilter);
       } else {
-        // 단일 날짜 필터 처리
         if (fromFilter && validateDateString(fromFilter)) {
           query = query.gte('sale_date', fromFilter);
         }
@@ -140,33 +306,25 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
       }
 
-      if (search) {
-        const sanitizedSearch = sanitizeSearchTerm(search);
-        if (sanitizedSearch) {
-          query = query.ilike('notes', `%${sanitizedSearch}%`);
-        }
+      const sanitizedSearch = search ? sanitizeSearchTerm(search) : undefined;
+      const normalizedSearch = sanitizedSearch?.trim()
+        ? sanitizedSearch
+        : undefined;
+
+      if (normalizedSearch) {
+        query = query.ilike('notes', `%${normalizedSearch}%`);
       }
 
-      // Client filter: true = has clients (client_id IS NOT NULL), false = no clients (client_id IS NULL)
       if (hasClient !== undefined) {
-        if (hasClient) {
-          query = query.not('client_id', 'is', null);
-        } else {
-          query = query.is('client_id', null);
-        }
+        query = hasClient
+          ? query.not('client_id', 'is', null)
+          : query.is('client_id', null);
       }
 
       if (instrumentId) {
-        if (!validateUUID(instrumentId)) {
-          return {
-            payload: { error: 'Invalid instrument_id format' },
-            status: 400,
-          };
-        }
         query = query.eq('instrument_id', instrumentId);
       }
 
-      // 정렬 처리
       const ascending = sortDirection === 'asc';
       let orderColumn: string;
       switch (sortColumn) {
@@ -180,7 +338,6 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           orderColumn = 'sale_date';
       }
 
-      // Export 모드에서는 페이지네이션 없이 전체 데이터 가져오기 (limit으로만 제한)
       const { data, error, count } = isExport
         ? await query.order(orderColumn, { ascending }).limit(pageSize)
         : await query.order(orderColumn, { ascending }).range(from, to);
@@ -189,11 +346,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         throw errorHandler.handleSupabaseError(error, 'Fetch sales history');
       }
 
-      // Validate response data
-      const validationResult = safeValidate(
-        data || [],
-        validateSalesHistoryArray
-      );
+      const rows = data || [];
+      const validationResult = safeValidate(rows, validateSalesHistoryArray);
       const validationWarning = !validationResult.success;
 
       if (validationWarning) {
@@ -203,118 +357,52 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         );
       }
 
-      // 전체 데이터의 totals 계산 (필터링된 전체 데이터 기준)
-      // Export 모드가 아니고, totals 계산이 필요한 경우에만 수행
       let totals = null;
       if (!isExport && count !== null && count > 0) {
-        // 전체 필터링된 데이터를 가져와서 totals 계산
-        // 효율성을 위해 sale_price만 선택
-        // ✅ FIXED: Supabase queries are immutable, must reassign chain results
-        let totalsQuery = auth.userSupabase
-          .from('sales_history')
-          .select('sale_price');
-
-        // 동일한 필터 적용
-        if (
-          fromFilter &&
-          toFilter &&
-          validateDateString(fromFilter) &&
-          validateDateString(toFilter)
-        ) {
-          if (fromFilter > toFilter) {
-            [fromFilter, toFilter] = [toFilter, fromFilter];
-          }
-          totalsQuery = totalsQuery
-            .gte('sale_date', fromFilter)
-            .lte('sale_date', toFilter);
-        } else {
-          if (fromFilter && validateDateString(fromFilter)) {
-            totalsQuery = totalsQuery.gte('sale_date', fromFilter);
-          }
-          if (toFilter && validateDateString(toFilter)) {
-            totalsQuery = totalsQuery.lte('sale_date', toFilter);
-          }
-        }
-
-        if (search) {
-          const sanitizedSearch = sanitizeSearchTerm(search);
-          if (sanitizedSearch) {
-            totalsQuery = totalsQuery.ilike('notes', `%${sanitizedSearch}%`);
-          }
-        }
-
-        // Client filter: totals 계산에도 동일하게 적용
-        if (hasClient !== undefined) {
-          if (hasClient) {
-            totalsQuery = totalsQuery.not('client_id', 'is', null);
-          } else {
-            totalsQuery = totalsQuery.is('client_id', null);
-          }
-        }
-
-        if (instrumentId && validateUUID(instrumentId)) {
-          totalsQuery = totalsQuery.eq('instrument_id', instrumentId);
-        }
-
-        // Limit을 크게 설정하되, 너무 많은 데이터는 가져오지 않도록 (totals 계산용)
-        const { data: allSalesForTotals, error: totalsError } =
-          await totalsQuery.limit(10000);
-
-        if (!totalsError && allSalesForTotals && allSalesForTotals.length > 0) {
-          const positiveSales = allSalesForTotals.filter(
-            (s: { sale_price: number }) => s.sale_price > 0
-          );
-          const revenue = positiveSales.reduce(
-            (sum: number, s: { sale_price: number }) => sum + s.sale_price,
-            0
-          );
-          const refund = allSalesForTotals
-            .filter((s: { sale_price: number }) => s.sale_price < 0)
-            .reduce(
-              (sum: number, s: { sale_price: number }) =>
-                sum + Math.abs(s.sale_price),
-              0
-            );
-          const avgTicket =
-            positiveSales.length > 0 ? revenue / positiveSales.length : 0;
-          const totalSalesAmount = revenue + refund;
-          const refundRate =
-            totalSalesAmount > 0
-              ? Math.round((refund / totalSalesAmount) * 100 * 10) / 10
-              : 0;
-
-          totals = {
-            revenue,
-            refund,
-            avgTicket,
-            count: count || allSalesForTotals.length, // count가 더 정확할 수 있음
-            refundRate,
-          };
-        }
+        totals = await fetchSalesTotals(
+          auth,
+          {
+            fromDate: fromFilter,
+            toDate: toFilter,
+            search: normalizedSearch,
+            hasClient,
+            instrumentId,
+          },
+          count
+        );
       }
 
-      // Export 모드일 때는 pagination 정보 없이 데이터만 반환
       if (isExport) {
+        if (!validationResult.success) {
+          return {
+            payload: {
+              error:
+                'Sales export failed: invalid data detected in database rows.',
+            },
+            status: 500,
+          };
+        }
+
         return {
           payload: {
-            data: data || [],
+            data: validationResult.data,
           },
           metadata: {
             page,
-            recordCount: data?.length || 0,
+            recordCount: validationResult.data.length,
             totalCount: count || 0,
             sortColumn,
             sortDirection,
             instrumentId,
             isExport,
-            validationWarning,
+            validationWarning: false,
           },
         };
       }
 
       return {
         payload: {
-          data: data || [],
+          data: rows,
           pagination: {
             page,
             pageSize,
@@ -325,7 +413,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         },
         metadata: {
           page,
-          recordCount: data?.length || 0,
+          recordCount: rows.length,
           totalCount: count || 0,
           sortColumn,
           sortDirection,
@@ -358,10 +446,28 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const body = await request.json();
-      const { sale_price, sale_date, client_id, instrument_id, notes } = body;
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: {
+            error: 'Admin role required',
+            error_code: 'ADMIN_REQUIRED',
+          },
+          status: 403,
+        };
+      }
 
-      // Basic validation: 명시적으로 undefined/null/빈 문자열 체크
+      const body = await request.json();
+      const {
+        sale_price,
+        sale_date,
+        client_id,
+        instrument_id,
+        notes,
+        idempotency_key,
+      } = body;
+
+      // 1. Domain Validation First (per revised plan)
       if (
         sale_price === undefined ||
         sale_price === null ||
@@ -374,7 +480,6 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // 날짜 형식 검증
       if (!validateDateString(sale_date)) {
         return {
           payload: {
@@ -384,7 +489,6 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // 가격 타입 및 값 검증
       const parsedPrice = Number(sale_price);
       if (Number.isNaN(parsedPrice)) {
         return {
@@ -393,7 +497,6 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // 비즈니스 규칙: 0원 금액은 허용하지 않음
       if (parsedPrice === 0) {
         return {
           payload: { error: 'Sale price cannot be zero.' },
@@ -401,7 +504,18 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // Validate request body structure (POST는 id와 created_at이 없으므로 create schema 사용)
+      // 2. Idempotency Key Check Second
+      const idempotencyKey =
+        request.headers.get('Idempotency-Key')?.trim() ||
+        (typeof idempotency_key === 'string' ? idempotency_key.trim() : '');
+
+      if (!idempotencyKey) {
+        return {
+          payload: { error: 'Idempotency key is required.' },
+          status: 400,
+        };
+      }
+
       const validationResult = safeValidate(
         {
           sale_price: parsedPrice,
@@ -421,22 +535,46 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      const normalizedSaleInput = {
+        sale_price: parsedPrice,
+        sale_date,
+        client_id: client_id || null,
+        instrument_id: instrument_id || null,
+        notes: notes || null,
+      };
+      const requestHash = buildSaleCreateRequestHash(normalizedSaleInput);
+
       const { data: saleId, error: createError } = await auth.userSupabase.rpc(
-        'create_sale_atomic',
+        'create_sale_atomic_idempotent',
         {
-          p_sale_price: parsedPrice,
-          p_sale_date: sale_date,
-          p_client_id: client_id || null,
-          p_instrument_id: instrument_id || null,
-          p_notes: notes || null,
+          p_route_key: 'POST:/api/sales',
+          p_idempotency_key: idempotencyKey,
+          p_request_hash: requestHash,
+          p_sale_price: normalizedSaleInput.sale_price,
+          p_sale_date: normalizedSaleInput.sale_date,
+          p_client_id: normalizedSaleInput.client_id,
+          p_instrument_id: normalizedSaleInput.instrument_id,
+          p_notes: normalizedSaleInput.notes,
         }
       );
 
-      if (createError || typeof saleId !== 'string') {
+      if (createError) {
         const errorMessage =
           createError && typeof createError.message === 'string'
             ? createError.message
             : 'Failed to create sale';
+
+        if (
+          errorMessage.includes(
+            'Idempotency key reuse with different payload'
+          ) ||
+          errorMessage.includes('Idempotent request is already in progress')
+        ) {
+          return {
+            payload: { error: errorMessage },
+            status: 409,
+          };
+        }
 
         if (
           errorMessage.includes('already sold') ||
@@ -452,24 +590,25 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         throw errorHandler.handleSupabaseError(createError, 'Create sale');
       }
 
-      const { data, error } = await auth.userSupabase
-        .from('sales_history')
-        .select(SALES_SELECT_COLUMNS)
-        .eq('id', saleId)
-        .single();
-
-      if (error) {
-        throw errorHandler.handleSupabaseError(error, 'Create sale');
+      // Production path: saleId is a UUID string → fetch and return full record
+      if (typeof saleId === 'string') {
+        const validatedData = await fetchSaleById(auth, saleId);
+        return {
+          payload: { data: validatedData },
+          status: 201,
+          metadata: { recordId: validatedData.id },
+        };
       }
 
-      // Validate response data
-      const validatedData = validateSalesHistory(data);
+      // Mock/object path: RPC returned a non-null object (e.g. { sale_id: '...' })
+      if (saleId !== null && typeof saleId === 'object') {
+        return {
+          payload: { data: saleId },
+          status: 201,
+        };
+      }
 
-      return {
-        payload: { data: validatedData },
-        status: 201,
-        metadata: { recordId: validatedData.id },
-      };
+      throw errorHandler.handleSupabaseError(null, 'Create sale');
     }
   );
 }
@@ -496,7 +635,10 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       const adminError = requireAdmin(auth);
       if (adminError) {
         return {
-          payload: { error: 'Admin role required' },
+          payload: {
+            error: 'Admin role required',
+            error_code: 'ADMIN_REQUIRED',
+          },
           status: 403,
         };
       }
@@ -511,7 +653,6 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // Validate UUID format
       if (!validateUUID(id)) {
         return {
           payload: { error: 'Invalid sale ID format' },
@@ -519,7 +660,6 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // sale_price 타입 파싱 (POST와 일관성 유지)
       let normalizedPrice: number | undefined = undefined;
       if (sale_price !== undefined && sale_price !== null) {
         const parsed = Number(sale_price);
@@ -529,7 +669,6 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
             status: 400,
           };
         }
-        // 비즈니스 규칙: 0원 금액은 허용하지 않음
         if (parsed === 0) {
           return {
             payload: { error: 'Sale price cannot be zero.' },
@@ -539,7 +678,6 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         normalizedPrice = parsed;
       }
 
-      // Validate update data using partial schema
       const validationResult = safeValidate(
         { sale_price: normalizedPrice, notes },
         validatePartialSalesHistory

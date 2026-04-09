@@ -472,7 +472,7 @@ describe('salesUtils', () => {
   describe('getDateRangeFromPreset', () => {
     beforeEach(() => {
       jest.useFakeTimers();
-      jest.setSystemTime(new Date('2024-06-15T12:00:00Z'));
+      jest.setSystemTime(Date.parse('2024-06-15T12:00:00Z'));
     });
 
     afterEach(() => {

@@ -30,6 +30,7 @@ import {
 } from './hooks';
 import dynamic from 'next/dynamic';
 import { useLoadingState } from '@/hooks/useLoadingState';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // Dynamic imports for large components to reduce initial bundle size
 const SalesCharts = dynamic(() => import('./components/SalesCharts'), {
@@ -131,6 +132,7 @@ function SalesPageContent() {
     undoRefund,
   } = useSalesHistory();
   const { showSuccess, handleError } = useAppFeedback();
+  const { canExportSales, exportSalesDisabledReason } = usePermissions();
   const { submitting: isMutatingSales, withSubmitting: withSalesSubmitting } =
     useLoadingState();
 
@@ -294,13 +296,29 @@ function SalesPageContent() {
   const handleSendReceipt = useCallback(
     async (sale: EnrichedSale) => {
       try {
-        // Download invoice PDF
-        const invoiceUrl = `/api/invoices/${sale.id}`;
+        const response = await fetch(`/api/invoices/${sale.id}/pdf`);
+
+        if (!response.ok) {
+          throw new Error('Download failed');
+        }
+
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/pdf')) {
+          throw new Error('Invalid file type');
+        }
+
+        const blob = await response.blob();
+        if (blob.size === 0) {
+          throw new Error('Empty file');
+        }
+
+        const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = invoiceUrl;
-        link.download = `invoice-${sale.id.slice(0, 8)}.pdf`;
+        link.href = url;
+        link.download = `invoice-${sale.id}.pdf`;
         document.body.appendChild(link);
         link.click();
+        window.URL.revokeObjectURL(url);
         document.body.removeChild(link);
         showSuccess('Invoice PDF downloaded.');
       } catch (error) {
@@ -315,31 +333,17 @@ function SalesPageContent() {
     setConfirmRefundSale(sale);
   }, []);
 
-  // Confirm refund
-  const handleConfirmRefund = useCallback(async () => {
-    if (!confirmRefundSale || isMutatingSales) return;
-
-    await withSalesSubmitting(async () => {
-      const note = `Refund issued on ${new Date().toISOString()}`;
-      const updated = await refundSale(confirmRefundSale, note);
-      if (updated) {
-        showSuccess('Sale marked as refunded.');
-        setConfirmRefundSale(null);
-        await fetchSales({
-          fromDate: from || undefined,
-          toDate: to || undefined,
-          page,
-          search: search || undefined,
-          hasClient: hasClient !== null ? hasClient : undefined,
-          sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
-          sortDirection,
-        });
-      }
+  const refreshSalesList = useCallback(async () => {
+    await fetchSales({
+      fromDate: from || undefined,
+      toDate: to || undefined,
+      page,
+      search: search || undefined,
+      hasClient: hasClient !== null ? hasClient : undefined,
+      sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
+      sortDirection,
     });
   }, [
-    confirmRefundSale,
-    refundSale,
-    showSuccess,
     fetchSales,
     from,
     to,
@@ -348,6 +352,36 @@ function SalesPageContent() {
     hasClient,
     sortColumn,
     sortDirection,
+  ]);
+
+  // Confirm refund
+  const handleConfirmRefund = useCallback(async () => {
+    if (!confirmRefundSale || isMutatingSales) return;
+
+    await withSalesSubmitting(async () => {
+      const note = `Refund issued on ${new Date().toISOString()}`;
+      const updated = await refundSale(confirmRefundSale, note);
+      if (updated) {
+        setConfirmRefundSale(null);
+        try {
+          await refreshSalesList();
+          showSuccess('Sale marked as refunded.');
+        } catch (error) {
+          handleError(
+            error instanceof Error
+              ? `Sale was marked as refunded, but the sales list failed to refresh. ${error.message}`
+              : 'Sale was marked as refunded, but the sales list failed to refresh.',
+            'Refund sale partially completed'
+          );
+        }
+      }
+    });
+  }, [
+    confirmRefundSale,
+    refundSale,
+    showSuccess,
+    refreshSalesList,
+    handleError,
     isMutatingSales,
     withSalesSubmitting,
   ]);
@@ -365,31 +399,26 @@ function SalesPageContent() {
       const note = `Refund undone on ${new Date().toISOString()}`;
       const updated = await undoRefund(confirmUndoRefundSale, note);
       if (updated) {
-        showSuccess('Refund has been undone.');
         setConfirmUndoRefundSale(null);
-        await fetchSales({
-          fromDate: from || undefined,
-          toDate: to || undefined,
-          page,
-          search: search || undefined,
-          hasClient: hasClient !== null ? hasClient : undefined,
-          sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
-          sortDirection,
-        });
+        try {
+          await refreshSalesList();
+          showSuccess('Refund has been undone.');
+        } catch (error) {
+          handleError(
+            error instanceof Error
+              ? `Refund was undone, but the sales list failed to refresh. ${error.message}`
+              : 'Refund was undone, but the sales list failed to refresh.',
+            'Undo refund partially completed'
+          );
+        }
       }
     });
   }, [
     confirmUndoRefundSale,
     undoRefund,
     showSuccess,
-    fetchSales,
-    from,
-    to,
-    page,
-    search,
-    hasClient,
-    sortColumn,
-    sortDirection,
+    refreshSalesList,
+    handleError,
     isMutatingSales,
     withSalesSubmitting,
   ]);
@@ -420,34 +449,24 @@ function SalesPageContent() {
           throw new Error(errorData.error || 'Failed to update sale');
         }
 
-        showSuccess('Sale updated successfully.');
-        // 데이터 새로고침
-        await fetchSales({
-          fromDate: from || undefined,
-          toDate: to || undefined,
-          page,
-          search: search || undefined,
-          hasClient: hasClient !== null ? hasClient : undefined,
-          sortColumn: sortColumn === 'client_name' ? undefined : sortColumn,
-          sortDirection,
-        });
+        try {
+          await refreshSalesList();
+          showSuccess('Sale updated successfully.');
+        } catch (refreshError) {
+          const partialError = new Error(
+            refreshError instanceof Error
+              ? `Sale was updated, but the sales list failed to refresh. ${refreshError.message}`
+              : 'Sale was updated, but the sales list failed to refresh.'
+          );
+          handleError(partialError, 'Update sale partially completed');
+          throw partialError;
+        }
       } catch (error) {
         handleError(error, 'Update sale');
         throw error; // 인라인 편집 훅에서 에러 처리하도록
       }
     },
-    [
-      showSuccess,
-      handleError,
-      fetchSales,
-      from,
-      to,
-      page,
-      search,
-      hasClient,
-      sortColumn,
-      sortDirection,
-    ]
+    [showSuccess, handleError, refreshSalesList]
   );
 
   // Export CSV loading state
@@ -584,6 +603,8 @@ function SalesPageContent() {
               onExportCSV={handleExportCSV}
               isExportingCSV={isExportingCSV}
               hasData={enrichedSales.length > 0}
+              canExportCSV={canExportSales}
+              exportDisabledReason={exportSalesDisabledReason}
             />
 
             <SalesSummary totals={totals} period={periodInfo} />

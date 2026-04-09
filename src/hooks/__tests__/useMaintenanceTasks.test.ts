@@ -1,9 +1,12 @@
 // src/hooks/__tests__/useMaintenanceTasks.test.ts
 import { renderHook, act, waitFor } from '@/test-utils/render';
-import { useMaintenanceTasks } from '../useMaintenanceTasks';
+import {
+  __resetMaintenanceTasksReadCacheForTests,
+  useMaintenanceTasks,
+} from '../useMaintenanceTasks';
 import { MaintenanceTask, TaskType, TaskStatus, TaskPriority } from '@/types';
-import { dataService } from '@/services/dataService';
 import { apiFetch } from '@/utils/apiFetch';
+import { ApiResponseError } from '@/utils/handleApiResponse';
 
 // ✅ FIXED: ToastProvider도 export하도록 mock 수정
 jest.mock('@/contexts/ToastContext', () => {
@@ -16,32 +19,8 @@ jest.mock('@/contexts/ToastContext', () => {
   };
 });
 
-// Mock apiClient to prevent actual Supabase calls
-jest.mock('@/utils/apiClient', () => ({
-  apiClient: {
-    query: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-  },
-}));
-
 jest.mock('@/utils/apiFetch', () => ({
   apiFetch: jest.fn(),
-}));
-
-// Mock dataService
-jest.mock('@/services/dataService', () => ({
-  dataService: {
-    fetchMaintenanceTasks: jest.fn(),
-    fetchMaintenanceTaskById: jest.fn(),
-    createMaintenanceTask: jest.fn(),
-    updateMaintenanceTask: jest.fn(),
-    deleteMaintenanceTask: jest.fn(),
-    fetchTasksByDateRange: jest.fn(),
-    fetchTasksByScheduledDate: jest.fn(),
-    fetchOverdueTasks: jest.fn(),
-  },
 }));
 
 describe('useMaintenanceTasks', () => {
@@ -69,14 +48,14 @@ describe('useMaintenanceTasks', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Reset all mocks - each test should set up its own mocks
-    // Set default mock that returns empty to prevent undefined errors
-    // Individual tests will override with mockResolvedValueOnce
-    (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValue({
-      data: [],
-      error: null,
+    __resetMaintenanceTasksReadCacheForTests();
+    // Default: all apiFetch calls return empty success to prevent undefined errors.
+    // Individual tests override with mockResolvedValueOnce.
+    (apiFetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({ data: [] }),
     });
-    (apiFetch as jest.Mock).mockReset();
   });
 
   describe('Initialization', () => {
@@ -101,9 +80,10 @@ describe('useMaintenanceTasks', () => {
         task_type: 'repair' as TaskType,
       };
 
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
-        data: [mockTask],
-        error: null,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: [mockTask] }),
       });
 
       const { result } = renderHook(() => useMaintenanceTasks(initialFilters));
@@ -115,8 +95,11 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      expect(dataService.fetchMaintenanceTasks).toHaveBeenCalledWith(
-        initialFilters
+      expect(apiFetch).toHaveBeenCalledWith(
+        expect.stringContaining('status=pending')
+      );
+      expect(apiFetch).toHaveBeenCalledWith(
+        expect.stringContaining('task_type=repair')
       );
     });
   });
@@ -124,9 +107,10 @@ describe('useMaintenanceTasks', () => {
   describe('fetchTasks', () => {
     it('should fetch tasks successfully', async () => {
       const mockTasks = [mockTask];
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValue({
-        data: mockTasks,
-        error: null,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: mockTasks }),
       });
 
       const { result } = renderHook(() =>
@@ -146,14 +130,19 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      expect(dataService.fetchMaintenanceTasks).toHaveBeenCalled();
+      expect(apiFetch).toHaveBeenCalledWith('/api/maintenance-tasks');
     });
 
     it('should handle fetch tasks error', async () => {
-      const fetchError = new Error('Fetch failed');
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValue({
-        data: null,
-        error: fetchError,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: jest.fn().mockResolvedValue({
+          message: 'Fetch failed',
+          error_code: 'TASK_FETCH_FAILED',
+          retryable: true,
+          details: { hint: 'retry later' },
+        }),
       });
 
       const { result } = renderHook(() =>
@@ -168,12 +157,20 @@ describe('useMaintenanceTasks', () => {
         () => {
           expect(result.current.loading.fetch).toBe(false);
           expect(result.current.loading.mutate).toBe(false);
-          expect(result.current.error).toBe(fetchError);
+          expect(result.current.error).toBeDefined();
         },
         { timeout: 3000 }
       );
 
       expect(result.current.tasks).toEqual([]);
+      expect(result.current.error).toBeInstanceOf(ApiResponseError);
+      expect(result.current.error).toMatchObject({
+        message: 'Fetch failed',
+        error_code: 'TASK_FETCH_FAILED',
+        retryable: true,
+        details: { hint: 'retry later' },
+        status: 500,
+      });
     });
 
     it('should fetch tasks with filters', async () => {
@@ -183,11 +180,10 @@ describe('useMaintenanceTasks', () => {
       };
       const mockTasks = [mockTask];
 
-      // Clear and reset mock
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockClear();
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
-        data: mockTasks,
-        error: null,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: mockTasks }),
       });
 
       const { result } = renderHook(() =>
@@ -205,18 +201,22 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      expect(dataService.fetchMaintenanceTasks).toHaveBeenCalledWith(filters);
+      expect(apiFetch).toHaveBeenCalledWith(
+        expect.stringContaining('status=pending')
+      );
+      expect(apiFetch).toHaveBeenCalledWith(
+        expect.stringContaining('task_type=repair')
+      );
     });
   });
 
   describe('fetchTaskById', () => {
     it('should fetch task by id successfully', async () => {
-      (dataService.fetchMaintenanceTaskById as jest.Mock).mockResolvedValueOnce(
-        {
-          data: mockTask,
-          error: null,
-        }
-      );
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: mockTask }),
+      });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -236,17 +236,15 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(fetchedTask).toEqual(mockTask);
-      expect(dataService.fetchMaintenanceTaskById).toHaveBeenCalledWith('1');
+      expect(apiFetch).toHaveBeenCalledWith('/api/maintenance-tasks?id=1');
     });
 
     it('should handle fetch task by id error', async () => {
-      const fetchError = new Error('Fetch failed');
-      (dataService.fetchMaintenanceTaskById as jest.Mock).mockResolvedValueOnce(
-        {
-          data: null,
-          error: fetchError,
-        }
-      );
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: jest.fn().mockResolvedValue({ error: 'Not found' }),
+      });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -266,7 +264,7 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(fetchedTask).toBeNull();
-      expect(result.current.error).toBe(fetchError);
+      expect(result.current.error).toBeDefined();
     });
   });
 
@@ -361,32 +359,48 @@ describe('useMaintenanceTasks', () => {
         notes: null,
       };
 
-      const createError = new Error('Create failed');
       (apiFetch as jest.Mock).mockResolvedValue({
         ok: false,
         status: 500,
-        json: jest.fn().mockResolvedValue({ error: createError }),
+        json: jest.fn().mockResolvedValue({
+          message: 'Create failed',
+          error_code: 'TASK_CREATE_FAILED',
+          retryable: false,
+          details: { field: 'title' },
+        }),
       });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
       );
 
-      let createdTaskResult: MaintenanceTask | null = null;
       await act(async () => {
-        createdTaskResult = await result.current.createTask(newTaskData);
+        await expect(
+          result.current.createTask(newTaskData)
+        ).rejects.toMatchObject({
+          message: 'Create failed',
+          error_code: 'TASK_CREATE_FAILED',
+          retryable: false,
+          details: { field: 'title' },
+          status: 500,
+        });
       });
 
       await waitFor(
         () => {
           expect(result.current.loading.fetch).toBe(false);
           expect(result.current.loading.mutate).toBe(false);
-          expect(result.current.error).toBe(createError);
+          expect(result.current.error).toMatchObject({
+            message: 'Create failed',
+            error_code: 'TASK_CREATE_FAILED',
+            retryable: false,
+            details: { field: 'title' },
+            status: 500,
+          });
         },
         { timeout: 3000 }
       );
 
-      expect(createdTaskResult).toBeNull();
       expect(result.current.tasks).toEqual([]);
     });
   });
@@ -490,7 +504,6 @@ describe('useMaintenanceTasks', () => {
     });
 
     it('should handle update task error', async () => {
-      const updateError = new Error('Update failed');
       (apiFetch as jest.Mock)
         .mockResolvedValueOnce({
           ok: true,
@@ -500,7 +513,11 @@ describe('useMaintenanceTasks', () => {
         .mockResolvedValueOnce({
           ok: false,
           status: 500,
-          json: jest.fn().mockResolvedValue({ error: updateError }),
+          json: jest.fn().mockResolvedValue({
+            message: 'Update failed',
+            error_code: 'TASK_UPDATE_FAILED',
+            retryable: true,
+          }),
         });
 
       const { result } = renderHook(() =>
@@ -537,10 +554,16 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      let updatedTaskResult: MaintenanceTask | null = null;
       await act(async () => {
-        updatedTaskResult = await result.current.updateTask('1', {
-          title: 'Updated Repair',
+        await expect(
+          result.current.updateTask('1', {
+            title: 'Updated Repair',
+          })
+        ).rejects.toMatchObject({
+          message: 'Update failed',
+          error_code: 'TASK_UPDATE_FAILED',
+          retryable: true,
+          status: 500,
         });
       });
 
@@ -552,8 +575,12 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      expect(updatedTaskResult).toBeNull();
-      expect(result.current.error).toBe(updateError);
+      expect(result.current.error).toMatchObject({
+        message: 'Update failed',
+        error_code: 'TASK_UPDATE_FAILED',
+        retryable: true,
+        status: 500,
+      });
       // Task should not be updated
       await waitFor(
         () => {
@@ -649,7 +676,6 @@ describe('useMaintenanceTasks', () => {
     });
 
     it('should handle delete task error', async () => {
-      const deleteError = new Error('Delete failed');
       (apiFetch as jest.Mock)
         .mockResolvedValueOnce({
           ok: true,
@@ -659,7 +685,11 @@ describe('useMaintenanceTasks', () => {
         .mockResolvedValueOnce({
           ok: false,
           status: 500,
-          json: jest.fn().mockResolvedValue({ error: deleteError }),
+          json: jest.fn().mockResolvedValue({
+            message: 'Delete failed',
+            error_code: 'TASK_DELETE_FAILED',
+            retryable: false,
+          }),
         });
 
       const { result } = renderHook(() =>
@@ -698,7 +728,12 @@ describe('useMaintenanceTasks', () => {
 
       // Now try to delete the task (should fail)
       await act(async () => {
-        await result.current.deleteTask('1');
+        await expect(result.current.deleteTask('1')).rejects.toMatchObject({
+          message: 'Delete failed',
+          error_code: 'TASK_DELETE_FAILED',
+          retryable: false,
+          status: 500,
+        });
       });
 
       await waitFor(
@@ -709,7 +744,12 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      expect(result.current.error).toBe(deleteError);
+      expect(result.current.error).toMatchObject({
+        message: 'Delete failed',
+        error_code: 'TASK_DELETE_FAILED',
+        retryable: false,
+        status: 500,
+      });
       // Task should not be deleted
       await waitFor(
         () => {
@@ -727,9 +767,10 @@ describe('useMaintenanceTasks', () => {
   describe('fetchTasksByDateRange', () => {
     it('should fetch tasks by date range successfully', async () => {
       const mockTasks = [mockTask];
-      (dataService.fetchTasksByDateRange as jest.Mock).mockResolvedValueOnce({
-        data: mockTasks,
-        error: null,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: mockTasks }),
       });
 
       const { result } = renderHook(() =>
@@ -755,9 +796,8 @@ describe('useMaintenanceTasks', () => {
 
       // Check that tasks were fetched
       expect(fetchedTasks).toEqual(mockTasks);
-      expect(dataService.fetchTasksByDateRange).toHaveBeenCalledWith(
-        '2024-01-01',
-        '2024-01-31'
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/api/maintenance-tasks?start_date=2024-01-01&end_date=2024-01-31'
       );
 
       // Note: fetchTasksByDateRange merges tasks into the existing tasks array
@@ -772,10 +812,10 @@ describe('useMaintenanceTasks', () => {
     });
 
     it('should handle fetch tasks by date range error', async () => {
-      const fetchError = new Error('Fetch failed');
-      (dataService.fetchTasksByDateRange as jest.Mock).mockResolvedValueOnce({
-        data: null,
-        error: fetchError,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: jest.fn().mockResolvedValue({ error: 'Fetch failed' }),
       });
 
       const { result } = renderHook(() =>
@@ -799,18 +839,17 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(fetchedTasks).toEqual([]);
-      expect(result.current.error).toBe(fetchError);
+      expect(result.current.error).toBeDefined();
     });
   });
 
   describe('fetchTasksByScheduledDate', () => {
     it('should fetch tasks by scheduled date successfully', async () => {
       const mockTasks = [mockTask];
-      (
-        dataService.fetchTasksByScheduledDate as jest.Mock
-      ).mockResolvedValueOnce({
-        data: mockTasks,
-        error: null,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: mockTasks }),
       });
 
       const { result } = renderHook(() =>
@@ -832,18 +871,16 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(fetchedTasks).toEqual(mockTasks);
-      expect(dataService.fetchTasksByScheduledDate).toHaveBeenCalledWith(
-        '2024-01-05'
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/api/maintenance-tasks?scheduled_date=2024-01-05'
       );
     });
 
     it('should handle fetch tasks by scheduled date error', async () => {
-      const fetchError = new Error('Fetch failed');
-      (
-        dataService.fetchTasksByScheduledDate as jest.Mock
-      ).mockResolvedValueOnce({
-        data: null,
-        error: fetchError,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: jest.fn().mockResolvedValue({ error: 'Fetch failed' }),
       });
 
       const { result } = renderHook(() =>
@@ -865,16 +902,17 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(fetchedTasks).toEqual([]);
-      expect(result.current.error).toBe(fetchError);
+      expect(result.current.error).toBeDefined();
     });
   });
 
   describe('fetchOverdueTasks', () => {
     it('should fetch overdue tasks successfully', async () => {
       const mockTasks = [mockTask];
-      (dataService.fetchOverdueTasks as jest.Mock).mockResolvedValueOnce({
-        data: mockTasks,
-        error: null,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: mockTasks }),
       });
 
       const { result } = renderHook(() =>
@@ -895,14 +933,16 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(fetchedTasks).toEqual(mockTasks);
-      expect(dataService.fetchOverdueTasks).toHaveBeenCalled();
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/api/maintenance-tasks?overdue=true'
+      );
     });
 
     it('should handle fetch overdue tasks error', async () => {
-      const fetchError = new Error('Fetch failed');
-      (dataService.fetchOverdueTasks as jest.Mock).mockResolvedValueOnce({
-        data: null,
-        error: fetchError,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: jest.fn().mockResolvedValue({ error: 'Fetch failed' }),
       });
 
       const { result } = renderHook(() =>
@@ -923,25 +963,18 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(fetchedTasks).toEqual([]);
-      expect(result.current.error).toBe(fetchError);
+      expect(result.current.error).toBeDefined();
     });
   });
 
   describe('Loading state', () => {
     it('should set loading state correctly during fetch', async () => {
-      let resolveFetch:
-        | ((value: { data: MaintenanceTask[]; error: null }) => void)
-        | null = null;
-      const fetchPromise = new Promise<{
-        data: MaintenanceTask[];
-        error: null;
-      }>(resolve => {
-        resolveFetch = resolve;
+      let resolveApiFetch: ((value: Response) => void) | null = null;
+      const fetchPromise = new Promise<Response>(resolve => {
+        resolveApiFetch = resolve;
       });
 
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockImplementation(
-        () => fetchPromise
-      );
+      (apiFetch as jest.Mock).mockReturnValueOnce(fetchPromise);
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -962,8 +995,12 @@ describe('useMaintenanceTasks', () => {
 
       // Resolve the promise
       await act(async () => {
-        if (resolveFetch) {
-          resolveFetch({ data: [], error: null });
+        if (resolveApiFetch) {
+          resolveApiFetch({
+            ok: true,
+            status: 200,
+            json: jest.fn().mockResolvedValue({ data: [] }),
+          } as unknown as Response);
         }
       });
 
@@ -994,13 +1031,19 @@ describe('useMaintenanceTasks', () => {
         title: 'Updated Title',
       };
 
-      // Clear and reset mock
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockClear();
-      // First, set up some existing tasks
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
-        data: [existingTask],
-        error: null,
-      });
+      (apiFetch as jest.Mock)
+        // First call: fetchTasks
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [existingTask] }),
+        })
+        // Second call: fetchTasksByDateRange
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [newTask, duplicateTask] }),
+        });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -1017,12 +1060,6 @@ describe('useMaintenanceTasks', () => {
         },
         { timeout: 3000 }
       );
-
-      // Now fetch by date range with new and duplicate tasks
-      (dataService.fetchTasksByDateRange as jest.Mock).mockResolvedValueOnce({
-        data: [newTask, duplicateTask],
-        error: null,
-      });
 
       await act(async () => {
         await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
@@ -1052,9 +1089,10 @@ describe('useMaintenanceTasks', () => {
     });
 
     it('should handle empty date range results', async () => {
-      (dataService.fetchTasksByDateRange as jest.Mock).mockResolvedValueOnce({
-        data: [],
-        error: null,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: [] }),
       });
 
       const { result } = renderHook(() =>
@@ -1080,6 +1118,33 @@ describe('useMaintenanceTasks', () => {
       expect(fetchedTasks).toEqual([]);
       expect(result.current.tasks).toEqual([]);
     });
+
+    it('should reuse cached date range results for identical filters', async () => {
+      const rangeTasks: MaintenanceTask[] = [
+        { ...mockTask, id: 'cached-1', title: 'Cached Task' },
+      ];
+
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: rangeTasks }),
+      });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      });
+
+      await act(async () => {
+        await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      });
+
+      expect(apiFetch).toHaveBeenCalledTimes(1);
+      expect(result.current.tasks).toEqual(rangeTasks);
+    });
   });
 
   describe('fetchTasksByScheduledDate - duplicate handling', () => {
@@ -1094,13 +1159,19 @@ describe('useMaintenanceTasks', () => {
         title: 'New Scheduled Task',
       };
 
-      // Clear and reset mock
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockClear();
-      // First, set up some existing tasks
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
-        data: [existingTask],
-        error: null,
-      });
+      (apiFetch as jest.Mock)
+        // First call: fetchTasks
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [existingTask] }),
+        })
+        // Second call: fetchTasksByScheduledDate
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [newTask] }),
+        });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -1117,14 +1188,6 @@ describe('useMaintenanceTasks', () => {
         },
         { timeout: 3000 }
       );
-
-      // Now fetch by scheduled date with new task
-      (
-        dataService.fetchTasksByScheduledDate as jest.Mock
-      ).mockResolvedValueOnce({
-        data: [newTask],
-        error: null,
-      });
 
       await act(async () => {
         await result.current.fetchTasksByScheduledDate('2024-01-05');
@@ -1156,15 +1219,17 @@ describe('useMaintenanceTasks', () => {
       const task1: MaintenanceTask = { ...mockTask, id: '1' };
       const task2: MaintenanceTask = { ...mockTask, id: '2', title: 'Task 2' };
 
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
-        data: [task1],
-        error: null,
-      });
-
-      (dataService.fetchTasksByDateRange as jest.Mock).mockResolvedValueOnce({
-        data: [task2],
-        error: null,
-      });
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [task1] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [task2] }),
+        });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -1282,17 +1347,18 @@ describe('useMaintenanceTasks', () => {
         status: 'pending' as TaskStatus,
       };
 
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
-        data: [mockTask],
-        error: null,
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: [mockTask] }),
       });
 
       renderHook(() => useMaintenanceTasks(filters));
 
       await waitFor(
         () => {
-          expect(dataService.fetchMaintenanceTasks).toHaveBeenCalledWith(
-            filters
+          expect(apiFetch).toHaveBeenCalledWith(
+            expect.stringContaining('status=pending')
           );
         },
         { timeout: 3000 }
@@ -1300,37 +1366,31 @@ describe('useMaintenanceTasks', () => {
     });
 
     it('should not fetch tasks on mount when no initialFilters and autoFetch is false', async () => {
-      // Reset mock completely before this test
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockReset();
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValue({
-        data: [],
-        error: null,
-      });
+      (apiFetch as jest.Mock).mockReset();
 
       renderHook(() => useMaintenanceTasks({ autoFetch: false }));
 
       // Wait for initial render and useEffect to complete
       await new Promise(resolve => setTimeout(resolve, 200));
 
-      // Should not call fetchMaintenanceTasks when autoFetch is false
-      // Note: mockClear was called, so we check that no calls were made
-      expect(dataService.fetchMaintenanceTasks).not.toHaveBeenCalled();
+      // Should not call apiFetch when autoFetch is false
+      expect(apiFetch).not.toHaveBeenCalled();
     });
   });
 
   describe('Error state reset', () => {
     it('should reset error state on successful operation after error', async () => {
-      const error = new Error('Initial error');
-      let callCount = 0;
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockImplementation(
-        () => {
-          callCount++;
-          if (callCount === 1) {
-            return Promise.resolve({ data: null, error });
-          }
-          return Promise.resolve({ data: [mockTask], error: null });
-        }
-      );
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          json: jest.fn().mockResolvedValue({ error: 'Initial error' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [mockTask] }),
+        });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -1342,7 +1402,8 @@ describe('useMaintenanceTasks', () => {
 
       await waitFor(
         () => {
-          expect(result.current.error).toBe(error);
+          expect(result.current.error).toBeDefined();
+          expect(result.current.error).not.toBeNull();
         },
         { timeout: 3000 }
       );
@@ -1374,13 +1435,19 @@ describe('useMaintenanceTasks', () => {
         title: 'Overdue Task',
       };
 
-      // Clear and reset mock
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockClear();
-      // Set up existing tasks
-      (dataService.fetchMaintenanceTasks as jest.Mock).mockResolvedValueOnce({
-        data: [existingTask],
-        error: null,
-      });
+      (apiFetch as jest.Mock)
+        // First call: fetchTasks
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [existingTask] }),
+        })
+        // Second call: fetchOverdueTasks
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [overdueTask] }),
+        });
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -1397,12 +1464,6 @@ describe('useMaintenanceTasks', () => {
         },
         { timeout: 3000 }
       );
-
-      // Fetch overdue tasks - this should NOT modify tasks state
-      (dataService.fetchOverdueTasks as jest.Mock).mockResolvedValueOnce({
-        data: [overdueTask],
-        error: null,
-      });
 
       let fetchedTasks: MaintenanceTask[] = [];
       await act(async () => {

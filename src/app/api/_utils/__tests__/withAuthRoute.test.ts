@@ -57,42 +57,39 @@ describe('withAuthRoute', () => {
     // Defaults used by auth util
     process.env.SUPABASE_URL = 'https://test.supabase.co';
     process.env.SUPABASE_ANON_KEY = 'test-anon-key';
-
-    // Avoid env leakage across tests
-    delete process.env.E2E_BYPASS_AUTH;
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
     setNodeEnv(originalNodeEnv);
-    delete process.env.E2E_BYPASS_AUTH;
   });
 
-  describe('test environment bypass', () => {
-    it('should bypass auth in test environment', async () => {
+  describe('test environment', () => {
+    it('should require real auth instead of bypassing in test environment', async () => {
       setNodeEnv('test');
 
+      const mockAuth = {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: 'Invalid token' },
+        }),
+      };
+      mockCreateClient.mockReturnValue({ auth: mockAuth } as any);
+
       const wrappedHandler = withAuthRoute(mockHandler);
-      const request = makeReq();
+      const request = makeReq('http://localhost/api/test', {
+        headers: { authorization: 'Bearer invalid-token' },
+      });
 
       const response = await wrappedHandler(request);
       const json = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(json.success).toBe(true);
-      expect(json.userId).toBe('test-user');
-      expect(json.role).toBe('admin');
-      expect(json.orgId).toBe('test-org');
-      expect(mockHandler).toHaveBeenCalledWith(
-        request,
-        expect.objectContaining({
-          user: expect.objectContaining({ id: 'test-user' }),
-          role: 'admin',
-          orgId: 'test-org',
-        })
-      );
-
+      expect(response.status).toBe(401);
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
+      expect(mockHandler).not.toHaveBeenCalled();
       expect(mockCreateClient).toHaveBeenCalled();
+      expect(mockAuth.getUser).toHaveBeenCalled();
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
   });
@@ -124,7 +121,8 @@ describe('withAuthRoute', () => {
       const json = await response.json();
 
       expect(response.status).toBe(401);
-      expect(json.error).toBe('Unauthorized');
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
       expect(mockHandler).not.toHaveBeenCalled();
 
       // benign invalid token => should not capture
@@ -151,7 +149,8 @@ describe('withAuthRoute', () => {
       const json = await response.json();
 
       expect(response.status).toBe(401);
-      expect(json.error).toBe('Unauthorized');
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
       expect(mockHandler).not.toHaveBeenCalled();
 
       expect(mockCaptureException).not.toHaveBeenCalled();
@@ -159,14 +158,16 @@ describe('withAuthRoute', () => {
       expect(mockAuth.getUser).toHaveBeenCalled();
     });
 
-    it.skip('should require valid auth token in production', async () => {
-      const mockUser = { id: 'real-user-id', email: 'user@example.com' };
+    it('should require a valid auth token in production', async () => {
+      const mockUser = {
+        id: 'real-user-id',
+        email: 'user@example.com',
+        app_metadata: { org_id: 'org-123', role: 'admin' },
+        user_metadata: {},
+      };
       const mockAuth = {
-        getSession: jest.fn().mockResolvedValue({
-          data: {
-            session: { user: mockUser },
-            user: mockUser,
-          },
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: mockUser },
           error: null,
         }),
       };
@@ -183,10 +184,51 @@ describe('withAuthRoute', () => {
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
       expect(json.userId).toBe('real-user-id');
-      expect(mockHandler).toHaveBeenCalledWith(request, mockUser);
+      expect(json.role).toBe('admin');
+      expect(json.orgId).toBe('org-123');
+      expect(mockHandler).toHaveBeenCalledWith(
+        request,
+        expect.objectContaining({
+          user: expect.objectContaining({ id: 'real-user-id' }),
+          accessToken: 'valid-token',
+          orgId: 'org-123',
+          role: 'admin',
+          isTestBypass: false,
+        })
+      );
       expect(mockCreateClient).toHaveBeenCalled();
-      expect(mockAuth.getSession).toHaveBeenCalled();
+      expect(mockAuth.getUser).toHaveBeenCalled();
       expect(mockCaptureException).not.toHaveBeenCalled();
+    });
+
+    it('should ignore malicious org and role values in user_metadata', async () => {
+      const mockUser = {
+        id: 'real-user-id',
+        email: 'user@example.com',
+        app_metadata: { org_id: 'org-from-app-meta', role: 'member' },
+        user_metadata: { org_id: 'evil-org', role: 'admin' },
+      };
+      const mockAuth = {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: mockUser },
+          error: null,
+        }),
+      };
+      mockCreateClient.mockReturnValue({ auth: mockAuth } as any);
+
+      const wrappedHandler = withAuthRoute(mockHandler);
+      const request = makeReq('http://localhost/api/test', {
+        headers: { authorization: 'Bearer valid-token' },
+      });
+
+      const response = await wrappedHandler(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.role).toBe('member');
+      expect(json.orgId).toBe('org-from-app-meta');
+      expect(json.role).not.toBe('admin');
+      expect(json.orgId).not.toBe('evil-org');
     });
   });
 
@@ -195,40 +237,53 @@ describe('withAuthRoute', () => {
       setNodeEnv('development');
     });
 
-    it('should bypass auth with E2E_BYPASS_AUTH env var', async () => {
+    it('should ignore E2E_BYPASS_AUTH and require real auth', async () => {
       process.env.E2E_BYPASS_AUTH = 'true';
       process.env.E2E_BYPASS_SECRET = 'secret';
 
+      const mockAuth = {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: 'Invalid token' },
+        }),
+      };
+      mockCreateClient.mockReturnValue({ auth: mockAuth } as any);
+
       const wrappedHandler = withAuthRoute(mockHandler);
       const request = makeReq('http://localhost/api/test', {
-        headers: { 'x-e2e-bypass-secret': 'secret' },
+        headers: {
+          authorization: 'Bearer invalid-token',
+          'x-e2e-bypass-secret': 'secret',
+        },
       });
 
       const response = await wrappedHandler(request);
       const json = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(json.success).toBe(true);
-      expect(json.userId).toBe('test-user');
-      expect(json.role).toBe('admin');
-
-      expect(mockHandler).toHaveBeenCalledWith(
-        request,
-        expect.objectContaining({
-          user: expect.objectContaining({ id: 'test-user' }),
-          role: 'admin',
-        })
-      );
+      expect(response.status).toBe(401);
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
+      expect(mockHandler).not.toHaveBeenCalled();
       expect(mockCreateClient).toHaveBeenCalled();
+      expect(mockAuth.getUser).toHaveBeenCalled();
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
 
-    it('should bypass auth with x-e2e-bypass header', async () => {
+    it('should ignore x-e2e-bypass header and require real auth', async () => {
       process.env.E2E_BYPASS_SECRET = 'secret';
+
+      const mockAuth = {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: 'Invalid token' },
+        }),
+      };
+      mockCreateClient.mockReturnValue({ auth: mockAuth } as any);
 
       const wrappedHandler = withAuthRoute(mockHandler);
       const request = makeReq('http://localhost/api/test', {
         headers: {
+          authorization: 'Bearer invalid-token',
           'x-e2e-bypass': '1',
           'x-e2e-bypass-secret': 'secret',
         },
@@ -237,17 +292,57 @@ describe('withAuthRoute', () => {
       const response = await wrappedHandler(request);
       const json = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(json.success).toBe(true);
-      expect(json.userId).toBe('test-user');
-
+      expect(response.status).toBe(401);
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
+      expect(mockHandler).not.toHaveBeenCalled();
       expect(mockCreateClient).toHaveBeenCalled();
+      expect(mockAuth.getUser).toHaveBeenCalled();
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
+  });
 
-    it.skip('should not bypass auth without bypass header or env var', async () => {
-      delete process.env.E2E_BYPASS_AUTH;
+  describe('getUserFromRequest (via wrapper)', () => {
+    beforeEach(() => {
+      setNodeEnv('development');
+    });
 
+    it('should return 401 when authorization header is missing', async () => {
+      const wrappedHandler = withAuthRoute(mockHandler);
+      const request = makeReq();
+
+      const response = await wrappedHandler(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
+
+      expect(mockHandler).not.toHaveBeenCalled();
+      // Missing token is benign
+      expect(mockCaptureException).not.toHaveBeenCalled();
+      expect(mockCreateClient).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 when bearer token is empty', async () => {
+      const wrappedHandler = withAuthRoute(mockHandler);
+      const request = makeReq('http://localhost/api/test', {
+        headers: { authorization: 'Bearer ' },
+      });
+
+      const response = await wrappedHandler(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
+
+      expect(mockHandler).not.toHaveBeenCalled();
+      expect(mockCaptureException).not.toHaveBeenCalled();
+      expect(mockCreateClient).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 when token is invalid', async () => {
       const mockAuth = {
         getUser: jest.fn().mockResolvedValue({
           data: { user: null },
@@ -265,82 +360,13 @@ describe('withAuthRoute', () => {
       const json = await response.json();
 
       expect(response.status).toBe(401);
-      expect(json.error).toBe('Unauthorized');
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
       expect(mockHandler).not.toHaveBeenCalled();
 
-      // Benign auth failure
       expect(mockCaptureException).not.toHaveBeenCalled();
       expect(mockCreateClient).toHaveBeenCalled();
       expect(mockAuth.getUser).toHaveBeenCalled();
-    });
-  });
-
-  describe('getUserFromRequest (via wrapper)', () => {
-    beforeEach(() => {
-      setNodeEnv('development');
-      delete process.env.E2E_BYPASS_AUTH;
-    });
-
-    it.skip('should return 401 when authorization header is missing', async () => {
-      const wrappedHandler = withAuthRoute(mockHandler);
-      const request = makeReq();
-
-      const response = await wrappedHandler(request);
-      const json = await response.json();
-
-      expect(response.status).toBe(401);
-      expect(json.error).toBe('Unauthorized');
-
-      expect(mockHandler).not.toHaveBeenCalled();
-      // Missing token is benign
-      expect(mockCaptureException).not.toHaveBeenCalled();
-      expect(mockCreateClient).not.toHaveBeenCalled();
-    });
-
-    it.skip('should return 401 when bearer token is empty', async () => {
-      const wrappedHandler = withAuthRoute(mockHandler);
-      const request = makeReq('http://localhost/api/test', {
-        headers: { authorization: 'Bearer ' },
-      });
-
-      const response = await wrappedHandler(request);
-      const json = await response.json();
-
-      expect(response.status).toBe(401);
-      expect(json.error).toBe('Unauthorized');
-
-      expect(mockHandler).not.toHaveBeenCalled();
-      expect(mockCaptureException).not.toHaveBeenCalled();
-      expect(mockCreateClient).not.toHaveBeenCalled();
-    });
-
-    it.skip('should return 401 when token is invalid', async () => {
-      const mockAuth = {
-        getSession: jest.fn().mockResolvedValue({
-          data: {
-            session: null,
-            user: null,
-          },
-          error: { message: 'Invalid token' },
-        }),
-      };
-      mockCreateClient.mockReturnValue({ auth: mockAuth } as any);
-
-      const wrappedHandler = withAuthRoute(mockHandler);
-      const request = makeReq('http://localhost/api/test', {
-        headers: { authorization: 'Bearer invalid-token' },
-      });
-
-      const response = await wrappedHandler(request);
-      const json = await response.json();
-
-      expect(response.status).toBe(401);
-      expect(json.error).toBe('Unauthorized');
-      expect(mockHandler).not.toHaveBeenCalled();
-
-      expect(mockCaptureException).not.toHaveBeenCalled();
-      expect(mockCreateClient).toHaveBeenCalled();
-      expect(mockAuth.getSession).toHaveBeenCalled();
     });
 
     it('should handle missing Supabase env vars (non-benign => capture)', async () => {
@@ -363,7 +389,8 @@ describe('withAuthRoute', () => {
       const json = await response.json();
 
       expect(response.status).toBe(401);
-      expect(json.error).toBe('Unauthorized');
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
       expect(mockHandler).not.toHaveBeenCalled();
 
       // Env var missing is non-benign
@@ -394,7 +421,8 @@ describe('withAuthRoute', () => {
       const json = await response.json();
 
       expect(response.status).toBe(401);
-      expect(json.error).toBe('Unauthorized');
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
       expect(mockHandler).not.toHaveBeenCalled();
 
       // Network errors should be captured
@@ -436,8 +464,10 @@ describe('withAuthRoute', () => {
         request,
         expect.objectContaining({
           user: expect.objectContaining({ id: 'user-123' }),
+          accessToken: 'valid-token',
           role: 'admin',
           orgId: 'org-123',
+          isTestBypass: false,
         })
       );
       expect(mockCreateClient).toHaveBeenCalled();
@@ -445,14 +475,42 @@ describe('withAuthRoute', () => {
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
 
-    it.skip('should handle Bearer token with different casing', async () => {
-      const mockUser = { id: 'user-123' };
+    it('should fail closed for org and role when only user_metadata is populated', async () => {
+      const mockUser = {
+        id: 'user-123',
+        app_metadata: {},
+        user_metadata: { org_id: 'evil-org', role: 'admin' },
+      };
       const mockAuth = {
-        getSession: jest.fn().mockResolvedValue({
-          data: {
-            session: { user: mockUser },
-            user: mockUser,
-          },
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: mockUser },
+          error: null,
+        }),
+      };
+      mockCreateClient.mockReturnValue({ auth: mockAuth } as any);
+
+      const wrappedHandler = withAuthRoute(mockHandler);
+      const request = makeReq('http://localhost/api/test', {
+        headers: { authorization: 'Bearer valid-token' },
+      });
+
+      const response = await wrappedHandler(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.role).toBe('member');
+      expect(json.orgId).toBeNull();
+    });
+
+    it('should handle Bearer token with different casing', async () => {
+      const mockUser = {
+        id: 'user-123',
+        app_metadata: {},
+        user_metadata: {},
+      };
+      const mockAuth = {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: mockUser },
           error: null,
         }),
       };
@@ -471,7 +529,7 @@ describe('withAuthRoute', () => {
       expect(json.userId).toBe('user-123');
 
       expect(mockCreateClient).toHaveBeenCalled();
-      expect(mockAuth.getSession).toHaveBeenCalled();
+      expect(mockAuth.getUser).toHaveBeenCalled();
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
   });
@@ -479,7 +537,6 @@ describe('withAuthRoute', () => {
   describe('error handling and monitoring', () => {
     beforeEach(() => {
       setNodeEnv('development');
-      delete process.env.E2E_BYPASS_AUTH;
     });
 
     it('should return 401 when getUser throws an error', async () => {
@@ -497,20 +554,18 @@ describe('withAuthRoute', () => {
       const json = await response.json();
 
       expect(response.status).toBe(401);
-      expect(json.error).toBe('Unauthorized');
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
       expect(mockHandler).not.toHaveBeenCalled();
 
       // network error => non-benign capture
       expect(mockCaptureException).toHaveBeenCalled();
     });
 
-    it.skip('should not capture exception for benign auth errors', async () => {
+    it('should not capture exception for benign auth errors', async () => {
       const mockAuth = {
-        getSession: jest.fn().mockResolvedValue({
-          data: {
-            session: null,
-            user: null,
-          },
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: null },
           error: { message: 'Invalid token' },
         }),
       };
@@ -525,7 +580,8 @@ describe('withAuthRoute', () => {
       const json = await response.json();
 
       expect(response.status).toBe(401);
-      expect(json.error).toBe('Unauthorized');
+      expect(json.message).toBe('Valid Supabase session is required');
+      expect(json.error_code).toBe('UNAUTHORIZED');
 
       expect(mockCaptureException).not.toHaveBeenCalled();
     });

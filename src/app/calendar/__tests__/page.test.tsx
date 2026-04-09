@@ -47,13 +47,16 @@ jest.mock('next/dynamic', () => ({
 }));
 
 // Mock useAppFeedback (replaces useErrorHandler + useToast)
+const mockHandleError = jest.fn();
+const mockShowSuccess = jest.fn();
+
 jest.mock('@/hooks/useAppFeedback', () => ({
   __esModule: true,
   useAppFeedback: () => ({
     ErrorToasts: () => <div data-testid="error-toasts">Error Toasts</div>,
     SuccessToasts: () => <div data-testid="success-toasts">Success Toasts</div>,
-    handleError: jest.fn(),
-    showSuccess: jest.fn(),
+    handleError: mockHandleError,
+    showSuccess: mockShowSuccess,
   }),
 }));
 
@@ -138,6 +141,14 @@ const mockFetchTasksByScheduledDate = jest.fn().mockResolvedValue(mockTasks);
 const mockOpenModal = jest.fn();
 const mockCloseModal = jest.fn();
 const mockOpenEditModal = jest.fn();
+const mockModalState = {
+  isOpen: false,
+  isEditing: false,
+  openModal: mockOpenModal,
+  closeModal: mockCloseModal,
+  openEditModal: mockOpenEditModal,
+  selectedItem: null as MaintenanceTask | null,
+};
 
 jest.mock('@/hooks/useMaintenanceTasks', () => ({
   __esModule: true,
@@ -155,14 +166,7 @@ jest.mock('@/hooks/useMaintenanceTasks', () => ({
 // Mock useModalState
 jest.mock('@/hooks/useModalState', () => ({
   __esModule: true,
-  useModalState: () => ({
-    isOpen: false,
-    isEditing: false,
-    openModal: mockOpenModal,
-    closeModal: mockCloseModal,
-    openEditModal: mockOpenEditModal,
-    selectedItem: null,
-  }),
+  useModalState: () => mockModalState,
 }));
 
 // Mock usePageNotifications
@@ -227,7 +231,13 @@ jest.mock('@/components/common', () => {
 // Mock calendar components
 jest.mock('../components/CalendarView', () => {
   const React = require('react');
-  function CalendarView({ tasks, onSelectEvent, onSelectSlot }: any) {
+  function CalendarView({
+    tasks,
+    onSelectEvent,
+    onSelectSlot,
+    onEventDrop,
+    onEventResize,
+  }: any) {
     return (
       <div data-testid="calendar-view">
         <div data-testid="react-big-calendar">Calendar View</div>
@@ -245,6 +255,32 @@ jest.mock('../components/CalendarView', () => {
           onClick={() => onSelectSlot?.({ start: new Date(), end: new Date() })}
         >
           Select Slot
+        </button>
+        <button
+          data-testid="event-drop-button"
+          onClick={() =>
+            tasks?.[0] &&
+            onEventDrop?.({
+              event: { resource: { kind: 'task', task: tasks[0] } },
+              start: new Date('2024-01-10T00:00:00Z'),
+              end: new Date('2024-01-10T00:00:00Z'),
+            })
+          }
+        >
+          Drop Event
+        </button>
+        <button
+          data-testid="event-resize-button"
+          onClick={() =>
+            tasks?.[0] &&
+            onEventResize?.({
+              event: { resource: { kind: 'task', task: tasks[0] } },
+              start: new Date('2024-01-10T00:00:00Z'),
+              end: new Date('2024-01-10T00:00:00Z'),
+            })
+          }
+        >
+          Resize Event
         </button>
       </div>
     );
@@ -374,6 +410,11 @@ describe('CalendarPage', () => {
     mockOpenModal.mockClear();
     mockCloseModal.mockClear();
     mockOpenEditModal.mockClear();
+    mockHandleError.mockClear();
+    mockShowSuccess.mockClear();
+    mockModalState.isOpen = false;
+    mockModalState.isEditing = false;
+    mockModalState.selectedItem = null;
   });
 
   it('should render the calendar page', async () => {
@@ -493,6 +534,134 @@ describe('CalendarPage', () => {
         );
       }
     }
+  });
+
+  it('should not close modal or show success when task creation fails', async () => {
+    const user = userEvent.setup();
+    mockModalState.isOpen = true;
+    mockCreateTask.mockRejectedValueOnce(new Error('Create failed'));
+
+    render(<CalendarPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('task-modal')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('modal-submit'));
+
+    await waitFor(() => {
+      expect(mockCreateTask).toHaveBeenCalled();
+    });
+
+    expect(mockCloseModal).not.toHaveBeenCalled();
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+    expect(mockHandleError).toHaveBeenCalled();
+  });
+
+  it('should not close modal or show success when task update fails', async () => {
+    const user = userEvent.setup();
+    mockModalState.isOpen = true;
+    mockModalState.isEditing = true;
+    mockModalState.selectedItem = mockTasks[0];
+    mockUpdateTask.mockRejectedValueOnce(new Error('Update failed'));
+
+    render(<CalendarPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('task-modal')).toBeInTheDocument();
+      expect(screen.getByTestId('modal-editing')).toHaveTextContent('Editing');
+    });
+
+    await user.click(screen.getByTestId('modal-submit'));
+
+    await waitFor(() => {
+      expect(mockUpdateTask).toHaveBeenCalled();
+    });
+
+    expect(mockCloseModal).not.toHaveBeenCalled();
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+    expect(mockHandleError).toHaveBeenCalled();
+  });
+
+  it('should not show delete success when task deletion fails', async () => {
+    const user = userEvent.setup();
+    mockDeleteTask.mockRejectedValueOnce(new Error('Delete failed'));
+
+    render(<CalendarPage />);
+
+    await waitFor(() => {
+      expect(mockFetchTasksByDateRange).toHaveBeenCalled();
+    });
+
+    const listViewButton = screen
+      .getAllByRole('button')
+      .find(button => button.textContent?.toLowerCase().includes('list'));
+
+    if (!listViewButton) {
+      throw new Error('List view button not found');
+    }
+
+    await user.click(listViewButton);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('task-list')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('delete-task-1'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('confirm-button'));
+
+    await waitFor(() => {
+      expect(mockDeleteTask).toHaveBeenCalled();
+    });
+
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+    expect(mockHandleError).toHaveBeenCalled();
+    expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
+  });
+
+  it('should not show success when drag and drop update fails', async () => {
+    const user = userEvent.setup();
+    mockUpdateTask.mockRejectedValueOnce(new Error('Move failed'));
+
+    render(<CalendarPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('react-big-calendar')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('event-drop-button'));
+
+    await waitFor(() => {
+      expect(mockUpdateTask).toHaveBeenCalled();
+    });
+
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+    expect(mockHandleError).toHaveBeenCalled();
+  });
+
+  it('should not show success when event resize update fails', async () => {
+    const user = userEvent.setup();
+    mockUpdateTask.mockRejectedValueOnce(new Error('Resize failed'));
+
+    render(<CalendarPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('react-big-calendar')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('event-resize-button'));
+
+    await waitFor(() => {
+      expect(mockUpdateTask).toHaveBeenCalled();
+    });
+
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+    expect(mockHandleError).toHaveBeenCalled();
   });
 
   it('should display tasks', async () => {

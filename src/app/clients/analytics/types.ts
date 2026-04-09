@@ -11,6 +11,9 @@ export type Purchase = {
 export type CustomerWithPurchases = Client & {
   purchases: Purchase[];
   lastPurchaseAt: string | null; // ✅ Raw ISO date string for sorting (not formatted)
+  totalSpend?: number;
+  purchaseCount?: number;
+  purchasesStatus?: 'idle' | 'loading' | 'success' | 'empty' | 'error';
 };
 
 // Helper function to convert SalesHistory to Purchase

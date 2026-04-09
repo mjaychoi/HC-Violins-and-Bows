@@ -39,8 +39,8 @@ echo "✅ Supabase CLI: $(supabase --version)"
 echo ""
 
 # 마이그레이션 파일 확인
-if ! ls supabase/migrations/*.sql &> /dev/null; then
-  echo "❌ supabase/migrations/*.sql 파일을 찾을 수 없습니다."
+if ! ls supabase/migrations/[0-9]*_*.sql &> /dev/null; then
+  echo "❌ deployable timestamped migrations를 찾을 수 없습니다."
   exit 1
 fi
 

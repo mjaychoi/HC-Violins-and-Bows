@@ -10,7 +10,6 @@ import React, {
   ReactNode,
 } from 'react';
 import { Client } from '@/types';
-import { fetchClients as serviceFetchClients } from '@/services/dataService';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
 import { logInfo, logWarn } from '@/utils/logger';
@@ -19,12 +18,14 @@ interface ClientsState {
   clients: Client[];
   loading: boolean;
   submitting: boolean;
+  error: unknown | null;
   lastUpdated: Date | null;
 }
 
 type ClientsAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_SUBMITTING'; payload: boolean }
+  | { type: 'SET_ERROR'; payload: unknown | null }
   | { type: 'SET_CLIENTS'; payload: Client[] }
   | { type: 'ADD_CLIENT'; payload: Client }
   | { type: 'UPDATE_CLIENT'; payload: { id: string; client: Client } }
@@ -36,6 +37,7 @@ const initialState: ClientsState = {
   clients: [],
   loading: false,
   submitting: false,
+  error: null,
   lastUpdated: null,
 };
 
@@ -48,8 +50,15 @@ function clientsReducer(
       return { ...state, loading: action.payload };
     case 'SET_SUBMITTING':
       return { ...state, submitting: action.payload };
+    case 'SET_ERROR':
+      return { ...state, error: action.payload };
     case 'SET_CLIENTS':
-      return { ...state, clients: action.payload, lastUpdated: new Date() };
+      return {
+        ...state,
+        clients: action.payload,
+        error: null,
+        lastUpdated: new Date(),
+      };
     case 'ADD_CLIENT':
       return {
         ...state,
@@ -182,35 +191,30 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
       return deduped(async () => {
         dispatch({ type: 'SET_LOADING', payload: true });
+        dispatch({ type: 'SET_ERROR', payload: null });
 
         try {
-          const fetcher = async (): Promise<Client[]> => {
-            const res = await apiFetch(
-              `/api/clients?orderBy=created_at&ascending=false&page=${CLIENTS_DEFAULT_PAGE}&pageSize=${CLIENTS_DEFAULT_PAGE_SIZE}`
-            );
+          const res = await apiFetch(
+            `/api/clients?orderBy=created_at&ascending=false&page=${CLIENTS_DEFAULT_PAGE}&pageSize=${CLIENTS_DEFAULT_PAGE_SIZE}`
+          );
 
-            if (!res.ok) {
-              const body = await safeJson(res);
-              const err =
-                body?.error ??
-                new Error(`Failed to fetch clients (${res.status})`);
+          if (!res.ok) {
+            const body = await safeJson(res);
+            const err =
+              body?.error ??
+              new Error(`Failed to fetch clients (${res.status})`);
 
-              // Auth-like error: bubble up as Error for统一처리
-              if (isAuthLikeError(err)) {
-                throw err;
-              }
-
+            if (isAuthLikeError(err)) {
               throw err;
             }
 
-            const body = await safeJson(res);
-            if (Array.isArray(body?.data)) {
-              return body?.data as Client[];
-            }
-            return [];
-          };
+            throw err;
+          }
 
-          const clients = await serviceFetchClients(fetcher);
+          const body = await safeJson(res);
+          const clients = Array.isArray(body?.data)
+            ? (body.data as Client[])
+            : [];
 
           logInfo(
             `[ClientsContext] fetchClients: Received ${clients.length} clients`
@@ -234,6 +238,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
             );
             return;
           }
+          dispatch({ type: 'SET_ERROR', payload: err });
           handleError(err, 'Fetch clients');
         } finally {
           dispatch({ type: 'SET_LOADING', payload: false });
@@ -377,6 +382,7 @@ export function useClients() {
     clients: state.clients,
     loading: state.loading,
     submitting: state.submitting,
+    error: state.error,
     lastUpdated: state.lastUpdated,
     ...actions,
   };

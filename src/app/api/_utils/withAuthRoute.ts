@@ -4,12 +4,12 @@ import type { User } from '@supabase/supabase-js';
 import { getUserSupabase } from '@/lib/supabase-server';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
+import { createApiErrorResponse } from '@/app/api/_utils/apiErrors';
 
 export interface AuthContext {
   user: User;
   accessToken: string;
   orgId: string | null;
-  clientId: string | null;
   role: 'admin' | 'member';
   userSupabase: ReturnType<typeof getUserSupabase>;
   isTestBypass: boolean;
@@ -24,9 +24,9 @@ interface AuthResult {
   user: User | null;
   accessToken: string | null;
   orgId: string | null;
-  clientId: string | null;
   role: 'admin' | 'member';
   error: Error | null;
+  userSupabase: ReturnType<typeof getUserSupabase> | null;
 }
 
 /**
@@ -69,54 +69,17 @@ function getCookieValue(request: NextRequest, key: string): string | null {
   }
 }
 
-function hasValidE2EBypassSecret(request: NextRequest): boolean {
-  const expectedSecret = process.env.E2E_BYPASS_SECRET?.trim();
-  if (!expectedSecret) return false;
-
-  const providedSecret =
-    getHeaderValue(request, 'x-e2e-bypass-secret') ??
-    getHeaderValue(request, 'X-E2E-BYPASS-SECRET') ??
-    '';
-
-  return providedSecret.trim() === expectedSecret;
-}
-
 /**
- * Pull org/client scope from known places.
+ * Pull auth claims only from trusted server-controlled metadata.
  *
- * Keep this tolerant because projects often move these between
- * app_metadata, user_metadata, and custom claims.
+ * Do not read user_metadata here. In Supabase, users can mutate their own
+ * user_metadata, so using it for org or role decisions is a privilege-
+ * escalation risk.
  */
 function extractOrgId(user: User): string | null {
   const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
-  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
 
-  const candidates = [
-    appMeta.org_id,
-    appMeta.orgId,
-    userMeta.org_id,
-    userMeta.orgId,
-  ];
-
-  for (const value of candidates) {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-
-  return null;
-}
-
-function extractClientId(user: User): string | null {
-  const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
-  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
-
-  const candidates = [
-    appMeta.client_id,
-    appMeta.clientId,
-    userMeta.client_id,
-    userMeta.clientId,
-  ];
+  const candidates = [appMeta.org_id, appMeta.orgId];
 
   for (const value of candidates) {
     if (typeof value === 'string' && value.trim()) {
@@ -129,14 +92,8 @@ function extractClientId(user: User): string | null {
 
 function extractRole(user: User): 'admin' | 'member' {
   const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
-  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
 
-  const candidates = [
-    appMeta.role,
-    appMeta.app_role,
-    userMeta.role,
-    userMeta.app_role,
-  ];
+  const candidates = [appMeta.role, appMeta.app_role];
 
   for (const value of candidates) {
     if (typeof value !== 'string') continue;
@@ -170,9 +127,9 @@ async function getUserFromRequest(request: NextRequest): Promise<AuthResult> {
         user: null,
         accessToken: null,
         orgId: null,
-        clientId: null,
         role: 'member',
         error: new Error('Missing authorization token'),
+        userSupabase: null,
       };
     }
 
@@ -187,9 +144,9 @@ async function getUserFromRequest(request: NextRequest): Promise<AuthResult> {
         user: null,
         accessToken: null,
         orgId: null,
-        clientId: null,
         role: 'member',
         error: new Error(error?.message || 'Invalid token'),
+        userSupabase: null,
       };
     }
 
@@ -197,9 +154,9 @@ async function getUserFromRequest(request: NextRequest): Promise<AuthResult> {
       user,
       accessToken: token,
       orgId: extractOrgId(user),
-      clientId: extractClientId(user),
       role: extractRole(user),
       error: null,
+      userSupabase,
     };
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
@@ -207,49 +164,28 @@ async function getUserFromRequest(request: NextRequest): Promise<AuthResult> {
       user: null,
       accessToken: null,
       orgId: null,
-      clientId: null,
       role: 'member',
       error: err,
+      userSupabase: null,
     };
   }
 }
 
-const TEST_USER: User = {
-  id: 'test-user',
-  aud: 'authenticated',
-  role: 'authenticated',
-  email: 'test@example.com',
-  created_at: new Date(0).toISOString(),
-  app_metadata: {
-    org_id: 'test-org',
-    client_id: 'test-client',
-  },
-  user_metadata: {},
-} as User;
-
-function buildTestAuthContext(): AuthContext {
-  const accessToken = 'test-access-token';
-
-  return {
-    user: TEST_USER,
-    accessToken,
-    orgId: 'test-org',
-    clientId: 'test-client',
-    role: 'admin',
-    userSupabase: getUserSupabase(accessToken),
-    isTestBypass: true,
-  };
-}
-
 export function createOrgContextRequiredResponse(): NextResponse {
-  return NextResponse.json(
-    { error: 'Organization context required' },
-    { status: 403 }
+  return createApiErrorResponse(
+    { message: 'Organization context required' },
+    403
   );
 }
 
 export function createAdminRequiredResponse(): NextResponse {
-  return NextResponse.json({ error: 'Admin role required' }, { status: 403 });
+  return createApiErrorResponse(
+    {
+      message: 'Admin role required',
+      error_code: 'ADMIN_REQUIRED',
+    },
+    403
+  );
 }
 
 export function requireOrgContext(auth: AuthContext): NextResponse | null {
@@ -281,32 +217,10 @@ export function withAuthRoute(
   handler: AuthedHandler
 ): (request: NextRequest) => Promise<Response> {
   return async (request: NextRequest) => {
-    const isProd = process.env.NODE_ENV === 'production';
-
-    if (process.env.NODE_ENV === 'test') {
-      return handler(request, buildTestAuthContext());
-    }
-
-    if (
-      !isProd &&
-      process.env.E2E_BYPASS_AUTH === 'true' &&
-      hasValidE2EBypassSecret(request)
-    ) {
-      return handler(request, buildTestAuthContext());
-    }
-
-    if (
-      !isProd &&
-      getHeaderValue(request, 'x-e2e-bypass') === '1' &&
-      hasValidE2EBypassSecret(request)
-    ) {
-      return handler(request, buildTestAuthContext());
-    }
-
-    const { user, accessToken, orgId, clientId, role, error } =
+    const { user, accessToken, orgId, role, error, userSupabase } =
       await getUserFromRequest(request);
 
-    if (!user || !accessToken || error) {
+    if (!user || !accessToken || !userSupabase || error) {
       if (error) {
         const msg = error.message || '';
         const lower = msg.toLowerCase();
@@ -331,12 +245,12 @@ export function withAuthRoute(
         }
       }
 
-      return NextResponse.json(
+      return createApiErrorResponse(
         {
-          error: 'Unauthorized',
           message: 'Valid Supabase session is required',
+          error_code: 'UNAUTHORIZED',
         },
-        { status: 401 }
+        401
       );
     }
 
@@ -344,9 +258,8 @@ export function withAuthRoute(
       user,
       accessToken,
       orgId,
-      clientId,
       role,
-      userSupabase: getUserSupabase(accessToken),
+      userSupabase,
       isTestBypass: false,
     };
 

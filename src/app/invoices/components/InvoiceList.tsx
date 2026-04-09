@@ -14,6 +14,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 interface InvoiceListProps {
   invoices: Invoice[];
   loading: boolean;
+  status?: 'loading' | 'success' | 'empty' | 'error';
   onSort: (column: InvoiceSortColumn) => void;
   getSortState: (
     column: InvoiceSortColumn
@@ -28,6 +29,7 @@ interface InvoiceListProps {
   totalCount?: number;
   pageSize?: number;
   onPageChange?: (page: number) => void;
+  onRetry?: () => void;
   emptyTitle?: string;
   emptyDescription?: string;
   highlightedInvoiceId?: string | null;
@@ -44,6 +46,7 @@ const statusColors: Record<string, string> = {
 function InvoiceList({
   invoices,
   loading,
+  status = 'success',
   onSort,
   getSortState,
   onEdit,
@@ -56,6 +59,7 @@ function InvoiceList({
   totalCount = 0,
   pageSize = 10,
   onPageChange,
+  onRetry,
   emptyTitle,
   emptyDescription,
   highlightedInvoiceId = null,
@@ -67,6 +71,28 @@ function InvoiceList({
 
   if (loading) {
     return <TableSkeleton rows={8} columns={8} />;
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 px-6 py-8 text-center">
+        <h3 className="text-lg font-semibold text-red-800">
+          Failed to load invoices
+        </h3>
+        <p className="mt-2 text-sm text-red-700">
+          Invoices could not be loaded. Try again.
+        </p>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-4 inline-flex items-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    );
   }
 
   if (invoices.length === 0) {

@@ -32,6 +32,11 @@ import { ErrorBoundary, ConfirmDialog } from '@/components/common';
 import React, { useState } from 'react';
 import { usePermissions } from '@/hooks/usePermissions';
 
+type PendingInstrumentLink = {
+  instrument: Instrument;
+  relationshipType: ClientInstrument['relationship_type'];
+};
+
 export default function ClientsPage() {
   // Error/Success handling
   const { handleError, showSuccess } = useAppFeedback();
@@ -123,11 +128,12 @@ export default function ClientsPage() {
 
   const handleSubmit = async (
     clientData: Omit<Client, 'id' | 'created_at'>,
-    instruments?: Array<{
-      instrument: Instrument;
-      relationshipType: ClientInstrument['relationship_type'];
-    }>
-  ) => {
+    instruments?: PendingInstrumentLink[]
+  ): Promise<{
+    status: 'full_success' | 'partial_success' | 'full_failure';
+    clientId?: string;
+    failedLinks?: PendingInstrumentLink[];
+  }> => {
     try {
       // client_number가 없으면 자동 생성
       // Create new object instead of mutating parameter (immutable pattern)
@@ -142,35 +148,89 @@ export default function ClientsPage() {
           ),
       };
 
+      // TODO: move to backend atomic endpoint (client + links in single transaction)
       const newClient = await createClient(withClientNumber);
+      if (!newClient) {
+        handleError(
+          new Error('Client creation failed'),
+          'Failed to create client'
+        );
+        return { status: 'full_failure' };
+      }
 
-      if (newClient && instruments && instruments.length > 0) {
-        // 새 클라이언트에 instrument 연결 추가
-        try {
-          await Promise.all(
-            instruments.map(({ instrument, relationshipType }) =>
-              addInstrumentRelationshipHook(
-                newClient.id,
-                instrument.id,
-                relationshipType
-              )
-            )
-          );
-        } catch (error) {
-          handleError(error, 'Failed to add instrument relationships');
-          // 클라이언트는 생성되었지만 instrument 연결 실패
+      const linkFailures: PendingInstrumentLink[] = [];
+
+      if (instruments && instruments.length > 0) {
+        for (const pendingLink of instruments) {
+          try {
+            await addInstrumentRelationshipHook(
+              newClient.id,
+              pendingLink.instrument.id,
+              pendingLink.relationshipType
+            );
+          } catch {
+            linkFailures.push(pendingLink);
+          }
         }
       }
 
-      if (newClient) {
-        closeModal();
-        showSuccess('Client added successfully.');
-        // Track newly created client for scroll/highlight feedback
-        setNewlyCreatedClientId(newClient.id);
+      setNewlyCreatedClientId(newClient.id);
+
+      if (linkFailures.length > 0) {
+        showSuccess('Client created, but some instrument links failed');
+        return {
+          status: 'partial_success',
+          clientId: newClient.id,
+          failedLinks: linkFailures,
+        };
       }
+
+      showSuccess(
+        instruments && instruments.length > 0
+          ? 'Client and instrument links created successfully'
+          : 'Client created successfully'
+      );
+      return {
+        status: 'full_success',
+        clientId: newClient.id,
+      };
     } catch (error) {
-      handleError(error, 'Failed to create client');
+      handleError(error, 'Client creation failed');
+      return { status: 'full_failure' };
     }
+  };
+
+  const handleRetryInstrumentLinks = async (
+    clientId: string,
+    instruments: PendingInstrumentLink[]
+  ): Promise<{
+    status: 'full_success' | 'partial_success' | 'full_failure';
+    failedLinks?: PendingInstrumentLink[];
+  }> => {
+    const linkFailures: PendingInstrumentLink[] = [];
+
+    for (const pendingLink of instruments) {
+      try {
+        await addInstrumentRelationshipHook(
+          clientId,
+          pendingLink.instrument.id,
+          pendingLink.relationshipType
+        );
+      } catch {
+        linkFailures.push(pendingLink);
+      }
+    }
+
+    if (linkFailures.length > 0) {
+      showSuccess('Client created, but some instrument links failed');
+      return {
+        status: 'partial_success',
+        failedLinks: linkFailures,
+      };
+    }
+
+    showSuccess('Client and instrument links created successfully');
+    return { status: 'full_success' };
   };
 
   const handleDeleteClient = () => {
@@ -350,6 +410,7 @@ export default function ClientsPage() {
           isOpen={showModal}
           onClose={closeModal}
           onSubmit={handleSubmit}
+          onRetryInstrumentLinks={handleRetryInstrumentLinks}
           submitting={submitting.hasAnySubmitting}
         />
 

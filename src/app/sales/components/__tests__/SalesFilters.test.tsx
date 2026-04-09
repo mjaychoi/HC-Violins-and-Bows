@@ -55,6 +55,31 @@ describe('SalesFilters', () => {
     expect(screen.getByText('Filters & Search')).toBeInTheDocument();
   });
 
+  it('disables export when permission is missing and shows the reason', () => {
+    render(
+      <SalesFilters
+        showFilters={true}
+        onToggleFilters={mockOnToggleFilters}
+        search=""
+        onSearchChange={mockOnSearchChange}
+        from=""
+        onFromChange={mockOnFromChange}
+        to=""
+        onToChange={mockOnToChange}
+        onDatePreset={mockOnDatePreset}
+        onClearFilters={mockOnClearFilters}
+        onExportCSV={mockOnExportCSV}
+        hasData={true}
+        canExportCSV={false}
+        exportDisabledReason="Admin only"
+      />
+    );
+
+    const exportButton = screen.getByText('Export CSV').closest('button');
+    expect(exportButton).toBeDisabled();
+    expect(exportButton).toHaveAttribute('title', 'Admin only');
+  });
+
   it('calls onToggleFilters when button is clicked', async () => {
     const user = userEvent.setup();
     render(

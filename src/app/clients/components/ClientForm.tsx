@@ -29,7 +29,28 @@ interface ClientFormProps {
       instrument: Instrument;
       relationshipType: ClientRelationshipType;
     }>
-  ) => Promise<void>;
+  ) => Promise<{
+    status: 'full_success' | 'partial_success' | 'full_failure';
+    clientId?: string;
+    failedLinks?: Array<{
+      instrument: Instrument;
+      relationshipType: ClientRelationshipType;
+    }>;
+  }>;
+  onRetryInstrumentLinks: (
+    clientId: string,
+    instruments: Array<{
+      instrument: Instrument;
+      relationshipType: ClientRelationshipType;
+    }>
+  ) => Promise<{
+    status: 'full_success' | 'partial_success' | 'full_failure';
+    clientId?: string;
+    failedLinks?: Array<{
+      instrument: Instrument;
+      relationshipType: ClientRelationshipType;
+    }>;
+  }>;
   submitting: boolean;
 }
 
@@ -37,6 +58,7 @@ function ClientForm({
   isOpen,
   onClose,
   onSubmit,
+  onRetryInstrumentLinks,
   submitting,
 }: ClientFormProps) {
   const { clients } = useUnifiedClients();
@@ -60,7 +82,10 @@ function ClientForm({
   } = useFormState(initialFormData);
 
   const [showInterestDropdown, setShowInterestDropdown] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [submissionState, setSubmissionState] = useState<{
+    status: 'full_success' | 'partial_success';
+    clientId?: string;
+  } | null>(null);
 
   // New client instrument connection states using useDataState
   const [showInstrumentSearchForNew, setShowInstrumentSearchForNew] =
@@ -79,6 +104,7 @@ function ClientForm({
     addItem: addSelectedInstrument,
     removeItem: removeSelectedInstrument,
     clearData: clearSelectedInstruments,
+    setItems: setSelectedInstruments,
   } = useDataState<{
     instrument: Instrument;
     relationshipType: ClientInstrument['relationship_type'];
@@ -209,21 +235,74 @@ function ClientForm({
       return;
     }
 
-    // 선택된 instruments와 함께 전달
-    await onSubmit(
-      formData,
+    const selectedLinks =
       selectedInstrumentsForNew.length > 0
         ? selectedInstrumentsForNew
-        : undefined
+        : undefined;
+
+    const result =
+      submissionState?.status === 'partial_success' && submissionState.clientId
+        ? await onRetryInstrumentLinks(
+            submissionState.clientId,
+            selectedInstrumentsForNew
+          )
+        : await onSubmit(formData, selectedLinks);
+
+    if (!result) {
+      return;
+    }
+
+    if (result.status === 'full_success') {
+      setSubmissionState({ status: 'full_success', clientId: result.clientId });
+      return;
+    }
+
+    if (result.status === 'partial_success') {
+      setSubmissionState({
+        status: 'partial_success',
+        clientId: result.clientId ?? submissionState?.clientId,
+      });
+
+      if (result.failedLinks) {
+        setSelectedInstruments(result.failedLinks);
+      }
+    }
+  };
+
+  const handleRetryFailedLinks = async () => {
+    if (
+      submissionState?.status !== 'partial_success' ||
+      !submissionState.clientId ||
+      selectedInstrumentsForNew.length === 0
+    ) {
+      return;
+    }
+
+    const result = await onRetryInstrumentLinks(
+      submissionState.clientId,
+      selectedInstrumentsForNew
     );
 
-    // UX: Show success state instead of immediately closing
-    setSuccess(true);
+    if (!result) {
+      return;
+    }
+
+    if (result.status === 'full_success') {
+      setSubmissionState({
+        status: 'full_success',
+        clientId: submissionState.clientId,
+      });
+      return;
+    }
+
+    if (result.status === 'partial_success' && result.failedLinks) {
+      setSelectedInstruments(result.failedLinks);
+    }
   };
 
   // UX: Handle success actions
   const handleAddAnother = () => {
-    setSuccess(false);
+    setSubmissionState(null);
     resetForm();
     setShowInterestDropdown(false);
     clearSelectedInstruments();
@@ -241,7 +320,7 @@ function ClientForm({
 
   const handleDone = () => {
     resetForm();
-    setSuccess(false);
+    setSubmissionState(null);
     setShowInterestDropdown(false);
     clearSelectedInstruments();
     setShowInstrumentSearchForNew(false);
@@ -258,7 +337,7 @@ function ClientForm({
   // Reset success state when modal closes
   useEffect(() => {
     if (!isOpen) {
-      setSuccess(false);
+      setSubmissionState(null);
     }
   }, [isOpen]);
 
@@ -318,7 +397,7 @@ function ClientForm({
         {/* Form */}
         <div className={modalStyles.body}>
           {/* UX: Success message with action buttons */}
-          {success && (
+          {submissionState?.status === 'full_success' && (
             <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
               <div className="flex items-start">
                 <svg
@@ -337,7 +416,7 @@ function ClientForm({
                 </svg>
                 <div className="ml-3 flex-1">
                   <h4 className="text-sm font-medium text-green-800">
-                    Client created successfully!
+                    Client and instrument links created successfully
                   </h4>
                   <p className="mt-1 text-sm text-green-700">
                     What would you like to do next?
@@ -363,10 +442,54 @@ function ClientForm({
             </div>
           )}
 
+          {submissionState?.status === 'partial_success' && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+              <div className="flex items-start">
+                <svg
+                  className="w-5 h-5 text-amber-600 mt-0.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v3m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z"
+                  />
+                </svg>
+                <div className="ml-3 flex-1">
+                  <h4 className="text-sm font-medium text-amber-900">
+                    Client created, but some instrument links failed
+                  </h4>
+                  <p className="mt-1 text-sm text-amber-800">
+                    Review the remaining instrument links below and retry
+                    without creating the client again.
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleRetryFailedLinks();
+                      }}
+                      className="px-3 py-1.5 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 transition-colors"
+                    >
+                      Retry Failed Links
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <form
             onSubmit={handleSubmit}
             className="space-y-5"
-            style={{ display: success ? 'none' : 'block' }}
+            style={{
+              display:
+                submissionState?.status === 'full_success' ? 'none' : 'block',
+            }}
           >
             <Input
               label="Last Name"

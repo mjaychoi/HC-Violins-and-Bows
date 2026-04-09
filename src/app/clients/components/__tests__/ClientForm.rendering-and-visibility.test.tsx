@@ -65,6 +65,7 @@ const mockProps = {
   isOpen: true,
   onClose: jest.fn(),
   onSubmit: jest.fn(),
+  onRetryInstrumentLinks: jest.fn(),
   submitting: false,
 };
 

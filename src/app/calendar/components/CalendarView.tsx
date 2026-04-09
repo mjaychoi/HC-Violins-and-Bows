@@ -146,7 +146,7 @@ export default function CalendarView({
     }
   };
 
-  // Convert tasks and follow-ups to calendar events
+  // Convert tasks to calendar events
   const events: Event[] = useMemo(() => {
     // Task events
     const taskEvents = tasks

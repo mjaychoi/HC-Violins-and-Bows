@@ -299,21 +299,31 @@ export function createSafeErrorResponse(
   error: unknown,
   statusCode: number = 500
 ): {
-  error: string;
   message: string;
-  statusCode: number;
-  details?: string;
+  error_code?: string;
+  details?: unknown;
+  retryable?: boolean;
+  retry_after_seconds?: number;
 } {
   const sanitized = sanitizeError(error);
   const userMessage = getUserFriendlyErrorMessage(error);
+  const errorCode =
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : undefined;
 
-  return {
-    error: 'An error occurred',
-    message: userMessage,
-    statusCode,
-    // Production에서는 details를 절대 포함하지 않음 (보안)
-    details: isDevelopment() ? sanitized.details : undefined,
-  };
+  return createApiErrorEnvelope(
+    {
+      message: userMessage,
+      error_code: errorCode,
+      // Production에서는 details를 절대 포함하지 않음 (보안)
+      details: isDevelopment() ? sanitized.details : undefined,
+    },
+    statusCode
+  );
 }
 
 /**
@@ -357,3 +367,4 @@ export function createLogErrorInfo(error: unknown): {
     type: 'unknown',
   };
 }
+import { createApiErrorEnvelope } from '@/app/api/_utils/apiErrors';

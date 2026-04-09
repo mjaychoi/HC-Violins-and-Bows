@@ -9,6 +9,7 @@ import {
 } from '@/hooks/useUnifiedData';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { useModalState } from '@/hooks/useModalState';
+import { usePermissions } from '@/hooks/usePermissions';
 import { SalesHistory, Client, Instrument } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 
@@ -17,6 +18,7 @@ jest.mock('../hooks/useSalesHistory');
 jest.mock('@/hooks/useUnifiedData');
 jest.mock('@/hooks/useAppFeedback');
 jest.mock('@/hooks/useModalState');
+jest.mock('@/hooks/usePermissions');
 jest.mock('@/utils/apiFetch');
 
 // Mock components
@@ -164,6 +166,8 @@ jest.mock('../components/SalesFilters', () => ({
     onClearFilters,
     onDatePreset,
     onExportCSV,
+    canExportCSV = true,
+    exportDisabledReason,
   }: any) => (
     <div data-testid="sales-filters">
       <input
@@ -197,37 +201,48 @@ jest.mock('../components/SalesFilters', () => ({
       <button data-testid="clear-filters" onClick={onClearFilters}>
         Clear filters
       </button>
-      <button onClick={onExportCSV}>Export CSV</button>
+      <button
+        onClick={onExportCSV}
+        disabled={!canExportCSV}
+        title={exportDisabledReason}
+      >
+        Export CSV
+      </button>
     </div>
   ),
 }));
 
 jest.mock('../components/SalesTable', () => ({
   __esModule: true,
-  default: ({ sales }: any) => (
+  default: ({ sales, onSendReceipt }: any) => (
     <div data-testid="sales-table">
       {sales.length === 0 ? (
         <div>No sales found</div>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Client</th>
-              <th>Instrument</th>
-              <th>Amount</th>
-              <th>Sale ID</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sales.map((sale: any) => (
-              <tr key={sale.id}>
-                <td>{sale.sale_date}</td>
-                <td>{sale.sale_price}</td>
+        <>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Instrument</th>
+                <th>Amount</th>
+                <th>Sale ID</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sales.map((sale: any) => (
+                <tr key={sale.id}>
+                  <td>{sale.sale_date}</td>
+                  <td>{sale.sale_price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button onClick={() => onSendReceipt?.(sales[0])}>
+            Download receipt
+          </button>
+        </>
       )}
     </div>
   ),
@@ -395,6 +410,9 @@ const mockUseAppFeedback = useAppFeedback as jest.MockedFunction<
 const mockUseModalState = useModalState as jest.MockedFunction<
   typeof useModalState
 >;
+const mockUsePermissions = usePermissions as jest.MockedFunction<
+  typeof usePermissions
+>;
 const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;
 
 const mockClient: Client = {
@@ -449,10 +467,20 @@ describe('SalesPage', () => {
 
   beforeAll(() => {
     global.URL.createObjectURL = jest.fn(() => 'blob:mock-url');
+    global.URL.revokeObjectURL = jest.fn();
+    global.fetch = jest.fn();
   });
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === 'content-type' ? 'application/pdf' : null,
+      },
+      blob: async () => new Blob(['pdf-content'], { type: 'application/pdf' }),
+    });
     mockSearchParamsGet.mockReturnValue(null);
     mockApiFetch.mockResolvedValue({
       ok: true,
@@ -514,6 +542,31 @@ describe('SalesPage', () => {
       toggleModal: jest.fn(),
       resetModal: jest.fn(),
     } as any);
+
+    mockUsePermissions.mockReturnValue({
+      canCreateSale: true,
+      canCreateInvoice: true,
+      canCreateInstrument: true,
+      canCreateTask: true,
+      canCreateContactLog: true,
+      canCreateNote: true,
+      canCreateConnection: true,
+      canManageContactLogs: true,
+      canManageTasks: true,
+      canManageSales: true,
+      canExportSales: true,
+      canEditInvoice: true,
+      canDeleteInvoice: true,
+      canManageInvoiceSettings: true,
+      canDeleteConnection: true,
+      canManageConnections: true,
+      canManageInstruments: true,
+      canUploadInstrumentMedia: true,
+      canManageClients: true,
+      canCreateClient: true,
+      createSaleDisabledReason: undefined,
+      exportSalesDisabledReason: undefined,
+    } as any);
   });
 
   it('should render sales page with title', () => {
@@ -539,6 +592,61 @@ describe('SalesPage', () => {
     expect(screen.getByText('Client')).toBeInTheDocument();
     expect(screen.getByText('Instrument')).toBeInTheDocument();
     expect(screen.getByText('Amount')).toBeInTheDocument();
+  });
+
+  it('downloads invoice pdf and only then shows success', async () => {
+    const user = userEvent.setup();
+    render(<SalesPage />);
+
+    await user.click(screen.getByText('Download receipt'));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/api/invoices/sale-1/pdf');
+    });
+    expect(mockShowSuccess).toHaveBeenCalledWith('Invoice PDF downloaded.');
+    expect(mockHandleError).not.toHaveBeenCalled();
+  });
+
+  it('does not show success for invalid invoice content type', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === 'content-type' ? 'application/json' : null,
+      },
+      blob: async () => new Blob(['{}'], { type: 'application/json' }),
+    });
+
+    const user = userEvent.setup();
+    render(<SalesPage />);
+
+    await user.click(screen.getByText('Download receipt'));
+
+    await waitFor(() => {
+      expect(mockHandleError).toHaveBeenCalled();
+    });
+    expect(mockShowSuccess).not.toHaveBeenCalledWith('Invoice PDF downloaded.');
+  });
+
+  it('does not show success for empty invoice pdf blob', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === 'content-type' ? 'application/pdf' : null,
+      },
+      blob: async () => new Blob([], { type: 'application/pdf' }),
+    });
+
+    const user = userEvent.setup();
+    render(<SalesPage />);
+
+    await user.click(screen.getByText('Download receipt'));
+
+    await waitFor(() => {
+      expect(mockHandleError).toHaveBeenCalled();
+    });
+    expect(mockShowSuccess).not.toHaveBeenCalledWith('Invoice PDF downloaded.');
   });
 
   it('should show loading skeleton when loading', () => {
@@ -675,6 +783,20 @@ describe('SalesPage', () => {
 
     // CSV 다운로드가 트리거되었는지 확인 (실제 다운로드는 mock할 수 없지만 클릭은 확인 가능)
     expect(exportButton).toBeInTheDocument();
+  });
+
+  it('disables export CSV when the user lacks export permission', async () => {
+    mockUsePermissions.mockReturnValue({
+      ...mockUsePermissions.mock.results.at(-1)?.value,
+      canExportSales: false,
+      exportSalesDisabledReason: 'Admin only',
+    } as any);
+
+    render(<SalesPage />);
+
+    const exportButton = screen.getByText('Export CSV');
+    expect(exportButton).toBeDisabled();
+    expect(exportButton).toHaveAttribute('title', 'Admin only');
   });
 
   it('should clear filters when clicking clear button', async () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { useUnifiedData } from '@/hooks/useUnifiedData';
 import { logInfo } from '@/utils/logger';
 
@@ -13,11 +13,15 @@ import { logInfo } from '@/utils/logger';
  * and without this, each page would trigger a fetch on mount.
  */
 export function DataInitializer({ children }: { children: ReactNode }) {
-  // FIXED: Call useUnifiedData only once at the root level
-  // This ensures data is fetched once per session, not on every page mount
-  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-    logInfo('[DataInitializer] Mounting - will call useUnifiedData');
-  }
+  // Log only on actual mount (useEffect), not on every render.
+  // Logging in the render function body is a side-effect that React StrictMode
+  // intentionally invokes twice, producing duplicate console entries.
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      logInfo('DataInitializer mounted', 'DataInitializer');
+    }
+  }, []);
+
   useUnifiedData();
   return <>{children}</>;
 }

@@ -13,6 +13,11 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import type {
+  ValueType as TooltipValueType,
+  NameType as TooltipNameType,
+  Formatter as TooltipFormatter,
+} from 'recharts/types/component/DefaultTooltipContent';
 import { EnrichedSale } from '@/types';
 import { currency } from '../utils/salesFormatters';
 import {
@@ -349,6 +354,45 @@ export default function SalesCharts({
     return value.toLocaleString('en-US');
   };
 
+  const getTooltipNumber = (value: TooltipValueType | undefined) => {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    if (Array.isArray(value) && typeof value[0] === 'number') {
+      return value[0];
+    }
+    return 0;
+  };
+
+  const formatSalesAmountTooltip: TooltipFormatter<
+    TooltipValueType,
+    TooltipNameType
+  > = (value, name) => {
+    const numericValue = getTooltipNumber(value);
+    if (name === 'Orders') return numericValue;
+    return formatCurrency(numericValue);
+  };
+
+  const formatRefundRateTooltip: TooltipFormatter<
+    TooltipValueType,
+    TooltipNameType
+  > = (value, name) => {
+    const numericValue = getTooltipNumber(value);
+    if (name === 'Refund Rate') return `${numericValue}%`;
+    return formatCurrency(numericValue);
+  };
+
+  const formatRefundAnalysisTooltip: TooltipFormatter<
+    TooltipValueType,
+    TooltipNameType
+  > = (value, name) => {
+    const numericValue = getTooltipNumber(value);
+    if (name === 'Refund Count') return numericValue;
+    return formatCurrency(numericValue);
+  };
+
   // 전체 환불율 계산 제거 - Monthly Sales Comparison 차트에서 더 이상 사용하지 않음
 
   // Refund 원인 분석: 고객별 환불 데이터
@@ -607,10 +651,7 @@ export default function SalesCharts({
                 style={{ fontSize: '12px' }}
               />
               <Tooltip
-                formatter={(value: number, name: string) => {
-                  if (name === 'Orders') return value;
-                  return formatCurrency(value);
-                }}
+                formatter={formatSalesAmountTooltip}
                 contentStyle={{
                   backgroundColor: 'white',
                   border: '1px solid #e5e7eb',
@@ -719,10 +760,7 @@ export default function SalesCharts({
                 }}
               />
               <Tooltip
-                formatter={(value: number, name: string) => {
-                  if (name === 'Orders') return value;
-                  return formatCurrency(value);
-                }}
+                formatter={formatSalesAmountTooltip}
                 contentStyle={{
                   backgroundColor: 'white',
                   border: '1px solid #e5e7eb',
@@ -798,10 +836,7 @@ export default function SalesCharts({
                 }}
               />
               <Tooltip
-                formatter={(value: number, name: string) => {
-                  if (name === 'Refund Rate') return `${value}%`;
-                  return formatCurrency(value);
-                }}
+                formatter={formatRefundRateTooltip}
                 labelFormatter={label => label}
                 content={({ active, payload }) => {
                   if (!active || !payload || payload.length === 0) return null;
@@ -891,10 +926,7 @@ export default function SalesCharts({
                 tick={{ fontSize: 12 }}
               />
               <Tooltip
-                formatter={(value: number, name: string) => {
-                  if (name === 'Refund Count') return value;
-                  return formatCurrency(value);
-                }}
+                formatter={formatRefundAnalysisTooltip}
                 contentStyle={{
                   backgroundColor: 'white',
                   border: '1px solid #e5e7eb',
@@ -967,10 +999,7 @@ export default function SalesCharts({
                 tick={{ fontSize: 12 }}
               />
               <Tooltip
-                formatter={(value: number, name: string) => {
-                  if (name === 'Refund Count') return value;
-                  return formatCurrency(value);
-                }}
+                formatter={formatRefundAnalysisTooltip}
                 contentStyle={{
                   backgroundColor: 'white',
                   border: '1px solid #e5e7eb',

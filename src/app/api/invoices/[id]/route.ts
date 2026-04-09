@@ -20,6 +20,7 @@ import { normalizeInvoiceRecord } from '@/utils/invoiceNormalize';
 import type { CreateInvoiceInput, InvoiceFinancialSnapshot } from '../types';
 import { validateInvoiceFinancials } from '../financialValidation';
 import { attachSignedUrlsToInvoice } from '../imageUrls';
+import { claimInvoiceImageUploads } from '../imageUploadTracking';
 
 function buildApiMeta(
   req: NextRequest,
@@ -293,8 +294,7 @@ async function updateInvoiceHandler(
     }
 
     // Re-fetch the updated invoice
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let fetchQuery: any = auth.userSupabase
+    const fetchQuery = auth.userSupabase
       .from('invoices')
       .select(
         `
@@ -315,12 +315,10 @@ async function updateInvoiceHandler(
           invoice_items (*)
         `
       )
-      .eq('id', id);
+      .eq('id', id)
+      .eq('org_id', orgId);
 
-    if (orgId) fetchQuery = fetchQuery.eq('org_id', orgId);
-    fetchQuery = fetchQuery.single();
-
-    const { data: updated, error: fetchError } = await fetchQuery;
+    const { data: updated, error: fetchError } = await fetchQuery.single();
 
     if (fetchError || !updated) {
       throw errorHandler.handleSupabaseError(
@@ -341,12 +339,20 @@ async function updateInvoiceHandler(
       validated.data
     );
 
+    const imageTracking = await claimInvoiceImageUploads(
+      auth.userSupabase,
+      orgId,
+      id,
+      itemsProvided ? validatedInput.items : null
+    );
+
     return {
       payload: { data: hydratedInvoice },
       status: 200,
       metadata: {
         ...metadata,
         scope: { enforced: true, orgId },
+        imageTracking,
       },
     };
   });
@@ -380,13 +386,22 @@ async function deleteInvoiceHandler(
 
     const orgId = auth.orgId!;
 
-    let del = auth.userSupabase.from('invoices').delete().eq('id', id);
-    del = del.eq('org_id', orgId);
-
-    const { error } = await del;
+    const { error, count } = await auth.userSupabase
+      .from('invoices')
+      .delete({ count: 'exact' })
+      .eq('id', id)
+      .eq('org_id', orgId);
 
     if (error) {
       throw errorHandler.handleSupabaseError(error, 'Delete invoice');
+    }
+
+    if (!count || count === 0) {
+      return {
+        payload: { error: 'Invoice not found' },
+        status: 404,
+        metadata: { scope: { enforced: true, orgId } },
+      };
     }
 
     return {

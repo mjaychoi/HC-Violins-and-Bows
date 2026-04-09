@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { Instrument, InstrumentImage } from '@/types';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import OptimizedImage from '@/components/common/OptimizedImage';
@@ -13,6 +13,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { useSuccessToastContext } from '@/contexts/SuccessToastContext';
 import { useErrorContext } from '@/contexts/ErrorContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import { downloadCertificatePdf } from '../utils/certificateDownload';
 
 interface InstrumentModalProps {
   isOpen: boolean;
@@ -28,6 +29,8 @@ interface CertificateFile {
   createdAt: string | null;
 }
 
+type MediaLoadState = 'loading' | 'success' | 'empty' | 'error';
+
 export default function InstrumentModal({
   isOpen,
   onClose,
@@ -37,11 +40,14 @@ export default function InstrumentModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const [images, setImages] = useState<InstrumentImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
+  const [imageState, setImageState] = useState<MediaLoadState>('loading');
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [certificateFiles, setCertificateFiles] = useState<CertificateFile[]>(
     []
   );
   const [loadingCertificates, setLoadingCertificates] = useState(false);
+  const [certificateState, setCertificateState] =
+    useState<MediaLoadState>('loading');
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{
@@ -61,6 +67,81 @@ export default function InstrumentModal({
     onClose,
   });
 
+  const fetchImages = useCallback(
+    async (instrumentId: string) => {
+      const reqId = ++imageReqIdRef.current;
+      setLoadingImages(true);
+      setImageState('loading');
+      try {
+        const response = await apiFetch(
+          `/api/instruments/${instrumentId}/images`
+        );
+        if (!response.ok) {
+          throw new Error(`Failed to fetch images: ${response.statusText}`);
+        }
+
+        if (imageReqIdRef.current === reqId) {
+          const result = await response.json();
+          const sortedImages = (result.data || []).sort(
+            (a: InstrumentImage, b: InstrumentImage) =>
+              a.display_order - b.display_order
+          );
+          setImages(sortedImages);
+          setSelectedImageIndex(0);
+          setImageState(sortedImages.length > 0 ? 'success' : 'empty');
+        }
+      } catch (error) {
+        if (imageReqIdRef.current === reqId) {
+          setImages([]);
+          setSelectedImageIndex(0);
+          setImageState('error');
+          handleError(error, 'InstrumentImagesFetch');
+        }
+      } finally {
+        if (imageReqIdRef.current === reqId) {
+          setLoadingImages(false);
+        }
+      }
+    },
+    [handleError]
+  );
+
+  const fetchCertificates = useCallback(
+    async (instrumentId: string) => {
+      const reqId = ++certificateReqIdRef.current;
+      setLoadingCertificates(true);
+      setCertificateState('loading');
+      try {
+        const response = await apiFetch(
+          `/api/instruments/${instrumentId}/certificates`
+        );
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch certificates: ${response.statusText}`
+          );
+        }
+
+        if (certificateReqIdRef.current === reqId) {
+          const result = await response.json();
+          const files = result.data || [];
+          setCertificateFiles(files);
+          setCertificateState(files.length > 0 ? 'success' : 'empty');
+        }
+      } catch (error) {
+        if (certificateReqIdRef.current === reqId) {
+          setCertificateFiles([]);
+          setCertificateState('error');
+          handleError(error, 'InstrumentCertificatesFetch');
+        }
+      } finally {
+        if (certificateReqIdRef.current === reqId) {
+          setLoadingCertificates(false);
+        }
+      }
+    },
+    [handleError]
+  );
+
   // Fetch images and certificates when modal opens
   useEffect(() => {
     if (isOpen && instrument?.id) {
@@ -69,59 +150,12 @@ export default function InstrumentModal({
       fetchCertificates(instrument.id);
     } else {
       setImages([]);
+      setImageState('empty');
       setSelectedImageIndex(0);
       setCertificateFiles([]);
+      setCertificateState('empty');
     }
-  }, [isOpen, instrument?.id]);
-
-  const fetchImages = async (instrumentId: string) => {
-    const reqId = ++imageReqIdRef.current;
-    setLoadingImages(true);
-    try {
-      const response = await apiFetch(
-        `/api/instruments/${instrumentId}/images`
-      );
-      if (response.ok && imageReqIdRef.current === reqId) {
-        const result = await response.json();
-        const sortedImages = (result.data || []).sort(
-          (a: InstrumentImage, b: InstrumentImage) =>
-            a.display_order - b.display_order
-        );
-        setImages(sortedImages);
-        setSelectedImageIndex(0);
-      }
-    } catch (error) {
-      if (imageReqIdRef.current === reqId) {
-        console.error('Failed to fetch images:', error);
-      }
-    } finally {
-      if (imageReqIdRef.current === reqId) {
-        setLoadingImages(false);
-      }
-    }
-  };
-
-  const fetchCertificates = async (instrumentId: string) => {
-    const reqId = ++certificateReqIdRef.current;
-    setLoadingCertificates(true);
-    try {
-      const response = await apiFetch(
-        `/api/instruments/${instrumentId}/certificates`
-      );
-      if (response.ok && certificateReqIdRef.current === reqId) {
-        const result = await response.json();
-        setCertificateFiles(result.data || []);
-      }
-    } catch (error) {
-      if (certificateReqIdRef.current === reqId) {
-        console.error('Failed to fetch certificates:', error);
-      }
-    } finally {
-      if (certificateReqIdRef.current === reqId) {
-        setLoadingCertificates(false);
-      }
-    }
-  };
+  }, [fetchCertificates, fetchImages, isOpen, instrument?.id]);
 
   const handleDownloadCertificate = async (file: CertificateFile) => {
     if (!instrument?.id) return;
@@ -139,32 +173,19 @@ export default function InstrumentModal({
       const query = file.id
         ? `id=${encodeURIComponent(file.id)}`
         : `file=${encodeURIComponent(file.name)}`;
-      const response = await apiFetch(
-        `/api/instruments/${instrument.id}/certificate?${query}`
-      );
-
-      if (!response.ok) {
-        handleError(
-          new Error(`Failed to download certificate: ${response.statusText}`),
-          'CertificateDownload'
-        );
-        return;
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
       const safe =
         instrument.serial_number?.replace(/[^a-zA-Z0-9]/g, '_') ||
         instrument.id.slice(0, 8);
       const downloadFileName = file.name.replace(/^\d+_/, '');
-      a.download = safe ? `${safe}_${downloadFileName}` : downloadFileName;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      showSuccess('Certificate downloaded successfully');
+      await downloadCertificatePdf({
+        url: `/api/instruments/${instrument.id}/certificates?${query}`,
+        downloadFileName: safe
+          ? `${safe}_${downloadFileName}`
+          : downloadFileName,
+        errorContext: 'CertificateDownload',
+        showSuccess,
+        handleError,
+      });
     } catch (error) {
       handleError(error, 'CertificateDownload');
     } finally {
@@ -220,6 +241,9 @@ export default function InstrumentModal({
   if (!isOpen || !instrument) return null;
 
   const selectedImage = images[selectedImageIndex];
+  const hasImageContent = imageState === 'success' && images.length > 0;
+  const hasCertificateContent =
+    certificateState === 'success' && certificateFiles.length > 0;
 
   return (
     <div
@@ -275,7 +299,20 @@ export default function InstrumentModal({
                 <div className="flex items-center justify-center h-64 bg-gray-100 rounded-lg">
                   <div className="text-gray-500">Loading images...</div>
                 </div>
-              ) : images.length > 0 ? (
+              ) : imageState === 'error' ? (
+                <div className="flex flex-col items-center justify-center gap-3 h-64 bg-red-50 rounded-lg border border-red-200">
+                  <div className="text-red-700 text-sm">
+                    Failed to load media
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => instrument?.id && fetchImages(instrument.id)}
+                    className="px-3 py-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-md hover:bg-red-100"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : hasImageContent ? (
                 <>
                   {/* Main Image */}
                   <div className="relative w-full h-64 bg-gray-100 rounded-lg overflow-hidden">
@@ -401,7 +438,20 @@ export default function InstrumentModal({
                       </div>
                     ))}
                   </div>
-                ) : certificateFiles.length > 0 ? (
+                ) : certificateState === 'error' ? (
+                  <div className="flex items-center justify-between gap-3 p-3 border border-red-200 rounded-lg bg-red-50">
+                    <p className="text-xs text-red-700">Failed to load media</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        instrument?.id && fetchCertificates(instrument.id)
+                      }
+                      className="px-3 py-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-md hover:bg-red-100"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : hasCertificateContent ? (
                   <div className="space-y-2">
                     {certificateFiles.map(file => {
                       // Use id as key if available, otherwise fall back to name

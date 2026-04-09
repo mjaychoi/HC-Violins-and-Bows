@@ -67,10 +67,16 @@ export function CustomerStats({
     const dates: string[] = [];
 
     for (const c of customers) {
-      purchaseCount += c.purchases.length;
-      for (const p of c.purchases) {
-        totalSpend += p.amount;
-        if (p.date) dates.push(p.date);
+      purchaseCount += c.purchaseCount ?? c.purchases.length;
+      totalSpend +=
+        c.totalSpend ??
+        c.purchases.reduce((sum, purchase) => sum + purchase.amount, 0);
+      if (c.lastPurchaseAt) {
+        dates.push(c.lastPurchaseAt);
+      } else {
+        for (const p of c.purchases) {
+          if (p.date) dates.push(p.date);
+        }
       }
     }
 

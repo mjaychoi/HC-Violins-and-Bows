@@ -61,14 +61,8 @@ function extractOrgId(user: User | null): string | null {
   if (!user) return null;
 
   const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
-  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
 
-  const candidates = [
-    appMeta.org_id,
-    appMeta.orgId,
-    userMeta.org_id,
-    userMeta.orgId,
-  ];
+  const candidates = [appMeta.org_id, appMeta.orgId];
 
   for (const value of candidates) {
     if (typeof value === 'string' && value.trim()) {
@@ -83,14 +77,8 @@ function extractRole(user: User | null): AuthRole {
   if (!user) return 'member';
 
   const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
-  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
 
-  const candidates = [
-    appMeta.role,
-    appMeta.app_role,
-    userMeta.role,
-    userMeta.app_role,
-  ];
+  const candidates = [appMeta.role, appMeta.app_role];
 
   for (const value of candidates) {
     if (typeof value !== 'string') continue;

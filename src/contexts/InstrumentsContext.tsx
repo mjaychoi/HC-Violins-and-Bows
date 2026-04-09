@@ -10,7 +10,6 @@ import React, {
   ReactNode,
 } from 'react';
 import { Instrument } from '@/types';
-import { fetchInstruments as serviceFetchInstruments } from '@/services/dataService';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
 
@@ -43,6 +42,7 @@ interface InstrumentsState {
   instruments: Instrument[];
   loading: boolean;
   submitting: boolean;
+  error: unknown | null;
   lastUpdated: Date | null;
 }
 
@@ -50,6 +50,7 @@ interface InstrumentsState {
 type InstrumentsAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_SUBMITTING'; payload: boolean }
+  | { type: 'SET_ERROR'; payload: unknown | null }
   | { type: 'SET_INSTRUMENTS'; payload: Instrument[] }
   | { type: 'ADD_INSTRUMENT'; payload: Instrument }
   | {
@@ -65,6 +66,7 @@ const initialState: InstrumentsState = {
   instruments: [],
   loading: false,
   submitting: false,
+  error: null,
   lastUpdated: null,
 };
 
@@ -80,10 +82,14 @@ function instrumentsReducer(
     case 'SET_SUBMITTING':
       return { ...state, submitting: action.payload };
 
+    case 'SET_ERROR':
+      return { ...state, error: action.payload };
+
     case 'SET_INSTRUMENTS':
       return {
         ...state,
         instruments: action.payload,
+        error: null,
         lastUpdated: new Date(),
       };
 
@@ -183,23 +189,22 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
   const fetchInstruments = useCallback(async () => {
     return deduped(async () => {
       dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_ERROR', payload: null });
       try {
-        const fetcher = async () => {
-          // 전체 데이터가 필요한 경우 all=true 파라미터 추가
-          const response = await apiFetch(
-            '/api/instruments?orderBy=created_at&ascending=false&all=true'
-          );
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw errorData.error || new Error('Failed to fetch instruments');
-          }
-          const result = await response.json();
-          return (result.data || []).map(parseInstrumentType);
-        };
-
-        const instruments = await serviceFetchInstruments(fetcher);
+        const response = await apiFetch(
+          '/api/instruments?orderBy=created_at&ascending=false&all=true'
+        );
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw errorData.error || new Error('Failed to fetch instruments');
+        }
+        const result = await response.json();
+        const instruments = ((result.data || []) as Instrument[]).map(
+          parseInstrumentType
+        );
         dispatch({ type: 'SET_INSTRUMENTS', payload: instruments });
       } catch (error) {
+        dispatch({ type: 'SET_ERROR', payload: error });
         handleError(error, 'Fetch instruments');
       } finally {
         dispatch({ type: 'SET_LOADING', payload: false });
@@ -362,6 +367,7 @@ export function useInstruments() {
     instruments: state.instruments,
     loading: state.loading,
     submitting: state.submitting,
+    error: state.error,
     lastUpdated: state.lastUpdated,
     ...actions,
   };

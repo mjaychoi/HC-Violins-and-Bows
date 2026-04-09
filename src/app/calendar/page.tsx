@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useMaintenanceTasks } from '@/hooks/useMaintenanceTasks';
 import {
@@ -22,7 +22,6 @@ import {
 import { Button } from '@/components/common/inputs';
 import type { MaintenanceTask, ContactLog } from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
-import { apiFetch } from '@/utils/apiFetch';
 import { useCalendarNavigation, useCalendarView } from './hooks';
 import {
   CALENDAR_MESSAGES,
@@ -58,46 +57,11 @@ export default function CalendarPage() {
   const [modalDefaultDate, setModalDefaultDate] = useState<string>('');
   const [draggingEventId, setDraggingEventId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchFollowUps = async () => {
-      try {
-        const response = await apiFetch('/api/contacts?hasFollowUp=true');
-        const payload = await response.json();
-
-        if (!response.ok) {
-          const errorMessage =
-            (payload && typeof payload === 'object' && 'error' in payload
-              ? (payload as { error?: string }).error
-              : undefined) ||
-            (payload && typeof payload === 'object' && 'message' in payload
-              ? (payload as { message?: string }).message
-              : undefined) ||
-            'Failed to fetch follow-ups';
-
-          throw new Error(errorMessage);
-        }
-
-        if (!isMounted) return;
-        // follow-up data is temporarily unused; retain for future UI hooks
-      } catch (error) {
-        if (!isMounted) return;
-        handleError(error, 'Fetch follow-ups');
-      }
-    };
-
-    void fetchFollowUps();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [handleError]);
-
   // Calendar data hooks
   const {
     tasks,
     loading,
+    error: fetchError,
     createTask,
     updateTask,
     deleteTask,
@@ -477,6 +441,8 @@ export default function CalendarPage() {
           instruments={instruments}
           clients={clients}
           loading={loading}
+          fetchError={fetchError}
+          onRetry={navigation.refetchCurrentRange}
           navigation={navigation}
           view={view}
           setView={setView}

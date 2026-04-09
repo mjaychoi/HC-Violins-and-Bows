@@ -1,23 +1,27 @@
-import { NextRequest, NextResponse } from 'next/server';
-import packageJson from '../../../../package.json';
-import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
+import { NextResponse } from 'next/server';
 import { checkMigrations } from '@/app/api/_utils/healthCheck';
 
-// Node.js runtime required for process.uptime() and process.env access
-export const runtime = 'nodejs';
+// This is a health check endpoint for the API.
+export async function GET() {
+  const result = await checkMigrations();
 
-async function getHandler(_request: NextRequest) {
-  // ✅ FIXED: Suppress unused parameter warning
-  void _request;
-  const migrations = await checkMigrations();
-
-  const healthStatus = migrations.allHealthy ? 'ok' : 'degraded';
-
-  return NextResponse.json({
-    status: healthStatus,
-    version: packageJson.version ?? 'unknown',
-    timestamp: new Date().toISOString(),
-  });
+  return NextResponse.json(
+    {
+      status: result.allHealthy ? 'ok' : 'error',
+      version: process.env.NEXT_PUBLIC_APP_VERSION ?? 'dev',
+      timestamp: new Date().toISOString(),
+      checks: {
+        forbiddenPoliciesAbsent: result.forbiddenPoliciesAbsent ?? true,
+        authOrgIdHelperValid: result.authOrgIdHelperValid,
+        authIsAdminHelperValid: result.authIsAdminHelperValid,
+        criticalPolicyPredicatesValid: result.criticalPolicyPredicatesValid,
+        requiredPoliciesPresent: result.requiredPoliciesPresent,
+        invoiceImageStoragePathShapeValid:
+          result.invoiceImageStoragePathShapeValid,
+      },
+    },
+    {
+      status: result.allHealthy ? 200 : 503,
+    }
+  );
 }
-
-export const GET = withSentryRoute(getHandler);

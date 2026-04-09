@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Instrument, InstrumentImage, ClientInstrument, Client } from '@/types';
 import OptimizedImage from '@/components/common/OptimizedImage';
 import {
@@ -15,6 +15,7 @@ import { useSuccessToastContext } from '@/contexts/SuccessToastContext';
 import { useErrorContext } from '@/contexts/ErrorContext';
 import Link from 'next/link';
 import { usePermissions } from '@/hooks/usePermissions';
+import { downloadCertificatePdf } from '../utils/certificateDownload';
 
 interface InstrumentExpandedRowProps {
   instrument: Instrument;
@@ -30,6 +31,8 @@ interface CertificateFile {
   size: number;
   createdAt: string | null;
 }
+
+type MediaLoadState = 'loading' | 'success' | 'empty' | 'error';
 
 const CERTIFICATE_CACHE_TTL = 60 * 1000; // 1 minute
 const certificateCache = new Map<
@@ -50,11 +53,14 @@ export function InstrumentExpandedRow({
   const { canUploadInstrumentMedia } = usePermissions();
   const [images, setImages] = useState<InstrumentImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
+  const [imageState, setImageState] = useState<MediaLoadState>('loading');
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [certificateFiles, setCertificateFiles] = useState<CertificateFile[]>(
     []
   );
   const [loadingCertificates, setLoadingCertificates] = useState(false);
+  const [certificateState, setCertificateState] =
+    useState<MediaLoadState>('loading');
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{
@@ -69,6 +75,108 @@ export function InstrumentExpandedRow({
   const imageReqIdRef = useRef(0);
   const certificateReqIdRef = useRef(0);
 
+  const fetchImages = useCallback(
+    async (instrumentId: string, isStillValid?: () => boolean) => {
+      const reqId = ++imageReqIdRef.current;
+      setLoadingImages(true);
+      setImageState('loading');
+      try {
+        const response = await apiFetch(
+          `/api/instruments/${instrumentId}/images`
+        );
+        if (!response.ok) {
+          throw new Error(`Failed to fetch images: ${response.statusText}`);
+        }
+
+        if (!isStillValid || isStillValid()) {
+          if (imageReqIdRef.current === reqId) {
+            const result = await response.json();
+            const sortedImages = (result.data || []).sort(
+              (a: InstrumentImage, b: InstrumentImage) =>
+                a.display_order - b.display_order
+            );
+            setImages(sortedImages);
+            setSelectedImageIndex(0);
+            setImageState(sortedImages.length > 0 ? 'success' : 'empty');
+          }
+        }
+      } catch (error) {
+        if (isStillValid && !isStillValid()) return;
+        if (imageReqIdRef.current === reqId) {
+          setImages([]);
+          setSelectedImageIndex(0);
+          setImageState('error');
+        }
+        handleError(error, 'InstrumentImagesFetch');
+      } finally {
+        if (imageReqIdRef.current === reqId) {
+          setLoadingImages(false);
+        }
+      }
+    },
+    [handleError]
+  );
+
+  const fetchCertificates = useCallback(
+    async (
+      instrumentId: string,
+      isStillValid?: () => boolean,
+      forceRefresh = false
+    ) => {
+      const reqId = ++certificateReqIdRef.current;
+      setLoadingCertificates(true);
+      setCertificateState('loading');
+      try {
+        const cached = certificateCache.get(instrumentId);
+        if (
+          !forceRefresh &&
+          cached &&
+          Date.now() - cached.updatedAt < CERTIFICATE_CACHE_TTL
+        ) {
+          if (!isStillValid || isStillValid()) {
+            setCertificateFiles(cached.data);
+            setCertificateState(cached.data.length > 0 ? 'success' : 'empty');
+          }
+          return;
+        }
+
+        const response = await apiFetch(
+          `/api/instruments/${instrumentId}/certificates`
+        );
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch certificates: ${response.statusText}`
+          );
+        }
+
+        if (!isStillValid || isStillValid()) {
+          if (certificateReqIdRef.current === reqId) {
+            const result = await response.json();
+            const files = result.data || [];
+            setCertificateFiles(files);
+            setCertificateState(files.length > 0 ? 'success' : 'empty');
+            certificateCache.set(instrumentId, {
+              data: files,
+              updatedAt: Date.now(),
+            });
+          }
+        }
+      } catch (error) {
+        if (isStillValid && !isStillValid()) return;
+        if (certificateReqIdRef.current === reqId) {
+          setCertificateFiles([]);
+          setCertificateState('error');
+        }
+        handleError(error, 'InstrumentCertificatesFetch');
+      } finally {
+        if (certificateReqIdRef.current === reqId) {
+          setLoadingCertificates(false);
+        }
+      }
+    },
+    [handleError]
+  );
+
   // Fetch images and certificates when component mounts or instrument changes
   useEffect(() => {
     let alive = true;
@@ -76,8 +184,10 @@ export function InstrumentExpandedRow({
 
     if (!currentInstrumentId) {
       setImages([]);
+      setImageState('empty');
       setSelectedImageIndex(0);
       setCertificateFiles([]);
+      setCertificateState('empty');
       return;
     }
 
@@ -92,81 +202,7 @@ export function InstrumentExpandedRow({
     return () => {
       alive = false;
     };
-  }, [instrument?.id]);
-
-  const fetchImages = async (
-    instrumentId: string,
-    isStillValid?: () => boolean
-  ) => {
-    const reqId = ++imageReqIdRef.current;
-    setLoadingImages(true);
-    try {
-      const response = await apiFetch(
-        `/api/instruments/${instrumentId}/images`
-      );
-      if (!isStillValid || isStillValid()) {
-        if (response.ok && imageReqIdRef.current === reqId) {
-          const result = await response.json();
-          const sortedImages = (result.data || []).sort(
-            (a: InstrumentImage, b: InstrumentImage) =>
-              a.display_order - b.display_order
-          );
-          setImages(sortedImages);
-          setSelectedImageIndex(0);
-        }
-      }
-    } catch (error) {
-      if (isStillValid && !isStillValid()) return;
-      console.error('Failed to fetch images:', error);
-    } finally {
-      if (imageReqIdRef.current === reqId) {
-        setLoadingImages(false);
-      }
-    }
-  };
-
-  const fetchCertificates = async (
-    instrumentId: string,
-    isStillValid?: () => boolean,
-    forceRefresh = false
-  ) => {
-    const reqId = ++certificateReqIdRef.current;
-    setLoadingCertificates(true);
-    try {
-      const cached = certificateCache.get(instrumentId);
-      if (
-        !forceRefresh &&
-        cached &&
-        Date.now() - cached.updatedAt < CERTIFICATE_CACHE_TTL
-      ) {
-        if (!isStillValid || isStillValid()) {
-          setCertificateFiles(cached.data);
-        }
-        return;
-      }
-
-      const response = await apiFetch(
-        `/api/instruments/${instrumentId}/certificates`
-      );
-      if (!isStillValid || isStillValid()) {
-        if (response.ok && certificateReqIdRef.current === reqId) {
-          const result = await response.json();
-          setCertificateFiles(result.data || []);
-          certificateCache.set(instrumentId, {
-            data: result.data || [],
-            updatedAt: Date.now(),
-          });
-        }
-      }
-    } catch (error) {
-      if (isStillValid && !isStillValid()) return;
-      console.error('Failed to fetch certificates:', error);
-    } finally {
-      if (certificateReqIdRef.current === reqId) {
-        setLoadingCertificates(false);
-      }
-    }
-  };
+  }, [fetchCertificates, fetchImages, instrument?.id]);
 
   const handleDownloadCertificate = async (file: CertificateFile) => {
     if (!instrument?.id) return;
@@ -182,32 +218,19 @@ export function InstrumentExpandedRow({
       const query = file.id
         ? `id=${encodeURIComponent(file.id)}`
         : `file=${encodeURIComponent(file.name)}`;
-      const response = await apiFetch(
-        `/api/instruments/${instrument.id}/certificate?${query}`
-      );
-
-      if (!response.ok) {
-        handleError(
-          new Error(`Failed to download certificate: ${response.statusText}`),
-          'CertificateDownload'
-        );
-        return;
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
       const safe =
         instrument.serial_number?.replace(/[^a-zA-Z0-9]/g, '_') ||
         instrument.id.slice(0, 8);
       const downloadFileName = file.name.replace(/^\d+_/, '');
-      a.download = safe ? `${safe}_${downloadFileName}` : downloadFileName;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      showSuccess('Certificate downloaded successfully');
+      await downloadCertificatePdf({
+        url: `/api/instruments/${instrument.id}/certificates?${query}`,
+        downloadFileName: safe
+          ? `${safe}_${downloadFileName}`
+          : downloadFileName,
+        errorContext: 'CertificateDownload',
+        showSuccess,
+        handleError,
+      });
     } catch (error) {
       handleError(error, 'CertificateDownload');
     } finally {
@@ -260,6 +283,9 @@ export function InstrumentExpandedRow({
   };
 
   const selectedImage = images[selectedImageIndex];
+  const hasImageContent = imageState === 'success' && images.length > 0;
+  const hasCertificateContent =
+    certificateState === 'success' && certificateFiles.length > 0;
 
   // Count columns in ItemList table: empty header + 9 data columns = 10
   // Adjust if ItemList structure changes
@@ -277,7 +303,18 @@ export function InstrumentExpandedRow({
               <div className="flex items-center justify-center h-64 bg-gray-100 rounded-lg">
                 <div className="text-gray-500">Loading images...</div>
               </div>
-            ) : images.length > 0 ? (
+            ) : imageState === 'error' ? (
+              <div className="flex flex-col items-center justify-center gap-3 h-64 bg-red-50 rounded-lg border border-red-200">
+                <div className="text-red-700 text-sm">Failed to load media</div>
+                <button
+                  type="button"
+                  onClick={() => instrument?.id && fetchImages(instrument.id)}
+                  className="px-3 py-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-md hover:bg-red-100"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : hasImageContent ? (
               <>
                 {/* Main Image */}
                 <div className="relative w-full h-64 bg-gray-100 rounded-lg overflow-hidden">
@@ -402,7 +439,20 @@ export function InstrumentExpandedRow({
                     </div>
                   ))}
                 </div>
-              ) : certificateFiles.length > 0 ? (
+              ) : certificateState === 'error' ? (
+                <div className="flex items-center justify-between gap-3 p-3 border border-red-200 rounded-lg bg-red-50">
+                  <p className="text-xs text-red-700">Failed to load media</p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      instrument?.id && fetchCertificates(instrument.id)
+                    }
+                    className="px-3 py-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-md hover:bg-red-100"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : hasCertificateContent ? (
                 <div className="space-y-2">
                   {certificateFiles.map(file => {
                     const isDownloading = downloadingFile === file.name;

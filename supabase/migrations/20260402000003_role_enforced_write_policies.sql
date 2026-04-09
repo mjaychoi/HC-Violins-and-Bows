@@ -9,8 +9,6 @@ AS $$
     WHEN lower(trim(COALESCE(
       auth.jwt() -> 'app_metadata' ->> 'role',
       auth.jwt() -> 'app_metadata' ->> 'app_role',
-      auth.jwt() -> 'user_metadata' ->> 'role',
-      auth.jwt() -> 'user_metadata' ->> 'app_role',
       auth.jwt() ->> 'role',
       auth.jwt() ->> 'app_role',
       'member'

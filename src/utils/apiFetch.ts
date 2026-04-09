@@ -1,122 +1,65 @@
-/**
- * Helper function to make authenticated API requests
- * Automatically includes Supabase access token in Authorization header
- */
-
 import { getSupabaseClient } from '@/lib/supabase-client';
-import type { Session } from '@supabase/supabase-js';
-
-type ApiFetchMeta = {
-  idempotencyKey?: string;
-  public?: boolean;
-};
 
 export class ApiFetchAuthError extends Error {
-  constructor(message = 'Session required') {
+  constructor(message: string) {
     super(message);
     this.name = 'ApiFetchAuthError';
   }
 }
 
-const SESSION_CACHE_TTL = 5_000;
-let cachedSession: Session | null = null;
-let cachedSessionExpiresAt = 0;
-let cachedSessionPromise: Promise<Session | null> | null = null;
+type ApiFetchOptions = {
+  public?: boolean;
+  idempotencyKey?: string;
+};
 
-async function getCachedSession(): Promise<Session | null> {
-  const now = Date.now();
-  if (cachedSession && now < cachedSessionExpiresAt) {
-    return cachedSession;
-  }
-
-  if (!cachedSessionPromise) {
-    cachedSessionPromise = (async () => {
-      const supabase = await getSupabaseClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      return session ?? null;
-    })();
-  }
-
-  try {
-    const session = await cachedSessionPromise;
-    cachedSession = session;
-    cachedSessionExpiresAt = Date.now() + SESSION_CACHE_TTL;
-    return session;
-  } finally {
-    cachedSessionPromise = null;
-  }
-}
-
-/**
- * Fetch with automatic authentication token injection
- * @param url - API endpoint URL
- * @param options - Fetch options (headers will be merged with auth header)
- * @param meta - Optional metadata (e.g., idempotency keys)
- * @returns Promise<Response>
- */
 export async function apiFetch(
-  url: string,
-  options: RequestInit = {},
-  meta?: ApiFetchMeta
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  options?: ApiFetchOptions
 ): Promise<Response> {
-  // Start from caller-provided options
-  const requestOptions: RequestInit = { ...options };
+  const url =
+    typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
 
-  // Apply idempotency key if provided
-  if (meta?.idempotencyKey) {
-    const h = new Headers(requestOptions.headers);
-    h.set('Idempotency-Key', meta.idempotencyKey);
-    requestOptions.headers = h;
+  const isPublic = options?.public === true || url.startsWith('/api/health');
+
+  if (isPublic) {
+    if (!init || Object.keys(init).length === 0) {
+      return fetch(input);
+    }
+    return fetch(input, init);
   }
 
-  // Prepare fetchOptions in outer scope so catch can use it
-  const fetchOptions: RequestInit = { ...requestOptions };
-
   try {
-    const session = await getCachedSession();
-    if (!session?.access_token) {
-      if (meta?.public) {
-        const hasOptions = Object.keys(fetchOptions).length > 0;
-        return hasOptions ? fetch(url, fetchOptions) : fetch(url);
-      }
+    const client = await getSupabaseClient();
+    const { data, error } = await client.auth.getSession();
 
-      throw new ApiFetchAuthError('Session required');
+    if (error) {
+      throw new ApiFetchAuthError('Session lookup failed');
     }
 
-    // Merge headers
-    const headers = new Headers(fetchOptions.headers);
-    headers.set('Authorization', `Bearer ${session.access_token}`);
+    if (!data?.session) {
+      throw new ApiFetchAuthError('Missing session');
+    }
 
-    // Normalize headers into a plain object for easier testing/inspection
-    const canonicalHeaderNames: Record<string, string> = {
-      'content-type': 'Content-Type',
-      authorization: 'Authorization',
-    };
-
-    const normalizedHeaders: Record<string, string> = {};
-    headers.forEach((value, key) => {
-      const canonicalKey = canonicalHeaderNames[key] ?? key;
-      normalizedHeaders[canonicalKey] = value;
+    return fetch(input, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${data.session.access_token}`,
+        ...(options?.idempotencyKey
+          ? { 'Idempotency-Key': options.idempotencyKey }
+          : {}),
+        ...(init?.headers ?? {}),
+      },
     });
-
-    if (Object.keys(normalizedHeaders).length > 0) {
-      fetchOptions.headers = normalizedHeaders;
-    } else {
-      delete fetchOptions.headers;
-    }
-
-    const hasOptions = Object.keys(fetchOptions).length > 0;
-    return hasOptions ? fetch(url, fetchOptions) : fetch(url);
   } catch (error) {
-    if (meta?.public) {
-      const hasOptions = Object.keys(fetchOptions).length > 0;
-      return hasOptions ? fetch(url, fetchOptions) : fetch(url);
+    if (error instanceof ApiFetchAuthError) {
+      throw error;
     }
-
-    throw error instanceof ApiFetchAuthError
-      ? error
-      : new ApiFetchAuthError('Session required');
+    throw new ApiFetchAuthError('Session lookup failed');
   }
 }

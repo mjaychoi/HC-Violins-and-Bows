@@ -249,7 +249,7 @@ describe('/api/invoices/[id]', () => {
 
       expect(response.status).toBe(400);
       // ✅ 변경: 실제 에러 메시지는 "Invalid invoice id: invalid-id" 형식
-      expect(json.error).toContain('Invalid invoice id');
+      expect(json.message).toContain('Invalid invoice id');
       // Note: apiHandler doesn't include error metadata for validation errors
       // that return directly (not thrown). Only thrown errors get full metadata.
       // Validation errors that return directly don't include error metadata in successful logging
@@ -296,7 +296,7 @@ describe('/api/invoices/[id]', () => {
       const json = await response.json();
 
       expect(response.status).toBe(404);
-      expect(json.error).toBeDefined();
+      expect(json.message).toBeDefined();
       expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
       expect(mockCaptureException).toHaveBeenCalled();
     });
@@ -328,7 +328,8 @@ describe('/api/invoices/[id]', () => {
       const json = await response.json();
 
       expect(response.status).toBe(500);
-      expect(json.error).toBeDefined();
+      expect(json.message).toBeDefined();
+      expect(response.headers.get('x-request-id')).toBeTruthy();
       expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
     });
 
@@ -588,7 +589,8 @@ describe('/api/invoices/[id]', () => {
       const json = await response.json();
 
       expect(response.status).toBe(413);
-      expect(json.error).toBeDefined();
+      expect(json.message).toBeDefined();
+      expect(response.headers.get('x-request-id')).toBeTruthy();
       expect(mockErrorHandler.createError).toHaveBeenCalled();
       expect(mockCaptureException).toHaveBeenCalled();
     });
@@ -723,7 +725,8 @@ describe('/api/invoices/[id]', () => {
       const json = await response.json();
 
       expect(response.status).toBe(500);
-      expect(json.error).toBeDefined();
+      expect(json.message).toBeDefined();
+      expect(response.headers.get('x-request-id')).toBeTruthy();
       expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
       expect(mockCaptureException).toHaveBeenCalled();
     });

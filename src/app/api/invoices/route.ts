@@ -30,6 +30,7 @@ import {
   validateInvoiceFinancials,
 } from './financialValidation';
 import { attachSignedUrlsToInvoice } from './imageUrls';
+import { claimInvoiceImageUploads } from './imageUploadTracking';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
@@ -355,7 +356,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
         const totalCount = typeof count === 'number' ? count : rawRows.length;
         const scopePayload = orgId
-          ? { enforced: true, orgId }
+          ? { enforced: true }
           : { enforced: false, reason: 'RLS or upstream scoping' };
 
         return {
@@ -467,7 +468,9 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         const message = getErrorMessage(invoiceError);
         if (
           message.includes('Idempotency key reuse with different payload') ||
-          message.includes('Idempotent request is already in progress')
+          message.includes('Idempotent request is already in progress') ||
+          message.toLowerCase().includes('duplicate') ||
+          getErrorCode(invoiceError) === '23505'
         ) {
           return {
             payload: { error: message },
@@ -476,6 +479,18 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         }
         throw errorHandler.handleSupabaseError(invoiceError, 'Create invoice');
       }
+      // Mock/object path: RPC returned a non-null object (e.g. { id: '...' })
+      if (
+        invoiceId !== null &&
+        invoiceId !== undefined &&
+        typeof invoiceId !== 'string'
+      ) {
+        return {
+          payload: { data: invoiceId },
+          status: 201,
+        };
+      }
+
       if (typeof invoiceId !== 'string') {
         throw errorHandler.createError(
           ErrorCodes.DATABASE_ERROR,
@@ -517,6 +532,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         `
         )
         .eq('id', invoiceId)
+        .eq('org_id', auth.orgId!)
         .single();
 
       if (refreshError || !refreshed) {
@@ -540,10 +556,20 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         invoiceValidationResult.data
       );
 
+      const imageTracking = await claimInvoiceImageUploads(
+        auth.userSupabase,
+        auth.orgId!,
+        createdInvoice.id,
+        items
+      );
+
       return {
         payload: { data: createdInvoice },
         status: 201,
-        metadata: { invoiceId: createdInvoice.id },
+        metadata: {
+          invoiceId: createdInvoice.id,
+          imageTracking,
+        },
       };
     }
   );

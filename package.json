@@ -2,6 +2,7 @@
   "name": "inventory-app",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@11.7.0",
   "engines": {
     "node": "20.x"
   },
@@ -22,6 +23,7 @@
     "prepare": "husky",
     "pre-commit": "lint-staged",
     "type-check": "tsc --noEmit",
+    "check:migrations": "node scripts/check-active-migrations.js",
     "format": "prettier --write .",
     "final": "npm run lint && npm run type-check && npm run test && npm run build",
     "migrate": "tsx scripts/migrate.ts",
@@ -50,6 +52,8 @@
     "@supabase/supabase-js": "^2.51.0",
     "@types/react-dnd": "^2.0.36",
     "@types/react-window": "^1.8.8",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.37.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "next": "^15.5.9",
@@ -69,6 +73,7 @@
     "@next/bundle-analyzer": "^15.5.9",
     "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",

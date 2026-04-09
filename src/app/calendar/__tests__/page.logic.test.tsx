@@ -535,6 +535,10 @@ describe('CalendarPage - Core Logic', () => {
           'Failed to create task'
         );
       });
+
+      expect(mockCloseModal).not.toHaveBeenCalled();
+      expect(mockRefetchCurrentRange).not.toHaveBeenCalled();
+      expect(mockShowSuccess).not.toHaveBeenCalled();
     });
 
     it('should clear modal default date when opening new task', async () => {
@@ -666,6 +670,10 @@ describe('CalendarPage - Core Logic', () => {
           'Failed to update task'
         );
       });
+
+      expect(mockCloseModal).not.toHaveBeenCalled();
+      expect(mockRefetchCurrentRange).not.toHaveBeenCalled();
+      expect(mockShowSuccess).not.toHaveBeenCalled();
     });
 
     it('should open edit modal when event is selected', async () => {
@@ -789,6 +797,10 @@ describe('CalendarPage - Core Logic', () => {
           'Failed to delete task'
         );
       });
+
+      expect(mockRefetchCurrentRange).not.toHaveBeenCalled();
+      expect(mockShowSuccess).not.toHaveBeenCalled();
+      expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
     });
   });
 
@@ -872,6 +884,7 @@ describe('CalendarPage - Core Logic', () => {
         expect(mockUpdateTask).toHaveBeenCalledTimes(2); // Original update + rollback
       });
 
+      expect(mockShowSuccess).not.toHaveBeenCalled();
       expect(mockHandleError).toHaveBeenCalledWith(
         error,
         'Failed to update task date'
@@ -1022,6 +1035,8 @@ describe('CalendarPage - Core Logic', () => {
           'Failed to update task time'
         );
       });
+
+      expect(mockShowSuccess).not.toHaveBeenCalled();
     });
   });
 

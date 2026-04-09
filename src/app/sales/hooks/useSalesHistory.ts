@@ -32,6 +32,17 @@ interface SalesTotals {
   refundRate: number;
 }
 
+function generateIdempotencyKey(): string {
+  if (
+    typeof globalThis.crypto !== 'undefined' &&
+    typeof globalThis.crypto.randomUUID === 'function'
+  ) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `sale-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
 export function useSalesHistory() {
   const [sales, setSales] = useState<SalesHistory[]>([]);
   const [page, setPageState] = useState(1);
@@ -126,13 +137,19 @@ export function useSalesHistory() {
         setLoading(true);
         setError(null);
 
-        const response = await apiFetch('/api/sales', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+        const response = await apiFetch(
+          '/api/sales',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
           },
-          body: JSON.stringify(payload),
-        });
+          {
+            idempotencyKey: generateIdempotencyKey(),
+          }
+        );
 
         const result = await response.json();
 

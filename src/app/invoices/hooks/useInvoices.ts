@@ -82,6 +82,9 @@ function isSafeIdempotencyConflict(status: number, message: string) {
 
 export function useInvoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [status, setStatus] = useState<
+    'loading' | 'success' | 'empty' | 'error'
+  >('empty');
   const [page, setPageState] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -106,6 +109,7 @@ export function useInvoices() {
       abortRef.current = controller;
 
       setLoading(true);
+      setStatus('loading');
       setScopeInfo(null);
       const currentPage = options.page || page;
 
@@ -147,6 +151,7 @@ export function useInvoices() {
 
         if (abortRef.current === controller && !controller.signal.aborted) {
           setInvoices(data);
+          setStatus(data.length > 0 ? 'success' : 'empty');
           setTotalCount(safeCount);
           setTotalPages(
             typeof result.totalPages === 'number'
@@ -195,6 +200,7 @@ export function useInvoices() {
         );
         if (abortRef.current === controller) {
           setInvoices([]);
+          setStatus('error');
           setTotalCount(0);
           setTotalPages(1);
           setScopeInfo(null);
@@ -326,6 +332,7 @@ export function useInvoices() {
           shouldRefreshList: false,
         };
       } catch (error) {
+        createIdempotencyRef.current = null;
         handleError(
           error instanceof Error ? error.message : String(error),
           'Create invoice'
@@ -419,6 +426,7 @@ export function useInvoices() {
 
   return {
     invoices,
+    status,
     page,
     totalCount,
     totalPages,

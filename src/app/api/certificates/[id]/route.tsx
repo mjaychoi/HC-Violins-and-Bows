@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import { requireOrgContext } from '@/app/api/_utils/withAuthRoute';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
@@ -18,6 +19,11 @@ import {
 import { validateUUID } from '@/utils/inputValidation';
 import { validateInstrument } from '@/utils/typeGuards';
 import type { Instrument } from '@/types';
+import { createApiErrorResponse } from '@/app/api/_utils/apiErrors';
+import {
+  getOrCreateRequestId,
+  withRequestIdHeader,
+} from '@/app/api/_utils/requestContext';
 
 // FIXED: Ensure Node.js runtime for PDF generation (Edge runtime breaks react-pdf)
 export const runtime = 'nodejs';
@@ -144,19 +150,50 @@ async function getHandlerInternal(
   const startTime = nowMs();
   const durationMs = () => Math.round(nowMs() - startTime);
   const routePath = `/api/certificates/${id}`;
+  const requestId = getOrCreateRequestId(request);
 
   try {
+    const orgContextError = requireOrgContext(auth);
+    if (orgContextError) {
+      logApiRequest('GET', routePath, 403, durationMs(), 'CertificatesAPI', {
+        instrumentId: id,
+        requestId,
+        error: true,
+        errorCode: 'ORG_CONTEXT_REQUIRED',
+      });
+
+      return withRequestIdHeader(
+        createApiErrorResponse(
+          {
+            message: 'Organization context required',
+            error_code: 'ORG_CONTEXT_REQUIRED',
+            retryable: false,
+          },
+          403
+        ),
+        requestId
+      );
+    }
+
     // 1) Validate UUID
     if (!validateUUID(id)) {
       logApiRequest('GET', routePath, 400, durationMs(), 'CertificatesAPI', {
         instrumentId: id,
+        requestId,
         error: true,
         errorCode: 'INVALID_UUID',
       });
 
-      return NextResponse.json(
-        { error: 'Invalid instrument ID format' },
-        { status: 400 }
+      return withRequestIdHeader(
+        createApiErrorResponse(
+          {
+            message: 'Invalid instrument ID format',
+            error_code: 'INVALID_UUID',
+            retryable: false,
+          },
+          400
+        ),
+        requestId
       );
     }
 
@@ -165,6 +202,7 @@ async function getHandlerInternal(
       .from('instruments')
       .select('*')
       .eq('id', id)
+      .eq('org_id', auth.orgId!)
       .single();
 
     // 2b) Optional owner fetch
@@ -182,6 +220,7 @@ async function getHandlerInternal(
           .from('clients')
           .select('first_name, last_name, email')
           .eq('id', ownerId)
+          .eq('org_id', auth.orgId!)
           .maybeSingle();
 
         if (ownerClient) {
@@ -211,6 +250,7 @@ async function getHandlerInternal(
 
       logApiRequest('GET', routePath, status, durationMs(), 'CertificatesAPI', {
         instrumentId: id,
+        requestId,
         error: true,
         errorCode: appError.code,
         logMessage: logInfo.message,
@@ -219,13 +259,16 @@ async function getHandlerInternal(
       captureException(
         appError instanceof Error ? appError : new Error(String(appError)),
         'CertificatesAPI.GET',
-        { instrumentId: id, status },
+        { instrumentId: id, status, requestId },
         ErrorSeverity.MEDIUM
       );
 
-      return NextResponse.json(createSafeErrorResponse(appError, status), {
-        status,
-      });
+      return withRequestIdHeader(
+        NextResponse.json(createSafeErrorResponse(appError, status), {
+          status,
+        }),
+        requestId
+      );
     }
 
     // 3) Validate instrument structure
@@ -248,6 +291,7 @@ async function getHandlerInternal(
 
       logApiRequest('GET', routePath, 500, durationMs(), 'CertificatesAPI', {
         instrumentId: id,
+        requestId,
         error: true,
         errorCode: appError.code,
         logMessage: logInfo.message,
@@ -256,13 +300,16 @@ async function getHandlerInternal(
       captureException(
         appError,
         'CertificatesAPI.GET',
-        { instrumentId: id },
+        { instrumentId: id, requestId },
         ErrorSeverity.HIGH
       );
 
-      return NextResponse.json(createSafeErrorResponse(appError, 500), {
-        status: 500,
-      });
+      return withRequestIdHeader(
+        NextResponse.json(createSafeErrorResponse(appError, 500), {
+          status: 500,
+        }),
+        requestId
+      );
     }
 
     // 4) Resolve logo src
@@ -295,6 +342,7 @@ async function getHandlerInternal(
 
       logApiRequest('GET', routePath, 413, durationMs(), 'CertificatesAPI', {
         instrumentId: id,
+        requestId,
         error: true,
         errorCode: appError.code,
         logMessage: logInfo.message,
@@ -304,13 +352,16 @@ async function getHandlerInternal(
       captureException(
         appError,
         'CertificatesAPI.GET',
-        { instrumentId: id, pdfSize: pdfBuffer.length },
+        { instrumentId: id, pdfSize: pdfBuffer.length, requestId },
         ErrorSeverity.HIGH
       );
 
-      return NextResponse.json(createSafeErrorResponse(appError, 413), {
-        status: 413,
-      });
+      return withRequestIdHeader(
+        NextResponse.json(createSafeErrorResponse(appError, 413), {
+          status: 413,
+        }),
+        requestId
+      );
     }
 
     // 8) Return PDF
@@ -322,16 +373,20 @@ async function getHandlerInternal(
       instrumentId: id,
       serialNumber: validatedInstrument.serial_number,
       pdfSize: pdfBuffer.length,
+      requestId,
     });
 
-    return new NextResponse(new Uint8Array(pdfBuffer), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': createContentDisposition(filename),
-        'Content-Length': pdfBuffer.length.toString(),
-      },
-    });
+    return withRequestIdHeader(
+      new NextResponse(new Uint8Array(pdfBuffer), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': createContentDisposition(filename),
+          'Content-Length': pdfBuffer.length.toString(),
+        },
+      }),
+      requestId
+    );
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
 
@@ -364,6 +419,7 @@ async function getHandlerInternal(
       'CertificatesAPI',
       {
         instrumentId: paramsId,
+        requestId,
         error: true,
         errorCode: appError.code,
         logMessage: logInfo.message,
@@ -373,13 +429,16 @@ async function getHandlerInternal(
     captureException(
       err,
       'CertificatesAPI.GET',
-      { instrumentId: paramsId, logMessage: logInfo.message },
+      { instrumentId: paramsId, logMessage: logInfo.message, requestId },
       ErrorSeverity.HIGH
     );
 
-    return NextResponse.json(createSafeErrorResponse(appError, 500), {
-      status: 500,
-    });
+    return withRequestIdHeader(
+      NextResponse.json(createSafeErrorResponse(appError, 500), {
+        status: 500,
+      }),
+      requestId
+    );
   }
 }
 

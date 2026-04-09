@@ -24,6 +24,11 @@ import {
   normalizeSupabaseInvoiceItemsJoin,
 } from '@/utils/invoiceNormalize';
 import { attachSignedUrlsToInvoiceItems } from '../../imageUrls';
+import { createApiErrorResponse } from '@/app/api/_utils/apiErrors';
+import {
+  getOrCreateRequestId,
+  withRequestIdHeader,
+} from '@/app/api/_utils/requestContext';
 
 // FIXED: Ensure Node.js runtime for PDF generation (Edge runtime breaks react-pdf)
 export const runtime = 'nodejs';
@@ -149,6 +154,7 @@ async function generateInvoicePdfResponse(
   id: string
 ): Promise<Response> {
   const startTime = performance.now();
+  const requestId = getOrCreateRequestId(req);
 
   try {
     const inline = new URL(req.url).searchParams.get('inline') === 'true';
@@ -164,14 +170,22 @@ async function generateInvoicePdfResponse(
         'InvoicesAPI',
         {
           invoiceId: id,
+          requestId,
           error: true,
           errorCode: 'ORG_CONTEXT_REQUIRED',
         }
       );
 
-      return NextResponse.json(
-        { error: 'Organization context required' },
-        { status: 403 }
+      return withRequestIdHeader(
+        createApiErrorResponse(
+          {
+            message: 'Organization context required',
+            error_code: 'ORG_CONTEXT_REQUIRED',
+            retryable: false,
+          },
+          403
+        ),
+        requestId
       );
     }
 
@@ -186,14 +200,22 @@ async function generateInvoicePdfResponse(
         'InvoicesAPI',
         {
           invoiceId: id,
+          requestId,
           error: true,
           errorCode: 'INVALID_UUID',
         }
       );
 
-      return NextResponse.json(
-        { error: 'Invalid invoice ID format' },
-        { status: 400 }
+      return withRequestIdHeader(
+        createApiErrorResponse(
+          {
+            message: 'Invalid invoice ID format',
+            error_code: 'INVALID_UUID',
+            retryable: false,
+          },
+          400
+        ),
+        requestId
       );
     }
 
@@ -237,6 +259,7 @@ async function generateInvoicePdfResponse(
         'InvoicesAPI',
         {
           invoiceId: id,
+          requestId,
           error: true,
           errorCode: (appError as { code?: string })?.code,
           logMessage: logInfo.message,
@@ -246,14 +269,17 @@ async function generateInvoicePdfResponse(
       captureException(
         appError,
         'InvoicesAPI.GET',
-        { invoiceId: id, duration },
+        { invoiceId: id, duration, requestId },
         ErrorSeverity.MEDIUM
       );
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const status = (invoiceError as any)?.code === 'PGRST116' ? 404 : 500;
       const safeError = createSafeErrorResponse(appError, status);
-      return NextResponse.json(safeError, { status });
+      return withRequestIdHeader(
+        NextResponse.json(safeError, { status }),
+        requestId
+      );
     }
 
     // Note: Invoice settings were previously loaded here but were not used.
@@ -486,6 +512,7 @@ async function generateInvoicePdfResponse(
         'InvoicesAPI',
         {
           invoiceId: id,
+          requestId,
           error: true,
           logMessage: logInfo.message,
           pdfSize: pdfBuffer.length,
@@ -495,12 +522,15 @@ async function generateInvoicePdfResponse(
       captureException(
         appError,
         'InvoicesAPI.GET',
-        { invoiceId: id, pdfSize: pdfBuffer.length, duration },
+        { invoiceId: id, pdfSize: pdfBuffer.length, duration, requestId },
         ErrorSeverity.HIGH
       );
 
       const safeError = createSafeErrorResponse(appError, 413);
-      return NextResponse.json(safeError, { status: 413 });
+      return withRequestIdHeader(
+        NextResponse.json(safeError, { status: 413 }),
+        requestId
+      );
     }
 
     // 9) Return PDF response
@@ -517,19 +547,23 @@ async function generateInvoicePdfResponse(
         invoiceId: id,
         invoiceNumber: normalizedInvoice.invoice_number || undefined,
         pdfSize: pdfBuffer.length,
+        requestId,
       }
     );
 
-    return new NextResponse(new Uint8Array(pdfBuffer), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': createContentDisposition(filename, inline),
-        'Content-Length': pdfBuffer.length.toString(),
-        // ✅ important for user-specific PDFs
-        'Cache-Control': 'private, no-store',
-      },
-    });
+    return withRequestIdHeader(
+      new NextResponse(new Uint8Array(pdfBuffer), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': createContentDisposition(filename, inline),
+          'Content-Length': pdfBuffer.length.toString(),
+          // ✅ important for user-specific PDFs
+          'Cache-Control': 'private, no-store',
+        },
+      }),
+      requestId
+    );
   } catch (error) {
     const duration = Math.round(performance.now() - startTime);
     const appError = errorHandler.handleSupabaseError(
@@ -546,6 +580,7 @@ async function generateInvoicePdfResponse(
       'InvoicesAPI',
       {
         invoiceId: id,
+        requestId,
         error: true,
         errorCode: (appError as { code?: string })?.code,
         logMessage: logInfo.message,
@@ -555,11 +590,14 @@ async function generateInvoicePdfResponse(
     captureException(
       appError,
       'InvoicesAPI.GET',
-      { invoiceId: id, duration },
+      { invoiceId: id, duration, requestId },
       ErrorSeverity.HIGH
     );
 
     const safeError = createSafeErrorResponse(appError, 500);
-    return NextResponse.json(safeError, { status: 500 });
+    return withRequestIdHeader(
+      NextResponse.json(safeError, { status: 500 }),
+      requestId
+    );
   }
 }

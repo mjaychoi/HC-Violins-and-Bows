@@ -13,8 +13,20 @@ import { useErrorContext } from '@/contexts/ErrorContext';
 
 // Mock dependencies
 jest.mock('@/utils/apiFetch');
-jest.mock('@/contexts/SuccessToastContext');
-jest.mock('@/contexts/ErrorContext');
+jest.mock('@/contexts/SuccessToastContext', () => {
+  const actual = jest.requireActual('@/contexts/SuccessToastContext');
+  return {
+    ...actual,
+    useSuccessToastContext: jest.fn(),
+  };
+});
+jest.mock('@/contexts/ErrorContext', () => {
+  const actual = jest.requireActual('@/contexts/ErrorContext');
+  return {
+    ...actual,
+    useErrorContext: jest.fn(),
+  };
+});
 jest.mock('@/hooks/usePermissions', () => ({
   usePermissions: jest.fn(() => ({
     canUploadInstrumentMedia: true,
@@ -42,6 +54,9 @@ type ApiFetchHandlerDetails = {
   ok?: boolean;
   status?: number;
   statusText?: string;
+  headers?: {
+    get: (name: string) => string | null;
+  };
   json?: () => Promise<unknown>;
   blob?: () => Promise<Blob>;
 };
@@ -60,7 +75,8 @@ function isApiFetchHandlerDetails(
     'data' in value ||
     'ok' in value ||
     'status' in value ||
-    'statusText' in value
+    'statusText' in value ||
+    'headers' in value
   );
 }
 
@@ -73,6 +89,7 @@ function createMockResponse(value: ApiFetchHandlerValue): Response {
       ok: value.ok ?? true,
       status: value.status ?? 200,
       statusText: value.statusText ?? 'OK',
+      headers: value.headers,
       json:
         value.json ??
         (async () => ({
@@ -109,7 +126,7 @@ function mockApiFetchByUrl(handlers: Record<string, ApiFetchHandlerValue>) {
   handleError: mockHandleError,
 });
 
-describe.skip('InstrumentExpandedRow', () => {
+describe('InstrumentExpandedRow', () => {
   const mockInstrument: Instrument = {
     id: 'inst-123',
     status: 'Available',
@@ -170,7 +187,7 @@ describe.skip('InstrumentExpandedRow', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText('No certificate files uploaded yet')
+        screen.getByText('No certificate files uploaded yet.')
       ).toBeInTheDocument();
     });
   });
@@ -290,6 +307,66 @@ describe.skip('InstrumentExpandedRow', () => {
     await waitFor(() => {
       expect(screen.getByText('No images available')).toBeInTheDocument();
     });
+  });
+
+  it('shows image fetch failure separately from empty state and retries', async () => {
+    const user = userEvent.setup();
+    let imageAttempts = 0;
+
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': async () => {
+        imageAttempts += 1;
+        if (imageAttempts === 1) {
+          throw new Error('network error');
+        }
+        return createMockResponse({
+          data: [
+            {
+              id: 'img-1',
+              instrument_id: 'inst-123',
+              image_url: '/image1.jpg',
+              alt_text: 'Image 1',
+              display_order: 0,
+              created_at: '2024-01-01',
+            },
+          ],
+        });
+      },
+      '/api/instruments/inst-123/certificates': [],
+    });
+
+    render(<InstrumentExpandedRow instrument={mockInstrument} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to load media')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('No images available')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('optimized-image')).toBeInTheDocument();
+    });
+  });
+
+  it('shows certificate fetch failure separately from empty state', async () => {
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': [],
+      '/api/instruments/inst-123/certificates': async () => {
+        throw new Error('certificate error');
+      },
+    });
+
+    render(<InstrumentExpandedRow instrument={mockInstrument} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText('Failed to load media').length
+      ).toBeGreaterThan(0);
+    });
+    expect(
+      screen.queryByText('No certificate files uploaded yet.')
+    ).not.toBeInTheDocument();
   });
 
   it('should display images when available', async () => {
@@ -566,7 +643,7 @@ describe.skip('InstrumentExpandedRow', () => {
     const mockBlob = new Blob(['certificate content'], {
       type: 'application/pdf',
     });
-    const downloadUrl = `/api/instruments/inst-123/certificate?file=${encodeURIComponent(
+    const downloadUrl = `/api/instruments/inst-123/certificates?file=${encodeURIComponent(
       mockCertificates[0].name
     )}`;
 
@@ -575,6 +652,10 @@ describe.skip('InstrumentExpandedRow', () => {
       '/api/instruments/inst-123/certificates': mockCertificates,
       [downloadUrl]: {
         ok: true,
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === 'content-type' ? 'application/pdf' : null,
+        },
         blob: async () => mockBlob,
       },
     });
@@ -607,7 +688,7 @@ describe.skip('InstrumentExpandedRow', () => {
     const mockBlob = new Blob(['certificate content'], {
       type: 'application/pdf',
     });
-    const downloadUrl = `/api/instruments/inst-123/certificate?file=${encodeURIComponent(
+    const downloadUrl = `/api/instruments/inst-123/certificates?file=${encodeURIComponent(
       mockCertificates[0].name
     )}`;
 
@@ -616,6 +697,10 @@ describe.skip('InstrumentExpandedRow', () => {
       '/api/instruments/inst-123/certificates': mockCertificates,
       [downloadUrl]: {
         ok: true,
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === 'content-type' ? 'application/pdf' : null,
+        },
         blob: async () => mockBlob,
       },
     });
@@ -1058,6 +1143,10 @@ describe.skip('InstrumentExpandedRow', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === 'content-type' ? 'application/pdf' : null,
+      },
       json: async () => ({}),
       blob: async () => mockBlob,
     } as unknown as Response);
@@ -1083,7 +1172,7 @@ describe.skip('InstrumentExpandedRow', () => {
     await waitFor(
       () => {
         expect(mockApiFetch).toHaveBeenCalledWith(
-          `/api/instruments/inst-123/certificate?file=${encodeURIComponent('1234567890_cert-1.pdf')}`
+          `/api/instruments/inst-123/certificates?file=${encodeURIComponent('1234567890_cert-1.pdf')}`
         );
         expect(mockCreateObjectURL).toHaveBeenCalled();
         expect(mockShowSuccess).toHaveBeenCalledWith(
@@ -1091,6 +1180,47 @@ describe.skip('InstrumentExpandedRow', () => {
         );
       },
       { timeout: 3000 }
+    );
+  });
+
+  it('should reject certificate download with invalid content type', async () => {
+    const user = userEvent.setup();
+    const mockCertificates = [
+      {
+        name: '1234567890_cert-1.pdf',
+        path: '/certificates/cert-1.pdf',
+        size: 1024,
+        createdAt: '2024-01-01T00:00:00Z',
+        publicUrl: '/certificates/cert-1.pdf',
+      },
+    ];
+
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': [],
+      '/api/instruments/inst-123/certificates': mockCertificates,
+      [`/api/instruments/inst-123/certificates?file=${encodeURIComponent('1234567890_cert-1.pdf')}`]:
+        {
+          ok: true,
+          headers: {
+            get: (name: string) =>
+              name.toLowerCase() === 'content-type' ? 'application/json' : null,
+          },
+          blob: async () => new Blob(['{}'], { type: 'application/json' }),
+        },
+    });
+
+    render(<InstrumentExpandedRow instrument={mockInstrument} />);
+
+    const downloadButton = await screen.findAllByRole('button', {
+      name: /download certificate/i,
+    });
+    await user.click(downloadButton[0]);
+
+    await waitFor(() => {
+      expect(mockHandleError).toHaveBeenCalled();
+    });
+    expect(mockShowSuccess).not.toHaveBeenCalledWith(
+      'Certificate downloaded successfully'
     );
   });
 

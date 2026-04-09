@@ -62,6 +62,46 @@ const eslintConfig = [
       '@typescript-eslint/ban-ts-comment': 'off',
     },
   },
+  {
+    files: ['src/hooks/**/*.{ts,tsx}', 'src/contexts/**/*.{ts,tsx}'],
+    ignores: [
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      'src/**/__tests__/**/*',
+      // AuthContext must use the Supabase client directly for auth subscriptions
+      // and session management — these cannot be proxied through apiFetch routes.
+      'src/contexts/AuthContext.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@/lib/supabase-client',
+              message:
+                'Use apiFetch-based API routes instead of direct Supabase access in hooks/contexts.',
+            },
+            {
+              name: '@/utils/apiClient',
+              message:
+                'Use apiFetch-based API routes instead of deprecated apiClient in hooks/contexts.',
+            },
+            {
+              name: '@/utils/supabaseHelpers',
+              message:
+                'Use apiFetch-based API routes instead of SupabaseHelpers in hooks/contexts.',
+            },
+            {
+              name: '@/services/dataService',
+              message:
+                'Use apiFetch-based API routes instead of deprecated dataService in hooks/contexts.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

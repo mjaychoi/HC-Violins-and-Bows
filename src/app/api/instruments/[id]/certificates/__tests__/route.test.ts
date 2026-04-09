@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
-import { getServerSupabase } from '@/lib/supabase-server';
+import { getAdminSupabase } from '@/lib/supabase-server';
 import { validateUUID } from '@/utils/inputValidation';
 import { getStorage } from '@/utils/storage';
 
@@ -15,8 +15,8 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => ({
   withAuthRoute: (fn: unknown) => fn,
 }));
 
-const mockGetServerSupabase = getServerSupabase as jest.MockedFunction<
-  typeof getServerSupabase
+const mockGetAdminSupabase = getAdminSupabase as jest.MockedFunction<
+  typeof getAdminSupabase
 >;
 const mockValidateUUID = validateUUID as jest.MockedFunction<
   typeof validateUUID
@@ -125,7 +125,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -173,7 +173,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
         }),
       } as any;
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -216,7 +216,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
 
       const mockSupabaseClient = buildSupabaseClient(mockQuery);
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -256,7 +256,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
         mockStorage as unknown
       );
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -309,7 +309,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
         mockStorage as unknown
       );
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -375,7 +375,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
         mockStorage as unknown
       );
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -441,7 +441,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
         mockStorage as unknown
       );
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -497,7 +497,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
         mockStorage as unknown
       );
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -549,7 +549,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
         mockStorage as unknown
       );
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -569,8 +569,8 @@ describe.skip('/api/instruments/[id]/certificates', () => {
     });
 
     it('should handle non-Error exceptions in list handler', async () => {
-      // Mock getServerSupabase to throw a non-Error
-      mockGetServerSupabase.mockImplementationOnce(() => {
+      // Mock getAdminSupabase to throw a non-Error
+      mockGetAdminSupabase.mockImplementationOnce(() => {
         throw 'String error'; // Non-Error exception
       });
 
@@ -625,7 +625,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
         mockStorage as unknown
       );
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -653,7 +653,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
 
       const mockSupabaseClient = buildSupabaseClient(mockQuery);
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`
@@ -707,7 +707,7 @@ describe.skip('/api/instruments/[id]/certificates', () => {
         mockStorage as unknown
       );
 
-      mockGetServerSupabase.mockReturnValue(mockSupabaseClient);
+      mockGetAdminSupabase.mockReturnValue(mockSupabaseClient);
 
       const request = new NextRequest(
         `http://localhost/api/instruments/${mockInstrumentId}/certificates`

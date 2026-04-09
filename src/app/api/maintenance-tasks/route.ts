@@ -31,6 +31,14 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       context: 'MaintenanceTasksAPI',
     },
     async () => {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
+        return {
+          payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
       const searchParams = request.nextUrl.searchParams;
       const id = searchParams.get('id') || undefined;
       const instrumentId = searchParams.get('instrument_id') || undefined;
@@ -57,6 +65,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           .from('maintenance_tasks')
           .select('*', { count: 'exact' })
           .eq('id', id)
+          .eq('org_id', auth.orgId!)
           .single();
 
         if (error) {
@@ -78,7 +87,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       // 필터 적용
       let query = auth.userSupabase
         .from('maintenance_tasks')
-        .select('*', { count: 'exact' });
+        .select('*', { count: 'exact' })
+        .eq('org_id', auth.orgId!);
 
       // Validate UUID format for instrumentId (consistent with other APIs)
       if (instrumentId) {
@@ -320,6 +330,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         .from('maintenance_tasks')
         .update(validationResult.data)
         .eq('id', id)
+        .eq('org_id', auth.orgId!)
         .select()
         .single();
 
@@ -403,16 +414,25 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const { error } = await auth.userSupabase
+      const { error, count } = await auth.userSupabase
         .from('maintenance_tasks')
-        .delete()
-        .eq('id', id);
+        .delete({ count: 'exact' })
+        .eq('id', id)
+        .eq('org_id', auth.orgId!);
 
       if (error) {
         throw errorHandler.handleSupabaseError(
           error,
           'Delete maintenance task'
         );
+      }
+
+      if (!count || count === 0) {
+        return {
+          payload: { error: 'Task not found' },
+          status: 404,
+          metadata: { taskId: id },
+        };
       }
 
       return {

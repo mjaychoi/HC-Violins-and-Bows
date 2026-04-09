@@ -7,6 +7,7 @@ jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
 let mockUserSupabase: any;
+let mockAuthContext: any;
 
 jest.mock('@/app/api/_utils/withAuthRoute', () => {
   const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
@@ -14,13 +15,8 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
     ...actual,
     withAuthRoute: (handler: any) => (request: NextRequest) =>
       handler(request, {
-        user: { id: 'test-user' },
-        accessToken: 'test-token',
-        orgId: 'test-org',
-        clientId: 'test-client',
-        role: 'admin',
+        ...mockAuthContext,
         userSupabase: mockUserSupabase,
-        isTestBypass: true,
       }),
   };
 });
@@ -82,6 +78,15 @@ describe('/api/instruments', () => {
     mockUserSupabase = {
       from: jest.fn(),
     };
+    mockAuthContext = {
+      user: { id: 'test-user' },
+      accessToken: 'test-token',
+      orgId: 'test-org',
+      clientId: 'test-client',
+      role: 'admin',
+      userSupabase: mockUserSupabase,
+      isTestBypass: false,
+    };
   });
 
   afterEach(() => {
@@ -89,9 +94,103 @@ describe('/api/instruments', () => {
   });
 
   describe('GET', () => {
+    it('should reject requests without org context', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        orgId: null,
+      };
+
+      const request = new NextRequest('http://localhost/api/instruments');
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.error).toBe('Organization context required');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('should scope GET queries to auth org and return instruments', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+      };
+      (mockQuery.order as jest.Mock).mockResolvedValue({
+        data: [mockInstrument],
+        error: null,
+        count: 1,
+      });
+
+      const mockCertQuery = {
+        select: jest.fn().mockReturnThis(),
+        in: jest.fn().mockResolvedValue({
+          data: [],
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest.fn((table: string) =>
+          table === 'instrument_certificates' ? mockCertQuery : mockQuery
+        ),
+      } as any;
+      mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
+
+      const request = new NextRequest('http://localhost/api/instruments');
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data).toEqual([
+        { ...mockInstrument, has_certificate: false },
+      ]);
+      expect(json.count).toBe(1);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    });
+
+    it('should prevent cross-org reads by filtering with the caller org_id', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+      };
+      (mockQuery.order as jest.Mock).mockResolvedValue({
+        data: [],
+        error: null,
+        count: 0,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn((table: string) =>
+          table === 'instrument_certificates'
+            ? {
+                select: jest.fn().mockReturnThis(),
+                in: jest.fn().mockResolvedValue({ data: [], error: null }),
+              }
+            : mockQuery
+        ),
+      } as any;
+      mockAuthContext = {
+        ...mockAuthContext,
+        orgId: 'org-abc',
+        userSupabase: mockUserSupabase,
+      };
+
+      const request = new NextRequest(
+        'http://localhost/api/instruments?ownership=owned'
+      );
+      await GET(request);
+
+      expect(mockQuery.eq).toHaveBeenNthCalledWith(1, 'org_id', 'org-abc');
+      expect(mockQuery.eq).toHaveBeenNthCalledWith(2, 'ownership', 'owned');
+    });
+
     it.skip('should return instruments with default parameters', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
       };
@@ -140,7 +239,14 @@ describe('/api/instruments', () => {
       });
 
       mockUserSupabase = {
-        from: jest.fn().mockReturnValue(mockQuery),
+        from: jest.fn((table: string) =>
+          table === 'instrument_certificates'
+            ? {
+                select: jest.fn().mockReturnThis(),
+                in: jest.fn().mockResolvedValue({ data: [], error: null }),
+              }
+            : mockQuery
+        ),
       } as any;
 
       const request = new NextRequest(
@@ -154,6 +260,7 @@ describe('/api/instruments', () => {
     it('should filter instruments by search query', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         or: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
@@ -165,7 +272,14 @@ describe('/api/instruments', () => {
       });
 
       mockUserSupabase = {
-        from: jest.fn().mockReturnValue(mockQuery),
+        from: jest.fn((table: string) =>
+          table === 'instrument_certificates'
+            ? {
+                select: jest.fn().mockReturnThis(),
+                in: jest.fn().mockResolvedValue({ data: [], error: null }),
+              }
+            : mockQuery
+        ),
       } as any;
 
       const request = new NextRequest(
@@ -179,6 +293,7 @@ describe('/api/instruments', () => {
     it('should apply limit when provided', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
       };
@@ -204,6 +319,7 @@ describe('/api/instruments', () => {
       const mockError = { message: 'Database error', code: 'PGRST116' };
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
       };
@@ -322,6 +438,8 @@ describe('/api/instruments', () => {
       expect(response.status).toBe(200);
       expect(json.data).toBeDefined();
       expect(mockQuery.update).toHaveBeenCalled();
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockInstrument.id);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
     it('should return 400 when id is missing', async () => {
@@ -409,11 +527,10 @@ describe('/api/instruments', () => {
     it('should delete an instrument', async () => {
       const mockQuery = {
         delete: jest.fn().mockReturnThis(),
-        eq: jest.fn(),
-      };
-      (mockQuery.eq as jest.Mock).mockResolvedValue({
         error: null,
-      });
+        count: 1,
+        eq: jest.fn().mockReturnThis(),
+      };
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -428,6 +545,8 @@ describe('/api/instruments', () => {
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
       expect(mockQuery.delete).toHaveBeenCalled();
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockInstrument.id);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
     it('should return 400 when id is missing', async () => {
