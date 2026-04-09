@@ -73,6 +73,7 @@ const getStoragePathFromPublicUrl = (url: string): string | null => {
   return null;
 };
 
+// this is a legacy function that is used to resolve the storage key from the image url
 function resolveLegacyStorageKey(
   storageKey: string | null | undefined,
   imageUrl: string | null | undefined
