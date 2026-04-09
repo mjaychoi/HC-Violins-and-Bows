@@ -21,6 +21,10 @@ import type { CreateInvoiceInput, InvoiceFinancialSnapshot } from '../types';
 import { validateInvoiceFinancials } from '../financialValidation';
 import { attachSignedUrlsToInvoice } from '../imageUrls';
 import { claimInvoiceImageUploads } from '../imageUploadTracking';
+import type { Json } from '@/types/database';
+
+type InvoiceMutationResult = 'full_success' | 'partial_success';
+type JsonObject = { [key: string]: Json | undefined };
 
 function buildApiMeta(
   req: NextRequest,
@@ -33,6 +37,36 @@ function buildApiMeta(
     path: req.nextUrl.pathname,
     metadata: { invoiceId },
   };
+}
+
+function getInvoiceMutationResult(
+  imageTracking: Awaited<ReturnType<typeof claimInvoiceImageUploads>>
+): InvoiceMutationResult {
+  return imageTracking.status === 'partial' || imageTracking.status === 'failed'
+    ? 'partial_success'
+    : 'full_success';
+}
+
+function getUpdateInvoiceMessage(result: InvoiceMutationResult): string {
+  return result === 'partial_success'
+    ? 'Invoice updated, but some item images were not linked.'
+    : 'Invoice updated successfully.';
+}
+
+function toInvoiceItemsJson(
+  items: CreateInvoiceInput['items'] | null | undefined
+): Json {
+  if (items === null) return null;
+
+  return (items ?? []).map(item => ({
+    instrument_id: item.instrument_id,
+    description: item.description,
+    qty: item.qty,
+    rate: item.rate,
+    amount: item.amount,
+    image_url: item.image_url,
+    display_order: item.display_order,
+  }));
 }
 
 /**
@@ -232,7 +266,7 @@ async function updateInvoiceHandler(
     }
 
     // Build invoice update object (only apply provided fields)
-    const invoiceUpdate: Record<string, unknown> = {};
+    const invoiceUpdate: JsonObject = {};
     if (validatedInput.client_id !== undefined)
       invoiceUpdate.client_id = validatedInput.client_id;
     if (validatedInput.invoice_date !== undefined)
@@ -282,9 +316,7 @@ async function updateInvoiceHandler(
         p_invoice_id: id,
         p_invoice: invoiceUpdate,
         p_items: itemsProvided
-          ? Array.isArray(validatedInput.items)
-            ? validatedInput.items
-            : []
+          ? toInvoiceItemsJson(validatedInput.items)
           : null,
       }
     );
@@ -345,9 +377,15 @@ async function updateInvoiceHandler(
       id,
       itemsProvided ? validatedInput.items : null
     );
+    const result = getInvoiceMutationResult(imageTracking);
 
     return {
-      payload: { data: hydratedInvoice },
+      payload: {
+        data: hydratedInvoice,
+        result,
+        message: getUpdateInvoiceMessage(result),
+        imageTracking,
+      },
       status: 200,
       metadata: {
         ...metadata,

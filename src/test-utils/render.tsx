@@ -53,3 +53,22 @@ export { screen, act, fireEvent, waitFor, within };
 
 // Re-export commonly used types for convenience
 export type { RenderOptions, RenderHookResult, RenderHookOptions };
+
+// Re-export TestAuthProvider so tests that need custom auth state
+// can wrap just their component without replacing the full TestProviders tree:
+//
+//   renderHook(() => useClients(), {
+//     wrapper: ({ children }) => (
+//       <TestAuthProvider value={{ role: 'member' }}>
+//         <ToastProvider disableHost>
+//           <ClientsProvider>{children}</ClientsProvider>
+//         </ToastProvider>
+//       </TestAuthProvider>
+//     ),
+//   });
+export {
+  TestAuthProvider,
+  defaultTestAuthValue,
+  TEST_USER_ID,
+  TEST_ORG_ID,
+} from './TestAuthProvider';

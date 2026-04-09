@@ -5,6 +5,7 @@ import React, {
   useContext,
   useReducer,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   ReactNode,
@@ -12,6 +13,8 @@ import React, {
 import { ClientInstrument } from '@/types';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
+import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 // Connections 상태 타입
 interface ConnectionsState {
@@ -112,6 +115,7 @@ type ConnectionsContextValue = {
 const ConnectionsContext = createContext<ConnectionsContextValue | null>(null);
 
 type JsonRecord = Record<string, unknown>;
+const NO_TENANT_SCOPE_KEY = '__no-tenant__';
 
 async function safeJson(res: Response): Promise<JsonRecord | null> {
   try {
@@ -123,6 +127,24 @@ async function safeJson(res: Response): Promise<JsonRecord | null> {
   } catch {
     return null;
   }
+}
+
+function getResponseError(
+  body: JsonRecord | null,
+  res: Response,
+  fallbackMessage: string
+): Error {
+  const candidate = body?.error ?? body?.message;
+
+  if (candidate instanceof Error) {
+    return candidate;
+  }
+
+  if (typeof candidate === 'string' && candidate.trim()) {
+    return new Error(candidate);
+  }
+
+  return new Error(`${fallbackMessage} (${res.status})`);
 }
 
 function sameConnections(
@@ -143,16 +165,34 @@ function sameConnections(
 export function ConnectionsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(connectionsReducer, initialState);
   const { handleError } = useErrorHandler();
+  const { tenantIdentityKey } = useTenantIdentity();
 
-  // In-flight request deduplication
-  const inflight = useRef<Promise<void> | null>(null);
+  // In-flight request deduplication is tenant-scoped.
+  const inflight = useRef(new Map<string, Promise<void>>());
+  const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+  const previousTenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+
+  useEffect(() => {
+    if (previousTenantIdentityKeyRef.current !== tenantIdentityKey) {
+      dispatch({ type: 'RESET_STATE' });
+    }
+    tenantIdentityKeyRef.current = tenantIdentityKey;
+    previousTenantIdentityKeyRef.current = tenantIdentityKey;
+  }, [tenantIdentityKey]);
   const deduped = useCallback(
-    <T extends () => Promise<void>>(fn: T): Promise<void> => {
-      if (inflight.current) return inflight.current;
+    <T extends () => Promise<void>>(
+      tenantKey: string,
+      fn: T
+    ): Promise<void> => {
+      const existing = inflight.current.get(tenantKey);
+      if (existing) return existing;
+
       const p = fn().finally(() => {
-        inflight.current = null;
+        if (inflight.current.get(tenantKey) === p) {
+          inflight.current.delete(tenantKey);
+        }
       });
-      inflight.current = p;
+      inflight.current.set(tenantKey, p);
       return p;
     },
     []
@@ -173,7 +213,10 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       // Optional cache check: already loaded & not forced -> skip
       if (!force && state.lastUpdated && state.connections.length > 0) return;
 
-      return deduped(async () => {
+      const fetchTenantIdentityKey = tenantIdentityKeyRef.current;
+      const inflightKey = fetchTenantIdentityKey ?? NO_TENANT_SCOPE_KEY;
+
+      return deduped(inflightKey, async () => {
         dispatch({ type: 'SET_LOADING', payload: true });
         dispatch({ type: 'SET_ERROR', payload: null });
         try {
@@ -183,31 +226,35 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
           const body = await safeJson(res);
 
           if (!res.ok) {
-            const errorObj = body?.error;
-            if (errorObj instanceof Error) {
-              throw errorObj;
-            }
-            const message =
-              (typeof errorObj === 'string' && errorObj) ||
-              (typeof body?.message === 'string' && body.message) ||
-              res.statusText ||
-              'Failed to fetch connections';
-            throw new Error(message);
+            throw getResponseError(body, res, 'Failed to fetch connections');
           }
 
           const next = Array.isArray(body?.data)
             ? (body?.data as ClientInstrument[])
             : [];
 
+          if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+            return;
+          }
+
           // Avoid unnecessary re-render
           if (!sameConnections(state.connections, next)) {
             dispatch({ type: 'SET_CONNECTIONS', payload: next });
           }
         } catch (err) {
+          if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+            return;
+          }
+          if (isAuthLikeTenantError(err)) {
+            dispatch({ type: 'RESET_STATE' });
+            return;
+          }
           dispatch({ type: 'SET_ERROR', payload: err });
           handleError(err, 'Fetch connections');
         } finally {
-          dispatch({ type: 'SET_LOADING', payload: false });
+          if (tenantIdentityKeyRef.current === fetchTenantIdentityKey) {
+            dispatch({ type: 'SET_LOADING', payload: false });
+          }
         }
       });
     },
@@ -216,6 +263,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
 
   const createConnection = useCallback(
     async (connection: Omit<ClientInstrument, 'id' | 'created_at'>) => {
+      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
         const res = await apiFetch('/api/connections', {
@@ -227,24 +275,31 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
         const body = await safeJson(res);
 
         if (!res.ok) {
-          const message =
-            (typeof body?.error === 'string' && body.error) ||
-            (typeof body?.message === 'string' && body.message) ||
-            res.statusText ||
-            'Failed to create connection';
-          throw new Error(message);
+          throw getResponseError(body, res, 'Failed to create connection');
         }
 
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
         const created = body?.data as ClientInstrument | undefined;
         if (created) {
           dispatch({ type: 'ADD_CONNECTION', payload: created });
         }
         return created ?? null;
       } catch (err) {
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
+        if (isAuthLikeTenantError(err)) {
+          dispatch({ type: 'RESET_STATE' });
+          return null;
+        }
         handleError(err, 'Create connection');
         return null;
       } finally {
-        dispatch({ type: 'SET_SUBMITTING', payload: false });
+        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+          dispatch({ type: 'SET_SUBMITTING', payload: false });
+        }
       }
     },
     [handleError]
@@ -252,6 +307,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
 
   const updateConnection = useCallback(
     async (id: string, connection: Partial<ClientInstrument>) => {
+      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
         const res = await apiFetch('/api/connections', {
@@ -263,14 +319,12 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
         const body = await safeJson(res);
 
         if (!res.ok) {
-          const message =
-            (typeof body?.error === 'string' && body.error) ||
-            (typeof body?.message === 'string' && body.message) ||
-            res.statusText ||
-            'Failed to update connection';
-          throw new Error(message);
+          throw getResponseError(body, res, 'Failed to update connection');
         }
 
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
         const updated = body?.data as ClientInstrument | undefined;
         if (updated) {
           dispatch({
@@ -280,10 +334,19 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
         }
         return updated ?? null;
       } catch (err) {
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
+        if (isAuthLikeTenantError(err)) {
+          dispatch({ type: 'RESET_STATE' });
+          return null;
+        }
         handleError(err, 'Update connection');
         return null;
       } finally {
-        dispatch({ type: 'SET_SUBMITTING', payload: false });
+        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+          dispatch({ type: 'SET_SUBMITTING', payload: false });
+        }
       }
     },
     [handleError]
@@ -291,6 +354,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
 
   const deleteConnection = useCallback(
     async (id: string) => {
+      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
         const res = await apiFetch(
@@ -303,21 +367,28 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
         const body = await safeJson(res);
 
         if (!res.ok) {
-          const message =
-            (typeof body?.error === 'string' && body.error) ||
-            (typeof body?.message === 'string' && body.message) ||
-            res.statusText ||
-            'Failed to delete connection';
-          throw new Error(message);
+          throw getResponseError(body, res, 'Failed to delete connection');
         }
 
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return false;
+        }
         dispatch({ type: 'REMOVE_CONNECTION', payload: id });
         return true;
       } catch (err) {
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return false;
+        }
+        if (isAuthLikeTenantError(err)) {
+          dispatch({ type: 'RESET_STATE' });
+          return false;
+        }
         handleError(err, 'Delete connection');
         return false;
       } finally {
-        dispatch({ type: 'SET_SUBMITTING', payload: false });
+        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+          dispatch({ type: 'SET_SUBMITTING', payload: false });
+        }
       }
     },
     [handleError]

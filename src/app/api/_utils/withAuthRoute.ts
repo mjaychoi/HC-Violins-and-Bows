@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { User } from '@supabase/supabase-js';
 
-import { getUserSupabase } from '@/lib/supabase-server';
+import {
+  getCookieBackedAuth,
+  type CookieBackedAuthResult,
+} from '@/lib/supabase-server';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity } from '@/types/errors';
 import { createApiErrorResponse } from '@/app/api/_utils/apiErrors';
@@ -11,7 +14,7 @@ export interface AuthContext {
   accessToken: string;
   orgId: string | null;
   role: 'admin' | 'member';
-  userSupabase: ReturnType<typeof getUserSupabase>;
+  userSupabase: CookieBackedAuthResult['userSupabase'];
   isTestBypass: boolean;
 }
 
@@ -26,47 +29,7 @@ interface AuthResult {
   orgId: string | null;
   role: 'admin' | 'member';
   error: Error | null;
-  userSupabase: ReturnType<typeof getUserSupabase> | null;
-}
-
-/**
- * Extract bearer token from Authorization header ("Bearer <token>")
- */
-function extractBearerToken(authHeader: string | null): string {
-  if (!authHeader) return '';
-  const match = authHeader.match(/^bearer\s+(.+)$/i);
-  return match?.[1]?.trim() ?? '';
-}
-
-function getHeaderValue(request: NextRequest, key: string): string | null {
-  try {
-    const headers = request.headers as
-      | Headers
-      | Record<string, string | undefined>
-      | undefined;
-
-    if (!headers) return null;
-
-    if (typeof headers.get === 'function') {
-      return headers.get(key) ?? null;
-    }
-
-    const normalizedKey = key.toLowerCase();
-    const record = headers as Record<string, string | undefined>;
-    return record[key] ?? record[normalizedKey] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function getCookieValue(request: NextRequest, key: string): string | null {
-  try {
-    const cookies = request.cookies;
-    if (!cookies || typeof cookies.get !== 'function') return null;
-    return cookies.get(key)?.value ?? null;
-  } catch {
-    return null;
-  }
+  userSupabase: AuthContext['userSupabase'] | null;
 }
 
 /**
@@ -107,56 +70,26 @@ function extractRole(user: User): 'admin' | 'member' {
 
 async function getUserFromRequest(request: NextRequest): Promise<AuthResult> {
   try {
-    const rawHeader =
-      getHeaderValue(request, 'authorization') ??
-      getHeaderValue(request, 'Authorization') ??
-      '';
+    const cookieAuth = await getCookieBackedAuth(request.cookies);
 
-    const bearerToken = extractBearerToken(rawHeader);
-
-    const cookieToken =
-      getCookieValue(request, 'sb-access-token') ||
-      getCookieValue(request, 'sb:access-token') ||
-      getCookieValue(request, 'sb-token') ||
-      '';
-
-    const token = (bearerToken || cookieToken).trim();
-
-    if (!token) {
+    if (!cookieAuth) {
       return {
         user: null,
         accessToken: null,
         orgId: null,
         role: 'member',
-        error: new Error('Missing authorization token'),
-        userSupabase: null,
-      };
-    }
-
-    const userSupabase = getUserSupabase(token);
-    const {
-      data: { user },
-      error,
-    } = await userSupabase.auth.getUser();
-
-    if (error || !user) {
-      return {
-        user: null,
-        accessToken: null,
-        orgId: null,
-        role: 'member',
-        error: new Error(error?.message || 'Invalid token'),
+        error: new Error('Missing cookie-backed session'),
         userSupabase: null,
       };
     }
 
     return {
-      user,
-      accessToken: token,
-      orgId: extractOrgId(user),
-      role: extractRole(user),
+      user: cookieAuth.user,
+      accessToken: cookieAuth.accessToken,
+      orgId: extractOrgId(cookieAuth.user),
+      role: extractRole(cookieAuth.user),
       error: null,
-      userSupabase,
+      userSupabase: cookieAuth.userSupabase,
     };
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
@@ -226,8 +159,7 @@ export function withAuthRoute(
         const lower = msg.toLowerCase();
 
         const isBenignAuthError =
-          msg === 'Missing authorization token' ||
-          msg === 'Invalid token' ||
+          msg === 'Missing cookie-backed session' ||
           lower.includes('jwt') ||
           lower.includes('unauthorized') ||
           lower.includes('invalid token') ||

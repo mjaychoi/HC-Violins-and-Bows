@@ -8,25 +8,13 @@ import {
 } from '../InstrumentExpandedRow';
 import type { Instrument } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
-import { useSuccessToastContext } from '@/contexts/SuccessToastContext';
-import { useErrorContext } from '@/contexts/ErrorContext';
+import { useAppFeedback } from '@/hooks/useAppFeedback';
 
 // Mock dependencies
 jest.mock('@/utils/apiFetch');
-jest.mock('@/contexts/SuccessToastContext', () => {
-  const actual = jest.requireActual('@/contexts/SuccessToastContext');
-  return {
-    ...actual,
-    useSuccessToastContext: jest.fn(),
-  };
-});
-jest.mock('@/contexts/ErrorContext', () => {
-  const actual = jest.requireActual('@/contexts/ErrorContext');
-  return {
-    ...actual,
-    useErrorContext: jest.fn(),
-  };
-});
+jest.mock('@/hooks/useAppFeedback', () => ({
+  useAppFeedback: jest.fn(),
+}));
 jest.mock('@/hooks/usePermissions', () => ({
   usePermissions: jest.fn(() => ({
     canUploadInstrumentMedia: true,
@@ -40,6 +28,7 @@ jest.mock('@/components/common/OptimizedImage', () => {
 
 const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;
 const mockShowSuccess = jest.fn();
+const mockShowWarning = jest.fn();
 const mockHandleError = jest.fn();
 
 const defaultMockApiResponse = () =>
@@ -118,14 +107,6 @@ function mockApiFetchByUrl(handlers: Record<string, ApiFetchHandlerValue>) {
   });
 }
 
-(useSuccessToastContext as jest.Mock).mockReturnValue({
-  showSuccess: mockShowSuccess,
-});
-
-(useErrorContext as jest.Mock).mockReturnValue({
-  handleError: mockHandleError,
-});
-
 describe('InstrumentExpandedRow', () => {
   const mockInstrument: Instrument = {
     id: 'inst-123',
@@ -150,6 +131,11 @@ describe('InstrumentExpandedRow', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (useAppFeedback as jest.Mock).mockReturnValue({
+      showSuccess: mockShowSuccess,
+      showWarning: mockShowWarning,
+      handleError: mockHandleError,
+    });
     mockApiFetch.mockImplementation(async () => defaultMockApiResponse());
     __resetCertificateCacheForTests(); // Mock certificate cache reset
   });
@@ -1306,10 +1292,11 @@ describe('InstrumentExpandedRow', () => {
     );
   });
 
-  it('should handle certificate delete error', async () => {
+  it('should show warning when certificate delete returns partial_success', async () => {
     const user = userEvent.setup();
     const mockCertificates = [
       {
+        id: 'cert-1',
         name: '1234567890_cert-1.pdf',
         path: '/certificates/cert-1.pdf',
         size: 1024,
@@ -1318,16 +1305,76 @@ describe('InstrumentExpandedRow', () => {
       },
     ];
 
-    mockApiFetch
-      .mockResolvedValueOnce({
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': [],
+      '/api/instruments/inst-123/certificates': { data: mockCertificates },
+      '/api/instruments/inst-123/certificates?id=cert-1': {
         ok: true,
-        json: async () => ({ data: [] }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: mockCertificates }),
-      } as Response)
-      .mockRejectedValueOnce(new Error('Delete failed'));
+        json: async () => ({
+          result: 'partial_success',
+          message:
+            'Certificate removed from the app, but storage cleanup failed.',
+        }),
+      },
+    });
+
+    render(<InstrumentExpandedRow instrument={mockInstrument} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole('button', { name: /delete certificate/i }).length
+      ).toBeGreaterThan(0);
+    });
+
+    await user.click(
+      screen.getAllByRole('button', { name: /delete certificate/i })[0]
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Delete Certificate')).toBeInTheDocument();
+    });
+
+    const confirmButton = screen
+      .getAllByRole('button')
+      .filter(
+        btn =>
+          btn.textContent === 'Delete' && btn.className.includes('bg-red-600')
+      );
+
+    if (confirmButton.length > 0) {
+      await user.click(confirmButton[confirmButton.length - 1]);
+    }
+
+    await waitFor(() => {
+      expect(mockShowWarning).toHaveBeenCalledWith(
+        'Certificate removed from the app, but storage cleanup failed.'
+      );
+      expect(mockShowSuccess).not.toHaveBeenCalledWith(
+        'Certificate deleted successfully'
+      );
+    });
+  });
+
+  it('should handle certificate delete error', async () => {
+    const user = userEvent.setup();
+    const mockCertificates = [
+      {
+        id: 'cert-1',
+        name: '1234567890_cert-1.pdf',
+        path: '/certificates/cert-1.pdf',
+        size: 1024,
+        createdAt: '2024-01-01T00:00:00Z',
+        publicUrl: '/certificates/cert-1.pdf',
+      },
+    ];
+
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': [],
+      '/api/instruments/inst-123/certificates': { data: mockCertificates },
+      '/api/instruments/inst-123/certificates?id=cert-1': async () => {
+        throw new Error('Delete failed');
+      },
+    });
 
     render(<InstrumentExpandedRow instrument={mockInstrument} />);
 
@@ -1380,6 +1427,7 @@ describe('InstrumentExpandedRow', () => {
     const user = userEvent.setup();
     const mockCertificates = [
       {
+        id: 'cert-1',
         name: '1234567890_cert-1.pdf',
         path: '/certificates/cert-1.pdf',
         size: 1024,
@@ -1395,39 +1443,31 @@ describe('InstrumentExpandedRow', () => {
     const mockCreateObjectURL = jest.fn(() => 'blob:mock-url');
     global.URL.createObjectURL = mockCreateObjectURL;
 
-    mockApiFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [] }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: mockCertificates }),
-      } as Response)
-      // Mock slow download API call
-      .mockImplementationOnce(
-        () =>
-          new Promise(resolve =>
-            setTimeout(
-              () =>
-                resolve({
-                  ok: true,
-                  status: 200,
-                  statusText: 'OK',
-                  json: async () => ({}),
-                  blob: async () => mockBlob,
-                } as unknown as Response),
-              100
-            )
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': [],
+      '/api/instruments/inst-123/certificates': { data: mockCertificates },
+      '/api/instruments/inst-123/certificates?id=cert-1': () =>
+        new Promise(resolve =>
+          setTimeout(
+            () =>
+              resolve({
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                json: async () => ({}),
+                blob: async () => mockBlob,
+              } as unknown as Response),
+            100
           )
-      );
+        ),
+    });
 
     render(<InstrumentExpandedRow instrument={mockInstrument} />);
 
     await waitFor(
       () => {
         const downloadButtons = screen.getAllByRole('button', {
-          name: /download/i,
+          name: /download certificate/i,
         });
         expect(downloadButtons.length).toBeGreaterThan(0);
       },
@@ -1435,7 +1475,7 @@ describe('InstrumentExpandedRow', () => {
     );
 
     const downloadButtons = screen.getAllByRole('button', {
-      name: /download/i,
+      name: /download certificate/i,
     });
     const certificateDownloadButton =
       downloadButtons.find(btn => btn.textContent?.includes('Download')) ||
@@ -1464,6 +1504,7 @@ describe('InstrumentExpandedRow', () => {
     const user = userEvent.setup();
     const mockCertificates = [
       {
+        id: 'cert-1',
         name: '1234567890_cert-1.pdf',
         path: '/certificates/cert-1.pdf',
         size: 1024,
@@ -1473,21 +1514,14 @@ describe('InstrumentExpandedRow', () => {
     ];
 
     let resolveDelete: ((value: Response) => void) | undefined;
-    mockApiFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [] }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: mockCertificates }),
-      } as Response)
-      .mockImplementationOnce(
-        () =>
-          new Promise<Response>(resolve => {
-            resolveDelete = resolve;
-          })
-      );
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': [],
+      '/api/instruments/inst-123/certificates': { data: mockCertificates },
+      '/api/instruments/inst-123/certificates?id=cert-1': () =>
+        new Promise<Response>(resolve => {
+          resolveDelete = resolve;
+        }),
+    });
 
     render(<InstrumentExpandedRow instrument={mockInstrument} />);
 
@@ -1563,6 +1597,7 @@ describe('InstrumentExpandedRow', () => {
     const user = userEvent.setup();
     const mockCertificates = [
       {
+        id: 'cert-1',
         name: '1234567890_cert-1.pdf',
         path: '/certificates/cert-1.pdf',
         size: 1024,
@@ -1571,26 +1606,21 @@ describe('InstrumentExpandedRow', () => {
       },
     ];
 
-    mockApiFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [] }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: mockCertificates }),
-      } as Response)
-      .mockResolvedValueOnce({
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': [],
+      '/api/instruments/inst-123/certificates': { data: mockCertificates },
+      '/api/instruments/inst-123/certificates?id=cert-1': {
         ok: false,
         statusText: 'Internal Server Error',
-      } as Response);
+      },
+    });
 
     render(<InstrumentExpandedRow instrument={mockInstrument} />);
 
     await waitFor(
       () => {
         const downloadButtons = screen.getAllByRole('button', {
-          name: /download/i,
+          name: /download certificate/i,
         });
         expect(downloadButtons.length).toBeGreaterThan(0);
       },
@@ -1598,7 +1628,7 @@ describe('InstrumentExpandedRow', () => {
     );
 
     const downloadButtons = screen.getAllByRole('button', {
-      name: /download/i,
+      name: /download certificate/i,
     });
     await user.click(downloadButtons[0]);
 

@@ -2,6 +2,13 @@ import { renderHook, act } from '@testing-library/react';
 import { useInstrumentView } from '../useInstrumentView';
 import type { Instrument } from '@/types';
 
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: jest.fn(() => ({
+    tenantIdentityKey: 'test-user-id:test-org-id:test-token',
+    isTenantTransitioning: false,
+  })),
+}));
+
 const mockInstrument: Instrument = {
   id: 'instrument-1',
   status: 'Available',

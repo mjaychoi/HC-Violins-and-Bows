@@ -5,6 +5,7 @@ import React, {
   useContext,
   useReducer,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   ReactNode,
@@ -12,8 +13,13 @@ import React, {
 import { Instrument } from '@/types';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
+import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 // Helper function to parse type field: if it contains "/", split into type and subtype
+type JsonRecord = Record<string, unknown>;
+const NO_TENANT_SCOPE_KEY = '__no-tenant__';
+
 function parseInstrumentType(item: Instrument): Instrument {
   if (item.type && typeof item.type === 'string' && item.type.includes('/')) {
     const parts = item.type
@@ -35,6 +41,36 @@ function parseInstrumentType(item: Instrument): Instrument {
     }
   }
   return item;
+}
+
+async function safeJson(res: Response): Promise<JsonRecord | null> {
+  try {
+    const json = await res.json();
+    if (json && typeof json === 'object') {
+      return json as JsonRecord;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function getResponseError(
+  body: JsonRecord | null,
+  res: Response,
+  fallbackMessage: string
+): Error {
+  const candidate = body?.error ?? body?.message;
+
+  if (candidate instanceof Error) {
+    return candidate;
+  }
+
+  if (typeof candidate === 'string' && candidate.trim()) {
+    return new Error(candidate);
+  }
+
+  return new Error(`${fallbackMessage} (${res.status})`);
 }
 
 // Instruments 상태 타입
@@ -157,19 +193,36 @@ const InstrumentsContext = createContext<{
 export function InstrumentsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(instrumentsReducer, initialState);
   const { handleError } = useErrorHandler();
+  const { tenantIdentityKey } = useTenantIdentity();
 
-  // In-flight request deduplication
-  const inflight = useRef<Promise<void> | null>(null);
+  // In-flight request deduplication is tenant-scoped.
+  const inflight = useRef(new Map<string, Promise<void>>());
+  const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+  const previousTenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+
+  useEffect(() => {
+    if (previousTenantIdentityKeyRef.current !== tenantIdentityKey) {
+      dispatch({ type: 'RESET_STATE' });
+    }
+    tenantIdentityKeyRef.current = tenantIdentityKey;
+    previousTenantIdentityKeyRef.current = tenantIdentityKey;
+  }, [tenantIdentityKey]);
 
   const deduped = useCallback(
-    <T extends () => Promise<void>>(fn: T): Promise<void> => {
-      if (inflight.current) {
-        return inflight.current;
+    <T extends () => Promise<void>>(
+      tenantKey: string,
+      fn: T
+    ): Promise<void> => {
+      const existing = inflight.current.get(tenantKey);
+      if (existing) {
+        return existing;
       }
       const p = fn().finally(() => {
-        inflight.current = null;
+        if (inflight.current.get(tenantKey) === p) {
+          inflight.current.delete(tenantKey);
+        }
       });
-      inflight.current = p;
+      inflight.current.set(tenantKey, p);
       return p;
     },
     []
@@ -187,7 +240,10 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
 
   // Instruments 액션들
   const fetchInstruments = useCallback(async () => {
-    return deduped(async () => {
+    const fetchTenantIdentityKey = tenantIdentityKeyRef.current;
+    const inflightKey = fetchTenantIdentityKey ?? NO_TENANT_SCOPE_KEY;
+
+    return deduped(inflightKey, async () => {
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
       try {
@@ -195,25 +251,40 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
           '/api/instruments?orderBy=created_at&ascending=false&all=true'
         );
         if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to fetch instruments');
+          const body = await safeJson(response);
+          throw getResponseError(body, response, 'Failed to fetch instruments');
         }
-        const result = await response.json();
-        const instruments = ((result.data || []) as Instrument[]).map(
+        const result = await safeJson(response);
+        const instruments = ((result?.data || []) as Instrument[]).map(
           parseInstrumentType
         );
+        if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+          return;
+        }
         dispatch({ type: 'SET_INSTRUMENTS', payload: instruments });
       } catch (error) {
+        if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+          return;
+        }
+        if (isAuthLikeTenantError(error)) {
+          dispatch({ type: 'RESET_STATE' });
+          return;
+        }
         dispatch({ type: 'SET_ERROR', payload: error });
         handleError(error, 'Fetch instruments');
       } finally {
-        dispatch({ type: 'SET_LOADING', payload: false });
+        if (tenantIdentityKeyRef.current === fetchTenantIdentityKey) {
+          dispatch({ type: 'SET_LOADING', payload: false });
+        }
       }
     });
   }, [handleError, deduped]);
 
   const createInstrument = useCallback(
-    async (instrument: Omit<Instrument, 'id' | 'created_at'>) => {
+    async (
+      instrument: Omit<Instrument, 'id' | 'created_at'>
+    ): Promise<Instrument | null> => {
+      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
         const response = await apiFetch('/api/instruments', {
@@ -222,37 +293,32 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify(instrument),
         });
 
-        const result = await response.json();
+        const result = await safeJson(response);
 
         if (!response.ok) {
-          console.error('[createInstrument] API error:', {
-            status: response.status,
-            statusText: response.statusText,
-            errorData: result,
-            instrument,
-          });
-          if (result?.error) {
-            const error = result.error;
-            if (typeof error === 'object' && error !== null) {
-              throw new Error(
-                error.message || error.details || 'Failed to create instrument'
-              );
-            }
-            throw new Error(
-              typeof error === 'string' ? error : 'Failed to create instrument'
-            );
-          }
-          throw new Error(
-            `Failed to create instrument: ${response.status} ${response.statusText}`
+          throw getResponseError(
+            result,
+            response,
+            'Failed to create instrument'
           );
         }
-        if (result.data) {
-          const parsedData = parseInstrumentType(result.data);
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
+        if (result?.data) {
+          const parsedData = parseInstrumentType(result.data as Instrument);
           dispatch({ type: 'ADD_INSTRUMENT', payload: parsedData });
           return parsedData;
         }
-        return result.data;
+        return null;
       } catch (error) {
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
+        if (isAuthLikeTenantError(error)) {
+          dispatch({ type: 'RESET_STATE' });
+          return null;
+        }
         const errorToHandle =
           error instanceof Error
             ? error
@@ -260,14 +326,20 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
         handleError(errorToHandle, 'Create instrument');
         return null;
       } finally {
-        dispatch({ type: 'SET_SUBMITTING', payload: false });
+        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+          dispatch({ type: 'SET_SUBMITTING', payload: false });
+        }
       }
     },
     [handleError]
   );
 
   const updateInstrument = useCallback(
-    async (id: string, instrument: Partial<Instrument>) => {
+    async (
+      id: string,
+      instrument: Partial<Instrument>
+    ): Promise<Instrument | null> => {
+      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
         const response = await apiFetch('/api/instruments', {
@@ -276,24 +348,36 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({ id, ...instrument }),
         });
         if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to update instrument');
+          const body = await safeJson(response);
+          throw getResponseError(body, response, 'Failed to update instrument');
         }
-        const result = await response.json();
-        if (result.data) {
-          const parsedData = parseInstrumentType(result.data);
+        const result = await safeJson(response);
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
+        if (result?.data) {
+          const parsedData = parseInstrumentType(result.data as Instrument);
           dispatch({
             type: 'UPDATE_INSTRUMENT',
             payload: { id, instrument: parsedData },
           });
           return parsedData;
         }
-        return result.data;
+        return null;
       } catch (error) {
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
+        if (isAuthLikeTenantError(error)) {
+          dispatch({ type: 'RESET_STATE' });
+          return null;
+        }
         handleError(error, 'Update instrument');
         return null;
       } finally {
-        dispatch({ type: 'SET_SUBMITTING', payload: false });
+        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+          dispatch({ type: 'SET_SUBMITTING', payload: false });
+        }
       }
     },
     [handleError]
@@ -301,22 +385,35 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
 
   const deleteInstrument = useCallback(
     async (id: string) => {
+      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
         const response = await apiFetch(`/api/instruments?id=${id}`, {
           method: 'DELETE',
         });
         if (!response.ok) {
-          const errorData = await response.json();
-          throw errorData.error || new Error('Failed to delete instrument');
+          const body = await safeJson(response);
+          throw getResponseError(body, response, 'Failed to delete instrument');
+        }
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return false;
         }
         dispatch({ type: 'REMOVE_INSTRUMENT', payload: id });
         return true;
       } catch (error) {
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return false;
+        }
+        if (isAuthLikeTenantError(error)) {
+          dispatch({ type: 'RESET_STATE' });
+          return false;
+        }
         handleError(error, 'Delete instrument');
         return false;
       } finally {
-        dispatch({ type: 'SET_SUBMITTING', payload: false });
+        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+          dispatch({ type: 'SET_SUBMITTING', payload: false });
+        }
       }
     },
     [handleError]

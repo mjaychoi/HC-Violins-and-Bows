@@ -118,8 +118,12 @@ async function patchHandlerInternal(
           };
         }
 
+        const currentStatus = (currentInstrument.status ??
+          'Available') as Parameters<
+          typeof validateInstrumentStatusTransition
+        >[0];
         const transitionError = validateInstrumentStatusTransition(
-          currentInstrument.status,
+          currentStatus,
           validationResult.data.status
         );
         if (transitionError) {
@@ -130,7 +134,7 @@ async function patchHandlerInternal(
         }
 
         const reservedStateResult = buildReservedStateUpdate(
-          currentInstrument.status,
+          currentStatus,
           currentInstrument.reserved_reason,
           currentInstrument.reserved_by_user_id,
           currentInstrument.reserved_connection_id,
@@ -170,7 +174,9 @@ async function patchHandlerInternal(
         }
 
         const reservedStateResult = buildReservedStateUpdate(
-          currentInstrument.status,
+          (currentInstrument.status ?? 'Available') as Parameters<
+            typeof buildReservedStateUpdate
+          >[0],
           currentInstrument.reserved_reason,
           currentInstrument.reserved_by_user_id,
           currentInstrument.reserved_connection_id,
@@ -188,9 +194,12 @@ async function patchHandlerInternal(
         validationResult.data = reservedStateResult.update;
       }
 
+      // Strip computed/relation-only fields not present in the DB schema
+      const { has_certificate: _hc, ...dbInstrumentUpdate } =
+        validationResult.data;
       const { data, error } = await auth.userSupabase
         .from('instruments')
-        .update(validationResult.data)
+        .update(dbInstrumentUpdate)
         .eq('id', id)
         .eq('org_id', auth.orgId!)
         .select('*')

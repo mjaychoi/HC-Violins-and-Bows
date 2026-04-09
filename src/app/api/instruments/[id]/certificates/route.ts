@@ -257,9 +257,13 @@ async function postHandlerInternal(
     // Validate file before upload
     storage.validateFile(file.name, 'application/pdf', file.size);
 
-    // Upload to storage
+    let canonicalStoredKey: string;
     try {
-      await storage.saveFile(buffer, fileKey, 'application/pdf');
+      canonicalStoredKey = await storage.saveFile(
+        buffer,
+        fileKey,
+        'application/pdf'
+      );
     } catch (uploadError) {
       logError('Certificate upload error:', uploadError);
       throw new Error(
@@ -271,11 +275,15 @@ async function postHandlerInternal(
       );
     }
 
+    if (!canonicalStoredKey) {
+      throw new Error('Certificate upload did not return a storage key');
+    }
+
     let insertedId: string | null = null;
     const { data: createdCertificateId, error: insertError } =
       await auth.userSupabase.rpc('create_instrument_certificate_metadata', {
         p_instrument_id: id,
-        p_storage_path: fileKey,
+        p_storage_path: canonicalStoredKey,
         p_original_name: file.name,
         p_mime_type: 'application/pdf',
         p_size: file.size,
@@ -284,7 +292,7 @@ async function postHandlerInternal(
 
     if (insertError) {
       try {
-        await storage.deleteFile(fileKey);
+        await storage.deleteFile(canonicalStoredKey);
       } catch (deleteError) {
         logError('Failed to rollback file upload:', deleteError);
       }
@@ -311,7 +319,7 @@ async function postHandlerInternal(
           .eq('id', insertedId);
       }
       try {
-        await storage.deleteFile(fileKey);
+        await storage.deleteFile(canonicalStoredKey);
       } catch (deleteError) {
         logError('Failed to rollback file upload:', deleteError);
       }
@@ -321,17 +329,17 @@ async function postHandlerInternal(
     let signedUrl = '';
     try {
       signedUrl = storage.presignGet
-        ? await storage.presignGet(fileKey, SIGNED_URL_TTL_SECONDS)
-        : storage.getFileUrl(fileKey);
+        ? await storage.presignGet(canonicalStoredKey, SIGNED_URL_TTL_SECONDS)
+        : storage.getFileUrl(canonicalStoredKey);
     } catch (presignError) {
       logError('Failed to generate presigned URL:', presignError);
-      signedUrl = storage.getFileUrl(fileKey);
+      signedUrl = storage.getFileUrl(canonicalStoredKey);
     }
 
     return routeJson({
       success: true,
       id: insertedId,
-      filePath: fileKey,
+      filePath: canonicalStoredKey,
       publicUrl: signedUrl,
       message: 'Certificate uploaded successfully',
     });
@@ -430,9 +438,13 @@ async function putHandlerInternal(
     // Validate file before upload
     storage.validateFile(file.name, 'application/pdf', file.size);
 
-    // Upload replacement to the org-prefixed path so new storage RLS applies.
+    let canonicalStoredKey: string;
     try {
-      await storage.saveFile(buffer, fileKey, 'application/pdf');
+      canonicalStoredKey = await storage.saveFile(
+        buffer,
+        fileKey,
+        'application/pdf'
+      );
     } catch (uploadError) {
       logError('Certificate replace error:', uploadError);
       throw new Error(
@@ -444,13 +456,17 @@ async function putHandlerInternal(
       );
     }
 
+    if (!canonicalStoredKey) {
+      throw new Error('Certificate replacement did not return a storage key');
+    }
+
     // org_id is enforced via RLS (join through instruments) and ensureOwnedInstrument.
     // instrument_certificates has no direct org_id column; instrument_id + storage_path
     // is the narrowest safe scope available at the application layer.
     const { error: updateMetaError } = await auth.userSupabase
       .from('instrument_certificates')
       .update({
-        storage_path: fileKey,
+        storage_path: canonicalStoredKey,
         original_name: file.name,
         mime_type: 'application/pdf',
         size: file.size,
@@ -460,7 +476,7 @@ async function putHandlerInternal(
 
     if (updateMetaError) {
       await rollbackUploadedCertificate(
-        fileKey,
+        canonicalStoredKey,
         'Failed to rollback replaced certificate upload:'
       );
       throw errorHandler.handleSupabaseError(
@@ -469,7 +485,7 @@ async function putHandlerInternal(
       );
     }
 
-    if (oldFileKey !== fileKey) {
+    if (oldFileKey !== canonicalStoredKey) {
       try {
         await storage.deleteFile(oldFileKey);
       } catch (deleteError) {
@@ -487,16 +503,16 @@ async function putHandlerInternal(
     let signedUrl = '';
     try {
       signedUrl = storage.presignGet
-        ? await storage.presignGet(fileKey, SIGNED_URL_TTL_SECONDS)
-        : storage.getFileUrl(fileKey);
+        ? await storage.presignGet(canonicalStoredKey, SIGNED_URL_TTL_SECONDS)
+        : storage.getFileUrl(canonicalStoredKey);
     } catch (presignError) {
       logError('Failed to generate presigned URL:', presignError);
-      signedUrl = storage.getFileUrl(fileKey);
+      signedUrl = storage.getFileUrl(canonicalStoredKey);
     }
 
     return routeJson({
       success: true,
-      filePath: fileKey,
+      filePath: canonicalStoredKey,
       publicUrl: signedUrl,
       message: 'Certificate replaced successfully',
     });
@@ -625,12 +641,21 @@ async function deleteHandlerInternal(
       );
     }
 
+    let storageDeleted = false;
     try {
-      await storage.deleteFile(filePath);
+      storageDeleted = Boolean(await storage.deleteFile(filePath));
     } catch (deleteError) {
       logError(
         'Certificate storage cleanup failed (metadata already removed):',
-        deleteError
+        {
+          instrumentId: id,
+          certificateId: deleteByCertificateId,
+          filePath,
+          error:
+            deleteError instanceof Error
+              ? deleteError.message
+              : String(deleteError),
+        }
       );
     }
 
@@ -660,9 +685,23 @@ async function deleteHandlerInternal(
       }
     }
 
+    if (!storageDeleted) {
+      return routeJson({
+        result: 'partial_success',
+        message:
+          'Certificate removed from the app, but storage cleanup failed.',
+        cleanup: {
+          storageDeleted: false,
+        },
+      });
+    }
+
     return routeJson({
-      success: true,
+      result: 'full_success',
       message: 'Certificate deleted successfully',
+      cleanup: {
+        storageDeleted: true,
+      },
     });
   } catch (error) {
     logError('Certificate delete error:', error);

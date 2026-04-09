@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 export interface AppHeaderActionButton {
   label: string;
@@ -25,9 +26,11 @@ export default function AppHeader({
   headerActions,
 }: AppHeaderProps) {
   const { user, signOut } = useAuth();
+  const router = useRouter();
 
   const handleSignOut = async () => {
     await signOut();
+    router.replace('/');
   };
 
   return (

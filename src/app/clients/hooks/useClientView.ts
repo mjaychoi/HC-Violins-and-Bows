@@ -1,7 +1,8 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Client } from '@/types';
 import { shouldShowInterestDropdown } from '@/policies/interest';
 import { ClientViewFormData } from '../types';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 const EMPTY_FORM_DATA: ClientViewFormData = {
   last_name: '',
@@ -20,6 +21,7 @@ export function useClientView() {
 
   const [viewFormData, setViewFormData] =
     useState<ClientViewFormData>(EMPTY_FORM_DATA);
+  const { tenantIdentityKey } = useTenantIdentity();
 
   // ✅ FIXED: showInterestDropdown를 파생값(useMemo)으로 변경
   const showInterestDropdown = useMemo(() => {
@@ -79,6 +81,13 @@ export function useClientView() {
       return { ...prev, tags: next };
     });
   }, []);
+
+  useEffect(() => {
+    setShowViewModal(false);
+    setSelectedClient(null);
+    setIsEditing(false);
+    setViewFormData(EMPTY_FORM_DATA);
+  }, [tenantIdentityKey]);
 
   // ✅ FIXED: handleViewInputChange를 명시적 setter 사용하도록 개선
   const handleViewInputChange = useCallback(

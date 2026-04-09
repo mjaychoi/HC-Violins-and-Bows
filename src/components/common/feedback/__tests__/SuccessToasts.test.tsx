@@ -54,6 +54,7 @@ describe('SuccessToasts', () => {
         id: 'toast-1',
         message: 'Success message',
         timestamp: new Date(),
+        variant: 'success',
       },
     ];
 
@@ -73,6 +74,7 @@ describe('SuccessToasts', () => {
         id: 'toast-1',
         message: 'Success message',
         timestamp: new Date(),
+        variant: 'success',
       },
     ];
 
@@ -90,11 +92,13 @@ describe('SuccessToasts', () => {
         id: 'toast-1',
         message: 'First message',
         timestamp: new Date(),
+        variant: 'success',
       },
       {
         id: 'toast-2',
         message: 'Second message',
         timestamp: new Date(),
+        variant: 'success',
       },
     ];
 
@@ -112,6 +116,7 @@ describe('SuccessToasts', () => {
         id: 'toast-1',
         message: 'Test message',
         timestamp: new Date(),
+        variant: 'success',
       },
     ];
 
@@ -135,6 +140,7 @@ describe('SuccessToasts', () => {
         id: 'toast-1',
         message: 'Success with links',
         timestamp: new Date(),
+        variant: 'success',
         links,
       },
     ];
@@ -161,6 +167,7 @@ describe('SuccessToasts', () => {
         id: 'toast-1',
         message: 'Success without links',
         timestamp: new Date(),
+        variant: 'success',
       },
     ];
 
@@ -176,11 +183,13 @@ describe('SuccessToasts', () => {
         id: 'toast-1',
         message: 'First',
         timestamp: new Date(),
+        variant: 'success',
       },
       {
         id: 'toast-2',
         message: 'Second',
         timestamp: new Date(),
+        variant: 'success',
       },
     ];
 
@@ -203,11 +212,13 @@ describe('SuccessToasts', () => {
         id: 'toast-1',
         message: 'First toast',
         timestamp: new Date(2024, 0, 1),
+        variant: 'success',
       },
       {
         id: 'toast-2',
         message: 'Second toast',
         timestamp: new Date(2024, 0, 2),
+        variant: 'success',
       },
     ];
 

@@ -5,6 +5,7 @@ import React, {
   useContext,
   useReducer,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   ReactNode,
@@ -13,6 +14,8 @@ import { Client } from '@/types';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
 import { logInfo, logWarn } from '@/utils/logger';
+import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 interface ClientsState {
   clients: Client[];
@@ -111,22 +114,8 @@ const CLIENTS_DEFAULT_PAGE_SIZE = 150;
 
 const ClientsContext = createContext<ClientsContextValue | null>(null);
 
-function isAuthLikeError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : '';
-  const code =
-    typeof err === 'object' && err && 'code' in err
-      ? (err as { code?: unknown }).code
-      : undefined;
-
-  return (
-    msg.includes('Invalid Refresh Token') ||
-    msg.includes('Refresh Token Not Found') ||
-    code === 'SESSION_EXPIRED' ||
-    code === 'UNAUTHORIZED'
-  );
-}
-
 type JsonRecord = Record<string, unknown>;
+const NO_TENANT_SCOPE_KEY = '__no-tenant__';
 
 async function safeJson(res: Response): Promise<JsonRecord | null> {
   try {
@@ -138,6 +127,24 @@ async function safeJson(res: Response): Promise<JsonRecord | null> {
   } catch {
     return null;
   }
+}
+
+function getResponseError(
+  body: JsonRecord | null,
+  res: Response,
+  fallbackMessage: string
+): Error {
+  const candidate = body?.error ?? body?.message;
+
+  if (candidate instanceof Error) {
+    return candidate;
+  }
+
+  if (typeof candidate === 'string' && candidate.trim()) {
+    return new Error(candidate);
+  }
+
+  return new Error(`${fallbackMessage} (${res.status})`);
 }
 
 function sameClientList(a: Client[], b: Client[]): boolean {
@@ -157,16 +164,34 @@ function sameClientList(a: Client[], b: Client[]): boolean {
 export function ClientsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(clientsReducer, initialState);
   const { handleError } = useErrorHandler();
+  const { tenantIdentityKey } = useTenantIdentity();
 
-  // In-flight request deduplication (fetchClients only)
-  const inflight = useRef<Promise<void> | null>(null);
+  // In-flight request deduplication is tenant-scoped.
+  const inflight = useRef(new Map<string, Promise<void>>());
+  const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+  const previousTenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+
+  useEffect(() => {
+    if (previousTenantIdentityKeyRef.current !== tenantIdentityKey) {
+      dispatch({ type: 'RESET_STATE' });
+    }
+    tenantIdentityKeyRef.current = tenantIdentityKey;
+    previousTenantIdentityKeyRef.current = tenantIdentityKey;
+  }, [tenantIdentityKey]);
   const deduped = useCallback(
-    <T extends () => Promise<void>>(fn: T): Promise<void> => {
-      if (inflight.current) return inflight.current;
+    <T extends () => Promise<void>>(
+      tenantKey: string,
+      fn: T
+    ): Promise<void> => {
+      const existing = inflight.current.get(tenantKey);
+      if (existing) return existing;
+
       const p = fn().finally(() => {
-        inflight.current = null;
+        if (inflight.current.get(tenantKey) === p) {
+          inflight.current.delete(tenantKey);
+        }
       });
-      inflight.current = p;
+      inflight.current.set(tenantKey, p);
       return p;
     },
     []
@@ -189,7 +214,10 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      return deduped(async () => {
+      const fetchTenantIdentityKey = tenantIdentityKeyRef.current;
+      const inflightKey = fetchTenantIdentityKey ?? NO_TENANT_SCOPE_KEY;
+
+      return deduped(inflightKey, async () => {
         dispatch({ type: 'SET_LOADING', payload: true });
         dispatch({ type: 'SET_ERROR', payload: null });
 
@@ -200,11 +228,9 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
           if (!res.ok) {
             const body = await safeJson(res);
-            const err =
-              body?.error ??
-              new Error(`Failed to fetch clients (${res.status})`);
+            const err = getResponseError(body, res, 'Failed to fetch clients');
 
-            if (isAuthLikeError(err)) {
+            if (isAuthLikeTenantError(err)) {
               throw err;
             }
 
@@ -225,23 +251,31 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
             );
           }
 
+          if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+            return;
+          }
+
           // Avoid unnecessary re-renders if identical
           if (!sameClientList(state.clients, clients)) {
             dispatch({ type: 'SET_CLIENTS', payload: clients });
           }
         } catch (err) {
-          // IMPORTANT: Do NOT clear clients on auth errors here.
-          // AuthContext/AppLayout should handle redirect/logout.
-          if (isAuthLikeError(err)) {
+          if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+            return;
+          }
+          if (isAuthLikeTenantError(err)) {
+            dispatch({ type: 'RESET_STATE' });
             logWarn(
-              '[ClientsContext] fetchClients auth-like error; keeping existing state'
+              '[ClientsContext] fetchClients auth-like error; cleared tenant-scoped state'
             );
             return;
           }
           dispatch({ type: 'SET_ERROR', payload: err });
           handleError(err, 'Fetch clients');
         } finally {
-          dispatch({ type: 'SET_LOADING', payload: false });
+          if (tenantIdentityKeyRef.current === fetchTenantIdentityKey) {
+            dispatch({ type: 'SET_LOADING', payload: false });
+          }
         }
       });
     },
@@ -250,6 +284,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
   const createClient = useCallback(
     async (client: Omit<Client, 'id' | 'created_at'>) => {
+      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
         const res = await apiFetch('/api/clients', {
@@ -260,20 +295,30 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
         if (!res.ok) {
           const body = await safeJson(res);
-          throw (
-            body?.error ?? new Error(`Failed to create client (${res.status})`)
-          );
+          throw getResponseError(body, res, 'Failed to create client');
         }
 
         const body = await safeJson(res);
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
         const created = body?.data as Client | undefined;
         if (created) dispatch({ type: 'ADD_CLIENT', payload: created });
         return created ?? null;
       } catch (err) {
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
+        if (isAuthLikeTenantError(err)) {
+          dispatch({ type: 'RESET_STATE' });
+          return null;
+        }
         handleError(err, 'Create client');
         return null;
       } finally {
-        dispatch({ type: 'SET_SUBMITTING', payload: false });
+        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+          dispatch({ type: 'SET_SUBMITTING', payload: false });
+        }
       }
     },
     [handleError]
@@ -281,6 +326,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
   const updateClient = useCallback(
     async (id: string, client: Partial<Client>) => {
+      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
         const res = await apiFetch('/api/clients', {
@@ -291,22 +337,32 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
         if (!res.ok) {
           const body = await safeJson(res);
-          throw (
-            body?.error ?? new Error(`Failed to update client (${res.status})`)
-          );
+          throw getResponseError(body, res, 'Failed to update client');
         }
 
         const body = await safeJson(res);
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
         const updated = body?.data as Client | undefined;
         if (updated) {
           dispatch({ type: 'UPDATE_CLIENT', payload: { id, client: updated } });
         }
         return updated ?? null;
       } catch (err) {
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return null;
+        }
+        if (isAuthLikeTenantError(err)) {
+          dispatch({ type: 'RESET_STATE' });
+          return null;
+        }
         handleError(err, 'Update client');
         return null;
       } finally {
-        dispatch({ type: 'SET_SUBMITTING', payload: false });
+        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+          dispatch({ type: 'SET_SUBMITTING', payload: false });
+        }
       }
     },
     [handleError]
@@ -314,6 +370,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
   const deleteClient = useCallback(
     async (id: string) => {
+      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
         // ✅ FIXED: Use apiFetch for consistency (auth/cookies/error handling)
@@ -326,18 +383,28 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
         if (!res.ok) {
           const body = await safeJson(res);
-          throw (
-            body?.error ?? new Error(`Failed to delete client (${res.status})`)
-          );
+          throw getResponseError(body, res, 'Failed to delete client');
         }
 
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return false;
+        }
         dispatch({ type: 'REMOVE_CLIENT', payload: id });
         return true;
       } catch (err) {
+        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          return false;
+        }
+        if (isAuthLikeTenantError(err)) {
+          dispatch({ type: 'RESET_STATE' });
+          return false;
+        }
         handleError(err, 'Delete client');
         return false;
       } finally {
-        dispatch({ type: 'SET_SUBMITTING', payload: false });
+        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+          dispatch({ type: 'SET_SUBMITTING', payload: false });
+        }
       }
     },
     [handleError]

@@ -22,6 +22,7 @@ import { useSalesHistory } from '@/app/sales/hooks/useSalesHistory';
 import { generateSampleInstruments } from './utils/sampleData';
 import { logDebug } from '@/utils/logger';
 import { apiFetch } from '@/utils/apiFetch';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 import type {
   Instrument,
@@ -45,6 +46,7 @@ export default function DashboardPage() {
     usePermissions();
   const { submitting: isSubmittingSale, withSubmitting: withSaleSubmitting } =
     useLoadingState();
+  const { tenantIdentityKey } = useTenantIdentity();
 
   // --- Sale modal state ---
   const [showSaleModal, setShowSaleModal] = useState(false);
@@ -218,6 +220,15 @@ export default function DashboardPage() {
   const [newlyCreatedItemId, setNewlyCreatedItemId] = useState<string | null>(
     null
   );
+
+  useEffect(() => {
+    setShowSaleModal(false);
+    setSelectedInstrumentForSale(null);
+    setSelectedClientForSale(null);
+    setRecentClientIds([]);
+    setRecentClientsLoaded(false);
+    setNewlyCreatedItemId(null);
+  }, [tenantIdentityKey]);
 
   // ✅ onSubmit 함수들: inline 생성 줄이고, 로직을 callback으로 분리
   const handleSubmitCreate = useCallback(

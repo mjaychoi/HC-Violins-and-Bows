@@ -2,6 +2,13 @@ import { renderHook, act } from '@testing-library/react';
 import { useDashboardModal } from '../useDashboardModal';
 import { Instrument } from '@/types';
 
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: jest.fn(() => ({
+    tenantIdentityKey: 'test-user-id:test-org-id:test-token',
+    isTenantTransitioning: false,
+  })),
+}));
+
 // Mock useModalState
 const mockOpenModal = jest.fn();
 const mockCloseModal = jest.fn();

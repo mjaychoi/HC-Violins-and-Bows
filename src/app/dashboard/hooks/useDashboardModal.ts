@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useModalState } from '@/hooks/useModalState';
 import { Instrument } from '@/types';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 export interface UseDashboardModalOptions {
   /**
@@ -22,6 +23,7 @@ export const useDashboardModal = (options?: UseDashboardModalOptions) => {
 
   // ✅ FIXED: confirmItem 객체 대신 ID만 저장하여 stale object 방지
   const [confirmItemId, setConfirmItemId] = useState<string | null>(null);
+  const { tenantIdentityKey } = useTenantIdentity();
 
   // Handle add new item
   const handleAddItem = useCallback(() => {
@@ -52,6 +54,10 @@ export const useDashboardModal = (options?: UseDashboardModalOptions) => {
 
   // Check if confirm dialog should be open
   const isConfirmDialogOpen = Boolean(confirmItemId);
+
+  useEffect(() => {
+    setConfirmItemId(null);
+  }, [tenantIdentityKey]);
 
   return {
     // Modal state

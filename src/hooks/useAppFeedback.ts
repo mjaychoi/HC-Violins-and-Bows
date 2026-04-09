@@ -8,15 +8,21 @@ import type { ToastLink } from '@/contexts/ToastContext';
  */
 export function useAppFeedback() {
   const { handleError } = useErrorHandler();
-  const { showSuccess: showSuccessBase } = useToast();
+  const { showSuccess: showSuccessBase, showWarning: showWarningBase } =
+    useToast();
 
   // Wrapper to maintain backward compatibility
   const showSuccess = (message: string, links?: ToastLink[]) => {
     showSuccessBase(message, links);
   };
 
+  const showWarning = (message: string, links?: ToastLink[]) => {
+    showWarningBase(message, links);
+  };
+
   return {
     handleError,
     showSuccess,
+    showWarning,
   };
 }

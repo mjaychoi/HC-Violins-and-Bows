@@ -11,8 +11,7 @@ import {
 } from '../utils/dashboardUtils';
 import { apiFetch } from '@/utils/apiFetch';
 import { cn } from '@/utils/classNames';
-import { useSuccessToastContext } from '@/contexts/SuccessToastContext';
-import { useErrorContext } from '@/contexts/ErrorContext';
+import { useAppFeedback } from '@/hooks/useAppFeedback';
 import Link from 'next/link';
 import { usePermissions } from '@/hooks/usePermissions';
 import { downloadCertificatePdf } from '../utils/certificateDownload';
@@ -67,8 +66,7 @@ export function InstrumentExpandedRow({
     id?: string;
     fileName: string;
   } | null>(null);
-  const { showSuccess } = useSuccessToastContext();
-  const { handleError } = useErrorContext();
+  const { showSuccess, showWarning, handleError } = useAppFeedback();
   const hasCertificateFile = certificateFiles.length > 0;
 
   // Request ID counters to handle concurrent requests
@@ -262,7 +260,19 @@ export function InstrumentExpandedRow({
         return;
       }
 
-      showSuccess('Certificate deleted successfully');
+      const result = (await response.json()) as {
+        result?: 'full_success' | 'partial_success';
+        message?: string;
+      };
+
+      if (result.result === 'partial_success') {
+        showWarning(
+          result.message ||
+            'Deleted from the app, but storage cleanup failed. Please contact support if needed.'
+        );
+      } else {
+        showSuccess(result.message || 'Certificate deleted successfully');
+      }
       // Refresh certificate list
       certificateCache.delete(instrument.id);
       await fetchCertificates(instrument.id, () => true, true);

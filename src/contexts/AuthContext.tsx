@@ -23,7 +23,7 @@ import {
 
 export type AuthRole = 'admin' | 'member';
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   session: Session | null;
   role: AuthRole;
@@ -42,7 +42,9 @@ interface AuthContextType {
   refreshSession: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(
+  undefined
+);
 
 export const defaultAuthContextValue: AuthContextType = {
   user: null,

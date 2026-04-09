@@ -29,8 +29,9 @@ import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { useModalState } from '@/hooks/useModalState';
 import { AppLayout } from '@/components/layout';
 import { ErrorBoundary, ConfirmDialog } from '@/components/common';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 type PendingInstrumentLink = {
   instrument: Instrument;
@@ -41,6 +42,7 @@ export default function ClientsPage() {
   // Error/Success handling
   const { handleError, showSuccess } = useAppFeedback();
   const { canCreateClient } = usePermissions();
+  const { tenantIdentityKey } = useTenantIdentity();
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
 
   // Track newly created client for scroll/highlight feedback
@@ -237,6 +239,12 @@ export default function ClientsPage() {
     if (!selectedClient) return;
     setConfirmDelete(selectedClient);
   };
+
+  useEffect(() => {
+    setConfirmDelete(null);
+    setNewlyCreatedClientId(null);
+    clearOwnedItems();
+  }, [clearOwnedItems, tenantIdentityKey]);
 
   const confirmDeleteClient = async () => {
     if (!confirmDelete) return;

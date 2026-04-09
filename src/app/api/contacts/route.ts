@@ -168,7 +168,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       // Collect unique client_ids and instrument_ids to batch fetch
       const clientIdSet = new Set<string>();
       const instrumentIds = new Set<string>();
-      (logs || []).forEach((log: ContactLog) => {
+      (logs || []).forEach(log => {
         if (log.client_id) clientIdSet.add(log.client_id);
         if (log.instrument_id) instrumentIds.add(log.instrument_id);
       });
@@ -184,8 +184,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           .eq('org_id', auth.orgId!)
           .in('id', Array.from(clientIdSet));
         if (clientsData) {
-          clientsData.forEach((client: Client) => {
-            clientsMap.set(client.id, client);
+          clientsData.forEach(row => {
+            clientsMap.set(row.id, { ...row, tags: row.tags ?? [] } as Client);
           });
         }
       }
@@ -197,14 +197,15 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           .eq('org_id', auth.orgId!)
           .in('id', Array.from(instrumentIds));
         if (instrumentsData) {
-          instrumentsData.forEach((instrument: Instrument) => {
-            instrumentsMap.set(instrument.id, instrument);
+          instrumentsData.forEach(row => {
+            // DB status is string|null; domain type is stricter enum — cast is safe here
+            instrumentsMap.set(row.id, row as unknown as Instrument);
           });
         }
       }
 
       // Enrich logs with fetched data
-      const enrichedLogs = (logs || []).map((log: ContactLog) => ({
+      const enrichedLogs = (logs || []).map(log => ({
         ...log,
         client: log.client_id ? clientsMap.get(log.client_id) || null : null,
         instrument: log.instrument_id
@@ -522,8 +523,9 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // Clean up updates (remove undefined values)
-      const cleanUpdates: Partial<ContactLog> = {};
+      // Clean up updates (remove undefined values and relation-only fields)
+      const cleanUpdates: Partial<Omit<ContactLog, 'client' | 'instrument'>> =
+        {};
       if (updates.subject !== undefined) cleanUpdates.subject = updates.subject;
       if (updates.content !== undefined)
         cleanUpdates.content = updates.content?.trim();

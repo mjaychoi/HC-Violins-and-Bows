@@ -1,6 +1,12 @@
 import { renderHook, act } from '@/test-utils/render';
 import { useModalState } from '../useModalState';
 
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: jest.fn(() => ({
+    tenantIdentityKey: 'tenant-a',
+  })),
+}));
+
 describe('useModalState', () => {
   it('should initialize with default values', () => {
     const { result } = renderHook(() => useModalState());

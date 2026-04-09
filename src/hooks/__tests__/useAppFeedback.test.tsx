@@ -2,6 +2,13 @@ import { renderHook } from '@/test-utils/render';
 import { useAppFeedback } from '../useAppFeedback';
 import { useErrorHandler, useToast } from '@/contexts/ToastContext';
 
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: jest.fn(() => ({
+    tenantIdentityKey: 'tenant-test',
+    isTenantTransitioning: false,
+  })),
+}));
+
 // ✅ FIXED: ToastProvider도 export하도록 mock 수정
 jest.mock('@/contexts/ToastContext', () => {
   const actual = jest.requireActual('@/contexts/ToastContext');
@@ -22,6 +29,7 @@ describe('useAppFeedback', () => {
   it('should combine error handler and toast hooks', () => {
     const mockHandleError = jest.fn();
     const mockShowSuccessBase = jest.fn();
+    const mockShowWarningBase = jest.fn();
 
     (useErrorHandler as jest.Mock).mockReturnValue({
       handleError: mockHandleError,
@@ -29,6 +37,7 @@ describe('useAppFeedback', () => {
 
     (useToast as jest.Mock).mockReturnValue({
       showSuccess: mockShowSuccessBase,
+      showWarning: mockShowWarningBase,
     });
 
     const { result } = renderHook(() => useAppFeedback());
@@ -48,6 +57,12 @@ describe('useAppFeedback', () => {
       'Test message with links',
       testLinks
     );
+
+    result.current.showWarning('Warning message');
+    expect(mockShowWarningBase).toHaveBeenCalledWith(
+      'Warning message',
+      undefined
+    );
   });
 
   it('should call useErrorHandler and useToast', () => {
@@ -57,6 +72,7 @@ describe('useAppFeedback', () => {
 
     (useToast as jest.Mock).mockReturnValue({
       showSuccess: jest.fn(),
+      showWarning: jest.fn(),
     });
 
     renderHook(() => useAppFeedback());

@@ -73,6 +73,10 @@ const mockInvoiceWithoutClient: Invoice = {
 const baseProps = {
   invoices: [mockInvoice],
   loading: false,
+  partial: false,
+  droppedCount: 0,
+  returnedCount: 1,
+  warning: undefined,
   onSort: jest.fn(),
   getSortState: jest.fn(() => ({ active: false as const })),
   onEdit: jest.fn(),
@@ -153,6 +157,62 @@ describe('InvoiceList', () => {
     expect(
       screen.getByText(/no invoices found matching your filters/i)
     ).toBeInTheDocument();
+  });
+
+  it('shows warning banner when partial results still have visible rows', () => {
+    render(
+      <InvoiceList
+        {...baseProps}
+        partial={true}
+        droppedCount={3}
+        returnedCount={1}
+        warning="Some invoices could not be displayed."
+      />
+    );
+
+    expect(
+      screen.getByText(/some invoices could not be displayed/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/showing 1 invoice; 3 were skipped/i)
+    ).toBeInTheDocument();
+  });
+
+  it('shows diagnostic empty state instead of normal empty when partial and no rows', () => {
+    render(
+      <InvoiceList
+        {...baseProps}
+        invoices={[]}
+        partial={true}
+        droppedCount={4}
+        returnedCount={0}
+        warning="Some invoices could not be displayed."
+      />
+    );
+
+    expect(
+      screen.getByText(
+        /invoices exist, but none on this page could be displayed/i
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps pagination based on raw total count during partial results', () => {
+    render(
+      <InvoiceList
+        {...baseProps}
+        partial={true}
+        droppedCount={2}
+        returnedCount={1}
+        totalCount={25}
+        totalPages={3}
+        currentPage={2}
+      />
+    );
+
+    expect(screen.getByText('Prev')).toBeInTheDocument();
+    expect(screen.getByText('Next')).toBeInTheDocument();
   });
 
   it('handles sort click', () => {

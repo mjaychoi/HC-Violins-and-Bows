@@ -21,6 +21,26 @@ import {
 } from '@/app/api/_utils/withAuthRoute';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
+import type { TablesInsert, TablesUpdate } from '@/types/database';
+import type { MaintenanceTask } from '@/types';
+
+type MaintenanceTaskInsertRow = TablesInsert<'maintenance_tasks'>;
+type MaintenanceTaskUpdateRow = TablesUpdate<'maintenance_tasks'>;
+
+function toMaintenanceTaskInsertRow(
+  input: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at'> & {
+    org_id: string;
+  }
+): MaintenanceTaskInsertRow {
+  return input;
+}
+
+function toMaintenanceTaskUpdateRow(
+  input: Partial<MaintenanceTask>
+): MaintenanceTaskUpdateRow {
+  const { instrument: _instrument, client: _client, ...rest } = input;
+  return rest;
+}
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
@@ -65,6 +85,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           .from('maintenance_tasks')
           .select('*', { count: 'exact' })
           .eq('id', id)
+
           .eq('org_id', auth.orgId!)
           .single();
 
@@ -246,7 +267,9 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
 
       const { data, error } = await auth.userSupabase
         .from('maintenance_tasks')
-        .insert({ ...validatedInput, org_id: auth.orgId! })
+        .insert(
+          toMaintenanceTaskInsertRow({ ...validatedInput, org_id: auth.orgId! })
+        )
         .select()
         .single();
 
@@ -328,7 +351,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
       const { data, error } = await auth.userSupabase
         .from('maintenance_tasks')
-        .update(validationResult.data)
+        .update(toMaintenanceTaskUpdateRow(validationResult.data))
         .eq('id', id)
         .eq('org_id', auth.orgId!)
         .select()
