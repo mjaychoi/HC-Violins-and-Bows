@@ -43,6 +43,10 @@ function ItemForm({
     resetForm,
     priceInput,
     handlePriceChange,
+    costPriceInput,
+    handleCostPriceChange,
+    consignmentPriceInput,
+    handleConsignmentPriceChange,
     selectedFiles,
     handleFileChange,
     removeFile,
@@ -50,11 +54,12 @@ function ItemForm({
   const [errors, setErrors] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{
-    maker?: string;
-    type?: string;
     year?: string;
     price?: string;
+    cost_price?: string;
+    consignment_price?: string;
     serial_number?: string;
+    certificate_name?: string;
   }>({});
   const [success, setSuccess] = useState(false);
   // ✅ FIXED: 이미지 미리보기 URL 생성 - file.name + size 기반 키 사용 (reorder 대비)
@@ -75,10 +80,11 @@ function ItemForm({
 
   const focusFirstErrorField = (fieldErrs: typeof fieldErrors) => {
     const order: (keyof typeof fieldErrors)[] = [
-      'maker',
-      'type',
       'year',
       'price',
+      'cost_price',
+      'consignment_price',
+      'certificate_name',
       'serial_number',
     ];
     for (const field of order) {
@@ -115,6 +121,15 @@ function ItemForm({
       // FIXED: Don't update formData.price - use priceInput directly
       // priceInput will be set via handlePriceChange
       handlePriceChange(selectedItem.price?.toString() || '');
+      handleCostPriceChange(selectedItem.cost_price?.toString() || '');
+      handleConsignmentPriceChange(
+        selectedItem.consignment_price?.toString() || ''
+      );
+      updateField(
+        'certificate',
+        Boolean(selectedItem.has_certificate || selectedItem.certificate)
+      );
+      updateField('certificate_name', selectedItem.certificate_name || '');
       updateField('size', selectedItem.size || '');
       updateField('weight', selectedItem.weight || '');
       updateField('ownership', selectedItem.ownership || '');
@@ -182,12 +197,30 @@ function ItemForm({
       setErrors(validationErrors);
       const mappedFieldErrors: typeof fieldErrors = {};
       validationErrors.forEach(msg => {
-        if (msg.includes('Maker')) mappedFieldErrors.maker = msg;
-        if (msg.includes('Type')) mappedFieldErrors.type = msg;
         if (msg.includes('Year')) mappedFieldErrors.year = msg;
         if (msg.includes('Price')) mappedFieldErrors.price = msg;
       });
+      if (
+        formData.certificate &&
+        !(formData.certificate_name || '').toString().trim()
+      ) {
+        mappedFieldErrors.certificate_name = 'Certificate name is required';
+      }
+      if (Object.keys(mappedFieldErrors).length > 0) {
+        setFieldErrors(mappedFieldErrors);
+        focusFirstErrorField(mappedFieldErrors);
+        return;
+      }
+    }
+
+    if (formData.certificate && !(formData.certificate_name || '').trim()) {
+      const mappedFieldErrors = {
+        certificate_name: 'Certificate name is required',
+      };
       setFieldErrors(mappedFieldErrors);
+      setErrors([
+        'Certificate name is required when certificate is marked yes',
+      ]);
       focusFirstErrorField(mappedFieldErrors);
       return;
     }
@@ -264,7 +297,25 @@ function ItemForm({
           const priceNum = Number(normalizedPrice);
           return Number.isFinite(priceNum) ? priceNum : null;
         })(),
-        certificate: null,
+        certificate: Boolean(formData.certificate),
+        has_certificate: Boolean(formData.certificate),
+        certificate_name: formData.certificate
+          ? formData.certificate_name?.trim() || null
+          : null,
+        cost_price: (() => {
+          const normalizedPrice = costPriceInput.trim().replace(/,/g, '');
+          if (normalizedPrice === '') return null;
+          const priceNum = Number(normalizedPrice);
+          return Number.isFinite(priceNum) ? priceNum : null;
+        })(),
+        consignment_price: (() => {
+          const normalizedPrice = consignmentPriceInput
+            .trim()
+            .replace(/,/g, '');
+          if (normalizedPrice === '') return null;
+          const priceNum = Number(normalizedPrice);
+          return Number.isFinite(priceNum) ? priceNum : null;
+        })(),
         size: formData.size?.trim() || null,
         weight: formData.weight?.trim() || null,
         ownership: formData.ownership?.trim() || null,
@@ -490,9 +541,7 @@ function ItemForm({
                 name="maker"
                 value={formData.maker}
                 onChange={handleInputChange}
-                required
                 placeholder="Enter maker name"
-                error={fieldErrors.maker}
                 helperText="The manufacturer or brand name of the instrument"
               />
 
@@ -502,9 +551,7 @@ function ItemForm({
                 name="type"
                 value={formData.type}
                 onChange={handleInputChange}
-                required
                 placeholder="Enter type"
-                error={fieldErrors.type}
                 helperText="Primary category (e.g., Violin, Viola, Cello, Bow)"
               />
             </div>
@@ -528,7 +575,6 @@ function ItemForm({
                 onChange={handleInputChange}
                 placeholder="Enter year"
                 error={fieldErrors.year}
-                required
               />
             </div>
 
@@ -562,8 +608,67 @@ function ItemForm({
                 onChange={e => handlePriceChange(e.target.value)}
                 placeholder="Enter price"
                 error={fieldErrors.price}
-                required
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                id="cost_price"
+                label="Cost Price"
+                name="cost_price"
+                type="text"
+                inputMode="decimal"
+                value={costPriceInput}
+                onChange={e => handleCostPriceChange(e.target.value)}
+                placeholder="Enter cost price"
+                error={fieldErrors.cost_price}
+              />
+
+              <Input
+                id="consignment_price"
+                label="Consignment Price"
+                name="consignment_price"
+                type="text"
+                inputMode="decimal"
+                value={consignmentPriceInput}
+                onChange={e => handleConsignmentPriceChange(e.target.value)}
+                placeholder="Enter consignment price"
+                error={fieldErrors.consignment_price}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={classNames.formLabel} htmlFor="certificate">
+                  Certificate
+                </label>
+                <select
+                  id="certificate"
+                  name="certificate"
+                  value={formData.certificate ? 'yes' : 'no'}
+                  onChange={e =>
+                    updateField('certificate', e.target.value === 'yes')
+                  }
+                  className={classNames.input}
+                >
+                  <option value="no">No</option>
+                  <option value="yes">Yes</option>
+                </select>
+              </div>
+
+              {formData.certificate ? (
+                <Input
+                  id="certificate_name"
+                  label="Certificate Name"
+                  name="certificate_name"
+                  value={formData.certificate_name}
+                  onChange={handleInputChange}
+                  placeholder="Enter certificate name"
+                  error={fieldErrors.certificate_name}
+                />
+              ) : (
+                <div />
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

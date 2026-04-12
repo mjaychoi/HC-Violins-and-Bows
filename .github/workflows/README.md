@@ -42,6 +42,8 @@
 - `ORG_ID`: Vercel Org ID
 - `PROJECT_ID`: Vercel Project ID
 
+배포 job은 위 3개 시크릿이 모두 설정된 경우에만 실행됩니다.
+
 ## 2. Security Scan (`.github/workflows/security.yml`)
 
 보안 스캔:

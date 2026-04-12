@@ -101,13 +101,13 @@ const ItemList = memo(function ItemList({
   // 인라인 편집 훅 사용
   type EditData = {
     id: string;
+    serial_number?: string | null;
     maker?: string | null;
     type?: string | null;
-    subtype?: string | null;
     year?: string | number | null;
     price?: string | number | null;
+    note?: string | null;
     status?: Instrument['status'];
-    ownership?: string | null;
   };
   type EditField = keyof EditData;
 
@@ -118,7 +118,7 @@ const ItemList = memo(function ItemList({
       const updates: Partial<Instrument> = {
         maker: data.maker?.trim() || null,
         type: data.type?.trim() || null,
-        subtype: data.subtype?.trim() || null,
+        serial_number: data.serial_number?.trim() || null,
         year: (() => {
           const yearValue = data.year;
           if (!yearValue) return null;
@@ -150,7 +150,7 @@ const ItemList = memo(function ItemList({
           return isNaN(priceNum) ? null : priceNum;
         })(),
         status: (data.status as Instrument['status']) || 'Available',
-        ownership: data.ownership?.trim() || null,
+        note: data.note?.trim() || null,
       };
 
       await onUpdateItem(id, updates);
@@ -595,27 +595,10 @@ const ItemList = memo(function ItemList({
                 <th className={`${classNames.tableHeaderCell} text-right`}></th>
                 <th
                   className={cn(classNames.tableHeaderCellSortable, 'group')}
-                  onClick={() => onSort('status')}
-                >
-                  <span className="inline-flex items-center gap-1">
-                    Status
-                    <span
-                      className={`opacity-0 group-hover:opacity-100 ${
-                        getSortArrow('status') !== ''
-                          ? 'opacity-100 text-gray-900'
-                          : ''
-                      }`}
-                    >
-                      {getSortArrow('status') || ''}
-                    </span>
-                  </span>
-                </th>
-                <th
-                  className={cn(classNames.tableHeaderCellSortable, 'group')}
                   onClick={() => onSort('serial_number')}
                 >
                   <span className="inline-flex items-center gap-1">
-                    Serial #
+                    Item Number
                     <span
                       className={`opacity-0 group-hover:opacity-100 ${
                         getSortArrow('serial_number') !== ''
@@ -663,23 +646,6 @@ const ItemList = memo(function ItemList({
                 </th>
                 <th
                   className={cn(classNames.tableHeaderCellSortable, 'group')}
-                  onClick={() => onSort('subtype')}
-                >
-                  <span className="inline-flex items-center gap-1">
-                    Subtype
-                    <span
-                      className={`opacity-0 group-hover:opacity-100 ${
-                        getSortArrow('subtype') !== ''
-                          ? 'opacity-100 text-gray-900'
-                          : ''
-                      }`}
-                    >
-                      {getSortArrow('subtype') || ''}
-                    </span>
-                  </span>
-                </th>
-                <th
-                  className={cn(classNames.tableHeaderCellSortable, 'group')}
                   onClick={() => onSort('year')}
                 >
                   <span className="inline-flex items-center gap-1">
@@ -713,8 +679,23 @@ const ItemList = memo(function ItemList({
                   </span>
                 </th>
                 <th className={classNames.tableHeaderCell}>Certificate</th>
-                <th className={classNames.tableHeaderCell}>
-                  Client Relationship
+                <th className={classNames.tableHeaderCell}>Note</th>
+                <th
+                  className={cn(classNames.tableHeaderCellSortable, 'group')}
+                  onClick={() => onSort('status')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Status
+                    <span
+                      className={`opacity-0 group-hover:opacity-100 ${
+                        getSortArrow('status') !== ''
+                          ? 'opacity-100 text-gray-900'
+                          : ''
+                      }`}
+                    >
+                      {getSortArrow('status') || ''}
+                    </span>
+                  </span>
                 </th>
               </tr>
             </thead>
@@ -904,32 +885,24 @@ const ItemList = memo(function ItemList({
                       </td>
                       <td className={classNames.tableCell}>
                         {isEditing ? (
-                          <select
-                            value={editData.status || 'Available'}
+                          <input
+                            type="text"
+                            value={editData.serial_number || ''}
                             onChange={e =>
                               handleEditFieldChange(
-                                'status',
-                                e.target.value as Instrument['status']
+                                'serial_number',
+                                e.target.value
                               )
                             }
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                             onClick={e => e.stopPropagation()}
-                          >
-                            <option value="Available">Available</option>
-                            <option value="Booked">Booked</option>
-                            <option value="Sold">Sold</option>
-                            <option value="Reserved">Reserved</option>
-                            <option value="Maintenance">Maintenance</option>
-                          </select>
+                            placeholder="Item number"
+                          />
                         ) : (
-                          <StatusBadge status={item.status} />
+                          <div className="text-sm text-gray-900 font-mono">
+                            {item.serial_number || '—'}
+                          </div>
                         )}
-                      </td>
-
-                      <td className={classNames.tableCell}>
-                        <div className="text-sm text-gray-900 font-mono">
-                          {item.serial_number || '—'}
-                        </div>
                       </td>
 
                       <td className={classNames.tableCell}>
@@ -966,25 +939,6 @@ const ItemList = memo(function ItemList({
                         ) : (
                           <div className="text-sm text-gray-900">
                             {item.type || '—'}
-                          </div>
-                        )}
-                      </td>
-
-                      <td className={classNames.tableCell}>
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editData.subtype || ''}
-                            onChange={e =>
-                              handleEditFieldChange('subtype', e.target.value)
-                            }
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            onClick={e => e.stopPropagation()}
-                            placeholder="Subtype"
-                          />
-                        ) : (
-                          <div className="text-sm text-gray-900 text-center">
-                            {item.subtype || '—'}
                           </div>
                         )}
                       </td>
@@ -1038,25 +992,54 @@ const ItemList = memo(function ItemList({
                       <td className={classNames.tableCell}>
                         <CertificateBadge
                           hasCertificate={Boolean(item.has_certificate)}
+                          certificateName={item.certificate_name}
                         />
                       </td>
 
                       <td className={classNames.tableCell}>
                         {isEditing ? (
-                          <input
-                            type="text"
-                            value={editData.ownership || ''}
+                          <textarea
+                            value={editData.note || ''}
                             onChange={e =>
-                              handleEditFieldChange('ownership', e.target.value)
+                              handleEditFieldChange('note', e.target.value)
                             }
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                             onClick={e => e.stopPropagation()}
-                            placeholder="Ownership"
+                            placeholder="Note"
+                            rows={2}
                           />
                         ) : (
-                          // FIXED: Use memoized renderOwnership callback instead of inline IIFE
-                          <div className="text-sm text-gray-900 text-center">
-                            {renderOwnership(item)}
+                          <div
+                            className="max-w-xs truncate text-sm text-gray-700"
+                            title={item.note || undefined}
+                          >
+                            {item.note?.trim() || '—'}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className={classNames.tableCell}>
+                        {isEditing ? (
+                          <select
+                            value={editData.status || 'Available'}
+                            onChange={e =>
+                              handleEditFieldChange(
+                                'status',
+                                e.target.value as Instrument['status']
+                              )
+                            }
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <option value="Available">Available</option>
+                            <option value="Booked">Booked</option>
+                            <option value="Sold">Sold</option>
+                            <option value="Reserved">Reserved</option>
+                            <option value="Maintenance">Maintenance</option>
+                          </select>
+                        ) : (
+                          <div className="min-w-[8rem]">
+                            <StatusBadge status={item.status} />
                           </div>
                         )}
                       </td>

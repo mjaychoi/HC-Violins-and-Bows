@@ -9,9 +9,13 @@ export function useDashboardForm() {
     type: 'Instrument',
     subtype: 'Violin',
     year: '',
+    certificate: false,
+    certificate_name: '',
     size: '',
     weight: '',
     price: '',
+    cost_price: '',
+    consignment_price: '',
     ownership: '',
     note: '',
     serial_number: '',
@@ -24,11 +28,21 @@ export function useDashboardForm() {
   // formData.price is derived at submit time, not stored separately
   // This avoids the drift issue where formData.price and priceInput can get out of sync
   const [priceInput, setPriceInput] = useState('');
+  const [costPriceInput, setCostPriceInput] = useState('');
+  const [consignmentPriceInput, setConsignmentPriceInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   const handlePriceChange = (value: string) => {
     setPriceInput(value);
     // Don't update formData.price - it will be derived at submit time
+  };
+
+  const handleCostPriceChange = (value: string) => {
+    setCostPriceInput(value);
+  };
+
+  const handleConsignmentPriceChange = (value: string) => {
+    setConsignmentPriceInput(value);
   };
 
   const handleFileChange = (files: FileList | null) => {
@@ -44,6 +58,8 @@ export function useDashboardForm() {
   const resetFormData = () => {
     resetForm();
     setPriceInput('');
+    setCostPriceInput('');
+    setConsignmentPriceInput('');
     setSelectedFiles([]);
   };
 
@@ -55,6 +71,12 @@ export function useDashboardForm() {
     priceInput,
     setPriceInput,
     handlePriceChange,
+    costPriceInput,
+    setCostPriceInput,
+    handleCostPriceChange,
+    consignmentPriceInput,
+    setConsignmentPriceInput,
+    handleConsignmentPriceChange,
     selectedFiles,
     setSelectedFiles,
     handleFileChange,

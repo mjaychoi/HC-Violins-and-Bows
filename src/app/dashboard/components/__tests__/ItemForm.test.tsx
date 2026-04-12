@@ -6,6 +6,7 @@ import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
 jest.mock('../../hooks/useDashboardForm', () => ({
   useDashboardForm: jest.fn(),
 }));
+
 jest.mock('@/utils/uniqueNumberGenerator', () => ({
   generateInstrumentSerialNumber: jest.fn(() => 'VI0000001'),
   normalizeInstrumentSerial: jest.requireActual('@/utils/uniqueNumberGenerator')
@@ -23,6 +24,7 @@ const baseFormState = {
     year: '',
     price: '',
     certificate: false,
+    certificate_name: '',
     size: '',
     weight: '',
     ownership: '',
@@ -31,8 +33,16 @@ const baseFormState = {
   },
   updateField: jest.fn(),
   resetForm: jest.fn(),
+
   priceInput: '',
   handlePriceChange: jest.fn(),
+
+  costPriceInput: '',
+  handleCostPriceChange: jest.fn(),
+
+  consignmentPriceInput: '',
+  handleConsignmentPriceChange: jest.fn(),
+
   selectedFiles: [],
   handleFileChange: jest.fn(),
   removeFile: jest.fn(),
@@ -66,7 +76,7 @@ describe('ItemForm', () => {
     expect(generateInstrumentSerialNumber).toHaveBeenCalled();
   });
 
-  it('submits valid form data and closes modal', async () => {
+  it('submits valid form data and shows success state', async () => {
     (useDashboardForm as jest.Mock).mockReturnValue({
       ...baseFormState,
       formData: {
@@ -77,6 +87,8 @@ describe('ItemForm', () => {
         serial_number: 'VI0000002',
       },
       priceInput: '1000',
+      costPriceInput: '',
+      consignmentPriceInput: '',
     });
 
     render(
@@ -99,21 +111,17 @@ describe('ItemForm', () => {
           maker: 'Strad',
           type: 'Violin',
           serial_number: 'VI0000002',
+          price: 1000,
         })
       )
     );
 
-    // UX: In create mode, success message is shown instead of immediately closing
-    // So onClose won't be called immediately - it will be called when user clicks "Done"
-    // For editing mode, onClose would be called immediately
-    await waitFor(
-      () => {
-        expect(
-          screen.getByText(/Item created successfully/i)
-        ).toBeInTheDocument();
-      },
-      { timeout: 3000 }
-    );
-    // onClose is not called immediately in create mode - user sees success message
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Item created successfully!/i)
+      ).toBeInTheDocument();
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
