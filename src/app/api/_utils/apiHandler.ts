@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { errorHandler } from '@/utils/errorHandler';
-import { logApiRequest } from '@/utils/logger';
+import { logApiRequest, logError } from '@/utils/logger';
 import { createSafeErrorResponse } from '@/utils/errorSanitization';
 import { captureException } from '@/utils/monitoring';
-import { ErrorSeverity } from '@/types/errors';
+import { ErrorCodes, ErrorSeverity } from '@/types/errors';
+import { getSupabaseConnectionDiagnostics } from '@/lib/supabaseConnectionDiagnostics';
+import { extractPostgrestLikeErrorSnapshot } from '@/app/api/_utils/postgrestErrorSnapshot';
 import type { AppError } from '@/types/errors';
 import {
   isApiErrorLikePayload,
@@ -216,6 +218,32 @@ export async function apiHandler(
 
     const status = resolveHttpStatus(error, appError);
 
+    const postgrestSnapshot = extractPostgrestLikeErrorSnapshot(error);
+    const supabaseDiag = getSupabaseConnectionDiagnostics();
+    if (
+      postgrestSnapshot ||
+      appError.code === ErrorCodes.DATABASE_ERROR ||
+      appError.code === ErrorCodes.FORBIDDEN ||
+      appError.code === ErrorCodes.RECORD_NOT_FOUND
+    ) {
+      logError(
+        'API handler: data layer error (PostgREST snapshot for operators)',
+        error,
+        `${meta.context}.${meta.method}`,
+        {
+          requestId,
+          routeKey: meta.path,
+          httpPath: path,
+          supabaseHost: supabaseDiag.host,
+          supabaseProjectRef: supabaseDiag.projectRef,
+          supabaseUrlSource: supabaseDiag.urlSource,
+          postgrest: postgrestSnapshot,
+          appErrorCode: appError.code,
+          appErrorMessage: appError.message,
+        }
+      );
+    }
+
     logApiRequest(meta.method, path, status, duration, meta.context, {
       ...meta.metadata,
       routeKey: meta.path,
@@ -234,6 +262,8 @@ export async function apiHandler(
         path,
         method: meta.method,
         requestId,
+        supabaseProjectRef: supabaseDiag.projectRef,
+        supabaseUrlSource: supabaseDiag.urlSource,
       }),
       ErrorSeverity.MEDIUM
     );

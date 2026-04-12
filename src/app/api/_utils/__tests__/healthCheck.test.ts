@@ -51,19 +51,12 @@ function withPolicyMeta(
 }
 
 const COMPLETE_REQUIRED_VERSIONS = [
-  { version: '20260401000000' },
-  { version: '20260401000007' },
-  { version: '20260402000001' },
-  { version: '20260402000003' },
-  { version: '20260402000004' },
-  { version: '20260402000005' },
-  { version: '20260402000006' },
-  { version: '20260403000000' },
-  { version: '20260403000001' },
-  { version: '20260403000002' },
-  { version: '20260403000003' },
-  { version: '20260403000005' },
-  { version: '20260403000006' },
+  { version: '00000000000000' },
+  { version: '00000000000001' },
+  { version: '00000000000002' },
+  { version: '00000000000003' },
+  { version: '00000000000004' },
+  { version: '00000000000005' },
 ];
 
 const COMPLETE_FUNCTION_ROWS = [
@@ -74,7 +67,7 @@ const COMPLETE_FUNCTION_ROWS = [
   },
   {
     proname: 'is_admin',
-    prosrc: "SELECT auth.user_role() = 'admin'",
+    prosrc: "SELECT public.user_role() = 'admin'",
   },
   {
     proname: 'user_role',
@@ -86,109 +79,109 @@ const COMPLETE_FUNCTION_ROWS = [
 const COMPLETE_REQUIRED_POLICY_ROWS = withPolicyMeta([
   {
     policyname: 'client_instruments_select',
-    qual: '(org_id = auth.org_id())',
+    qual: '(org_id = public.org_id())',
     with_check: null,
   },
   {
     policyname: 'maintenance_tasks_select',
-    qual: '(org_id = auth.org_id())',
+    qual: '(org_id = public.org_id())',
     with_check: null,
   },
   {
     policyname: 'sales_history_select',
-    qual: '(org_id = auth.org_id())',
+    qual: '(org_id = public.org_id())',
     with_check: null,
   },
   {
     policyname: 'sales_history_insert',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
-    with_check: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
+    with_check: '(org_id = public.org_id() AND public.is_admin())',
   },
   {
     policyname: 'invoices_select',
-    qual: '(org_id = auth.org_id())',
+    qual: '(org_id = public.org_id())',
     with_check: null,
   },
   {
     policyname: 'clients_update',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
-    with_check: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
+    with_check: '(org_id = public.org_id() AND public.is_admin())',
   },
   {
     policyname: 'clients_delete',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
     with_check: null,
   },
   {
     policyname: 'instruments_update',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
-    with_check: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
+    with_check: '(org_id = public.org_id() AND public.is_admin())',
   },
   {
     policyname: 'instruments_delete',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
     with_check: null,
   },
   {
     policyname: 'client_instruments_update',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
-    with_check: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
+    with_check: '(org_id = public.org_id() AND public.is_admin())',
   },
   {
     policyname: 'client_instruments_delete',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
     with_check: null,
   },
   {
     policyname: 'maintenance_tasks_update',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
-    with_check: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
+    with_check: '(org_id = public.org_id() AND public.is_admin())',
   },
   {
     policyname: 'maintenance_tasks_delete',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
     with_check: null,
   },
   {
     policyname: 'contact_logs_update',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
-    with_check: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
+    with_check: '(org_id = public.org_id() AND public.is_admin())',
   },
   {
     policyname: 'contact_logs_delete',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
     with_check: null,
   },
   {
     policyname: 'invoices_update',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
-    with_check: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
+    with_check: '(org_id = public.org_id() AND public.is_admin())',
   },
   {
     policyname: 'invoices_delete',
-    qual: '(org_id = auth.org_id() AND auth.is_admin())',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
     with_check: null,
   },
   {
     policyname: 'hc_v_invoice_images_insert',
     qual: null,
     with_check:
-      "(bucket_id = 'invoices' AND (storage.foldername(name))[1] = auth.org_id()::text AND array_length(storage.foldername(name), 1) = 2 AND auth.is_admin())",
+      "(bucket_id = 'invoices' AND (storage.foldername(name))[1] = public.org_id()::text AND array_length(storage.foldername(name), 1) = 2 AND public.is_admin())",
   },
   {
     policyname: 'hc_v_invoice_images_select',
-    qual: "(bucket_id = 'invoices' AND (storage.foldername(name))[1] = auth.org_id()::text AND array_length(storage.foldername(name), 1) = 2)",
+    qual: "(bucket_id = 'invoices' AND (storage.foldername(name))[1] = public.org_id()::text AND array_length(storage.foldername(name), 1) = 2)",
     with_check: null,
   },
   {
     policyname: 'hc_v_invoice_images_update',
-    qual: "(bucket_id = 'invoices' AND (storage.foldername(name))[1] = auth.org_id()::text AND array_length(storage.foldername(name), 1) = 2 AND auth.is_admin())",
+    qual: "(bucket_id = 'invoices' AND (storage.foldername(name))[1] = public.org_id()::text AND array_length(storage.foldername(name), 1) = 2 AND public.is_admin())",
     with_check:
-      "(bucket_id = 'invoices' AND (storage.foldername(name))[1] = auth.org_id()::text AND array_length(storage.foldername(name), 1) = 2 AND auth.is_admin())",
+      "(bucket_id = 'invoices' AND (storage.foldername(name))[1] = public.org_id()::text AND array_length(storage.foldername(name), 1) = 2 AND public.is_admin())",
   },
   {
     policyname: 'hc_v_invoice_images_delete',
-    qual: "(bucket_id = 'invoices' AND (storage.foldername(name))[1] = auth.org_id()::text AND array_length(storage.foldername(name), 1) = 2 AND auth.is_admin())",
+    qual: "(bucket_id = 'invoices' AND (storage.foldername(name))[1] = public.org_id()::text AND array_length(storage.foldername(name), 1) = 2 AND public.is_admin())",
     with_check: null,
   },
 ]);
@@ -269,8 +262,8 @@ describe.skip('healthCheck [TEMP SKIPPED - infra contract drift]', () => {
     expect(result.allHealthy).toBe(false);
     expect(result.authOrgIdHelperValid).toBe(false);
     expect(result.authIsAdminHelperValid).toBe(false);
-    expect(result.invalidHelpers).toContain('auth.org_id');
-    expect(result.invalidHelpers).toContain('auth.is_admin');
+    expect(result.invalidHelpers).toContain('public.org_id');
+    expect(result.invalidHelpers).toContain('public.is_admin');
   });
 
   it('returns unhealthy when a critical policy predicate is unsafe', async () => {

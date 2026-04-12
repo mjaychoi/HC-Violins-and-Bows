@@ -159,6 +159,14 @@ async function migrateMaintenanceTasks() {
           '📅 이제 /calendar 페이지에서 캘린더 기능을 사용할 수 있습니다.\n',
           'migrateMaintenanceTasks'
         );
+        logInfo(
+          '⚠️  API는 maintenance_tasks.org_id 및 테넌트 RLS(auth.org_id())를 사용합니다.',
+          'migrateMaintenanceTasks'
+        );
+        logInfo(
+          '   이 스크립트만 실행했다면 org_id 컬럼이 없을 수 있습니다. 동일 DB에 supabase/migrations/20260401000000_tenant_isolation.sql(또는 전체 Supabase 마이그레이션) 적용 여부를 확인하세요.\n',
+          'migrateMaintenanceTasks'
+        );
 
         await client.end();
         return;
