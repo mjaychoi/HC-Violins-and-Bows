@@ -370,7 +370,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // userSupabase + RLS (org_id = auth.org_id()) prevents cross-tenant writes
+      // userSupabase + RLS (org_id = public.org_id()) prevents cross-tenant writes
       const { data, error } = await auth.userSupabase
         .from('clients')
         .update(validation.data)

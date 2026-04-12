@@ -60,137 +60,130 @@ type ParsedPolicyRow = {
 };
 
 const REQUIRED_MIGRATION_VERSIONS = [
-  '20260401000000',
-  '20260401000007',
-  '20260402000001',
-  '20260402000003',
-  '20260402000004',
-  '20260402000005',
-  '20260402000006',
-  '20260403000000',
-  '20260403000001',
-  '20260403000002',
-  '20260403000003',
-  '20260403000005',
-  '20260403000006',
-  '20260404000000',
-  '20260404000001',
+  '00000000000000', // initial_schema
+  '00000000000001', // auth_helpers
+  '00000000000002', // rls_policies
+  '00000000000003', // triggers
+  '00000000000004', // functions
+  '00000000000005', // indexes
 ] as const;
 
-const TENANT_ISOLATION_MIGRATION_VERSION = '20260401000000';
-const ROLE_ENFORCED_WRITE_POLICIES_MIGRATION_VERSION = '20260402000003';
+// With consolidated migrations the "tenant isolation" and "role-enforced write
+// policies" functionality ship in the initial 00000000000000 migration.
+const TENANT_ISOLATION_MIGRATION_VERSION = '00000000000000';
+const ROLE_ENFORCED_WRITE_POLICIES_MIGRATION_VERSION = '00000000000002';
 
 const REQUIRED_FUNCTIONS = ['org_id', 'user_role', 'is_admin'] as const;
 
 const REQUIRED_HELPER_SNIPPETS = {
   org_id: ['app_metadata', 'org_id'],
-  is_admin: ['auth.user_role() =', 'admin'],
+  is_admin: ['public.user_role() =', 'admin'],
 } as const;
 
 const REQUIRED_POLICY_SPECS: Record<string, RequiredPolicySpec> = {
   client_instruments_select: {
     schema: 'public',
     table: 'client_instruments',
-    snippets: ['org_id = auth.org_id()'],
+    snippets: ['org_id = public.org_id()'],
   },
   maintenance_tasks_select: {
     schema: 'public',
     table: 'maintenance_tasks',
-    snippets: ['org_id = auth.org_id()'],
+    snippets: ['org_id = public.org_id()'],
   },
   sales_history_select: {
     schema: 'public',
     table: 'sales_history',
-    snippets: ['org_id = auth.org_id()'],
+    snippets: ['org_id = public.org_id()'],
   },
   sales_history_insert: {
     schema: 'public',
     table: 'sales_history',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   invoices_select: {
     schema: 'public',
     table: 'invoices',
-    snippets: ['org_id = auth.org_id()'],
+    snippets: ['org_id = public.org_id()'],
   },
   clients_insert: {
     schema: 'public',
     table: 'clients',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   clients_update: {
     schema: 'public',
     table: 'clients',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   clients_delete: {
     schema: 'public',
     table: 'clients',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   instruments_insert: {
     schema: 'public',
     table: 'instruments',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   instruments_update: {
     schema: 'public',
     table: 'instruments',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   instruments_delete: {
     schema: 'public',
     table: 'instruments',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   client_instruments_update: {
     schema: 'public',
     table: 'client_instruments',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   client_instruments_delete: {
     schema: 'public',
     table: 'client_instruments',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   maintenance_tasks_update: {
     schema: 'public',
     table: 'maintenance_tasks',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   maintenance_tasks_delete: {
     schema: 'public',
     table: 'maintenance_tasks',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   contact_logs_update: {
     schema: 'public',
     table: 'contact_logs',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   contact_logs_delete: {
     schema: 'public',
     table: 'contact_logs',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   invoices_update: {
     schema: 'public',
     table: 'invoices',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   invoices_delete: {
     schema: 'public',
     table: 'invoices',
-    snippets: ['org_id = auth.org_id()', 'auth.is_admin()'],
+    snippets: ['org_id = public.org_id()', 'public.is_admin()'],
   },
   hc_v_invoice_images_insert: {
     schema: 'storage',
     table: 'objects',
     snippets: [
       "bucket_id = 'invoices'",
-      '(storage.foldername(name))[1] = auth.org_id()::text',
+      '(storage.foldername(name))[1] = public.org_id()::text',
       'array_length(storage.foldername(name), 1) = 2',
-      'auth.is_admin()',
+      'public.is_admin()',
     ],
   },
   hc_v_invoice_images_select: {
@@ -198,7 +191,7 @@ const REQUIRED_POLICY_SPECS: Record<string, RequiredPolicySpec> = {
     table: 'objects',
     snippets: [
       "bucket_id = 'invoices'",
-      '(storage.foldername(name))[1] = auth.org_id()::text',
+      '(storage.foldername(name))[1] = public.org_id()::text',
       'array_length(storage.foldername(name), 1) = 2',
     ],
   },
@@ -207,9 +200,9 @@ const REQUIRED_POLICY_SPECS: Record<string, RequiredPolicySpec> = {
     table: 'objects',
     snippets: [
       "bucket_id = 'invoices'",
-      '(storage.foldername(name))[1] = auth.org_id()::text',
+      '(storage.foldername(name))[1] = public.org_id()::text',
       'array_length(storage.foldername(name), 1) = 2',
-      'auth.is_admin()',
+      'public.is_admin()',
     ],
   },
   hc_v_invoice_images_delete: {
@@ -217,9 +210,9 @@ const REQUIRED_POLICY_SPECS: Record<string, RequiredPolicySpec> = {
     table: 'objects',
     snippets: [
       "bucket_id = 'invoices'",
-      '(storage.foldername(name))[1] = auth.org_id()::text',
+      '(storage.foldername(name))[1] = public.org_id()::text',
       'array_length(storage.foldername(name), 1) = 2',
-      'auth.is_admin()',
+      'public.is_admin()',
     ],
   },
 };
@@ -290,7 +283,7 @@ function unhealthyResult(
     missingMigrationVersions: [...REQUIRED_MIGRATION_VERSIONS],
     missingPolicies: [...REQUIRED_POLICY_NAMES],
     forbiddenPoliciesPresent: getDefaultForbiddenPolicyKeys(),
-    invalidHelpers: ['auth.org_id', 'auth.is_admin'],
+    invalidHelpers: ['public.org_id', 'public.is_admin'],
     unsafePolicies: [...REQUIRED_POLICY_NAMES],
     ...overrides,
   };
@@ -355,11 +348,11 @@ function getInvalidHelpers(functionMap: Map<string, string>): string[] {
     ) || isAdminHelperSource.includes('user_metadata');
 
   if (orgIdInvalid) {
-    invalidHelpers.push('auth.org_id');
+    invalidHelpers.push('public.org_id');
   }
 
   if (isAdminInvalid) {
-    invalidHelpers.push('auth.is_admin');
+    invalidHelpers.push('public.is_admin');
   }
 
   return invalidHelpers;
@@ -489,8 +482,8 @@ function buildPartialFailureResult(params: {
     invalidHelpers,
     ...(includeHelperFlags
       ? {
-          authOrgIdHelperValid: !invalidHelpers.includes('auth.org_id'),
-          authIsAdminHelperValid: !invalidHelpers.includes('auth.is_admin'),
+          authOrgIdHelperValid: !invalidHelpers.includes('public.org_id'),
+          authIsAdminHelperValid: !invalidHelpers.includes('public.is_admin'),
         }
       : {}),
   });
@@ -579,8 +572,8 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
     );
     const requiredPoliciesPresent = missingPolicies.length === 0;
     const forbiddenPoliciesAbsent = forbiddenPoliciesPresent.length === 0;
-    const authOrgIdHelperValid = !invalidHelpers.includes('auth.org_id');
-    const authIsAdminHelperValid = !invalidHelpers.includes('auth.is_admin');
+    const authOrgIdHelperValid = !invalidHelpers.includes('public.org_id');
+    const authIsAdminHelperValid = !invalidHelpers.includes('public.is_admin');
     const criticalPolicyPredicatesValid =
       unsafePolicies.length === 0 && missingPolicies.length === 0;
     const invoiceImageStoragePathShapeValid =
