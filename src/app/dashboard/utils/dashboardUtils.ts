@@ -138,14 +138,18 @@ export const validateInstrumentData = (
 ): string[] => {
   const errors: string[] = [];
 
-  if (!data.maker?.trim()) errors.push('Maker is required');
-  if (!data.type?.trim()) errors.push('Type is required');
+  // ✅ REQUIRED FIELDS 추가
+  if (!data.maker || data.maker.toString().trim() === '') {
+    errors.push('Maker is required');
+  }
 
-  // Year is required
+  if (!data.type || data.type.toString().trim() === '') {
+    errors.push('Type is required');
+  }
+
+  // ✅ YEAR VALIDATION (기존 유지)
   const yearStr = data.year?.toString().trim() || '';
-  if (!yearStr) {
-    errors.push('Year is required');
-  } else {
+  if (yearStr) {
     const year =
       typeof data.year === 'string' ? parseInt(data.year, 10) : data.year;
     if (
@@ -158,16 +162,14 @@ export const validateInstrumentData = (
     }
   }
 
-  // Price is required - check priceInput if provided, otherwise check data.price
+  // ✅ PRICE VALIDATION 수정 (positive 기준)
   const priceValue = priceInput !== undefined ? priceInput : data.price;
   const normalizedPrice =
     typeof priceValue === 'string'
       ? priceValue.trim().replace(/,/g, '')
       : priceValue?.toString() || '';
 
-  if (!normalizedPrice) {
-    errors.push('Price is required');
-  } else {
+  if (normalizedPrice) {
     const priceNum = parseFloat(normalizedPrice);
     if (isNaN(priceNum) || priceNum <= 0) {
       errors.push('Price must be a valid positive number');

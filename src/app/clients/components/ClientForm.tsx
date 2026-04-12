@@ -219,9 +219,7 @@ function ClientForm({
 
     // Validate form data
     const validationSchema = {
-      first_name: clientValidation.firstName,
-      last_name: clientValidation.lastName,
-      email: clientValidation.email,
+      email: [clientValidation.email[1]],
       contact_number: clientValidation.phone,
     };
 
@@ -496,7 +494,6 @@ function ClientForm({
               name="last_name"
               value={formData.last_name}
               onChange={handleInputChange}
-              required
               placeholder="Enter last name"
             />
 

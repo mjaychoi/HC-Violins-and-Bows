@@ -111,6 +111,25 @@ export default function AppSidebar({
         </svg>
       ),
     },
+    {
+      href: '/notes',
+      label: 'Notes',
+      icon: (
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M9 12h6m-6 4h6M7 4h7l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"
+          />
+        </svg>
+      ),
+    },
   ];
 
   return (
@@ -152,7 +171,10 @@ export default function AppSidebar({
               currentPath === item.href ||
               (item.href === '/clients' &&
                 (currentPath.startsWith('/clients/') ||
-                  currentPath.startsWith('/clients?')));
+                  currentPath.startsWith('/clients?'))) ||
+              (item.href === '/notes' &&
+                (currentPath.startsWith('/notes/') ||
+                  currentPath.startsWith('/notes?')));
             return (
               <Link
                 key={item.href}

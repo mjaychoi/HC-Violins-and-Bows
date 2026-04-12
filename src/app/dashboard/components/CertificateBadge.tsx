@@ -3,10 +3,16 @@ import { getCertificateColor } from '@/utils/colorTokens';
 
 interface CertificateBadgeProps {
   hasCertificate: boolean;
+  certificateName?: string | null;
 }
 
-function CertificateBadge({ hasCertificate }: CertificateBadgeProps) {
-  const text = hasCertificate ? 'Yes' : 'No';
+function CertificateBadge({
+  hasCertificate,
+  certificateName,
+}: CertificateBadgeProps) {
+  const text = hasCertificate
+    ? certificateName?.trim() || 'Certificate'
+    : 'No certificate';
   const icon = hasCertificate ? '✓' : '✗';
   const className = getCertificateColor(hasCertificate);
 

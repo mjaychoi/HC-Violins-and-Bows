@@ -690,10 +690,13 @@ export const partialInstrumentSchema = z
 
     certificate: z.boolean().optional(),
     has_certificate: z.boolean().optional(),
+    certificate_name: z.string().nullable().optional(),
 
     size: z.string().nullable().optional(),
     weight: z.string().nullable().optional(),
     price: z.number().nullable().optional(),
+    cost_price: z.number().nullable().optional(),
+    consignment_price: z.number().nullable().optional(),
     ownership: z.string().nullable().optional(),
     note: z.string().nullable().optional(),
     serial_number: z.string().nullable().optional(),
@@ -756,10 +759,13 @@ export const createInstrumentSchema = z
 
     certificate: z.boolean().optional().default(false),
     has_certificate: z.boolean().optional(),
+    certificate_name: z.string().nullable().optional(),
 
     size: z.string().nullable(),
     weight: z.string().nullable(),
     price: z.number().nullable(),
+    cost_price: z.number().nullable().optional(),
+    consignment_price: z.number().nullable().optional(),
     ownership: z.string().nullable(),
     note: z.string().nullable(),
     serial_number: z.string().nullable(),
@@ -770,6 +776,9 @@ export const createInstrumentSchema = z
       ...raw,
       has_certificate: computedHasCert,
       certificate: raw.certificate ?? computedHasCert,
+      certificate_name: computedHasCert
+        ? (raw.certificate_name?.trim() ?? null)
+        : null,
     };
   });
 

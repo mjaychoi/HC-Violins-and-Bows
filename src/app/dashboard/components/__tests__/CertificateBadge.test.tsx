@@ -3,19 +3,23 @@ import { render, screen } from '@/test-utils/render';
 import CertificateBadge from '../CertificateBadge';
 
 describe('CertificateBadge', () => {
-  it('shows Yes state when certificate exists', () => {
+  it('shows certificate state when certificate exists', () => {
     render(<CertificateBadge hasCertificate={true} />);
 
-    expect(screen.getByText('Yes')).toBeInTheDocument();
-    expect(screen.getByLabelText('Certificate: Yes')).toBeInTheDocument();
+    expect(screen.getByText('Certificate')).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('Certificate: Certificate')
+    ).toBeInTheDocument();
     expect(screen.getByText('✓')).toBeInTheDocument();
   });
 
-  it('shows No state when certificate is missing', () => {
+  it('shows no-certificate state when certificate is missing', () => {
     render(<CertificateBadge hasCertificate={false} />);
 
-    expect(screen.getByText('No')).toBeInTheDocument();
-    expect(screen.getByLabelText('Certificate: No')).toBeInTheDocument();
+    expect(screen.getByText('No certificate')).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('Certificate: No certificate')
+    ).toBeInTheDocument();
     expect(screen.getByText('✗')).toBeInTheDocument();
   });
 
