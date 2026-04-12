@@ -12,6 +12,7 @@ import {
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { logError } from '@/utils/logger';
+import { mapClientsTableRowToClient } from '@/utils/clientDbMap';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -185,7 +186,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           .in('id', Array.from(clientIdSet));
         if (clientsData) {
           clientsData.forEach(row => {
-            clientsMap.set(row.id, { ...row, tags: row.tags ?? [] } as Client);
+            clientsMap.set(row.id, mapClientsTableRowToClient(row));
           });
         }
       }

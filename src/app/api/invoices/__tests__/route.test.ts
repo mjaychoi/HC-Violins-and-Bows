@@ -150,7 +150,7 @@ describe('/api/invoices GET', () => {
     expect(json.data).toHaveLength(1);
   });
 
-  it('searches client first_name using actual schema fields', async () => {
+  it('searches clients.name and clients.email (single name column in DB)', async () => {
     const query = createInvoicesGetQueryMock({
       data: [],
       error: null,
@@ -169,33 +169,10 @@ describe('/api/invoices GET', () => {
     await GET(request);
 
     expect(query.or).toHaveBeenCalledWith(
-      expect.stringContaining('clients.first_name.ilike.%John%')
+      expect.stringContaining('clients.name.ilike.%John%')
     );
-    expect(query.or).not.toHaveBeenCalledWith(
-      expect.stringContaining('clients.name')
-    );
-  });
-
-  it('searches client last_name using actual schema fields', async () => {
-    const query = createInvoicesGetQueryMock({
-      data: [],
-      error: null,
-      count: 0,
-    });
-
-    mockUserSupabase = {
-      from: jest.fn(() => query),
-    };
-
-    const { GET } = await import('../route');
-    const request = new NextRequest(
-      'http://localhost/api/invoices?page=1&search=Doe'
-    );
-
-    await GET(request);
-
     expect(query.or).toHaveBeenCalledWith(
-      expect.stringContaining('clients.last_name.ilike.%Doe%')
+      expect.stringContaining('clients.email.ilike.%John%')
     );
   });
 
@@ -222,7 +199,7 @@ describe('/api/invoices GET', () => {
     );
   });
 
-  it('supports simple combined first-name last-name search', async () => {
+  it('searches full client name in one clients.name ILIKE', async () => {
     const query = createInvoicesGetQueryMock({
       data: [],
       error: null,
@@ -241,14 +218,7 @@ describe('/api/invoices GET', () => {
     await GET(request);
 
     expect(query.or).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'and(clients.first_name.ilike.%John%,clients.last_name.ilike.%Doe%)'
-      )
-    );
-    expect(query.or).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'and(clients.first_name.ilike.%Doe%,clients.last_name.ilike.%John%)'
-      )
+      expect.stringContaining('clients.name.ilike.%John Doe%')
     );
   });
 

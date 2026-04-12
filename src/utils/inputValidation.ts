@@ -19,10 +19,10 @@ export const ALLOWED_SORT_COLUMNS = {
   clients: [
     'id',
     'created_at',
-    'first_name',
-    'last_name',
+    'updated_at',
+    'name',
     'email',
-    'contact_number',
+    'phone',
     'client_number',
   ] as const,
   instruments: [
@@ -61,6 +61,13 @@ export function validateSortColumn(
       ? (preferredDefault as string)
       : (allowed[0] as string);
   }
+
+  // Legacy query params (first/last/contact) → rebuilt `clients` columns (name, phone)
+  if (table === 'clients') {
+    if (column === 'first_name' || column === 'last_name') return 'name';
+    if (column === 'contact_number') return 'phone';
+  }
+
   // Type-safe check
   const allowedSet = new Set(allowed as readonly string[]);
   if (allowedSet.has(column)) {

@@ -218,14 +218,14 @@ async function getHandlerInternal(
       try {
         const { data: ownerClient } = await auth.userSupabase
           .from('clients')
-          .select('first_name, last_name, email')
+          .select('name, email')
           .eq('id', ownerId)
           .eq('org_id', auth.orgId!)
           .maybeSingle();
 
         if (ownerClient) {
           ownerName =
-            `${ownerClient.first_name || ''} ${ownerClient.last_name || ''}`.trim() ||
+            (ownerClient.name && String(ownerClient.name).trim()) ||
             ownerClient.email ||
             null;
         }
