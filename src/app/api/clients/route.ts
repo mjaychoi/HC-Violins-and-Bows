@@ -10,6 +10,7 @@ import {
 } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import type { Client } from '@/types';
+import type { TablesInsert } from '@/types/database';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logDebug } from '@/utils/logger';
 import {
@@ -20,9 +21,12 @@ import {
   safeValidate,
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
-
-const CLIENT_SELECT_COLUMNS =
-  'id, client_number, first_name, last_name, email, contact_number, interest, note, tags, created_at';
+import {
+  CLIENT_TABLE_SELECT,
+  createClientInputToDbRow,
+  mapClientsTableRowToClient,
+  mergePartialClientIntoDbPatch,
+} from '@/utils/clientDbMap';
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
@@ -151,14 +155,12 @@ function parseListQuery(request: NextRequest): { q: ListQuery } {
   };
 }
 
-function normalizeClientRows(
-  rows: Array<Client & { tags?: string[] | null; email?: string | null }>
-): Client[] {
-  return rows.map(c => ({
-    ...c,
-    tags: c.tags ?? [],
-    email: c.email === null ? null : c.email || null,
-  }));
+function normalizeClientRows(rows: unknown[]): Client[] {
+  return rows.map(raw =>
+    mapClientsTableRowToClient(
+      raw as Parameters<typeof mapClientsTableRowToClient>[0]
+    )
+  );
 }
 
 function debugQueryResult(meta: Record<string, unknown>) {
@@ -173,14 +175,12 @@ async function runClientsQuery(
 ) {
   let query = supabase
     .from('clients')
-    .select(CLIENT_SELECT_COLUMNS, { count: 'exact' })
+    .select(CLIENT_TABLE_SELECT, { count: 'exact' })
     .eq('org_id', orgId);
 
   if (q.search) {
     const s = q.search;
-    query = query.or(
-      `last_name.ilike.%${s}%,first_name.ilike.%${s}%,email.ilike.%${s}%`
-    );
+    query = query.or(`name.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%`);
   }
 
   query = query.order(q.orderBy, { ascending: q.ascending });
@@ -233,11 +233,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       if (error) throw errorHandler.handleSupabaseError(error, 'Fetch clients');
 
-      const normalized = normalizeClientRows(
-        (data ?? []) as Array<
-          Client & { tags?: string[] | null; email?: string | null }
-        >
-      );
+      const normalized = normalizeClientRows(data ?? []);
 
       const recordCount = normalized.length;
       const totalCount = count ?? 0;
@@ -310,15 +306,20 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      const insertRow: TablesInsert<'clients'> = {
+        ...createClientInputToDbRow(validation.data),
+        org_id: auth.orgId!,
+      };
+
       const { data, error } = await auth.userSupabase
         .from('clients')
-        .insert({ ...validation.data, org_id: auth.orgId! })
-        .select()
+        .insert(insertRow)
+        .select(CLIENT_TABLE_SELECT)
         .single();
 
       if (error) throw errorHandler.handleSupabaseError(error, 'Create client');
 
-      const validated = validateClient(data);
+      const validated = validateClient(mapClientsTableRowToClient(data));
       return {
         payload: { data: validated },
         status: 201,
@@ -370,18 +371,40 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // userSupabase + RLS (org_id = public.org_id()) prevents cross-tenant writes
-      const { data, error } = await auth.userSupabase
+      const { data: currentRow, error: curErr } = await auth.userSupabase
         .from('clients')
-        .update(validation.data)
+        .select('name')
         .eq('id', id)
         .eq('org_id', auth.orgId!)
-        .select()
+        .single();
+
+      if (curErr || !currentRow) {
+        return { payload: { error: 'Client not found' }, status: 404 };
+      }
+
+      const dbPatch = mergePartialClientIntoDbPatch(
+        typeof currentRow.name === 'string' ? currentRow.name : null,
+        validation.data
+      );
+
+      if (Object.keys(dbPatch).length === 0) {
+        return {
+          payload: { error: 'No updatable fields provided' },
+          status: 400,
+        };
+      }
+
+      const { data, error } = await auth.userSupabase
+        .from('clients')
+        .update(dbPatch)
+        .eq('id', id)
+        .eq('org_id', auth.orgId!)
+        .select(CLIENT_TABLE_SELECT)
         .single();
 
       if (error) throw errorHandler.handleSupabaseError(error, 'Update client');
 
-      const validated = validateClient(data);
+      const validated = validateClient(mapClientsTableRowToClient(data));
       return { payload: { data: validated }, metadata: { clientId: id } };
     }
   );

@@ -21,9 +21,9 @@ describe('inputValidation', () => {
       expect(result).toBe('created_at'); // First column in clients array
     });
 
-    it('should return column when it is in allowed list', () => {
+    it('maps legacy first_name sort to clients.name', () => {
       const result = validateSortColumn('clients', 'first_name');
-      expect(result).toBe('first_name');
+      expect(result).toBe('name');
     });
 
     it('should return default column when column is not in allowed list', () => {
@@ -424,8 +424,8 @@ describe('inputValidation', () => {
   describe('ALLOWED_SORT_COLUMNS', () => {
     it('should contain expected columns for clients', () => {
       expect(ALLOWED_SORT_COLUMNS.clients).toContain('created_at');
-      expect(ALLOWED_SORT_COLUMNS.clients).toContain('first_name');
-      expect(ALLOWED_SORT_COLUMNS.clients).toContain('last_name');
+      expect(ALLOWED_SORT_COLUMNS.clients).toContain('name');
+      expect(ALLOWED_SORT_COLUMNS.clients).toContain('phone');
       expect(ALLOWED_SORT_COLUMNS.clients).toContain('email');
     });
 

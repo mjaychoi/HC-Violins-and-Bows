@@ -35,13 +35,27 @@ export function normalizeSupabaseClientJoin(raw: unknown): NormalizedClient {
     ? clientData.tags.filter((tag): tag is string => typeof tag === 'string')
     : [];
 
+  const fullName =
+    (clientData.name as string | null | undefined)?.trim() ||
+    [
+      (clientData.first_name as string | null | undefined)?.trim(),
+      (clientData.last_name as string | null | undefined)?.trim(),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim() ||
+    '';
+
   return {
     client: {
       id,
-      first_name: (clientData.first_name as string | null) ?? null,
-      last_name: (clientData.last_name as string | null) ?? null,
+      first_name: fullName || null,
+      last_name: null,
       email: (clientData.email as string | null) ?? null,
-      contact_number: (clientData.contact_number as string | null) ?? null,
+      contact_number:
+        (clientData.phone as string | null | undefined) ??
+        (clientData.contact_number as string | null) ??
+        null,
       address: (clientData.address as string | null) ?? null,
       tags,
       interest: (clientData.interest as string | null) ?? null,

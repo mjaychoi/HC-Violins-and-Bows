@@ -140,30 +140,13 @@ function getCreateInvoiceMessage(result: InvoiceMutationResult): string {
 
 function buildInvoiceSearchFilter(search: string): string {
   const escaped = escapePostgrestFilterValue(search);
-  const filters = [
+  // DB `clients` uses single `name` + `email` (not first_name / last_name).
+  return [
     `invoice_number.ilike.%${escaped}%`,
     `notes.ilike.%${escaped}%`,
-    `clients.first_name.ilike.%${escaped}%`,
-    `clients.last_name.ilike.%${escaped}%`,
-  ];
-
-  const nameParts = search
-    .split(/\s+/)
-    .map(part => part.trim())
-    .filter(Boolean);
-
-  if (nameParts.length >= 2) {
-    const [first, second] = nameParts;
-    const escapedFirst = escapePostgrestFilterValue(first);
-    const escapedSecond = escapePostgrestFilterValue(second);
-
-    filters.push(
-      `and(clients.first_name.ilike.%${escapedFirst}%,clients.last_name.ilike.%${escapedSecond}%)`,
-      `and(clients.first_name.ilike.%${escapedSecond}%,clients.last_name.ilike.%${escapedFirst}%)`
-    );
-  }
-
-  return filters.join(',');
+    `clients.name.ilike.%${escaped}%`,
+    `clients.email.ilike.%${escaped}%`,
+  ].join(',');
 }
 
 async function getHandler(request: NextRequest, auth: AuthContext) {

@@ -27,11 +27,11 @@ export type CalendarSortField = 'date' | 'priority' | 'status' | 'type';
  */
 export type ClientSortField =
   | 'created_at'
-  | 'first_name'
-  | 'last_name'
-  | 'contact_number'
+  | 'updated_at'
+  | 'name'
+  | 'phone'
   | 'email'
-  | 'interest';
+  | 'client_number';
 
 /**
  * Generic sort order
@@ -77,9 +77,9 @@ export const CALENDAR_SORT_FIELDS: readonly CalendarSortField[] = [
  */
 export const CLIENT_SORT_FIELDS: readonly ClientSortField[] = [
   'created_at',
-  'first_name',
-  'last_name',
-  'contact_number',
+  'updated_at',
+  'name',
+  'phone',
   'email',
-  'interest',
+  'client_number',
 ] as const;

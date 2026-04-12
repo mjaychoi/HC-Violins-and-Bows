@@ -54,11 +54,11 @@ describe('sort types and constants', () => {
   describe('CLIENT_SORT_FIELDS', () => {
     it('should contain all expected client sort fields', () => {
       expect(CLIENT_SORT_FIELDS).toContain('created_at');
-      expect(CLIENT_SORT_FIELDS).toContain('first_name');
-      expect(CLIENT_SORT_FIELDS).toContain('last_name');
-      expect(CLIENT_SORT_FIELDS).toContain('contact_number');
+      expect(CLIENT_SORT_FIELDS).toContain('updated_at');
+      expect(CLIENT_SORT_FIELDS).toContain('name');
+      expect(CLIENT_SORT_FIELDS).toContain('phone');
       expect(CLIENT_SORT_FIELDS).toContain('email');
-      expect(CLIENT_SORT_FIELDS).toContain('interest');
+      expect(CLIENT_SORT_FIELDS).toContain('client_number');
     });
 
     it('should have correct length', () => {
@@ -104,11 +104,11 @@ describe('sort types and constants', () => {
     it('should accept valid ClientSortField values', () => {
       const validFields: ClientSortField[] = [
         'created_at',
-        'first_name',
-        'last_name',
-        'contact_number',
+        'updated_at',
+        'name',
+        'phone',
         'email',
-        'interest',
+        'client_number',
       ];
 
       validFields.forEach(field => {
@@ -161,12 +161,12 @@ describe('sort types and constants', () => {
 
     it('should allow creating config for client sort fields', () => {
       const config: SortFieldConfig<ClientSortField> = {
-        field: 'last_name',
-        label: 'Last Name',
+        field: 'name',
+        label: 'Name',
         defaultOrder: 'asc',
       };
 
-      expect(config.field).toBe('last_name');
+      expect(config.field).toBe('name');
       expect(config.defaultOrder).toBe('asc');
     });
   });
