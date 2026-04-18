@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { ErrorCodes } from '@/types/errors';
 
 let mockUserSupabase: any;
 
@@ -105,6 +106,15 @@ function createInvoicesGetQueryMock(result: {
 describe('/api/invoices GET', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    const { safeValidate } = require('@/utils/typeGuards');
+    safeValidate.mockImplementation((value: unknown) => ({
+      success: true,
+      data: value,
+    }));
+    const { attachSignedUrlsToInvoice } = require('../imageUrls');
+    attachSignedUrlsToInvoice.mockImplementation(
+      async (_supabase: unknown, invoice: unknown) => invoice
+    );
   });
 
   it('returns full success payload when no rows are dropped', async () => {
@@ -341,6 +351,70 @@ describe('/api/invoices GET', () => {
     expect(json.count).toBe(3);
     expect(json.data).toEqual([]);
   });
+
+  it('fails closed when invoice image hydration fails', async () => {
+    const { attachSignedUrlsToInvoice } = require('../imageUrls');
+    attachSignedUrlsToInvoice.mockRejectedValueOnce({
+      code: ErrorCodes.RECORD_NOT_FOUND,
+      message: 'Invoice image not found',
+      status: 404,
+      timestamp: new Date().toISOString(),
+      context: {
+        invoiceImageHydration: true,
+        storagePath: 'test-org/missing-image.png',
+      },
+    });
+
+    const query = createInvoicesGetQueryMock({
+      data: [
+        {
+          id: '123e4567-e89b-12d3-a456-426614174014',
+          invoice_number: 'INV-014',
+          client_id: '123e4567-e89b-12d3-a456-426614174001',
+          invoice_date: '2026-04-03',
+          due_date: '2026-04-10',
+          subtotal: 100,
+          tax: 0,
+          total: 100,
+          currency: 'USD',
+          status: 'draft',
+          notes: null,
+          created_at: '2026-04-03T00:00:00.000Z',
+          updated_at: '2026-04-03T00:00:00.000Z',
+          clients: null,
+          invoice_items: [
+            {
+              id: '123e4567-e89b-12d3-a456-426614174015',
+              invoice_id: '123e4567-e89b-12d3-a456-426614174014',
+              instrument_id: null,
+              description: 'Line item',
+              qty: 1,
+              rate: 100,
+              amount: 100,
+              image_url: 'test-org/missing-image.png',
+              display_order: 0,
+              created_at: '2026-04-03T00:00:00.000Z',
+            },
+          ],
+        },
+      ],
+      error: null,
+      count: 1,
+    });
+
+    mockUserSupabase = {
+      from: jest.fn(() => query),
+    };
+
+    const { GET } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices?page=1');
+    const response = await GET(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(json.success).toBe(false);
+    expect(json.message).toBeDefined();
+  });
 });
 
 describe('/api/invoices POST', () => {
@@ -363,6 +437,10 @@ describe('/api/invoices POST', () => {
         items: [],
       },
     }));
+    const { attachSignedUrlsToInvoice } = require('../imageUrls');
+    attachSignedUrlsToInvoice.mockImplementation(
+      async (_supabase: unknown, invoice: unknown) => invoice
+    );
   });
 
   it('scopes the created-invoice readback by org_id', async () => {

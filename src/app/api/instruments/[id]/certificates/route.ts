@@ -154,28 +154,82 @@ async function getHandlerInternal(
     ).order('created_at', { ascending: false });
 
     if (!certError && certRows && certRows.length > 0) {
-      const certificateFiles = await Promise.all(
-        (certRows as ScopedCertificateRow[]).map(async row => {
-          const fileKey = row.storage_path;
-          let signedUrl = '';
-          try {
-            signedUrl = storage.presignGet
-              ? await storage.presignGet(fileKey, SIGNED_URL_TTL_SECONDS)
-              : storage.getFileUrl(fileKey);
-          } catch (presignError) {
-            logError('Failed to generate presigned URL:', presignError);
-          }
-          const name = row.original_name || getStorageFilename(fileKey);
-          return {
-            id: row.id,
-            name,
-            path: fileKey,
-            size: row.size || 0,
-            createdAt: row.created_at || null,
-            signedUrl: signedUrl || null,
-          };
-        })
-      );
+      const certificateFiles = [];
+
+      for (const row of certRows as ScopedCertificateRow[]) {
+        const fileKey = row.storage_path?.trim();
+
+        if (!fileKey) {
+          logError('Certificate object missing storage path', {
+            instrumentId: id,
+            certificateId: row.id,
+          });
+          return routeJson({ error: 'Media object not found' }, 404);
+        }
+
+        let exists = false;
+        try {
+          exists = await storage.fileExists(fileKey);
+        } catch (error) {
+          logError('Failed to verify certificate object', {
+            instrumentId: id,
+            certificateId: row.id,
+            fileKey,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return routeJson({ error: 'Failed to verify media object' }, 500);
+        }
+
+        if (!exists) {
+          logError('Certificate object not found', {
+            instrumentId: id,
+            certificateId: row.id,
+            fileKey,
+          });
+          return routeJson({ error: 'Media object not found' }, 404);
+        }
+
+        if (!storage.presignGet) {
+          logError('Certificate presign unavailable', {
+            instrumentId: id,
+            certificateId: row.id,
+            fileKey,
+          });
+          return routeJson({ error: 'Failed to generate access URL' }, 500);
+        }
+
+        let signedUrl = '';
+        try {
+          signedUrl = await storage.presignGet(fileKey, SIGNED_URL_TTL_SECONDS);
+        } catch (error) {
+          logError('Failed to generate certificate access URL', {
+            instrumentId: id,
+            certificateId: row.id,
+            fileKey,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return routeJson({ error: 'Failed to generate access URL' }, 500);
+        }
+
+        if (!signedUrl.trim()) {
+          logError('Certificate access URL was empty', {
+            instrumentId: id,
+            certificateId: row.id,
+            fileKey,
+          });
+          return routeJson({ error: 'Failed to generate access URL' }, 500);
+        }
+
+        const name = row.original_name || getStorageFilename(fileKey);
+        certificateFiles.push({
+          id: row.id,
+          name,
+          path: fileKey,
+          size: row.size || 0,
+          createdAt: row.created_at || null,
+          signedUrl,
+        });
+      }
 
       return routeJson({ data: certificateFiles }, 200);
     }

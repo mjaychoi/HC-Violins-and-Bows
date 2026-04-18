@@ -54,6 +54,9 @@ describe('instrumentation.ts', () => {
       NEXT_PUBLIC_SENTRY_DSN: 'test-dsn',
       NEXT_RUNTIME: 'nodejs',
       SENTRY_TRACES_SAMPLE_RATE: '0.05',
+      STORAGE_TYPE: 's3',
+      S3_BUCKET_NAME: 'test-bucket',
+      S3_REGION: 'us-east-1',
     } as any;
 
     await instrumentation.register();
@@ -74,6 +77,9 @@ describe('instrumentation.ts', () => {
       NODE_ENV: 'production',
       NEXT_PUBLIC_SENTRY_DSN: 'test-dsn',
       NEXT_RUNTIME: 'nodejs',
+      STORAGE_TYPE: 's3',
+      S3_BUCKET_NAME: 'test-bucket',
+      S3_REGION: 'us-east-1',
     };
     delete env.SENTRY_TRACES_SAMPLE_RATE;
     process.env = env;

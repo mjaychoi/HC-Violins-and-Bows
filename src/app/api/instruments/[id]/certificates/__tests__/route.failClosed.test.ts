@@ -1,13 +1,15 @@
 import type { NextRequest } from 'next/server';
 import { validateUUID } from '@/utils/inputValidation';
 import { getStorage } from '@/utils/storage';
-import { POST, PUT, DELETE } from '../route';
+import { GET, POST, PUT, DELETE } from '../route';
 
 const mockStorage = {
   validateFile: jest.fn(),
   saveFile: jest.fn(),
   deleteFile: jest.fn(),
+  fileExists: jest.fn(),
   presignPut: jest.fn(),
+  presignGet: jest.fn(),
   getFileUrl: jest.fn((key: string) => `https://example.com/${key}`),
 };
 
@@ -147,6 +149,12 @@ function createPostRequest(fileName = 'certificate.pdf') {
   } as unknown as NextRequest;
 }
 
+function createGetRequest() {
+  return {
+    url: `http://localhost/api/instruments/${instrumentId}/certificates`,
+  } as unknown as NextRequest;
+}
+
 describe('/api/instruments/[id]/certificates fail-closed flows', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -157,7 +165,11 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     mockStorage.validateFile.mockReturnValue(undefined);
     mockStorage.saveFile.mockResolvedValue('saved-key');
     mockStorage.deleteFile.mockResolvedValue(true);
+    mockStorage.fileExists.mockResolvedValue(true);
     mockStorage.presignPut.mockResolvedValue('https://example.com/signed');
+    mockStorage.presignGet.mockResolvedValue(
+      `https://presigned.example.com/${oldFileKey}`
+    );
 
     mockAuthContext = {
       user: { id: 'user-1' },
@@ -185,6 +197,128 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(json.message).toBe('Organization context required');
     expect(mockAuthContext.userSupabase.from).not.toHaveBeenCalled();
     expect(mockStorage.saveFile).not.toHaveBeenCalled();
+  });
+
+  it('returns certificate metadata only when the object exists and a signed URL is generated', async () => {
+    const instrumentChain = createAwaitableChain({
+      data: { id: instrumentId, serial_number: 'SN-1' },
+      error: null,
+    });
+    const listChain = createAwaitableChain({
+      data: [
+        {
+          id: certificateId,
+          storage_path: oldFileKey,
+          original_name: 'old-certificate.pdf',
+          mime_type: 'application/pdf',
+          size: 3,
+          created_at: '2024-01-01T00:00:00Z',
+          version: 1,
+          is_primary: false,
+          instruments: { org_id: 'org-1' },
+        },
+      ],
+      error: null,
+    });
+
+    mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
+      if (table === 'instruments') return instrumentChain;
+      if (table === 'instrument_certificates') return listChain;
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const response = await GET(createGetRequest(), {
+      params: Promise.resolve({ id: instrumentId }),
+    });
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mockStorage.fileExists).toHaveBeenCalledWith(oldFileKey);
+    expect(mockStorage.presignGet).toHaveBeenCalledWith(oldFileKey, 600);
+    expect(json.data).toEqual([
+      expect.objectContaining({
+        id: certificateId,
+        path: oldFileKey,
+        signedUrl: `https://presigned.example.com/${oldFileKey}`,
+      }),
+    ]);
+  });
+
+  it('returns 404 when the certificate object is missing', async () => {
+    const instrumentChain = createAwaitableChain({
+      data: { id: instrumentId, serial_number: 'SN-1' },
+      error: null,
+    });
+    const listChain = createAwaitableChain({
+      data: [
+        {
+          id: certificateId,
+          storage_path: oldFileKey,
+          original_name: 'old-certificate.pdf',
+          mime_type: 'application/pdf',
+          size: 3,
+          created_at: '2024-01-01T00:00:00Z',
+          version: 1,
+          is_primary: false,
+          instruments: { org_id: 'org-1' },
+        },
+      ],
+      error: null,
+    });
+
+    mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
+      if (table === 'instruments') return instrumentChain;
+      if (table === 'instrument_certificates') return listChain;
+      throw new Error(`Unexpected table ${table}`);
+    });
+    mockStorage.fileExists.mockResolvedValueOnce(false);
+
+    const response = await GET(createGetRequest(), {
+      params: Promise.resolve({ id: instrumentId }),
+    });
+    const json = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(json.error).toBe('Media object not found');
+    expect(mockStorage.presignGet).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 when certificate access URL generation fails', async () => {
+    const instrumentChain = createAwaitableChain({
+      data: { id: instrumentId, serial_number: 'SN-1' },
+      error: null,
+    });
+    const listChain = createAwaitableChain({
+      data: [
+        {
+          id: certificateId,
+          storage_path: oldFileKey,
+          original_name: 'old-certificate.pdf',
+          mime_type: 'application/pdf',
+          size: 3,
+          created_at: '2024-01-01T00:00:00Z',
+          version: 1,
+          is_primary: false,
+          instruments: { org_id: 'org-1' },
+        },
+      ],
+      error: null,
+    });
+
+    mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
+      if (table === 'instruments') return instrumentChain;
+      if (table === 'instrument_certificates') return listChain;
+      throw new Error(`Unexpected table ${table}`);
+    });
+    mockStorage.presignGet.mockRejectedValueOnce(new Error('presign failed'));
+
+    const response = await GET(createGetRequest(), {
+      params: Promise.resolve({ id: instrumentId }),
+    });
+    const json = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(json.error).toBe('Failed to generate access URL');
   });
 
   it('persists the canonical stored key returned by storage during certificate upload', async () => {
@@ -230,7 +364,10 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
         p_storage_path: canonicalStoredKey,
       })
     );
-    expect(mockStorage.getFileUrl).toHaveBeenCalledWith(canonicalStoredKey);
+    expect(mockStorage.presignGet).toHaveBeenCalledWith(
+      canonicalStoredKey,
+      600
+    );
   });
 
   it('returns 500 when replacement upload fails and leaves the old certificate intact', async () => {

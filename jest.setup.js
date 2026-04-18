@@ -99,8 +99,26 @@ jest.mock('next/server', () => {
       this._map.set(this._normalize(name), String(value));
     }
 
+    has(name) {
+      return this._map.has(this._normalize(name));
+    }
+
+    delete(name) {
+      this._map.delete(this._normalize(name));
+    }
+
+    forEach(callback, thisArg) {
+      for (const [key, value] of this._map.entries()) {
+        callback.call(thisArg, value, key, this);
+      }
+    }
+
     entries() {
       return this._map.entries();
+    }
+
+    [Symbol.iterator]() {
+      return this.entries();
     }
   }
 
@@ -134,9 +152,14 @@ jest.mock('next/server', () => {
   const NextResponse = {
     json(body, init = {}) {
       const status = init.status ?? 200;
+      const headers = new MockHeaders(init.headers);
+      if (!headers.has('content-type')) {
+        headers.set('content-type', 'application/json');
+      }
       return {
         status,
         ok: status >= 200 && status < 300,
+        headers,
         json: async () => body,
       };
     },

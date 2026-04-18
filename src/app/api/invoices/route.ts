@@ -115,6 +115,17 @@ function toInvoiceItemsJson(
   }));
 }
 
+function isHydrationFailure(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'context' in error &&
+    typeof (error as { context?: unknown }).context === 'object' &&
+    (error as { context?: { invoiceImageHydration?: unknown } }).context
+      ?.invoiceImageHydration === true
+  );
+}
+
 function buildInvoiceCreateRequestHash(
   invoice: Record<string, unknown>,
   items: CreateInvoiceInput['items']
@@ -368,7 +379,10 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
               const id = normalized.id;
               if (typeof id === 'string') invalidRowIds.push(id);
             }
-          } catch {
+          } catch (error) {
+            if (isHydrationFailure(error)) {
+              throw error;
+            }
             const id = (row as unknown as Invoice)?.id;
             if (typeof id === 'string') invalidRowIds.push(id);
           }

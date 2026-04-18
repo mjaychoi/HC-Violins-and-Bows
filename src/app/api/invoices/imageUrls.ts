@@ -1,5 +1,7 @@
 import type { Invoice, InvoiceItem } from '@/types';
-import { logWarn } from '@/utils/logger';
+import { ErrorCodes } from '@/types/errors';
+import { errorHandler } from '@/utils/errorHandler';
+import { logError, logWarn } from '@/utils/logger';
 
 export const INVOICE_IMAGE_BUCKET = 'invoices';
 export const INVOICE_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 15;
@@ -8,6 +10,10 @@ export const INVOICE_IMAGE_STORAGE_PATH_SEGMENTS = 2;
 type UserScopedSupabase = {
   storage: {
     from: (bucket: string) => {
+      exists: (path: string) => Promise<{
+        data: boolean;
+        error: { message?: string } | null;
+      }>;
       createSignedUrl: (
         path: string,
         expiresIn: number
@@ -18,6 +24,22 @@ type UserScopedSupabase = {
     };
   };
 };
+
+function createInvoiceImageReadError(
+  code: ErrorCodes,
+  message: string,
+  status: number,
+  storagePath: string,
+  details?: string
+) {
+  return {
+    ...errorHandler.createApiError(code, message, status, undefined, details),
+    context: {
+      invoiceImageHydration: true,
+      storagePath,
+    },
+  };
+}
 
 function isAbsoluteUrl(value: string): boolean {
   try {
@@ -114,17 +136,72 @@ export function isInvoiceImageStoragePath(
 export async function createInvoiceImageSignedUrl(
   userSupabase: UserScopedSupabase,
   storagePath: string
-): Promise<string | null> {
-  const { data, error } = await userSupabase.storage
-    .from(INVOICE_IMAGE_BUCKET)
-    .createSignedUrl(storagePath, INVOICE_IMAGE_SIGNED_URL_TTL_SECONDS);
+): Promise<string> {
+  if (!matchesInvoiceImageStoragePolicyShape(storagePath)) {
+    logWarn('invoice-image.reference.invalid', 'InvoicesAPI.imageUrls', {
+      storagePath,
+    });
+    throw createInvoiceImageReadError(
+      ErrorCodes.RECORD_NOT_FOUND,
+      'Invoice image not found',
+      404,
+      storagePath,
+      'Storage path does not match invoice image policy.'
+    );
+  }
+
+  const storage = userSupabase.storage.from(INVOICE_IMAGE_BUCKET);
+  const { data: exists, error: existsError } =
+    await storage.exists(storagePath);
+
+  if (existsError) {
+    logError(
+      'invoice-image.exists.failed',
+      existsError,
+      'InvoicesAPI.imageUrls',
+      { storagePath }
+    );
+    throw createInvoiceImageReadError(
+      ErrorCodes.INTERNAL_ERROR,
+      'Failed to verify invoice image availability',
+      500,
+      storagePath,
+      existsError.message || 'Storage existence check failed.'
+    );
+  }
+
+  if (!exists) {
+    logWarn('invoice-image.object.missing', 'InvoicesAPI.imageUrls', {
+      storagePath,
+    });
+    throw createInvoiceImageReadError(
+      ErrorCodes.RECORD_NOT_FOUND,
+      'Invoice image not found',
+      404,
+      storagePath,
+      'Storage object is missing.'
+    );
+  }
+
+  const { data, error } = await storage.createSignedUrl(
+    storagePath,
+    INVOICE_IMAGE_SIGNED_URL_TTL_SECONDS
+  );
 
   if (error || !data?.signedUrl) {
-    logWarn(
+    logError(
       'invoice-image.signed-url.failed',
-      `path=${storagePath} message=${error?.message || 'missing signed URL'}`
+      error || new Error('Missing signed URL'),
+      'InvoicesAPI.imageUrls',
+      { storagePath }
     );
-    return null;
+    throw createInvoiceImageReadError(
+      ErrorCodes.INTERNAL_ERROR,
+      'Failed to generate invoice image access URL',
+      500,
+      storagePath,
+      error?.message || 'Missing signed URL.'
+    );
   }
 
   return data.signedUrl;
@@ -148,7 +225,20 @@ export async function attachSignedUrlsToInvoiceItems<
 
       const storagePath = normalizeInvoiceImageReference(item.image_url);
       if (!storagePath) {
-        return { ...item, image_signed_url: item.image_url };
+        logWarn(
+          'invoice-image.reference.unresolvable',
+          'InvoicesAPI.imageUrls',
+          {
+            imageUrl: item.image_url,
+          }
+        );
+        throw createInvoiceImageReadError(
+          ErrorCodes.RECORD_NOT_FOUND,
+          'Invoice image not found',
+          404,
+          item.image_url,
+          'Image reference could not be resolved to storage.'
+        );
       }
 
       const signedUrl = await createInvoiceImageSignedUrl(

@@ -5,7 +5,7 @@
 
 import 'server-only';
 
-import { getStorageConfig } from './config';
+import { getStorageConfig, validateStorageRuntimeConfig } from './config';
 import type { Storage } from './types';
 import { S3Storage } from './s3Storage';
 import { LocalFileStorage, MemoryStorage } from './localStorage';
@@ -23,25 +23,10 @@ export function getStorage(): Storage {
     return _storageSingleton;
   }
 
-  const config = getStorageConfig();
+  const config = validateStorageRuntimeConfig(getStorageConfig());
   const env = process.env.NODE_ENV || 'development';
 
   if (config.storageType === 's3') {
-    if (!config.s3Bucket) {
-      throw new Error(
-        'STORAGE_TYPE=s3 requires S3_BUCKET_NAME to be set. ' +
-          'Please set S3_BUCKET_NAME environment variable. ' +
-          `Current environment: ${env}`
-      );
-    }
-    if (!config.s3Region) {
-      throw new Error(
-        'STORAGE_TYPE=s3 requires S3_REGION to be set. ' +
-          'Please set S3_REGION environment variable (e.g., us-east-1). ' +
-          `Current environment: ${env}`
-      );
-    }
-
     try {
       _storageSingleton = new S3Storage();
       // Note: S3Storage uses lazy initialization, so actual client creation happens on first use

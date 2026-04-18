@@ -3,17 +3,16 @@ import { Redis } from '@upstash/redis';
 
 const redis = Redis.fromEnv();
 
-export const authRateLimit = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(5, '1 m'),
-});
+function createSlidingWindowRateLimit(
+  limit: number,
+  window: `${number}${'s' | 'm' | 'h' | 'd'}`
+): Ratelimit {
+  return new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(limit, window),
+  });
+}
 
-export const exportRateLimit = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(3, '1 m'),
-});
-
-export const searchRateLimit = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(30, '1 m'),
-});
+export const authRateLimit = createSlidingWindowRateLimit(5, '1m');
+export const exportRateLimit = createSlidingWindowRateLimit(3, '1m');
+export const searchRateLimit = createSlidingWindowRateLimit(30, '1m');

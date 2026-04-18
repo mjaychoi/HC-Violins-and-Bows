@@ -1,7 +1,7 @@
 import { getStorage, resetStorage } from '../factory';
-import { getStorageConfig } from '../config';
+import { getStorageConfig, validateStorageRuntimeConfig } from '../config';
 import { S3Storage } from '../s3Storage';
-import { MemoryStorage } from '../localStorage';
+import { LocalFileStorage, MemoryStorage } from '../localStorage';
 
 jest.mock('../config');
 jest.mock('../s3Storage');
@@ -9,6 +9,10 @@ jest.mock('../s3Storage');
 const mockGetStorageConfig = getStorageConfig as jest.MockedFunction<
   typeof getStorageConfig
 >;
+const mockValidateStorageRuntimeConfig =
+  validateStorageRuntimeConfig as jest.MockedFunction<
+    typeof validateStorageRuntimeConfig
+  >;
 const MockS3Storage = S3Storage as jest.MockedClass<typeof S3Storage>;
 
 const setNodeEnv = (value?: string) => {
@@ -29,10 +33,14 @@ describe('storage factory', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     resetStorage();
     process.env = { ...originalEnv };
     setNodeEnv(originalNodeEnv);
+    MockS3Storage.mockImplementation(() => ({}) as any);
+    mockValidateStorageRuntimeConfig.mockImplementation(
+      config => config as ReturnType<typeof getStorageConfig>
+    );
     // Mock console methods to avoid noise in tests
     jest.spyOn(console, 'log').mockImplementation();
     jest.spyOn(console, 'error').mockImplementation();
@@ -84,6 +92,11 @@ describe('storage factory', () => {
         s3Bucket: undefined,
         s3Region: 'us-east-1',
       } as any);
+      mockValidateStorageRuntimeConfig.mockImplementation(() => {
+        throw new Error(
+          'STORAGE_TYPE=s3 requires S3_BUCKET_NAME to be set. Current environment: production'
+        );
+      });
 
       expect(() => getStorage()).toThrow(
         'STORAGE_TYPE=s3 requires S3_BUCKET_NAME to be set'
@@ -97,6 +110,11 @@ describe('storage factory', () => {
         s3Bucket: 'test-bucket',
         s3Region: undefined,
       } as any);
+      mockValidateStorageRuntimeConfig.mockImplementation(() => {
+        throw new Error(
+          'STORAGE_TYPE=s3 requires S3_REGION to be set. Current environment: production'
+        );
+      });
 
       expect(() => getStorage()).toThrow(
         'STORAGE_TYPE=s3 requires S3_REGION to be set'
@@ -129,6 +147,32 @@ describe('storage factory', () => {
       expect(storage).toBeInstanceOf(MemoryStorage);
     });
 
+    it('should create LocalFileStorage when local storage is requested in development', () => {
+      setNodeEnv('development');
+      mockGetStorageConfig.mockReturnValue({
+        storageType: 'local',
+      } as any);
+
+      const storage = getStorage();
+      expect(storage).toBeInstanceOf(LocalFileStorage);
+    });
+
+    it('should reject local storage outside development and test', () => {
+      setNodeEnv('production');
+      mockGetStorageConfig.mockReturnValue({
+        storageType: 'local',
+      } as any);
+      mockValidateStorageRuntimeConfig.mockImplementation(() => {
+        throw new Error(
+          'Durable object storage is required in production environments.'
+        );
+      });
+
+      expect(() => getStorage()).toThrow(
+        'Durable object storage is required in production environments.'
+      );
+    });
+
     it('should include environment in error message', () => {
       setNodeEnv('production');
       mockGetStorageConfig.mockReturnValue({
@@ -136,6 +180,11 @@ describe('storage factory', () => {
         s3Bucket: undefined,
         s3Region: 'us-east-1',
       } as any);
+      mockValidateStorageRuntimeConfig.mockImplementation(() => {
+        throw new Error(
+          'STORAGE_TYPE=s3 requires S3_BUCKET_NAME to be set. Current environment: production'
+        );
+      });
 
       expect(() => getStorage()).toThrow('Current environment: production');
     });

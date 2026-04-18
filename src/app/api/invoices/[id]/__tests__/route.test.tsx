@@ -1,5 +1,6 @@
 import React from 'react';
 import { NextRequest } from 'next/server';
+import { ErrorCodes } from '@/types/errors';
 import { validateUUID } from '@/utils/inputValidation';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
@@ -187,6 +188,12 @@ describe('/api/invoices/[id]', () => {
     mockErrorHandler.createError = jest
       .fn()
       .mockReturnValue(new Error('Error message'));
+    const {
+      attachSignedUrlsToInvoice,
+    } = require('@/app/api/invoices/imageUrls');
+    attachSignedUrlsToInvoice.mockImplementation(
+      async (_supabase: unknown, invoice: unknown) => invoice
+    );
 
     // Mock React on global if needed
     if (typeof global !== 'undefined') {
@@ -338,6 +345,64 @@ describe('/api/invoices/[id]', () => {
       expect(json.message).toBeDefined();
       expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
       expect(mockCaptureException).toHaveBeenCalled();
+    });
+
+    it('should fail closed when invoice image hydration fails', async () => {
+      const {
+        attachSignedUrlsToInvoice,
+      } = require('@/app/api/invoices/imageUrls');
+      attachSignedUrlsToInvoice.mockRejectedValueOnce({
+        code: ErrorCodes.RECORD_NOT_FOUND,
+        message: 'Invoice image not found',
+        status: 404,
+        timestamp: new Date().toISOString(),
+        context: {
+          invoiceImageHydration: true,
+          storagePath: 'test-org/missing-image.png',
+        },
+      });
+
+      const mockInvoiceQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockReturnThis(),
+        data: {
+          id: mockSaleId,
+          invoice_number: 'INV-100',
+          client_id: '123e4567-e89b-12d3-a456-426614174001',
+          invoice_date: '2026-04-03',
+          due_date: '2026-04-10',
+          subtotal: 100,
+          tax: 0,
+          total: 100,
+          currency: 'USD',
+          status: 'draft',
+          notes: null,
+          created_at: '2026-04-03T00:00:00.000Z',
+          updated_at: '2026-04-03T00:00:00.000Z',
+          clients: null,
+          invoice_items: [],
+        },
+        error: null,
+      };
+
+      mockUserSupabase = {
+        from: jest.fn(() => mockInvoiceQuery),
+      };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockSaleId}`
+      );
+      const context = {
+        params: Promise.resolve({ id: mockSaleId }),
+      };
+      const invoiceGet = await loadInvoiceHandler();
+      const response = await invoiceGet(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.success).toBe(false);
+      expect(json.message).toBeDefined();
     });
 
     it('should return 500 when sale fetch fails with non-404 error', async () => {

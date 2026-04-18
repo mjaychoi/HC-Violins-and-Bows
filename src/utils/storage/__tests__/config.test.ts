@@ -1,19 +1,36 @@
-import { getStorageConfig } from '../config';
+import { getStorageConfig, validateStorageRuntimeConfig } from '../config';
+
+const setNodeEnv = (value?: string) => {
+  if (value === undefined) {
+    delete (process.env as Record<string, string | undefined>).NODE_ENV;
+    return;
+  }
+
+  Object.defineProperty(process.env, 'NODE_ENV', {
+    value,
+    configurable: true,
+    writable: true,
+  });
+};
 
 describe('storage config', () => {
   const originalEnv = process.env;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
     jest.resetModules();
     process.env = { ...originalEnv };
+    setNodeEnv(originalNodeEnv);
   });
 
   afterEach(() => {
     process.env = originalEnv;
+    setNodeEnv(originalNodeEnv);
   });
 
   describe('getStorageConfig', () => {
-    it('should return default config when env vars are not set', () => {
+    it('should default to local storage in development when env vars are not set', () => {
+      setNodeEnv('development');
       delete process.env.STORAGE_TYPE;
       delete process.env.UPLOAD_MAX_FILE_SIZE_MB;
 
@@ -21,6 +38,15 @@ describe('storage config', () => {
 
       expect(config.storageType).toBe('local');
       expect(config.maxFileSizeBytes).toBe(10 * 1024 * 1024); // 10MB default
+    });
+
+    it('should default to s3 storage in production when STORAGE_TYPE is not set', () => {
+      setNodeEnv('production');
+      delete process.env.STORAGE_TYPE;
+
+      const config = getStorageConfig();
+
+      expect(config.storageType).toBe('s3');
     });
 
     it('should return s3 config when STORAGE_TYPE is s3', () => {
@@ -119,6 +145,46 @@ describe('storage config', () => {
       expect(config.awsEndpointUrl).toBeUndefined();
       expect(config.s3AddressingStyle).toBeUndefined();
       expect(config.kmsKeyId).toBeUndefined();
+    });
+  });
+
+  describe('validateStorageRuntimeConfig', () => {
+    it('allows local storage in development', () => {
+      setNodeEnv('development');
+      delete process.env.STORAGE_TYPE;
+
+      expect(() => validateStorageRuntimeConfig()).not.toThrow();
+    });
+
+    it('rejects local storage in production', () => {
+      setNodeEnv('production');
+      process.env.STORAGE_TYPE = 'local';
+
+      expect(() => validateStorageRuntimeConfig()).toThrow(
+        'Durable object storage is required in production environments.'
+      );
+    });
+
+    it('rejects missing bucket in production', () => {
+      setNodeEnv('production');
+      process.env.STORAGE_TYPE = 's3';
+      delete process.env.S3_BUCKET_NAME;
+      process.env.S3_REGION = 'us-east-1';
+
+      expect(() => validateStorageRuntimeConfig()).toThrow(
+        'STORAGE_TYPE=s3 requires S3_BUCKET_NAME to be set. Current environment: production'
+      );
+    });
+
+    it('rejects missing region in production', () => {
+      setNodeEnv('production');
+      process.env.STORAGE_TYPE = 's3';
+      process.env.S3_BUCKET_NAME = 'test-bucket';
+      delete process.env.S3_REGION;
+
+      expect(() => validateStorageRuntimeConfig()).toThrow(
+        'STORAGE_TYPE=s3 requires S3_REGION to be set. Current environment: production'
+      );
     });
   });
 });
