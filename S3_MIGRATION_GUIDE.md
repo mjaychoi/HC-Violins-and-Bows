@@ -33,6 +33,8 @@ UPLOAD_MAX_FILE_SIZE_MB=100
 STORAGE_BASE_PREFIX=uploads
 ```
 
+`development`/`test` 외 환경에서는 로컬 파일 시스템 fallback이 허용되지 않습니다. S3 설정이 없으면 앱이 부팅 단계에서 실패합니다.
+
 ## 🔄 주요 변경사항
 
 ### 1. 이미지 API (`/api/instruments/[id]/images`)

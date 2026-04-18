@@ -169,36 +169,97 @@ async function getHandlerInternal(
       (data || []) as Array<InstrumentImage & { instruments?: unknown }>
     ).map(image => stripInstrumentScope(image));
 
-    // Attach signed URLs (preferred for private buckets)
-    const signedImages = await Promise.all(
-      images.map(async image => {
-        const fileKey = resolveLegacyStorageKey(
-          (image as InstrumentImage & { storage_key?: string | null })
-            .storage_key,
-          image.image_url
+    const signedImages: InstrumentImage[] = [];
+
+    for (const image of images) {
+      const fileKey = resolveLegacyStorageKey(
+        (image as InstrumentImage & { storage_key?: string | null })
+          .storage_key,
+        image.image_url
+      );
+
+      if (!fileKey) {
+        logError('Instrument image object missing storage key', {
+          instrumentId: id,
+          imageId: image.id,
+          imageUrl: image.image_url ?? null,
+        });
+        return createApiErrorResponse(
+          { message: 'Media object not found' },
+          404
         );
+      }
 
-        if (fileKey) {
-          try {
-            const signedUrl = storage.presignGet
-              ? await storage.presignGet(fileKey, SIGNED_URL_TTL_SECONDS)
-              : storage.getFileUrl(fileKey);
-            return { ...image, image_url: signedUrl };
-          } catch (error) {
-            logError(
-              'Failed to generate presigned URL for',
-              { fileKey, imageId: image.id },
-              error instanceof Error ? error.message : String(error)
-            );
-            const fallbackUrl = image.image_url || storage.getFileUrl(fileKey);
-            return { ...image, image_url: fallbackUrl };
-          }
-        }
+      let exists = false;
+      try {
+        exists = await storage.fileExists(fileKey);
+      } catch (error) {
+        logError('Failed to verify instrument image object', {
+          instrumentId: id,
+          imageId: image.id,
+          fileKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return createApiErrorResponse(
+          { message: 'Failed to verify media object' },
+          500
+        );
+      }
 
-        // Fallback: return as-is (image_url might be publicUrl)
-        return image;
-      })
-    );
+      if (!exists) {
+        logError('Instrument image object not found', {
+          instrumentId: id,
+          imageId: image.id,
+          fileKey,
+        });
+        return createApiErrorResponse(
+          { message: 'Media object not found' },
+          404
+        );
+      }
+
+      if (!storage.presignGet) {
+        logError('Instrument image presign unavailable', {
+          instrumentId: id,
+          imageId: image.id,
+          fileKey,
+        });
+        return createApiErrorResponse(
+          { message: 'Failed to generate access URL' },
+          500
+        );
+      }
+
+      let signedUrl = '';
+      try {
+        signedUrl = await storage.presignGet(fileKey, SIGNED_URL_TTL_SECONDS);
+      } catch (error) {
+        logError('Failed to generate instrument image access URL', {
+          instrumentId: id,
+          imageId: image.id,
+          fileKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return createApiErrorResponse(
+          { message: 'Failed to generate access URL' },
+          500
+        );
+      }
+
+      if (!signedUrl.trim()) {
+        logError('Instrument image access URL was empty', {
+          instrumentId: id,
+          imageId: image.id,
+          fileKey,
+        });
+        return createApiErrorResponse(
+          { message: 'Failed to generate access URL' },
+          500
+        );
+      }
+
+      signedImages.push({ ...image, image_url: signedUrl });
+    }
 
     return NextResponse.json({ data: signedImages });
   } catch (error) {

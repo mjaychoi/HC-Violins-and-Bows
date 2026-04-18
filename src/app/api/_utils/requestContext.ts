@@ -1,25 +1,5 @@
 import { randomUUID } from 'crypto';
-import { NextRequest, NextResponse } from 'next/server';
-
-export type AuthContext = {
-  userId: string;
-  orgId: string | null;
-  role?: string | null;
-};
-
-export function requireOrgContext(auth: AuthContext): string {
-  if (!auth.orgId) {
-    throw new Error('Organization context required');
-  }
-  return auth.orgId;
-}
-
-export function forbiddenOrgContextResponse() {
-  return NextResponse.json(
-    { error: 'Organization context required' },
-    { status: 403 }
-  );
-}
+import type { NextRequest, NextResponse } from 'next/server';
 
 export const REQUEST_ID_HEADER = 'x-request-id';
 
@@ -42,18 +22,6 @@ export function withRequestIdHeader<T extends Response | NextResponse>(
   response: T,
   requestId: string
 ): T {
-  if (response.headers && typeof response.headers.set === 'function') {
-    response.headers.set(REQUEST_ID_HEADER, requestId);
-    return response;
-  }
-
-  const headers = new Headers();
-  headers.set(REQUEST_ID_HEADER, requestId);
-
-  Object.defineProperty(response, 'headers', {
-    value: headers,
-    configurable: true,
-  });
-
+  response.headers.set(REQUEST_ID_HEADER, requestId);
   return response;
 }

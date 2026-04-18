@@ -30,6 +30,8 @@ STORAGE_BASE_PREFIX=uploads                # Optional base prefix for generated 
 STORAGE_LOCAL_ROOT=/tmp/app-uploads        # Used when STORAGE_TYPE=local
 ```
 
+`STORAGE_TYPE=local` is only supported in `development` and `test`. Non-local runtimes fail closed at startup unless `STORAGE_TYPE=s3` and the required S3 settings are present.
+
 ## Usage
 
 ```typescript

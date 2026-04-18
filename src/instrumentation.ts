@@ -12,6 +12,15 @@ export async function register() {
     return;
   }
 
+  try {
+    const { validateStorageRuntimeConfig } =
+      await import('./utils/storage/config');
+    validateStorageRuntimeConfig();
+  } catch (error) {
+    console.error('[instrumentation] Storage configuration invalid:', error);
+    throw error;
+  }
+
   // ✅ CRITICAL: Dynamic import to prevent webpack from including Sentry in client bundle
   try {
     const Sentry = await import('@sentry/nextjs');

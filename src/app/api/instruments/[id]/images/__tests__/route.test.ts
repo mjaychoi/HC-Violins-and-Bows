@@ -18,6 +18,7 @@ let mockAuthContext: any;
 let mockStorage: {
   saveFile: jest.Mock;
   deleteFile: jest.Mock;
+  fileExists: jest.Mock;
   getFileUrl: jest.Mock;
   presignGet: jest.Mock;
 };
@@ -98,12 +99,31 @@ describe('/api/instruments/[id]/images', () => {
     );
   }
 
+  function makeStoredImage(
+    imageId: string,
+    displayOrder: number,
+    overrides: Record<string, unknown> = {}
+  ) {
+    const storageKey = `test-org/${mockInstrumentId}/${imageId}.jpg`;
+    return {
+      id: imageId,
+      instrument_id: mockInstrumentId,
+      image_url: `https://presigned.example.com/${storageKey}`,
+      storage_key: storageKey,
+      file_name: `${imageId}.jpg`,
+      display_order: displayOrder,
+      created_at: '2024-01-01T00:00:00Z',
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockValidateUUID.mockReturnValue(true);
     mockStorage = {
       saveFile: jest.fn().mockResolvedValue(`org/${mockInstrumentId}/file.jpg`),
       deleteFile: jest.fn().mockResolvedValue(undefined),
+      fileExists: jest.fn().mockResolvedValue(true),
       getFileUrl: jest.fn(
         (key: string) => `https://storage.example.com/${key}`
       ),
@@ -135,20 +155,10 @@ describe('/api/instruments/[id]/images', () => {
   describe('GET', () => {
     it('should fetch images successfully', async () => {
       const mockImages = [
-        {
-          id: 'img-1',
-          instrument_id: mockInstrumentId,
-          image_url: 'https://example.com/image1.jpg',
-          display_order: 0,
-          created_at: '2024-01-01T00:00:00Z',
-        },
-        {
-          id: 'img-2',
-          instrument_id: mockInstrumentId,
-          image_url: 'https://example.com/image2.jpg',
-          display_order: 1,
+        makeStoredImage('img-1', 0),
+        makeStoredImage('img-2', 1, {
           created_at: '2024-01-02T00:00:00Z',
-        },
+        }),
       ];
 
       const mockQuery = {
@@ -332,15 +342,7 @@ describe('/api/instruments/[id]/images', () => {
     });
 
     it('should handle params as Promise in Next.js 15+ format', async () => {
-      const mockImages = [
-        {
-          id: 'img-1',
-          instrument_id: mockInstrumentId,
-          image_url: 'https://example.com/image1.jpg',
-          display_order: 0,
-          created_at: '2024-01-01T00:00:00Z',
-        },
-      ];
+      const mockImages = [makeStoredImage('img-1', 0)];
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
@@ -367,15 +369,7 @@ describe('/api/instruments/[id]/images', () => {
     });
 
     it('should handle params as object (legacy format)', async () => {
-      const mockImages = [
-        {
-          id: 'img-1',
-          instrument_id: mockInstrumentId,
-          image_url: 'https://example.com/image1.jpg',
-          display_order: 0,
-          created_at: '2024-01-01T00:00:00Z',
-        },
-      ];
+      const mockImages = [makeStoredImage('img-1', 0)];
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
@@ -403,15 +397,10 @@ describe('/api/instruments/[id]/images', () => {
 
     it('should handle images with null metadata fields', async () => {
       const mockImages = [
-        {
-          id: 'img-1',
-          instrument_id: mockInstrumentId,
-          image_url: 'https://example.com/image1.jpg',
-          display_order: 0,
-          created_at: '2024-01-01T00:00:00Z',
+        makeStoredImage('img-1', 0, {
           updated_at: null,
           metadata: null,
-        },
+        }),
       ];
 
       const mockQuery = {
@@ -440,27 +429,13 @@ describe('/api/instruments/[id]/images', () => {
 
     it('should order images by display_order ascending (alias)', async () => {
       const mockImages = [
-        {
-          id: 'img-3',
-          instrument_id: mockInstrumentId,
-          image_url: 'https://example.com/image3.jpg',
-          display_order: 2,
+        makeStoredImage('img-3', 2, {
           created_at: '2024-01-03T00:00:00Z',
-        },
-        {
-          id: 'img-1',
-          instrument_id: mockInstrumentId,
-          image_url: 'https://example.com/image1.jpg',
-          display_order: 0,
-          created_at: '2024-01-01T00:00:00Z',
-        },
-        {
-          id: 'img-2',
-          instrument_id: mockInstrumentId,
-          image_url: 'https://example.com/image2.jpg',
-          display_order: 1,
+        }),
+        makeStoredImage('img-1', 0),
+        makeStoredImage('img-2', 1, {
           created_at: '2024-01-02T00:00:00Z',
-        },
+        }),
       ];
 
       const mockQuery = {
@@ -570,13 +545,11 @@ describe('/api/instruments/[id]/images', () => {
     });
 
     it('should handle large number of images', async () => {
-      const mockImages = Array.from({ length: 100 }, (_, i) => ({
-        id: `img-${i}`,
-        instrument_id: mockInstrumentId,
-        image_url: `https://example.com/image${i}.jpg`,
-        display_order: i,
-        created_at: `2024-01-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
-      }));
+      const mockImages = Array.from({ length: 100 }, (_, i) =>
+        makeStoredImage(`img-${i}`, i, {
+          created_at: `2024-01-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+        })
+      );
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
@@ -602,6 +575,66 @@ describe('/api/instruments/[id]/images', () => {
       expect(json.data).toHaveLength(100);
       expect(json.data[0].display_order).toBe(0);
       expect(json.data[99].display_order).toBe(99);
+    });
+
+    it('returns 404 when the storage object is missing', async () => {
+      const mockImages = [makeStoredImage('img-1', 0)];
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockResolvedValue({
+          data: mockImages,
+          error: null,
+        }),
+      };
+
+      mockStorage.fileExists.mockResolvedValueOnce(false);
+      mockUserSupabase = makeSupabaseClient(mockQuery);
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments/${mockInstrumentId}/images`
+      );
+      const context = {
+        params: Promise.resolve({ id: mockInstrumentId }),
+      };
+      const response = await GET(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json).toMatchObject({
+        message: 'Media object not found',
+        retryable: false,
+      });
+      expect(mockStorage.presignGet).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 when access URL generation fails', async () => {
+      const mockImages = [makeStoredImage('img-1', 0)];
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockResolvedValue({
+          data: mockImages,
+          error: null,
+        }),
+      };
+
+      mockStorage.presignGet.mockRejectedValueOnce(new Error('presign failed'));
+      mockUserSupabase = makeSupabaseClient(mockQuery);
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments/${mockInstrumentId}/images`
+      );
+      const context = {
+        params: Promise.resolve({ id: mockInstrumentId }),
+      };
+      const response = await GET(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(json).toMatchObject({
+        message: 'Failed to generate access URL',
+      });
     });
   });
 

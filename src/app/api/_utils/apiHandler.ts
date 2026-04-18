@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+
+import { extractPostgrestLikeErrorSnapshot } from '@/app/api/_utils/postgrestErrorSnapshot';
+import { getSupabaseConnectionDiagnostics } from '@/lib/supabaseConnectionDiagnostics';
+import { ErrorCodes, ErrorSeverity } from '@/types/errors';
+import type { AppError } from '@/types/errors';
+import { createSafeErrorResponse } from '@/utils/errorSanitization';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest, logError } from '@/utils/logger';
-import { createSafeErrorResponse } from '@/utils/errorSanitization';
 import { captureException } from '@/utils/monitoring';
-import { ErrorCodes, ErrorSeverity } from '@/types/errors';
-import { getSupabaseConnectionDiagnostics } from '@/lib/supabaseConnectionDiagnostics';
-import { extractPostgrestLikeErrorSnapshot } from '@/app/api/_utils/postgrestErrorSnapshot';
-import type { AppError } from '@/types/errors';
+
 import {
   isApiErrorLikePayload,
   normalizeApiErrorPayload,
@@ -18,11 +20,11 @@ import {
 
 export interface ApiHandlerMeta {
   method: string;
-  path: string; // 정규화된 라우트 이름 (로깅용 컨텍스트, 실제 경로는 request.nextUrl.pathname 사용)
+  path: string; // normalized route key for logs/monitoring
   context: string;
   /**
-   * ⚠️ 모니터링/로깅으로 나가도 되는 "안전한" 메타데이터만 넣기
-   * (PII, 토큰, 원문 body 등 금지)
+   * Only include safe metadata here.
+   * Never include PII, tokens, raw request bodies, or secrets.
    */
   metadata?: Record<string, unknown>;
 }
@@ -42,22 +44,38 @@ export type ApiErr = {
 export type ApiHandlerResult = ApiOk<unknown> | ApiErr;
 export type ApiHandlerFn = (req: NextRequest) => Promise<ApiHandlerResult>;
 
-/**
- * Extended AppError with HTTP status information
- * Used in apiHandler for type-safe status code extraction
- */
 export interface AppErrorWithStatus extends AppError {
   status?: number;
   statusCode?: number;
 }
 
-/**
- * 에러 객체에서 유효한 HTTP status 코드를 추출
- * - error.status, error.statusCode, (Response이면 response.status),
- *   appError.status, appError.statusCode를 순차적으로 확인
- * - 400-599 범위의 유효한 코드만 반환, 없으면 500
- * - 다른 파일에서도 재사용 가능하도록 export
- */
+type ErrorHandlerPlugin = {
+  isSupabaseError?: (error: unknown) => boolean;
+  handleUnknownError?: (
+    error: unknown,
+    context: string
+  ) => AppErrorWithStatus | undefined;
+};
+
+const errorHandlerPlugin = errorHandler as ErrorHandlerPlugin;
+
+const now = () =>
+  typeof globalThis.performance !== 'undefined'
+    ? globalThis.performance.now()
+    : Date.now();
+
+function isValidHttpStatus(value: unknown): value is number {
+  return typeof value === 'number' && value >= 200 && value < 600;
+}
+
+function resolveResultStatus(result: ApiHandlerResult): number {
+  if (isValidHttpStatus(result.status)) {
+    return result.status;
+  }
+
+  return isApiErrorLikePayload(result.payload) ? 400 : 200;
+}
+
 export function resolveHttpStatus(
   error: unknown,
   appError: AppErrorWithStatus | undefined
@@ -72,36 +90,19 @@ export function resolveHttpStatus(
     appError?.statusCode,
   ];
 
-  for (const v of candidates) {
-    if (typeof v === 'number' && v >= 400 && v < 600) return v;
+  for (const value of candidates) {
+    if (typeof value === 'number' && value >= 400 && value < 600) {
+      return value;
+    }
   }
+
   return 500;
 }
-
-/**
- * error를 AppError로 정규화.
- * - 이미 AppError면 보존
- * - Supabase 에러면 handleSupabaseError
- * - 그 외는 generic(unknown) 처리
- *
- * NOTE: errorHandler에 isSupabaseError / handleUnknownError가 없을 수도 있어
- *       -> 안전하게 optional chaining + fallback으로 처리
- */
-type ErrorHandlerPlugin = {
-  isSupabaseError?: (error: unknown) => boolean;
-  handleUnknownError?: (
-    error: unknown,
-    context: string
-  ) => AppErrorWithStatus | undefined;
-};
-
-const errorHandlerPlugin = errorHandler as ErrorHandlerPlugin;
 
 export function toAppError(
   error: unknown,
   context: string
 ): AppErrorWithStatus {
-  // 1) 이미 AppError처럼 보이면 그대로 사용 (code가 있는지로 최소 판별)
   if (
     error &&
     typeof error === 'object' &&
@@ -111,23 +112,21 @@ export function toAppError(
     return error as AppErrorWithStatus;
   }
 
-  // 2) Supabase 에러만 변환
-  const isSupabaseError = errorHandlerPlugin.isSupabaseError?.(error);
-
-  if (isSupabaseError) {
+  if (errorHandlerPlugin.isSupabaseError?.(error)) {
     return errorHandler.handleSupabaseError(
       error,
       context
     ) as AppErrorWithStatus;
   }
 
-  // 3) 그 외: 있으면 unknown handler 사용, 없으면 최소 fallback
   const handledUnknown = errorHandlerPlugin.handleUnknownError?.(
     error,
     context
   );
 
-  if (handledUnknown) return handledUnknown;
+  if (handledUnknown) {
+    return handledUnknown;
+  }
 
   return {
     code: 'INTERNAL_ERROR',
@@ -136,11 +135,6 @@ export function toAppError(
   } as AppErrorWithStatus;
 }
 
-/**
- * 모니터링(captureException)에 넣을 메타데이터를 allowlist로 제한
- * - meta.metadata를 그대로 보내지 않음
- * - 여기서는 기본 필드만 포함하고, 필요하면 allowlist 키를 추가해서 쓰기
- */
 export function buildSafeCaptureMeta(
   meta: ApiHandlerMeta,
   extras: Record<string, unknown>
@@ -152,16 +146,130 @@ export function buildSafeCaptureMeta(
   };
 }
 
-/**
- * 공통 API 핸들러 헬퍼
- * - 성능 측정 (duration)
- * - 에러 처리 및 로깅
- * - 일관된 응답 형식 (JSON)
- */
-const now = () =>
-  typeof globalThis.performance !== 'undefined'
-    ? globalThis.performance.now()
-    : Date.now();
+function buildSuccessPayload(result: ApiHandlerResult): {
+  status: number;
+  payload: unknown;
+  isErrorPayload: boolean;
+} {
+  const status = resolveResultStatus(result);
+  const isErrorPayload = status >= 400;
+
+  return {
+    status,
+    payload: isErrorPayload
+      ? normalizeApiErrorPayload(result.payload, status)
+      : result.payload,
+    isErrorPayload,
+  };
+}
+
+function logSuccessResponse(params: {
+  meta: ApiHandlerMeta;
+  path: string;
+  requestId: string;
+  duration: number;
+  result: ApiHandlerResult;
+  status: number;
+  payload: unknown;
+  isErrorPayload: boolean;
+}): void {
+  const {
+    meta,
+    path,
+    requestId,
+    duration,
+    result,
+    status,
+    payload,
+    isErrorPayload,
+  } = params;
+
+  logApiRequest(meta.method, path, status, duration, meta.context, {
+    ...meta.metadata,
+    ...result.metadata,
+    routeKey: meta.path,
+    requestId,
+    error: isErrorPayload,
+    errorMessage: isErrorPayload
+      ? (payload as { message?: string }).message
+      : undefined,
+  });
+}
+
+function logDataLayerError(params: {
+  error: unknown;
+  meta: ApiHandlerMeta;
+  path: string;
+  requestId: string;
+  appError: AppErrorWithStatus;
+}): void {
+  const { error, meta, path, requestId, appError } = params;
+
+  const postgrestSnapshot = extractPostgrestLikeErrorSnapshot(error);
+  const supabaseDiag = getSupabaseConnectionDiagnostics();
+
+  const shouldLogDataLayerError =
+    Boolean(postgrestSnapshot) ||
+    appError.code === ErrorCodes.DATABASE_ERROR ||
+    appError.code === ErrorCodes.FORBIDDEN ||
+    appError.code === ErrorCodes.RECORD_NOT_FOUND;
+
+  if (!shouldLogDataLayerError) {
+    return;
+  }
+
+  logError(
+    'API handler: data layer error (PostgREST snapshot for operators)',
+    error,
+    `${meta.context}.${meta.method}`,
+    {
+      requestId,
+      routeKey: meta.path,
+      httpPath: path,
+      supabaseHost: supabaseDiag.host,
+      supabaseProjectRef: supabaseDiag.projectRef,
+      supabaseUrlSource: supabaseDiag.urlSource,
+      postgrest: postgrestSnapshot,
+      appErrorCode: appError.code,
+      appErrorMessage: appError.message,
+    }
+  );
+}
+
+function captureApiHandlerError(params: {
+  error: unknown;
+  meta: ApiHandlerMeta;
+  path: string;
+  requestId: string;
+  appError: AppErrorWithStatus;
+  status: number;
+}): void {
+  const { error, meta, path, requestId, appError, status } = params;
+  const supabaseDiag = getSupabaseConnectionDiagnostics();
+
+  captureException(
+    error instanceof Error ? error : new Error(String(error)),
+    `${meta.context}.${meta.method}`,
+    buildSafeCaptureMeta(meta, {
+      errorCode: appError.code,
+      status,
+      path,
+      method: meta.method,
+      requestId,
+      supabaseProjectRef: supabaseDiag.projectRef,
+      supabaseUrlSource: supabaseDiag.urlSource,
+    }),
+    ErrorSeverity.MEDIUM
+  );
+}
+
+function buildJsonResponse(
+  payload: unknown,
+  status: number,
+  requestId: string
+): NextResponse {
+  return withRequestIdHeader(NextResponse.json(payload, { status }), requestId);
+}
 
 export async function apiHandler(
   request: NextRequest,
@@ -175,34 +283,21 @@ export async function apiHandler(
   try {
     const result = await fn(request);
     const duration = Math.round(now() - startTime);
-    const status =
-      typeof result.status === 'number' &&
-      result.status >= 200 &&
-      result.status < 600
-        ? result.status
-        : isApiErrorLikePayload(result.payload)
-          ? 400
-          : 200;
-    const isErrorPayload = status >= 400;
-    const payload = isErrorPayload
-      ? normalizeApiErrorPayload(result.payload, status)
-      : result.payload;
 
-    logApiRequest(meta.method, path, status, duration, meta.context, {
-      ...meta.metadata,
-      ...result.metadata,
-      routeKey: meta.path, // 정규화 키
+    const { status, payload, isErrorPayload } = buildSuccessPayload(result);
+
+    logSuccessResponse({
+      meta,
+      path,
       requestId,
-      error: isErrorPayload,
-      errorMessage: isErrorPayload
-        ? (payload as { message?: string }).message
-        : undefined,
+      duration,
+      result,
+      status,
+      payload,
+      isErrorPayload,
     });
 
-    return withRequestIdHeader(
-      NextResponse.json(payload, { status }),
-      requestId
-    );
+    return buildJsonResponse(payload, status, requestId);
   } catch (error) {
     const duration = Math.round(now() - startTime);
 
@@ -213,36 +308,16 @@ export async function apiHandler(
       }
     }
 
-    // ✅ supabase가 아닌 에러까지 supabase로 뭉개지지 않도록 정규화
     const appError = toAppError(error, `${meta.context}.${meta.method}`);
-
     const status = resolveHttpStatus(error, appError);
 
-    const postgrestSnapshot = extractPostgrestLikeErrorSnapshot(error);
-    const supabaseDiag = getSupabaseConnectionDiagnostics();
-    if (
-      postgrestSnapshot ||
-      appError.code === ErrorCodes.DATABASE_ERROR ||
-      appError.code === ErrorCodes.FORBIDDEN ||
-      appError.code === ErrorCodes.RECORD_NOT_FOUND
-    ) {
-      logError(
-        'API handler: data layer error (PostgREST snapshot for operators)',
-        error,
-        `${meta.context}.${meta.method}`,
-        {
-          requestId,
-          routeKey: meta.path,
-          httpPath: path,
-          supabaseHost: supabaseDiag.host,
-          supabaseProjectRef: supabaseDiag.projectRef,
-          supabaseUrlSource: supabaseDiag.urlSource,
-          postgrest: postgrestSnapshot,
-          appErrorCode: appError.code,
-          appErrorMessage: appError.message,
-        }
-      );
-    }
+    logDataLayerError({
+      error,
+      meta,
+      path,
+      requestId,
+      appError,
+    });
 
     logApiRequest(meta.method, path, status, duration, meta.context, {
       ...meta.metadata,
@@ -252,26 +327,18 @@ export async function apiHandler(
       errorCode: appError.code,
     });
 
-    // ✅ captureException에는 allowlist meta만
-    captureException(
-      error instanceof Error ? error : new Error(String(error)),
-      `${meta.context}.${meta.method}`,
-      buildSafeCaptureMeta(meta, {
-        errorCode: appError.code,
-        status,
-        path,
-        method: meta.method,
-        requestId,
-        supabaseProjectRef: supabaseDiag.projectRef,
-        supabaseUrlSource: supabaseDiag.urlSource,
-      }),
-      ErrorSeverity.MEDIUM
-    );
+    captureApiHandlerError({
+      error,
+      meta,
+      path,
+      requestId,
+      appError,
+      status,
+    });
 
-    return withRequestIdHeader(
-      NextResponse.json(createSafeErrorResponse(appError, status), {
-        status,
-      }),
+    return buildJsonResponse(
+      createSafeErrorResponse(appError, status),
+      status,
       requestId
     );
   }

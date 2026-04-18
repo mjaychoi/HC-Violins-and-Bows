@@ -180,6 +180,11 @@ Settings > Environment Variables에서 다음 추가:
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+STORAGE_TYPE=s3
+S3_BUCKET_NAME=your-s3-bucket
+S3_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your-access-key-id
+AWS_SECRET_ACCESS_KEY=your-secret-access-key
 NEXT_PUBLIC_APP_URL=https://your-domain.vercel.app
 NODE_ENV=production
 ```
@@ -190,6 +195,11 @@ NODE_ENV=production
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+STORAGE_TYPE=s3
+S3_BUCKET_NAME=your-s3-bucket
+S3_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your-access-key-id
+AWS_SECRET_ACCESS_KEY=your-secret-access-key
 NEXT_PUBLIC_APP_URL=https://your-preview.vercel.app
 NODE_ENV=preview
 ```
@@ -200,11 +210,17 @@ NODE_ENV=preview
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+STORAGE_TYPE=s3
+S3_BUCKET_NAME=your-s3-bucket
+S3_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your-access-key-id
+AWS_SECRET_ACCESS_KEY=your-secret-access-key
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NODE_ENV=development
 ```
 
 ⚠️ **중요:** Supabase Service Role Key는 **절대** 클라이언트 사이드에 노출되면 안 됩니다!
+⚠️ **중요:** 계측기(`src/instrumentation.ts`)가 부팅 시 스토리지 구성을 검증합니다. `development`/`test` 외 환경에서는 `STORAGE_TYPE=s3`와 S3 버킷/리전 설정이 없으면 서버가 시작되지 않습니다.
 
 #### 빌드 설정 확인
 
@@ -241,33 +257,31 @@ bash scripts/supabase/apply-migrations.sh
 
 자세한 내용은 [데이터베이스 마이그레이션 가이드](./DATABASE_MIGRATION.md)를 참조하세요.
 
-#### Storage 버킷 설정
+#### Media storage 설정
 
-1. Storage > "instrument-images" 버킷 생성
-2. Settings > Policies에서 다음 정책 활성화:
+Instrument 이미지와 certificate는 더 이상 애플리케이션 로컬 디스크나 Supabase `instrument-images` 버킷에 저장하지 않습니다. 프로덕션/프리뷰에서는 외부 durable object storage가 필수입니다.
 
-```sql
--- View/Download policy
-CREATE POLICY "Anyone can view images"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'instrument-images');
+1. S3 버킷(또는 호환 object storage) 생성
+2. 다음 환경 변수를 Vercel Project Env에 설정:
 
--- Upload policy (authenticated only)
-CREATE POLICY "Authenticated users can upload images"
-ON storage.objects FOR INSERT
-WITH CHECK (
-  bucket_id = 'instrument-images' AND
-  auth.role() = 'authenticated'
-);
-
--- Delete policy (authenticated only)
-CREATE POLICY "Authenticated users can delete images"
-ON storage.objects FOR DELETE
-USING (
-  bucket_id = 'instrument-images' AND
-  auth.role() = 'authenticated'
-);
+```bash
+STORAGE_TYPE=s3
+S3_BUCKET_NAME=your-s3-bucket
+S3_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your-access-key-id
+AWS_SECRET_ACCESS_KEY=your-secret-access-key
 ```
+
+3. 필요 시 추가 옵션 설정:
+
+```bash
+AWS_ENDPOINT_URL=https://your-s3-endpoint
+S3_ADDRESSING_STYLE=virtual-hosted-style
+KMS_KEY_ID=your-kms-key-id
+UPLOAD_MAX_FILE_SIZE_MB=100
+```
+
+4. Supabase Storage는 invoice 이미지(`invoices` bucket) 전용으로만 유지합니다. 해당 버킷과 RLS 정책은 버전드 migration(`supabase/migrations/00000000000002_rls_policies.sql`, `00000000000053_storage_buckets.sql`)로 관리하고, 수동으로 `instrument-images` 공개 정책을 다시 열지 마세요.
 
 ### 4. 커스텀 도메인 (선택)
 

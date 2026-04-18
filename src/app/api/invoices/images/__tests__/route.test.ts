@@ -74,10 +74,15 @@ describe('/api/invoices/images', () => {
       data: { signedUrl: 'https://example.com/invoice-items/test-123.jpg' },
       error: null,
     });
+    const mockExists = jest.fn().mockResolvedValue({
+      data: true,
+      error: null,
+    });
 
     const mockStorage = {
       from: jest.fn(() => ({
         upload: mockUpload,
+        exists: mockExists,
         createSignedUrl: mockCreateSignedUrl,
         remove: jest.fn().mockResolvedValue({ data: null, error: null }),
       })),

@@ -5,9 +5,9 @@ import {
   getCookieBackedAuth,
   type CookieBackedAuthResult,
 } from '@/lib/supabase-server';
-import { captureException } from '@/utils/monitoring';
-import { ErrorSeverity } from '@/types/errors';
 import { createApiErrorResponse } from '@/app/api/_utils/apiErrors';
+import { ErrorSeverity } from '@/types/errors';
+import { captureException } from '@/utils/monitoring';
 
 export interface AuthContext {
   user: User;
@@ -23,28 +23,19 @@ type AuthedHandler = (
   auth: AuthContext
 ) => Promise<Response>;
 
-interface AuthResult {
+type AuthResult = {
   user: User | null;
   accessToken: string | null;
   orgId: string | null;
   role: 'admin' | 'member';
   error: Error | null;
   userSupabase: AuthContext['userSupabase'] | null;
-}
+};
 
-/**
- * Pull auth claims only from trusted server-controlled metadata.
- *
- * Do not read user_metadata here. In Supabase, users can mutate their own
- * user_metadata, so using it for org or role decisions is a privilege-
- * escalation risk.
- */
 function extractOrgId(user: User): string | null {
   const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
 
-  const candidates = [appMeta.org_id, appMeta.orgId];
-
-  for (const value of candidates) {
+  for (const value of [appMeta.org_id, appMeta.orgId]) {
     if (typeof value === 'string' && value.trim()) {
       return value.trim();
     }
@@ -56,10 +47,9 @@ function extractOrgId(user: User): string | null {
 function extractRole(user: User): 'admin' | 'member' {
   const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
 
-  const candidates = [appMeta.role, appMeta.app_role];
-
-  for (const value of candidates) {
+  for (const value of [appMeta.role, appMeta.app_role]) {
     if (typeof value !== 'string') continue;
+
     const normalized = value.trim().toLowerCase();
     if (normalized === 'admin') return 'admin';
     if (normalized === 'member') return 'member';
@@ -92,16 +82,28 @@ async function getUserFromRequest(request: NextRequest): Promise<AuthResult> {
       userSupabase: cookieAuth.userSupabase,
     };
   } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
     return {
       user: null,
       accessToken: null,
       orgId: null,
       role: 'member',
-      error: err,
+      error: error instanceof Error ? error : new Error(String(error)),
       userSupabase: null,
     };
   }
+}
+
+function isBenignAuthError(error: Error): boolean {
+  const msg = error.message || '';
+  const lower = msg.toLowerCase();
+
+  return (
+    msg === 'Missing cookie-backed session' ||
+    lower.includes('jwt') ||
+    lower.includes('unauthorized') ||
+    lower.includes('invalid token') ||
+    lower.includes('auth session missing')
+  );
 }
 
 export function createOrgContextRequiredResponse(): NextResponse {
@@ -121,60 +123,39 @@ export function createAdminRequiredResponse(): NextResponse {
   );
 }
 
+export function getRequiredOrgId(auth: AuthContext): string {
+  if (!auth.orgId) {
+    throw new Error('Organization context required');
+  }
+
+  return auth.orgId;
+}
+
 export function requireOrgContext(auth: AuthContext): NextResponse | null {
-  if (auth.orgId) return null;
-  return createOrgContextRequiredResponse();
+  return auth.orgId ? null : createOrgContextRequiredResponse();
 }
 
 export function requireAdmin(auth: AuthContext): NextResponse | null {
-  if (auth.role === 'admin') return null;
-  return createAdminRequiredResponse();
+  return auth.role === 'admin' ? null : createAdminRequiredResponse();
 }
 
-/**
- * API route auth middleware
- *
- * What it guarantees:
- * - valid Supabase user session is required
- * - auth context is passed to the route
- * - route gets a USER-SCOPED Supabase client by default
- *
- * What it does NOT guarantee:
- * - resource ownership checks
- * - domain-specific authorization rules
- *
- * Route handlers must still verify that requested resources
- * belong to the authenticated user's allowed scope.
- */
 export function withAuthRoute(
   handler: AuthedHandler
 ): (request: NextRequest) => Promise<Response> {
-  return async (request: NextRequest) => {
+  return async (request: NextRequest): Promise<Response> => {
     const { user, accessToken, orgId, role, error, userSupabase } =
       await getUserFromRequest(request);
 
     if (!user || !accessToken || !userSupabase || error) {
-      if (error) {
-        const msg = error.message || '';
-        const lower = msg.toLowerCase();
-
-        const isBenignAuthError =
-          msg === 'Missing cookie-backed session' ||
-          lower.includes('jwt') ||
-          lower.includes('unauthorized') ||
-          lower.includes('invalid token') ||
-          lower.includes('auth session missing');
-
-        if (!isBenignAuthError) {
-          captureException(
-            error,
-            'API_AUTH_MIDDLEWARE',
-            {
-              path: request.nextUrl.pathname,
-            },
-            ErrorSeverity.LOW
-          );
-        }
+      if (error && !isBenignAuthError(error)) {
+        captureException(
+          error,
+          'API_AUTH_MIDDLEWARE',
+          {
+            path: request.nextUrl.pathname,
+          },
+          ErrorSeverity.LOW
+        );
       }
 
       return createApiErrorResponse(
@@ -186,15 +167,13 @@ export function withAuthRoute(
       );
     }
 
-    const auth: AuthContext = {
+    return handler(request, {
       user,
       accessToken,
       orgId,
       role,
       userSupabase,
       isTestBypass: false,
-    };
-
-    return handler(request, auth);
+    });
   };
 }
