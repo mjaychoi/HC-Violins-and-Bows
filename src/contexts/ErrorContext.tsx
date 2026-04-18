@@ -142,7 +142,7 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
           appError = errorHandler.createError(
             ErrorCodes.NETWORK_ERROR,
             errorMessage,
-            error.stack,
+            undefined,
             { context, originalError: error }
           );
         }
@@ -155,7 +155,7 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
           appError = errorHandler.createError(
             ErrorCodes.UNAUTHORIZED,
             errorMessage,
-            error.stack,
+            undefined,
             { context, originalError: error }
           );
         }
@@ -168,7 +168,7 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
           appError = errorHandler.createError(
             ErrorCodes.FORBIDDEN,
             errorMessage,
-            error.stack,
+            undefined,
             { context, originalError: error }
           );
         }
@@ -181,7 +181,7 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
           appError = errorHandler.createError(
             ErrorCodes.UNKNOWN_ERROR,
             errorMessage,
-            error.stack,
+            undefined,
             { context, originalError: error }
           );
         }
@@ -199,7 +199,7 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
             : typeof error === 'string'
               ? error
               : 'An unexpected error occurred',
-          error instanceof Error ? error.stack : String(error),
+          undefined,
           { context, originalError: error }
         );
       }

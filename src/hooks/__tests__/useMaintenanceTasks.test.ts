@@ -8,13 +8,15 @@ import { MaintenanceTask, TaskType, TaskStatus, TaskPriority } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 import { ApiResponseError } from '@/utils/handleApiResponse';
 
+const mockHandleError = jest.fn();
+
 // ✅ FIXED: ToastProvider도 export하도록 mock 수정
 jest.mock('@/contexts/ToastContext', () => {
   const actual = jest.requireActual('@/contexts/ToastContext');
   return {
     ...actual,
     useErrorHandler: () => ({
-      handleError: jest.fn(),
+      handleError: mockHandleError,
     }),
   };
 });
@@ -49,6 +51,7 @@ describe('useMaintenanceTasks', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     __resetMaintenanceTasksReadCacheForTests();
+    mockHandleError.mockClear();
     // Default: all apiFetch calls return empty success to prevent undefined errors.
     // Individual tests override with mockResolvedValueOnce.
     (apiFetch as jest.Mock).mockResolvedValue({
@@ -839,6 +842,77 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(fetchedTasks).toEqual([]);
+      expect(result.current.error).toBeDefined();
+    });
+
+    it('should pass abort signal to date range fetch', async () => {
+      const controller = new AbortController();
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31', {
+          signal: controller.signal,
+        });
+      });
+
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/api/maintenance-tasks?start_date=2024-01-01&end_date=2024-01-31',
+        { signal: controller.signal }
+      );
+    });
+
+    it('should ignore aborted date range fetches without surfacing an error', async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      let fetchedTasks: MaintenanceTask[] = [];
+      await act(async () => {
+        fetchedTasks = await result.current.fetchTasksByDateRange(
+          '2024-01-01',
+          '2024-01-31',
+          {
+            signal: controller.signal,
+            throwOnError: true,
+          }
+        );
+      });
+
+      expect(fetchedTasks).toEqual([]);
+      expect(apiFetch).not.toHaveBeenCalled();
+      expect(result.current.error).toBe(null);
+      expect(mockHandleError).not.toHaveBeenCalled();
+    });
+
+    it('should rethrow date range errors when requested', async () => {
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: jest.fn().mockResolvedValue({ error: 'Fetch failed' }),
+      });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await expect(
+        act(async () => {
+          await result.current.fetchTasksByDateRange(
+            '2024-01-01',
+            '2024-01-31',
+            {
+              throwOnError: true,
+            }
+          );
+        })
+      ).rejects.toThrow('Fetch failed');
+
       expect(result.current.error).toBeDefined();
     });
   });

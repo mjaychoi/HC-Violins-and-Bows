@@ -54,6 +54,19 @@ export const CALENDAR_ERROR_MESSAGES = {
   DELETE_TASK: 'Failed to delete task',
 };
 
+export const CALENDAR_WARNING_MESSAGES = {
+  CREATE_REFRESH_FAILED:
+    'Task was created, but the calendar failed to refresh. Please retry.',
+  UPDATE_REFRESH_FAILED:
+    'Task was updated, but the calendar failed to refresh. Please retry.',
+  DELETE_REFRESH_FAILED:
+    'Task was deleted, but the calendar failed to refresh. Please retry.',
+  DATE_REFRESH_FAILED:
+    'Task date was updated, but the calendar failed to refresh. Please retry.',
+  TIME_REFRESH_FAILED:
+    'Task time was updated, but the calendar failed to refresh. Please retry.',
+};
+
 export const CALENDAR_CONFIRM_MESSAGES = {
   DELETE_TASK_TITLE: 'Delete maintenance task',
   DELETE_TASK_MESSAGE:

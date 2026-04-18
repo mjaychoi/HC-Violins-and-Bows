@@ -67,6 +67,14 @@ export default function ErrorToast({
   };
 
   const friendlyMessage = errorHandler.getUserFriendlyMessage(error);
+  const safeDetails =
+    typeof error.details === 'string' &&
+    error.details.trim() &&
+    !error.details.includes('\n    at ') &&
+    !error.details.includes('\n at ') &&
+    !error.details.startsWith('ApiResponseError:')
+      ? error.details
+      : null;
   const recoverySuggestions = showRecoverySuggestions
     ? errorHandler.getRecoverySuggestions(error)
     : [];
@@ -82,8 +90,8 @@ export default function ErrorToast({
           </div>
           <div className="ml-3 w-0 flex-1">
             <p className="text-sm font-medium">{friendlyMessage}</p>
-            {error.details && (
-              <p className="mt-1 text-sm opacity-75">{error.details}</p>
+            {safeDetails && (
+              <p className="mt-1 text-sm opacity-75">{safeDetails}</p>
             )}
 
             {recoverySuggestions.length > 0 && (

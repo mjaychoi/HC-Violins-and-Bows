@@ -11,7 +11,12 @@ interface UseCalendarNavigationOptions {
   initialDate?: Date;
   fetchTasksByDateRange: (
     startDate: string,
-    endDate: string
+    endDate: string,
+    options?: {
+      signal?: AbortSignal;
+      throwOnError?: boolean;
+      suppressErrorToast?: boolean;
+    }
   ) => Promise<unknown>;
   onError?: (error: unknown) => void;
 }
@@ -45,6 +50,12 @@ export const useCalendarNavigation = ({
     onErrorRef.current = onError;
   }, [onError]);
 
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   // Current date range for the view (memoized)
   const currentRange = useMemo(() => {
     return getDateRangeForView(calendarView, currentDate);
@@ -52,7 +63,12 @@ export const useCalendarNavigation = ({
 
   // Refetch current range with deduplication and race condition prevention
   const refetchCurrentRange = useCallback(
-    async (force = false) => {
+    async (
+      force = false,
+      options?: {
+        suppressErrorToast?: boolean;
+      }
+    ) => {
       // Create request key for deduplication
       const requestKey = `${calendarView}|${currentRange.startDate}|${currentRange.endDate}`;
 
@@ -76,7 +92,11 @@ export const useCalendarNavigation = ({
       lastRequestKeyRef.current = requestKey;
 
       try {
-        await fetchRef.current(currentRange.startDate, currentRange.endDate);
+        await fetchRef.current(currentRange.startDate, currentRange.endDate, {
+          signal: abortController.signal,
+          throwOnError: true,
+          suppressErrorToast: options?.suppressErrorToast,
+        });
 
         // Only process if this is still the latest request (race condition check)
         if (
@@ -87,6 +107,17 @@ export const useCalendarNavigation = ({
           abortControllerRef.current = null;
         }
       } catch (error) {
+        const isAbortError =
+          abortController.signal.aborted ||
+          (error instanceof DOMException && error.name === 'AbortError');
+
+        if (isAbortError) {
+          if (currentRequestId === requestIdRef.current) {
+            abortControllerRef.current = null;
+          }
+          return;
+        }
+
         // Only handle error if this is still the latest request
         if (
           currentRequestId === requestIdRef.current &&
@@ -96,6 +127,7 @@ export const useCalendarNavigation = ({
             onErrorRef.current(error);
           }
           abortControllerRef.current = null;
+          throw error;
         }
       }
     },
@@ -103,9 +135,12 @@ export const useCalendarNavigation = ({
   );
 
   // Force refetch: bypass deduplication for manual refresh (e.g., after external task changes)
-  const forceRefetch = useCallback(async () => {
-    await refetchCurrentRange(true);
-  }, [refetchCurrentRange]);
+  const forceRefetch = useCallback(
+    async (options?: { suppressErrorToast?: boolean }) => {
+      await refetchCurrentRange(true, options);
+    },
+    [refetchCurrentRange]
+  );
 
   // Invalidate request key: allows next refetch to bypass deduplication
   const invalidateRequestKey = useCallback(() => {
@@ -114,7 +149,7 @@ export const useCalendarNavigation = ({
 
   // Fetch tasks when date or view changes (with deduplication)
   useEffect(() => {
-    refetchCurrentRange();
+    void refetchCurrentRange().catch(() => {});
   }, [refetchCurrentRange]);
 
   // Navigate to previous period

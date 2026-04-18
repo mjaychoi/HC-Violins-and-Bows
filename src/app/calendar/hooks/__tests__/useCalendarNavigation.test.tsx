@@ -70,6 +70,10 @@ describe('useCalendarNavigation', () => {
     await waitFor(() => {
       expect(mockFetchTasksByDateRange).toHaveBeenCalled();
     });
+
+    const options = mockFetchTasksByDateRange.mock.calls[0][2];
+    expect(options).toMatchObject({ throwOnError: true });
+    expect(options.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('should navigate to previous period', async () => {
@@ -214,5 +218,23 @@ describe('useCalendarNavigation', () => {
     );
 
     expect(typeof result.current.refetchCurrentRange).toBe('function');
+  });
+
+  it('should force refetch even when the request key has not changed', async () => {
+    const { result } = renderHook(() =>
+      useCalendarNavigation({
+        fetchTasksByDateRange: mockFetchTasksByDateRange,
+      })
+    );
+
+    await waitFor(() => {
+      expect(mockFetchTasksByDateRange).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      await result.current.forceRefetch();
+    });
+
+    expect(mockFetchTasksByDateRange).toHaveBeenCalledTimes(2);
   });
 });

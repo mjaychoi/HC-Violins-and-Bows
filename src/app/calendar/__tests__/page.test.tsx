@@ -5,6 +5,7 @@ import CalendarPage from '../page';
 import { MaintenanceTask } from '@/types';
 import { format } from 'date-fns';
 import React from 'react';
+import { useMaintenanceTasks } from '@/hooks/useMaintenanceTasks';
 
 jest.mock('@/utils/apiFetch', () => ({
   apiFetch: (...args: Parameters<typeof fetch>) => fetch(...args),
@@ -49,6 +50,7 @@ jest.mock('next/dynamic', () => ({
 // Mock useAppFeedback (replaces useErrorHandler + useToast)
 const mockHandleError = jest.fn();
 const mockShowSuccess = jest.fn();
+const mockShowWarning = jest.fn();
 
 jest.mock('@/hooks/useAppFeedback', () => ({
   __esModule: true,
@@ -57,6 +59,7 @@ jest.mock('@/hooks/useAppFeedback', () => ({
     SuccessToasts: () => <div data-testid="success-toasts">Success Toasts</div>,
     handleError: mockHandleError,
     showSuccess: mockShowSuccess,
+    showWarning: mockShowWarning,
   }),
 }));
 
@@ -412,9 +415,16 @@ describe('CalendarPage', () => {
     mockOpenEditModal.mockClear();
     mockHandleError.mockClear();
     mockShowSuccess.mockClear();
+    mockShowWarning.mockClear();
     mockModalState.isOpen = false;
     mockModalState.isEditing = false;
     mockModalState.selectedItem = null;
+  });
+
+  it('disables maintenance autoFetch because navigation owns the initial range load', () => {
+    render(<CalendarPage />);
+
+    expect(useMaintenanceTasks).toHaveBeenCalledWith({ autoFetch: false });
   });
 
   it('should render the calendar page', async () => {

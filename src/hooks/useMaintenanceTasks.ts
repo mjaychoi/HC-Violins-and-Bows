@@ -46,7 +46,12 @@ interface UseMaintenanceTasksReturn {
   deleteTask: (id: string) => Promise<void>;
   fetchTasksByDateRange: (
     startDate: string,
-    endDate: string
+    endDate: string,
+    options?: {
+      signal?: AbortSignal;
+      throwOnError?: boolean;
+      suppressErrorToast?: boolean;
+    }
   ) => Promise<MaintenanceTask[]>;
   fetchTasksByScheduledDate: (date: string) => Promise<MaintenanceTask[]>;
   fetchOverdueTasks: () => Promise<MaintenanceTask[]>;
@@ -80,6 +85,10 @@ function setCachedMaintenanceTasks(cacheKey: string, data: MaintenanceTask[]) {
 
 function invalidateMaintenanceTasksCache() {
   maintenanceTasksReadCache.clear();
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 export function __resetMaintenanceTasksReadCacheForTests() {
@@ -348,11 +357,23 @@ export function useMaintenanceTasks(
   );
 
   const fetchTasksByDateRange = useCallback(
-    async (startDate: string, endDate: string): Promise<MaintenanceTask[]> => {
+    async (
+      startDate: string,
+      endDate: string,
+      options?: {
+        signal?: AbortSignal;
+        throwOnError?: boolean;
+        suppressErrorToast?: boolean;
+      }
+    ): Promise<MaintenanceTask[]> => {
       startFetch();
       setError(null);
 
       try {
+        if (options?.signal?.aborted) {
+          return [];
+        }
+
         const queryString = buildMaintenanceTaskQuery({
           start_date: startDate,
           end_date: endDate,
@@ -360,24 +381,43 @@ export function useMaintenanceTasks(
         const cacheKey = `range:${queryString}`;
         const cachedTasks = getCachedMaintenanceTasks(cacheKey);
         if (cachedTasks) {
+          if (options?.signal?.aborted) {
+            return [];
+          }
           mergeTasksIntoState(cachedTasks);
           return cachedTasks;
         }
 
-        const res = await apiFetch(`/api/maintenance-tasks${queryString}`);
+        const requestUrl = `/api/maintenance-tasks${queryString}`;
+        const res = options?.signal
+          ? await apiFetch(requestUrl, { signal: options.signal })
+          : await apiFetch(requestUrl);
         const tasksResult =
           (await handleApiResponse<MaintenanceTask[]>(
             res,
             `Failed to fetch tasks by date range (${res.status})`
           )) ?? [];
 
+        if (options?.signal?.aborted) {
+          return [];
+        }
+
         mergeTasksIntoState(tasksResult);
         setCachedMaintenanceTasks(cacheKey, tasksResult);
 
         return tasksResult;
       } catch (err) {
+        if (options?.signal?.aborted || isAbortError(err)) {
+          return [];
+        }
+
         setError(err);
-        handleError(err, 'Failed to fetch tasks by date range');
+        if (!options?.suppressErrorToast) {
+          handleError(err, 'Failed to fetch tasks by date range');
+        }
+        if (options?.throwOnError) {
+          throw err;
+        }
         return [];
       } finally {
         endFetch();
