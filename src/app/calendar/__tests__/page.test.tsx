@@ -50,6 +50,7 @@ jest.mock('next/dynamic', () => ({
 // Mock useAppFeedback (replaces useErrorHandler + useToast)
 const mockHandleError = jest.fn();
 const mockShowSuccess = jest.fn();
+const mockShowWarning = jest.fn();
 
 jest.mock('@/hooks/useAppFeedback', () => ({
   __esModule: true,
@@ -58,6 +59,7 @@ jest.mock('@/hooks/useAppFeedback', () => ({
     SuccessToasts: () => <div data-testid="success-toasts">Success Toasts</div>,
     handleError: mockHandleError,
     showSuccess: mockShowSuccess,
+    showWarning: mockShowWarning,
   }),
 }));
 
@@ -413,6 +415,7 @@ describe('CalendarPage', () => {
     mockOpenEditModal.mockClear();
     mockHandleError.mockClear();
     mockShowSuccess.mockClear();
+    mockShowWarning.mockClear();
     mockModalState.isOpen = false;
     mockModalState.isEditing = false;
     mockModalState.selectedItem = null;

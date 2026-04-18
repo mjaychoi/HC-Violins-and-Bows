@@ -40,11 +40,13 @@ jest.mock('next/dynamic', () => ({
 // Mock useAppFeedback
 const mockHandleError = jest.fn();
 const mockShowSuccess = jest.fn();
+const mockShowWarning = jest.fn();
 jest.mock('@/hooks/useAppFeedback', () => ({
   __esModule: true,
   useAppFeedback: () => ({
     handleError: mockHandleError,
     showSuccess: mockShowSuccess,
+    showWarning: mockShowWarning,
   }),
 }));
 
@@ -165,6 +167,7 @@ jest.mock('@/hooks/usePageNotifications', () => ({
 
 // Mock calendar hooks
 const mockRefetchCurrentRange = jest.fn();
+const mockForceRefetch = mockRefetchCurrentRange;
 const mockSetSelectedDate = jest.fn();
 const mockHandleGoToToday = jest.fn();
 jest.mock('../hooks', () => ({
@@ -176,6 +179,7 @@ jest.mock('../hooks', () => ({
     handleNext: jest.fn(),
     handleGoToToday: mockHandleGoToToday,
     refetchCurrentRange: mockRefetchCurrentRange,
+    forceRefetch: mockForceRefetch,
     viewRangeLabel: 'January 2024',
   })),
   useCalendarView: jest.fn(() => ({
@@ -347,6 +351,7 @@ describe('CalendarPage - Core Logic', () => {
     mockSetSelectedDate.mockClear();
     mockHandleError.mockClear();
     mockShowSuccess.mockClear();
+    mockShowWarning.mockClear();
 
     // Reset mocks
     mockFetchTasksByDateRange.mockResolvedValue(mockTasks);
@@ -539,6 +544,45 @@ describe('CalendarPage - Core Logic', () => {
       expect(mockCloseModal).not.toHaveBeenCalled();
       expect(mockRefetchCurrentRange).not.toHaveBeenCalled();
       expect(mockShowSuccess).not.toHaveBeenCalled();
+    });
+
+    it('should warn instead of reporting create failure when refresh fails after creation', async () => {
+      const user = userEvent.setup();
+      mockRefetchCurrentRange.mockRejectedValueOnce(
+        new Error('Refresh failed')
+      );
+      mockUseModalState.mockReturnValue({
+        isOpen: true,
+        isEditing: false,
+        openModal: mockOpenModal,
+        closeModal: mockCloseModal,
+        openEditModal: mockOpenEditModal,
+        selectedItem: null,
+      });
+
+      render(<CalendarPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('task-modal')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId('modal-submit'));
+      await flushPromises();
+
+      await waitFor(() => {
+        expect(mockCreateTask).toHaveBeenCalled();
+        expect(mockRefetchCurrentRange).toHaveBeenCalled();
+      });
+
+      expect(mockCloseModal).toHaveBeenCalled();
+      expect(mockShowSuccess).not.toHaveBeenCalled();
+      expect(mockHandleError).not.toHaveBeenCalledWith(
+        expect.any(Error),
+        'Failed to create task'
+      );
+      expect(mockShowWarning).toHaveBeenCalledWith(
+        'Task was created, but the calendar failed to refresh. Please retry.'
+      );
     });
 
     it('should clear modal default date when opening new task', async () => {

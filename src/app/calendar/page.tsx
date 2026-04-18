@@ -26,6 +26,7 @@ import { useCalendarNavigation, useCalendarView } from './hooks';
 import {
   CALENDAR_MESSAGES,
   CALENDAR_ERROR_MESSAGES,
+  CALENDAR_WARNING_MESSAGES,
   CALENDAR_CONFIRM_MESSAGES,
 } from './constants';
 
@@ -44,7 +45,7 @@ const TaskModal = dynamic(() => import('./components/TaskModal'), {
 });
 
 export default function CalendarPage() {
-  const { handleError, showSuccess } = useAppFeedback();
+  const { handleError, showSuccess, showWarning } = useAppFeedback();
   const { canCreateTask, canManageTasks } = usePermissions();
 
   // FIXED: useUnifiedData is now called at root layout level
@@ -98,6 +99,19 @@ export default function CalendarPage() {
     onError: handleTableError,
   });
 
+  const refreshCalendarAfterMutation = useCallback(
+    async (warningMessage: string) => {
+      try {
+        await navigation.forceRefetch({ suppressErrorToast: true });
+        return true;
+      } catch {
+        showWarning(warningMessage);
+        return false;
+      }
+    },
+    [navigation, showWarning]
+  );
+
   // Page notifications (badge with click handler)
   // For calendar page, clicking badge should navigate to today
   // FIXED: Now passes tasks to prevent duplicate fetch
@@ -131,15 +145,26 @@ export default function CalendarPage() {
     ) => {
       try {
         await createTask(taskData);
-        closeModal();
-        // Use navigation's refetchCurrentRange instead of manual range calculation
-        await navigation.refetchCurrentRange();
-        showSuccess(CALENDAR_MESSAGES.TASK_CREATED);
       } catch (error) {
         handleError(error, CALENDAR_ERROR_MESSAGES.CREATE_TASK);
+        return;
+      }
+
+      closeModal();
+      const refreshed = await refreshCalendarAfterMutation(
+        CALENDAR_WARNING_MESSAGES.CREATE_REFRESH_FAILED
+      );
+      if (refreshed) {
+        showSuccess(CALENDAR_MESSAGES.TASK_CREATED);
       }
     },
-    [createTask, closeModal, navigation, showSuccess, handleError]
+    [
+      createTask,
+      closeModal,
+      refreshCalendarAfterMutation,
+      showSuccess,
+      handleError,
+    ]
   );
 
   const handleUpdateTask = useCallback(
@@ -152,15 +177,27 @@ export default function CalendarPage() {
       if (!selectedTask) return;
       try {
         await updateTask(selectedTask.id, taskData);
-        closeModal();
-        // Use navigation's refetchCurrentRange instead of manual range calculation
-        await navigation.refetchCurrentRange();
-        showSuccess(CALENDAR_MESSAGES.TASK_UPDATED);
       } catch (error) {
         handleError(error, CALENDAR_ERROR_MESSAGES.UPDATE_TASK);
+        return;
+      }
+
+      closeModal();
+      const refreshed = await refreshCalendarAfterMutation(
+        CALENDAR_WARNING_MESSAGES.UPDATE_REFRESH_FAILED
+      );
+      if (refreshed) {
+        showSuccess(CALENDAR_MESSAGES.TASK_UPDATED);
       }
     },
-    [selectedTask, updateTask, closeModal, navigation, showSuccess, handleError]
+    [
+      selectedTask,
+      updateTask,
+      closeModal,
+      refreshCalendarAfterMutation,
+      showSuccess,
+      handleError,
+    ]
   );
 
   const handleDeleteTaskRequest = useCallback((task: MaintenanceTask) => {
@@ -172,14 +209,25 @@ export default function CalendarPage() {
 
     try {
       await deleteTask(confirmDeleteTask.id);
-      // Use navigation's refetchCurrentRange instead of manual range calculation
-      await navigation.refetchCurrentRange();
-      showSuccess(CALENDAR_MESSAGES.TASK_DELETED);
-      setConfirmDeleteTask(null);
     } catch (error) {
       handleError(error, CALENDAR_ERROR_MESSAGES.DELETE_TASK);
+      return;
     }
-  }, [confirmDeleteTask, deleteTask, navigation, showSuccess, handleError]);
+
+    setConfirmDeleteTask(null);
+    const refreshed = await refreshCalendarAfterMutation(
+      CALENDAR_WARNING_MESSAGES.DELETE_REFRESH_FAILED
+    );
+    if (refreshed) {
+      showSuccess(CALENDAR_MESSAGES.TASK_DELETED);
+    }
+  }, [
+    confirmDeleteTask,
+    deleteTask,
+    refreshCalendarAfterMutation,
+    showSuccess,
+    handleError,
+  ]);
 
   const handleSelectEvent = (task: MaintenanceTask) => {
     openEditModal(task);
@@ -241,48 +289,61 @@ export default function CalendarPage() {
 
       // Store backup in local variable to avoid stale state issues
       const backup = {
-        taskId: task.id,
         originalDate,
         dateField,
       };
       setDraggingEventId(task.id);
 
       try {
-        // Convert Date to YYYY-MM-DD format (date-only, no time preserved)
-        const newDate = toLocalYMD(start.toISOString());
-
-        // Determine which date field to update based on task's current date priority
-        // Priority: due_date > personal_due_date > scheduled_date
-        const updateData: Partial<MaintenanceTask> = {};
-
-        if (task.due_date) {
-          updateData.due_date = newDate;
-        } else if (task.personal_due_date) {
-          updateData.personal_due_date = newDate;
-        } else {
-          updateData.scheduled_date = newDate;
-        }
-
-        await updateTask(task.id, updateData);
-        await navigation.refetchCurrentRange();
-        showSuccess('Task date updated successfully.');
-      } catch (error) {
-        // Rollback on error using local backup variable
         try {
-          const rollbackData: Partial<MaintenanceTask> = {
-            [backup.dateField]: backup.originalDate,
-          };
-          await updateTask(task.id, rollbackData);
-          await navigation.refetchCurrentRange();
-        } catch (rollbackError) {
-          console.error('Failed to rollback task date:', rollbackError);
+          // Convert Date to YYYY-MM-DD format (date-only, no time preserved)
+          const newDate = toLocalYMD(start.toISOString());
+
+          // Determine which date field to update based on task's current date priority
+          // Priority: due_date > personal_due_date > scheduled_date
+          const updateData: Partial<MaintenanceTask> = {};
+
+          if (task.due_date) {
+            updateData.due_date = newDate;
+          } else if (task.personal_due_date) {
+            updateData.personal_due_date = newDate;
+          } else {
+            updateData.scheduled_date = newDate;
+          }
+
+          await updateTask(task.id, updateData);
+        } catch (error) {
+          // Rollback on error using local backup variable
+          try {
+            const rollbackData: Partial<MaintenanceTask> = {
+              [backup.dateField]: backup.originalDate,
+            };
+            await updateTask(task.id, rollbackData);
+            await navigation.forceRefetch({ suppressErrorToast: true });
+          } catch (rollbackError) {
+            console.error('Failed to rollback task date:', rollbackError);
+          }
+          handleError(error, 'Failed to update task date');
+          return;
         }
-        handleError(error, 'Failed to update task date');
+
+        const refreshed = await refreshCalendarAfterMutation(
+          CALENDAR_WARNING_MESSAGES.DATE_REFRESH_FAILED
+        );
+        if (refreshed) {
+          showSuccess('Task date updated successfully.');
+        }
       } finally {
         setDraggingEventId(null);
       }
     },
-    [updateTask, navigation, showSuccess, handleError]
+    [
+      updateTask,
+      navigation,
+      refreshCalendarAfterMutation,
+      showSuccess,
+      handleError,
+    ]
   );
 
   // Handle event resize: update task end time
@@ -307,29 +368,37 @@ export default function CalendarPage() {
       setDraggingEventId(task.id);
 
       try {
-        // For resize, we update the date based on the start time
-        const newDate = toLocalYMD(start.toISOString());
+        try {
+          // For resize, we update the date based on the start time
+          const newDate = toLocalYMD(start.toISOString());
 
-        const updateData: Partial<MaintenanceTask> = {};
+          const updateData: Partial<MaintenanceTask> = {};
 
-        if (task.due_date) {
-          updateData.due_date = newDate;
-        } else if (task.personal_due_date) {
-          updateData.personal_due_date = newDate;
-        } else {
-          updateData.scheduled_date = newDate;
+          if (task.due_date) {
+            updateData.due_date = newDate;
+          } else if (task.personal_due_date) {
+            updateData.personal_due_date = newDate;
+          } else {
+            updateData.scheduled_date = newDate;
+          }
+
+          await updateTask(task.id, updateData);
+        } catch (error) {
+          handleError(error, 'Failed to update task time');
+          return;
         }
 
-        await updateTask(task.id, updateData);
-        await navigation.refetchCurrentRange();
-        showSuccess('Task time updated successfully.');
-      } catch (error) {
-        handleError(error, 'Failed to update task time');
+        const refreshed = await refreshCalendarAfterMutation(
+          CALENDAR_WARNING_MESSAGES.TIME_REFRESH_FAILED
+        );
+        if (refreshed) {
+          showSuccess('Task time updated successfully.');
+        }
       } finally {
         setDraggingEventId(null);
       }
     },
-    [updateTask, navigation, showSuccess, handleError]
+    [updateTask, refreshCalendarAfterMutation, showSuccess, handleError]
   );
 
   const handleTaskClick = (task: MaintenanceTask) => {
@@ -442,7 +511,9 @@ export default function CalendarPage() {
           clients={clients}
           loading={loading}
           fetchError={fetchError}
-          onRetry={navigation.refetchCurrentRange}
+          onRetry={() => {
+            void navigation.forceRefetch().catch(() => {});
+          }}
           navigation={navigation}
           view={view}
           setView={setView}
