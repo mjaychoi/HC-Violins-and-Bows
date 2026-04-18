@@ -89,6 +89,8 @@ describe('/api/maintenance-tasks', () => {
     const baseQuery = {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
+      gte: jest.fn().mockReturnThis(),
+      lte: jest.fn().mockReturnThis(),
       in: jest.fn().mockReturnThis(),
       or: jest.fn().mockReturnThis(),
       order: jest.fn().mockReturnThis(),
@@ -325,15 +327,12 @@ describe('/api/maintenance-tasks', () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        or: jest.fn().mockReturnThis(),
-        order: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
       };
-      // or() should return this for chaining to order()
-      (mockQuery.or as jest.Mock).mockReturnValue(mockQuery);
-      (mockQuery.order as jest.Mock).mockResolvedValue({
+      (mockQuery.lte as jest.Mock).mockResolvedValue({
         data: [mockTask],
         error: null,
-        count: 1,
       });
 
       mockUserSupabase = {
@@ -352,6 +351,19 @@ describe('/api/maintenance-tasks', () => {
       const json = await response.json();
       expect(json.data).toBeDefined();
       expect(json.count).toBe(1);
+      expect(mockUserSupabase.from).toHaveBeenCalledTimes(4);
+      expect(mockQuery.gte).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /received_date|scheduled_date|due_date|personal_due_date/
+        ),
+        '2024-01-01'
+      );
+      expect(mockQuery.lte).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /received_date|scheduled_date|due_date|personal_due_date/
+        ),
+        '2024-01-31'
+      );
     });
 
     it('should filter by overdue', async () => {

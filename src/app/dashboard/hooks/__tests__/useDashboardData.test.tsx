@@ -108,6 +108,23 @@ describe('useDashboardData', () => {
     expect(typeof result.current.handleDeleteItem).toBe('function');
   });
 
+  it('normalizes missing error fields instead of crashing on incomplete hook data', () => {
+    setDashboardState({
+      errors: undefined,
+    });
+
+    const { result } = renderHook(() => useDashboardData());
+
+    expect(result.current.hasFatalError).toBe(false);
+    expect(result.current.errors).toEqual({
+      clients: null,
+      instruments: null,
+      connections: null,
+      any: false,
+      hasAnyError: false,
+    });
+  });
+
   it('creates an item successfully', async () => {
     mockCreateInstrument.mockResolvedValue(mockInstrument);
     const { result } = renderHook(() => useDashboardData());

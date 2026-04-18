@@ -13,6 +13,7 @@ import React, {
 import { Client } from '@/types';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
+import { createApiResponseError } from '@/utils/handleApiResponse';
 import { logInfo, logWarn } from '@/utils/logger';
 import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
@@ -139,17 +140,10 @@ function getResponseError(
   res: Response,
   fallbackMessage: string
 ): Error {
-  const candidate = body?.error ?? body?.message;
-
-  if (candidate instanceof Error) {
-    return candidate;
-  }
-
-  if (typeof candidate === 'string' && candidate.trim()) {
-    return new Error(candidate);
-  }
-
-  return new Error(`${fallbackMessage} (${res.status})`);
+  return createApiResponseError(body, {
+    status: res.status,
+    fallbackMessage,
+  });
 }
 
 function sameClientList(a: Client[], b: Client[]): boolean {

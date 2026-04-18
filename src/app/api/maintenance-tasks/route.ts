@@ -42,6 +42,70 @@ function toMaintenanceTaskUpdateRow(
   return rest;
 }
 
+type MaintenanceTaskSortMode = 'scheduled' | 'overdue' | 'default';
+
+const DATE_RANGE_COLUMNS = [
+  'received_date',
+  'scheduled_date',
+  'due_date',
+  'personal_due_date',
+] as const;
+
+const TASK_PRIORITY_RANK: Record<string, number> = {
+  urgent: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+function compareNullableDateAsc(
+  a: string | null | undefined,
+  b: string | null | undefined
+) {
+  if (a && b) return a.localeCompare(b);
+  if (a) return -1;
+  if (b) return 1;
+  return 0;
+}
+
+function compareNullableDateDesc(
+  a: string | null | undefined,
+  b: string | null | undefined
+) {
+  return compareNullableDateAsc(b, a);
+}
+
+function sortMaintenanceTaskRows(
+  tasks: MaintenanceTask[],
+  sortMode: MaintenanceTaskSortMode
+) {
+  return [...tasks].sort((a, b) => {
+    if (sortMode === 'scheduled') {
+      const priorityDelta =
+        (TASK_PRIORITY_RANK[b.priority] ?? 0) -
+        (TASK_PRIORITY_RANK[a.priority] ?? 0);
+      if (priorityDelta !== 0) return priorityDelta;
+
+      const dueDateDelta = compareNullableDateAsc(a.due_date, b.due_date);
+      if (dueDateDelta !== 0) return dueDateDelta;
+
+      return compareNullableDateDesc(a.received_date, b.received_date);
+    }
+
+    if (sortMode === 'overdue') {
+      const overdueDateDelta = compareNullableDateAsc(
+        a.due_date ?? a.personal_due_date,
+        b.due_date ?? b.personal_due_date
+      );
+      if (overdueDateDelta !== 0) return overdueDateDelta;
+
+      return compareNullableDateDesc(a.received_date, b.received_date);
+    }
+
+    return compareNullableDateDesc(a.received_date, b.received_date);
+  });
+}
+
 async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
@@ -65,11 +129,22 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       const status = searchParams.get('status') || undefined;
       const taskType = searchParams.get('task_type') || undefined;
       const scheduledDate = searchParams.get('scheduled_date') || undefined;
-      const startDate = searchParams.get('start_date') || undefined;
-      const endDate = searchParams.get('end_date') || undefined;
+      const startDate =
+        searchParams.get('start_date') ||
+        searchParams.get('startDate') ||
+        undefined;
+      const endDate =
+        searchParams.get('end_date') ||
+        searchParams.get('endDate') ||
+        undefined;
       const overdue = searchParams.get('overdue') === 'true';
       const priority = searchParams.get('priority') || undefined;
       const search = searchParams.get('search') || undefined;
+      const sortMode: MaintenanceTaskSortMode = scheduledDate
+        ? 'scheduled'
+        : overdue
+          ? 'overdue'
+          : 'default';
 
       // 특정 ID로 조회
       if (id) {
@@ -105,40 +180,85 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // 필터 적용
-      let query = auth.userSupabase
-        .from('maintenance_tasks')
-        .select('*', { count: 'exact' })
-        .eq('org_id', auth.orgId!);
+      const applyCommonFilters = (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        inputQuery: any
+      ) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let query: any = inputQuery.eq('org_id', auth.orgId!);
+
+        if (instrumentId) {
+          query = query.eq('instrument_id', instrumentId);
+        }
+        if (status) {
+          query = query.eq('status', status);
+        }
+        if (taskType) {
+          query = query.eq('task_type', taskType);
+        }
+        if (scheduledDate) {
+          query = query.eq('scheduled_date', scheduledDate);
+        }
+        if (overdue) {
+          const today = todayLocalYMD();
+          query = query
+            .in('status', ['pending', 'in_progress'])
+            .or(`due_date.lt.${today},personal_due_date.lt.${today}`);
+        }
+        if (priority) {
+          query = query.eq('priority', priority);
+        }
+        if (search) {
+          const sanitizedSearch = sanitizeSearchTerm(search);
+          if (sanitizedSearch) {
+            query = query.or(
+              `title.ilike.%${sanitizedSearch}%,description.ilike.%${sanitizedSearch}%`
+            );
+          }
+        }
+
+        return query;
+      };
+
+      const applyOrdering = (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        inputQuery: any
+      ) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let query: any = inputQuery;
+
+        if (sortMode === 'scheduled') {
+          query = query
+            .order('priority', { ascending: false })
+            .order('due_date', { ascending: true });
+        } else if (sortMode === 'overdue') {
+          query = query.order('due_date', { ascending: true });
+        } else {
+          query = query.order('received_date', { ascending: false });
+        }
+
+        return query;
+      };
 
       // Validate UUID format for instrumentId (consistent with other APIs)
-      if (instrumentId) {
-        if (!validateUUID(instrumentId)) {
-          return {
-            payload: { error: 'Invalid instrument_id format' },
-            status: 400,
-          };
-        }
-        query = query.eq('instrument_id', instrumentId);
+      if (instrumentId && !validateUUID(instrumentId)) {
+        return {
+          payload: { error: 'Invalid instrument_id format' },
+          status: 400,
+        };
       }
-      if (status) {
-        query = query.eq('status', status);
+
+      if (scheduledDate && !validateDateString(scheduledDate)) {
+        return {
+          payload: { error: 'Invalid scheduled_date format. Use YYYY-MM-DD' },
+          status: 400,
+        };
       }
-      if (taskType) {
-        query = query.eq('task_type', taskType);
-      }
-      // Validate scheduledDate format - return 400 instead of silently ignoring invalid dates
-      if (scheduledDate) {
-        if (!validateDateString(scheduledDate)) {
-          return {
-            payload: { error: 'Invalid scheduled_date format. Use YYYY-MM-DD' },
-            status: 400,
-          };
-        }
-        query = query.eq('scheduled_date', scheduledDate);
-      }
+
+      let data: MaintenanceTask[] = [];
+      let count = 0;
+
       if (startDate && endDate) {
-        // Validate date strings before using in query
         if (!validateDateString(startDate) || !validateDateString(endDate)) {
           return {
             payload: { error: 'Invalid date format. Use YYYY-MM-DD' },
@@ -146,54 +266,64 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           };
         }
 
-        // 날짜 범위 필터링: 여러 날짜 필드 확인 (received_date, scheduled_date, due_date)
-        // Supabase의 or() + and()를 사용하여 각 필드가 범위 내에 있는 경우를 OR로 묶음
-        // 의미: (received_date가 범위 내) OR (scheduled_date가 범위 내) OR (due_date가 범위 내)
-        query = query.or(
-          `and(received_date.gte.${startDate},received_date.lte.${endDate}),` +
-            `and(scheduled_date.gte.${startDate},scheduled_date.lte.${endDate}),` +
-            `and(due_date.gte.${startDate},due_date.lte.${endDate})`
-        );
-      }
-      if (overdue) {
-        // FIXED: Use todayLocalYMD for consistent date format (YYYY-MM-DD)
-        const today = todayLocalYMD();
-        query = query
-          .in('status', ['pending', 'in_progress'])
-          .or(`due_date.lt.${today},personal_due_date.lt.${today}`);
-      }
+        const rangeResults = await Promise.all(
+          DATE_RANGE_COLUMNS.map(async column => {
+            const rangeQuery = applyCommonFilters(
+              auth.userSupabase.from('maintenance_tasks').select('*')
+            )
+              .gte(column, startDate)
+              .lte(column, endDate);
 
-      // 추가 필터 (priority, search 등은 클라이언트에서 처리하거나 별도 파라미터로 추가 가능)
-      if (priority) {
-        query = query.eq('priority', priority);
-      }
-      if (search) {
-        const sanitizedSearch = sanitizeSearchTerm(search);
-        if (sanitizedSearch) {
-          query = query.or(
-            `title.ilike.%${sanitizedSearch}%,description.ilike.%${sanitizedSearch}%`
+            const { data: rangeData, error: rangeError } = await rangeQuery;
+
+            if (rangeError) {
+              throw errorHandler.handleSupabaseError(
+                rangeError,
+                `Fetch maintenance tasks (${column} range)`
+              );
+            }
+
+            return Array.isArray(rangeData)
+              ? (rangeData as MaintenanceTask[])
+              : [];
+          })
+        );
+
+        const mergedTasks = new Map<string, MaintenanceTask>();
+        for (const rows of rangeResults) {
+          for (const task of rows) {
+            mergedTasks.set(task.id, task);
+          }
+        }
+
+        data = sortMaintenanceTaskRows(
+          Array.from(mergedTasks.values()),
+          sortMode
+        );
+        count = data.length;
+      } else {
+        const query = applyOrdering(
+          applyCommonFilters(
+            auth.userSupabase
+              .from('maintenance_tasks')
+              .select('*', { count: 'exact' })
+          )
+        );
+
+        const result = await query;
+        const error = result?.error;
+
+        if (error) {
+          throw errorHandler.handleSupabaseError(
+            error,
+            'Fetch maintenance tasks'
           );
         }
-      }
 
-      // 기본 정렬
-      if (scheduledDate) {
-        query = query
-          .order('priority', { ascending: false })
-          .order('due_date', { ascending: true });
-      } else if (overdue) {
-        query = query.order('due_date', { ascending: true });
-      } else {
-        query = query.order('received_date', { ascending: false });
-      }
-
-      const { data, error, count } = await query;
-
-      if (error) {
-        throw errorHandler.handleSupabaseError(
-          error,
-          'Fetch maintenance tasks'
-        );
+        data = Array.isArray(result?.data)
+          ? (result.data as MaintenanceTask[])
+          : [];
+        count = result?.count || 0;
       }
 
       // Validate response data

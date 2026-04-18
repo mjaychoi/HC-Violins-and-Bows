@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from 'react';
 import { Instrument, ClientInstrument } from '@/types';
 import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
+import { normalizeUnifiedResourceErrors } from '@/hooks/unifiedResourceErrors';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useErrorHandler, useToast } from '@/contexts/ToastContext';
 import { format } from 'date-fns';
@@ -34,10 +35,15 @@ export const useDashboardData = () => {
     deleteInstrument,
   } = useUnifiedDashboard();
 
+  const safeErrors = useMemo(
+    () => normalizeUnifiedResourceErrors(errors),
+    [errors]
+  );
+
   // Primary-source fatal error: instruments fetch confirmed failed.
   // SET_ERROR(null) clears this at retry start, so no loading guard is needed —
   // secondary source loading states must not suppress this signal.
-  const hasFatalError = Boolean(errors.instruments);
+  const hasFatalError = Boolean(safeErrors?.instruments);
 
   // Optimized: Create Maps for O(1) lookups instead of O(n) find operations
   const instrumentMap = useMemo(
@@ -223,7 +229,7 @@ export const useDashboardData = () => {
 
     // Loading states
     loading,
-    errors,
+    errors: safeErrors,
     submitting,
 
     // Derived error severity

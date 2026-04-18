@@ -39,6 +39,7 @@ import type {
   ClientInstrument,
 } from '@/types';
 import { logInfo, logDebug } from '@/utils/logger';
+import { normalizeUnifiedResourceErrors } from './unifiedResourceErrors';
 
 // ----------------------------
 // Module-level singletons
@@ -334,10 +335,10 @@ export function useUnifiedData() {
     state.submitting.clients ||
     state.submitting.instruments ||
     state.submitting.connections;
-  const hasAnyError =
-    Boolean(state.errors.clients) ||
-    Boolean(state.errors.instruments) ||
-    Boolean(state.errors.connections);
+  const normalizedErrors = useMemo(
+    () => normalizeUnifiedResourceErrors(state.errors),
+    [state.errors]
+  );
   const { isTenantTransitioning } = useTenantScopeGuard();
 
   return {
@@ -356,11 +357,7 @@ export function useUnifiedData() {
       hasAnyLoading: isTenantTransitioning ? true : hasAnyLoading,
     },
     errors: {
-      clients: state.errors.clients,
-      instruments: state.errors.instruments,
-      connections: state.errors.connections,
-      any: hasAnyError,
-      hasAnyError,
+      ...normalizedErrors,
     },
 
     // submitting
@@ -523,10 +520,10 @@ export function useUnifiedDashboard() {
     state.loading.connections;
   const hasAnySubmitting =
     state.submitting.instruments || state.submitting.connections;
-  const hasAnyError =
-    Boolean(state.errors.instruments) ||
-    Boolean(state.errors.clients) ||
-    Boolean(state.errors.connections);
+  const normalizedErrors = useMemo(
+    () => normalizeUnifiedResourceErrors(state.errors),
+    [state.errors]
+  );
   const { isTenantTransitioning } = useTenantScopeGuard();
   const safeClients = isTenantTransitioning ? [] : state.clients;
   const safeInstruments = isTenantTransitioning ? [] : state.instruments;
@@ -552,11 +549,7 @@ export function useUnifiedDashboard() {
       hasAnyLoading: isTenantTransitioning ? true : hasAnyLoading,
     },
     errors: {
-      instruments: state.errors.instruments,
-      clients: state.errors.clients,
-      connections: state.errors.connections,
-      any: hasAnyError,
-      hasAnyError,
+      ...normalizedErrors,
     },
 
     submitting: {

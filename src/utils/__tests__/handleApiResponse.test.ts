@@ -36,4 +36,20 @@ describe('handleApiResponse', () => {
       status: 403,
     });
   });
+
+  it('uses a server-specific fallback message for 500 responses without a body message', async () => {
+    const response = {
+      ok: false,
+      status: 500,
+      json: jest.fn().mockResolvedValue({}),
+    } as unknown as Response;
+
+    await expect(
+      handleApiResponse(response, 'Failed to fetch maintenance tasks (500)')
+    ).rejects.toMatchObject<Partial<ApiResponseError>>({
+      name: 'ApiResponseError',
+      message: 'Server error occurred. Please try again later.',
+      status: 500,
+    });
+  });
 });
