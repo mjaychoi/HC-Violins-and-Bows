@@ -48,6 +48,7 @@ function ItemForm({
     consignmentPriceInput,
     handleConsignmentPriceChange,
     selectedFiles,
+    setSelectedFiles,
     handleFileChange,
     removeFile,
   } = useDashboardForm();
@@ -342,6 +343,10 @@ function ItemForm({
     } catch {
       setFormError('저장에 실패했습니다. 입력 값을 다시 확인해 주세요.');
       setSuccess(false);
+      // Clear zombie previews so the UI does not imply files were staged after
+      // a failed submit.
+      setSelectedFiles([]);
+      setImagePreviews(new Map());
     }
   };
 

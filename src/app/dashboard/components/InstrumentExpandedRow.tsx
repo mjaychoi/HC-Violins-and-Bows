@@ -14,6 +14,7 @@ import { cn } from '@/utils/classNames';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import Link from 'next/link';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { downloadCertificatePdf } from '../utils/certificateDownload';
 
 interface InstrumentExpandedRowProps {
@@ -50,6 +51,7 @@ export function InstrumentExpandedRow({
   ownerClient,
 }: InstrumentExpandedRowProps) {
   const { canUploadInstrumentMedia } = usePermissions();
+  const { tenantIdentityKey } = useTenantIdentity();
   const [images, setImages] = useState<InstrumentImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
   const [imageState, setImageState] = useState<MediaLoadState>('loading');
@@ -72,15 +74,29 @@ export function InstrumentExpandedRow({
   // Request ID counters to handle concurrent requests
   const imageReqIdRef = useRef(0);
   const certificateReqIdRef = useRef(0);
+  // AbortControllers to cancel in-flight network requests on unmount/change
+  const imageAbortRef = useRef<AbortController | null>(null);
+  const certificateAbortRef = useRef<AbortController | null>(null);
+
+  // Clear module-level cert cache on tenant switch so previous-org data
+  // cannot bleed into the new org's view.
+  useEffect(() => {
+    certificateCache.clear();
+  }, [tenantIdentityKey]);
 
   const fetchImages = useCallback(
     async (instrumentId: string, isStillValid?: () => boolean) => {
+      imageAbortRef.current?.abort();
+      const controller = new AbortController();
+      imageAbortRef.current = controller;
+
       const reqId = ++imageReqIdRef.current;
       setLoadingImages(true);
       setImageState('loading');
       try {
         const response = await apiFetch(
-          `/api/instruments/${instrumentId}/images`
+          `/api/instruments/${instrumentId}/images`,
+          { signal: controller.signal }
         );
         if (!response.ok) {
           throw new Error(`Failed to fetch images: ${response.statusText}`);
@@ -99,6 +115,12 @@ export function InstrumentExpandedRow({
           }
         }
       } catch (error) {
+        if (
+          controller.signal.aborted ||
+          (error instanceof Error && error.name === 'AbortError')
+        ) {
+          return;
+        }
         if (isStillValid && !isStillValid()) return;
         if (imageReqIdRef.current === reqId) {
           setImages([]);
@@ -107,7 +129,7 @@ export function InstrumentExpandedRow({
         }
         handleError(error, 'InstrumentImagesFetch');
       } finally {
-        if (imageReqIdRef.current === reqId) {
+        if (imageReqIdRef.current === reqId && !controller.signal.aborted) {
           setLoadingImages(false);
         }
       }
@@ -121,6 +143,10 @@ export function InstrumentExpandedRow({
       isStillValid?: () => boolean,
       forceRefresh = false
     ) => {
+      certificateAbortRef.current?.abort();
+      const controller = new AbortController();
+      certificateAbortRef.current = controller;
+
       const reqId = ++certificateReqIdRef.current;
       setLoadingCertificates(true);
       setCertificateState('loading');
@@ -139,7 +165,8 @@ export function InstrumentExpandedRow({
         }
 
         const response = await apiFetch(
-          `/api/instruments/${instrumentId}/certificates`
+          `/api/instruments/${instrumentId}/certificates`,
+          { signal: controller.signal }
         );
         if (!response.ok) {
           throw new Error(
@@ -160,6 +187,12 @@ export function InstrumentExpandedRow({
           }
         }
       } catch (error) {
+        if (
+          controller.signal.aborted ||
+          (error instanceof Error && error.name === 'AbortError')
+        ) {
+          return;
+        }
         if (isStillValid && !isStillValid()) return;
         if (certificateReqIdRef.current === reqId) {
           setCertificateFiles([]);
@@ -167,7 +200,10 @@ export function InstrumentExpandedRow({
         }
         handleError(error, 'InstrumentCertificatesFetch');
       } finally {
-        if (certificateReqIdRef.current === reqId) {
+        if (
+          certificateReqIdRef.current === reqId &&
+          !controller.signal.aborted
+        ) {
           setLoadingCertificates(false);
         }
       }
@@ -199,6 +235,8 @@ export function InstrumentExpandedRow({
 
     return () => {
       alive = false;
+      imageAbortRef.current?.abort();
+      certificateAbortRef.current?.abort();
     };
   }, [fetchCertificates, fetchImages, instrument?.id]);
 

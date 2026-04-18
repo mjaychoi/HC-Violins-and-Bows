@@ -9,6 +9,11 @@ export interface UseDashboardModalOptions {
    * confirmItemId가 설정된 상태에서 handleConfirmDelete가 호출되면 이 함수가 실행됨
    */
   onDelete: (id: string) => Promise<void>;
+  /**
+   * When true the confirm dialog is forcibly closed and the add/edit modal
+   * cannot be submitted.  Drive this from the dashboard's hasFatalError.
+   */
+  hasFatalError?: boolean;
 }
 
 export const useDashboardModal = (options?: UseDashboardModalOptions) => {
@@ -58,6 +63,16 @@ export const useDashboardModal = (options?: UseDashboardModalOptions) => {
   useEffect(() => {
     setConfirmItemId(null);
   }, [tenantIdentityKey]);
+
+  // Close all modals when the dashboard enters a fatal error state so no
+  // mutation path (delete confirm or add/edit form) remains open against
+  // a known-broken API.
+  useEffect(() => {
+    if (options?.hasFatalError) {
+      setConfirmItemId(null);
+      closeModal();
+    }
+  }, [options?.hasFatalError, closeModal]);
 
   return {
     // Modal state

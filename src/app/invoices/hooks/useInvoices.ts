@@ -107,7 +107,7 @@ export function useInvoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [status, setStatus] = useState<
     'loading' | 'success' | 'empty' | 'error'
-  >('empty');
+  >('loading');
   const [page, setPageState] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -243,10 +243,7 @@ export function useInvoices() {
           'Error fetching invoices:',
           error instanceof Error ? error.message : String(error)
         );
-        handleError(
-          error instanceof Error ? error.message : String(error),
-          'Fetch invoices'
-        );
+        handleError(error, 'Fetch invoices');
         if (abortRef.current === controller) {
           setInvoices([]);
           setStatus('error');

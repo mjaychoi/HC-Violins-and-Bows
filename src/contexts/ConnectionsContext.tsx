@@ -57,7 +57,11 @@ function connectionsReducer(
     case 'SET_SUBMITTING':
       return { ...state, submitting: action.payload };
     case 'SET_ERROR':
-      return { ...state, error: action.payload };
+      // null = fetch-start housekeeping; non-null = fatal failure, clear stale data.
+      if (action.payload === null) {
+        return { ...state, error: null };
+      }
+      return { ...state, connections: [], error: action.payload };
     case 'SET_CONNECTIONS':
       return {
         ...state,
@@ -86,6 +90,7 @@ function connectionsReducer(
         lastUpdated: new Date(),
       };
     case 'INVALIDATE_CACHE':
+      // Stale-while-revalidate: preserve data, clear freshness only.
       return { ...state, lastUpdated: null };
     case 'RESET_STATE':
       return initialState;
