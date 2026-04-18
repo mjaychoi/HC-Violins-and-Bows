@@ -27,6 +27,22 @@ function isUnsafeUserFacingDetails(value: unknown): boolean {
   );
 }
 
+function normalizeUserFacingDetails(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (
+    trimmed === 'undefined' ||
+    trimmed === 'null' ||
+    trimmed === '[object Object]'
+  ) {
+    return undefined;
+  }
+
+  return isUnsafeUserFacingDetails(trimmed) ? undefined : trimmed;
+}
+
 export class ErrorHandler {
   private static instance: ErrorHandler;
   private errorLog: AppError[] = [];
@@ -261,20 +277,15 @@ export class ErrorHandler {
     }
 
     const details =
-      errorDetails ??
+      normalizeUserFacingDetails(errorDetails) ??
       (error && typeof error === 'object' && 'details' in error
-        ? String((error as { details?: unknown }).details)
+        ? normalizeUserFacingDetails((error as { details?: unknown }).details)
         : undefined);
 
-    return this.createError(
-      code,
-      message,
-      isUnsafeUserFacingDetails(details) ? undefined : details,
-      {
-        context,
-        originalError: this.toSafeOriginalError(error),
-      }
-    );
+    return this.createError(code, message, details, {
+      context,
+      originalError: this.toSafeOriginalError(error),
+    });
   }
 
   handleNetworkError(error: unknown, endpoint?: string): ApiError {

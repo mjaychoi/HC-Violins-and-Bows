@@ -5,6 +5,7 @@ import type { Invoice, InvoiceStatus } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { logError } from '@/utils/logger';
+import { createApiResponseError } from '@/utils/handleApiResponse';
 interface FetchInvoicesOptions {
   page?: number;
   pageSize?: number;
@@ -123,6 +124,7 @@ export function useInvoices() {
       returnedCount: 0,
     });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
   const { handleError } = useErrorHandler();
   const abortRef = useRef<AbortController | null>(null);
   const createIdempotencyRef = useRef<string | null>(null);
@@ -138,6 +140,7 @@ export function useInvoices() {
       abortRef.current = controller;
 
       setLoading(true);
+      setError(null);
       setStatus('loading');
       setScopeInfo(null);
       setListDiagnostics({
@@ -166,14 +169,14 @@ export function useInvoices() {
         });
 
         if (!response.ok) {
-          let errorMessage = 'Failed to fetch invoices';
-          try {
-            const errorData = await response.json();
-            errorMessage = errorData.error || errorMessage;
-          } catch {
-            errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-          }
-          throw new Error(errorMessage);
+          const errorData = (await response.json().catch(() => null)) as Record<
+            string,
+            unknown
+          > | null;
+          throw createApiResponseError(errorData, {
+            status: response.status,
+            fallbackMessage: `Failed to fetch invoices (${response.status})`,
+          });
         }
 
         const result = await response.json();
@@ -243,6 +246,7 @@ export function useInvoices() {
           'Error fetching invoices:',
           error instanceof Error ? error.message : String(error)
         );
+        setError(error);
         handleError(error, 'Fetch invoices');
         if (abortRef.current === controller) {
           setInvoices([]);
@@ -367,7 +371,13 @@ export function useInvoices() {
             });
           }
 
-          throw new Error(errorMessage);
+          throw createApiResponseError(
+            errorData as Record<string, unknown> | null,
+            {
+              status: response.status,
+              fallbackMessage: errorMessage,
+            }
+          );
         }
 
         const result = await response.json();
@@ -394,10 +404,7 @@ export function useInvoices() {
         };
       } catch (error) {
         createIdempotencyRef.current = null;
-        handleError(
-          error instanceof Error ? error.message : String(error),
-          'Create invoice'
-        );
+        handleError(error, 'Create invoice');
         throw error;
       }
     },
@@ -444,8 +451,14 @@ export function useInvoices() {
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to update invoice');
+          const errorData = (await response.json().catch(() => null)) as Record<
+            string,
+            unknown
+          > | null;
+          throw createApiResponseError(errorData, {
+            status: response.status,
+            fallbackMessage: `Failed to update invoice (${response.status})`,
+          });
         }
 
         const result = await response.json();
@@ -465,10 +478,7 @@ export function useInvoices() {
               : null,
         };
       } catch (error) {
-        handleError(
-          error instanceof Error ? error.message : String(error),
-          'Update invoice'
-        );
+        handleError(error, 'Update invoice');
         throw error;
       }
     },
@@ -483,16 +493,19 @@ export function useInvoices() {
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to delete invoice');
+          const errorData = (await response.json().catch(() => null)) as Record<
+            string,
+            unknown
+          > | null;
+          throw createApiResponseError(errorData, {
+            status: response.status,
+            fallbackMessage: `Failed to delete invoice (${response.status})`,
+          });
         }
 
         return true;
       } catch (error) {
-        handleError(
-          error instanceof Error ? error.message : String(error),
-          'Delete invoice'
-        );
+        handleError(error, 'Delete invoice');
         throw error;
       }
     },
@@ -506,6 +519,7 @@ export function useInvoices() {
     totalCount,
     totalPages,
     loading,
+    error,
     fetchInvoices,
     createInvoice,
     updateInvoice,

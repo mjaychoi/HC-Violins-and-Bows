@@ -53,6 +53,7 @@ function InvoicesPageContent() {
     totalCount,
     totalPages,
     loading,
+    error: invoicesError,
     fetchInvoices,
     createInvoice,
     updateInvoice,
@@ -813,6 +814,7 @@ function InvoicesPageContent() {
             invoices={invoices}
             loading={loading}
             status={invoicesStatus}
+            fetchError={invoicesError}
             partial={listDiagnostics.partial}
             droppedCount={listDiagnostics.droppedCount}
             returnedCount={listDiagnostics.returnedCount}

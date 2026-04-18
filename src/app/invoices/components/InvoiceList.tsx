@@ -15,6 +15,7 @@ interface InvoiceListProps {
   invoices: Invoice[];
   loading: boolean;
   status?: 'loading' | 'success' | 'empty' | 'error';
+  fetchError?: unknown;
   partial?: boolean;
   droppedCount?: number;
   returnedCount?: number;
@@ -51,6 +52,7 @@ function InvoiceList({
   invoices,
   loading,
   status = 'success',
+  fetchError,
   partial = false,
   droppedCount = 0,
   returnedCount = 0,
@@ -77,6 +79,25 @@ function InvoiceList({
   );
   const { canEditInvoice, canDeleteInvoice } = usePermissions();
 
+  const fetchErrorMessage = React.useMemo(() => {
+    if (fetchError instanceof Error && fetchError.message.trim()) {
+      return fetchError.message;
+    }
+
+    if (
+      typeof fetchError === 'object' &&
+      fetchError !== null &&
+      'message' in fetchError
+    ) {
+      const message = (fetchError as { message?: unknown }).message;
+      if (typeof message === 'string' && message.trim()) {
+        return message;
+      }
+    }
+
+    return 'Invoices could not be loaded. Try again.';
+  }, [fetchError]);
+
   if (loading) {
     return <TableSkeleton rows={8} columns={8} />;
   }
@@ -87,9 +108,7 @@ function InvoiceList({
         <h3 className="text-lg font-semibold text-red-800">
           Failed to load invoices
         </h3>
-        <p className="mt-2 text-sm text-red-700">
-          Invoices could not be loaded. Try again.
-        </p>
+        <p className="mt-2 text-sm text-red-700">{fetchErrorMessage}</p>
         {onRetry && (
           <button
             type="button"
