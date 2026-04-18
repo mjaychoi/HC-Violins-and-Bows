@@ -577,6 +577,17 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       expect(error.code).toBe(ErrorCodes.DATABASE_ERROR);
       expect(error.message).toBe('Database operation failed');
     });
+
+    it('should not surface literal undefined as error details', () => {
+      const supabaseError = {
+        status: 500,
+        message: 'Server error occurred. Please try again later.',
+        details: undefined,
+      };
+      const error = errorHandler.handleSupabaseError(supabaseError, 'Test');
+
+      expect(error.details).toBeUndefined();
+    });
   });
 
   describe('isNetworkError - Extended', () => {

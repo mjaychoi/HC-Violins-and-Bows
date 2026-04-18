@@ -70,10 +70,13 @@ export default function ErrorToast({
   const safeDetails =
     typeof error.details === 'string' &&
     error.details.trim() &&
+    error.details.trim() !== 'undefined' &&
+    error.details.trim() !== 'null' &&
+    error.details.trim() !== '[object Object]' &&
     !error.details.includes('\n    at ') &&
     !error.details.includes('\n at ') &&
     !error.details.startsWith('ApiResponseError:')
-      ? error.details
+      ? error.details.trim()
       : null;
   const recoverySuggestions = showRecoverySuggestions
     ? errorHandler.getRecoverySuggestions(error)

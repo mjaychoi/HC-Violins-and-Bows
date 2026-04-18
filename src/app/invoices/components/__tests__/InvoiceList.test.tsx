@@ -135,6 +135,21 @@ describe('InvoiceList', () => {
     expect(onRetry).toHaveBeenCalled();
   });
 
+  it('shows the fetch error message when provided', () => {
+    render(
+      <InvoiceList
+        {...baseProps}
+        invoices={[]}
+        status="error"
+        fetchError={new Error('Server error occurred. Please try again later.')}
+      />
+    );
+
+    expect(
+      screen.getByText('Server error occurred. Please try again later.')
+    ).toBeInTheDocument();
+  });
+
   it('honors custom empty title/description', () => {
     render(
       <InvoiceList

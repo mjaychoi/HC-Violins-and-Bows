@@ -69,6 +69,17 @@ describe('ErrorToast', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('should suppress undefined-like error details', () => {
+    const errorWithUndefinedDetails = {
+      ...mockError,
+      details: 'undefined',
+    };
+
+    render(<ErrorToast {...defaultProps} error={errorWithUndefinedDetails} />);
+
+    expect(screen.queryByText('undefined')).not.toBeInTheDocument();
+  });
+
   it('should call onClose when close button is clicked', () => {
     render(<ErrorToast {...defaultProps} />);
 

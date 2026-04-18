@@ -2,6 +2,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { useInvoices } from '../useInvoices';
 import { apiFetch } from '@/utils/apiFetch';
 import { useErrorHandler } from '@/contexts/ToastContext';
+import { ApiResponseError } from '@/utils/handleApiResponse';
 
 jest.mock('@/utils/apiFetch');
 jest.mock('@/contexts/ToastContext', () => ({
@@ -87,9 +88,9 @@ describe('useInvoices', () => {
   });
 
   it('handles fetch error', async () => {
-    new Error('Fetch failed');
     (apiFetch as jest.Mock).mockResolvedValueOnce({
       ok: false,
+      status: 500,
       json: async () => ({ error: 'Fetch failed' }),
     });
 
@@ -102,6 +103,8 @@ describe('useInvoices', () => {
     await waitFor(() => {
       expect(mockHandleError).toHaveBeenCalled();
       expect(result.current.invoices).toEqual([]);
+      expect(result.current.error).toBeInstanceOf(ApiResponseError);
+      expect((result.current.error as ApiResponseError).status).toBe(500);
     });
   });
 
