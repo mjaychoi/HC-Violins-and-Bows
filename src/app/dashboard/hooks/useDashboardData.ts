@@ -34,6 +34,11 @@ export const useDashboardData = () => {
     deleteInstrument,
   } = useUnifiedDashboard();
 
+  // Primary-source fatal error: instruments fetch confirmed failed.
+  // SET_ERROR(null) clears this at retry start, so no loading guard is needed —
+  // secondary source loading states must not suppress this signal.
+  const hasFatalError = Boolean(errors.instruments);
+
   // Optimized: Create Maps for O(1) lookups instead of O(n) find operations
   const instrumentMap = useMemo(
     () =>
@@ -59,6 +64,7 @@ export const useDashboardData = () => {
   // Handle item creation
   const handleCreateItem = useCallback(
     async (formData: Omit<Instrument, 'id' | 'created_at'>) => {
+      if (hasFatalError) return null;
       try {
         let createdItemId: string | null = null;
         await withSubmitting(async () => {
@@ -72,7 +78,7 @@ export const useDashboardData = () => {
         throw error; // Re-throw to allow form to handle error
       }
     },
-    [createInstrument, withSubmitting, showSuccess, handleError]
+    [hasFatalError, createInstrument, withSubmitting, showSuccess, handleError]
   );
 
   // Handle item update
@@ -81,6 +87,7 @@ export const useDashboardData = () => {
       itemId: string,
       formData: Partial<Omit<Instrument, 'id' | 'created_at'>>
     ) => {
+      if (hasFatalError) return null;
       try {
         // 이전 상태 확인 (O(1) lookup)
         const previousInstrument = instrumentMap.get(itemId) as
@@ -165,6 +172,7 @@ export const useDashboardData = () => {
       }
     },
     [
+      hasFatalError,
       updateInstrument,
       showSuccess,
       handleError,
@@ -187,6 +195,7 @@ export const useDashboardData = () => {
   // Handle item deletion
   const handleDeleteItem = useCallback(
     async (itemId: string) => {
+      if (hasFatalError) return;
       try {
         await deleteInstrument(itemId);
         showSuccess('아이템이 성공적으로 삭제되었습니다.');
@@ -195,7 +204,7 @@ export const useDashboardData = () => {
         throw error;
       }
     },
-    [deleteInstrument, showSuccess, handleError]
+    [hasFatalError, deleteInstrument, showSuccess, handleError]
   );
 
   const reloadDashboard = useCallback(async () => {
@@ -216,6 +225,9 @@ export const useDashboardData = () => {
     loading,
     errors,
     submitting,
+
+    // Derived error severity
+    hasFatalError,
 
     // CRUD operations
     handleCreateItem,

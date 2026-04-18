@@ -200,7 +200,8 @@ describe('InstrumentExpandedRow', () => {
     await waitFor(
       () => {
         expect(mockApiFetch).toHaveBeenCalledWith(
-          '/api/instruments/inst-123/images'
+          '/api/instruments/inst-123/images',
+          expect.objectContaining({ signal: expect.any(Object) })
         );
       },
       { timeout: 3000 }
@@ -227,7 +228,8 @@ describe('InstrumentExpandedRow', () => {
     await waitFor(
       () => {
         expect(mockApiFetch).toHaveBeenCalledWith(
-          '/api/instruments/inst-123/certificates'
+          '/api/instruments/inst-123/certificates',
+          expect.objectContaining({ signal: expect.any(Object) })
         );
       },
       { timeout: 3000 }
@@ -257,14 +259,16 @@ describe('InstrumentExpandedRow', () => {
 
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        '/api/instruments/inst-123/images'
+        '/api/instruments/inst-123/images',
+        expect.objectContaining({ signal: expect.any(Object) })
       );
     });
 
     // Should call certificates endpoint (always fetch to show section with "No certificate files uploaded yet" message)
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        '/api/instruments/inst-123/certificates'
+        '/api/instruments/inst-123/certificates',
+        expect.objectContaining({ signal: expect.any(Object) })
       );
     });
   });
@@ -1079,14 +1083,16 @@ describe('InstrumentExpandedRow', () => {
 
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        '/api/instruments/inst-123/images'
+        '/api/instruments/inst-123/images',
+        expect.objectContaining({ signal: expect.any(Object) })
       );
     });
 
     // Should call certificates endpoint (always fetch to show section with "No certificate files uploaded yet." message)
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        '/api/instruments/inst-123/certificates'
+        '/api/instruments/inst-123/certificates',
+        expect.objectContaining({ signal: expect.any(Object) })
       );
     });
   });

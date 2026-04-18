@@ -119,7 +119,13 @@ function instrumentsReducer(
       return { ...state, submitting: action.payload };
 
     case 'SET_ERROR':
-      return { ...state, error: action.payload };
+      // null payload = fetch-start housekeeping: clear prior error, keep data.
+      // non-null payload = confirmed fatal fetch failure: clear stale data so
+      // it cannot masquerade as valid alongside a known error state.
+      if (action.payload === null) {
+        return { ...state, error: null };
+      }
+      return { ...state, instruments: [], error: action.payload };
 
     case 'SET_INSTRUMENTS':
       return {
@@ -160,6 +166,9 @@ function instrumentsReducer(
       };
 
     case 'INVALIDATE_CACHE':
+      // Stale-while-revalidate: preserve visible data until a fresh response
+      // arrives; only the freshness timestamp is cleared.  If the subsequent
+      // fetch fails, SET_ERROR (non-null) will clear the data at that point.
       return { ...state, lastUpdated: null };
 
     case 'RESET_STATE':

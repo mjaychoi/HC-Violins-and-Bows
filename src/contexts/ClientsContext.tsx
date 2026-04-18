@@ -54,7 +54,11 @@ function clientsReducer(
     case 'SET_SUBMITTING':
       return { ...state, submitting: action.payload };
     case 'SET_ERROR':
-      return { ...state, error: action.payload };
+      // null = fetch-start housekeeping; non-null = fatal failure, clear stale data.
+      if (action.payload === null) {
+        return { ...state, error: null };
+      }
+      return { ...state, clients: [], error: action.payload };
     case 'SET_CLIENTS':
       return {
         ...state,
@@ -83,6 +87,7 @@ function clientsReducer(
         lastUpdated: new Date(),
       };
     case 'INVALIDATE_CACHE':
+      // Stale-while-revalidate: preserve data, clear freshness only.
       return { ...state, lastUpdated: null };
     case 'RESET_STATE':
       return initialState;
@@ -239,7 +244,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
           const body = await safeJson(res);
           const clients = Array.isArray(body?.data)
-            ? (body.data as Client[])
+            ? (body?.data as Client[])
             : [];
 
           logInfo(

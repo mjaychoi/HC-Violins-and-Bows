@@ -69,6 +69,7 @@ export default function DashboardPage() {
     loading,
     errors,
     submitting,
+    hasFatalError,
     handleCreateItem,
     handleUpdateItem,
     handleUpdateItemInline,
@@ -77,28 +78,40 @@ export default function DashboardPage() {
   } = useDashboardData();
 
   const clientsLoading = loading.clients;
-  const hasBootstrapError =
-    errors.hasAnyError && !loading.hasAnyLoading && instruments.length === 0;
 
+  // Two-tier error model:
+  //   hasFatalError   — instruments (primary source) failed; whole dashboard is unusable.
+  //   hasSecondaryError — clients or connections failed but instruments loaded; show
+  //                       degraded content rather than replacing the whole page.
+  // hasFatalError is computed authoritatively inside useDashboardData and returned here.
+  const hasSecondaryError =
+    !hasFatalError &&
+    (Boolean(errors.clients) || Boolean(errors.connections)) &&
+    !loading.hasAnyLoading;
+
+  // Fatal error message is driven by the instruments error (primary source).
   const dashboardErrorMessage = useMemo(() => {
-    const firstError =
-      errors.instruments || errors.clients || errors.connections || null;
-
-    if (firstError instanceof Error && firstError.message) {
-      return firstError.message;
-    }
-
+    const err = errors.instruments;
+    if (err instanceof Error && err.message) return err.message;
     if (
-      firstError &&
-      typeof firstError === 'object' &&
-      'message' in firstError &&
-      typeof (firstError as { message?: unknown }).message === 'string'
+      err &&
+      typeof err === 'object' &&
+      'message' in err &&
+      typeof (err as { message?: unknown }).message === 'string'
     ) {
-      return (firstError as { message: string }).message;
+      return (err as { message: string }).message;
     }
-
     return 'Failed to load dashboard data.';
-  }, [errors.clients, errors.connections, errors.instruments]);
+  }, [errors.instruments]);
+
+  // Degraded message shown when secondary sources fail but content is still visible.
+  const secondaryErrorMessage = useMemo(() => {
+    const parts: string[] = [];
+    if (errors.clients) parts.push('client data');
+    if (errors.connections) parts.push('instrument–client relationships');
+    if (parts.length === 0) return null;
+    return `Some data could not be loaded: ${parts.join(' and ')}. Some features may be limited.`;
+  }, [errors.clients, errors.connections]);
 
   // ✅ 개선 1) enrichedItems: 캐스팅 제거 + O(1) map
   const enrichedItems = useMemo<EnrichedInstrument[]>(() => {
@@ -212,7 +225,7 @@ export default function DashboardPage() {
     handleRequestDelete,
     handleCancelDelete,
     handleConfirmDelete: handleConfirmDeleteFromHook,
-  } = useDashboardModal({ onDelete: handleDeleteItem });
+  } = useDashboardModal({ onDelete: handleDeleteItem, hasFatalError });
 
   const handleConfirmDelete = handleConfirmDeleteFromHook;
 
@@ -230,9 +243,20 @@ export default function DashboardPage() {
     setNewlyCreatedItemId(null);
   }, [tenantIdentityKey]);
 
+  // Close sale modal on fatal error so it cannot be submitted against a
+  // known-broken instruments API (autoUpdateInstrumentStatus=true).
+  useEffect(() => {
+    if (hasFatalError) {
+      setShowSaleModal(false);
+      setSelectedInstrumentForSale(null);
+      setSelectedClientForSale(null);
+    }
+  }, [hasFatalError]);
+
   // ✅ onSubmit 함수들: inline 생성 줄이고, 로직을 callback으로 분리
   const handleSubmitCreate = useCallback(
     async (formData: InstrumentFormData) => {
+      if (hasFatalError) return;
       const createdId = await handleCreateItem(formData);
       if (!createdId) return;
 
@@ -246,11 +270,12 @@ export default function DashboardPage() {
         (titleParts.length > 0 ? titleParts.join(' - ') : '새 악기') + '이(가)';
       showSuccess(`"${label}" 추가되었습니다.`);
     },
-    [handleCreateItem, showSuccess]
+    [handleCreateItem, showSuccess, hasFatalError]
   );
 
   const handleSubmitUpdate = useCallback(
     async (id: string, formData: Partial<InstrumentFormData>) => {
+      if (hasFatalError) return;
       await handleUpdateItem(id, formData);
 
       const titleParts = [
@@ -261,7 +286,7 @@ export default function DashboardPage() {
         (titleParts.length > 0 ? titleParts.join(' - ') : '악기') + '이(가)';
       showSuccess(`"${label}" 수정되었습니다.`);
     },
-    [handleUpdateItem, showSuccess]
+    [handleUpdateItem, showSuccess, hasFatalError]
   );
 
   // 판매 기록 저장 핸들러
@@ -270,7 +295,7 @@ export default function DashboardPage() {
       payload: Omit<SalesHistory, 'id' | 'created_at'>,
       options?: { instrumentStatusUpdated?: boolean; instrumentId?: string }
     ) => {
-      if (isSubmittingSale) return;
+      if (isSubmittingSale || hasFatalError) return;
 
       await withSaleSubmitting(async () => {
         try {
@@ -288,7 +313,14 @@ export default function DashboardPage() {
         }
       });
     },
-    [createSale, showSuccess, handleError, isSubmittingSale, withSaleSubmitting]
+    [
+      createSale,
+      showSuccess,
+      handleError,
+      isSubmittingSale,
+      hasFatalError,
+      withSaleSubmitting,
+    ]
   );
 
   const handleOpenSaleModal = useCallback(() => {
@@ -376,10 +408,12 @@ export default function DashboardPage() {
             ? {
                 label: 'Add Item',
                 onClick: handleAddItem,
-                disabled: submitting.hasAnySubmitting,
-                disabledReason: submitting.hasAnySubmitting
-                  ? 'Please wait for the current submission to finish'
-                  : undefined,
+                disabled: submitting.hasAnySubmitting || hasFatalError,
+                disabledReason: hasFatalError
+                  ? 'Dashboard failed to load — retry before making changes'
+                  : submitting.hasAnySubmitting
+                    ? 'Please wait for the current submission to finish'
+                    : undefined,
                 icon: (
                   <svg
                     className="h-4 w-4"
@@ -406,13 +440,15 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={canCreateSale ? handleOpenSaleModal : undefined}
-                disabled={isSubmittingSale || !canCreateSale}
+                disabled={isSubmittingSale || !canCreateSale || hasFatalError}
                 title={
-                  isSubmittingSale
-                    ? 'Please wait for the current submission to finish'
-                    : !canCreateSale
-                      ? createSaleDisabledReason
-                      : 'Record a new sale'
+                  hasFatalError
+                    ? 'Dashboard failed to load — retry before making changes'
+                    : isSubmittingSale
+                      ? 'Please wait for the current submission to finish'
+                      : !canCreateSale
+                        ? createSaleDisabledReason
+                        : 'Record a new sale'
                 }
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -444,9 +480,14 @@ export default function DashboardPage() {
           </div>
         }
       >
-        {hasBootstrapError ? (
+        {hasFatalError ? (
+          /* Primary source (instruments) failed — full-page fatal error */
           <div className="p-6">
-            <div className="rounded-xl border border-red-200 bg-red-50 p-6">
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="rounded-xl border border-red-200 bg-red-50 p-6"
+            >
               <h2 className="text-lg font-semibold text-red-900">
                 Failed to load dashboard
               </h2>
@@ -465,19 +506,31 @@ export default function DashboardPage() {
             </div>
           </div>
         ) : (
-          <DashboardContent
-            enrichedItems={enrichedItems}
-            clients={clients}
-            clientRelationships={clientRelationships}
-            clientsLoading={clientsLoading}
-            loading={loading}
-            onDeleteClick={item => handleRequestDelete(item.id)}
-            onUpdateItemInline={handleUpdateItemInline}
-            onAddClick={handleAddItem}
-            newlyCreatedItemId={newlyCreatedItemId}
-            onNewlyCreatedItemShown={() => setNewlyCreatedItemId(null)}
-            onLoadSampleData={handleLoadSampleData}
-          />
+          /* Instruments loaded — show content; surface secondary failures inline */
+          <>
+            {hasSecondaryError && secondaryErrorMessage && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mx-6 mt-4 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800"
+              >
+                {secondaryErrorMessage}
+              </div>
+            )}
+            <DashboardContent
+              enrichedItems={enrichedItems}
+              clients={clients}
+              clientRelationships={clientRelationships}
+              clientsLoading={clientsLoading}
+              loading={loading}
+              onDeleteClick={item => handleRequestDelete(item.id)}
+              onUpdateItemInline={handleUpdateItemInline}
+              onAddClick={handleAddItem}
+              newlyCreatedItemId={newlyCreatedItemId}
+              onNewlyCreatedItemShown={() => setNewlyCreatedItemId(null)}
+              onLoadSampleData={handleLoadSampleData}
+            />
+          </>
         )}
 
         <ItemForm
@@ -491,17 +544,19 @@ export default function DashboardPage() {
           instruments={instruments}
         />
 
-        <ConfirmDialog
-          isOpen={isConfirmDialogOpen}
-          title="Delete item?"
-          message="This item will be permanently removed. This action cannot be undone."
-          confirmLabel="Delete"
-          cancelLabel="Cancel"
-          onConfirm={handleConfirmDelete}
-          onCancel={handleCancelDelete}
-          submitting={submitting.hasAnySubmitting}
-          submittingLabel="Deleting..."
-        />
+        {!hasFatalError && (
+          <ConfirmDialog
+            isOpen={isConfirmDialogOpen}
+            title="Delete item?"
+            message="This item will be permanently removed. This action cannot be undone."
+            confirmLabel="Delete"
+            cancelLabel="Cancel"
+            onConfirm={handleConfirmDelete}
+            onCancel={handleCancelDelete}
+            submitting={submitting.hasAnySubmitting}
+            submittingLabel="Deleting..."
+          />
+        )}
 
         <SaleForm
           isOpen={showSaleModal}
