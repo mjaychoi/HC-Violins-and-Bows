@@ -50,6 +50,7 @@ const DATE_RANGE_COLUMNS = [
   'due_date',
   'personal_due_date',
 ] as const;
+const OPTIONAL_MAINTENANCE_COLUMNS = new Set<string>(['personal_due_date']);
 
 const TASK_PRIORITY_RANK: Record<string, number> = {
   urgent: 4,
@@ -104,6 +105,40 @@ function sortMaintenanceTaskRows(
 
     return compareNullableDateDesc(a.received_date, b.received_date);
   });
+}
+
+function isMissingMaintenanceTaskColumnError(
+  error: unknown,
+  column: string
+): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const err = error as {
+    code?: unknown;
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+  };
+  const code = typeof err.code === 'string' ? err.code : '';
+  const haystacks = [err.message, err.details, err.hint]
+    .filter((value): value is string => typeof value === 'string')
+    .map(value => value.toLowerCase());
+  const columnName = column.toLowerCase();
+  const mentionsColumn = haystacks.some(text => text.includes(columnName));
+
+  if (!mentionsColumn) return false;
+
+  return (
+    code === 'PGRST204' ||
+    code === '42703' ||
+    haystacks.some(
+      text =>
+        text.includes('could not find') ||
+        text.includes('does not exist') ||
+        text.includes('column') ||
+        text.includes('schema cache')
+    )
+  );
 }
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
@@ -182,10 +217,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       const applyCommonFilters = (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        inputQuery: any
+        inputQuery: any,
+        options?: { includePersonalDueDate?: boolean }
       ) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let query: any = inputQuery.eq('org_id', auth.orgId!);
+        const includePersonalDueDate =
+          options?.includePersonalDueDate !== false;
 
         if (instrumentId) {
           query = query.eq('instrument_id', instrumentId);
@@ -203,7 +241,11 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           const today = todayLocalYMD();
           query = query
             .in('status', ['pending', 'in_progress'])
-            .or(`due_date.lt.${today},personal_due_date.lt.${today}`);
+            .or(
+              includePersonalDueDate
+                ? `due_date.lt.${today},personal_due_date.lt.${today}`
+                : `due_date.lt.${today}`
+            );
         }
         if (priority) {
           query = query.eq('priority', priority);
@@ -277,6 +319,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
             const { data: rangeData, error: rangeError } = await rangeQuery;
 
             if (rangeError) {
+              if (
+                OPTIONAL_MAINTENANCE_COLUMNS.has(column) &&
+                isMissingMaintenanceTaskColumnError(rangeError, column)
+              ) {
+                return [];
+              }
+
               throw errorHandler.handleSupabaseError(
                 rangeError,
                 `Fetch maintenance tasks (${column} range)`
@@ -302,16 +351,27 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         );
         count = data.length;
       } else {
-        const query = applyOrdering(
-          applyCommonFilters(
-            auth.userSupabase
-              .from('maintenance_tasks')
-              .select('*', { count: 'exact' })
-          )
-        );
+        const buildBaseQuery = (includePersonalDueDate = true) =>
+          applyOrdering(
+            applyCommonFilters(
+              auth.userSupabase
+                .from('maintenance_tasks')
+                .select('*', { count: 'exact' }),
+              { includePersonalDueDate }
+            )
+          );
 
-        const result = await query;
-        const error = result?.error;
+        let result = await buildBaseQuery();
+        let error = result?.error;
+
+        if (
+          error &&
+          overdue &&
+          isMissingMaintenanceTaskColumnError(error, 'personal_due_date')
+        ) {
+          result = await buildBaseQuery(false);
+          error = result?.error;
+        }
 
         if (error) {
           throw errorHandler.handleSupabaseError(

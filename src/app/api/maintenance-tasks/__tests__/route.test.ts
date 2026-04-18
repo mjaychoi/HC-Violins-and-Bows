@@ -366,6 +366,50 @@ describe('/api/maintenance-tasks', () => {
       );
     });
 
+    it('should tolerate missing optional personal_due_date column in date range queries', async () => {
+      const successQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockResolvedValue({
+          data: [mockTask],
+          error: null,
+        }),
+      };
+      const missingColumnQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockResolvedValue({
+          data: null,
+          error: {
+            code: 'PGRST204',
+            message:
+              "Could not find the 'personal_due_date' column of 'maintenance_tasks' in the schema cache",
+          },
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(successQuery)
+          .mockReturnValueOnce(successQuery)
+          .mockReturnValueOnce(successQuery)
+          .mockReturnValueOnce(missingColumnQuery),
+      };
+
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks?start_date=2024-01-01&end_date=2024-01-31'
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data).toEqual([mockTask]);
+      expect(json.count).toBe(1);
+    });
+
     it('should filter by overdue', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),

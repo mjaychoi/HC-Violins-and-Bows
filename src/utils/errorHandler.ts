@@ -13,6 +13,20 @@ import {
   isDevelopment,
 } from './errorSanitization';
 
+function isUnsafeUserFacingDetails(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+
+  return (
+    trimmed.includes('\n    at ') ||
+    trimmed.includes('\n at ') ||
+    trimmed.startsWith('Error:') ||
+    trimmed.startsWith('ApiResponseError:')
+  );
+}
+
 export class ErrorHandler {
   private static instance: ErrorHandler;
   private errorLog: AppError[] = [];
@@ -104,7 +118,6 @@ export class ErrorHandler {
 
     if (error instanceof Error) {
       errorMessage = error.message || 'Unknown error';
-      errorDetails = error.stack;
 
       if (error.name === 'PostgrestError' || error.message?.includes('PGRST')) {
         const match = error.message.match(/PGRST\d+/);
@@ -253,10 +266,15 @@ export class ErrorHandler {
         ? String((error as { details?: unknown }).details)
         : undefined);
 
-    return this.createError(code, message, details, {
-      context,
-      originalError: this.toSafeOriginalError(error),
-    });
+    return this.createError(
+      code,
+      message,
+      isUnsafeUserFacingDetails(details) ? undefined : details,
+      {
+        context,
+        originalError: this.toSafeOriginalError(error),
+      }
+    );
   }
 
   handleNetworkError(error: unknown, endpoint?: string): ApiError {

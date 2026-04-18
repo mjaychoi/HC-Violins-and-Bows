@@ -66,7 +66,7 @@ export default function CalendarPage() {
     updateTask,
     deleteTask,
     fetchTasksByDateRange,
-  } = useMaintenanceTasks();
+  } = useMaintenanceTasks({ autoFetch: false });
 
   const {
     isOpen: showModal,

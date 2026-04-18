@@ -55,6 +55,20 @@ describe('ErrorToast', () => {
     ).toBeInTheDocument();
   });
 
+  it('should suppress stack-like error details', () => {
+    const errorWithStackDetails = {
+      ...mockError,
+      details:
+        'ApiResponseError: Server error occurred. Please try again later.\n    at fetchTasks (/app/page.tsx:10:2)',
+    };
+
+    render(<ErrorToast {...defaultProps} error={errorWithStackDetails} />);
+
+    expect(
+      screen.queryByText(/ApiResponseError: Server error occurred/)
+    ).not.toBeInTheDocument();
+  });
+
   it('should call onClose when close button is clicked', () => {
     render(<ErrorToast {...defaultProps} />);
 

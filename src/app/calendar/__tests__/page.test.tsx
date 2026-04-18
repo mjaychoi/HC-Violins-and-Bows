@@ -5,6 +5,7 @@ import CalendarPage from '../page';
 import { MaintenanceTask } from '@/types';
 import { format } from 'date-fns';
 import React from 'react';
+import { useMaintenanceTasks } from '@/hooks/useMaintenanceTasks';
 
 jest.mock('@/utils/apiFetch', () => ({
   apiFetch: (...args: Parameters<typeof fetch>) => fetch(...args),
@@ -415,6 +416,12 @@ describe('CalendarPage', () => {
     mockModalState.isOpen = false;
     mockModalState.isEditing = false;
     mockModalState.selectedItem = null;
+  });
+
+  it('disables maintenance autoFetch because navigation owns the initial range load', () => {
+    render(<CalendarPage />);
+
+    expect(useMaintenanceTasks).toHaveBeenCalledWith({ autoFetch: false });
   });
 
   it('should render the calendar page', async () => {
