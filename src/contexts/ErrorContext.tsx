@@ -127,8 +127,14 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
       else if (error instanceof Error) {
         const errorMessage = error.message || 'An unexpected error occurred';
 
-        // Check if it's a fetch/network error
         if (
+          'status' in error &&
+          typeof (error as { status?: unknown }).status === 'number'
+        ) {
+          appError = errorHandler.handleSupabaseError(error, context);
+        }
+        // Check if it's a fetch/network error
+        else if (
           errorMessage.includes('fetch') ||
           errorMessage.includes('network') ||
           errorMessage.includes('Failed to fetch')

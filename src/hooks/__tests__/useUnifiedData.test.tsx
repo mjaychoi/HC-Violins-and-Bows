@@ -481,6 +481,37 @@ describe('useUnifiedData', () => {
       expect(result.current.lastUpdated.instruments).toBeNull();
       expect(result.current.lastUpdated.connections).toBeNull();
     });
+
+    it('normalizes missing context error fields to null fallbacks', () => {
+      mockUseClientsContext.mockImplementation(() => ({
+        state: {
+          clients: mockState.clients,
+          loading: mockState.loading.clients,
+          submitting: mockState.submitting.clients,
+          lastUpdated: mockState.lastUpdated.clients,
+        },
+        actions: {
+          fetchClients: mockActions.fetchClients,
+          createClient: mockActions.createClient,
+          updateClient: mockActions.updateClient,
+          deleteClient: mockActions.deleteClient,
+          invalidateCache: jest.fn(),
+          resetState: mockActions.resetState,
+        },
+      }));
+
+      const { result } = rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      expect(result.current.errors).toEqual({
+        clients: null,
+        instruments: null,
+        connections: null,
+        any: false,
+        hasAnyError: false,
+      });
+    });
   });
 
   describe('useUnifiedClients', () => {

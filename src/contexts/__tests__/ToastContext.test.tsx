@@ -7,6 +7,7 @@ const { ToastProvider, useToastContext, useErrorHandler, useToast } =
 import { ErrorCodes, ErrorSeverity } from '@/types/errors';
 import { errorHandler } from '@/utils/errorHandler';
 import { captureException } from '@/utils/monitoring';
+import { ApiResponseError } from '@/utils/handleApiResponse';
 
 jest.mock('@/utils/errorHandler', () => ({
   errorHandler: {
@@ -197,6 +198,29 @@ describe('ToastContext', () => {
     );
     expect(errorHandler.logError).toHaveBeenCalled();
     expect(captureException).toHaveBeenCalled();
+  });
+
+  it('handleError treats status-bearing response errors as server errors before network heuristics', () => {
+    const { result } = renderHook(() => useToastContext(), { wrapper });
+    const responseError = new ApiResponseError('Failed to fetch tasks (500)', {
+      status: 500,
+    });
+
+    (errorHandler.handleSupabaseError as jest.Mock).mockReturnValue({
+      code: ErrorCodes.INTERNAL_ERROR,
+      message: 'Server error',
+      timestamp: new Date().toISOString(),
+    });
+
+    act(() => {
+      result.current.handleError(responseError, 'TaskFetchContext');
+    });
+
+    expect(errorHandler.handleSupabaseError).toHaveBeenCalledWith(
+      responseError,
+      'TaskFetchContext'
+    );
+    expect(errorHandler.handleNetworkError).not.toHaveBeenCalled();
   });
 
   it('handleError does not notify when options.notify is false', () => {

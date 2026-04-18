@@ -63,6 +63,37 @@ function parseApiErrorBody(
   };
 }
 
+function getHttpFallbackMessage(
+  status: number,
+  fallbackMessage: string
+): string {
+  if (status >= 500) {
+    return 'Server error occurred. Please try again later.';
+  }
+
+  return fallbackMessage;
+}
+
+export function createApiResponseError(
+  body: JsonRecord | null,
+  options: {
+    status: number;
+    fallbackMessage: string;
+  }
+): ApiResponseError {
+  const parsed = parseApiErrorBody(
+    body,
+    getHttpFallbackMessage(options.status, options.fallbackMessage)
+  );
+
+  return new ApiResponseError(parsed.message, {
+    status: options.status,
+    error_code: parsed.error_code,
+    retryable: parsed.retryable,
+    details: parsed.details,
+  });
+}
+
 export async function handleApiResponse<T>(
   res: Response,
   fallbackMessage: string
@@ -70,12 +101,9 @@ export async function handleApiResponse<T>(
   const body = await safeJson(res);
 
   if (!res.ok) {
-    const parsed = parseApiErrorBody(body, fallbackMessage);
-    throw new ApiResponseError(parsed.message, {
+    throw createApiResponseError(body, {
       status: res.status,
-      error_code: parsed.error_code,
-      retryable: parsed.retryable,
-      details: parsed.details,
+      fallbackMessage,
     });
   }
 

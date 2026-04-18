@@ -13,6 +13,7 @@ import {
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { usePermissions } from '@/hooks/usePermissions';
+import { normalizeUnifiedResourceErrors } from '@/hooks/unifiedResourceErrors';
 
 import { useDashboardModal } from './hooks/useDashboardModal';
 import { useDashboardData } from './hooks/useDashboardData';
@@ -77,6 +78,11 @@ export default function DashboardPage() {
     reloadDashboard,
   } = useDashboardData();
 
+  const safeErrors = useMemo(
+    () => normalizeUnifiedResourceErrors(errors),
+    [errors]
+  );
+
   const clientsLoading = loading.clients;
 
   // Two-tier error model:
@@ -86,12 +92,12 @@ export default function DashboardPage() {
   // hasFatalError is computed authoritatively inside useDashboardData and returned here.
   const hasSecondaryError =
     !hasFatalError &&
-    (Boolean(errors.clients) || Boolean(errors.connections)) &&
+    (Boolean(safeErrors?.clients) || Boolean(safeErrors?.connections)) &&
     !loading.hasAnyLoading;
 
   // Fatal error message is driven by the instruments error (primary source).
   const dashboardErrorMessage = useMemo(() => {
-    const err = errors.instruments;
+    const err = safeErrors?.instruments;
     if (err instanceof Error && err.message) return err.message;
     if (
       err &&
@@ -102,16 +108,16 @@ export default function DashboardPage() {
       return (err as { message: string }).message;
     }
     return 'Failed to load dashboard data.';
-  }, [errors.instruments]);
+  }, [safeErrors]);
 
   // Degraded message shown when secondary sources fail but content is still visible.
   const secondaryErrorMessage = useMemo(() => {
     const parts: string[] = [];
-    if (errors.clients) parts.push('client data');
-    if (errors.connections) parts.push('instrument–client relationships');
+    if (safeErrors?.clients) parts.push('client data');
+    if (safeErrors?.connections) parts.push('instrument–client relationships');
     if (parts.length === 0) return null;
     return `Some data could not be loaded: ${parts.join(' and ')}. Some features may be limited.`;
-  }, [errors.clients, errors.connections]);
+  }, [safeErrors]);
 
   // ✅ 개선 1) enrichedItems: 캐스팅 제거 + O(1) map
   const enrichedItems = useMemo<EnrichedInstrument[]>(() => {
