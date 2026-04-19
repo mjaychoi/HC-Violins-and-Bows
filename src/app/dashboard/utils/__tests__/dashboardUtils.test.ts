@@ -12,6 +12,7 @@ import {
   validateInstrumentData,
   formatFileSize,
   validateImageFile,
+  shortenUuidForDisplay,
 } from '../dashboardUtils';
 import { Instrument, Client, ClientInstrument } from '@/types';
 
@@ -584,6 +585,22 @@ describe('dashboardUtils', () => {
       const file = new File([blob], 'test.jpg', { type: 'image/jpeg' });
       const errors = validateImageFile(file);
       expect(errors).toContain('File size must be less than 5MB');
+    });
+  });
+
+  describe('shortenUuidForDisplay', () => {
+    it('should show first segment and ellipsis for standard UUIDs', () => {
+      expect(
+        shortenUuidForDisplay('550e8400-e29b-41d4-a716-446655440000')
+      ).toBe('550e8400…');
+    });
+
+    it('should trim whitespace', () => {
+      expect(shortenUuidForDisplay('  abcdef12-0000  ')).toBe('abcdef12…');
+    });
+
+    it('should handle empty string', () => {
+      expect(shortenUuidForDisplay('')).toBe('—');
     });
   });
 });

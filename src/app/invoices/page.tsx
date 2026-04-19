@@ -27,6 +27,9 @@ import { useLoadingState } from '@/hooks/useLoadingState';
 import { usePermissions } from '@/hooks/usePermissions';
 import { logError } from '@/utils/logger';
 import { useRouter } from 'next/navigation';
+import { errorHandler } from '@/utils/errorHandler';
+import { createApiResponseErrorFromResponse } from '@/utils/handleApiResponse';
+import type { AppError } from '@/types/errors';
 const DEFAULT_SORT_COLUMN: InvoiceSortColumn = 'invoice_date';
 const DEFAULT_SORT_DIRECTION = 'desc';
 const INVOICE_SORT_COLUMNS_SET = new Set(INVOICE_SORT_COLUMNS);
@@ -54,6 +57,7 @@ function InvoicesPageContent() {
     totalPages,
     loading,
     error: invoicesError,
+    displayError: invoicesDisplayError,
     fetchInvoices,
     createInvoice,
     updateInvoice,
@@ -140,8 +144,8 @@ function InvoicesPageContent() {
   const [invoiceSettingsStatus, setInvoiceSettingsStatus] = useState<
     'idle' | 'loading' | 'success' | 'error'
   >('idle');
-  const [invoiceSettingsErrorMessage, setInvoiceSettingsErrorMessage] =
-    useState<string | null>(null);
+  const [invoiceSettingsError, setInvoiceSettingsError] =
+    useState<AppError | null>(null);
 
   // Confirmation dialog state
   const [confirmDeleteInvoice, setConfirmDeleteInvoice] =
@@ -427,6 +431,8 @@ function InvoicesPageContent() {
         status: status || undefined,
         sortColumn: sortColumn || undefined,
         sortDirection: sortDirection || undefined,
+        throwOnError: true,
+        suppressErrorToast: true,
       }),
     [
       fetchInvoices,
@@ -459,10 +465,13 @@ function InvoicesPageContent() {
               setEditingInvoice(null);
             } catch (refreshError) {
               handleError(
-                refreshError instanceof Error
-                  ? `Invoice was updated, but the invoice list failed to refresh. ${refreshError.message}`
-                  : 'Invoice was updated, but the invoice list failed to refresh.',
-                'Update invoice partially completed'
+                refreshError,
+                'Refresh invoices after update',
+                undefined,
+                { notify: false }
+              );
+              showWarning(
+                'Invoice was updated, but the invoice list failed to refresh.'
               );
             }
           } else {
@@ -486,10 +495,13 @@ function InvoicesPageContent() {
                 setEditingInvoice(null);
               } catch (refreshError) {
                 handleError(
-                  refreshError instanceof Error
-                    ? `${createResult.message} However, the invoice list failed to refresh. ${refreshError.message}`
-                    : `${createResult.message} However, the invoice list failed to refresh.`,
-                  'Create invoice partially completed'
+                  refreshError,
+                  'Refresh invoices after create',
+                  undefined,
+                  { notify: false }
+                );
+                showWarning(
+                  `${createResult.message} However, the invoice list failed to refresh.`
                 );
               }
               return;
@@ -507,17 +519,20 @@ function InvoicesPageContent() {
               setEditingInvoice(null);
             } catch (refreshError) {
               handleError(
-                refreshError instanceof Error
-                  ? `${createResult.message} However, the invoice list failed to refresh. ${refreshError.message}`
-                  : `${createResult.message} However, the invoice list failed to refresh.`,
-                'Create invoice partially completed'
+                refreshError,
+                'Refresh invoices after create',
+                undefined,
+                { notify: false }
+              );
+              showWarning(
+                `${createResult.message} However, the invoice list failed to refresh.`
               );
             }
             return;
           }
         } catch (error) {
           handleError(
-            error instanceof Error ? error.message : String(error),
+            error,
             editingInvoice ? 'Update invoice' : 'Create invoice'
           );
         }
@@ -573,17 +588,17 @@ function InvoicesPageContent() {
           showSuccess('Invoice deleted successfully.');
         } catch (refreshError) {
           handleError(
-            refreshError instanceof Error
-              ? `Invoice was deleted, but the invoice list failed to refresh. ${refreshError.message}`
-              : 'Invoice was deleted, but the invoice list failed to refresh.',
-            'Delete invoice partially completed'
+            refreshError,
+            'Refresh invoices after delete',
+            undefined,
+            { notify: false }
+          );
+          showWarning(
+            'Invoice was deleted, but the invoice list failed to refresh.'
           );
         }
       } catch (error) {
-        handleError(
-          error instanceof Error ? error.message : String(error),
-          'Delete invoice'
-        );
+        handleError(error, 'Delete invoice');
       }
     });
   }, [
@@ -605,39 +620,10 @@ function InvoicesPageContent() {
         const response = await apiFetch(`/api/invoices/${invoice.id}/pdf`);
 
         if (!response.ok) {
-          let errorMessage = 'Failed to download invoice PDF';
-          try {
-            // Try to read error as JSON
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-              const errorData = await response.json();
-              errorMessage =
-                errorData.message || errorData.error || errorMessage;
-            } else {
-              // If not JSON, try to read as text
-              const errorText = await response.text();
-              if (errorText) {
-                try {
-                  const errorData = JSON.parse(errorText);
-                  errorMessage =
-                    errorData.message || errorData.error || errorMessage;
-                } catch {
-                  errorMessage = errorText || errorMessage;
-                }
-              } else {
-                errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-              }
-            }
-          } catch (parseError) {
-            logError(
-              'Failed to parse error response:',
-              parseError instanceof Error
-                ? parseError.message
-                : String(parseError)
-            );
-            errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-          }
-          throw new Error(errorMessage);
+          throw await createApiResponseErrorFromResponse(
+            response,
+            'Failed to download invoice PDF'
+          );
         }
 
         // Check content type to ensure it's a PDF
@@ -674,11 +660,7 @@ function InvoicesPageContent() {
           'PDF download error:',
           error instanceof Error ? error.message : String(error)
         );
-        const errorMessage =
-          error instanceof Error
-            ? error.message
-            : 'Failed to download invoice PDF';
-        handleError(errorMessage, 'Download Invoice');
+        handleError(error, 'Download Invoice');
       }
     },
     [handleError, showSuccess]
@@ -689,24 +671,20 @@ function InvoicesPageContent() {
     setIsModalOpen(false);
     setEditingInvoice(null);
     setInvoiceSettingsStatus('idle');
-    setInvoiceSettingsErrorMessage(null);
+    setInvoiceSettingsError(null);
   }, []);
 
   const loadInvoiceSettingsForCreate = useCallback(async () => {
     setInvoiceSettingsStatus('loading');
-    setInvoiceSettingsErrorMessage(null);
+    setInvoiceSettingsError(null);
     try {
       const res = await apiFetch('/api/invoices/invoice_settings');
 
       if (!res.ok) {
-        let errorMessage = 'Failed to load invoice settings';
-        try {
-          const errorData = await res.json();
-          errorMessage = errorData.message || errorData.error || errorMessage;
-        } catch {
-          errorMessage = `HTTP ${res.status}: ${res.statusText}`;
-        }
-        throw new Error(errorMessage);
+        throw await createApiResponseErrorFromResponse(
+          res,
+          'Failed to load invoice settings'
+        );
       }
 
       const json = await res.json();
@@ -726,15 +704,13 @@ function InvoicesPageContent() {
       });
       setInvoiceSettingsStatus('success');
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Failed to load invoice settings';
-      logError('Failed to load invoice settings:', message);
+      const appError =
+        handleError(error, 'Load invoice settings') ??
+        errorHandler.normalizeError(error, 'Load invoice settings');
+      logError('Failed to load invoice settings:', appError.message);
       setInvoiceSettings(null);
       setInvoiceSettingsStatus('error');
-      setInvoiceSettingsErrorMessage(message);
-      handleError(message, 'Load invoice settings');
+      setInvoiceSettingsError(appError);
     }
   }, [handleError]);
 
@@ -814,7 +790,7 @@ function InvoicesPageContent() {
             invoices={invoices}
             loading={loading}
             status={invoicesStatus}
-            fetchError={invoicesError}
+            fetchError={invoicesDisplayError ?? invoicesError}
             partial={listDiagnostics.partial}
             droppedCount={listDiagnostics.droppedCount}
             returnedCount={listDiagnostics.returnedCount}
@@ -858,7 +834,14 @@ function InvoicesPageContent() {
             isEditing={!!editingInvoice}
             invoiceSettings={invoiceSettings}
             settingsStatus={editingInvoice ? 'success' : invoiceSettingsStatus}
-            settingsErrorMessage={invoiceSettingsErrorMessage}
+            settingsErrorMessage={
+              invoiceSettingsError
+                ? errorHandler.getDisplayMessage(
+                    invoiceSettingsError,
+                    'Invoice settings could not be loaded. Retry before creating the invoice.'
+                  )
+                : null
+            }
             onRetrySettingsLoad={() => {
               void loadInvoiceSettingsForCreate();
             }}

@@ -210,9 +210,7 @@ export const clientInstrumentSchema: z.ZodType<ClientInstrument> = z.object({
  */
 export const maintenanceTaskSchema: z.ZodType<MaintenanceTask> = z.object({
   id: uuidSchema,
-  // SECURITY: If instrument_id can be nullable in DB, make it nullable here
-  // Otherwise, keep as required if DB constraint enforces it
-  instrument_id: uuidSchema, // Change to uuidSchema.nullable() if DB allows null
+  instrument_id: uuidSchema.nullable(),
   client_id: uuidSchema.nullable(),
   task_type: taskTypeSchema,
   title: z.string().min(1),
@@ -797,6 +795,20 @@ export const createClientSchema = z.object({
   type: z.enum(['Musician', 'Dealer', 'Collector', 'Regular']).optional(),
   status: z
     .enum(['Active', 'Browsing', 'In Negotiation', 'Inactive'])
+    .optional(),
+});
+
+const instrumentLinkForClientCreateSchema = z.object({
+  instrument_id: uuidSchema,
+  relationship_type: relationshipTypeSchema,
+  notes: z.string().nullable().optional(),
+});
+
+/** Client POST body + optional instrument links (atomic create on server). */
+export const createClientWithInstrumentLinksSchema = createClientSchema.extend({
+  instrumentLinks: z
+    .array(instrumentLinkForClientCreateSchema)
+    .max(50)
     .optional(),
 });
 

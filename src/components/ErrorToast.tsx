@@ -1,6 +1,7 @@
 import React from 'react';
 import { AppError } from '@/types/errors';
 import { errorHandler } from '@/utils/errorHandler';
+import { errorToastMessages } from '@/components/errorToast.messages';
 
 interface ErrorToastProps {
   error: AppError;
@@ -67,17 +68,7 @@ export default function ErrorToast({
   };
 
   const friendlyMessage = errorHandler.getUserFriendlyMessage(error);
-  const safeDetails =
-    typeof error.details === 'string' &&
-    error.details.trim() &&
-    error.details.trim() !== 'undefined' &&
-    error.details.trim() !== 'null' &&
-    error.details.trim() !== '[object Object]' &&
-    !error.details.includes('\n    at ') &&
-    !error.details.includes('\n at ') &&
-    !error.details.startsWith('ApiResponseError:')
-      ? error.details.trim()
-      : null;
+  const safeDetails = errorHandler.getDisplayDetails(error) ?? null;
   const recoverySuggestions = showRecoverySuggestions
     ? errorHandler.getRecoverySuggestions(error)
     : [];
@@ -100,7 +91,7 @@ export default function ErrorToast({
             {recoverySuggestions.length > 0 && (
               <div className="mt-3 pt-2 border-t border-gray-200">
                 <p className="text-xs font-semibold mb-1.5 text-gray-700">
-                  해결 방법:
+                  {errorToastMessages.recoveryHeading}
                 </p>
                 <ul className="text-xs space-y-1.5">
                   {recoverySuggestions.map((suggestion, index) => (
@@ -116,18 +107,20 @@ export default function ErrorToast({
           <div className="ml-4 flex-shrink-0 flex">
             {onRetry && (
               <button
+                type="button"
                 onClick={onRetry}
                 className="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-2"
               >
-                <span className="sr-only">Retry</span>
+                <span className="sr-only">다시 시도</span>
                 🔄
               </button>
             )}
             <button
+              type="button"
               onClick={onClose}
               className="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
-              <span className="sr-only">Close</span>
+              <span className="sr-only">닫기</span>
               <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path
                   fillRule="evenodd"

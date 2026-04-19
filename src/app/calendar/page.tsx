@@ -63,6 +63,7 @@ export default function CalendarPage() {
     tasks,
     loading,
     error: fetchError,
+    displayError: fetchDisplayError,
     createTask,
     updateTask,
     deleteTask,
@@ -510,7 +511,7 @@ export default function CalendarPage() {
           instruments={instruments}
           clients={clients}
           loading={loading}
-          fetchError={fetchError}
+          fetchError={fetchDisplayError ?? fetchError}
           onRetry={() => {
             void navigation.forceRefetch().catch(() => {});
           }}

@@ -5,35 +5,61 @@ import { ErrorCodes, ErrorSeverity } from '@/types/errors';
 import { ToastProvider } from '@/contexts/ToastContext';
 
 // Mock the errorHandler
-jest.mock('@/utils/errorHandler', () => ({
-  errorHandler: {
-    logError: jest.fn(),
-    clearErrorLogs: jest.fn(),
-    getErrorStats: jest.fn(() => new Map()),
-    getErrorCount: jest.fn(() => 0),
-    getRecoverySuggestions: jest.fn(() => ['Test suggestion']),
-    shouldRetry: jest.fn(() => true),
-    recordRetryAttempt: jest.fn(),
-    clearRetryAttempts: jest.fn(),
-    getUserFriendlyMessage: jest.fn(() => 'Test error message'),
-    createError: jest.fn((code, message, stack, context) => ({
-      code,
-      message,
-      timestamp: new Date().toISOString(),
-      context,
-    })),
-    handleNetworkError: jest.fn(() => ({
-      code: 'NETWORK_ERROR' as any,
-      message: 'Network error',
-      timestamp: new Date().toISOString(),
-    })),
-    handleSupabaseError: jest.fn(() => ({
-      code: 'DATABASE_ERROR' as any,
-      message: 'Database error',
-      timestamp: new Date().toISOString(),
-    })),
-  },
-}));
+jest.mock('@/utils/errorHandler', () => {
+  const { ErrorCodes: MockErrorCodes } = require('@/types/errors');
+  return {
+    errorHandler: {
+      logError: jest.fn(),
+      clearErrorLogs: jest.fn(),
+      getErrorStats: jest.fn(() => new Map()),
+      getErrorCount: jest.fn(() => 0),
+      getRecoverySuggestions: jest.fn(() => ['Test suggestion']),
+      shouldRetry: jest.fn(() => true),
+      recordRetryAttempt: jest.fn(),
+      clearRetryAttempts: jest.fn(),
+      getUserFriendlyMessage: jest.fn(() => 'Test error message'),
+      normalizeError: jest.fn((error: unknown, context?: string) => {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          'message' in error &&
+          'timestamp' in error
+        ) {
+          return error;
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'An unexpected error occurred';
+        return {
+          code: MockErrorCodes.UNKNOWN_ERROR,
+          message,
+          timestamp: new Date().toISOString(),
+          context: context ? { context } : undefined,
+        };
+      }),
+      createError: jest.fn((code, message, stack, context) => ({
+        code,
+        message,
+        timestamp: new Date().toISOString(),
+        context,
+      })),
+      handleNetworkError: jest.fn(() => ({
+        code: 'NETWORK_ERROR' as any,
+        message: 'Network error',
+        timestamp: new Date().toISOString(),
+      })),
+      handleSupabaseError: jest.fn(() => ({
+        code: 'DATABASE_ERROR' as any,
+        message: 'Database error',
+        timestamp: new Date().toISOString(),
+      })),
+    },
+  };
+});
 
 describe('useErrorHandler', () => {
   beforeEach(() => {

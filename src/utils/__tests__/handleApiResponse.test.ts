@@ -1,4 +1,8 @@
-import { ApiResponseError, handleApiResponse } from '../handleApiResponse';
+import {
+  ApiResponseError,
+  createApiResponseErrorFromResponse,
+  handleApiResponse,
+} from '../handleApiResponse';
 
 describe('handleApiResponse', () => {
   it('returns data when response is ok', async () => {
@@ -50,6 +54,25 @@ describe('handleApiResponse', () => {
       name: 'ApiResponseError',
       message: 'Server error occurred. Please try again later.',
       status: 500,
+    });
+  });
+
+  it('parses plain-text error responses into ApiResponseError messages', async () => {
+    const response = {
+      ok: false,
+      status: 502,
+      clone: jest.fn().mockReturnValue({
+        json: jest.fn().mockRejectedValue(new Error('not json')),
+      }),
+      text: jest.fn().mockResolvedValue('Upstream gateway failed'),
+    } as unknown as Response;
+
+    await expect(
+      createApiResponseErrorFromResponse(response, 'fallback')
+    ).resolves.toMatchObject<Partial<ApiResponseError>>({
+      name: 'ApiResponseError',
+      message: 'Upstream gateway failed',
+      status: 502,
     });
   });
 });

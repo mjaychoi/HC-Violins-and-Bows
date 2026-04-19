@@ -10,6 +10,7 @@ import { Button } from '@/components/common/inputs';
 import { getButtonVariantClasses } from '@/utils/colorTokens';
 import OptimizedImage from '@/components/common/OptimizedImage';
 import { usePermissions } from '@/hooks/usePermissions';
+import { errorHandler } from '@/utils/errorHandler';
 
 interface InvoiceListProps {
   invoices: Invoice[];
@@ -80,22 +81,10 @@ function InvoiceList({
   const { canEditInvoice, canDeleteInvoice } = usePermissions();
 
   const fetchErrorMessage = React.useMemo(() => {
-    if (fetchError instanceof Error && fetchError.message.trim()) {
-      return fetchError.message;
-    }
-
-    if (
-      typeof fetchError === 'object' &&
-      fetchError !== null &&
-      'message' in fetchError
-    ) {
-      const message = (fetchError as { message?: unknown }).message;
-      if (typeof message === 'string' && message.trim()) {
-        return message;
-      }
-    }
-
-    return 'Invoices could not be loaded. Try again.';
+    return errorHandler.getDisplayMessage(
+      fetchError,
+      'Invoices could not be loaded. Try again.'
+    );
   }, [fetchError]);
 
   if (loading) {

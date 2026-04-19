@@ -6,6 +6,8 @@ import { apiFetch } from '@/utils/apiFetch';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { logError } from '@/utils/logger';
 import { createApiResponseError } from '@/utils/handleApiResponse';
+import { errorHandler } from '@/utils/errorHandler';
+import type { AppError } from '@/types/errors';
 interface FetchInvoicesOptions {
   page?: number;
   pageSize?: number;
@@ -16,6 +18,8 @@ interface FetchInvoicesOptions {
   status?: string;
   sortColumn?: string;
   sortDirection?: 'asc' | 'desc';
+  throwOnError?: boolean;
+  suppressErrorToast?: boolean;
 }
 
 interface InvoiceListDiagnostics {
@@ -125,6 +129,7 @@ export function useInvoices() {
     });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [displayError, setDisplayError] = useState<AppError | null>(null);
   const { handleError } = useErrorHandler();
   const abortRef = useRef<AbortController | null>(null);
   const createIdempotencyRef = useRef<string | null>(null);
@@ -141,6 +146,7 @@ export function useInvoices() {
 
       setLoading(true);
       setError(null);
+      setDisplayError(null);
       setStatus('loading');
       setScopeInfo(null);
       setListDiagnostics({
@@ -247,7 +253,11 @@ export function useInvoices() {
           error instanceof Error ? error.message : String(error)
         );
         setError(error);
-        handleError(error, 'Fetch invoices');
+        const appError =
+          handleError(error, 'Fetch invoices', undefined, {
+            notify: !options.suppressErrorToast,
+          }) ?? errorHandler.normalizeError(error, 'Fetch invoices');
+        setDisplayError(appError);
         if (abortRef.current === controller) {
           setInvoices([]);
           setStatus('error');
@@ -259,6 +269,9 @@ export function useInvoices() {
             droppedCount: 0,
             returnedCount: 0,
           });
+        }
+        if (options.throwOnError) {
+          throw error;
         }
         return [];
       } finally {
@@ -520,6 +533,7 @@ export function useInvoices() {
     totalPages,
     loading,
     error,
+    displayError,
     fetchInvoices,
     createInvoice,
     updateInvoice,

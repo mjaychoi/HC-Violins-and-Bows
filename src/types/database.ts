@@ -765,6 +765,16 @@ export type Database = {
         };
         Returns: string;
       };
+      create_client_with_connections_atomic: {
+        Args: {
+          p_name: string;
+          p_email?: string | null;
+          p_phone?: string | null;
+          p_client_number?: string | null;
+          p_links?: Json | null;
+        };
+        Returns: string;
+      };
       create_instrument_certificate_metadata: {
         Args: {
           p_instrument_id: string;

@@ -89,6 +89,17 @@ export const getClientInitials = (client: Client): string => {
   return (first + last).toUpperCase() || 'U';
 };
 
+/** First UUID segment + ellipsis — avoids exposing full identifiers in list UI. */
+export const shortenUuidForDisplay = (uuid: string): string => {
+  const trimmed = uuid.trim();
+  if (!trimmed) return '—';
+  const dash = trimmed.indexOf('-');
+  if (dash > 0) {
+    return `${trimmed.slice(0, dash)}…`;
+  }
+  return trimmed.length > 8 ? `${trimmed.slice(0, 8)}…` : trimmed;
+};
+
 // Relationship utilities
 // ✅ FIXED: Use centralized color tokens
 export const getRelationshipColor = (

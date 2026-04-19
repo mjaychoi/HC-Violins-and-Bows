@@ -9,22 +9,6 @@ import { errorHandler } from '@/utils/errorHandler';
 import { captureException } from '@/utils/monitoring';
 import { ApiResponseError } from '@/utils/handleApiResponse';
 
-jest.mock('@/utils/errorHandler', () => ({
-  errorHandler: {
-    handleNetworkError: jest.fn(),
-    handleSupabaseError: jest.fn(),
-    createError: jest.fn(),
-    logError: jest.fn(),
-    shouldRetry: jest.fn().mockReturnValue(false),
-    recordRetryAttempt: jest.fn(),
-    clearRetryAttempts: jest.fn(),
-    clearErrorLogs: jest.fn(),
-    getErrorStats: jest.fn(() => new Map()),
-    getErrorCount: jest.fn(() => 0),
-    getRecoverySuggestions: jest.fn(() => []),
-  },
-}));
-
 jest.mock('@/utils/monitoring', () => ({
   captureException: jest.fn(),
 }));
@@ -34,8 +18,18 @@ describe('ToastContext', () => {
     <ToastProvider disableHost>{children}</ToastProvider>
   );
 
+  beforeEach(() => {
+    jest.spyOn(errorHandler, 'logError').mockImplementation(() => {});
+    jest.spyOn(errorHandler, 'clearErrorLogs').mockImplementation(() => {});
+    jest.spyOn(errorHandler, 'getErrorStats').mockReturnValue(new Map());
+    jest.spyOn(errorHandler, 'getErrorCount').mockReturnValue(0);
+    jest.spyOn(errorHandler, 'shouldRetry').mockReturnValue(false);
+    jest.spyOn(errorHandler, 'recordRetryAttempt').mockImplementation(() => {});
+    jest.spyOn(errorHandler, 'clearRetryAttempts').mockImplementation(() => {});
+  });
+
   afterEach(() => {
-    jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   it('throws on client when used outside of ToastProvider', () => {
@@ -101,11 +95,7 @@ describe('ToastContext', () => {
     const { result } = renderHook(() => useToastContext(), { wrapper });
     const unknownError = new Error('Something went wrong');
 
-    (errorHandler.createError as jest.Mock).mockReturnValue({
-      code: ErrorCodes.UNKNOWN_ERROR,
-      message: 'Wrapped error',
-      timestamp: new Date().toISOString(),
-    });
+    const createSpy = jest.spyOn(errorHandler, 'createError');
 
     act(() => {
       result.current.handleError(
@@ -115,7 +105,7 @@ describe('ToastContext', () => {
       );
     });
 
-    expect(errorHandler.createError).toHaveBeenCalled();
+    expect(createSpy).toHaveBeenCalled();
     expect(errorHandler.logError).toHaveBeenCalled();
     expect(captureException).toHaveBeenCalled();
     expect(result.current.errors.length).toBe(1);
@@ -159,21 +149,19 @@ describe('ToastContext', () => {
     expect(result.current.toasts.length).toBe(0);
   });
 
-  it('handleError uses network error handler when response is present', () => {
+  it('handleError normalizes axios-like errors without calling handleNetworkError', () => {
     const { result } = renderHook(() => useToastContext(), { wrapper });
     const networkError = { response: { status: 500 } };
 
-    (errorHandler.handleNetworkError as jest.Mock).mockReturnValue({
-      code: ErrorCodes.UNKNOWN_ERROR,
-      message: 'Network wrapped',
-      timestamp: new Date().toISOString(),
-    });
+    const handleNetworkSpy = jest.spyOn(errorHandler, 'handleNetworkError');
+    const createSpy = jest.spyOn(errorHandler, 'createError');
 
     act(() => {
       result.current.handleError(networkError, 'NetworkContext');
     });
 
-    expect(errorHandler.handleNetworkError).toHaveBeenCalledWith(networkError);
+    expect(handleNetworkSpy).not.toHaveBeenCalled();
+    expect(createSpy).toHaveBeenCalled();
     expect(errorHandler.logError).toHaveBeenCalled();
     expect(captureException).toHaveBeenCalled();
   });
@@ -182,17 +170,13 @@ describe('ToastContext', () => {
     const { result } = renderHook(() => useToastContext(), { wrapper });
     const supabaseError = { code: 'PGRST_ERROR' };
 
-    (errorHandler.handleSupabaseError as jest.Mock).mockReturnValue({
-      code: ErrorCodes.UNKNOWN_ERROR,
-      message: 'Supabase wrapped',
-      timestamp: new Date().toISOString(),
-    });
+    const handleSupabaseSpy = jest.spyOn(errorHandler, 'handleSupabaseError');
 
     act(() => {
       result.current.handleError(supabaseError, 'SupabaseContext');
     });
 
-    expect(errorHandler.handleSupabaseError).toHaveBeenCalledWith(
+    expect(handleSupabaseSpy).toHaveBeenCalledWith(
       supabaseError,
       'SupabaseContext'
     );
@@ -206,21 +190,18 @@ describe('ToastContext', () => {
       status: 500,
     });
 
-    (errorHandler.handleSupabaseError as jest.Mock).mockReturnValue({
-      code: ErrorCodes.INTERNAL_ERROR,
-      message: 'Server error',
-      timestamp: new Date().toISOString(),
-    });
+    const handleSupabaseSpy = jest.spyOn(errorHandler, 'handleSupabaseError');
+    const handleNetworkSpy = jest.spyOn(errorHandler, 'handleNetworkError');
 
     act(() => {
       result.current.handleError(responseError, 'TaskFetchContext');
     });
 
-    expect(errorHandler.handleSupabaseError).toHaveBeenCalledWith(
+    expect(handleSupabaseSpy).toHaveBeenCalledWith(
       responseError,
       'TaskFetchContext'
     );
-    expect(errorHandler.handleNetworkError).not.toHaveBeenCalled();
+    expect(handleNetworkSpy).not.toHaveBeenCalled();
   });
 
   it('handleError does not notify when options.notify is false', () => {
@@ -252,15 +233,15 @@ describe('ToastContext', () => {
       timestamp: new Date().toISOString(),
     };
 
-    (errorHandler.getRecoverySuggestions as jest.Mock).mockReturnValue([
-      'Try again',
-    ]);
+    const getSuggestionsSpy = jest
+      .spyOn(errorHandler, 'getRecoverySuggestions')
+      .mockReturnValue(['Try again']);
 
     const suggestions = result.current.getRecoverySuggestions(
       appError as never
     );
 
-    expect(errorHandler.getRecoverySuggestions).toHaveBeenCalledWith(appError);
+    expect(getSuggestionsSpy).toHaveBeenCalledWith(appError);
     expect(suggestions).toEqual(['Try again']);
   });
 

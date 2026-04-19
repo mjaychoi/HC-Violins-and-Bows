@@ -5,6 +5,8 @@ import { useErrorHandler } from '@/contexts/ToastContext';
 import type { MaintenanceTask, TaskFilters } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 import { handleApiResponse } from '@/utils/handleApiResponse';
+import { errorHandler } from '@/utils/errorHandler';
+import type { AppError } from '@/types/errors';
 import {
   buildMaintenanceTaskQuery,
   type MaintenanceTaskQuery,
@@ -26,6 +28,7 @@ interface UseMaintenanceTasksReturn {
     mutate: boolean;
   };
   error: unknown;
+  displayError: AppError | null;
   fetchTasks: (filters?: TaskFilters) => Promise<void>;
   fetchTaskById: (id: string) => Promise<MaintenanceTask | null>;
   createTask: (
@@ -124,6 +127,7 @@ export function useMaintenanceTasks(
     mutate: false,
   });
   const [error, setError] = useState<unknown>(null);
+  const [displayError, setDisplayError] = useState<AppError | null>(null);
   const { handleError } = useErrorHandler();
 
   // Stale guard for fetchTasks
@@ -165,6 +169,7 @@ export function useMaintenanceTasks(
       const myId = ++fetchReqIdRef.current;
       startFetch();
       setError(null);
+      setDisplayError(null);
 
       try {
         const effectiveFilters = filters ?? initialFilters;
@@ -203,7 +208,10 @@ export function useMaintenanceTasks(
       } catch (err) {
         if (myId !== fetchReqIdRef.current) return;
         setError(err);
-        handleError(err, 'Failed to fetch maintenance tasks');
+        const appError =
+          handleError(err, 'Failed to fetch maintenance tasks') ??
+          errorHandler.normalizeError(err, 'Failed to fetch maintenance tasks');
+        setDisplayError(appError);
         setTasks([]);
       } finally {
         // only endFetch if still latest request (prevents flicker)
@@ -217,6 +225,7 @@ export function useMaintenanceTasks(
     async (id: string): Promise<MaintenanceTask | null> => {
       startFetch();
       setError(null);
+      setDisplayError(null);
 
       try {
         const queryString = buildMaintenanceTaskQuery({ id });
@@ -238,7 +247,10 @@ export function useMaintenanceTasks(
         return task;
       } catch (err) {
         setError(err);
-        handleError(err, 'Failed to fetch maintenance task');
+        const appError =
+          handleError(err, 'Failed to fetch maintenance task') ??
+          errorHandler.normalizeError(err, 'Failed to fetch maintenance task');
+        setDisplayError(appError);
         return null;
       } finally {
         endFetch();
@@ -256,6 +268,7 @@ export function useMaintenanceTasks(
     ): Promise<MaintenanceTask | null> => {
       setLoading(prev => ({ ...prev, mutate: true }));
       setError(null);
+      setDisplayError(null);
 
       try {
         const res = await apiFetch('/api/maintenance-tasks', {
@@ -276,7 +289,10 @@ export function useMaintenanceTasks(
         return data ?? null;
       } catch (err) {
         setError(err);
-        handleError(err, 'Failed to create maintenance task');
+        const appError =
+          handleError(err, 'Failed to create maintenance task') ??
+          errorHandler.normalizeError(err, 'Failed to create maintenance task');
+        setDisplayError(appError);
         throw err;
       } finally {
         setLoading(prev => ({ ...prev, mutate: false }));
@@ -297,6 +313,7 @@ export function useMaintenanceTasks(
     ): Promise<MaintenanceTask | null> => {
       setLoading(prev => ({ ...prev, mutate: true }));
       setError(null);
+      setDisplayError(null);
 
       try {
         const res = await apiFetch('/api/maintenance-tasks', {
@@ -317,7 +334,10 @@ export function useMaintenanceTasks(
         return data ?? null;
       } catch (err) {
         setError(err);
-        handleError(err, 'Failed to update maintenance task');
+        const appError =
+          handleError(err, 'Failed to update maintenance task') ??
+          errorHandler.normalizeError(err, 'Failed to update maintenance task');
+        setDisplayError(appError);
         throw err;
       } finally {
         setLoading(prev => ({ ...prev, mutate: false }));
@@ -330,6 +350,7 @@ export function useMaintenanceTasks(
     async (id: string) => {
       setLoading(prev => ({ ...prev, mutate: true }));
       setError(null);
+      setDisplayError(null);
 
       try {
         const res = await apiFetch(
@@ -347,7 +368,10 @@ export function useMaintenanceTasks(
         setTasks(prev => prev.filter(t => t.id !== id));
       } catch (err) {
         setError(err);
-        handleError(err, 'Failed to delete maintenance task');
+        const appError =
+          handleError(err, 'Failed to delete maintenance task') ??
+          errorHandler.normalizeError(err, 'Failed to delete maintenance task');
+        setDisplayError(appError);
         throw err;
       } finally {
         setLoading(prev => ({ ...prev, mutate: false }));
@@ -368,6 +392,7 @@ export function useMaintenanceTasks(
     ): Promise<MaintenanceTask[]> => {
       startFetch();
       setError(null);
+      setDisplayError(null);
 
       try {
         if (options?.signal?.aborted) {
@@ -413,7 +438,20 @@ export function useMaintenanceTasks(
 
         setError(err);
         if (!options?.suppressErrorToast) {
-          handleError(err, 'Failed to fetch tasks by date range');
+          const appError =
+            handleError(err, 'Failed to fetch tasks by date range') ??
+            errorHandler.normalizeError(
+              err,
+              'Failed to fetch tasks by date range'
+            );
+          setDisplayError(appError);
+        } else {
+          setDisplayError(
+            errorHandler.normalizeError(
+              err,
+              'Failed to fetch tasks by date range'
+            )
+          );
         }
         if (options?.throwOnError) {
           throw err;
@@ -430,6 +468,7 @@ export function useMaintenanceTasks(
     async (date: string): Promise<MaintenanceTask[]> => {
       startFetch();
       setError(null);
+      setDisplayError(null);
 
       try {
         const queryString = buildMaintenanceTaskQuery({
@@ -455,7 +494,13 @@ export function useMaintenanceTasks(
         return tasksResult;
       } catch (err) {
         setError(err);
-        handleError(err, 'Failed to fetch tasks by scheduled date');
+        const appError =
+          handleError(err, 'Failed to fetch tasks by scheduled date') ??
+          errorHandler.normalizeError(
+            err,
+            'Failed to fetch tasks by scheduled date'
+          );
+        setDisplayError(appError);
         return [];
       } finally {
         endFetch();
@@ -469,6 +514,7 @@ export function useMaintenanceTasks(
   > => {
     startFetch();
     setError(null);
+    setDisplayError(null);
 
     try {
       const queryString = buildMaintenanceTaskQuery({
@@ -490,7 +536,10 @@ export function useMaintenanceTasks(
       return tasksResult;
     } catch (err) {
       setError(err);
-      handleError(err, 'Failed to fetch overdue tasks');
+      const appError =
+        handleError(err, 'Failed to fetch overdue tasks') ??
+        errorHandler.normalizeError(err, 'Failed to fetch overdue tasks');
+      setDisplayError(appError);
       return [];
     } finally {
       endFetch();
@@ -508,6 +557,7 @@ export function useMaintenanceTasks(
     tasks,
     loading,
     error,
+    displayError,
     fetchTasks,
     fetchTaskById,
     createTask,

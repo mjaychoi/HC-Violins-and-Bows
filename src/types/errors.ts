@@ -4,6 +4,10 @@ export interface AppError {
   code: string;
   message: string;
   details?: string;
+  rawDetails?: unknown;
+  status?: number;
+  error_code?: string;
+  retryable?: boolean;
   timestamp: string; // ISO string (예: new Date().toISOString())
   context?: Record<string, unknown>;
 }

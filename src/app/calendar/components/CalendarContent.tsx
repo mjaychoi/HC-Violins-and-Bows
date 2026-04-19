@@ -24,6 +24,7 @@ import { TableSkeleton, Pagination } from '@/components/common';
 import { Button } from '@/components/common/inputs';
 import type { ExtendedView } from './CalendarView';
 import type { CalendarViewMode } from '../hooks/useCalendarView';
+import { errorHandler } from '@/utils/errorHandler';
 
 // Dynamic import for CalendarView (includes react-big-calendar and react-dnd)
 // This significantly reduces initial bundle size for calendar page
@@ -267,22 +268,10 @@ function CalendarContentInner({
   }, [filtersOpen, isCalendarView]);
 
   const fetchErrorMessage = useMemo(() => {
-    if (fetchError instanceof Error) {
-      return fetchError.message;
-    }
-
-    if (
-      typeof fetchError === 'object' &&
-      fetchError !== null &&
-      'message' in fetchError
-    ) {
-      const message = (fetchError as { message?: unknown }).message;
-      if (typeof message === 'string') {
-        return message;
-      }
-    }
-
-    return 'An unexpected error occurred. Please try again.';
+    return errorHandler.getDisplayMessage(
+      fetchError,
+      'An unexpected error occurred. Please try again.'
+    );
   }, [fetchError]);
 
   const isEmptyState =

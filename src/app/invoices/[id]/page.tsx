@@ -14,6 +14,9 @@ import { usePermissions } from '@/hooks/usePermissions';
 import OptimizedImage from '@/components/common/OptimizedImage';
 import { cn } from '@/utils/classNames';
 import InvoiceSettingsPanel from '../components/InvoiceSettingsPanel';
+import { errorHandler } from '@/utils/errorHandler';
+import { createApiResponseErrorFromResponse } from '@/utils/handleApiResponse';
+import type { AppError } from '@/types/errors';
 
 const InvoiceModalDynamic = dynamic(
   () => import('../components/InvoiceModal'),
@@ -66,9 +69,7 @@ export default function InvoiceDetailPage() {
   const [fetchState, setFetchState] = useState<
     'loading' | 'success' | 'not_found' | 'error'
   >('loading');
-  const [fetchErrorMessage, setFetchErrorMessage] = useState<string | null>(
-    null
-  );
+  const [fetchError, setFetchError] = useState<AppError | null>(null);
   const pdfIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -78,40 +79,40 @@ export default function InvoiceDetailPage() {
     if (!invoiceId) {
       setInvoice(null);
       setFetchState('not_found');
-      setFetchErrorMessage(null);
+      setFetchError(null);
       setLoading(false);
       return;
     }
     setLoading(true);
     setFetchState('loading');
-    setFetchErrorMessage(null);
+    setFetchError(null);
     try {
       const response = await apiFetch(`/api/invoices/${invoiceId}`);
-      const result = await response.json().catch(() => null);
 
       if (!response.ok) {
-        const message =
-          result?.message || result?.error || 'Failed to fetch invoice';
-
         if (response.status === 404) {
           setInvoice(null);
           setFetchState('not_found');
-          setFetchErrorMessage(null);
+          setFetchError(null);
           return;
         }
 
-        throw new Error(message);
+        throw await createApiResponseErrorFromResponse(
+          response,
+          'Failed to fetch invoice'
+        );
       }
 
+      const result = await response.json();
       setInvoice(result.data as Invoice);
       setFetchState('success');
     } catch (error) {
-      handleError(error, 'Fetch invoice');
+      const appError =
+        handleError(error, 'Fetch invoice') ??
+        errorHandler.normalizeError(error, 'Fetch invoice');
       setInvoice(null);
       setFetchState('error');
-      setFetchErrorMessage(
-        error instanceof Error ? error.message : 'Failed to load invoice'
-      );
+      setFetchError(appError);
     } finally {
       setLoading(false);
     }
@@ -158,12 +159,14 @@ export default function InvoiceDetailPage() {
           body: JSON.stringify(data),
         });
 
-        const result = await response.json();
-
         if (!response.ok) {
-          throw new Error(result?.error || 'Failed to update invoice');
+          throw await createApiResponseErrorFromResponse(
+            response,
+            'Failed to update invoice'
+          );
         }
 
+        const result = await response.json();
         setInvoice(result.data as Invoice);
         showSuccess('Invoice updated');
         setIsModalOpen(false);
@@ -186,8 +189,10 @@ export default function InvoiceDetailPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete invoice');
+        throw await createApiResponseErrorFromResponse(
+          response,
+          'Failed to delete invoice'
+        );
       }
 
       showSuccess('Invoice deleted');
@@ -219,7 +224,10 @@ export default function InvoiceDetailPage() {
               Failed to load invoice
             </h2>
             <p className="mt-2 text-sm text-red-700">
-              {fetchErrorMessage || 'The invoice could not be loaded.'}
+              {errorHandler.getDisplayMessage(
+                fetchError,
+                'The invoice could not be loaded.'
+              )}
             </p>
             <div className="mt-4 flex gap-3">
               <Button variant="secondary" onClick={() => void fetchInvoice()}>
