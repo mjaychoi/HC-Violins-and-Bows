@@ -8,9 +8,9 @@ import { useConnectionFilters, useConnectionEdit } from './hooks';
 import { useURLState } from '@/hooks/useURLState';
 import { ConnectionModal, ConnectionSearch } from './components';
 import EmptyState from '@/components/common/empty-state/EmptyState';
+import { GuideModal } from '@/components/common/empty-state/GuideModal';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
-import { logInfo } from '@/utils/logger';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useFilterSort } from '@/hooks/useFilterSort';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -76,6 +76,12 @@ const ConnectionCard = dynamic(
   }
 );
 
+const CONNECTION_GUIDE_STEPS = [
+  '클라이언트와 악기를 선택하세요',
+  '관계 타입을 선택하세요 (Owned, Interested, Booked 등)',
+  '연결을 저장하면 양쪽에서 확인할 수 있습니다',
+];
+
 // Component that uses useURLState (which uses useSearchParams) - must be wrapped in Suspense
 function ConnectedClientsPageContent() {
   // Error handling
@@ -116,6 +122,8 @@ function ConnectedClientsPageContent() {
 
   // Connection form state
   const [showConnectionModal, setShowConnectionModal] = useState(false);
+  const [showConnectionsGuideModal, setShowConnectionsGuideModal] =
+    useState(false);
   // FIXED: Store only IDs to avoid stale objects and reduce state duplication
   const [selectedClientId, setSelectedClientId] = useState('');
   const [selectedInstrumentId, setSelectedInstrumentId] = useState('');
@@ -570,46 +578,48 @@ function ConnectedClientsPageContent() {
 
               if (!hasAnyConnections) {
                 return (
-                  <EmptyState
-                    title="No connections"
-                    description="Get started by creating your first client-item connection."
-                    actionButton={
-                      canCreateConnection
-                        ? {
-                            label: 'Create Connection',
-                            onClick: () => setShowConnectionModal(true),
-                            icon: (
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                                aria-hidden="true"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                                />
-                              </svg>
-                            ),
-                          }
-                        : undefined
-                    }
-                    guideSteps={[
-                      '클라이언트와 악기를 선택하세요',
-                      '관계 타입을 선택하세요 (Owned, Interested, Booked 등)',
-                      '연결을 저장하면 양쪽에서 확인할 수 있습니다',
-                    ]}
-                    helpLink={{
-                      label: '연결 관리 방법 알아보기',
-                      onClick: () => {
-                        // TODO: 도움말 모달 또는 페이지로 이동
-                        logInfo('Show help guide');
-                      },
-                    }}
-                  />
+                  <>
+                    <EmptyState
+                      title="No connections"
+                      description="Get started by creating your first client-item connection."
+                      actionButton={
+                        canCreateConnection
+                          ? {
+                              label: 'Create Connection',
+                              onClick: () => setShowConnectionModal(true),
+                              icon: (
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  aria-hidden="true"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                                  />
+                                </svg>
+                              ),
+                            }
+                          : undefined
+                      }
+                      guideSteps={CONNECTION_GUIDE_STEPS}
+                      helpLink={{
+                        label: '연결 관리 방법 알아보기',
+                        href: '#',
+                        onClick: () => setShowConnectionsGuideModal(true),
+                      }}
+                    />
+                    <GuideModal
+                      isOpen={showConnectionsGuideModal}
+                      onClose={() => setShowConnectionsGuideModal(false)}
+                      title="연결 관리 가이드"
+                      steps={CONNECTION_GUIDE_STEPS}
+                    />
+                  </>
                 );
               }
 

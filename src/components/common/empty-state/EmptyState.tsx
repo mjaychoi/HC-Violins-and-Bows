@@ -183,8 +183,13 @@ export default function EmptyState({
             </div>
             {helpLink && (
               <a
-                href={helpLink.href}
-                onClick={helpLink.onClick}
+                href={helpLink.href ?? '#'}
+                onClick={e => {
+                  if (!helpLink.href || helpLink.href === '#') {
+                    e.preventDefault();
+                  }
+                  helpLink.onClick?.();
+                }}
                 className="text-xs text-blue-600 hover:text-blue-700 underline inline-flex items-center gap-1"
               >
                 <svg

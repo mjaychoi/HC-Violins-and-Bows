@@ -43,6 +43,28 @@ async function safeJson(res: Response): Promise<JsonRecord | null> {
   }
 }
 
+async function safeText(res: Response): Promise<string | null> {
+  try {
+    const text = await res.text();
+    const trimmed = text.trim();
+    return trimmed ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseJsonRecord(text: string): JsonRecord | null {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as JsonRecord;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function parseApiErrorBody(
   body: JsonRecord | null,
   fallbackMessage: string
@@ -74,6 +96,32 @@ function getHttpFallbackMessage(
   return fallbackMessage;
 }
 
+export async function readApiErrorBody(
+  res: Response
+): Promise<JsonRecord | null> {
+  const jsonSource = typeof res.clone === 'function' ? res.clone() : res;
+  const jsonBody = await safeJson(jsonSource);
+  if (jsonBody) {
+    return jsonBody;
+  }
+
+  if (jsonSource === res) {
+    return null;
+  }
+
+  const text = await safeText(res);
+  if (!text) {
+    return null;
+  }
+
+  const parsed = parseJsonRecord(text);
+  if (parsed) {
+    return parsed;
+  }
+
+  return { message: text };
+}
+
 export function createApiResponseError(
   body: JsonRecord | null,
   options: {
@@ -94,18 +142,31 @@ export function createApiResponseError(
   });
 }
 
+export async function createApiResponseErrorFromResponse(
+  res: Response,
+  fallbackMessage: string
+): Promise<ApiResponseError> {
+  const body = await readApiErrorBody(res);
+
+  return createApiResponseError(body, {
+    status: res.status,
+    fallbackMessage,
+  });
+}
+
 export async function handleApiResponse<T>(
   res: Response,
   fallbackMessage: string
 ): Promise<T> {
-  const body = await safeJson(res);
-
   if (!res.ok) {
+    const body = await readApiErrorBody(res);
     throw createApiResponseError(body, {
       status: res.status,
       fallbackMessage,
     });
   }
+
+  const body = await safeJson(res);
 
   if (body && 'data' in body) {
     return (body.data as T) ?? (null as T);

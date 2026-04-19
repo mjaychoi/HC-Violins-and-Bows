@@ -554,7 +554,7 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       const error = errorHandler.handleSupabaseError(circularError, 'Test');
 
       expect(error.code).toBe(ErrorCodes.INTERNAL_ERROR);
-      expect(error.message).toBe('Server error');
+      expect(error.message).toBe('Circular error');
     });
 
     it('should handle error with null message', () => {
@@ -565,7 +565,9 @@ describe('ErrorHandler - Comprehensive Tests', () => {
       const error = errorHandler.handleSupabaseError(supabaseError, 'Test');
 
       expect(error.code).toBe(ErrorCodes.INTERNAL_ERROR);
-      expect(error.message).toBe('Server error');
+      expect(error.message).toBe(
+        'Server error occurred. Please try again later.'
+      );
     });
 
     it('should handle error with undefined status', () => {

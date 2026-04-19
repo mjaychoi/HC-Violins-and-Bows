@@ -31,6 +31,28 @@ describe('ErrorHandler - Simple Tests', () => {
     );
   });
 
+  test('should preserve structured API error messages for display', () => {
+    const message = errorHandler.getDisplayMessage({
+      code: ErrorCodes.INTERNAL_ERROR,
+      message: 'Maintenance API temporarily unavailable',
+      status: 500,
+      timestamp: new Date().toISOString(),
+    });
+
+    expect(message).toBe('Maintenance API temporarily unavailable');
+  });
+
+  test('should flatten meaningful structured details', () => {
+    const details = errorHandler.getDisplayDetails({
+      details: {
+        hint: 'retry later',
+        scope: ['calendar', 'invoices'],
+      },
+    });
+
+    expect(details).toBe('hint: retry later; scope: calendar, invoices');
+  });
+
   test('should provide recovery suggestions', () => {
     const error = errorHandler.createError(
       ErrorCodes.NETWORK_ERROR,

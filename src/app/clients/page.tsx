@@ -3,8 +3,10 @@ import { Client, ClientInstrument, Instrument } from '@/types';
 import dynamic from 'next/dynamic';
 import {
   useUnifiedClients,
+  useUnifiedConnections,
   useUnifiedInstruments,
 } from '@/hooks/useUnifiedData';
+import { apiFetch } from '@/utils/apiFetch';
 import { generateClientNumber } from '@/utils/uniqueNumberGenerator';
 import {
   useClientInstruments,
@@ -49,6 +51,7 @@ export default function ClientsPage() {
   const [newlyCreatedClientId, setNewlyCreatedClientId] = useState<
     string | null
   >(null);
+  const [atomicSubmitting, setAtomicSubmitting] = useState(false);
 
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched
@@ -61,7 +64,10 @@ export default function ClientsPage() {
     createClient,
     updateClient,
     deleteClient,
+    fetchClients,
   } = useUnifiedClients();
+
+  const { fetchConnections } = useUnifiedConnections();
 
   const { instruments } = useUnifiedInstruments();
 
@@ -150,7 +156,65 @@ export default function ClientsPage() {
           ),
       };
 
-      // TODO: move to backend atomic endpoint (client + links in single transaction)
+      if (instruments && instruments.length > 0) {
+        setAtomicSubmitting(true);
+        try {
+          const res = await apiFetch('/api/clients/with-connections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...withClientNumber,
+              instrumentLinks: instruments.map(p => ({
+                instrument_id: p.instrument.id,
+                relationship_type: p.relationshipType,
+                notes: null,
+              })),
+            }),
+          });
+
+          const body = (await res.json().catch(() => null)) as {
+            data?: { client?: Client };
+            error?: string;
+            message?: string;
+          } | null;
+
+          if (!res.ok) {
+            const errMsg =
+              (typeof body?.error === 'string' && body.error) ||
+              (typeof body?.message === 'string' && body.message) ||
+              'Failed to create client';
+            handleError(new Error(errMsg), errMsg);
+            return { status: 'full_failure' };
+          }
+
+          const clientId = body?.data?.client?.id;
+          if (!clientId) {
+            handleError(
+              new Error('Invalid response'),
+              'Failed to create client'
+            );
+            return { status: 'full_failure' };
+          }
+
+          setNewlyCreatedClientId(clientId);
+          await Promise.all([
+            fetchClients({ force: true }),
+            fetchConnections({ force: true }),
+          ]);
+
+          showSuccess('Client and instrument links created successfully');
+          return {
+            status: 'full_success',
+            clientId,
+          };
+        } catch (error) {
+          handleError(error, 'Client creation failed');
+          return { status: 'full_failure' };
+        } finally {
+          setAtomicSubmitting(false);
+        }
+      }
+
       const newClient = await createClient(withClientNumber);
       if (!newClient) {
         handleError(
@@ -160,38 +224,9 @@ export default function ClientsPage() {
         return { status: 'full_failure' };
       }
 
-      const linkFailures: PendingInstrumentLink[] = [];
-
-      if (instruments && instruments.length > 0) {
-        for (const pendingLink of instruments) {
-          try {
-            await addInstrumentRelationshipHook(
-              newClient.id,
-              pendingLink.instrument.id,
-              pendingLink.relationshipType
-            );
-          } catch {
-            linkFailures.push(pendingLink);
-          }
-        }
-      }
-
       setNewlyCreatedClientId(newClient.id);
 
-      if (linkFailures.length > 0) {
-        showSuccess('Client created, but some instrument links failed');
-        return {
-          status: 'partial_success',
-          clientId: newClient.id,
-          failedLinks: linkFailures,
-        };
-      }
-
-      showSuccess(
-        instruments && instruments.length > 0
-          ? 'Client and instrument links created successfully'
-          : 'Client created successfully'
-      );
+      showSuccess('Client created successfully');
       return {
         status: 'full_success',
         clientId: newClient.id,
@@ -356,10 +391,11 @@ export default function ClientsPage() {
             ? {
                 label: 'Add Client',
                 onClick: openModal,
-                disabled: submitting.hasAnySubmitting,
-                disabledReason: submitting.hasAnySubmitting
-                  ? 'Please wait for the current submission to finish'
-                  : undefined,
+                disabled: submitting.hasAnySubmitting || atomicSubmitting,
+                disabledReason:
+                  submitting.hasAnySubmitting || atomicSubmitting
+                    ? 'Please wait for the current submission to finish'
+                    : undefined,
                 icon: (
                   <svg
                     className="h-4 w-4"
@@ -419,7 +455,7 @@ export default function ClientsPage() {
           onClose={closeModal}
           onSubmit={handleSubmit}
           onRetryInstrumentLinks={handleRetryInstrumentLinks}
-          submitting={submitting.hasAnySubmitting}
+          submitting={submitting.hasAnySubmitting || atomicSubmitting}
         />
 
         {/* View/Edit Client Modal */}

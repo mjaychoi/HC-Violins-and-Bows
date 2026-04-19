@@ -5,6 +5,9 @@ import { apiFetch } from '@/utils/apiFetch';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { Button } from '@/components/common/inputs';
 import { logError } from '@/utils/logger';
+import { errorHandler } from '@/utils/errorHandler';
+import { createApiResponseErrorFromResponse } from '@/utils/handleApiResponse';
+import type { AppError } from '@/types/errors';
 type InvoiceSettings = {
   business_name: string;
   address: string;
@@ -47,6 +50,7 @@ export default function InvoiceSettingsPanel({
   );
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<InvoiceSettings>(empty);
+  const [loadError, setLoadError] = useState<AppError | null>(null);
 
   const currencies = useMemo(
     () => ['USD', 'KRW', 'EUR', 'GBP', 'JPY', 'CNY'],
@@ -56,6 +60,7 @@ export default function InvoiceSettingsPanel({
   const load = useCallback(async () => {
     setLoading(true);
     setStatus('loading');
+    setLoadError(null);
     try {
       const res = await apiFetch('/api/invoices/invoice_settings');
 
@@ -64,25 +69,10 @@ export default function InvoiceSettingsPanel({
       const isJson = contentType?.includes('application/json');
 
       if (!res.ok) {
-        let errorMessage = 'Failed to load invoice settings';
-        try {
-          if (isJson) {
-            const errorData = await res.json();
-            errorMessage = errorData.message || errorData.error || errorMessage;
-          } else {
-            const text = await res.text();
-            errorMessage = text || `HTTP ${res.status}: ${res.statusText}`;
-          }
-        } catch (parseError) {
-          logError(
-            'Failed to parse error response:',
-            parseError instanceof Error
-              ? parseError.message
-              : String(parseError)
-          );
-          errorMessage = `HTTP ${res.status}: ${res.statusText}`;
-        }
-        throw new Error(errorMessage);
+        throw await createApiResponseErrorFromResponse(
+          res,
+          'Failed to load invoice settings'
+        );
       }
 
       if (!isJson) {
@@ -96,15 +86,12 @@ export default function InvoiceSettingsPanel({
       });
       setStatus('success');
     } catch (e) {
-      logError(
-        'Failed to load invoice settings:',
-        e instanceof Error ? e.message : String(e)
-      );
+      const appError =
+        handleError(e, 'Load invoice settings') ??
+        errorHandler.normalizeError(e, 'Load invoice settings');
+      logError('Failed to load invoice settings:', appError.message);
       setStatus('error');
-      handleError(
-        e instanceof Error ? e.message : String(e),
-        'Load invoice settings'
-      );
+      setLoadError(appError);
     } finally {
       setLoading(false);
     }
@@ -127,14 +114,10 @@ export default function InvoiceSettingsPanel({
       });
 
       if (!res.ok) {
-        let errorMessage = 'Failed to save invoice settings';
-        try {
-          const errorData = await res.json();
-          errorMessage = errorData.message || errorData.error || errorMessage;
-        } catch {
-          errorMessage = `HTTP ${res.status}: ${res.statusText}`;
-        }
-        throw new Error(errorMessage);
+        throw await createApiResponseErrorFromResponse(
+          res,
+          'Failed to save invoice settings'
+        );
       }
 
       const json = await res.json();
@@ -142,14 +125,10 @@ export default function InvoiceSettingsPanel({
       showSuccess('Invoice settings saved');
       onSaved?.();
     } catch (e) {
-      logError(
-        'Failed to save invoice settings:',
-        e instanceof Error ? e.message : String(e)
-      );
-      handleError(
-        e instanceof Error ? e.message : String(e),
-        'Save invoice settings'
-      );
+      const appError =
+        handleError(e, 'Save invoice settings') ??
+        errorHandler.normalizeError(e, 'Save invoice settings');
+      logError('Failed to save invoice settings:', appError.message);
     } finally {
       setSaving(false);
     }
@@ -170,7 +149,10 @@ export default function InvoiceSettingsPanel({
           Failed to load invoice settings
         </div>
         <div className="mt-1 text-sm text-red-700">
-          Invoice settings could not be loaded. Try again.
+          {errorHandler.getDisplayMessage(
+            loadError,
+            'Invoice settings could not be loaded. Try again.'
+          )}
         </div>
         <Button className="mt-4" onClick={() => void load()}>
           Retry

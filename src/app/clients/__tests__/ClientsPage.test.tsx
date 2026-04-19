@@ -500,6 +500,11 @@ jest.mock('@/hooks/useUnifiedData', () => ({
     deleteClient: mockRemoveClient,
     fetchClients: jest.fn(),
   }),
+  useUnifiedConnections: () => ({
+    connections: [],
+    loading: false,
+    fetchConnections: jest.fn(),
+  }),
   useUnifiedInstruments: () => ({
     instruments: [],
     loading: false,
@@ -843,6 +848,11 @@ describe('ClientsPage', () => {
           deleteClient: mockRemoveClient,
           fetchClients: jest.fn(),
         }),
+        useUnifiedConnections: () => ({
+          connections: [],
+          loading: false,
+          fetchConnections: jest.fn(),
+        }),
         useUnifiedInstruments: () => ({
           instruments: [],
           loading: false,
@@ -970,6 +980,11 @@ describe('ClientsPage', () => {
           updateClient: mockUpdateClient,
           deleteClient: mockRemoveClient,
           fetchClients: jest.fn(),
+        }),
+        useUnifiedConnections: () => ({
+          connections: [],
+          loading: false,
+          fetchConnections: jest.fn(),
         }),
         useUnifiedInstruments: () => ({
           instruments: [],

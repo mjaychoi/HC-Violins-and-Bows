@@ -10,6 +10,24 @@ import ErrorToast from '../ErrorToast';
 jest.mock('@/utils/errorHandler', () => ({
   errorHandler: {
     getUserFriendlyMessage: jest.fn(error => `Friendly: ${error.message}`),
+    getDisplayDetails: jest.fn(error => {
+      if (typeof error?.details !== 'string') {
+        return undefined;
+      }
+      const trimmed = error.details.trim();
+      if (
+        !trimmed ||
+        trimmed === 'undefined' ||
+        trimmed === 'null' ||
+        trimmed === '[object Object]' ||
+        trimmed.startsWith('ApiResponseError:') ||
+        trimmed.includes('\n    at ') ||
+        trimmed.includes('\n at ')
+      ) {
+        return undefined;
+      }
+      return trimmed;
+    }),
     getRecoverySuggestions: jest.fn(() => [
       'Check your connection',
       'Try again later',
@@ -83,7 +101,7 @@ describe('ErrorToast', () => {
   it('should call onClose when close button is clicked', () => {
     render(<ErrorToast {...defaultProps} />);
 
-    const closeButton = screen.getByRole('button', { name: /close/i });
+    const closeButton = screen.getByRole('button', { name: '닫기' });
     fireEvent.click(closeButton);
 
     expect(defaultProps.onClose).toHaveBeenCalled();
@@ -157,7 +175,9 @@ describe('ErrorToast', () => {
       <ErrorToast {...defaultProps} error={validationError} onRetry={onRetry} />
     );
 
-    expect(screen.queryByTitle('Retry')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '다시 시도' })
+    ).not.toBeInTheDocument();
   });
 
   it('should apply correct styling for different error types', () => {

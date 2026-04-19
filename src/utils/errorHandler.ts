@@ -43,6 +43,66 @@ function normalizeUserFacingDetails(value: unknown): string | undefined {
   return isUnsafeUserFacingDetails(trimmed) ? undefined : trimmed;
 }
 
+function collectMeaningfulDetailParts(
+  value: unknown,
+  seen = new WeakSet<object>(),
+  depth = 0
+): string[] {
+  if (depth > 2 || value === null || value === undefined) {
+    return [];
+  }
+
+  if (typeof value === 'string') {
+    const normalized = normalizeUserFacingDetails(value);
+    return normalized ? [normalized] : [];
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return [String(value)];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap(item =>
+      collectMeaningfulDetailParts(item, seen, depth + 1)
+    );
+  }
+
+  if (typeof value !== 'object') {
+    return [];
+  }
+
+  if (seen.has(value)) {
+    return [];
+  }
+  seen.add(value);
+
+  const objectValue = value as Record<string, unknown>;
+  const parts = Object.entries(objectValue).flatMap(([key, nestedValue]) => {
+    const nestedParts = collectMeaningfulDetailParts(
+      nestedValue,
+      seen,
+      depth + 1
+    );
+    if (nestedParts.length === 0) {
+      return [];
+    }
+
+    const joined = nestedParts.join(', ');
+    return key.trim() ? [`${key}: ${joined}`] : [joined];
+  });
+
+  return parts;
+}
+
+function normalizeStructuredDetails(value: unknown): string | undefined {
+  const parts = collectMeaningfulDetailParts(value);
+  if (parts.length === 0) {
+    return undefined;
+  }
+
+  return parts.join('; ');
+}
+
 export class ErrorHandler {
   private static instance: ErrorHandler;
   private errorLog: AppError[] = [];
@@ -127,13 +187,130 @@ export class ErrorHandler {
     };
   }
 
+  normalizeError(error: unknown, context?: string): AppError {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      'message' in error &&
+      'timestamp' in error
+    ) {
+      return error as AppError;
+    }
+
+    if (error instanceof Error) {
+      const errorMessage = error.message || 'An unexpected error occurred';
+
+      if (
+        'status' in error &&
+        typeof (error as { status?: unknown }).status === 'number'
+      ) {
+        return this.handleSupabaseError(error, context);
+      }
+
+      if (
+        error.name === 'ApiFetchNetworkError' ||
+        ('code' in error && (error as { code?: unknown }).code === 'NETWORK') ||
+        errorMessage.includes('fetch') ||
+        errorMessage.includes('network') ||
+        errorMessage.includes('Failed to fetch')
+      ) {
+        return this.createError(
+          ErrorCodes.NETWORK_ERROR,
+          errorMessage,
+          undefined,
+          { context, originalError: this.toSafeOriginalError(error) }
+        );
+      }
+
+      if (
+        errorMessage.includes('Unauthorized') ||
+        errorMessage.includes('401') ||
+        errorMessage.includes('Authentication')
+      ) {
+        return this.createError(
+          ErrorCodes.UNAUTHORIZED,
+          errorMessage,
+          undefined,
+          { context, originalError: this.toSafeOriginalError(error) }
+        );
+      }
+
+      if (
+        errorMessage.includes('Forbidden') ||
+        errorMessage.includes('403') ||
+        errorMessage.includes('Access denied')
+      ) {
+        return this.createError(ErrorCodes.FORBIDDEN, errorMessage, undefined, {
+          context,
+          originalError: this.toSafeOriginalError(error),
+        });
+      }
+
+      if ('code' in error) {
+        return this.handleSupabaseError(error, context);
+      }
+
+      return this.createError(
+        ErrorCodes.UNKNOWN_ERROR,
+        errorMessage,
+        undefined,
+        { context, originalError: this.toSafeOriginalError(error) }
+      );
+    }
+
+    if (
+      error &&
+      typeof error === 'object' &&
+      'status' in error &&
+      'message' in error
+    ) {
+      return this.handleSupabaseError(error, context);
+    }
+
+    if (error && typeof error === 'object' && 'code' in error) {
+      return this.handleSupabaseError(error, context);
+    }
+
+    return this.createError(
+      ErrorCodes.UNKNOWN_ERROR,
+      typeof error === 'string' && error.trim()
+        ? error
+        : 'An unexpected error occurred',
+      undefined,
+      { context, originalError: this.toSafeOriginalError(error) }
+    );
+  }
+
   handleSupabaseError(error: unknown, context?: string): AppError {
     let errorMessage = 'Unknown error';
     let errorCode: string | undefined;
     let errorDetails: string | undefined;
+    let status: number | undefined;
+    let retryable: boolean | undefined;
+    let rawDetails: unknown;
+    let structuredErrorCode: string | undefined;
 
     if (error instanceof Error) {
+      const errorMeta = error as Error & {
+        status?: number;
+        retryable?: boolean;
+        error_code?: string;
+        details?: unknown;
+      };
       errorMessage = error.message || 'Unknown error';
+      status =
+        typeof errorMeta.status === 'number' ? errorMeta.status : undefined;
+      retryable =
+        typeof errorMeta.retryable === 'boolean'
+          ? errorMeta.retryable
+          : undefined;
+      structuredErrorCode =
+        typeof errorMeta.error_code === 'string'
+          ? errorMeta.error_code
+          : undefined;
+      rawDetails = errorMeta.details;
+      errorDetails = normalizeStructuredDetails(rawDetails) ?? errorDetails;
 
       if (error.name === 'PostgrestError' || error.message?.includes('PGRST')) {
         const match = error.message.match(/PGRST\d+/);
@@ -142,14 +319,24 @@ export class ErrorHandler {
     } else if (error && typeof error === 'object') {
       const err = error as {
         code?: string;
+        error_code?: string;
         message?: string;
-        details?: string;
+        details?: unknown;
         hint?: string;
         name?: string;
+        status?: number;
+        retryable?: boolean;
       };
       errorCode = err.code;
+      structuredErrorCode = err.error_code;
+      status = typeof err.status === 'number' ? err.status : undefined;
+      retryable =
+        typeof err.retryable === 'boolean' ? err.retryable : undefined;
       errorMessage = err.message || errorMessage;
-      errorDetails = err.details || err.hint;
+      rawDetails = err.details ?? err.hint;
+      errorDetails =
+        normalizeStructuredDetails(rawDetails) ??
+        normalizeUserFacingDetails(err.hint);
 
       if (
         err.name === 'AuthApiError' ||
@@ -206,7 +393,7 @@ export class ErrorHandler {
       'status' in error &&
       'message' in error
     ) {
-      const { status } = error as { status?: number };
+      status = (error as { status?: number }).status;
       const msg =
         typeof (error as { message?: unknown }).message === 'string'
           ? (error as { message?: string }).message
@@ -214,19 +401,19 @@ export class ErrorHandler {
 
       if (status === 401) {
         code = ErrorCodes.UNAUTHORIZED;
-        message = 'Authentication required';
+        message = msg || 'Authentication required';
       } else if (status === 403) {
         code = ErrorCodes.FORBIDDEN;
-        message = 'Access denied';
+        message = msg || 'Access denied';
       } else if (status === 404) {
         code = ErrorCodes.RECORD_NOT_FOUND;
-        message = 'Resource not found';
+        message = msg || 'Resource not found';
       } else if (status && status >= 500) {
         code = ErrorCodes.INTERNAL_ERROR;
-        message = 'Server error';
+        message = msg || 'Server error occurred. Please try again later.';
       } else if (msg?.toLowerCase().includes('duplicate key')) {
         code = ErrorCodes.DUPLICATE_RECORD;
-        message = 'Record already exists';
+        message = msg || 'Record already exists';
       } else if (!errorCode || errorCode !== 'PGRST204') {
         message = errorMessage || msg || 'Database operation failed';
       }
@@ -277,15 +464,21 @@ export class ErrorHandler {
     }
 
     const details =
-      normalizeUserFacingDetails(errorDetails) ??
+      normalizeStructuredDetails(errorDetails) ??
       (error && typeof error === 'object' && 'details' in error
-        ? normalizeUserFacingDetails((error as { details?: unknown }).details)
+        ? normalizeStructuredDetails((error as { details?: unknown }).details)
         : undefined);
 
-    return this.createError(code, message, details, {
-      context,
-      originalError: this.toSafeOriginalError(error),
-    });
+    return {
+      ...this.createError(code, message, details, {
+        context,
+        originalError: this.toSafeOriginalError(error),
+      }),
+      status,
+      error_code: structuredErrorCode || errorCode,
+      retryable,
+      rawDetails,
+    };
   }
 
   handleNetworkError(error: unknown, endpoint?: string): ApiError {
@@ -336,7 +529,9 @@ export class ErrorHandler {
       }
     }
 
-    const details = error instanceof Error ? error.message : String(error);
+    const details = normalizeStructuredDetails(
+      error instanceof Error ? error.message : error
+    );
 
     // monitoring에도 safe snapshot 넣기
     captureException(
@@ -346,10 +541,52 @@ export class ErrorHandler {
       ErrorSeverity.MEDIUM
     );
 
-    return this.createApiError(code, message, status, endpoint, details);
+    return {
+      ...this.createApiError(code, message, status, endpoint, details),
+      rawDetails: error instanceof Error ? error.message : error,
+    };
+  }
+
+  getDisplayMessage(
+    error: unknown,
+    fallbackMessage: string = 'An error occurred. Please try again.'
+  ): string {
+    if (error === null || error === undefined) {
+      return fallbackMessage;
+    }
+
+    const normalized = this.normalizeError(error);
+    const message = this.getUserFriendlyMessage(normalized);
+    return normalizeUserFacingDetails(message) ?? fallbackMessage;
+  }
+
+  getDisplayDetails(error: unknown): string | undefined {
+    if (error && typeof error === 'object') {
+      const candidate = error as {
+        details?: unknown;
+        rawDetails?: unknown;
+      };
+      return (
+        normalizeStructuredDetails(candidate.details) ??
+        normalizeStructuredDetails(candidate.rawDetails)
+      );
+    }
+
+    return normalizeStructuredDetails(error);
   }
 
   getUserFriendlyMessage(error: AppError): string {
+    const shouldPreserveOriginalMessage =
+      typeof error.status === 'number' ||
+      typeof error.error_code === 'string' ||
+      typeof error.retryable === 'boolean' ||
+      error.code === ErrorCodes.UNKNOWN_ERROR;
+    const preservedMessage = normalizeUserFacingDetails(error.message);
+
+    if (!isDevelopment() && shouldPreserveOriginalMessage && preservedMessage) {
+      return preservedMessage;
+    }
+
     if (isDevelopment()) {
       const messages: Record<string, string> = {
         [ErrorCodes.NETWORK_ERROR]: 'Please check your network connection.',

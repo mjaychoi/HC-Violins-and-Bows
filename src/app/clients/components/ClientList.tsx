@@ -21,12 +21,12 @@ import {
   TagBadge,
   InterestBadge,
 } from '@/components/common';
+import { GuideModal } from '@/components/common/empty-state/GuideModal';
 import { useInlineEdit } from '@/hooks/useInlineEdit';
 import {
   InlineSelectField,
   InlineEditActions,
 } from '@/components/common/InlineEditFields';
-import { logInfo } from '@/utils/logger';
 import { INTEREST_LEVELS } from '../constants';
 import dynamic from 'next/dynamic';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -361,27 +361,11 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
   );
 });
 
-// TODO: Virtualization will be implemented when needed for 200+ clients
-// Currently using pagination (20 items per page) which is sufficient
-// When implementing, uncomment the following code:
-// type VariableSizeListProps = {
-//   height: number;
-//   itemCount: number;
-//   itemSize: (index: number) => number;
-//   overscanCount?: number;
-//   className?: string;
-//   children: (props: {
-//     index: number;
-//     style: React.CSSProperties;
-//   }) => React.ReactNode;
-//   onItemsRendered?: (props: {
-//     overscanStartIndex: number;
-//     overscanStopIndex: number;
-//     visibleStartIndex: number;
-//     visibleStopIndex: number;
-//   }) => void;
-// };
-// const VariableSizeList = dynamic(...);
+const CLIENT_EMPTY_GUIDE_STEPS = [
+  '클라이언트 이름과 연락처를 입력하세요',
+  '태그와 관심도를 설정하여 분류하세요',
+  '악기와 연결하려면 Connections 페이지를 사용하세요',
+];
 
 interface ClientListProps {
   clients: Client[];
@@ -443,6 +427,7 @@ const ClientList = memo(function ClientList({
   const [editData, setEditData] = useState<Partial<Client>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+  const [showClientGuideModal, setShowClientGuideModal] = useState(false);
 
   // 인라인 편집 훅 (interest와 tags만 별도 편집)
   const inlineEditInterest = useInlineEdit<Client>({
@@ -631,55 +616,45 @@ const ClientList = memo(function ClientList({
     }
   }, []);
 
-  // TODO: Virtualization will be implemented when needed for 200+ clients
-  // Currently using pagination (20 items per page) which is sufficient
-  // const shouldVirtualize = clients.length >= 50;
-  // const rowHeightRef = useRef<Map<number, number>>(new Map());
-  // const listRef = useRef<{ resetAfterIndex: (index: number) => void } | null>(null);
-  // const getRowHeight = useCallback(...);
-  // const listHeight = useMemo(...);
-
   if (clients.length === 0) {
     return (
-      <EmptyState
-        title={
-          hasActiveFilters
-            ? 'No clients found matching your filters'
-            : 'No clients yet'
-        }
-        description={
-          hasActiveFilters
-            ? 'Try adjusting your filters or clearing them to see all clients.'
-            : 'Add your first client to start tracking relationships and instruments.'
-        }
-        hasActiveFilters={hasActiveFilters}
-        onResetFilters={hasActiveFilters ? onResetFilters : undefined}
-        actionButton={
-          !hasActiveFilters && onAddClient
-            ? { label: 'Add client', onClick: onAddClient }
-            : undefined
-        }
-        guideSteps={
-          !hasActiveFilters
-            ? [
-                '클라이언트 이름과 연락처를 입력하세요',
-                '태그와 관심도를 설정하여 분류하세요',
-                '악기와 연결하려면 Connections 페이지를 사용하세요',
-              ]
-            : undefined
-        }
-        helpLink={
-          !hasActiveFilters
-            ? {
-                label: '클라이언트 관리 방법 알아보기',
-                onClick: () => {
-                  // TODO: 도움말 모달 또는 페이지로 이동
-                  logInfo('Show help guide');
-                },
-              }
-            : undefined
-        }
-      />
+      <>
+        <EmptyState
+          title={
+            hasActiveFilters
+              ? 'No clients found matching your filters'
+              : 'No clients yet'
+          }
+          description={
+            hasActiveFilters
+              ? 'Try adjusting your filters or clearing them to see all clients.'
+              : 'Add your first client to start tracking relationships and instruments.'
+          }
+          hasActiveFilters={hasActiveFilters}
+          onResetFilters={hasActiveFilters ? onResetFilters : undefined}
+          actionButton={
+            !hasActiveFilters && onAddClient
+              ? { label: 'Add client', onClick: onAddClient }
+              : undefined
+          }
+          guideSteps={!hasActiveFilters ? CLIENT_EMPTY_GUIDE_STEPS : undefined}
+          helpLink={
+            !hasActiveFilters
+              ? {
+                  label: '클라이언트 관리 방법 알아보기',
+                  href: '#',
+                  onClick: () => setShowClientGuideModal(true),
+                }
+              : undefined
+          }
+        />
+        <GuideModal
+          isOpen={showClientGuideModal}
+          onClose={() => setShowClientGuideModal(false)}
+          title="클라이언트 관리 가이드"
+          steps={CLIENT_EMPTY_GUIDE_STEPS}
+        />
+      </>
     );
   }
 

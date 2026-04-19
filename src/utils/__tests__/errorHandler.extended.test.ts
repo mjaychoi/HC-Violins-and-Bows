@@ -33,7 +33,7 @@ describe('ErrorHandler - Extended Tests', () => {
       );
 
       expect(error.code).toBe(ErrorCodes.UNAUTHORIZED);
-      expect(error.message).toBe('Authentication required');
+      expect(error.message).toBe('Unauthorized');
     });
 
     it('should handle 403 status code', () => {
@@ -47,7 +47,7 @@ describe('ErrorHandler - Extended Tests', () => {
       );
 
       expect(error.code).toBe(ErrorCodes.FORBIDDEN);
-      expect(error.message).toBe('Access denied');
+      expect(error.message).toBe('Forbidden');
     });
 
     it('should handle 404 status code', () => {
@@ -61,7 +61,7 @@ describe('ErrorHandler - Extended Tests', () => {
       );
 
       expect(error.code).toBe(ErrorCodes.RECORD_NOT_FOUND);
-      expect(error.message).toBe('Resource not found');
+      expect(error.message).toBe('Not found');
     });
 
     it('should handle 500+ status codes', () => {
@@ -75,7 +75,7 @@ describe('ErrorHandler - Extended Tests', () => {
       );
 
       expect(error.code).toBe(ErrorCodes.INTERNAL_ERROR);
-      expect(error.message).toBe('Server error');
+      expect(error.message).toBe('Internal server error');
     });
 
     it('should handle duplicate key error in message', () => {
@@ -89,7 +89,7 @@ describe('ErrorHandler - Extended Tests', () => {
       );
 
       expect(error.code).toBe(ErrorCodes.DUPLICATE_RECORD);
-      expect(error.message).toBe('Record already exists');
+      expect(error.message).toBe('Duplicate key violation');
     });
 
     it('should handle JWT expired error', () => {

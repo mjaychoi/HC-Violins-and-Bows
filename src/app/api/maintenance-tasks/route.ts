@@ -206,12 +206,17 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           );
         }
 
-        // Validate response data
-        const validatedData = validateMaintenanceTask(data);
+        const singleValidation = safeValidate(data, validateMaintenanceTask);
+        const payloadData = singleValidation.success
+          ? singleValidation.data
+          : (data as MaintenanceTask);
 
         return {
-          payload: { data: validatedData },
-          metadata: { id },
+          payload: { data: payloadData },
+          metadata: {
+            id,
+            validationWarning: !singleValidation.success,
+          },
         };
       }
 
@@ -470,13 +475,18 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         );
       }
 
-      // Validate response data
-      const validatedResponse = validateMaintenanceTask(data);
+      const createdValidation = safeValidate(data, validateMaintenanceTask);
+      const createdPayload = createdValidation.success
+        ? createdValidation.data
+        : (data as MaintenanceTask);
 
       return {
-        payload: { data: validatedResponse },
+        payload: { data: createdPayload },
         status: 201,
-        metadata: { taskId: validatedResponse.id },
+        metadata: {
+          taskId: createdPayload.id,
+          validationWarning: !createdValidation.success,
+        },
       };
     }
   );
@@ -554,12 +564,17 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         );
       }
 
-      // Validate response data
-      const validatedData = validateMaintenanceTask(data);
+      const updatedValidation = safeValidate(data, validateMaintenanceTask);
+      const updatedPayload = updatedValidation.success
+        ? updatedValidation.data
+        : (data as MaintenanceTask);
 
       return {
-        payload: { data: validatedData },
-        metadata: { taskId: id },
+        payload: { data: updatedPayload },
+        metadata: {
+          taskId: id,
+          validationWarning: !updatedValidation.success,
+        },
       };
     }
   );

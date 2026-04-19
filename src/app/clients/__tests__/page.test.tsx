@@ -1,15 +1,17 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import ClientsPage from '../page';
 import {
   useUnifiedClients,
   useUnifiedInstruments,
+  useUnifiedConnections,
 } from '@/hooks/useUnifiedData';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { useModalState } from '@/hooks/useModalState';
 import { Client, ClientInstrument, Instrument } from '@/types';
 import { flushPromises } from '@/../tests/utils/flushPromises';
+import { apiFetch } from '@/utils/apiFetch';
 
 // Mock dependencies
 jest.mock('@/hooks/usePermissions', () => ({
@@ -19,6 +21,9 @@ jest.mock('@/hooks/usePermissions', () => ({
 }));
 
 jest.mock('@/hooks/useUnifiedData');
+jest.mock('@/utils/apiFetch', () => ({
+  apiFetch: jest.fn(),
+}));
 jest.mock('@/hooks/useAppFeedback');
 jest.mock('@/hooks/useModalState');
 jest.mock('../hooks', () => ({
@@ -130,7 +135,7 @@ jest.mock('../components/ClientForm', () => {
     isOpen,
     onClose,
     onSubmit,
-    onRetryInstrumentLinks: _onRetryInstrumentLinks, // eslint-disable-line @typescript-eslint/no-unused-vars
+    onRetryInstrumentLinks,
     submitting: _submitting, // eslint-disable-line @typescript-eslint/no-unused-vars
   }: {
     isOpen: boolean;
@@ -210,6 +215,34 @@ jest.mock('../components/ClientForm', () => {
           }
         >
           Submit With Instruments
+        </button>
+        <button
+          data-testid="retry-instrument-links-btn"
+          onClick={() =>
+            onRetryInstrumentLinks('3', [
+              {
+                instrument: {
+                  id: 'inst-123',
+                  maker: 'Maker',
+                  type: 'Violin',
+                  subtype: null,
+                  year: 2020,
+                  certificate: false,
+                  size: null,
+                  weight: null,
+                  price: 1000,
+                  ownership: null,
+                  note: null,
+                  serial_number: null,
+                  status: 'Available',
+                  created_at: '2024-01-01T00:00:00Z',
+                },
+                relationshipType: 'Interested',
+              },
+            ])
+          }
+        >
+          Retry Links
         </button>
         <button data-testid="close-form-btn" onClick={onClose}>
           Close
@@ -297,12 +330,16 @@ const mockUseUnifiedClients = useUnifiedClients as jest.MockedFunction<
 const mockUseUnifiedInstruments = useUnifiedInstruments as jest.MockedFunction<
   typeof useUnifiedInstruments
 >;
+const mockUseUnifiedConnections = useUnifiedConnections as jest.MockedFunction<
+  typeof useUnifiedConnections
+>;
 const mockUseAppFeedback = useAppFeedback as jest.MockedFunction<
   typeof useAppFeedback
 >;
 const mockUseModalState = useModalState as jest.MockedFunction<
   typeof useModalState
 >;
+const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;
 
 // Import hooks to access mocked functions
 import {
@@ -354,6 +391,7 @@ describe('ClientsPage', () => {
   ];
 
   const mockCreateClient = jest.fn();
+  const mockFetchClients = jest.fn();
   const mockUpdateClient = jest.fn();
   const mockDeleteClient = jest.fn();
   const mockHandleError = jest.fn();
@@ -370,9 +408,34 @@ describe('ClientsPage', () => {
   const mockClearOwnedItems = jest.fn();
   const mockOpenInstrumentSearch = jest.fn();
   const mockCloseInstrumentSearch = jest.fn();
+  const mockFetchConnections = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    mockApiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            client: {
+              id: '3',
+              first_name: 'New',
+              last_name: 'Client',
+              email: 'new@example.com',
+              contact_number: '',
+              tags: [],
+              interest: '',
+              note: '',
+              client_number: 'CL003',
+              created_at: '2023-01-03T00:00:00Z',
+            },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    mockFetchConnections.mockResolvedValue(undefined);
+    mockFetchClients.mockResolvedValue(undefined);
 
     mockUseUnifiedClients.mockReturnValue({
       clients: mockClients,
@@ -393,6 +456,7 @@ describe('ClientsPage', () => {
       createClient: mockCreateClient,
       updateClient: mockUpdateClient,
       deleteClient: mockDeleteClient,
+      fetchClients: mockFetchClients,
       refreshClients: jest.fn(),
       refreshInstruments: jest.fn(),
       refreshConnections: jest.fn(),
@@ -405,6 +469,15 @@ describe('ClientsPage', () => {
       createInstrument: jest.fn(),
       updateInstrument: jest.fn(),
       deleteInstrument: jest.fn(),
+    } as any);
+
+    mockUseUnifiedConnections.mockReturnValue({
+      connections: [],
+      loading: false,
+      fetchConnections: mockFetchConnections,
+      createConnection: jest.fn(),
+      updateConnection: jest.fn(),
+      deleteConnection: jest.fn(),
     } as any);
 
     mockUseAppFeedback.mockReturnValue({
@@ -457,7 +530,11 @@ describe('ClientsPage', () => {
 
   describe('Rendering', () => {
     it('should render clients page', async () => {
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       // Wait for content to render
       await waitFor(() => {
@@ -488,12 +565,17 @@ describe('ClientsPage', () => {
         createClient: mockCreateClient,
         updateClient: mockUpdateClient,
         deleteClient: mockDeleteClient,
+        fetchClients: mockFetchClients,
         refreshClients: jest.fn(),
         refreshInstruments: jest.fn(),
         refreshConnections: jest.fn(),
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       expect(screen.getByText('Add Client')).toBeInTheDocument();
       expect(
@@ -502,7 +584,11 @@ describe('ClientsPage', () => {
     });
 
     it('should render clients list when not loading', () => {
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       expect(screen.getByTestId('clients-list-content')).toBeInTheDocument();
       expect(screen.getByText('John Doe')).toBeInTheDocument();
@@ -513,7 +599,11 @@ describe('ClientsPage', () => {
   describe('Client Creation', () => {
     it('should open modal when add client button is clicked', async () => {
       const user = userEvent.setup();
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const addButton = screen.getByText('Add Client');
       await user.click(addButton);
@@ -542,7 +632,11 @@ describe('ClientsPage', () => {
         closeModal: mockCloseModal,
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const submitButton = screen.getByTestId('submit-form-btn');
       await user.click(submitButton);
@@ -577,7 +671,11 @@ describe('ClientsPage', () => {
         closeModal: mockCloseModal,
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const submitButton = screen.getByTestId('submit-form-btn');
       await user.click(submitButton);
@@ -592,20 +690,7 @@ describe('ClientsPage', () => {
     });
 
     it('should handle client creation with instruments', async () => {
-      const newClient: Client = {
-        id: '3',
-        first_name: 'New',
-        last_name: 'Client',
-        email: 'new@example.com',
-        contact_number: '',
-        tags: [],
-        interest: '',
-        note: '',
-        client_number: 'CL003',
-        created_at: '2023-01-03T00:00:00Z',
-      };
-      mockCreateClient.mockResolvedValue(newClient);
-      mockAddInstrumentRelationship.mockResolvedValue(undefined);
+      mockCreateClient.mockResolvedValue(null);
       mockUseModalState.mockReturnValue({
         isOpen: true,
         openModal: mockOpenModal,
@@ -613,16 +698,24 @@ describe('ClientsPage', () => {
       } as any);
 
       const user = userEvent.setup();
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       await user.click(screen.getByTestId('submit-form-with-instruments-btn'));
 
       await waitFor(() => {
-        expect(mockAddInstrumentRelationship).toHaveBeenCalledWith(
-          '3',
-          'inst-123',
-          'Interested'
+        expect(mockApiFetch).toHaveBeenCalledWith(
+          '/api/clients/with-connections',
+          expect.objectContaining({ method: 'POST' })
         );
+      });
+
+      await waitFor(() => {
+        expect(mockFetchClients).toHaveBeenCalled();
+        expect(mockFetchConnections).toHaveBeenCalled();
       });
 
       expect(mockShowSuccess).toHaveBeenCalledWith(
@@ -640,7 +733,11 @@ describe('ClientsPage', () => {
         closeModal: mockCloseModal,
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const submitButton = screen.getByTestId('submit-form-btn');
       await user.click(submitButton);
@@ -655,19 +752,6 @@ describe('ClientsPage', () => {
 
     it('should show partial success when instrument relationship creation fails', async () => {
       const user = userEvent.setup();
-      const newClient: Client = {
-        id: '3',
-        first_name: 'New',
-        last_name: 'Client',
-        email: 'new@example.com',
-        contact_number: '',
-        tags: [],
-        interest: '',
-        note: '',
-        client_number: 'CL003',
-        created_at: '2023-01-03T00:00:00Z',
-      };
-      mockCreateClient.mockResolvedValue(newClient);
       mockAddInstrumentRelationship.mockRejectedValueOnce(
         new Error('Link failed')
       );
@@ -677,9 +761,13 @@ describe('ClientsPage', () => {
         closeModal: mockCloseModal,
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
-      await user.click(screen.getByTestId('submit-form-with-instruments-btn'));
+      await user.click(screen.getByTestId('retry-instrument-links-btn'));
 
       await waitFor(() => {
         expect(mockShowSuccess).toHaveBeenCalledWith(
@@ -698,7 +786,11 @@ describe('ClientsPage', () => {
         first_name: 'Updated',
       });
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const updateButton = screen.getByTestId('update-client-btn');
       await user.click(updateButton);
@@ -722,7 +814,11 @@ describe('ClientsPage', () => {
       // Suppress console.error for this test
       const consoleError = jest.spyOn(console, 'error').mockImplementation();
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       await waitFor(() => {
         expect(screen.getByTestId('update-client-btn')).toBeInTheDocument();
@@ -760,7 +856,11 @@ describe('ClientsPage', () => {
       // Suppress console.error for this test
       const consoleError = jest.spyOn(console, 'error').mockImplementation();
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       await waitFor(() => {
         expect(screen.getByTestId('update-client-btn')).toBeInTheDocument();
@@ -797,7 +897,11 @@ describe('ClientsPage', () => {
   describe('Client Deletion', () => {
     it('should set confirm delete state when delete is requested', async () => {
       const user = userEvent.setup();
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const deleteButton = screen.getByTestId('delete-client-btn');
       await user.click(deleteButton);
@@ -825,7 +929,11 @@ describe('ClientsPage', () => {
         handleViewInputChange: jest.fn(),
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       // Trigger delete through list - this sets confirmDelete state
       const deleteButton = screen.getByTestId('delete-client-btn');
@@ -860,7 +968,11 @@ describe('ClientsPage', () => {
       const error = new Error('Deletion failed');
       mockDeleteClient.mockRejectedValue(error);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const deleteButton = screen.getByTestId('delete-client-btn');
       await user.click(deleteButton);
@@ -886,7 +998,11 @@ describe('ClientsPage', () => {
 
     it('should cancel delete confirmation', async () => {
       const user = userEvent.setup();
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const deleteButton = screen.getByTestId('delete-client-btn');
       await user.click(deleteButton);
@@ -923,7 +1039,11 @@ describe('ClientsPage', () => {
         handleViewInputChange: jest.fn(),
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const clientRow = screen.getByTestId(`client-row-${mockClients[0].id}`);
       await user.click(clientRow);
@@ -948,7 +1068,11 @@ describe('ClientsPage', () => {
         handleViewInputChange: jest.fn(),
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       // Ensure fetchOwnedItems returns a Promise
       mockFetchOwnedItems.mockResolvedValue(undefined);
@@ -979,7 +1103,11 @@ describe('ClientsPage', () => {
         handleViewInputChange: jest.fn(),
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const clientRow = screen.getByTestId(`client-row-${nonOwnerClient.id}`);
       await user.click(clientRow);
@@ -1008,7 +1136,11 @@ describe('ClientsPage', () => {
         handleViewInputChange: jest.fn(),
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const clientRow = screen.getByTestId(`client-row-${ownerClient.id}`);
       await user.click(clientRow);
@@ -1040,7 +1172,11 @@ describe('ClientsPage', () => {
       } as any);
       mockAddInstrumentRelationship.mockResolvedValue(undefined);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const addInstrumentBtn = screen.getByTestId('add-instrument-btn');
       await user.click(addInstrumentBtn);
@@ -1077,7 +1213,11 @@ describe('ClientsPage', () => {
       const error = new Error('Add failed');
       mockAddInstrumentRelationship.mockRejectedValue(error);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const addInstrumentBtn = screen.getByTestId('add-instrument-btn');
       await user.click(addInstrumentBtn);
@@ -1107,7 +1247,11 @@ describe('ClientsPage', () => {
       } as any);
       mockRemoveInstrumentRelationship.mockResolvedValue(undefined);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const removeInstrumentBtn = screen.getByTestId('remove-instrument-btn');
       await user.click(removeInstrumentBtn);
@@ -1141,7 +1285,11 @@ describe('ClientsPage', () => {
       const error = new Error('Remove failed');
       mockRemoveInstrumentRelationship.mockRejectedValue(error);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const removeInstrumentBtn = screen.getByTestId('remove-instrument-btn');
       await user.click(removeInstrumentBtn);
@@ -1179,7 +1327,11 @@ describe('ClientsPage', () => {
         handleInstrumentSearch: jest.fn(),
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const toggleBtn = screen.getByTestId('toggle-search-btn');
       await user.click(toggleBtn);
@@ -1212,7 +1364,11 @@ describe('ClientsPage', () => {
         handleInstrumentSearch: jest.fn(),
       } as any);
 
-      render(<ClientsPage />);
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const toggleBtn = screen.getByTestId('toggle-search-btn');
       await user.click(toggleBtn);
@@ -1256,6 +1412,7 @@ describe('ClientsPage', () => {
         createClient: mockCreateClient,
         updateClient: mockUpdateClient,
         deleteClient: mockDeleteClient,
+        fetchClients: mockFetchClients,
         refreshClients: jest.fn(),
         refreshInstruments: jest.fn(),
         refreshConnections: jest.fn(),
@@ -1266,7 +1423,11 @@ describe('ClientsPage', () => {
         closeModal: mockCloseModal,
       } as any);
 
-      const { rerender } = render(<ClientsPage />);
+      const { rerender } = render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       const submitButton = screen.getByTestId('submit-form-btn');
       await user.click(submitButton);
@@ -1276,7 +1437,11 @@ describe('ClientsPage', () => {
       });
 
       // Rerender to simulate state update
-      rerender(<ClientsPage />);
+      rerender(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
 
       // The indicator should appear for the newly created client
       // This would be tested by checking for the indicator in the list
