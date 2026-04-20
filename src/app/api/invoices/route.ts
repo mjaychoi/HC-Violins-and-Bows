@@ -37,6 +37,9 @@ import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
 const MAX_SEARCH_LEN = 200;
+const DEBUG_INVOICES_ROUTE =
+  process.env.DEBUG_INVOICES_ROUTE === '1' ||
+  process.env.DEBUG_INVOICES_ROUTE === 'true';
 
 type AnyRecord = Record<string, unknown>;
 type JsonObject = { [key: string]: Json | undefined };
@@ -50,6 +53,10 @@ type PostgrestErrorLike = {
 
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
 type InvoiceMutationResult = 'full_success' | 'partial_success';
+
+if (DEBUG_INVOICES_ROUTE) {
+  console.log('[api/invoices] module loaded (debug mode)');
+}
 
 function clampInt(n: number, min: number, max: number): number {
   if (Number.isNaN(n)) return min;
@@ -230,6 +237,11 @@ function buildInvoiceSearchFilter(search: string): string {
 }
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
+  if (DEBUG_INVOICES_ROUTE) {
+    console.log('[api/invoices] GET entered (debug mode)');
+    return Response.json({ ok: true, route: 'invoices', debug: true });
+  }
+
   return apiHandler(
     request,
     {
