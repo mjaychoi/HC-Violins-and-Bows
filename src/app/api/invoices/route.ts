@@ -63,6 +63,19 @@ function getErrorCode(err: unknown): string | undefined {
   return undefined;
 }
 
+/** List GET must not return rows we cannot sign image URLs for (missing / not found). */
+function shouldFailClosedOnInvoiceImageHydrationError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const o = err as {
+    context?: { invoiceImageHydration?: boolean };
+    status?: number;
+    code?: string;
+  };
+  if (!o.context?.invoiceImageHydration) return false;
+  if (o.status === 404) return true;
+  return o.code === ErrorCodes.RECORD_NOT_FOUND;
+}
+
 function buildInvoiceMutationPayload(
   input: Partial<CreateInvoiceInput>
 ): JsonObject {
@@ -113,17 +126,6 @@ function toInvoiceItemsJson(
     image_url: item.image_url,
     display_order: item.display_order,
   }));
-}
-
-function isHydrationFailure(error: unknown): boolean {
-  return Boolean(
-    error &&
-    typeof error === 'object' &&
-    'context' in error &&
-    typeof (error as { context?: unknown }).context === 'object' &&
-    (error as { context?: { invoiceImageHydration?: unknown } }).context
-      ?.invoiceImageHydration === true
-  );
 }
 
 function buildInvoiceCreateRequestHash(
@@ -369,20 +371,36 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
             const res = safeValidate(normalized, validateInvoice);
             if (res.success) {
-              validRows.push(
-                await attachSignedUrlsToInvoice(
+              let invoice = res.data as Invoice;
+              try {
+                invoice = await attachSignedUrlsToInvoice(
                   auth.userSupabase,
-                  res.data as Invoice
-                )
-              );
+                  invoice
+                );
+              } catch (imageError) {
+                if (shouldFailClosedOnInvoiceImageHydrationError(imageError)) {
+                  logWarn(
+                    'invoices.image_hydration_failed_closed',
+                    `invoiceId=${invoice.id} err=${getErrorMessage(imageError)}`
+                  );
+                  return {
+                    payload: {
+                      error: getErrorMessage(imageError),
+                    },
+                    status: 404,
+                  };
+                }
+                logWarn(
+                  'invoices.image_hydration_skipped',
+                  `invoiceId=${invoice.id} err=${getErrorMessage(imageError)}`
+                );
+              }
+              validRows.push(invoice);
             } else {
               const id = normalized.id;
               if (typeof id === 'string') invalidRowIds.push(id);
             }
-          } catch (error) {
-            if (isHydrationFailure(error)) {
-              throw error;
-            }
+          } catch {
             const id = (row as unknown as Invoice)?.id;
             if (typeof id === 'string') invalidRowIds.push(id);
           }
