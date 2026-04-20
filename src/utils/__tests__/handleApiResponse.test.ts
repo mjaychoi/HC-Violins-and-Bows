@@ -2,6 +2,7 @@ import {
   ApiResponseError,
   createApiResponseErrorFromResponse,
   handleApiResponse,
+  readApiResponseEnvelope,
 } from '../handleApiResponse';
 
 describe('handleApiResponse', () => {
@@ -94,6 +95,45 @@ describe('handleApiResponse', () => {
       name: 'ApiResponseError',
       message: 'The server returned an unexpected response. Please try again.',
       status: 500,
+    });
+  });
+
+  it('rejects successful responses that are missing the data envelope', async () => {
+    const response = {
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({ count: 0 }),
+    } as unknown as Response;
+
+    await expect(
+      readApiResponseEnvelope<unknown[]>(response, 'fallback')
+    ).rejects.toMatchObject<Partial<ApiResponseError>>({
+      name: 'ApiResponseError',
+      message: 'The server returned an unexpected response. Please try again.',
+      error_code: 'INVALID_RESPONSE',
+      status: 502,
+    });
+  });
+
+  it('rejects successful HTML responses instead of returning null', async () => {
+    const html = '<!DOCTYPE html><html><body>redirect</body></html>';
+    const response = {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+      clone: jest.fn().mockReturnValue({
+        json: jest.fn().mockRejectedValue(new Error('not json')),
+      }),
+      text: jest.fn().mockResolvedValue(html),
+    } as unknown as Response;
+
+    await expect(handleApiResponse(response, 'fallback')).rejects.toMatchObject<
+      Partial<ApiResponseError>
+    >({
+      name: 'ApiResponseError',
+      message: 'The server returned an unexpected response. Please try again.',
+      error_code: 'INVALID_RESPONSE',
+      status: 502,
     });
   });
 });

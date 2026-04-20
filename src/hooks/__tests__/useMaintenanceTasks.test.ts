@@ -9,6 +9,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { ApiResponseError } from '@/utils/handleApiResponse';
 
 const mockHandleError = jest.fn();
+let mockTenantIdentityKey = 'tenant-1';
 
 // ✅ FIXED: ToastProvider도 export하도록 mock 수정
 jest.mock('@/contexts/ToastContext', () => {
@@ -23,6 +24,13 @@ jest.mock('@/contexts/ToastContext', () => {
 
 jest.mock('@/utils/apiFetch', () => ({
   apiFetch: jest.fn(),
+}));
+
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: () => ({
+    tenantIdentityKey: mockTenantIdentityKey,
+    isTenantTransitioning: false,
+  }),
 }));
 
 describe('useMaintenanceTasks', () => {
@@ -52,6 +60,7 @@ describe('useMaintenanceTasks', () => {
     jest.clearAllMocks();
     __resetMaintenanceTasksReadCacheForTests();
     mockHandleError.mockClear();
+    mockTenantIdentityKey = 'tenant-1';
     // Default: all apiFetch calls return empty success to prevent undefined errors.
     // Individual tests override with mockResolvedValueOnce.
     (apiFetch as jest.Mock).mockResolvedValue({
@@ -210,6 +219,56 @@ describe('useMaintenanceTasks', () => {
       expect(apiFetch).toHaveBeenCalledWith(
         expect.stringContaining('task_type=repair')
       );
+    });
+
+    it('clears cached tasks when the tenant identity changes', async () => {
+      const firstTenantTask = { ...mockTask, id: 'tenant-1-task' };
+      const secondTenantTask = {
+        ...mockTask,
+        id: 'tenant-2-task',
+        title: 'Tenant 2 Task',
+      };
+
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [firstTenantTask] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [secondTenantTask] }),
+        });
+
+      const { result, rerender } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasks();
+      });
+
+      await waitFor(() => {
+        expect(result.current.tasks).toEqual([firstTenantTask]);
+      });
+
+      mockTenantIdentityKey = 'tenant-2';
+      rerender();
+
+      await waitFor(() => {
+        expect(result.current.tasks).toEqual([]);
+      });
+
+      await act(async () => {
+        await result.current.fetchTasks();
+      });
+
+      await waitFor(() => {
+        expect(result.current.tasks).toEqual([secondTenantTask]);
+      });
+
+      expect(apiFetch).toHaveBeenCalledTimes(2);
     });
   });
 

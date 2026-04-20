@@ -7,6 +7,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { handleApiResponse } from '@/utils/handleApiResponse';
 import { errorHandler } from '@/utils/errorHandler';
 import type { AppError } from '@/types/errors';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import {
   buildMaintenanceTaskQuery,
   type MaintenanceTaskQuery,
@@ -129,6 +130,7 @@ export function useMaintenanceTasks(
   const [error, setError] = useState<unknown>(null);
   const [displayError, setDisplayError] = useState<AppError | null>(null);
   const { handleError } = useErrorHandler();
+  const { tenantIdentityKey } = useTenantIdentity();
 
   // Stale guard for fetchTasks
   const fetchReqIdRef = useRef(0);
@@ -148,6 +150,16 @@ export function useMaintenanceTasks(
 
   // StrictMode double-run guard (dev)
   const didFetchRef = useRef(false);
+
+  useEffect(() => {
+    invalidateMaintenanceTasksCache();
+    setTasks([]);
+    setError(null);
+    setDisplayError(null);
+    fetchReqIdRef.current += 1;
+    fetchCountRef.current = 0;
+    setLoading(prev => ({ ...prev, fetch: false }));
+  }, [tenantIdentityKey]);
 
   const mergeTasksIntoState = useCallback((nextTasks: MaintenanceTask[]) => {
     setTasks(prev => {

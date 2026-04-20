@@ -16,9 +16,11 @@ export async function GET() {
         authIsAdminHelperValid: result.authIsAdminHelperValid,
         criticalPolicyPredicatesValid: result.criticalPolicyPredicatesValid,
         requiredPoliciesPresent: result.requiredPoliciesPresent,
+        requiredColumnsPresent: result.requiredColumnsPresent,
         invoiceImageStoragePathShapeValid:
           result.invoiceImageStoragePathShapeValid,
       },
+      missingColumns: result.missingColumns,
     },
     {
       status: result.allHealthy ? 200 : 503,

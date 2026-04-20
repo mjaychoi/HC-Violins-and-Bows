@@ -21,6 +21,15 @@ export async function register() {
     throw error;
   }
 
+  try {
+    const { assertSchemaReadiness } =
+      await import('./app/api/_utils/schemaReadiness');
+    await assertSchemaReadiness({ bypassCache: true });
+  } catch (error) {
+    console.error('[instrumentation] Schema readiness check failed:', error);
+    throw error;
+  }
+
   // ✅ CRITICAL: Dynamic import to prevent webpack from including Sentry in client bundle
   try {
     const Sentry = await import('@sentry/nextjs');

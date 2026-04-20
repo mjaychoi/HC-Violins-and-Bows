@@ -9,6 +9,14 @@ jest.mock('@sentry/nextjs', () => ({
   captureRequestError: jest.fn(),
 }));
 
+jest.mock('@/app/api/_utils/schemaReadiness', () => ({
+  assertSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-04-20T00:00:00.000Z',
+    missingColumns: [],
+  }),
+}));
+
 describe('instrumentation.ts', () => {
   const originalEnv = process.env;
 

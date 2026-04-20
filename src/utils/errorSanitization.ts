@@ -248,6 +248,7 @@ export function getUserFriendlyErrorMessage(
       RECORD_NOT_FOUND: 'The requested resource was not found.',
       VALIDATION_ERROR: 'Please check your input and try again.',
       DATABASE_ERROR: 'Database error occurred. Please try again later.',
+      SCHEMA_OUT_OF_DATE: 'Database migration required.',
       INTERNAL_ERROR: 'Server error occurred. Please try again later.',
       SESSION_EXPIRED: 'Session expired. Please log in again.',
       DUPLICATE_RECORD: 'This record already exists.',
@@ -297,13 +298,15 @@ export function getUserFriendlyErrorMessage(
  */
 export function createSafeErrorResponse(
   error: unknown,
-  statusCode: number = 500
+  statusCode: number = 500,
+  requestId?: string
 ): {
   message: string;
   error_code?: string;
   details?: unknown;
   retryable?: boolean;
   retry_after_seconds?: number;
+  request_id?: string;
 } {
   const sanitized = sanitizeError(error);
   const userMessage = getUserFriendlyErrorMessage(error);
@@ -321,6 +324,7 @@ export function createSafeErrorResponse(
       error_code: errorCode,
       // Production에서는 details를 절대 포함하지 않음 (보안)
       details: isDevelopment() ? sanitized.details : undefined,
+      request_id: requestId,
     },
     statusCode
   );

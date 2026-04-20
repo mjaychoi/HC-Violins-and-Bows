@@ -22,6 +22,7 @@ import { validateInvoiceFinancials } from '../financialValidation';
 import { attachSignedUrlsToInvoice } from '../imageUrls';
 import { claimInvoiceImageUploads } from '../imageUploadTracking';
 import type { Json } from '@/types/database';
+import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 
 type InvoiceMutationResult = 'full_success' | 'partial_success';
 type JsonObject = { [key: string]: Json | undefined };
@@ -85,6 +86,8 @@ async function getInvoiceHandler(
         status: 403,
       };
     }
+
+    await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
 
     if (!validateUUID(id)) {
       return { payload: { error: `Invalid invoice id: ${id}` }, status: 400 };
@@ -169,6 +172,8 @@ async function updateInvoiceHandler(
     if (adminError) {
       return { payload: { error: 'Admin role required' }, status: 403 };
     }
+
+    await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
 
     if (!validateUUID(id)) {
       return { payload: { error: `Invalid invoice id: ${id}` }, status: 400 };
@@ -417,6 +422,8 @@ async function deleteInvoiceHandler(
     if (adminError) {
       return { payload: { error: 'Admin role required' }, status: 403 };
     }
+
+    await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
 
     if (!validateUUID(id)) {
       return { payload: { error: `Invalid invoice id: ${id}` }, status: 400 };
