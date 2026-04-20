@@ -275,6 +275,58 @@ describe('/api/certificates/[id]', () => {
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
+    it('should fail closed when owner lookup fails', async () => {
+      const instrumentWithOwner = {
+        ...mockInstrument,
+        ownership: '123e4567-e89b-12d3-a456-426614174002',
+      };
+
+      const instrumentQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+      (instrumentQuery.single as jest.Mock).mockResolvedValue({
+        data: instrumentWithOwner,
+        error: null,
+      });
+
+      const ownerQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn(),
+      };
+      (ownerQuery.maybeSingle as jest.Mock).mockResolvedValue({
+        data: null,
+        error: { message: 'owner query failed' },
+      });
+
+      let callCount = 0;
+      mockUserSupabase = {
+        from: jest.fn().mockImplementation(() => {
+          callCount += 1;
+          return callCount === 1 ? instrumentQuery : ownerQuery;
+        }),
+      };
+      mockAuthContext = {
+        ...mockAuthContext,
+        userSupabase: mockUserSupabase,
+      };
+
+      const request = new NextRequest(
+        `http://localhost/api/certificates/${instrumentWithOwner.id}`
+      );
+      const context = {
+        params: Promise.resolve({ id: instrumentWithOwner.id }),
+      };
+      const response = await GET(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('OWNER_LOOKUP_FAILED');
+      expect(mockRenderToBufferFn).not.toHaveBeenCalled();
+    });
+
     it.skip('should fetch owner client when ownership exists', async () => {
       const instrumentWithOwner = {
         ...mockInstrument,

@@ -263,6 +263,17 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      const idempotencyKey = request.headers.get('Idempotency-Key')?.trim();
+      if (!idempotencyKey) {
+        return {
+          payload: {
+            error: 'Idempotency-Key header is required.',
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
       const body = await request.json();
       const {
         client_id,

@@ -738,6 +738,22 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
               : 'Failed to create sale adjustment';
 
           if (isSaleConflict(errorMessage)) {
+            // Adjustment already exists — idempotent retry: return the existing record.
+            const { data: existing } = await auth.userSupabase
+              .from('sales_history')
+              .select('*')
+              .eq('adjustment_of_sale_id', id)
+              .eq('entry_kind', adjustmentKind)
+              .eq('org_id', auth.orgId!)
+              .maybeSingle();
+
+            if (existing) {
+              return {
+                payload: { data: existing },
+                metadata: { id: existing.id },
+              };
+            }
+
             return {
               payload: { error: errorMessage },
               status: 409,

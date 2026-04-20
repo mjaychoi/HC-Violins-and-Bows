@@ -307,7 +307,10 @@ export async function apiHandler(
   } catch (error) {
     const duration = Math.round(now() - startTime);
 
-    if (process.env.NODE_ENV === 'test') {
+    const verboseTestLogging =
+      process.env.NODE_ENV === 'test' &&
+      process.env.API_HANDLER_TEST_DEBUG === 'true';
+    if (verboseTestLogging) {
       console.error('API handler error', error);
       if (error instanceof Error && error.stack) {
         console.error(error.stack);

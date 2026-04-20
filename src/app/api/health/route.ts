@@ -1,29 +1,33 @@
 import { NextResponse } from 'next/server';
 import { checkMigrations } from '@/app/api/_utils/healthCheck';
 
-// This is a health check endpoint for the API.
 export async function GET() {
   const result = await checkMigrations();
+  const fallbackHealthy = result.allHealthy;
+  const checks = {
+    display_order: result.display_order,
+    tenantIsolationMigration:
+      result.tenantIsolationMigration ?? fallbackHealthy,
+    roleEnforcedWritePoliciesMigration:
+      result.roleEnforcedWritePoliciesMigration ?? fallbackHealthy,
+    requiredPoliciesPresent: result.requiredPoliciesPresent ?? fallbackHealthy,
+    forbiddenPoliciesAbsent: result.forbiddenPoliciesAbsent ?? fallbackHealthy,
+    authOrgIdHelperValid: result.authOrgIdHelperValid ?? fallbackHealthy,
+    authIsAdminHelperValid: result.authIsAdminHelperValid ?? fallbackHealthy,
+    criticalPolicyPredicatesValid:
+      result.criticalPolicyPredicatesValid ?? fallbackHealthy,
+    invoiceImageStoragePathShapeValid:
+      result.invoiceImageStoragePathShapeValid ?? fallbackHealthy,
+    requiredColumnsPresent: result.requiredColumnsPresent ?? fallbackHealthy,
+  };
 
   return NextResponse.json(
     {
       status: result.allHealthy ? 'ok' : 'error',
-      version: process.env.NEXT_PUBLIC_APP_VERSION ?? 'dev',
+      version: process.env.NEXT_PUBLIC_APP_VERSION || 'dev',
       timestamp: new Date().toISOString(),
-      checks: {
-        forbiddenPoliciesAbsent: result.forbiddenPoliciesAbsent ?? true,
-        authOrgIdHelperValid: result.authOrgIdHelperValid,
-        authIsAdminHelperValid: result.authIsAdminHelperValid,
-        criticalPolicyPredicatesValid: result.criticalPolicyPredicatesValid,
-        requiredPoliciesPresent: result.requiredPoliciesPresent,
-        requiredColumnsPresent: result.requiredColumnsPresent,
-        invoiceImageStoragePathShapeValid:
-          result.invoiceImageStoragePathShapeValid,
-      },
-      missingColumns: result.missingColumns,
+      checks,
     },
-    {
-      status: result.allHealthy ? 200 : 503,
-    }
+    { status: result.allHealthy ? 200 : 503 }
   );
 }

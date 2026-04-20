@@ -647,6 +647,50 @@ describe('/api/maintenance-tasks', () => {
       expect(response.status).toBe(400);
       expect(json.message).toBe('Invalid task ID format');
     });
+
+    it('should return 409 for invalid maintenance task status transition', async () => {
+      const statusQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { status: 'completed' },
+          error: null,
+        }),
+      };
+      const updateQuery = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+      (updateQuery.single as jest.Mock).mockResolvedValue({
+        data: { ...mockTask, status: 'pending' },
+        error: null,
+      });
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(statusQuery)
+          .mockReturnValueOnce(updateQuery),
+      };
+
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ id: mockTask.id, status: 'pending' }),
+        }
+      );
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.message).toContain(
+        'Invalid maintenance task status transition'
+      );
+      expect(updateQuery.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('DELETE', () => {

@@ -872,6 +872,7 @@ describe('/api/invoices/[id]', () => {
         eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
           data: {
+            status: 'draft',
             subtotal: 100,
             tax: 0,
             total: 100,
@@ -946,8 +947,12 @@ describe('/api/invoices/[id]', () => {
         `http://localhost/api/invoices/${mockInvoiceId}`,
         {
           method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'test-put-idempotency-key-1',
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({
-            status: 'paid',
+            status: 'sent',
             notes: 'Updated',
           }),
         }
@@ -1005,8 +1010,12 @@ describe('/api/invoices/[id]', () => {
         `http://localhost/api/invoices/${mockInvoiceId}`,
         {
           method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'test-put-idempotency-key-2',
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({
-            status: 'paid',
+            status: 'sent',
           }),
         }
       );
@@ -1031,6 +1040,50 @@ describe('/api/invoices/[id]', () => {
         missingPaths: ['org/file-a.jpg', 'org/file-b.jpg'],
       });
       expect(json.data.id).toBe(mockInvoiceId);
+    });
+
+    it('returns 409 for invalid invoice status transition', async () => {
+      const supabase = buildUpdateSupabase();
+      supabase.currentInvoiceQuery.single.mockResolvedValueOnce({
+        data: {
+          status: 'paid',
+          subtotal: 100,
+          tax: 0,
+          total: 100,
+          invoice_items: [],
+        },
+        error: null,
+      });
+
+      mockUserSupabase = {
+        rpc: supabase.rpc,
+        from: supabase.from,
+      };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'test-put-idempotency-key-3',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status: 'draft',
+          }),
+        }
+      );
+      const context = {
+        params: Promise.resolve({ id: mockInvoiceId }),
+      };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.message).toContain('Invalid invoice status transition');
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
     });
   });
 });

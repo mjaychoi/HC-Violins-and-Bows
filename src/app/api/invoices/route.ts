@@ -37,9 +37,6 @@ import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
 const MAX_SEARCH_LEN = 200;
-const DEBUG_INVOICES_ROUTE =
-  process.env.DEBUG_INVOICES_ROUTE === '1' ||
-  process.env.DEBUG_INVOICES_ROUTE === 'true';
 
 type AnyRecord = Record<string, unknown>;
 type JsonObject = { [key: string]: Json | undefined };
@@ -53,10 +50,6 @@ type PostgrestErrorLike = {
 
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
 type InvoiceMutationResult = 'full_success' | 'partial_success';
-
-if (DEBUG_INVOICES_ROUTE) {
-  console.log('[api/invoices] module loaded (debug mode)');
-}
 
 function clampInt(n: number, min: number, max: number): number {
   if (Number.isNaN(n)) return min;
@@ -578,6 +571,13 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       const { items } = validatedInput;
       const idempotencyKey = request.headers.get('Idempotency-Key')?.trim();
 
+      if (!idempotencyKey) {
+        return {
+          payload: { error: 'Idempotency-Key header is required.' },
+          status: 400,
+        };
+      }
+
       const financialError = validateInvoiceFinancials(
         toFinancialSnapshot(validatedInput)
       );
@@ -598,25 +598,14 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       });
       const requestHash = buildInvoiceCreateRequestHash(invoiceData, items);
 
-      const rpcName = idempotencyKey
-        ? 'create_invoice_atomic_idempotent'
-        : 'create_invoice_atomic';
-
-      const rpcArgs = idempotencyKey
-        ? {
-            p_route_key: 'POST:/api/invoices',
-            p_idempotency_key: idempotencyKey,
-            p_request_hash: requestHash,
-            p_invoice: invoiceData,
-            p_items: toInvoiceItemsJson(items),
-          }
-        : {
-            p_invoice: invoiceData,
-            p_items: toInvoiceItemsJson(items),
-          };
-
       const { data: invoiceId, error: invoiceError } =
-        await auth.userSupabase.rpc(rpcName, rpcArgs);
+        await auth.userSupabase.rpc('create_invoice_atomic_idempotent', {
+          p_route_key: 'POST:/api/invoices',
+          p_idempotency_key: idempotencyKey,
+          p_request_hash: requestHash,
+          p_invoice: invoiceData,
+          p_items: toInvoiceItemsJson(items),
+        });
 
       if (invoiceError) {
         if (isIdempotencyReplayError(invoiceError)) {
@@ -773,7 +762,5 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
   );
 }
 
-export const GET = DEBUG_INVOICES_ROUTE
-  ? async () => Response.json({ ok: true, route: 'invoices', debug: true })
-  : withSentryRoute(withAuthRoute(getHandler));
+export const GET = withSentryRoute(withAuthRoute(getHandler));
 export const POST = withSentryRoute(withAuthRoute(postHandler));

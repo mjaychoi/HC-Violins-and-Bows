@@ -21,6 +21,7 @@ import {
 } from '@/app/api/_utils/withAuthRoute';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
+import { validateMaintenanceTaskStatusTransition } from '@/app/api/_utils/stateTransitions';
 import type { TablesInsert, TablesUpdate } from '@/types/database';
 import type { MaintenanceTask } from '@/types';
 
@@ -572,6 +573,34 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           payload: { error: `Invalid update data: ${validationResult.error}` },
           status: 400,
         };
+      }
+
+      if (validationResult.data.status !== undefined) {
+        const { data: currentTask, error: currentTaskError } =
+          await auth.userSupabase
+            .from('maintenance_tasks')
+            .select('status')
+            .eq('id', id)
+            .eq('org_id', auth.orgId!)
+            .single();
+
+        if (currentTaskError || !currentTask) {
+          throw errorHandler.handleSupabaseError(
+            currentTaskError,
+            'Fetch maintenance task status'
+          );
+        }
+
+        const transitionError = validateMaintenanceTaskStatusTransition(
+          currentTask.status as MaintenanceTask['status'],
+          validationResult.data.status as MaintenanceTask['status']
+        );
+        if (transitionError) {
+          return {
+            payload: { error: transitionError },
+            status: 409,
+          };
+        }
       }
 
       const { data, error } = await auth.userSupabase
