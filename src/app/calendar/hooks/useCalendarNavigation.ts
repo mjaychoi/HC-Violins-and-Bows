@@ -95,7 +95,8 @@ export const useCalendarNavigation = ({
         await fetchRef.current(currentRange.startDate, currentRange.endDate, {
           signal: abortController.signal,
           throwOnError: true,
-          suppressErrorToast: options?.suppressErrorToast,
+          // Inline error UI on the calendar; avoid duplicate global toasts.
+          suppressErrorToast: options?.suppressErrorToast ?? true,
         });
 
         // Only process if this is still the latest request (race condition check)
