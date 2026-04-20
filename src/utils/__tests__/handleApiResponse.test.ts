@@ -75,4 +75,25 @@ describe('handleApiResponse', () => {
       status: 502,
     });
   });
+
+  it('replaces HTML error pages with a short message', async () => {
+    const html = `<!DOCTYPE html><html><head><title>500</title></head><body>err</body></html>`;
+    const response = {
+      ok: false,
+      status: 500,
+      headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+      clone: jest.fn().mockReturnValue({
+        json: jest.fn().mockRejectedValue(new Error('not json')),
+      }),
+      text: jest.fn().mockResolvedValue(html),
+    } as unknown as Response;
+
+    await expect(
+      handleApiResponse(response, 'Failed to fetch maintenance tasks (500)')
+    ).rejects.toMatchObject<Partial<ApiResponseError>>({
+      name: 'ApiResponseError',
+      message: 'The server returned an unexpected response. Please try again.',
+      status: 500,
+    });
+  });
 });

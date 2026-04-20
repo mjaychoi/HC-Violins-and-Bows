@@ -22,9 +22,23 @@ function setIfPresent(
   query.set(key, value);
 }
 
+/**
+ * API `/api/maintenance-tasks` expects YYYY-MM-DD (`validateDateString`).
+ * Do not use `toISOString()` — it breaks date-only validation and timezone boundaries.
+ */
 function normalizeDate(value: QueryDateValue | null | undefined) {
   if (value === undefined || value === null) return undefined;
-  return value instanceof Date ? value.toISOString() : value;
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  if (typeof value === 'string') {
+    const head = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (head) return head[1];
+  }
+  return String(value);
 }
 
 export function buildMaintenanceTaskQuery(

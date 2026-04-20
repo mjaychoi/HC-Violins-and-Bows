@@ -65,6 +65,16 @@ function parseJsonRecord(text: string): JsonRecord | null {
   }
 }
 
+/** Next.js / proxy HTML error pages are not user-facing API errors */
+function isLikelyHtmlErrorPayload(text: string): boolean {
+  const t = text.trimStart().toLowerCase();
+  return t.startsWith('<!doctype') || t.startsWith('<html');
+}
+
+function htmlErrorFallbackMessage(): string {
+  return 'The server returned an unexpected response. Please try again.';
+}
+
 function parseApiErrorBody(
   body: JsonRecord | null,
   fallbackMessage: string
@@ -99,6 +109,11 @@ function getHttpFallbackMessage(
 export async function readApiErrorBody(
   res: Response
 ): Promise<JsonRecord | null> {
+  const contentType =
+    res.headers && typeof res.headers.get === 'function'
+      ? (res.headers.get('content-type') ?? '').toLowerCase()
+      : '';
+
   const jsonSource = typeof res.clone === 'function' ? res.clone() : res;
   const jsonBody = await safeJson(jsonSource);
   if (jsonBody) {
@@ -117,6 +132,10 @@ export async function readApiErrorBody(
   const parsed = parseJsonRecord(text);
   if (parsed) {
     return parsed;
+  }
+
+  if (contentType.includes('text/html') || isLikelyHtmlErrorPayload(text)) {
+    return { message: htmlErrorFallbackMessage() };
   }
 
   return { message: text };

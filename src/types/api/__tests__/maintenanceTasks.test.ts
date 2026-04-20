@@ -19,14 +19,14 @@ describe('buildMaintenanceTaskQuery', () => {
     ).toBe('?overdue=false');
   });
 
-  it('serializes Date values to ISO strings', () => {
-    const date = new Date('2026-04-03T12:34:56.000Z');
+  it('serializes Date values to YYYY-MM-DD (local calendar day)', () => {
+    const date = new Date(2026, 3, 3, 12, 34, 56);
 
     expect(
       buildMaintenanceTaskQuery({
         scheduled_date: date,
       })
-    ).toBe(`?scheduled_date=${encodeURIComponent(date.toISOString())}`);
+    ).toBe('?scheduled_date=2026-04-03');
   });
 
   it('uses URLSearchParams encoding for special characters', () => {
