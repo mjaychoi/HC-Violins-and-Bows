@@ -3,6 +3,25 @@ import { checkSchemaReadiness } from '../src/app/api/_utils/schemaReadiness';
 
 dotenv.config({ path: '.env.local' });
 
+function getSchemaTargetHost(): string | null {
+  const candidates = [
+    process.env.SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.DATABASE_URL,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate || !candidate.trim()) continue;
+    try {
+      return new URL(candidate).host;
+    } catch {
+      // Ignore invalid URL candidates; readiness check below will still fail loudly.
+    }
+  }
+
+  return null;
+}
+
 function printList(label: string, values: string[]) {
   if (values.length === 0) {
     return;
@@ -15,6 +34,9 @@ function printList(label: string, values: string[]) {
 }
 
 async function main() {
+  const host = getSchemaTargetHost();
+  console.log(`Schema readiness target: ${host ?? 'unknown-host'}`);
+
   const result = await checkSchemaReadiness({ bypassCache: true });
 
   if (result.ready) {
