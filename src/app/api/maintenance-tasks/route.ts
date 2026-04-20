@@ -38,7 +38,9 @@ function toMaintenanceTaskInsertRow(
 function toMaintenanceTaskUpdateRow(
   input: Partial<MaintenanceTask>
 ): MaintenanceTaskUpdateRow {
-  const { instrument: _instrument, client: _client, ...rest } = input;
+  const { instrument, client, ...rest } = input;
+  void instrument;
+  void client;
   return rest;
 }
 

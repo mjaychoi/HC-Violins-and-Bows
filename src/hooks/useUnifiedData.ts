@@ -680,9 +680,18 @@ export function useUnifiedSearch() {
   const instruments = instrumentsContext.state.instruments;
   const connections = connectionsContext.state.connections;
   const { isTenantTransitioning } = useTenantScopeGuard();
-  const safeClients = isTenantTransitioning ? [] : clients;
-  const safeInstruments = isTenantTransitioning ? [] : instruments;
-  const safeConnections = isTenantTransitioning ? [] : connections;
+  const safeClients = useMemo(
+    () => (isTenantTransitioning ? [] : clients),
+    [isTenantTransitioning, clients]
+  );
+  const safeInstruments = useMemo(
+    () => (isTenantTransitioning ? [] : instruments),
+    [isTenantTransitioning, instruments]
+  );
+  const safeConnections = useMemo(
+    () => (isTenantTransitioning ? [] : connections),
+    [isTenantTransitioning, connections]
+  );
 
   const searchAll = useCallback(
     (query: string) => {
