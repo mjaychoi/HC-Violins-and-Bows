@@ -237,11 +237,6 @@ function buildInvoiceSearchFilter(search: string): string {
 }
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
-  if (DEBUG_INVOICES_ROUTE) {
-    console.log('[api/invoices] GET entered (debug mode)');
-    return Response.json({ ok: true, route: 'invoices', debug: true });
-  }
-
   return apiHandler(
     request,
     {
@@ -778,5 +773,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
   );
 }
 
-export const GET = withSentryRoute(withAuthRoute(getHandler));
+export const GET = DEBUG_INVOICES_ROUTE
+  ? async () => Response.json({ ok: true, route: 'invoices', debug: true })
+  : withSentryRoute(withAuthRoute(getHandler));
 export const POST = withSentryRoute(withAuthRoute(postHandler));

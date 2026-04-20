@@ -82,6 +82,10 @@ async function getUserFromRequest(request: NextRequest): Promise<AuthResult> {
       userSupabase: cookieAuth.userSupabase,
     };
   } catch (error) {
+    console.error('[withAuthRoute] getUserFromRequest failed', {
+      path: request.nextUrl.pathname,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return {
       user: null,
       accessToken: null,
