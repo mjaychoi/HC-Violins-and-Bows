@@ -605,6 +605,7 @@ function InvoicesPageContent() {
     confirmDeleteInvoice,
     deleteInvoice,
     showSuccess,
+    showWarning,
     handleError,
     refreshInvoiceList,
     page,

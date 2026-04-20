@@ -399,6 +399,7 @@ const ItemList = memo(function ItemList({
     // FIXED: clientsMap already includes all clients data, so allClients dependency is unnecessary
     [clientsMap, clientsLoading]
   );
+  void renderOwnership;
 
   const startEditing = useCallback(
     (item: Instrument) => {

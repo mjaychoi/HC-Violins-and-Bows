@@ -37,14 +37,16 @@ function toInstrumentInsertRow(
     reserved_connection_id: string | null;
   }
 ): InstrumentInsertRow {
-  const { has_certificate: _hasCertificate, ...rest } = input;
+  const { has_certificate, ...rest } = input;
+  void has_certificate;
   return rest;
 }
 
 function toInstrumentUpdateRow(
   input: Partial<Instrument>
 ): InstrumentUpdateRow {
-  const { has_certificate: _hasCertificate, ...rest } = input;
+  const { has_certificate, ...rest } = input;
+  void has_certificate;
   return rest;
 }
 

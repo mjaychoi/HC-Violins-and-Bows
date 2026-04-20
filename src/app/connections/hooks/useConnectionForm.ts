@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClientInstrument } from '@/types';
 import { useModalState } from '@/hooks/useModalState';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
@@ -20,14 +20,15 @@ export function useConnectionForm() {
   const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
   const [connectionSearchTerm, setConnectionSearchTerm] = useState('');
   const { tenantIdentityKey } = useTenantIdentity();
+  const lastTenantIdentityKeyRef = useRef<string | null>(null);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setSelectedClient('');
     setSelectedInstrument('');
     setRelationshipType('Interested');
     setConnectionNotes('');
     resetModal();
-  };
+  }, [resetModal]);
 
   const open = () => openModal();
   const close = () => {
@@ -35,8 +36,12 @@ export function useConnectionForm() {
   };
 
   useEffect(() => {
+    if (lastTenantIdentityKeyRef.current === tenantIdentityKey) {
+      return;
+    }
+    lastTenantIdentityKeyRef.current = tenantIdentityKey;
     resetForm();
-  }, [tenantIdentityKey]);
+  }, [tenantIdentityKey, resetForm]);
 
   return {
     // Form states

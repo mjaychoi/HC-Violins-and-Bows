@@ -195,8 +195,8 @@ async function patchHandlerInternal(
       }
 
       // Strip computed/relation-only fields not present in the DB schema
-      const { has_certificate: _hc, ...dbInstrumentUpdate } =
-        validationResult.data;
+      const { has_certificate, ...dbInstrumentUpdate } = validationResult.data;
+      void has_certificate;
       const { data, error } = await auth.userSupabase
         .from('instruments')
         .update(dbInstrumentUpdate)
