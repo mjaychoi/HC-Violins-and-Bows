@@ -517,6 +517,10 @@ describe('/api/contacts', () => {
 
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': 'test-contacts-post-1',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           client_id: mockContactLog.client_id,
           contact_type: 'email',
@@ -581,6 +585,10 @@ describe('/api/contacts', () => {
 
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': 'test-contacts-post-2',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(createData),
       });
       const response = await POST(request);
@@ -636,6 +644,10 @@ describe('/api/contacts', () => {
 
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': 'test-contacts-post-3',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           client_id: mockContactLog.client_id,
           instrument_id: instrumentId,
@@ -700,6 +712,10 @@ describe('/api/contacts', () => {
 
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': 'test-contacts-post-4',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           client_id: mockContactLog.client_id,
           instrument_id: instrumentId,
@@ -740,6 +756,10 @@ describe('/api/contacts', () => {
 
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': 'test-contacts-post-5',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           client_id: mockContactLog.client_id,
           contact_type: 'email',
@@ -759,6 +779,10 @@ describe('/api/contacts', () => {
     it('should return 400 when client_id is missing', async () => {
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': 'test-contacts-post-6',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           contact_type: 'email',
           content: 'Test',
@@ -775,6 +799,10 @@ describe('/api/contacts', () => {
     it('should return 400 when contact_type is invalid', async () => {
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': 'test-contacts-post-7',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           client_id: mockContactLog.client_id,
           contact_type: 'invalid',
@@ -792,6 +820,10 @@ describe('/api/contacts', () => {
     it('should return 400 when content is missing', async () => {
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': 'test-contacts-post-8',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           client_id: mockContactLog.client_id,
           contact_type: 'email',

@@ -103,10 +103,29 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   // ------------------------------------------------------------------
   // 3. Static assets and Next.js internals — always allow
   // ------------------------------------------------------------------
+  const STATIC_EXTENSIONS = [
+    '.svg',
+    '.png',
+    '.jpg',
+    '.jpeg',
+    '.gif',
+    '.webp',
+    '.ico',
+    '.js',
+    '.css',
+    '.map',
+    '.woff',
+    '.woff2',
+    '.ttf',
+    '.eot',
+    '.json',
+    '.txt',
+    '.xml',
+  ];
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
-    pathname.includes('.')
+    STATIC_EXTENSIONS.some(ext => pathname.endsWith(ext))
   ) {
     return NextResponse.next();
   }

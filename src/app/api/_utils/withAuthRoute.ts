@@ -8,6 +8,7 @@ import {
 import { createApiErrorResponse } from '@/app/api/_utils/apiErrors';
 import { ErrorSeverity } from '@/types/errors';
 import { captureException } from '@/utils/monitoring';
+import { logError } from '@/utils/logger';
 
 export interface AuthContext {
   user: User;
@@ -82,10 +83,14 @@ async function getUserFromRequest(request: NextRequest): Promise<AuthResult> {
       userSupabase: cookieAuth.userSupabase,
     };
   } catch (error) {
-    console.error('[withAuthRoute] getUserFromRequest failed', {
-      path: request.nextUrl.pathname,
-      message: error instanceof Error ? error.message : String(error),
-    });
+    logError(
+      '[withAuthRoute] getUserFromRequest failed',
+      error,
+      'withAuthRoute',
+      {
+        path: request.nextUrl.pathname,
+      }
+    );
     return {
       user: null,
       accessToken: null,

@@ -17,7 +17,12 @@ export async function register() {
       await import('./utils/storage/config');
     validateStorageRuntimeConfig();
   } catch (error) {
-    console.error('[instrumentation] Storage configuration invalid:', error);
+    const { Logger } = await import('./utils/logger');
+    Logger.error(
+      '[instrumentation] Storage configuration invalid',
+      error,
+      'instrumentation'
+    );
     throw error;
   }
 
@@ -26,7 +31,12 @@ export async function register() {
       await import('./app/api/_utils/schemaReadiness');
     await assertSchemaReadiness({ bypassCache: true });
   } catch (error) {
-    console.error('[instrumentation] Schema readiness check failed:', error);
+    const { Logger } = await import('./utils/logger');
+    Logger.error(
+      '[instrumentation] Schema readiness check failed',
+      error,
+      'instrumentation'
+    );
     throw error;
   }
 
@@ -42,12 +52,32 @@ export async function register() {
         process.env.NODE_ENV === 'production'
           ? Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? '0.05') || 0.05
           : 1.0,
+      beforeSend(event) {
+        const minLevel = (
+          process.env.SENTRY_MIN_LEVEL || 'error'
+        ).toLowerCase();
+        const rank: Record<string, number> = {
+          debug: 0,
+          info: 1,
+          log: 1,
+          warning: 2,
+          error: 3,
+          fatal: 4,
+        };
+        const eventLevel = event.level || 'error';
+        const threshold = minLevel in rank ? rank[minLevel] : rank.error;
+        return (rank[eventLevel] ?? rank.error) >= threshold ? event : null;
+      },
     });
   } catch (error) {
-    // Silently fail if Sentry is not available (dev environment)
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('[instrumentation] Sentry initialization skipped:', error);
-    }
+    const { Logger } = await import('./utils/logger');
+    Logger.warn(
+      '[instrumentation] Sentry initialization skipped',
+      'instrumentation',
+      {
+        reason: error instanceof Error ? error.message : String(error),
+      }
+    );
   }
 
   // Optional: OpenTelemetry initialization (if needed)

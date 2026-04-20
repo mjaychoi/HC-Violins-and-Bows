@@ -538,6 +538,9 @@ describe('/api/invoices POST', () => {
     const { POST } = await import('../route');
     const request = new NextRequest('http://localhost/api/invoices', {
       method: 'POST',
+      headers: {
+        'Idempotency-Key': 'test-key-1',
+      },
       body: JSON.stringify({
         client_id: refreshedInvoice.client_id,
         invoice_date: refreshedInvoice.invoice_date,
@@ -624,6 +627,9 @@ describe('/api/invoices POST', () => {
     const { POST } = await import('../route');
     const request = new NextRequest('http://localhost/api/invoices', {
       method: 'POST',
+      headers: {
+        'Idempotency-Key': 'test-key-2',
+      },
       body: JSON.stringify({
         client_id: refreshedInvoice.client_id,
         invoice_date: refreshedInvoice.invoice_date,
@@ -664,6 +670,9 @@ describe('/api/invoices POST', () => {
     const { POST } = await import('../route');
     const request = new NextRequest('http://localhost/api/invoices', {
       method: 'POST',
+      headers: {
+        'Idempotency-Key': 'test-key-3',
+      },
       body: JSON.stringify({
         client_id: '123e4567-e89b-12d3-a456-426614174001',
         invoice_date: '2026-04-03',
@@ -696,6 +705,9 @@ describe('/api/invoices POST', () => {
     const { POST } = await import('../route');
     const request = new NextRequest('http://localhost/api/invoices', {
       method: 'POST',
+      headers: {
+        'Idempotency-Key': 'test-key-4',
+      },
       body: JSON.stringify({
         client_id: '123e4567-e89b-12d3-a456-426614174001',
         invoice_date: '2026-04-03',
@@ -768,6 +780,9 @@ describe('/api/invoices POST', () => {
     const { POST } = await import('../route');
     const request = new NextRequest('http://localhost/api/invoices', {
       method: 'POST',
+      headers: {
+        'Idempotency-Key': 'test-key-5',
+      },
       body: JSON.stringify({
         client_id: refreshedInvoice.client_id,
         invoice_date: refreshedInvoice.invoice_date,

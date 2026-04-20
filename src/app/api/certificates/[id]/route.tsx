@@ -8,7 +8,7 @@ import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
 import { requireOrgContext } from '@/app/api/_utils/withAuthRoute';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { errorHandler } from '@/utils/errorHandler';
-import { logApiRequest } from '@/utils/logger';
+import { logApiRequest, logWarn } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import { ErrorSeverity, ErrorCodes } from '@/types/errors';
 import type { AppError } from '@/types/errors';
@@ -131,9 +131,12 @@ async function resolveLogoSrc(): Promise<string | undefined> {
     // Fallback to absolute URL
     const absoluteUrl =
       process.env.NEXT_PUBLIC_LOGO_URL || 'https://www.hcviolins.com/logo.png';
-    console.warn(
-      'Failed to read logo from public folder; falling back to absolute URL:',
-      e instanceof Error ? e.message : String(e)
+    logWarn(
+      'Failed to read logo from public folder; falling back to absolute URL',
+      'CertificatesAPI',
+      {
+        reason: e instanceof Error ? e.message : String(e),
+      }
     );
     return absoluteUrl || undefined;
   }
@@ -216,23 +219,127 @@ async function getHandlerInternal(
 
     if (instrument && ownerId) {
       try {
-        const { data: ownerClient } = await auth.userSupabase
-          .from('clients')
-          .select('name, email')
-          .eq('id', ownerId)
-          .eq('org_id', auth.orgId!)
-          .maybeSingle();
+        const { data: ownerClient, error: ownerLookupError } =
+          await auth.userSupabase
+            .from('clients')
+            .select('name, email')
+            .eq('id', ownerId)
+            .eq('org_id', auth.orgId!)
+            .maybeSingle();
+
+        if (ownerLookupError) {
+          const status = 503;
+          const appError = errorHandler.createError(
+            ErrorCodes.DATABASE_ERROR,
+            'Owner lookup failed for certificate generation',
+            ownerLookupError.message || 'Failed to resolve owner',
+            { instrumentId: id, ownerId }
+          );
+          const logInfo = createLogErrorInfo(appError);
+
+          logApiRequest(
+            'GET',
+            routePath,
+            status,
+            durationMs(),
+            'CertificatesAPI',
+            {
+              instrumentId: id,
+              requestId,
+              error: true,
+              errorCode: 'OWNER_LOOKUP_FAILED',
+              logMessage: logInfo.message,
+              ownerId,
+            }
+          );
+
+          captureException(
+            appError,
+            'CertificatesAPI.GET.ownerLookup',
+            { instrumentId: id, ownerId, requestId },
+            ErrorSeverity.HIGH
+          );
+
+          return withRequestIdHeader(
+            createApiErrorResponse(
+              {
+                message: 'Failed to resolve certificate owner. Please retry.',
+                error_code: 'OWNER_LOOKUP_FAILED',
+                retryable: true,
+              },
+              status
+            ),
+            requestId
+          );
+        }
 
         if (ownerClient) {
           ownerName =
             (ownerClient.name && String(ownerClient.name).trim()) ||
             ownerClient.email ||
             null;
+        } else {
+          logApiRequest(
+            'GET',
+            routePath,
+            409,
+            durationMs(),
+            'CertificatesAPI',
+            {
+              instrumentId: id,
+              requestId,
+              error: true,
+              errorCode: 'OWNER_NOT_FOUND',
+              ownerId,
+            }
+          );
+
+          return withRequestIdHeader(
+            createApiErrorResponse(
+              {
+                message:
+                  'Certificate owner reference is invalid. Please fix owner data.',
+                error_code: 'OWNER_NOT_FOUND',
+                retryable: false,
+              },
+              409
+            ),
+            requestId
+          );
         }
       } catch (ownerError) {
-        console.warn(
-          'Failed to fetch owner client for certificate:',
-          ownerError instanceof Error ? ownerError.message : String(ownerError)
+        const status = 503;
+        logApiRequest(
+          'GET',
+          routePath,
+          status,
+          durationMs(),
+          'CertificatesAPI',
+          {
+            instrumentId: id,
+            requestId,
+            error: true,
+            errorCode: 'OWNER_LOOKUP_FAILED',
+            ownerId,
+          }
+        );
+        captureException(
+          ownerError,
+          'CertificatesAPI.GET.ownerLookup',
+          { instrumentId: id, ownerId, requestId },
+          ErrorSeverity.HIGH
+        );
+
+        return withRequestIdHeader(
+          createApiErrorResponse(
+            {
+              message: 'Failed to resolve certificate owner. Please retry.',
+              error_code: 'OWNER_LOOKUP_FAILED',
+              retryable: true,
+            },
+            status
+          ),
+          requestId
         );
       }
     }

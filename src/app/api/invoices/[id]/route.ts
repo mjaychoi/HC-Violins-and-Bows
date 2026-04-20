@@ -17,6 +17,7 @@ import {
 
 import { validateUUID } from '@/utils/inputValidation';
 import { normalizeInvoiceRecord } from '@/utils/invoiceNormalize';
+import { validateInvoiceStatusTransition } from '@/app/api/_utils/stateTransitions';
 import type { CreateInvoiceInput, InvoiceFinancialSnapshot } from '../types';
 import { validateInvoiceFinancials } from '../financialValidation';
 import { attachSignedUrlsToInvoice } from '../imageUrls';
@@ -179,6 +180,14 @@ async function updateInvoiceHandler(
       return { payload: { error: `Invalid invoice id: ${id}` }, status: 400 };
     }
 
+    const idempotencyKey = request.headers.get('Idempotency-Key')?.trim();
+    if (!idempotencyKey) {
+      return {
+        payload: { error: 'Idempotency-Key header is required.' },
+        status: 400,
+      };
+    }
+
     // JSON parse safety
     let body: unknown;
     try {
@@ -209,6 +218,7 @@ async function updateInvoiceHandler(
 
     if (
       itemsProvided ||
+      validatedInput.status !== undefined ||
       validatedInput.subtotal !== undefined ||
       validatedInput.tax !== undefined ||
       validatedInput.total !== undefined
@@ -216,7 +226,9 @@ async function updateInvoiceHandler(
       const { data: currentInvoice, error: currentInvoiceError } =
         await auth.userSupabase
           .from('invoices')
-          .select('subtotal, tax, total, invoice_items(qty, rate, amount)')
+          .select(
+            'status, subtotal, tax, total, invoice_items(qty, rate, amount)'
+          )
           .eq('id', id)
           .eq('org_id', orgId)
           .single();
@@ -231,6 +243,24 @@ async function updateInvoiceHandler(
       const currentItems = Array.isArray(currentInvoice.invoice_items)
         ? currentInvoice.invoice_items
         : [];
+      if (validatedInput.status !== undefined) {
+        if (typeof currentInvoice.status !== 'string') {
+          return {
+            payload: { error: 'Current invoice status is invalid.' },
+            status: 409,
+          };
+        }
+        const transitionError = validateInvoiceStatusTransition(
+          currentInvoice.status as NonNullable<CreateInvoiceInput['status']>,
+          validatedInput.status as NonNullable<CreateInvoiceInput['status']>
+        );
+        if (transitionError) {
+          return {
+            payload: { error: transitionError },
+            status: 409,
+          };
+        }
+      }
       const financialSnapshot: InvoiceFinancialSnapshot = {
         subtotal:
           validatedInput.subtotal !== undefined

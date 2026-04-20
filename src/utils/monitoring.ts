@@ -17,6 +17,14 @@ export interface AlertConfig {
   };
 }
 
+type WebhookDeliveryResult = {
+  delivered: boolean;
+  attempts: number;
+  statusCode?: number;
+  retryable: boolean;
+  errorMessage?: string;
+};
+
 /**
  * Get alert configuration from environment variables
  * SECURITY: Webhook URL should NOT use NEXT_PUBLIC_ prefix to avoid client-side exposure
@@ -56,57 +64,81 @@ async function sendToWebhook(
   error: AppError | Error,
   context?: string,
   metadata?: LogContext
-): Promise<void> {
+): Promise<WebhookDeliveryResult> {
   const config = getAlertConfig();
   if (!config.webhook?.enabled || !config.webhook.url) {
-    return;
-  }
-
-  try {
-    const errorData = {
-      message:
-        error instanceof Error ? error.message : (error as AppError).message,
-      code: (error as AppError).code || 'UNKNOWN_ERROR',
-      stack: error instanceof Error ? error.stack : (error as AppError).details,
-      context,
-      metadata,
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'unknown',
-      url: typeof window !== 'undefined' ? window.location.href : undefined,
-      userAgent:
-        typeof window !== 'undefined' ? window.navigator.userAgent : undefined,
+    return {
+      delivered: false,
+      attempts: 0,
+      retryable: false,
+      errorMessage: 'WEBHOOK_DISABLED',
     };
-
-    const response = await fetch(config.webhook.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(errorData),
-    });
-
-    if (!response.ok) {
-      Logger.warn(
-        `Webhook notification failed: ${response.status}`,
-        'monitoring'
-      );
-    }
-  } catch (webhookError) {
-    // Don't throw - webhook failures shouldn't break the app
-    Logger.warn(
-      `Failed to send webhook notification: ${webhookError}`,
-      'monitoring'
-    );
   }
+
+  const errorData = {
+    message:
+      error instanceof Error ? error.message : (error as AppError).message,
+    code: (error as AppError).code || 'UNKNOWN_ERROR',
+    stack: error instanceof Error ? error.stack : (error as AppError).details,
+    context,
+    metadata,
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'unknown',
+    url: typeof window !== 'undefined' ? window.location.href : undefined,
+    userAgent:
+      typeof window !== 'undefined' ? window.navigator.userAgent : undefined,
+  };
+
+  const maxAttempts = 3;
+  let lastStatusCode: number | undefined;
+  let lastErrorMessage: string | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(config.webhook.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(errorData),
+      });
+
+      if (response.ok) {
+        return {
+          delivered: true,
+          attempts: attempt,
+          retryable: false,
+        };
+      }
+
+      lastStatusCode = response.status;
+      lastErrorMessage = `HTTP_${response.status}`;
+    } catch (webhookError) {
+      lastErrorMessage =
+        webhookError instanceof Error
+          ? webhookError.message
+          : String(webhookError);
+    }
+
+    if (attempt < maxAttempts) {
+      const backoffMs = attempt * 250;
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+    }
+  }
+
+  return {
+    delivered: false,
+    attempts: maxAttempts,
+    statusCode: lastStatusCode,
+    retryable: true,
+    errorMessage: lastErrorMessage || 'WEBHOOK_DELIVERY_FAILED',
+  };
 }
 
 /**
  * Check if error severity meets threshold for alerting
  */
-function shouldAlert(
-  error: AppError | Error,
-  severity: ErrorSeverity = ErrorSeverity.MEDIUM
-): boolean {
+function shouldAlert(severity: ErrorSeverity = ErrorSeverity.MEDIUM): boolean {
   const config = getAlertConfig();
   const severityLevels = [
     ErrorSeverity.LOW,
@@ -184,10 +216,96 @@ export function captureException(
   }
 
   // Send alert if severity threshold is met
-  if (shouldAlert(appError, severity)) {
-    sendToWebhook(appError, context, metadata).catch(() => {
-      // Silently fail - webhook errors shouldn't break the app
+  captureExceptionWithSeverityFilter(appError, context, metadata, severity);
+
+  if (shouldAlert(severity)) {
+    sendToWebhook(appError, context, metadata)
+      .then(result => {
+        if (!result.delivered && result.attempts > 0) {
+          Logger.error(
+            'Webhook delivery failed after retries',
+            new Error(result.errorMessage || 'WEBHOOK_DELIVERY_FAILED'),
+            'monitoring',
+            {
+              ...metadata,
+              retryable: result.retryable,
+              attempts: result.attempts,
+              statusCode: result.statusCode,
+              context,
+              signal: 'WEBHOOK_RETRY_REQUIRED',
+            }
+          );
+        }
+      })
+      .catch(unexpectedWebhookError => {
+        Logger.error(
+          'Unexpected webhook dispatch failure',
+          unexpectedWebhookError,
+          'monitoring',
+          {
+            ...metadata,
+            context,
+            signal: 'WEBHOOK_RETRY_REQUIRED',
+          }
+        );
+      });
+  }
+}
+
+function resolveSentryLevel(severity: ErrorSeverity): Sentry.SeverityLevel {
+  switch (severity) {
+    case ErrorSeverity.CRITICAL:
+      return 'fatal';
+    case ErrorSeverity.HIGH:
+      return 'error';
+    case ErrorSeverity.MEDIUM:
+      return 'warning';
+    case ErrorSeverity.LOW:
+    default:
+      return 'info';
+  }
+}
+
+function shouldSendToSentry(severity: ErrorSeverity): boolean {
+  const minLevelRaw = (process.env.SENTRY_MIN_LEVEL || 'error').toLowerCase();
+  const rank: Record<Sentry.SeverityLevel, number> = {
+    debug: 0,
+    info: 1,
+    log: 1,
+    warning: 2,
+    error: 3,
+    fatal: 4,
+  };
+  const minLevel =
+    minLevelRaw === 'fatal' ||
+    minLevelRaw === 'error' ||
+    minLevelRaw === 'warning' ||
+    minLevelRaw === 'info' ||
+    minLevelRaw === 'debug'
+      ? (minLevelRaw as Sentry.SeverityLevel)
+      : ('error' as Sentry.SeverityLevel);
+  const sentryLevel = resolveSentryLevel(severity);
+  return rank[sentryLevel] >= rank[minLevel];
+}
+
+export function captureExceptionWithSeverityFilter(
+  appError: AppError | Error,
+  context?: string,
+  metadata?: LogContext,
+  severity: ErrorSeverity = ErrorSeverity.MEDIUM
+): void {
+  if (!shouldSendToSentry(severity)) {
+    return;
+  }
+
+  try {
+    Sentry.captureException(appError, {
+      level: resolveSentryLevel(severity),
+      tags: context ? { context } : undefined,
+      extra: metadata,
     });
+  } catch {
+    // Sentry 미설정/로딩 실패 시에도 조용히 무시
   }
 }
 
