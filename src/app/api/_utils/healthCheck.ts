@@ -4,6 +4,7 @@ import {
   INVOICE_IMAGE_STORAGE_PATH_SEGMENTS,
   matchesInvoiceImageStoragePolicyShape,
 } from '@/app/api/invoices/imageUrls';
+import { checkSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 
 export interface MigrationCheckResult {
   display_order: boolean;
@@ -15,12 +16,14 @@ export interface MigrationCheckResult {
   authIsAdminHelperValid: boolean;
   criticalPolicyPredicatesValid: boolean;
   invoiceImageStoragePathShapeValid: boolean;
+  requiredColumnsPresent: boolean;
   allHealthy: boolean;
   missingMigrationVersions: string[];
   missingPolicies: string[];
   forbiddenPoliciesPresent: string[];
   invalidHelpers: string[];
   unsafePolicies: string[];
+  missingColumns: string[];
 }
 
 type SchemaName = 'public' | 'storage';
@@ -279,12 +282,14 @@ function unhealthyResult(
     authIsAdminHelperValid: false,
     criticalPolicyPredicatesValid: false,
     invoiceImageStoragePathShapeValid: false,
+    requiredColumnsPresent: false,
     allHealthy: false,
     missingMigrationVersions: [...REQUIRED_MIGRATION_VERSIONS],
     missingPolicies: [...REQUIRED_POLICY_NAMES],
     forbiddenPoliciesPresent: getDefaultForbiddenPolicyKeys(),
     invalidHelpers: ['public.org_id', 'public.is_admin'],
     unsafePolicies: [...REQUIRED_POLICY_NAMES],
+    missingColumns: ['public.invoices.invoice_number'],
     ...overrides,
   };
 }
@@ -457,11 +462,15 @@ function buildPartialFailureResult(params: {
   missingMigrationVersions: string[];
   invalidHelpers?: string[];
   includeHelperFlags?: boolean;
+  requiredColumnsPresent?: boolean;
+  missingColumns?: string[];
 }): MigrationCheckResult {
   const {
     missingMigrationVersions,
     invalidHelpers = [],
     includeHelperFlags = false,
+    requiredColumnsPresent = false,
+    missingColumns = ['public.invoices.invoice_number'],
   } = params;
 
   const tenantIsolationMigration = getMigrationFlag(
@@ -480,6 +489,8 @@ function buildPartialFailureResult(params: {
     missingMigrationVersions,
     missingPolicies: [...REQUIRED_POLICY_NAMES],
     invalidHelpers,
+    requiredColumnsPresent,
+    missingColumns,
     ...(includeHelperFlags
       ? {
           authOrgIdHelperValid: !invalidHelpers.includes('public.org_id'),
@@ -521,6 +532,7 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
     const missingMigrationVersions = REQUIRED_MIGRATION_VERSIONS.filter(
       version => !appliedVersions.has(version)
     );
+    const schemaReadiness = await checkSchemaReadiness({ bypassCache: true });
 
     const { data: functionRows, error: functionError } = await sysSupa
       .from('pg_proc')
@@ -530,6 +542,8 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
     if (functionError) {
       return buildPartialFailureResult({
         missingMigrationVersions,
+        requiredColumnsPresent: schemaReadiness.ready,
+        missingColumns: schemaReadiness.missingColumns,
       });
     }
 
@@ -548,6 +562,8 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
         missingMigrationVersions,
         invalidHelpers,
         includeHelperFlags: true,
+        requiredColumnsPresent: schemaReadiness.ready,
+        missingColumns: schemaReadiness.missingColumns,
       });
     }
 
@@ -578,6 +594,7 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
       unsafePolicies.length === 0 && missingPolicies.length === 0;
     const invoiceImageStoragePathShapeValid =
       isInvoiceImageStoragePathInvariantValid();
+    const requiredColumnsPresent = schemaReadiness.ready;
 
     const allHealthy =
       requiredMigrationsPresent &&
@@ -588,7 +605,8 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
       authOrgIdHelperValid &&
       authIsAdminHelperValid &&
       criticalPolicyPredicatesValid &&
-      invoiceImageStoragePathShapeValid;
+      invoiceImageStoragePathShapeValid &&
+      requiredColumnsPresent;
 
     const display_order =
       tenantIsolationMigration &&
@@ -597,7 +615,8 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
       authOrgIdHelperValid &&
       authIsAdminHelperValid &&
       criticalPolicyPredicatesValid &&
-      invoiceImageStoragePathShapeValid;
+      invoiceImageStoragePathShapeValid &&
+      requiredColumnsPresent;
 
     return {
       display_order,
@@ -609,12 +628,14 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
       authIsAdminHelperValid,
       criticalPolicyPredicatesValid,
       invoiceImageStoragePathShapeValid,
+      requiredColumnsPresent,
       allHealthy,
       missingMigrationVersions,
       missingPolicies,
       forbiddenPoliciesPresent,
       invalidHelpers,
       unsafePolicies,
+      missingColumns: schemaReadiness.missingColumns,
     };
   } catch {
     return unhealthyResult();

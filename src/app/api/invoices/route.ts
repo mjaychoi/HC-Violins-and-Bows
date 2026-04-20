@@ -32,6 +32,7 @@ import {
 } from './financialValidation';
 import { attachSignedUrlsToInvoice } from './imageUrls';
 import { claimInvoiceImageUploads } from './imageUploadTracking';
+import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
@@ -39,6 +40,13 @@ const MAX_SEARCH_LEN = 200;
 
 type AnyRecord = Record<string, unknown>;
 type JsonObject = { [key: string]: Json | undefined };
+type PostgrestErrorLike = {
+  code?: string;
+  message?: string;
+  details?: unknown;
+  hint?: unknown;
+  error_code?: unknown;
+};
 
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
 type InvoiceMutationResult = 'full_success' | 'partial_success';
@@ -61,6 +69,65 @@ function getErrorCode(err: unknown): string | undefined {
     return typeof code === 'string' ? code : undefined;
   }
   return undefined;
+}
+
+function parseErrorDetailsObject(
+  details: unknown
+): Record<string, unknown> | null {
+  if (!details) return null;
+  if (typeof details === 'object') return details as Record<string, unknown>;
+  if (typeof details !== 'string') return null;
+  try {
+    const parsed = JSON.parse(details) as unknown;
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function getExplicitErrorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const e = err as PostgrestErrorLike;
+  if (typeof e.error_code === 'string') return e.error_code;
+  const details = parseErrorDetailsObject(e.details);
+  const detailCode = details?.error_code;
+  return typeof detailCode === 'string' ? detailCode : undefined;
+}
+
+function extractExistingInvoiceIdFromError(err: unknown): string | null {
+  if (!err || typeof err !== 'object') return null;
+  const e = err as PostgrestErrorLike & { existing_invoice_id?: unknown };
+  if (
+    typeof e.existing_invoice_id === 'string' &&
+    e.existing_invoice_id.trim()
+  ) {
+    return e.existing_invoice_id.trim();
+  }
+
+  const details = parseErrorDetailsObject(e.details);
+  const detailId = details?.existing_invoice_id;
+  if (typeof detailId === 'string' && detailId.trim()) {
+    return detailId.trim();
+  }
+  return null;
+}
+
+function isIdempotencyReplayError(err: unknown): boolean {
+  return getExplicitErrorCode(err) === 'IDEMPOTENCY_REPLAY';
+}
+
+function isIdempotencyInProgress(err: unknown): boolean {
+  return getExplicitErrorCode(err) === 'IDEMPOTENCY_IN_PROGRESS';
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    getErrorCode(err) === '23505' ||
+    getExplicitErrorCode(err) === 'UNIQUE_VIOLATION'
+  );
 }
 
 /** List GET must not return rows we cannot sign image URLs for (missing / not found). */
@@ -179,6 +246,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           status: 403,
         };
       }
+
+      await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
 
       try {
         const searchParams = request.nextUrl.searchParams;
@@ -479,6 +548,8 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
+
       let body: unknown;
       try {
         body = await request.json();
@@ -541,15 +612,35 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         await auth.userSupabase.rpc(rpcName, rpcArgs);
 
       if (invoiceError) {
-        const message = getErrorMessage(invoiceError);
-        if (
-          message.includes('Idempotency key reuse with different payload') ||
-          message.includes('Idempotent request is already in progress') ||
-          message.toLowerCase().includes('duplicate') ||
-          getErrorCode(invoiceError) === '23505'
-        ) {
+        if (isIdempotencyReplayError(invoiceError)) {
+          const existingInvoiceId =
+            extractExistingInvoiceIdFromError(invoiceError);
           return {
-            payload: { error: message },
+            payload: {
+              error_code: 'IDEMPOTENCY_REPLAY',
+              message: 'Request already processed',
+              data: existingInvoiceId
+                ? { id: existingInvoiceId, replayed: true }
+                : null,
+            },
+            status: 409,
+          };
+        }
+        if (isIdempotencyInProgress(invoiceError)) {
+          return {
+            payload: {
+              error_code: 'IDEMPOTENCY_IN_PROGRESS',
+              message: 'Request is already in progress',
+            },
+            status: 409,
+          };
+        }
+        if (isUniqueViolation(invoiceError)) {
+          return {
+            payload: {
+              error_code: 'UNIQUE_VIOLATION',
+              message: 'Invoice conflict',
+            },
             status: 409,
           };
         }
@@ -576,83 +667,101 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         );
       }
 
-      const { data: refreshed, error: refreshError } = await auth.userSupabase
-        .from('invoices')
-        .select(
+      try {
+        const { data: refreshed, error: refreshError } = await auth.userSupabase
+          .from('invoices')
+          .select(
+            `
+            id,
+            invoice_number,
+            client_id,
+            invoice_date,
+            due_date,
+            subtotal,
+            tax,
+            total,
+            currency,
+            status,
+            notes,
+            business_name,
+            business_address,
+            business_phone,
+            business_email,
+            bank_account_holder,
+            bank_name,
+            bank_swift_code,
+            bank_account_number,
+            default_conditions,
+            default_exchange_rate,
+            created_at,
+            updated_at,
+            clients (*),
+            invoice_items (*)
           `
-          id,
-          invoice_number,
-          client_id,
-          invoice_date,
-          due_date,
-          subtotal,
-          tax,
-          total,
-          currency,
-          status,
-          notes,
-          business_name,
-          business_address,
-          business_phone,
-          business_email,
-          bank_account_holder,
-          bank_name,
-          bank_swift_code,
-          bank_account_number,
-          default_conditions,
-          default_exchange_rate,
-          created_at,
-          updated_at,
-          clients (*),
-          invoice_items (*)
-        `
-        )
-        .eq('id', invoiceId)
-        .eq('org_id', auth.orgId!)
-        .single();
+          )
+          .eq('id', invoiceId)
+          .eq('org_id', auth.orgId!)
+          .single();
 
-      if (refreshError || !refreshed) {
-        throw errorHandler.handleSupabaseError(
-          refreshError,
-          'Fetch created invoice'
+        if (refreshError || !refreshed) {
+          throw errorHandler.handleSupabaseError(
+            refreshError,
+            'Fetch created invoice'
+          );
+        }
+
+        const { normalized } = normalizeInvoiceRecord(
+          refreshed as unknown as AnyRecord
         );
-      }
-
-      const { normalized } = normalizeInvoiceRecord(
-        refreshed as unknown as AnyRecord
-      );
-      const invoiceValidationResult = validateInvoice(normalized);
-      if (!invoiceValidationResult.success) {
-        throw new Error(
-          invoiceValidationResult.error || 'Invalid invoice data'
+        const invoiceValidationResult = validateInvoice(normalized);
+        if (!invoiceValidationResult.success) {
+          throw new Error(
+            invoiceValidationResult.error || 'Invalid invoice data'
+          );
+        }
+        const createdInvoice = await attachSignedUrlsToInvoice(
+          auth.userSupabase,
+          invoiceValidationResult.data
         );
+
+        const imageTracking = await claimInvoiceImageUploads(
+          auth.userSupabase,
+          auth.orgId!,
+          createdInvoice.id,
+          items
+        );
+        const result = getInvoiceMutationResult(imageTracking);
+
+        return {
+          payload: {
+            data: createdInvoice,
+            result,
+            message: getCreateInvoiceMessage(result),
+            imageTracking,
+          },
+          status: 201,
+          metadata: {
+            invoiceId: createdInvoice.id,
+            imageTracking,
+          },
+        };
+      } catch (hydrationError) {
+        logWarn(
+          'invoices.post.hydration_failed',
+          `invoiceId=${invoiceId} err=${getErrorMessage(hydrationError)}`
+        );
+        return {
+          payload: {
+            data: { id: invoiceId },
+            warning: 'HYDRATION_FAILED',
+          },
+          status: 201,
+          metadata: {
+            invoiceId,
+            warning: 'HYDRATION_FAILED',
+          },
+        };
       }
-      const createdInvoice = await attachSignedUrlsToInvoice(
-        auth.userSupabase,
-        invoiceValidationResult.data
-      );
-
-      const imageTracking = await claimInvoiceImageUploads(
-        auth.userSupabase,
-        auth.orgId!,
-        createdInvoice.id,
-        items
-      );
-      const result = getInvoiceMutationResult(imageTracking);
-
-      return {
-        payload: {
-          data: createdInvoice,
-          result,
-          message: getCreateInvoiceMessage(result),
-          imageTracking,
-        },
-        status: 201,
-        metadata: {
-          invoiceId: createdInvoice.id,
-          imageTracking,
-        },
-      };
     }
   );
 }

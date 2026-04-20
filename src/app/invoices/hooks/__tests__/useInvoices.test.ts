@@ -246,6 +246,7 @@ describe('useInvoices', () => {
 
     (apiFetch as jest.Mock).mockResolvedValueOnce({
       ok: false,
+      status: 400,
       text: async () => JSON.stringify({ error: 'Create failed' }),
       json: async () => ({ error: 'Create failed' }),
     });
@@ -257,7 +258,49 @@ describe('useInvoices', () => {
     expect(mockHandleError).toHaveBeenCalled();
   });
 
-  it('treats idempotency conflict as success and avoids generic error toast', async () => {
+  it('reuses the same idempotency key after transient failure retry', async () => {
+    const newInvoice = {
+      client_id: 'client-1',
+      invoice_date: '2024-01-15',
+      due_date: null,
+      subtotal: 50000,
+      tax: null,
+      total: 50000,
+      currency: 'USD',
+      status: 'draft' as const,
+      notes: null,
+      items: [],
+    };
+
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      statusText: 'Server Error',
+      text: async () => JSON.stringify({ error: 'Temporary failure' }),
+      json: async () => ({ error: 'Temporary failure' }),
+    });
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: mockInvoices[0],
+        result: 'full_success',
+        message: 'Invoice created successfully.',
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+
+    await expect(result.current.createInvoice(newInvoice)).rejects.toThrow();
+    const retryResult = await result.current.createInvoice(newInvoice);
+
+    expect(retryResult.result).toBe('full_success');
+    const calls = (apiFetch as jest.Mock).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0][2]?.idempotencyKey).toBeDefined();
+    expect(calls[0][2]?.idempotencyKey).toBe(calls[1][2]?.idempotencyKey);
+  });
+
+  it('treats IDEMPOTENCY_REPLAY conflict as success and avoids generic error toast', async () => {
     const newInvoice = {
       client_id: 'client-1',
       invoice_date: '2024-01-15',
@@ -277,9 +320,15 @@ describe('useInvoices', () => {
       statusText: 'Conflict',
       text: async () =>
         JSON.stringify({
-          error: 'Idempotent request is already being processed',
-          existing_invoice_id: 'inv-existing',
+          error_code: 'IDEMPOTENCY_REPLAY',
+          message: 'Request already processed',
+          data: { id: 'inv-existing', replayed: true },
         }),
+      json: async () => ({
+        error_code: 'IDEMPOTENCY_REPLAY',
+        message: 'Request already processed',
+        data: { id: 'inv-existing', replayed: true },
+      }),
     });
 
     const { result } = renderHook(() => useInvoices());
@@ -294,6 +343,41 @@ describe('useInvoices', () => {
       shouldRefreshList: false,
     });
     expect(mockHandleError).not.toHaveBeenCalled();
+  });
+
+  it('treats UNIQUE_VIOLATION as failure', async () => {
+    const newInvoice = {
+      client_id: 'client-1',
+      invoice_date: '2024-01-15',
+      due_date: null,
+      subtotal: 50000,
+      tax: null,
+      total: 50000,
+      currency: 'USD',
+      status: 'draft' as const,
+      notes: null,
+      items: [],
+    };
+
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      statusText: 'Conflict',
+      text: async () =>
+        JSON.stringify({
+          error_code: 'UNIQUE_VIOLATION',
+          message: 'Invoice conflict',
+        }),
+      json: async () => ({
+        error_code: 'UNIQUE_VIOLATION',
+        message: 'Invoice conflict',
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+
+    await expect(result.current.createInvoice(newInvoice)).rejects.toThrow();
+    expect(mockHandleError).toHaveBeenCalled();
   });
 
   it('updates invoice successfully', async () => {
@@ -406,6 +490,7 @@ describe('useInvoices', () => {
   it('handles update invoice error', async () => {
     (apiFetch as jest.Mock).mockResolvedValueOnce({
       ok: false,
+      status: 500,
       json: async () => ({ error: 'Update failed' }),
     });
 
@@ -421,6 +506,8 @@ describe('useInvoices', () => {
   it('deletes invoice successfully', async () => {
     (apiFetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
+      status: 200,
+      json: async () => ({ data: { id: 'inv-1' } }),
     });
 
     const { result } = renderHook(() => useInvoices());
@@ -436,6 +523,7 @@ describe('useInvoices', () => {
   it('handles delete invoice error', async () => {
     (apiFetch as jest.Mock).mockResolvedValueOnce({
       ok: false,
+      status: 500,
       json: async () => ({ error: 'Delete failed' }),
     });
 

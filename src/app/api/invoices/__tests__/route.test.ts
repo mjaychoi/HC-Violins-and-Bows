@@ -30,6 +30,13 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
 
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
+jest.mock('@/app/api/_utils/schemaReadiness', () => ({
+  assertInvoiceSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-04-20T00:00:00.000Z',
+    missingColumns: [],
+  }),
+}));
 jest.mock('@/utils/errorHandler', () => ({
   errorHandler: {
     handleSupabaseError: jest.fn((error: unknown) => error),
@@ -415,6 +422,42 @@ describe('/api/invoices GET', () => {
     expect(json.success).toBe(false);
     expect(json.message).toBeDefined();
   });
+
+  it('fails fast when the invoice schema is out of date', async () => {
+    const {
+      assertInvoiceSchemaReadiness,
+    } = require('@/app/api/_utils/schemaReadiness');
+    assertInvoiceSchemaReadiness.mockRejectedValueOnce(
+      Object.assign(
+        new Error(
+          'Database migration required: missing public.invoices.invoice_number'
+        ),
+        {
+          code: 'SCHEMA_OUT_OF_DATE',
+          error_code: 'SCHEMA_OUT_OF_DATE',
+          status: 503,
+          retryable: false,
+        }
+      )
+    );
+
+    mockUserSupabase = {
+      from: jest.fn(() => {
+        throw new Error('invoice query should not run');
+      }),
+    };
+
+    const { GET } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices?page=1');
+    const response = await GET(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+    expect(json.message).toBe('Database migration required.');
+    expect(json.request_id).toEqual(expect.any(String));
+    expect(mockUserSupabase.from).not.toHaveBeenCalled();
+  });
 });
 
 describe('/api/invoices POST', () => {
@@ -601,5 +644,145 @@ describe('/api/invoices POST', () => {
     );
     expect(json.imageTracking.status).toBe('partial');
     expect(json.data.id).toBe(refreshedInvoice.id);
+  });
+
+  it('returns IDEMPOTENCY_REPLAY with authoritative existing invoice id', async () => {
+    mockUserSupabase = {
+      rpc: jest.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: 'P0001',
+          error_code: 'IDEMPOTENCY_REPLAY',
+          details: {
+            existing_invoice_id: 'inv-existing-1',
+          },
+        },
+      }),
+      from: jest.fn(),
+    };
+
+    const { POST } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices', {
+      method: 'POST',
+      body: JSON.stringify({
+        client_id: '123e4567-e89b-12d3-a456-426614174001',
+        invoice_date: '2026-04-03',
+        due_date: '2026-04-10',
+        subtotal: 100,
+        total: 100,
+        items: [],
+      }),
+    });
+
+    const response = await POST(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(json.error_code).toBe('IDEMPOTENCY_REPLAY');
+    expect(json.data).toEqual({ id: 'inv-existing-1', replayed: true });
+  });
+
+  it('returns UNIQUE_VIOLATION for non-idempotency unique conflicts', async () => {
+    mockUserSupabase = {
+      rpc: jest.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: '23505',
+        },
+      }),
+      from: jest.fn(),
+    };
+
+    const { POST } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices', {
+      method: 'POST',
+      body: JSON.stringify({
+        client_id: '123e4567-e89b-12d3-a456-426614174001',
+        invoice_date: '2026-04-03',
+        due_date: '2026-04-10',
+        subtotal: 100,
+        total: 100,
+        items: [],
+      }),
+    });
+
+    const response = await POST(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(json.error_code).toBe('UNIQUE_VIOLATION');
+    expect(json.message).toBe('Invoice conflict');
+  });
+
+  it('returns success with HYDRATION_FAILED warning when post-commit hydration fails', async () => {
+    const { attachSignedUrlsToInvoice } = require('../imageUrls');
+    attachSignedUrlsToInvoice.mockRejectedValueOnce(
+      new Error('storage unavailable')
+    );
+
+    const refreshedInvoice = {
+      id: '123e4567-e89b-12d3-a456-426614174299',
+      invoice_number: 'INV-003',
+      client_id: '123e4567-e89b-12d3-a456-426614174001',
+      invoice_date: '2026-04-03',
+      due_date: '2026-04-10',
+      subtotal: 100,
+      tax: 0,
+      total: 100,
+      currency: 'USD',
+      status: 'draft',
+      notes: null,
+      business_name: null,
+      business_address: null,
+      business_phone: null,
+      business_email: null,
+      bank_account_holder: null,
+      bank_name: null,
+      bank_swift_code: null,
+      bank_account_number: null,
+      default_conditions: null,
+      default_exchange_rate: null,
+      created_at: '2026-04-03T00:00:00.000Z',
+      updated_at: '2026-04-03T00:00:00.000Z',
+      clients: null,
+      invoice_items: [],
+    };
+
+    const mockInvoiceQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({
+        data: refreshedInvoice,
+        error: null,
+      }),
+    };
+
+    mockUserSupabase = {
+      rpc: jest.fn().mockResolvedValue({
+        data: refreshedInvoice.id,
+        error: null,
+      }),
+      from: jest.fn(() => mockInvoiceQuery),
+    };
+
+    const { POST } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices', {
+      method: 'POST',
+      body: JSON.stringify({
+        client_id: refreshedInvoice.client_id,
+        invoice_date: refreshedInvoice.invoice_date,
+        due_date: refreshedInvoice.due_date,
+        subtotal: refreshedInvoice.subtotal,
+        total: refreshedInvoice.total,
+        items: [],
+      }),
+    });
+
+    const response = await POST(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(json.data).toEqual({ id: refreshedInvoice.id });
+    expect(json.warning).toBe('HYDRATION_FAILED');
   });
 });

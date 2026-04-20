@@ -146,7 +146,10 @@ export function buildSafeCaptureMeta(
   };
 }
 
-function buildSuccessPayload(result: ApiHandlerResult): {
+function buildSuccessPayload(
+  result: ApiHandlerResult,
+  requestId: string
+): {
   status: number;
   payload: unknown;
   isErrorPayload: boolean;
@@ -157,7 +160,7 @@ function buildSuccessPayload(result: ApiHandlerResult): {
   return {
     status,
     payload: isErrorPayload
-      ? normalizeApiErrorPayload(result.payload, status)
+      ? normalizeApiErrorPayload(result.payload, status, requestId)
       : result.payload,
     isErrorPayload,
   };
@@ -284,7 +287,10 @@ export async function apiHandler(
     const result = await fn(request);
     const duration = Math.round(now() - startTime);
 
-    const { status, payload, isErrorPayload } = buildSuccessPayload(result);
+    const { status, payload, isErrorPayload } = buildSuccessPayload(
+      result,
+      requestId
+    );
 
     logSuccessResponse({
       meta,
@@ -337,7 +343,7 @@ export async function apiHandler(
     });
 
     return buildJsonResponse(
-      createSafeErrorResponse(appError, status),
+      createSafeErrorResponse(appError, status, requestId),
       status,
       requestId
     );

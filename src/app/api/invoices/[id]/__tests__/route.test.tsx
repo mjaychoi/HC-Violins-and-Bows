@@ -33,6 +33,13 @@ jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 jest.mock('fs/promises');
+jest.mock('@/app/api/_utils/schemaReadiness', () => ({
+  assertInvoiceSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-04-20T00:00:00.000Z',
+    missingColumns: [],
+  }),
+}));
 jest.mock('@/utils/typeGuards', () => ({
   validateInvoice: jest.fn((value: unknown) => ({
     success: true,

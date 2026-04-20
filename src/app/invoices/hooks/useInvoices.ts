@@ -5,9 +5,15 @@ import type { Invoice, InvoiceStatus } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { logError } from '@/utils/logger';
-import { createApiResponseError } from '@/utils/handleApiResponse';
+import {
+  createApiResponseError,
+  createApiResponseErrorFromResponse,
+  readApiErrorBody,
+  readApiResponseEnvelope,
+} from '@/utils/handleApiResponse';
 import { errorHandler } from '@/utils/errorHandler';
 import type { AppError } from '@/types/errors';
+
 interface FetchInvoicesOptions {
   page?: number;
   pageSize?: number;
@@ -54,6 +60,7 @@ export interface UpdateInvoiceResult {
 }
 
 interface InvoiceCreateErrorPayload {
+  error_code?: string;
   message?: string;
   error?: string;
   payload?: { error?: string };
@@ -93,19 +100,31 @@ function extractExistingInvoiceId(
   return null;
 }
 
-function isSafeIdempotencyConflict(status: number, message: string) {
+function isSafeIdempotencyConflict(
+  status: number,
+  payload: InvoiceCreateErrorPayload | null
+) {
   if (status !== 409) return false;
-
-  const normalized = message.toLowerCase();
-  if (normalized.includes('different payload')) return false;
-
+  const errorCode =
+    typeof payload?.error_code === 'string' ? payload.error_code : null;
   return (
-    normalized.includes('already processed') ||
-    normalized.includes('already being processed') ||
-    normalized.includes('duplicate request') ||
-    normalized.includes('idempotent request') ||
-    normalized.includes('idempotency')
+    errorCode === 'IDEMPOTENCY_REPLAY' ||
+    errorCode === 'IDEMPOTENCY_IN_PROGRESS'
   );
+}
+
+function isConfirmedSuccess(res: unknown): boolean {
+  if (!res || typeof res !== 'object') return false;
+
+  const data =
+    'data' in res && res.data && typeof res.data === 'object' ? res.data : null;
+  return !!(data && 'id' in data && typeof data.id === 'string' && data.id);
+}
+
+function shouldPreserveIdempotencyKey(error: unknown): boolean {
+  // P0 안전성 우선: 명시적으로 안전한 경우 외에는 키를 유지한다.
+  void error;
+  return true;
 }
 
 export function useInvoices() {
@@ -174,20 +193,11 @@ export function useInvoices() {
           signal: controller.signal,
         });
 
-        if (!response.ok) {
-          const errorData = (await response.json().catch(() => null)) as Record<
-            string,
-            unknown
-          > | null;
-          throw createApiResponseError(errorData, {
-            status: response.status,
-            fallbackMessage: `Failed to fetch invoices (${response.status})`,
-          });
-        }
-
-        const result = await response.json();
-        // API handler returns payload directly, so result already contains { data, count, page, pageSize }
-        const data = result.data || [];
+        const result = await readApiResponseEnvelope<Invoice[]>(
+          response,
+          `Failed to fetch invoices (${response.status})`
+        );
+        const data = Array.isArray(result.data) ? result.data : [];
         const rawCount =
           typeof result.count === 'number' ? result.count : undefined;
         const safeCount = typeof rawCount === 'number' ? rawCount : data.length;
@@ -217,12 +227,11 @@ export function useInvoices() {
             warning,
           });
 
-          const scopePayload = result.scope;
-          if (
-            scopePayload &&
-            typeof scopePayload === 'object' &&
-            typeof scopePayload.enforced === 'boolean'
-          ) {
+          const scopePayload =
+            result.scope && typeof result.scope === 'object'
+              ? (result.scope as Record<string, unknown>)
+              : null;
+          if (scopePayload && typeof scopePayload.enforced === 'boolean') {
             setScopeInfo({
               enforced: scopePayload.enforced,
               orgId:
@@ -331,30 +340,30 @@ export function useInvoices() {
         if (!response.ok) {
           let errorMessage = 'Failed to create invoice';
 
-          // ✅ 개선된 에러 처리: text()로 먼저 읽어서 빈 바디도 처리
-          let errorText = '';
-          let errorData: InvoiceCreateErrorPayload | null = null;
-
-          try {
-            errorText = await response.text();
-            if (errorText) {
-              try {
-                errorData = JSON.parse(errorText) as InvoiceCreateErrorPayload;
-              } catch {
-                // JSON이 아니면 그대로 텍스트로 사용
-                errorText = errorText.trim();
-              }
-            }
-          } catch (readError) {
-            console.error('Failed to read error response:', readError);
-          }
+          const errorData = (await readApiErrorBody(
+            response
+          )) as InvoiceCreateErrorPayload | null;
+          const errorText =
+            typeof errorData?.message === 'string'
+              ? errorData.message
+              : typeof errorData?.error === 'string'
+                ? errorData.error
+                : '';
 
           // 에러 메시지 추출 (여러 형태 지원)
           if (errorData && typeof errorData === 'object') {
+            const payloadError =
+              typeof errorData.payload?.error === 'string'
+                ? errorData.payload.error
+                : undefined;
             errorMessage =
-              errorData.message || // user-friendly message 우선
-              errorData.error || // error 필드
-              errorData.payload?.error ||
+              (typeof errorData.message === 'string'
+                ? errorData.message
+                : undefined) || // user-friendly message 우선
+              (typeof errorData.error === 'string'
+                ? errorData.error
+                : undefined) || // error 필드
+              payloadError ||
               errorMessage;
           } else if (errorText) {
             errorMessage = errorText;
@@ -362,8 +371,7 @@ export function useInvoices() {
 
           const existingInvoiceId = extractExistingInvoiceId(errorData);
 
-          if (isSafeIdempotencyConflict(response.status, errorMessage)) {
-            createIdempotencyRef.current = null;
+          if (isSafeIdempotencyConflict(response.status, errorData)) {
             return {
               invoice: null,
               result: 'already_processed',
@@ -374,29 +382,25 @@ export function useInvoices() {
             };
           }
 
-          // 상세 정보 로깅 (개발 환경)
-          if (process.env.NODE_ENV === 'development') {
-            console.error('Invoice creation error response:', {
-              status: response.status,
-              statusText: response.statusText,
-              errorText,
-              errorData,
-            });
-          }
-
           throw createApiResponseError(
             errorData as Record<string, unknown> | null,
             {
               status: response.status,
               fallbackMessage: errorMessage,
+              requestId: response.headers.get('x-request-id') ?? undefined,
             }
           );
         }
 
-        const result = await response.json();
-        createIdempotencyRef.current = null;
+        const result = await readApiResponseEnvelope<Invoice>(
+          response,
+          `Failed to create invoice (${response.status})`
+        );
+        if (isConfirmedSuccess(result)) {
+          createIdempotencyRef.current = null;
+        }
         return {
-          invoice: result.data as Invoice,
+          invoice: result.data,
           result:
             result.result === 'partial_success'
               ? 'partial_success'
@@ -416,7 +420,9 @@ export function useInvoices() {
               : null,
         };
       } catch (error) {
-        createIdempotencyRef.current = null;
+        if (!shouldPreserveIdempotencyKey(error)) {
+          createIdempotencyRef.current = null;
+        }
         handleError(error, 'Create invoice');
         throw error;
       }
@@ -464,19 +470,18 @@ export function useInvoices() {
         });
 
         if (!response.ok) {
-          const errorData = (await response.json().catch(() => null)) as Record<
-            string,
-            unknown
-          > | null;
-          throw createApiResponseError(errorData, {
-            status: response.status,
-            fallbackMessage: `Failed to update invoice (${response.status})`,
-          });
+          throw await createApiResponseErrorFromResponse(
+            response,
+            `Failed to update invoice (${response.status})`
+          );
         }
 
-        const result = await response.json();
+        const result = await readApiResponseEnvelope<Invoice>(
+          response,
+          `Failed to update invoice (${response.status})`
+        );
         return {
-          invoice: result.data as Invoice,
+          invoice: result.data,
           result:
             result.result === 'partial_success'
               ? 'partial_success'
@@ -506,16 +511,16 @@ export function useInvoices() {
         });
 
         if (!response.ok) {
-          const errorData = (await response.json().catch(() => null)) as Record<
-            string,
-            unknown
-          > | null;
-          throw createApiResponseError(errorData, {
-            status: response.status,
-            fallbackMessage: `Failed to delete invoice (${response.status})`,
-          });
+          throw await createApiResponseErrorFromResponse(
+            response,
+            `Failed to delete invoice (${response.status})`
+          );
         }
 
+        await readApiResponseEnvelope<{ id: string }>(
+          response,
+          `Failed to delete invoice (${response.status})`
+        );
         return true;
       } catch (error) {
         handleError(error, 'Delete invoice');
