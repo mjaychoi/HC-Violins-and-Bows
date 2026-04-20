@@ -72,7 +72,10 @@ describe('useCalendarNavigation', () => {
     });
 
     const options = mockFetchTasksByDateRange.mock.calls[0][2];
-    expect(options).toMatchObject({ throwOnError: true });
+    expect(options).toMatchObject({
+      throwOnError: true,
+      suppressErrorToast: true,
+    });
     expect(options.signal).toBeInstanceOf(AbortSignal);
   });
 

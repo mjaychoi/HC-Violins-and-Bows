@@ -107,6 +107,17 @@ function sortMaintenanceTaskRows(
   });
 }
 
+function organizationIdInvalidResponse() {
+  return {
+    payload: {
+      error: 'Invalid organization context',
+      message:
+        'Organization id in your session is invalid. Please sign out and sign in again.',
+    },
+    status: 403,
+  };
+}
+
 function isMissingMaintenanceTaskColumnError(
   error: unknown,
   column: string
@@ -156,6 +167,10 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           payload: { error: 'Organization context required' },
           status: 403,
         };
+      }
+
+      if (!validateUUID(auth.orgId!)) {
+        return organizationIdInvalidResponse();
       }
 
       const searchParams = request.nextUrl.searchParams;
@@ -441,6 +456,10 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      if (!validateUUID(auth.orgId!)) {
+        return organizationIdInvalidResponse();
+      }
+
       const body = await request.json();
 
       // Validate request body using create schema (without id, created_at, updated_at)
@@ -509,6 +528,10 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           payload: { error: 'Organization context required' },
           status: 403,
         };
+      }
+
+      if (!validateUUID(auth.orgId!)) {
+        return organizationIdInvalidResponse();
       }
 
       const adminError = requireAdmin(auth);
@@ -632,6 +655,10 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
           payload: { error: 'Organization context required' },
           status: 403,
         };
+      }
+
+      if (!validateUUID(auth.orgId!)) {
+        return organizationIdInvalidResponse();
       }
 
       const adminError = requireAdmin(auth);

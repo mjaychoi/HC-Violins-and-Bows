@@ -66,6 +66,8 @@ jest.mock('@/utils/dateParsing', () => ({
 }));
 
 describe('/api/maintenance-tasks', () => {
+  const TEST_ORG_ID = '123e4567-e89b-12d3-a456-426614174099';
+
   const mockTask = {
     id: '123e4567-e89b-12d3-a456-426614174000',
     instrument_id: '123e4567-e89b-12d3-a456-426614174001',
@@ -108,7 +110,7 @@ describe('/api/maintenance-tasks', () => {
     mockAuthContext = {
       user: { id: 'test-user' },
       accessToken: 'test-token',
-      orgId: 'test-org',
+      orgId: TEST_ORG_ID,
       clientId: 'test-client',
       role: 'admin',
       userSupabase: mockUserSupabase,
@@ -144,7 +146,7 @@ describe('/api/maintenance-tasks', () => {
       expect(response.status).toBe(200);
       expect(json.data).toEqual([mockTask]);
       expect(json.count).toBe(1);
-      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', TEST_ORG_ID);
     });
 
     it('should reject GET when org context is missing', async () => {
@@ -188,12 +190,14 @@ describe('/api/maintenance-tasks', () => {
 
       expect(response.status).toBe(200);
       expect(json.data).toEqual(mockTask);
-      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', TEST_ORG_ID);
     });
 
     it('should return 400 for invalid task id format', async () => {
       const { validateUUID } = require('@/utils/inputValidation');
-      (validateUUID as jest.Mock).mockReturnValueOnce(false);
+      (validateUUID as jest.Mock)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false);
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks?id=invalid'
@@ -491,7 +495,9 @@ describe('/api/maintenance-tasks', () => {
 
     it('should return 400 for invalid instrument_id', async () => {
       const { validateUUID } = require('@/utils/inputValidation');
-      (validateUUID as jest.Mock).mockReturnValueOnce(false);
+      (validateUUID as jest.Mock)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false);
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks?instrument_id=invalid'
@@ -603,7 +609,7 @@ describe('/api/maintenance-tasks', () => {
       expect(response.status).toBe(200);
       expect(json.data).toBeDefined();
       expect(mockQuery.eq).toHaveBeenCalledWith('id', mockTask.id);
-      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', TEST_ORG_ID);
       expect(mockQuery.update).toHaveBeenCalled();
     });
 
@@ -624,7 +630,9 @@ describe('/api/maintenance-tasks', () => {
 
     it('should return 400 for invalid UUID', async () => {
       const { validateUUID } = require('@/utils/inputValidation');
-      (validateUUID as jest.Mock).mockReturnValueOnce(false);
+      (validateUUID as jest.Mock)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false);
 
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks',
@@ -663,7 +671,7 @@ describe('/api/maintenance-tasks', () => {
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
       expect(mockQuery.eq).toHaveBeenCalledWith('id', mockTask.id);
-      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', TEST_ORG_ID);
       expect(mockQuery.delete).toHaveBeenCalled();
     });
 
