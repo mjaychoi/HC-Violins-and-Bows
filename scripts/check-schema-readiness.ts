@@ -3,6 +3,7 @@ import { checkSchemaReadiness } from '../src/app/api/_utils/schemaReadiness';
 
 dotenv.config({ path: '.env.local' });
 
+// comment
 function getSchemaTargetHost(): string | null {
   const candidates = [
     process.env.SUPABASE_URL,
