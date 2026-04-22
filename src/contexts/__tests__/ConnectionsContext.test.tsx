@@ -178,7 +178,28 @@ describe.skip('ConnectionsContext', () => {
       ]);
       expect(result.current.lastUpdated).not.toBeNull();
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/connections?orderBy=created_at&ascending=false'
+        expect.stringContaining(
+          '/api/connections?orderBy=created_at&ascending=false&page=1&pageSize=50'
+        )
+      );
+    });
+
+    it('fetches all connections when all: true is passed', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: [mockConnection, mockConnection2] }),
+      });
+
+      const { result } = renderHook(() => useConnections(), {
+        wrapper: ConnectionsProvider,
+      });
+
+      await act(async () => {
+        await result.current.fetchConnections({ all: true });
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/connections?orderBy=created_at&ascending=false&all=true'
       );
     });
 

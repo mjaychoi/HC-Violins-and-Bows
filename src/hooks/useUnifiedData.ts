@@ -102,11 +102,6 @@ function useTenantScopeGuard() {
 
 // unified data hook - manage all data in one place
 export function useUnifiedData() {
-  // DEBUG: Log every time this hook is called to track multiple invocations
-  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-    logInfo('[useUnifiedData] Hook called');
-  }
-
   const clientsContext = useClientsContext();
   const instrumentsContext = useInstrumentsContext();
   const connectionsContext = useConnectionsContext();
@@ -311,8 +306,12 @@ export function useUnifiedData() {
 
       await Promise.all([
         runOne('clients', needClients, a.fetchClients),
-        runOne('instruments', needInstruments, a.fetchInstruments),
-        runOne('connections', needConnections, a.fetchConnections),
+        runOne('instruments', needInstruments, () =>
+          a.fetchInstruments({ all: true })
+        ),
+        runOne('connections', needConnections, () =>
+          a.fetchConnections({ all: true })
+        ),
       ]);
     };
 
@@ -498,6 +497,10 @@ export function useUnifiedDashboard() {
     instrument: Instrument;
   };
 
+  // Enriched client–instrument view: requires org-wide `connections` (see
+  // `fetchConnections({ all: true })` in the DataInitializer initial load) plus
+  // clients and instruments in context. Do not use this for correctness if only
+  // a paged connection subset was loaded.
   const clientRelationships = useMemo<EnrichedConnection[]>(() => {
     const clientMap = new Map(state.clients.map(c => [c.id, c]));
     const instrumentMap = new Map(state.instruments.map(i => [i.id, i]));

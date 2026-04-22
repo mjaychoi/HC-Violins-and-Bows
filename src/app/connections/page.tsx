@@ -386,7 +386,7 @@ function ConnectedClientsPageContent() {
             relationshipType: newType,
             notes: connection.notes || '', // Preserve existing notes
           });
-          await fetchConnections();
+          await fetchConnections({ all: true, force: true });
         });
       } catch (error) {
         handleError(error, 'Failed to update connection type');

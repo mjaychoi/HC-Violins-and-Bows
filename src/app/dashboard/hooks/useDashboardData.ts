@@ -213,8 +213,8 @@ export const useDashboardData = () => {
   const reloadDashboard = useCallback(async () => {
     await Promise.all([
       fetchClients({ force: true }),
-      fetchInstruments(),
-      fetchConnections({ force: true }),
+      fetchInstruments({ all: true }),
+      fetchConnections({ all: true, force: true }),
     ]);
   }, [fetchClients, fetchInstruments, fetchConnections]);
 

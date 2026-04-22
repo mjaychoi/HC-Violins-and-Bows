@@ -328,8 +328,11 @@ describe('DashboardPage', () => {
 
     await waitFor(() => {
       expect(fetchClients).toHaveBeenCalledWith({ force: true });
-      expect(fetchInstruments).toHaveBeenCalled();
-      expect(fetchConnections).toHaveBeenCalledWith({ force: true });
+      expect(fetchInstruments).toHaveBeenCalledWith({ all: true });
+      expect(fetchConnections).toHaveBeenCalledWith({
+        force: true,
+        all: true,
+      });
     });
   });
 });

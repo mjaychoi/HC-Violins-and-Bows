@@ -83,7 +83,17 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         const ownership = searchParams.get('ownership') || 'all';
         const search = searchParams.get('search');
         const limitParam = searchParams.get('limit');
-        const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+        /**
+         * `all=true` = intentional unbounded list for admin/inventory UIs.
+         * Otherwise, cap rows when `limit` is omitted (PostgREST default is unbounded).
+         */
+        const listAll = searchParams.get('all') === 'true';
+        const DEFAULT_LIST_LIMIT = 200;
+        const limit = listAll
+          ? undefined
+          : limitParam
+            ? parseInt(limitParam, 10)
+            : DEFAULT_LIST_LIMIT;
 
         let query = auth.userSupabase
           .from('instruments')
@@ -101,8 +111,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
 
         // ✅ limit은 non-reassigning 형태로 호출 (mock chain 대응)
-        if (limit) {
-          query.limit(limit);
+        if (typeof limit === 'number' && !Number.isNaN(limit) && limit > 0) {
+          query = query.limit(limit);
         }
 
         // order

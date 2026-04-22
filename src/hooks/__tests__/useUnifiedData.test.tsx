@@ -357,8 +357,12 @@ describe('useUnifiedData', () => {
 
       await waitFor(() => {
         expect(mockActions.fetchClients).toHaveBeenCalled();
-        expect(mockActions.fetchInstruments).toHaveBeenCalled();
-        expect(mockActions.fetchConnections).toHaveBeenCalled();
+        expect(mockActions.fetchInstruments).toHaveBeenCalledWith({
+          all: true,
+        });
+        expect(mockActions.fetchConnections).toHaveBeenCalledWith({
+          all: true,
+        });
       });
     });
 

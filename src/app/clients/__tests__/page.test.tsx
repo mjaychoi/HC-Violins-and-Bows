@@ -410,6 +410,8 @@ describe('ClientsPage', () => {
   const mockOpenInstrumentSearch = jest.fn();
   const mockCloseInstrumentSearch = jest.fn();
   const mockFetchConnections = jest.fn();
+  const mockUpsertClient = jest.fn();
+  const mockUpsertConnections = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -430,6 +432,17 @@ describe('ClientsPage', () => {
               client_number: 'CL003',
               created_at: '2023-01-03T00:00:00Z',
             },
+            connections: [
+              {
+                id: 'conn-1',
+                client_id: '3',
+                instrument_id: 'inst-123',
+                relationship_type: 'Interested',
+                notes: null,
+                display_order: 0,
+                created_at: '2023-01-03T00:00:00Z',
+              },
+            ],
           },
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -458,6 +471,7 @@ describe('ClientsPage', () => {
       updateClient: mockUpdateClient,
       deleteClient: mockDeleteClient,
       fetchClients: mockFetchClients,
+      upsertClient: mockUpsertClient,
       refreshClients: jest.fn(),
       refreshInstruments: jest.fn(),
       refreshConnections: jest.fn(),
@@ -476,6 +490,7 @@ describe('ClientsPage', () => {
       connections: [],
       loading: false,
       fetchConnections: mockFetchConnections,
+      upsertConnections: mockUpsertConnections,
       createConnection: jest.fn(),
       updateConnection: jest.fn(),
       deleteConnection: jest.fn(),
@@ -568,6 +583,7 @@ describe('ClientsPage', () => {
         updateClient: mockUpdateClient,
         deleteClient: mockDeleteClient,
         fetchClients: mockFetchClients,
+        upsertClient: mockUpsertClient,
         refreshClients: jest.fn(),
         refreshInstruments: jest.fn(),
         refreshConnections: jest.fn(),
@@ -716,9 +732,12 @@ describe('ClientsPage', () => {
       });
 
       await waitFor(() => {
-        expect(mockFetchClients).toHaveBeenCalled();
-        expect(mockFetchConnections).toHaveBeenCalled();
+        expect(mockUpsertClient).toHaveBeenCalled();
+        expect(mockUpsertConnections).toHaveBeenCalled();
       });
+
+      expect(mockFetchClients).not.toHaveBeenCalled();
+      expect(mockFetchConnections).not.toHaveBeenCalled();
 
       expect(mockShowSuccess).toHaveBeenCalledWith(
         'Client and instrument links created successfully'
@@ -1423,6 +1442,7 @@ describe('ClientsPage', () => {
         updateClient: mockUpdateClient,
         deleteClient: mockDeleteClient,
         fetchClients: mockFetchClients,
+        upsertClient: mockUpsertClient,
         refreshClients: jest.fn(),
         refreshInstruments: jest.fn(),
         refreshConnections: jest.fn(),
