@@ -102,6 +102,9 @@
     "typescript": "^5",
     "whatwg-fetch": "^3.6.20"
   },
+  "overrides": {
+    "fast-xml-parser": ">=5.7.0"
+  },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
       "eslint --fix",
