@@ -20,7 +20,7 @@ import {
 import { validateUUID } from '@/utils/inputValidation';
 import Link from 'next/link';
 import { ListSkeleton, Pagination, EmptyState } from '@/components/common';
-import { GuideModal } from '@/components/common/empty-state/GuideModal';
+
 import { InstrumentExpandedRow } from './InstrumentExpandedRow';
 import StatusBadge from './StatusBadge';
 import CertificateBadge from './CertificateBadge';
@@ -30,12 +30,6 @@ import { useInlineEdit } from '@/hooks/useInlineEdit';
 import { useSuccessToastContext } from '@/contexts/SuccessToastContext';
 import { useErrorContext } from '@/contexts/ErrorContext';
 import { downloadCertificatePdf } from '../utils/certificateDownload';
-
-const DASHBOARD_EMPTY_GUIDE_STEPS = [
-  '악기 정보를 입력하세요 (Maker, Type, Serial Number 등)',
-  '가격과 상태를 설정하세요',
-  '클라이언트와 연결하려면 Connections 페이지를 사용하세요',
-];
 
 // FIXED: Use EnrichedInstrument type to avoid duplicate computation
 // Import from DashboardContent or define here - using explicit definition for clarity
@@ -169,8 +163,6 @@ const ItemList = memo(function ItemList({
   const [expandedInstrumentId, setExpandedInstrumentId] = useState<
     string | null
   >(null);
-  const [showInstrumentGuideModal, setShowInstrumentGuideModal] =
-    useState(false);
 
   // 편의를 위한 별칭
   const editingItem = inlineEdit.editingId;
@@ -545,48 +537,27 @@ const ItemList = memo(function ItemList({
   if (items.length === 0) {
     const hasFilters = emptyState?.hasActiveFilters ?? false;
     return (
-      <>
-        <EmptyState
-          title={
-            emptyState?.message ||
-            (hasFilters
-              ? 'No items found matching your filters'
-              : 'No items yet')
-          }
-          description={
-            hasFilters
-              ? 'Try adjusting your filters or clearing them to see all items.'
-              : 'Add your first instrument to get started.'
-          }
-          hasActiveFilters={hasFilters}
-          onResetFilters={emptyState?.onResetFilters}
-          actionButton={
-            !hasFilters && onAddClick
-              ? {
-                  label: emptyState?.actionLabel || 'Add Item',
-                  onClick: onAddClick,
-                }
-              : undefined
-          }
-          guideSteps={!hasFilters ? DASHBOARD_EMPTY_GUIDE_STEPS : undefined}
-          helpLink={
-            !hasFilters
-              ? {
-                  label: '악기 추가 방법 알아보기',
-                  href: '#',
-                  onClick: () => setShowInstrumentGuideModal(true),
-                }
-              : undefined
-          }
-          onLoadSampleData={!hasFilters ? onLoadSampleData : undefined}
-        />
-        <GuideModal
-          isOpen={showInstrumentGuideModal}
-          onClose={() => setShowInstrumentGuideModal(false)}
-          title="악기 추가 가이드"
-          steps={DASHBOARD_EMPTY_GUIDE_STEPS}
-        />
-      </>
+      <EmptyState
+        title={
+          emptyState?.message ||
+          (hasFilters ? 'No items found matching your filters' : 'No items yet')
+        }
+        description={
+          hasFilters
+            ? 'Try adjusting your filters or clearing them to see all items.'
+            : 'Add your first instrument to get started.'
+        }
+        hasActiveFilters={hasFilters}
+        onResetFilters={emptyState?.onResetFilters}
+        actionButton={
+          !hasFilters && onAddClick
+            ? {
+                label: emptyState?.actionLabel || 'Add Item',
+                onClick: onAddClick,
+              }
+            : undefined
+        }
+      />
     );
   }
 

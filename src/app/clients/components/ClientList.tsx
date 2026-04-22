@@ -21,7 +21,7 @@ import {
   TagBadge,
   InterestBadge,
 } from '@/components/common';
-import { GuideModal } from '@/components/common/empty-state/GuideModal';
+
 import { useInlineEdit } from '@/hooks/useInlineEdit';
 import {
   InlineSelectField,
@@ -361,12 +361,6 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
   );
 });
 
-const CLIENT_EMPTY_GUIDE_STEPS = [
-  '클라이언트 이름과 연락처를 입력하세요',
-  '태그와 관심도를 설정하여 분류하세요',
-  '악기와 연결하려면 Connections 페이지를 사용하세요',
-];
-
 interface ClientListProps {
   clients: Client[];
   clientInstruments: ClientInstrument[];
@@ -427,7 +421,6 @@ const ClientList = memo(function ClientList({
   const [editData, setEditData] = useState<Partial<Client>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
-  const [showClientGuideModal, setShowClientGuideModal] = useState(false);
 
   // 인라인 편집 훅 (interest와 tags만 별도 편집)
   const inlineEditInterest = useInlineEdit<Client>({
@@ -618,43 +611,25 @@ const ClientList = memo(function ClientList({
 
   if (clients.length === 0) {
     return (
-      <>
-        <EmptyState
-          title={
-            hasActiveFilters
-              ? 'No clients found matching your filters'
-              : 'No clients yet'
-          }
-          description={
-            hasActiveFilters
-              ? 'Try adjusting your filters or clearing them to see all clients.'
-              : 'Add your first client to start tracking relationships and instruments.'
-          }
-          hasActiveFilters={hasActiveFilters}
-          onResetFilters={hasActiveFilters ? onResetFilters : undefined}
-          actionButton={
-            !hasActiveFilters && onAddClient
-              ? { label: 'Add client', onClick: onAddClient }
-              : undefined
-          }
-          guideSteps={!hasActiveFilters ? CLIENT_EMPTY_GUIDE_STEPS : undefined}
-          helpLink={
-            !hasActiveFilters
-              ? {
-                  label: '클라이언트 관리 방법 알아보기',
-                  href: '#',
-                  onClick: () => setShowClientGuideModal(true),
-                }
-              : undefined
-          }
-        />
-        <GuideModal
-          isOpen={showClientGuideModal}
-          onClose={() => setShowClientGuideModal(false)}
-          title="클라이언트 관리 가이드"
-          steps={CLIENT_EMPTY_GUIDE_STEPS}
-        />
-      </>
+      <EmptyState
+        title={
+          hasActiveFilters
+            ? 'No clients found matching your filters'
+            : 'No clients yet'
+        }
+        description={
+          hasActiveFilters
+            ? 'Try adjusting your filters or clearing them to see all clients.'
+            : 'Add your first client to start tracking relationships and instruments.'
+        }
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={hasActiveFilters ? onResetFilters : undefined}
+        actionButton={
+          !hasActiveFilters && onAddClient
+            ? { label: 'Add client', onClick: onAddClient }
+            : undefined
+        }
+      />
     );
   }
 
