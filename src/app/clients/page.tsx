@@ -42,8 +42,8 @@ type PendingInstrumentLink = {
 
 export default function ClientsPage() {
   // Error/Success handling
-  const { handleError, showSuccess } = useAppFeedback();
-  const { canCreateClient } = usePermissions();
+  const { handleError, showSuccess, showWarning } = useAppFeedback();
+  const { canCreateClient, createClientDisabledReason } = usePermissions();
   const { tenantIdentityKey } = useTenantIdentity();
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
 
@@ -248,18 +248,23 @@ export default function ClientsPage() {
 
     for (const pendingLink of instruments) {
       try {
-        await addInstrumentRelationshipHook(
+        const link = await addInstrumentRelationshipHook(
           clientId,
           pendingLink.instrument.id,
           pendingLink.relationshipType
         );
+        if (!link) {
+          linkFailures.push(pendingLink);
+        }
       } catch {
         linkFailures.push(pendingLink);
       }
     }
 
     if (linkFailures.length > 0) {
-      showSuccess('Client created, but some instrument links failed');
+      showWarning(
+        'Some instrument links could not be created. You can retry from the client profile.'
+      );
       return {
         status: 'partial_success',
         failedLinks: linkFailures,
@@ -328,12 +333,14 @@ export default function ClientsPage() {
         relationshipType
       );
 
+      if (!connection) {
+        return;
+      }
+
       // Relationships are automatically updated in DataContext
-      // No need to manually refresh
       closeInstrumentSearch();
 
-      // 작업 완료 요약 메시지 생성
-      if (connection) {
+      {
         const instrument = instruments.find(i => i.id === instrumentId);
         const instrumentName =
           instrument?.maker && instrument?.serial_number
@@ -362,8 +369,6 @@ export default function ClientsPage() {
           `연결이 추가되었습니다. ${instrumentName}과 ${clientName}이 연결되었습니다.`,
           links.length > 0 ? links : undefined
         );
-      } else {
-        showSuccess('Instrument connection added.');
       }
     } catch (error) {
       handleError(error, 'Failed to add instrument relationship');
@@ -372,7 +377,10 @@ export default function ClientsPage() {
 
   const removeInstrumentRelationship = async (relationshipId: string) => {
     try {
-      await removeInstrumentRelationshipHook(relationshipId);
+      const ok = await removeInstrumentRelationshipHook(relationshipId);
+      if (!ok) {
+        return;
+      }
 
       // Relationships are automatically updated in DataContext
       // No need to manually refresh
@@ -387,13 +395,21 @@ export default function ClientsPage() {
       <AppLayout
         title="Clients"
         actionButton={
-          canCreateClient
+          canCreateClient || createClientDisabledReason
             ? {
                 label: 'Add Client',
-                onClick: openModal,
-                disabled: submitting.hasAnySubmitting || atomicSubmitting,
-                disabledReason:
-                  submitting.hasAnySubmitting || atomicSubmitting
+                onClick: canCreateClient
+                  ? openModal
+                  : () => {
+                      /* disabled — see disabledReason */
+                    },
+                disabled:
+                  !canCreateClient ||
+                  submitting.hasAnySubmitting ||
+                  atomicSubmitting,
+                disabledReason: !canCreateClient
+                  ? createClientDisabledReason
+                  : submitting.hasAnySubmitting || atomicSubmitting
                     ? 'Please wait for the current submission to finish'
                     : undefined,
                 icon: (
@@ -467,11 +483,12 @@ export default function ClientsPage() {
           onEdit={startEditing}
           onSave={async (clientData: Partial<Client>) => {
             if (selectedClient) {
-              await updateClient(selectedClient.id, clientData);
+              const updated = await updateClient(selectedClient.id, clientData);
+              if (!updated) {
+                return;
+              }
               stopEditing();
               showSuccess('Client information updated successfully.');
-              // Update local view data
-              // updateViewFormData(clientData)
             }
           }}
           onDelete={handleDeleteClient}

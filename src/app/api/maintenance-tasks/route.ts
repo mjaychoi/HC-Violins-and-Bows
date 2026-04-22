@@ -463,6 +463,14 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         return organizationIdInvalidResponse();
       }
 
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
 
       // Validate request body using create schema (without id, created_at, updated_at)

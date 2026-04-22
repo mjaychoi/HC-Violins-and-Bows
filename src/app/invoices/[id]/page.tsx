@@ -167,7 +167,13 @@ export default function InvoiceDetailPage() {
         }
 
         const result = await response.json();
-        setInvoice(result.data as Invoice);
+        const next = result?.data as Invoice | undefined;
+        if (!next?.id) {
+          throw new Error(
+            'Invalid response: missing invoice data after update'
+          );
+        }
+        setInvoice(next);
         showSuccess('Invoice updated');
         setIsModalOpen(false);
       } catch (error) {

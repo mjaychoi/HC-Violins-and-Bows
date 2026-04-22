@@ -91,4 +91,25 @@ describe('usePageNotifications', () => {
     result.current.notificationBadge.onClick();
     expect(mockPush).not.toHaveBeenCalled();
   });
+
+  it('uses showWarning (not success) for badge text when customClickHandler is set', () => {
+    const showSuccess = jest.fn();
+    const showWarning = jest.fn();
+    const customClickHandler = jest.fn();
+
+    const { result } = renderHook(() =>
+      usePageNotifications({
+        tasks: mockTasks,
+        showSuccess,
+        showWarning,
+        customClickHandler,
+        showToastOnClick: true,
+      })
+    );
+
+    result.current.notificationBadge.onClick();
+    expect(showWarning).toHaveBeenCalled();
+    expect(showSuccess).not.toHaveBeenCalled();
+    expect(customClickHandler).toHaveBeenCalled();
+  });
 });

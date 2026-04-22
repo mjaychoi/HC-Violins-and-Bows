@@ -37,7 +37,7 @@ interface UseMaintenanceTasksReturn {
       MaintenanceTask,
       'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
     >
-  ) => Promise<MaintenanceTask | null>;
+  ) => Promise<MaintenanceTask>;
   updateTask: (
     id: string,
     updates: Partial<
@@ -46,7 +46,7 @@ interface UseMaintenanceTasksReturn {
         'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
       >
     >
-  ) => Promise<MaintenanceTask | null>;
+  ) => Promise<MaintenanceTask>;
   deleteTask: (id: string) => Promise<void>;
   fetchTasksByDateRange: (
     startDate: string,
@@ -248,14 +248,11 @@ export function useMaintenanceTasks(
         }
 
         const res = await apiFetch(`/api/maintenance-tasks${queryString}`);
-        const task =
-          (await handleApiResponse<MaintenanceTask | null>(
-            res,
-            `Failed to fetch maintenance task (${res.status})`
-          )) ?? null;
-        if (task) {
-          setCachedMaintenanceTasks(cacheKey, [task]);
-        }
+        const task = await handleApiResponse<MaintenanceTask>(
+          res,
+          `Failed to fetch maintenance task (${res.status})`
+        );
+        setCachedMaintenanceTasks(cacheKey, [task]);
         return task;
       } catch (err) {
         setError(err);
@@ -277,7 +274,7 @@ export function useMaintenanceTasks(
         MaintenanceTask,
         'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
       >
-    ): Promise<MaintenanceTask | null> => {
+    ): Promise<MaintenanceTask> => {
       setLoading(prev => ({ ...prev, mutate: true }));
       setError(null);
       setDisplayError(null);
@@ -288,17 +285,14 @@ export function useMaintenanceTasks(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(task),
         });
-        const data =
-          (await handleApiResponse<MaintenanceTask | null>(
-            res,
-            `Failed to create maintenance task (${res.status})`
-          )) ?? null;
-        if (data) {
-          invalidateMaintenanceTasksCache();
-          setTasks(prev => [data, ...prev]);
-        }
+        const data = await handleApiResponse<MaintenanceTask>(
+          res,
+          `Failed to create maintenance task (${res.status})`
+        );
+        invalidateMaintenanceTasksCache();
+        setTasks(prev => [data, ...prev]);
 
-        return data ?? null;
+        return data;
       } catch (err) {
         setError(err);
         const appError =
@@ -322,7 +316,7 @@ export function useMaintenanceTasks(
           'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
         >
       >
-    ): Promise<MaintenanceTask | null> => {
+    ): Promise<MaintenanceTask> => {
       setLoading(prev => ({ ...prev, mutate: true }));
       setError(null);
       setDisplayError(null);
@@ -333,17 +327,14 @@ export function useMaintenanceTasks(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, ...updates }),
         });
-        const data =
-          (await handleApiResponse<MaintenanceTask | null>(
-            res,
-            `Failed to update maintenance task (${res.status})`
-          )) ?? null;
-        if (data) {
-          invalidateMaintenanceTasksCache();
-          setTasks(prev => prev.map(t => (t.id === id ? data : t)));
-        }
+        const data = await handleApiResponse<MaintenanceTask>(
+          res,
+          `Failed to update maintenance task (${res.status})`
+        );
+        invalidateMaintenanceTasksCache();
+        setTasks(prev => prev.map(t => (t.id === id ? data : t)));
 
-        return data ?? null;
+        return data;
       } catch (err) {
         setError(err);
         const appError =
@@ -373,7 +364,10 @@ export function useMaintenanceTasks(
         );
         await handleApiResponse<null>(
           res,
-          `Failed to delete maintenance task (${res.status})`
+          `Failed to delete maintenance task (${res.status})`,
+          {
+            allowSuccessWithoutData: true,
+          }
         );
 
         invalidateMaintenanceTasksCache();

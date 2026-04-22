@@ -388,6 +388,39 @@ describe('/api/instruments', () => {
       expect(mockQuery.insert).toHaveBeenCalled();
     });
 
+    it('should return 403 when the user is not an admin (matches instruments_insert RLS)', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        role: 'member',
+      };
+
+      const createData = {
+        maker: 'Guarneri',
+        type: 'Violin',
+        subtype: null,
+        serial_number: null,
+        year: 1740,
+        ownership: null,
+        size: null,
+        weight: null,
+        note: null,
+        price: null,
+        certificate: false,
+        status: 'Available',
+      };
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify(createData),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.error).toBe('Admin role required');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should return 400 for invalid data', async () => {
       const request = new NextRequest('http://localhost/api/instruments', {
         method: 'POST',

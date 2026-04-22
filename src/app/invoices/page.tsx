@@ -67,7 +67,11 @@ function InvoicesPageContent() {
     listDiagnostics,
   } = useInvoices();
   const { showSuccess, showWarning, handleError } = useAppFeedback();
-  const { canCreateInvoice, canManageInvoiceSettings } = usePermissions();
+  const {
+    canCreateInvoice,
+    createInvoiceDisabledReason,
+    canManageInvoiceSettings,
+  } = usePermissions();
   const {
     submitting: isMutatingInvoice,
     withSubmitting: withInvoiceSubmitting,
@@ -490,7 +494,7 @@ function InvoicesPageContent() {
                 const refreshedInvoices = await refreshInvoiceList(1);
                 setPage(1);
                 setHighlightedInvoiceId(refreshedInvoices[0]?.id ?? null);
-                showSuccess(createResult.message);
+                showWarning(createResult.message);
                 setIsModalOpen(false);
                 setEditingInvoice(null);
               } catch (refreshError) {
@@ -733,14 +737,20 @@ function InvoicesPageContent() {
       <AppLayout
         title="Invoices"
         actionButton={
-          canCreateInvoice
+          canCreateInvoice || createInvoiceDisabledReason
             ? {
                 label: 'Add Invoice',
-                onClick: handleAddInvoice,
-                disabled: isMutatingInvoice,
-                disabledReason: isMutatingInvoice
-                  ? 'Please wait for the current submission to finish'
-                  : undefined,
+                onClick: canCreateInvoice
+                  ? handleAddInvoice
+                  : () => {
+                      /* disabled — see disabledReason */
+                    },
+                disabled: !canCreateInvoice || isMutatingInvoice,
+                disabledReason: !canCreateInvoice
+                  ? createInvoiceDisabledReason
+                  : isMutatingInvoice
+                    ? 'Please wait for the current submission to finish'
+                    : undefined,
                 icon: (
                   <svg
                     className="h-4 w-4"

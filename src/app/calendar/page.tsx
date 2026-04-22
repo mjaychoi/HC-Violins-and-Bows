@@ -25,7 +25,6 @@ import { toLocalYMD } from '@/utils/dateParsing';
 import { useCalendarNavigation, useCalendarView } from './hooks';
 import {
   CALENDAR_MESSAGES,
-  CALENDAR_ERROR_MESSAGES,
   CALENDAR_WARNING_MESSAGES,
   CALENDAR_CONFIRM_MESSAGES,
 } from './constants';
@@ -46,7 +45,8 @@ const TaskModal = dynamic(() => import('./components/TaskModal'), {
 
 export default function CalendarPage() {
   const { handleError, showSuccess, showWarning } = useAppFeedback();
-  const { canCreateTask, canManageTasks } = usePermissions();
+  const { canCreateTask, canManageTasks, createTaskDisabledReason } =
+    usePermissions();
 
   // FIXED: useUnifiedData is now called at root layout level
   // Use specific hooks to read data (they don't trigger fetches)
@@ -98,6 +98,9 @@ export default function CalendarPage() {
   const navigation = useCalendarNavigation({
     fetchTasksByDateRange,
     onError: handleTableError,
+    onRefetchFailure: () => {
+      showWarning(CALENDAR_WARNING_MESSAGES.CALENDAR_DATA_LOAD_FAILED);
+    },
   });
 
   const refreshCalendarAfterMutation = useCallback(
@@ -122,8 +125,8 @@ export default function CalendarPage() {
     navigateTo: '', // Don't navigate, use custom handler instead
     showToastOnClick: true,
     showSuccess,
+    showWarning,
     customClickHandler: () => {
-      // Custom handler: navigate to today (toast is handled by default onClick)
       navigation.handleGoToToday();
     },
     // Uses default formatter from policies/notifications.ts
@@ -144,10 +147,17 @@ export default function CalendarPage() {
         'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
       >
     ) => {
+      let created: MaintenanceTask;
       try {
-        await createTask(taskData);
-      } catch (error) {
-        handleError(error, CALENDAR_ERROR_MESSAGES.CREATE_TASK);
+        created = await createTask(taskData);
+      } catch {
+        return;
+      }
+
+      if (!created?.id) {
+        showWarning(
+          'Task could not be confirmed from the server. Please check the calendar or refresh.'
+        );
         return;
       }
 
@@ -164,7 +174,7 @@ export default function CalendarPage() {
       closeModal,
       refreshCalendarAfterMutation,
       showSuccess,
-      handleError,
+      showWarning,
     ]
   );
 
@@ -176,10 +186,17 @@ export default function CalendarPage() {
       >
     ) => {
       if (!selectedTask) return;
+      let updated: MaintenanceTask;
       try {
-        await updateTask(selectedTask.id, taskData);
-      } catch (error) {
-        handleError(error, CALENDAR_ERROR_MESSAGES.UPDATE_TASK);
+        updated = await updateTask(selectedTask.id, taskData);
+      } catch {
+        return;
+      }
+
+      if (!updated?.id) {
+        showWarning(
+          'Update could not be confirmed from the server. Please try again or refresh.'
+        );
         return;
       }
 
@@ -197,7 +214,7 @@ export default function CalendarPage() {
       closeModal,
       refreshCalendarAfterMutation,
       showSuccess,
-      handleError,
+      showWarning,
     ]
   );
 
@@ -210,8 +227,7 @@ export default function CalendarPage() {
 
     try {
       await deleteTask(confirmDeleteTask.id);
-    } catch (error) {
-      handleError(error, CALENDAR_ERROR_MESSAGES.DELETE_TASK);
+    } catch {
       return;
     }
 
@@ -227,7 +243,6 @@ export default function CalendarPage() {
     deleteTask,
     refreshCalendarAfterMutation,
     showSuccess,
-    handleError,
   ]);
 
   const handleSelectEvent = (task: MaintenanceTask) => {
@@ -296,6 +311,7 @@ export default function CalendarPage() {
       setDraggingEventId(task.id);
 
       try {
+        let updated: MaintenanceTask;
         try {
           // Convert Date to YYYY-MM-DD format (date-only, no time preserved)
           const newDate = toLocalYMD(start.toISOString());
@@ -312,7 +328,7 @@ export default function CalendarPage() {
             updateData.scheduled_date = newDate;
           }
 
-          await updateTask(task.id, updateData);
+          updated = await updateTask(task.id, updateData);
         } catch (error) {
           // Rollback on error using local backup variable
           try {
@@ -321,10 +337,17 @@ export default function CalendarPage() {
             };
             await updateTask(task.id, rollbackData);
             await navigation.forceRefetch({ suppressErrorToast: true });
-          } catch (rollbackError) {
-            console.error('Failed to rollback task date:', rollbackError);
+          } catch {
+            showWarning(CALENDAR_WARNING_MESSAGES.ROLLBACK_FAILED);
           }
           handleError(error, 'Failed to update task date');
+          return;
+        }
+
+        if (!updated?.id) {
+          showWarning(
+            'The move could not be confirmed. Please refresh the calendar.'
+          );
           return;
         }
 
@@ -343,6 +366,7 @@ export default function CalendarPage() {
       navigation,
       refreshCalendarAfterMutation,
       showSuccess,
+      showWarning,
       handleError,
     ]
   );
@@ -369,6 +393,7 @@ export default function CalendarPage() {
       setDraggingEventId(task.id);
 
       try {
+        let updated: MaintenanceTask;
         try {
           // For resize, we update the date based on the start time
           const newDate = toLocalYMD(start.toISOString());
@@ -383,9 +408,16 @@ export default function CalendarPage() {
             updateData.scheduled_date = newDate;
           }
 
-          await updateTask(task.id, updateData);
+          updated = await updateTask(task.id, updateData);
         } catch (error) {
           handleError(error, 'Failed to update task time');
+          return;
+        }
+
+        if (!updated?.id) {
+          showWarning(
+            'The resize could not be confirmed. Please refresh the calendar.'
+          );
           return;
         }
 
@@ -399,7 +431,13 @@ export default function CalendarPage() {
         setDraggingEventId(null);
       }
     },
-    [updateTask, refreshCalendarAfterMutation, showSuccess, handleError]
+    [
+      updateTask,
+      refreshCalendarAfterMutation,
+      showSuccess,
+      showWarning,
+      handleError,
+    ]
   );
 
   const handleTaskClick = (task: MaintenanceTask) => {
@@ -464,14 +502,20 @@ export default function CalendarPage() {
       <AppLayout
         title="Calendar"
         actionButton={
-          canCreateTask
+          canCreateTask || createTaskDisabledReason
             ? {
                 label: 'Add Task',
-                onClick: handleOpenNewTask,
-                disabled: loading.mutate,
-                disabledReason: loading.mutate
-                  ? 'Please wait for the current submission to finish'
-                  : undefined,
+                onClick: canCreateTask
+                  ? handleOpenNewTask
+                  : () => {
+                      /* disabled — see disabledReason */
+                    },
+                disabled: !canCreateTask || loading.mutate,
+                disabledReason: !canCreateTask
+                  ? createTaskDisabledReason
+                  : loading.mutate
+                    ? 'Please wait for the current submission to finish'
+                    : undefined,
                 icon: (
                   <svg
                     className="h-4 w-4"
@@ -513,7 +557,9 @@ export default function CalendarPage() {
           loading={loading}
           fetchError={fetchDisplayError ?? fetchError}
           onRetry={() => {
-            void navigation.forceRefetch().catch(() => {});
+            void navigation.forceRefetch().catch(() => {
+              showWarning(CALENDAR_WARNING_MESSAGES.MANUAL_REFETCH_FAILED);
+            });
           }}
           navigation={navigation}
           view={view}
@@ -529,9 +575,11 @@ export default function CalendarPage() {
           onOpenNewTask={handleOpenNewTask}
           canCreateTask={canCreateTask && !loading.mutate}
           createTaskDisabledReason={
-            loading.mutate
-              ? 'Please wait for the current submission to finish'
-              : undefined
+            !canCreateTask
+              ? createTaskDisabledReason
+              : loading.mutate
+                ? 'Please wait for the current submission to finish'
+                : undefined
           }
           canManageTask={canManageTasks}
           manageTaskDisabledReason="Admin only"

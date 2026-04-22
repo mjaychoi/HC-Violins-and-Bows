@@ -235,6 +235,29 @@ export function getUserFriendlyErrorMessage(
     return defaultMessage;
   }
 
+  // Permission / RLS / HTTP 403: must not be masked as a generic retry-only DB error
+  if (error && typeof error === 'object') {
+    const o = error as Record<string, unknown>;
+    if (o.status === 403) {
+      return 'You do not have permission to perform this action.';
+    }
+    if (typeof o.message === 'string') {
+      const m = o.message.toLowerCase();
+      if (
+        m.includes('row-level security') ||
+        m.includes('rls') ||
+        m.includes('permission denied for') ||
+        m.includes('permission denied') ||
+        m.includes('insufficient privilege') ||
+        m.includes('42501') ||
+        (m.includes('policy') && m.includes('violat')) ||
+        m.includes('not authorized')
+      ) {
+        return 'You do not have permission to perform this action.';
+      }
+    }
+  }
+
   // Error code 기반 매핑 (가장 안정적)
   if (error && typeof error === 'object' && 'code' in error) {
     const errorCode = (error as { code: string }).code;

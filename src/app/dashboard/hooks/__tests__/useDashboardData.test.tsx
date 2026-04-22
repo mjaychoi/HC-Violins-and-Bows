@@ -148,13 +148,37 @@ describe('useDashboardData', () => {
     });
 
     expect(mockCreateInstrument).toHaveBeenCalled();
-    expect(mockShowSuccess).toHaveBeenCalledWith(
-      '아이템이 성공적으로 생성되었습니다.'
-    );
+    expect(mockShowSuccess).not.toHaveBeenCalled();
     expect(createdId).toBe(mockInstrument.id);
   });
 
-  it('updates a non-status change through updateInstrument directly', async () => {
+  it('does not report success when create returns null (API failure)', async () => {
+    mockCreateInstrument.mockResolvedValue(null);
+    const { result } = renderHook(() => useDashboardData());
+
+    let createdId: string | null = 'should-be-cleared';
+    await act(async () => {
+      createdId = await result.current.handleCreateItem({
+        maker: 'Maker',
+        type: 'Violin',
+        subtype: null,
+        serial_number: 'SN999',
+        year: 1800,
+        ownership: null,
+        size: null,
+        weight: null,
+        note: null,
+        price: null,
+        certificate: false,
+        status: 'Available',
+      });
+    });
+
+    expect(createdId).toBeNull();
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+  });
+
+  it('updates a non-status change through updateInstrument directly (no success toast; page owns modal flow)', async () => {
     const updatedInstrument = { ...mockInstrument, maker: 'Updated Maker' };
     mockUpdateInstrument.mockResolvedValue(updatedInstrument);
     const { result } = renderHook(() => useDashboardData());
@@ -168,9 +192,7 @@ describe('useDashboardData', () => {
     expect(mockUpdateInstrument).toHaveBeenCalledWith(mockInstrument.id, {
       maker: 'Updated Maker',
     });
-    expect(mockShowSuccess).toHaveBeenCalledWith(
-      '아이템이 성공적으로 수정되었습니다.'
-    );
+    expect(mockShowSuccess).not.toHaveBeenCalled();
   });
 
   it('uses atomic sale transition payload when moving to Sold', async () => {
@@ -302,7 +324,7 @@ describe('useDashboardData', () => {
     );
   });
 
-  it('handleUpdateItemInline delegates to handleUpdateItem', async () => {
+  it('handleUpdateItemInline delegates to handleUpdateItem and shows inline success toast', async () => {
     mockUpdateInstrument.mockResolvedValue(mockInstrument);
     const { result } = renderHook(() => useDashboardData());
 
@@ -313,6 +335,9 @@ describe('useDashboardData', () => {
     });
 
     expect(mockUpdateInstrument).toHaveBeenCalled();
+    expect(mockShowSuccess).toHaveBeenCalledWith(
+      '아이템이 성공적으로 수정되었습니다.'
+    );
   });
 
   it('deletes an item successfully', async () => {

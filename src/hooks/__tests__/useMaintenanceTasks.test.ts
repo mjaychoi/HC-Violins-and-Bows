@@ -465,6 +465,43 @@ describe('useMaintenanceTasks', () => {
 
       expect(result.current.tasks).toEqual([]);
     });
+
+    it('throws when API returns ok but no task payload (does not add to state)', async () => {
+      const newTaskData = {
+        instrument_id: 'instrument-1',
+        client_id: null,
+        task_type: 'repair' as TaskType,
+        title: 'New Repair',
+        description: 'New repair task',
+        status: 'pending' as TaskStatus,
+        received_date: '2024-01-01',
+        due_date: null,
+        personal_due_date: null,
+        scheduled_date: null,
+        completed_date: null,
+        priority: 'medium' as TaskPriority,
+        estimated_hours: null,
+        actual_hours: null,
+        cost: null,
+        notes: null,
+      };
+
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ success: true }),
+      });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await expect(result.current.createTask(newTaskData)).rejects.toThrow();
+      });
+
+      expect(result.current.tasks).toEqual([]);
+    });
   });
 
   describe('updateTask', () => {
@@ -654,6 +691,63 @@ describe('useMaintenanceTasks', () => {
         },
         { timeout: 3000 }
       );
+    });
+
+    it('throws when update returns ok but no task in body (keeps previous task in state)', async () => {
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({ data: mockTask }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: null }),
+        });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.createTask({
+          instrument_id: mockTask.instrument_id,
+          client_id: mockTask.client_id,
+          task_type: mockTask.task_type,
+          title: mockTask.title,
+          description: mockTask.description,
+          status: mockTask.status,
+          received_date: mockTask.received_date,
+          due_date: mockTask.due_date,
+          personal_due_date: mockTask.personal_due_date,
+          scheduled_date: mockTask.scheduled_date,
+          completed_date: mockTask.completed_date,
+          priority: mockTask.priority,
+          estimated_hours: mockTask.estimated_hours,
+          actual_hours: mockTask.actual_hours,
+          cost: mockTask.cost,
+          notes: mockTask.notes,
+        });
+      });
+
+      await waitFor(
+        () => {
+          expect(result.current.tasks.length).toBeGreaterThan(0);
+        },
+        { timeout: 3000 }
+      );
+
+      await act(async () => {
+        await expect(
+          result.current.updateTask('1', { title: 'Nope' })
+        ).rejects.toThrow();
+      });
+
+      const task = result.current.tasks.find(
+        (t: MaintenanceTask) => t.id === '1'
+      );
+      expect(task?.title).toBe('Violin Repair');
     });
   });
 
