@@ -64,10 +64,10 @@ export default function ClientsPage() {
     createClient,
     updateClient,
     deleteClient,
-    fetchClients,
+    upsertClient,
   } = useUnifiedClients();
 
-  const { fetchConnections } = useUnifiedConnections();
+  const { fetchConnections, upsertConnections } = useUnifiedConnections();
 
   const { instruments } = useUnifiedInstruments();
 
@@ -173,7 +173,10 @@ export default function ClientsPage() {
           });
 
           const body = (await res.json().catch(() => null)) as {
-            data?: { client?: Client };
+            data?: {
+              client?: Client;
+              connections?: ClientInstrument[];
+            };
             error?: string;
             message?: string;
           } | null;
@@ -187,8 +190,11 @@ export default function ClientsPage() {
             return { status: 'full_failure' };
           }
 
-          const clientId = body?.data?.client?.id;
-          if (!clientId) {
+          const createdClient = body?.data?.client;
+          const clientId = createdClient?.id;
+          const createdConnections = body?.data?.connections;
+
+          if (!clientId || !createdClient) {
             handleError(
               new Error('Invalid response'),
               'Failed to create client'
@@ -196,11 +202,19 @@ export default function ClientsPage() {
             return { status: 'full_failure' };
           }
 
+          // API already materialized the new client and links; patch stores to avoid redundant list refetches.
+          upsertClient(createdClient);
+          if (
+            Array.isArray(createdConnections) &&
+            createdConnections.length > 0
+          ) {
+            upsertConnections(createdConnections);
+          } else {
+            // Should not happen on success, but if the payload is missing links, re-sync from the server.
+            void fetchConnections({ all: true, force: true });
+          }
+
           setNewlyCreatedClientId(clientId);
-          await Promise.all([
-            fetchClients({ force: true }),
-            fetchConnections({ force: true }),
-          ]);
 
           showSuccess('Client and instrument links created successfully');
           return {

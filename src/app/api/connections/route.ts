@@ -100,6 +100,9 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       );
       const ascending = searchParams.get('ascending') !== 'false';
 
+      /** When true, return all rows for the (optional) org filters — no `range` window. */
+      const fetchAll = searchParams.get('all') === 'true';
+
       const page = parsePage(searchParams.get('page'));
       const pageSize = searchParams.has('pageSize')
         ? parsePageSize(searchParams.get('pageSize'))
@@ -127,9 +130,12 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       // query = query.order('display_order', { ascending: true });
       query = query.order(orderBy, { ascending });
 
-      const offset = (page - 1) * pageSize;
-      const to = offset + pageSize - 1;
-      query = query.range(offset, to);
+      const offset = fetchAll ? 0 : (page - 1) * pageSize;
+      const to = fetchAll ? 0 : offset + pageSize - 1;
+
+      if (!fetchAll) {
+        query = query.range(offset, to);
+      }
 
       let { data, error, count } = await query;
 
@@ -150,7 +156,9 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
         retryQuery = retryQuery.order(orderBy, { ascending });
 
-        retryQuery = retryQuery.range(offset, to);
+        if (!fetchAll) {
+          retryQuery = retryQuery.range(offset, to);
+        }
 
         const retryResult = await retryQuery;
         data = retryResult.data;
@@ -162,20 +170,30 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         throw errorHandler.handleSupabaseError(error, 'Fetch connections');
       }
 
+      const responsePage = fetchAll ? 1 : page;
+      const responsePageSize = fetchAll
+        ? (count ?? data?.length ?? 0)
+        : pageSize;
+      const responseTotalPages = fetchAll
+        ? 1
+        : page && pageSize && count
+          ? Math.ceil(count / pageSize)
+          : undefined;
+
       return {
         payload: {
           data: data || [],
           count: count || 0,
-          page,
-          pageSize,
-          totalPages:
-            page && pageSize && count ? Math.ceil(count / pageSize) : undefined,
+          page: responsePage,
+          pageSize: responsePageSize,
+          totalPages: responseTotalPages,
         },
         metadata: {
           recordCount: data?.length || 0,
           totalCount: count || 0,
-          page,
-          pageSize,
+          page: responsePage,
+          pageSize: responsePageSize,
+          fetchAll,
           clientId,
           instrumentId,
           orderBy,

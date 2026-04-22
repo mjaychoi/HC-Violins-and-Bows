@@ -37,6 +37,7 @@ type ConnectionsAction =
       payload: { id: string; connection: ClientInstrument };
     }
   | { type: 'REMOVE_CONNECTION'; payload: string }
+  | { type: 'UPSERT_CONNECTIONS'; payload: ClientInstrument[] }
   | { type: 'INVALIDATE_CACHE' }
   | { type: 'RESET_STATE' };
 
@@ -90,6 +91,21 @@ function connectionsReducer(
         connections: state.connections.filter(c => c.id !== action.payload),
         lastUpdated: new Date(),
       };
+    case 'UPSERT_CONNECTIONS': {
+      const incoming = action.payload;
+      if (incoming.length === 0) return state;
+      const incomingIds = new Set(incoming.map(c => c.id));
+      const merged = [
+        ...incoming,
+        ...state.connections.filter(c => !incomingIds.has(c.id)),
+      ];
+      return {
+        ...state,
+        connections: merged,
+        error: null,
+        lastUpdated: new Date(),
+      };
+    }
     case 'INVALIDATE_CACHE':
       // Stale-while-revalidate: preserve data, clear freshness only.
       return { ...state, lastUpdated: null };
@@ -104,7 +120,15 @@ type ConnectionsContextValue = {
   state: ConnectionsState;
   dispatch: React.Dispatch<ConnectionsAction>;
   actions: {
-    fetchConnections: (opts?: { force?: boolean }) => Promise<void>;
+    /**
+     * @param all - `true`: org-wide full list (`/api/connections?all=true`). Omit or `false`: first page only (bounded) — not valid for dashboard / global joins.
+     */
+    fetchConnections: (opts?: {
+      force?: boolean;
+      all?: boolean;
+      page?: number;
+      pageSize?: number;
+    }) => Promise<void>;
     createConnection: (
       connection: Omit<ClientInstrument, 'id' | 'created_at'>
     ) => Promise<ClientInstrument | null>;
@@ -113,10 +137,18 @@ type ConnectionsContextValue = {
       connection: Partial<ClientInstrument>
     ) => Promise<ClientInstrument | null>;
     deleteConnection: (id: string) => Promise<boolean>;
+    /**
+     * Merge by id (insert or replace) without a refetch. Used when the API
+     * response already includes authoritative rows.
+     */
+    upsertConnections: (connections: ClientInstrument[]) => void;
     invalidateCache: () => void;
     resetState: () => void;
   };
 };
+
+const CONNECTIONS_DEFAULT_PAGE = 1;
+const CONNECTIONS_DEFAULT_PAGE_SIZE = 50;
 
 const ConnectionsContext = createContext<ConnectionsContextValue | null>(null);
 
@@ -163,7 +195,18 @@ function sameConnections(
 
 export function ConnectionsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(connectionsReducer, initialState);
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  /** After a successful `all: true` fetch, we can skip repeat full fetches unless `force`. */
+  const orgWideFetchCompleteRef = useRef(false);
   const { handleError } = useErrorHandler();
+  const handleErrorRef = useRef(handleError);
+  useEffect(() => {
+    handleErrorRef.current = handleError;
+  }, [handleError]);
+
   const { tenantIdentityKey } = useTenantIdentity();
 
   // In-flight request deduplication is tenant-scoped.
@@ -173,6 +216,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (previousTenantIdentityKeyRef.current !== tenantIdentityKey) {
+      orgWideFetchCompleteRef.current = false;
       dispatch({ type: 'RESET_STATE' });
     }
     tenantIdentityKeyRef.current = tenantIdentityKey;
@@ -198,30 +242,59 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
   );
 
   const invalidateCache = useCallback(() => {
+    orgWideFetchCompleteRef.current = false;
     dispatch({ type: 'INVALIDATE_CACHE' });
   }, []);
 
   const resetState = useCallback(() => {
+    orgWideFetchCompleteRef.current = false;
     dispatch({ type: 'RESET_STATE' });
   }, []);
 
-  const fetchConnections = useCallback(
-    async (opts?: { force?: boolean }) => {
-      const force = opts?.force ?? false;
+  const upsertConnections = useCallback((rows: ClientInstrument[]) => {
+    if (rows.length === 0) return;
+    dispatch({ type: 'UPSERT_CONNECTIONS', payload: rows });
+  }, []);
 
-      // Optional cache check: already loaded & not forced -> skip
-      if (!force && state.lastUpdated && state.connections.length > 0) return;
+  const fetchConnections = useCallback(
+    async (opts?: {
+      force?: boolean;
+      all?: boolean;
+      page?: number;
+      pageSize?: number;
+    }) => {
+      const force = opts?.force ?? false;
+      const all = opts?.all === true;
+      const page = opts?.page ?? CONNECTIONS_DEFAULT_PAGE;
+      const pageSize = opts?.pageSize ?? CONNECTIONS_DEFAULT_PAGE_SIZE;
+
+      if (!force) {
+        if (all) {
+          if (orgWideFetchCompleteRef.current) return;
+        } else {
+          const s = stateRef.current;
+          if (s.lastUpdated && s.connections.length > 0) return;
+        }
+      }
 
       const fetchTenantIdentityKey = tenantIdentityKeyRef.current;
       const inflightKey = fetchTenantIdentityKey ?? NO_TENANT_SCOPE_KEY;
 
-      return deduped(inflightKey, async () => {
+      const runFetch = async () => {
         dispatch({ type: 'SET_LOADING', payload: true });
         dispatch({ type: 'SET_ERROR', payload: null });
         try {
-          const res = await apiFetch(
-            '/api/connections?orderBy=created_at&ascending=false'
-          );
+          const base = new URLSearchParams({
+            orderBy: 'created_at',
+            ascending: 'false',
+          });
+          if (all) {
+            base.set('all', 'true');
+          } else {
+            base.set('page', String(page));
+            base.set('pageSize', String(pageSize));
+          }
+          const res = await apiFetch(`/api/connections?${base.toString()}`);
           const body = await safeJson(res);
 
           if (!res.ok) {
@@ -236,8 +309,14 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
             return;
           }
 
-          // Avoid unnecessary re-render
-          if (!sameConnections(state.connections, next)) {
+          if (all) {
+            orgWideFetchCompleteRef.current = true;
+          } else {
+            orgWideFetchCompleteRef.current = false;
+          }
+
+          // Always update when not identical; ref flags above mark cache semantics for all vs paged.
+          if (!sameConnections(stateRef.current.connections, next)) {
             dispatch({ type: 'SET_CONNECTIONS', payload: next });
           }
         } catch (err) {
@@ -245,19 +324,24 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
             return;
           }
           if (isAuthLikeTenantError(err)) {
+            orgWideFetchCompleteRef.current = false;
             dispatch({ type: 'RESET_STATE' });
             return;
           }
           dispatch({ type: 'SET_ERROR', payload: err });
-          handleError(err, 'Fetch connections');
+          handleErrorRef.current(err, 'Fetch connections');
         } finally {
           if (tenantIdentityKeyRef.current === fetchTenantIdentityKey) {
             dispatch({ type: 'SET_LOADING', payload: false });
           }
         }
-      });
+      };
+
+      // Separate inflight keys so a paged fetch does not dedupe a full fetch.
+      const modeKey = all ? 'all' : `paged:${page}:${pageSize}`;
+      return deduped(`${inflightKey}:${modeKey}` as string, runFetch);
     },
-    [deduped, handleError, state.connections, state.lastUpdated]
+    [deduped]
   );
 
   const createConnection = useCallback(
@@ -293,7 +377,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'RESET_STATE' });
           return null;
         }
-        handleError(err, 'Create connection');
+        handleErrorRef.current(err, 'Create connection');
         return null;
       } finally {
         if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
@@ -301,7 +385,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [handleError]
+    []
   );
 
   const updateConnection = useCallback(
@@ -340,7 +424,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'RESET_STATE' });
           return null;
         }
-        handleError(err, 'Update connection');
+        handleErrorRef.current(err, 'Update connection');
         return null;
       } finally {
         if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
@@ -348,50 +432,47 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [handleError]
+    []
   );
 
-  const deleteConnection = useCallback(
-    async (id: string) => {
-      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
-      dispatch({ type: 'SET_SUBMITTING', payload: true });
-      try {
-        const res = await apiFetch(
-          `/api/connections?id=${encodeURIComponent(id)}`,
-          {
-            method: 'DELETE',
-          }
-        );
+  const deleteConnection = useCallback(async (id: string) => {
+    const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
+    dispatch({ type: 'SET_SUBMITTING', payload: true });
+    try {
+      const res = await apiFetch(
+        `/api/connections?id=${encodeURIComponent(id)}`,
+        {
+          method: 'DELETE',
+        }
+      );
 
-        const body = await safeJson(res);
+      const body = await safeJson(res);
 
-        if (!res.ok) {
-          throw getResponseError(body, res, 'Failed to delete connection');
-        }
-
-        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-          return false;
-        }
-        dispatch({ type: 'REMOVE_CONNECTION', payload: id });
-        return true;
-      } catch (err) {
-        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-          return false;
-        }
-        if (isAuthLikeTenantError(err)) {
-          dispatch({ type: 'RESET_STATE' });
-          return false;
-        }
-        handleError(err, 'Delete connection');
-        return false;
-      } finally {
-        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
-          dispatch({ type: 'SET_SUBMITTING', payload: false });
-        }
+      if (!res.ok) {
+        throw getResponseError(body, res, 'Failed to delete connection');
       }
-    },
-    [handleError]
-  );
+
+      if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+        return false;
+      }
+      dispatch({ type: 'REMOVE_CONNECTION', payload: id });
+      return true;
+    } catch (err) {
+      if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+        return false;
+      }
+      if (isAuthLikeTenantError(err)) {
+        dispatch({ type: 'RESET_STATE' });
+        return false;
+      }
+      handleErrorRef.current(err, 'Delete connection');
+      return false;
+    } finally {
+      if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+        dispatch({ type: 'SET_SUBMITTING', payload: false });
+      }
+    }
+  }, []);
 
   const actions = useMemo(
     () => ({
@@ -399,6 +480,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       createConnection,
       updateConnection,
       deleteConnection,
+      upsertConnections,
       invalidateCache,
       resetState,
     }),
@@ -407,13 +489,19 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       createConnection,
       updateConnection,
       deleteConnection,
+      upsertConnections,
       invalidateCache,
       resetState,
     ]
   );
 
+  const contextValue = useMemo(
+    () => ({ state, dispatch, actions }),
+    [state, dispatch, actions]
+  );
+
   return (
-    <ConnectionsContext.Provider value={{ state, dispatch, actions }}>
+    <ConnectionsContext.Provider value={contextValue}>
       {children}
     </ConnectionsContext.Provider>
   );

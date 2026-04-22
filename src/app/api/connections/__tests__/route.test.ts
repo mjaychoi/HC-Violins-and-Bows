@@ -108,6 +108,32 @@ describe('/api/connections', () => {
       expect(json.count).toBe(1);
     });
 
+    it('should not apply range when all=true (full list for an org filter)', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockReturnThis(),
+      };
+      (mockQuery.order as jest.Mock).mockResolvedValue({
+        data: [mockConnection],
+        error: null,
+        count: 1,
+      });
+
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
+
+      const request = new NextRequest(
+        'http://localhost/api/connections?all=true&orderBy=created_at&ascending=false'
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data).toEqual([mockConnection]);
+      expect(mockQuery.range).not.toHaveBeenCalled();
+    });
+
     it('should reject GET when org context is missing', async () => {
       mockAuthContext = {
         ...mockAuthContext,

@@ -147,6 +147,37 @@ describe('/api/instruments', () => {
       ]);
       expect(json.count).toBe(1);
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      // Default unbounded list is capped (see DEFAULT_LIST_LIMIT in route)
+      expect(mockQuery.limit).toHaveBeenCalledWith(200);
+    });
+
+    it('should omit default limit when all=true (full list intent)', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+      };
+      (mockQuery.order as jest.Mock).mockResolvedValue({
+        data: [mockInstrument],
+        error: null,
+        count: 1,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+      mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
+
+      const request = new NextRequest(
+        'http://localhost/api/instruments?all=true&orderBy=created_at&ascending=false'
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data).toHaveLength(1);
+      expect(mockQuery.limit).not.toHaveBeenCalled();
     });
 
     it('should prevent cross-org reads by filtering with the caller org_id', async () => {

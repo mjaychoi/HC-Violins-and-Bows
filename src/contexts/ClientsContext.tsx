@@ -34,6 +34,7 @@ type ClientsAction =
   | { type: 'ADD_CLIENT'; payload: Client }
   | { type: 'UPDATE_CLIENT'; payload: { id: string; client: Client } }
   | { type: 'REMOVE_CLIENT'; payload: string }
+  | { type: 'UPSERT_CLIENT'; payload: Client }
   | { type: 'INVALIDATE_CACHE' }
   | { type: 'RESET_STATE' };
 
@@ -87,6 +88,20 @@ function clientsReducer(
         clients: state.clients.filter(c => c.id !== action.payload),
         lastUpdated: new Date(),
       };
+    case 'UPSERT_CLIENT': {
+      const c = action.payload;
+      const idx = state.clients.findIndex(x => x.id === c.id);
+      if (idx === -1) {
+        return {
+          ...state,
+          clients: [c, ...state.clients],
+          lastUpdated: new Date(),
+        };
+      }
+      const next = [...state.clients];
+      next[idx] = c;
+      return { ...state, clients: next, lastUpdated: new Date() };
+    }
     case 'INVALIDATE_CACHE':
       // Stale-while-revalidate: preserve data, clear freshness only.
       return { ...state, lastUpdated: null };
@@ -110,6 +125,8 @@ type ClientsContextValue = {
       client: Partial<Client>
     ) => Promise<Client | null>;
     deleteClient: (id: string) => Promise<boolean>;
+    /** Merge by id: insert or replace without a network round-trip */
+    upsertClient: (client: Client) => void;
     invalidateCache: () => void;
     resetState: () => void;
   };
@@ -162,7 +179,16 @@ function sameClientList(a: Client[], b: Client[]): boolean {
 
 export function ClientsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(clientsReducer, initialState);
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
   const { handleError } = useErrorHandler();
+  const handleErrorRef = useRef(handleError);
+  useEffect(() => {
+    handleErrorRef.current = handleError;
+  }, [handleError]);
+
   const { tenantIdentityKey } = useTenantIdentity();
 
   // In-flight request deduplication is tenant-scoped.
@@ -204,13 +230,21 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'RESET_STATE' });
   }, []);
 
+  const upsertClient = useCallback((client: Client) => {
+    dispatch({ type: 'UPSERT_CLIENT', payload: client });
+  }, []);
+
   const fetchClients = useCallback(
     async (opts?: { force?: boolean }) => {
       const force = opts?.force ?? false;
 
       // Optional cache check (very light): if not forced and already loaded, skip
-      if (!force && state.lastUpdated && state.clients.length > 0) {
-        return;
+      // Reads latest state via ref so the callback identity stays stable.
+      if (!force) {
+        const { lastUpdated, clients: cur } = stateRef.current;
+        if (lastUpdated && cur.length > 0) {
+          return;
+        }
       }
 
       const fetchTenantIdentityKey = tenantIdentityKeyRef.current;
@@ -255,7 +289,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
           }
 
           // Avoid unnecessary re-renders if identical
-          if (!sameClientList(state.clients, clients)) {
+          if (!sameClientList(stateRef.current.clients, clients)) {
             dispatch({ type: 'SET_CLIENTS', payload: clients });
           }
         } catch (err) {
@@ -270,7 +304,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
             return;
           }
           dispatch({ type: 'SET_ERROR', payload: err });
-          handleError(err, 'Fetch clients');
+          handleErrorRef.current(err, 'Fetch clients');
         } finally {
           if (tenantIdentityKeyRef.current === fetchTenantIdentityKey) {
             dispatch({ type: 'SET_LOADING', payload: false });
@@ -278,7 +312,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
         }
       });
     },
-    [deduped, handleError, state.clients, state.lastUpdated]
+    [deduped]
   );
 
   const createClient = useCallback(
@@ -312,7 +346,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'RESET_STATE' });
           return null;
         }
-        handleError(err, 'Create client');
+        handleErrorRef.current(err, 'Create client');
         return null;
       } finally {
         if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
@@ -320,7 +354,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [handleError]
+    []
   );
 
   const updateClient = useCallback(
@@ -356,7 +390,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'RESET_STATE' });
           return null;
         }
-        handleError(err, 'Update client');
+        handleErrorRef.current(err, 'Update client');
         return null;
       } finally {
         if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
@@ -364,50 +398,44 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [handleError]
+    []
   );
 
-  const deleteClient = useCallback(
-    async (id: string) => {
-      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
-      dispatch({ type: 'SET_SUBMITTING', payload: true });
-      try {
-        // ✅ FIXED: Use apiFetch for consistency (auth/cookies/error handling)
-        const res = await apiFetch(
-          `/api/clients?id=${encodeURIComponent(id)}`,
-          {
-            method: 'DELETE',
-          }
-        );
+  const deleteClient = useCallback(async (id: string) => {
+    const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
+    dispatch({ type: 'SET_SUBMITTING', payload: true });
+    try {
+      // ✅ FIXED: Use apiFetch for consistency (auth/cookies/error handling)
+      const res = await apiFetch(`/api/clients?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
 
-        if (!res.ok) {
-          const body = await safeJson(res);
-          throw getResponseError(body, res, 'Failed to delete client');
-        }
-
-        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-          return false;
-        }
-        dispatch({ type: 'REMOVE_CLIENT', payload: id });
-        return true;
-      } catch (err) {
-        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-          return false;
-        }
-        if (isAuthLikeTenantError(err)) {
-          dispatch({ type: 'RESET_STATE' });
-          return false;
-        }
-        handleError(err, 'Delete client');
-        return false;
-      } finally {
-        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
-          dispatch({ type: 'SET_SUBMITTING', payload: false });
-        }
+      if (!res.ok) {
+        const body = await safeJson(res);
+        throw getResponseError(body, res, 'Failed to delete client');
       }
-    },
-    [handleError]
-  );
+
+      if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+        return false;
+      }
+      dispatch({ type: 'REMOVE_CLIENT', payload: id });
+      return true;
+    } catch (err) {
+      if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+        return false;
+      }
+      if (isAuthLikeTenantError(err)) {
+        dispatch({ type: 'RESET_STATE' });
+        return false;
+      }
+      handleErrorRef.current(err, 'Delete client');
+      return false;
+    } finally {
+      if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+        dispatch({ type: 'SET_SUBMITTING', payload: false });
+      }
+    }
+  }, []);
 
   const actions = useMemo(
     () => ({
@@ -415,6 +443,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
       createClient,
       updateClient,
       deleteClient,
+      upsertClient,
       invalidateCache,
       resetState,
     }),
@@ -423,13 +452,19 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
       createClient,
       updateClient,
       deleteClient,
+      upsertClient,
       invalidateCache,
       resetState,
     ]
   );
 
+  const contextValue = useMemo(
+    () => ({ state, dispatch, actions }),
+    [state, dispatch, actions]
+  );
+
   return (
-    <ClientsContext.Provider value={{ state, dispatch, actions }}>
+    <ClientsContext.Provider value={contextValue}>
       {children}
     </ClientsContext.Provider>
   );
