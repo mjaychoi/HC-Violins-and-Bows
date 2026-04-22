@@ -17,6 +17,7 @@ import { MaintenanceTask } from '@/types';
 import { parseYMDLocal, taskDayKey } from '@/utils/dateParsing';
 import { parseISO, isValid } from 'date-fns';
 import { getDateStatus } from '@/utils/tasks/style';
+import { getCalendarPlacementDate } from '@/utils/calendar';
 
 interface YearViewProps {
   currentDate: Date;
@@ -52,9 +53,7 @@ export default function YearView({
 
     // Single pass through tasks
     for (const task of tasks) {
-      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
-      const raw =
-        task.due_date || task.personal_due_date || task.scheduled_date;
+      const raw = getCalendarPlacementDate(task);
       if (!raw) continue;
 
       let d: Date | null = null;

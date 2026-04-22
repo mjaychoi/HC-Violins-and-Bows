@@ -506,16 +506,24 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const createdValidation = safeValidate(data, validateMaintenanceTask);
-      const createdPayload = createdValidation.success
-        ? createdValidation.data
-        : (data as MaintenanceTask);
+      if (!createdValidation.success) {
+        return {
+          status: 422,
+          payload: {
+            error: 'Created maintenance task failed response validation',
+            error_code: 'maintenance_task_response_invalid',
+            details: createdValidation.error,
+          },
+        };
+      }
+
+      const createdPayload = createdValidation.data;
 
       return {
         payload: { data: createdPayload },
         status: 201,
         metadata: {
           taskId: createdPayload.id,
-          validationWarning: !createdValidation.success,
         },
       };
     }
@@ -627,15 +635,23 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const updatedValidation = safeValidate(data, validateMaintenanceTask);
-      const updatedPayload = updatedValidation.success
-        ? updatedValidation.data
-        : (data as MaintenanceTask);
+      if (!updatedValidation.success) {
+        return {
+          status: 422,
+          payload: {
+            error: 'Updated maintenance task failed response validation',
+            error_code: 'maintenance_task_response_invalid',
+            details: updatedValidation.error,
+          },
+        };
+      }
+
+      const updatedPayload = updatedValidation.data;
 
       return {
         payload: { data: updatedPayload },
         metadata: {
           taskId: id,
-          validationWarning: !updatedValidation.success,
         },
       };
     }

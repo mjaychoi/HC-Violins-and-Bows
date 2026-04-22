@@ -21,6 +21,9 @@ import {
   validateMaintenanceTaskArray,
   validateSalesHistoryArray,
   safeValidate,
+  validateCreateClient,
+  validateCreateInstrument,
+  validatePartialInstrument,
 } from '../typeGuards';
 import { Instrument, Client, MaintenanceTask, SalesHistory } from '@/types';
 
@@ -208,6 +211,98 @@ describe('Type Guards', () => {
 });
 
 describe('Validation Functions', () => {
+  describe('validateCreateClient', () => {
+    it('requires a non-empty combined client name and normalizes empty optional text to null', () => {
+      const result = validateCreateClient({
+        first_name: '  Jane  ',
+        last_name: '  Smith  ',
+        contact_number: '   ',
+        email: '',
+        tags: ['Owner'],
+        interest: '  Collector  ',
+        note: '   ',
+      });
+
+      expect(result).toMatchObject({
+        first_name: 'Jane',
+        last_name: 'Smith',
+        contact_number: null,
+        email: null,
+        tags: ['Owner'],
+        interest: 'Collector',
+        note: null,
+      });
+    });
+
+    it('rejects create payloads when both name fields are blank', () => {
+      expect(() =>
+        validateCreateClient({
+          first_name: '   ',
+          last_name: '',
+          contact_number: null,
+          email: null,
+          tags: [],
+          interest: null,
+          note: null,
+        })
+      ).toThrow('Client name is required');
+    });
+  });
+
+  describe('validateCreateInstrument', () => {
+    it('defaults and normalizes a minimal valid create payload', () => {
+      const result = validateCreateInstrument({
+        type: '  Violin  ',
+        maker: '  ',
+        subtype: '',
+        note: '  concert instrument  ',
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          type: 'Violin',
+          status: 'Available',
+          maker: null,
+          subtype: null,
+          note: 'concert instrument',
+          certificate: false,
+          has_certificate: false,
+        })
+      );
+    });
+
+    it('rejects nullable type values and strips unsupported fields', () => {
+      expect(() =>
+        validateCreateInstrument({
+          type: null,
+        })
+      ).toThrow('Invalid Instrument creation data');
+
+      const result = validateCreateInstrument({
+        type: 'Violin',
+        certificate_name: 'Unsupported',
+        image_url: 'https://example.com/test.jpg',
+      });
+
+      expect(result).toEqual(
+        expect.not.objectContaining({
+          certificate_name: expect.anything(),
+          image_url: expect.anything(),
+        })
+      );
+    });
+  });
+
+  describe('validatePartialInstrument', () => {
+    it('does not allow setting type to null on update', () => {
+      expect(() =>
+        validatePartialInstrument({
+          type: null,
+        })
+      ).toThrow('Invalid Instrument update');
+    });
+  });
+
   describe('validateInstrument', () => {
     it.skip('should validate and return instrument for valid data', () => {
       const data: Instrument = {

@@ -105,6 +105,7 @@ const ItemList = memo(function ItemList({
 }: ItemListProps) {
   const { showSuccess } = useSuccessToastContext();
   const { handleError } = useErrorContext();
+  const [inlineSaveError, setInlineSaveError] = useState<string | null>(null);
   // 인라인 편집 훅 사용
   type EditData = {
     id: string;
@@ -176,6 +177,30 @@ const ItemList = memo(function ItemList({
   const editData = inlineEdit.editData;
   const isSaving = inlineEdit.isSaving;
   const savedItemId = inlineEdit.savedId;
+  const saveEditing = inlineEdit.saveEditing;
+
+  const commitInlineEdit = useCallback(async () => {
+    setInlineSaveError(null);
+    try {
+      await saveEditing();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message.trim().length > 0
+          ? e.message
+          : '저장에 실패했습니다.';
+      setInlineSaveError(msg);
+      handleError(
+        e instanceof Error ? e : new Error(String(e)),
+        'Failed to save instrument'
+      );
+    }
+  }, [saveEditing, handleError]);
+
+  useEffect(() => {
+    if (editingItem) {
+      setInlineSaveError(null);
+    }
+  }, [editingItem]);
 
   useEffect(() => {
     if (
@@ -417,7 +442,6 @@ const ItemList = memo(function ItemList({
   );
 
   const cancelEditing = inlineEdit.cancelEditing;
-  const saveEditing = inlineEdit.saveEditing;
 
   const handleEditFieldChange = useCallback(
     <K extends EditField>(field: K, value: EditData[K]) => {
@@ -568,6 +592,14 @@ const ItemList = memo(function ItemList({
 
   return (
     <>
+      {inlineSaveError ? (
+        <div
+          role="alert"
+          className="mx-4 mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800 md:mx-6"
+        >
+          {inlineSaveError}
+        </div>
+      ) : null}
       {/* 데스크톱 테이블 뷰 */}
       <div className={cn('w-full', classNames.tableWrapper)}>
         <div className={classNames.tableContainer}>
@@ -749,7 +781,7 @@ const ItemList = memo(function ItemList({
                             <button
                               onClick={e => {
                                 e.stopPropagation();
-                                saveEditing();
+                                void commitInlineEdit();
                               }}
                               disabled={isSaving}
                               className="text-green-600 hover:text-green-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-2 rounded-md hover:bg-green-50"
@@ -1016,7 +1048,6 @@ const ItemList = memo(function ItemList({
                             <option value="Available">Available</option>
                             <option value="Booked">Booked</option>
                             <option value="Sold">Sold</option>
-                            <option value="Reserved">Reserved</option>
                             <option value="Maintenance">Maintenance</option>
                           </select>
                         ) : (
@@ -1024,6 +1055,12 @@ const ItemList = memo(function ItemList({
                             <StatusBadge status={item.status} />
                           </div>
                         )}
+                        {isEditing ? (
+                          <p className="mt-1 text-xs text-gray-500 max-w-[12rem]">
+                            Reserved status needs a reason — use the full Edit
+                            modal.
+                          </p>
+                        ) : null}
                       </td>
                     </tr>
                     {isExpanded && (

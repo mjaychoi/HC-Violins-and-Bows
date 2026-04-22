@@ -12,6 +12,7 @@ import {
   safeValidate,
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
+import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
 import { Instrument } from '@/types';
 import type { TablesInsert, TablesUpdate } from '@/types/database';
 
@@ -29,25 +30,233 @@ type InstrumentUpdateInput = Partial<
 
 type InstrumentInsertRow = TablesInsert<'instruments'>;
 type InstrumentUpdateRow = TablesUpdate<'instruments'>;
+type CreateInstrumentInput = {
+  status?: Instrument['status'];
+  reserved_reason?: string | null;
+  maker?: string | null;
+  type: string;
+  subtype?: string | null;
+  year?: number | null;
+  certificate?: boolean;
+  has_certificate?: boolean;
+  size?: string | null;
+  weight?: string | null;
+  price?: number | null;
+  cost_price?: number | null;
+  consignment_price?: number | null;
+  ownership?: string | null;
+  note?: string | null;
+  serial_number?: string | null;
+};
+type PartialInstrumentInput = Partial<CreateInstrumentInput> & {
+  reserved_by_user_id?: string | null;
+  reserved_connection_id?: string | null;
+};
+type InstrumentInsertInput = CreateInstrumentInput & {
+  org_id: string;
+  reserved_by_user_id: string | null;
+  reserved_connection_id: string | null;
+};
+
+const SERIAL_CONFLICT_MAX_RETRIES = 3;
+
+function normalizeNullableText(
+  value: string | null | undefined
+): string | null {
+  if (typeof value !== 'string') {
+    return value ?? null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
 
 function toInstrumentInsertRow(
-  input: Omit<Instrument, 'id' | 'created_at' | 'updated_at'> & {
-    org_id: string;
-    reserved_by_user_id: string | null;
-    reserved_connection_id: string | null;
-  }
+  input: InstrumentInsertInput
 ): InstrumentInsertRow {
-  const { has_certificate, ...rest } = input;
-  void has_certificate;
-  return rest;
+  return {
+    org_id: input.org_id,
+    type: input.type.trim(),
+    maker: normalizeNullableText(input.maker),
+    subtype: normalizeNullableText(input.subtype),
+    year: input.year ?? null,
+    certificate: Boolean(input.certificate ?? input.has_certificate),
+    cost_price: input.cost_price ?? null,
+    consignment_price: input.consignment_price ?? null,
+    size: normalizeNullableText(input.size),
+    weight: normalizeNullableText(input.weight),
+    price: input.price ?? null,
+    ownership: normalizeNullableText(input.ownership),
+    note: normalizeNullableText(input.note),
+    serial_number: normalizeNullableText(input.serial_number),
+    status: input.status ?? 'Available',
+    reserved_reason:
+      input.status === 'Reserved'
+        ? normalizeNullableText(input.reserved_reason)
+        : null,
+    reserved_by_user_id: input.reserved_by_user_id,
+    reserved_connection_id: input.reserved_connection_id,
+  };
 }
 
 function toInstrumentUpdateRow(
-  input: Partial<Instrument>
+  input: PartialInstrumentInput
 ): InstrumentUpdateRow {
-  const { has_certificate, ...rest } = input;
-  void has_certificate;
-  return rest;
+  const row: InstrumentUpdateRow = {};
+
+  if (Object.prototype.hasOwnProperty.call(input, 'status')) {
+    row.status = input.status;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'reserved_reason')) {
+    row.reserved_reason = normalizeNullableText(input.reserved_reason);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'maker')) {
+    row.maker = normalizeNullableText(input.maker);
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(input, 'type') &&
+    typeof input.type === 'string'
+  ) {
+    row.type = input.type.trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'subtype')) {
+    row.subtype = normalizeNullableText(input.subtype);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'year')) {
+    row.year = input.year ?? null;
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(input, 'certificate') ||
+    Object.prototype.hasOwnProperty.call(input, 'has_certificate')
+  ) {
+    row.certificate = Boolean(input.certificate ?? input.has_certificate);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'size')) {
+    row.size = normalizeNullableText(input.size);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'weight')) {
+    row.weight = normalizeNullableText(input.weight);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'price')) {
+    row.price = input.price ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'cost_price')) {
+    row.cost_price = input.cost_price ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'consignment_price')) {
+    row.consignment_price = input.consignment_price ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'ownership')) {
+    row.ownership = normalizeNullableText(input.ownership);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'note')) {
+    row.note = normalizeNullableText(input.note);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'serial_number')) {
+    row.serial_number = normalizeNullableText(input.serial_number);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'reserved_by_user_id')) {
+    row.reserved_by_user_id = input.reserved_by_user_id ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'reserved_connection_id')) {
+    row.reserved_connection_id = input.reserved_connection_id ?? null;
+  }
+
+  return row;
+}
+
+function isRetryableSerialConflict(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  if (code !== '23505') {
+    return false;
+  }
+
+  const message =
+    typeof (error as { message?: unknown }).message === 'string'
+      ? (error as { message: string }).message.toLowerCase()
+      : '';
+  const details =
+    typeof (error as { details?: unknown }).details === 'string'
+      ? (error as { details: string }).details.toLowerCase()
+      : '';
+
+  return (
+    message.includes('serial') ||
+    details.includes('serial') ||
+    details.includes('idx_instruments_org_serial') ||
+    details.includes('idx_instruments_serial_number')
+  );
+}
+
+async function getOrgSerialNumbers(
+  auth: AuthContext,
+  orgId: string
+): Promise<string[]> {
+  const { data, error } = await auth.userSupabase
+    .from('instruments')
+    .select('serial_number')
+    .eq('org_id', orgId);
+
+  if (error) {
+    throw errorHandler.handleSupabaseError(error, 'Fetch instrument serials');
+  }
+
+  return (data ?? [])
+    .map((row: { serial_number?: string | null }) => row.serial_number ?? null)
+    .filter((serial): serial is string => Boolean(serial?.trim()));
+}
+
+async function allocateRetrySerialNumber(
+  auth: AuthContext,
+  instrumentInsert: InstrumentInsertRow
+): Promise<string> {
+  const existingSerialNumbers = await getOrgSerialNumbers(auth, auth.orgId!);
+  return generateInstrumentSerialNumber(
+    instrumentInsert.type,
+    existingSerialNumbers
+  );
+}
+
+async function createInstrumentWithRetry(
+  auth: AuthContext,
+  instrumentInsert: InstrumentInsertRow
+) {
+  let nextInsert = instrumentInsert;
+
+  for (let attempt = 0; attempt <= SERIAL_CONFLICT_MAX_RETRIES; attempt += 1) {
+    const { data, error } = await auth.userSupabase
+      .from('instruments')
+      .insert(nextInsert)
+      .select()
+      .single();
+
+    if (!error) {
+      return data;
+    }
+
+    const isLastAttempt = attempt >= SERIAL_CONFLICT_MAX_RETRIES;
+    const canRetry =
+      !isLastAttempt &&
+      Boolean(nextInsert.serial_number) &&
+      isRetryableSerialConflict(error);
+
+    if (!canRetry) {
+      throw errorHandler.handleSupabaseError(error, 'Create instrument');
+    }
+
+    nextInsert = {
+      ...nextInsert,
+      serial_number: await allocateRetrySerialNumber(auth, nextInsert),
+    };
+  }
+
+  throw new Error(
+    'Failed to create instrument after retrying serial allocation.'
+  );
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -192,10 +401,10 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      if (
-        validationResult.data.status === 'Reserved' &&
-        !validationResult.data.reserved_reason?.trim()
-      ) {
+      const createInput = validationResult.data as CreateInstrumentInput;
+      const nextStatus = createInput.status ?? 'Available';
+
+      if (nextStatus === 'Reserved' && !createInput.reserved_reason?.trim()) {
         return {
           payload: {
             error: 'Reserved status requires a reserved_reason.',
@@ -206,26 +415,18 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const instrumentInsert = toInstrumentInsertRow({
-        ...validationResult.data,
+        ...createInput,
+        status: nextStatus,
         org_id: auth.orgId,
         reserved_reason:
-          validationResult.data.status === 'Reserved'
-            ? (validationResult.data.reserved_reason?.trim() ?? null)
+          nextStatus === 'Reserved'
+            ? (createInput.reserved_reason?.trim() ?? null)
             : null,
-        reserved_by_user_id:
-          validationResult.data.status === 'Reserved' ? auth.user.id : null,
+        reserved_by_user_id: nextStatus === 'Reserved' ? auth.user.id : null,
         reserved_connection_id: null,
       });
 
-      const { data, error } = await auth.userSupabase
-        .from('instruments')
-        .insert(instrumentInsert)
-        .select()
-        .single();
-
-      if (error) {
-        throw errorHandler.handleSupabaseError(error, 'Create instrument');
-      }
+      const data = await createInstrumentWithRetry(auth, instrumentInsert);
 
       const validatedResponse = validateInstrument(data);
 
@@ -357,7 +558,9 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
       const { data, error } = await auth.userSupabase
         .from('instruments')
-        .update(toInstrumentUpdateRow(validationResult.data))
+        .update(
+          toInstrumentUpdateRow(validationResult.data as PartialInstrumentInput)
+        )
         .eq('id', id)
         .eq('org_id', orgId)
         .select()

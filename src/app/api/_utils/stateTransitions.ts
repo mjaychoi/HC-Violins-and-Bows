@@ -1,5 +1,8 @@
-import type { Instrument } from '@/types';
-import type { InvoiceStatus, TaskStatus } from '@/types';
+import type { Instrument, InvoiceStatus, TaskStatus } from '@/types';
+import {
+  validateMaintenanceTaskStatusTransition as validateMaintenanceTaskStatusTransitionImpl,
+  getAllowedMaintenanceTaskNextStatuses as getAllowedMaintenanceTaskNextStatusesImpl,
+} from '@/utils/maintenanceTaskTransitions';
 
 type InstrumentStatus = Instrument['status'];
 
@@ -58,28 +61,15 @@ export function validateInvoiceStatusTransition(
   return `Invalid invoice status transition: ${currentStatus} -> ${nextStatus}`;
 }
 
-const allowedMaintenanceTaskTransitions: Record<
-  TaskStatus,
-  readonly TaskStatus[]
-> = {
-  pending: ['pending', 'in_progress', 'cancelled'],
-  in_progress: ['in_progress', 'completed', 'cancelled'],
-  completed: ['completed'],
-  cancelled: ['cancelled'],
-};
-
 export function validateMaintenanceTaskStatusTransition(
   currentStatus: TaskStatus,
   nextStatus: TaskStatus
 ): string | null {
-  const allowedNextStatuses = allowedMaintenanceTaskTransitions[currentStatus];
-  if (!allowedNextStatuses) {
-    return `Invalid maintenance task status transition: ${currentStatus} -> ${nextStatus}`;
-  }
+  return validateMaintenanceTaskStatusTransitionImpl(currentStatus, nextStatus);
+}
 
-  if (allowedNextStatuses.includes(nextStatus)) {
-    return null;
-  }
-
-  return `Invalid maintenance task status transition: ${currentStatus} -> ${nextStatus}`;
+export function getAllowedMaintenanceTaskNextStatuses(
+  currentStatus: TaskStatus
+): readonly TaskStatus[] {
+  return getAllowedMaintenanceTaskNextStatusesImpl(currentStatus);
 }

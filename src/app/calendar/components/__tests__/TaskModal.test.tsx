@@ -241,6 +241,62 @@ describe('TaskModal', () => {
     );
   });
 
+  it('when editing completed task, status dropdown only lists allowed transitions', () => {
+    render(
+      <TaskModal
+        isOpen={true}
+        onClose={mockOnClose}
+        onSubmit={mockOnSubmit}
+        submitting={false}
+        isEditing={true}
+        selectedTask={{ ...mockTask, status: 'completed' }}
+        instruments={mockInstruments}
+        clients={[]}
+      />
+    );
+
+    const statusSelect = document.querySelector(
+      'select[name="status"]'
+    ) as HTMLSelectElement;
+    const options = Array.from(statusSelect.querySelectorAll('option'));
+    expect(options.map(o => o.value)).toEqual(['completed']);
+  });
+
+  it('shows form error when onSubmit rejects', async () => {
+    const user = userEvent.setup();
+    const onSubmit = jest
+      .fn()
+      .mockRejectedValue(new Error('Server rejected save'));
+
+    render(
+      <TaskModal
+        isOpen={true}
+        onClose={mockOnClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        instruments={mockInstruments}
+        clients={[]}
+      />
+    );
+
+    const instrumentSelect = document.querySelector(
+      'select[name="instrument_id"]'
+    ) as HTMLSelectElement;
+    await user.selectOptions(instrumentSelect, 'instrument-1');
+
+    const titleInput = document.querySelector(
+      'input[name="title"]'
+    ) as HTMLInputElement;
+    await user.type(titleInput, 'My task');
+
+    await user.click(screen.getByRole('button', { name: /create task/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Server rejected save/i)).toBeInTheDocument();
+    });
+    expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
   it('should display loading state when submitting', () => {
     render(
       <TaskModal

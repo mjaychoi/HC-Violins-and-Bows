@@ -98,6 +98,32 @@ const invoiceStatusSchema = z.enum([
 ]);
 
 const nullableTrimmedStringSchema = z.string().trim().nullable();
+const emptyStringToNull = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? null : value;
+const nullableInputStringSchema = z.preprocess(
+  emptyStringToNull,
+  z.string().trim().nullable()
+);
+const nullableEmailInputStringSchema = z.preprocess(
+  emptyStringToNull,
+  z.string().trim().email().nullable()
+);
+const optionalNullableInputStringSchema = z.preprocess(
+  emptyStringToNull,
+  z.string().trim().nullable().optional()
+);
+const optionalNullableEmailInputStringSchema = z.preprocess(
+  emptyStringToNull,
+  z.string().trim().email().nullable().optional()
+);
+const optionalNullableNonEmptyStringSchema = z.preprocess(
+  emptyStringToNull,
+  z.string().trim().min(1).nullable().optional()
+);
+const requiredTrimmedStringSchema = z.preprocess(
+  value => (typeof value === 'string' ? value.trim() : value),
+  z.string().min(1)
+);
 
 function formatZodError(error: z.ZodError): string {
   const errorMessages = error.issues?.map(issue => issue.message).join(', ');
@@ -117,12 +143,12 @@ export const instrumentSchema: z.ZodType<Instrument> = z
   .object({
     id: uuidSchema,
     status: instrumentStatusSchema,
-    reserved_reason: z.string().nullable().optional(),
+    reserved_reason: optionalNullableInputStringSchema,
     reserved_by_user_id: uuidSchema.nullable().optional(),
     reserved_connection_id: uuidSchema.nullable().optional(),
-    maker: z.string().nullable(),
-    type: z.string().nullable(),
-    subtype: z.string().nullable(),
+    maker: nullableInputStringSchema,
+    type: requiredTrimmedStringSchema,
+    subtype: nullableInputStringSchema,
     year: z.number().nullable(),
     // legacy field (some payloads still use this)
     certificate: z.boolean().optional().default(false),
@@ -171,18 +197,18 @@ export function normalizeInstrument(raw: InstrumentRecord): Instrument {
  */
 export const clientSchema: z.ZodType<Client> = z.object({
   id: uuidSchema,
-  last_name: z.string().nullable(),
-  first_name: z.string().nullable(),
-  contact_number: z.string().nullable(),
-  email: z.union([z.string().email(), z.string().length(0), z.null()]),
+  last_name: nullableInputStringSchema,
+  first_name: nullableInputStringSchema,
+  contact_number: nullableInputStringSchema,
+  email: nullableEmailInputStringSchema,
   // SECURITY: Handle null from DB - normalize to empty array
   tags: z.preprocess(val => {
     if (val === null || val === undefined) return [];
     if (Array.isArray(val)) return val;
     return [];
   }, z.array(z.string())),
-  interest: z.string().nullable(),
-  note: z.string().nullable(),
+  interest: nullableInputStringSchema,
+  note: nullableInputStringSchema,
   client_number: z.string().nullable(),
   type: z.enum(['Musician', 'Dealer', 'Collector', 'Regular']).optional(),
   status: z
@@ -680,24 +706,23 @@ export const partialInstrumentSchema = z
   .object({
     id: uuidSchema.optional(),
     status: instrumentStatusSchema.optional(),
-    reserved_reason: z.string().trim().min(1).nullable().optional(),
-    maker: z.string().nullable().optional(),
-    type: z.string().nullable().optional(),
-    subtype: z.string().nullable().optional(),
+    reserved_reason: optionalNullableNonEmptyStringSchema,
+    maker: optionalNullableInputStringSchema,
+    type: requiredTrimmedStringSchema.optional(),
+    subtype: optionalNullableInputStringSchema,
     year: z.number().nullable().optional(),
 
     certificate: z.boolean().optional(),
     has_certificate: z.boolean().optional(),
-    certificate_name: z.string().nullable().optional(),
 
-    size: z.string().nullable().optional(),
-    weight: z.string().nullable().optional(),
+    size: optionalNullableInputStringSchema,
+    weight: optionalNullableInputStringSchema,
     price: z.number().nullable().optional(),
     cost_price: z.number().nullable().optional(),
     consignment_price: z.number().nullable().optional(),
-    ownership: z.string().nullable().optional(),
-    note: z.string().nullable().optional(),
-    serial_number: z.string().nullable().optional(),
+    ownership: optionalNullableInputStringSchema,
+    note: optionalNullableInputStringSchema,
+    serial_number: optionalNullableInputStringSchema,
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
   })
@@ -717,15 +742,15 @@ export const partialInstrumentSchema = z
  */
 export const partialClientSchema = z.object({
   id: uuidSchema.optional(),
-  last_name: z.string().nullable().optional(),
-  first_name: z.string().nullable().optional(),
-  contact_number: z.string().nullable().optional(),
-  email: z.string().email().nullable().or(z.literal('')).optional(),
+  last_name: optionalNullableInputStringSchema,
+  first_name: optionalNullableInputStringSchema,
+  contact_number: optionalNullableInputStringSchema,
+  email: optionalNullableEmailInputStringSchema,
   // SECURITY: Handle null from DB - normalize to empty array
   tags: z.array(z.string()).catch([]).optional(), // null/undefined -> []
-  interest: z.string().nullable().optional(),
-  note: z.string().nullable().optional(),
-  client_number: z.string().nullable().optional(),
+  interest: optionalNullableInputStringSchema,
+  note: optionalNullableInputStringSchema,
+  client_number: optionalNullableInputStringSchema,
   type: z.enum(['Musician', 'Dealer', 'Collector', 'Regular']).optional(),
   status: z
     .enum(['Active', 'Browsing', 'In Negotiation', 'Inactive'])
@@ -748,25 +773,24 @@ export const createClientInstrumentSchema = z.object({
  */
 export const createInstrumentSchema = z
   .object({
-    status: instrumentStatusSchema,
-    reserved_reason: z.string().trim().min(1).nullable().optional(),
-    maker: z.string().nullable(),
-    type: z.string().nullable(),
-    subtype: z.string().nullable(),
-    year: z.number().nullable(),
+    status: instrumentStatusSchema.optional().default('Available'),
+    reserved_reason: optionalNullableNonEmptyStringSchema,
+    maker: optionalNullableInputStringSchema,
+    type: requiredTrimmedStringSchema,
+    subtype: optionalNullableInputStringSchema,
+    year: z.number().nullable().optional(),
 
     certificate: z.boolean().optional().default(false),
     has_certificate: z.boolean().optional(),
-    certificate_name: z.string().nullable().optional(),
 
-    size: z.string().nullable(),
-    weight: z.string().nullable(),
-    price: z.number().nullable(),
+    size: optionalNullableInputStringSchema,
+    weight: optionalNullableInputStringSchema,
+    price: z.number().nullable().optional(),
     cost_price: z.number().nullable().optional(),
     consignment_price: z.number().nullable().optional(),
-    ownership: z.string().nullable(),
-    note: z.string().nullable(),
-    serial_number: z.string().nullable(),
+    ownership: optionalNullableInputStringSchema,
+    note: optionalNullableInputStringSchema,
+    serial_number: optionalNullableInputStringSchema,
   })
   .transform(raw => {
     const computedHasCert = raw.has_certificate ?? raw.certificate ?? false;
@@ -774,29 +798,42 @@ export const createInstrumentSchema = z
       ...raw,
       has_certificate: computedHasCert,
       certificate: raw.certificate ?? computedHasCert,
-      certificate_name: computedHasCert
-        ? (raw.certificate_name?.trim() ?? null)
-        : null,
     };
   });
 
 /**
  * Client creation schema (for POST requests - without id and created_at)
  */
-export const createClientSchema = z.object({
-  last_name: z.string().nullable(),
-  first_name: z.string().nullable(),
-  contact_number: z.string().nullable(),
-  email: z.union([z.string().email(), z.string().length(0), z.null()]),
-  tags: z.array(z.string()).catch([]),
-  interest: z.string().nullable(),
-  note: z.string().nullable(),
-  client_number: z.string().nullable(),
-  type: z.enum(['Musician', 'Dealer', 'Collector', 'Regular']).optional(),
-  status: z
-    .enum(['Active', 'Browsing', 'In Negotiation', 'Inactive'])
-    .optional(),
-});
+export const createClientSchema = z
+  .object({
+    last_name: nullableInputStringSchema,
+    first_name: nullableInputStringSchema,
+    contact_number: nullableInputStringSchema,
+    email: nullableEmailInputStringSchema,
+    tags: z.array(z.string()).catch([]),
+    interest: nullableInputStringSchema,
+    note: nullableInputStringSchema,
+    client_number: optionalNullableInputStringSchema,
+    type: z.enum(['Musician', 'Dealer', 'Collector', 'Regular']).optional(),
+    status: z
+      .enum(['Active', 'Browsing', 'In Negotiation', 'Inactive'])
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    const fullName = [data.first_name, data.last_name]
+      .map(part => part?.trim() ?? '')
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    if (!fullName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['first_name'],
+        message: 'Client name is required',
+      });
+    }
+  });
 
 const instrumentLinkForClientCreateSchema = z.object({
   instrument_id: uuidSchema,

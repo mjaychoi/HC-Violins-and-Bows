@@ -7,7 +7,6 @@ const mockUpdateInstrument = jest.fn();
 const mockDeleteInstrument = jest.fn();
 const mockWithSubmitting = jest.fn(async (cb: () => Promise<unknown>) => cb());
 const mockShowSuccess = jest.fn();
-const mockHandleError = jest.fn();
 
 jest.mock('@/hooks/useUnifiedData', () => ({
   useUnifiedDashboard: jest.fn(() => ({
@@ -37,7 +36,7 @@ jest.mock('@/hooks/useLoadingState', () => ({
 
 jest.mock('@/contexts/ToastContext', () => ({
   useErrorHandler: jest.fn(() => ({
-    handleError: mockHandleError,
+    handleError: jest.fn(),
   })),
   useToast: jest.fn(() => ({
     showSuccess: mockShowSuccess,
@@ -129,9 +128,9 @@ describe('useDashboardData', () => {
     mockCreateInstrument.mockResolvedValue(mockInstrument);
     const { result } = renderHook(() => useDashboardData());
 
-    let createdId: string | null = null;
+    let created: Instrument | null = null;
     await act(async () => {
-      createdId = await result.current.handleCreateItem({
+      created = await result.current.handleCreateItem({
         maker: 'Maker',
         type: 'Violin',
         subtype: null,
@@ -149,33 +148,61 @@ describe('useDashboardData', () => {
 
     expect(mockCreateInstrument).toHaveBeenCalled();
     expect(mockShowSuccess).not.toHaveBeenCalled();
-    expect(createdId).toBe(mockInstrument.id);
+    expect((created as Instrument | null)?.id ?? null).toBe(mockInstrument.id);
   });
 
-  it('does not report success when create returns null (API failure)', async () => {
-    mockCreateInstrument.mockResolvedValue(null);
+  it('propagates error when createInstrument rejects', async () => {
+    const apiError = new Error('Failed to create instrument');
+    mockCreateInstrument.mockRejectedValue(apiError);
     const { result } = renderHook(() => useDashboardData());
 
-    let createdId: string | null = 'should-be-cleared';
     await act(async () => {
-      createdId = await result.current.handleCreateItem({
-        maker: 'Maker',
-        type: 'Violin',
-        subtype: null,
-        serial_number: 'SN999',
-        year: 1800,
-        ownership: null,
-        size: null,
-        weight: null,
-        note: null,
-        price: null,
-        certificate: false,
-        status: 'Available',
-      });
+      await expect(
+        result.current.handleCreateItem({
+          maker: 'Maker',
+          type: 'Violin',
+          subtype: null,
+          serial_number: 'SN999',
+          year: 1800,
+          ownership: null,
+          size: null,
+          weight: null,
+          note: null,
+          price: null,
+          certificate: false,
+          status: 'Available',
+        })
+      ).rejects.toThrow('Failed to create instrument');
     });
 
-    expect(createdId).toBeNull();
     expect(mockShowSuccess).not.toHaveBeenCalled();
+  });
+
+  it('throws when createInstrument resolves without an id', async () => {
+    mockCreateInstrument.mockResolvedValue({
+      ...mockInstrument,
+      id: '',
+    } as Instrument);
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await expect(
+        result.current.handleCreateItem({
+          maker: 'Maker',
+          type: 'Violin',
+          subtype: null,
+          serial_number: 'SN999',
+          year: 1800,
+          ownership: null,
+          size: null,
+          weight: null,
+          note: null,
+          price: null,
+          certificate: false,
+          status: 'Available',
+        })
+      ).rejects.toThrow('Instrument creation failed');
+    });
   });
 
   it('updates a non-status change through updateInstrument directly (no success toast; page owns modal flow)', async () => {
@@ -270,7 +297,6 @@ describe('useDashboardData', () => {
     });
 
     expect(mockUpdateInstrument).not.toHaveBeenCalled();
-    expect(mockHandleError).toHaveBeenCalled();
   });
 
   it('uses atomic refund transition payload when moving away from Sold', async () => {
@@ -318,10 +344,7 @@ describe('useDashboardData', () => {
       ).rejects.toThrow('Update failed');
     });
 
-    expect(mockHandleError).toHaveBeenCalledWith(
-      error,
-      'Failed to update item'
-    );
+    expect(mockShowSuccess).not.toHaveBeenCalled();
   });
 
   it('handleUpdateItemInline delegates to handleUpdateItem and shows inline success toast', async () => {
@@ -340,8 +363,23 @@ describe('useDashboardData', () => {
     );
   });
 
+  it('handleUpdateItemInline does not show success when update rejects', async () => {
+    mockUpdateInstrument.mockRejectedValue(new Error('Network error'));
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await expect(
+        result.current.handleUpdateItemInline(mockInstrument.id, {
+          maker: 'Updated',
+        })
+      ).rejects.toThrow('Network error');
+    });
+
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+  });
+
   it('deletes an item successfully', async () => {
-    mockDeleteInstrument.mockResolvedValue(true);
+    mockDeleteInstrument.mockResolvedValue(undefined);
     const { result } = renderHook(() => useDashboardData());
 
     await act(async () => {
@@ -352,5 +390,19 @@ describe('useDashboardData', () => {
     expect(mockShowSuccess).toHaveBeenCalledWith(
       '아이템이 성공적으로 삭제되었습니다.'
     );
+  });
+
+  it('handleDeleteItem propagates delete failures', async () => {
+    const err = new Error('Delete failed');
+    mockDeleteInstrument.mockRejectedValue(err);
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await expect(
+        result.current.handleDeleteItem(mockInstrument.id)
+      ).rejects.toThrow('Delete failed');
+    });
+
+    expect(mockShowSuccess).not.toHaveBeenCalled();
   });
 });

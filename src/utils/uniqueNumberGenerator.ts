@@ -171,9 +171,10 @@ export function validateInstrumentSerial(
 }
 
 /**
- * 클라이언트 고유 번호 생성
- * 형식: CL{숫자} (예: CL001, CL123)
- * 또는 사용자 정의 형식 (예: mj123)
+ * 클라이언트 번호 `CL###` **미리보기/테스트/모의**용 휴리스틱.
+ * 실제 저장 시 `client_number`는 서버( DB `max_cl_suffix_for_org` + unique 제약)가
+ * 권한을 가집니다. 부분 목록만 넘기면 잘못된 번호를 낼 수 있으니 생성 API 페이로드에
+ * 이 결과를 “확정값”으로 넣지 마세요.
  */
 export function generateClientNumber(existingNumbers: string[] = []): string {
   const prefix = 'CL';

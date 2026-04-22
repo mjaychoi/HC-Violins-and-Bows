@@ -76,11 +76,6 @@ interface CalendarContentProps {
     end: Date;
     isAllDay?: boolean;
   }) => Promise<void> | void;
-  onEventResize?: (data: {
-    event: { resource?: unknown };
-    start: Date;
-    end: Date;
-  }) => Promise<void> | void;
   draggingEventId?: string | null;
   onOpenNewTask: () => void;
   canCreateTask?: boolean;
@@ -106,7 +101,6 @@ function CalendarContentInner({
   onSelectEvent,
   onSelectSlot,
   onEventDrop,
-  onEventResize,
   draggingEventId,
   onOpenNewTask,
   canCreateTask = true,
@@ -647,7 +641,6 @@ function CalendarContentInner({
           onSelectEvent={onSelectEvent}
           onSelectSlot={onSelectSlot}
           onEventDrop={onEventDrop}
-          onEventResize={onEventResize}
           draggingEventId={draggingEventId}
           currentDate={navigation.currentDate}
           onNavigate={navigation.setCurrentDate}

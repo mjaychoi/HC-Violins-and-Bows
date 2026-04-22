@@ -10,7 +10,6 @@ export function useDashboardForm() {
     subtype: 'Violin',
     year: '',
     certificate: false,
-    certificate_name: '',
     size: '',
     weight: '',
     price: '',

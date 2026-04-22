@@ -16,13 +16,33 @@ import {
   validateClientInstrument,
 } from '@/utils/typeGuards';
 import {
-  CLIENT_TABLE_SELECT,
   createClientInputToDbRow,
   mapClientsTableRowToClient,
 } from '@/utils/clientDbMap';
+import {
+  isClientNumberAllocationExhausted,
+  isCreateClientRpcResponseAssemblyFailure,
+  rpcCreateClientWithConnectionsAtomic,
+} from '@/app/api/_utils/insertClientWithAllocatedNumber';
+import { logWarn } from '@/utils/logger';
 
-const CONNECTION_LIST_COLUMNS =
-  'id, client_id, instrument_id, relationship_type, notes, display_order, created_at';
+/** HTTP 503: RPC/write likely succeeded but we cannot return a verified API payload. */
+function createClientResponseMalformed503(orgId: string | null | undefined) {
+  logWarn(
+    'create_client_with_connections could not assemble a verified response; write may have succeeded',
+    'ClientsWithConnectionsAPI',
+    { orgId }
+  );
+  return {
+    status: 503 as const,
+    payload: {
+      error:
+        'The client may have been created, but the response could not be verified. Refresh the client list before trying again.',
+      error_code: 'create_response_malformed',
+      retryable: false,
+    },
+  };
+}
 
 function getConnectionConflictStatus(errorMessage: string): number {
   if (
@@ -87,7 +107,11 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const dbRow = createClientInputToDbRow(clientPayload);
+      // client_number is always server-allocated; ignore any request value
+      const dbRow = createClientInputToDbRow({
+        ...clientPayload,
+        client_number: null,
+      });
       const clientName = (dbRow.name ?? '').trim();
       if (!clientName) {
         return {
@@ -102,16 +126,51 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         notes: l.notes ?? null,
       }));
 
-      const { data: newClientId, error: rpcError } =
-        await auth.userSupabase.rpc('create_client_with_connections_atomic', {
-          p_name: clientName,
-          p_email: dbRow.email ?? null,
-          p_phone: dbRow.phone ?? null,
-          p_client_number: dbRow.client_number ?? null,
-          p_links: pLinks,
-        });
+      const { data: rpcData, error: rpcError } =
+        await rpcCreateClientWithConnectionsAtomic(
+          auth.userSupabase,
+          auth.orgId!,
+          {
+            name: clientName,
+            email: dbRow.email ?? null,
+            phone: dbRow.phone ?? null,
+            tags: dbRow.tags ?? [],
+            interest: dbRow.interest ?? null,
+            note: dbRow.note ?? null,
+          },
+          pLinks
+        );
 
-      if (rpcError || typeof newClientId !== 'string') {
+      if (rpcError || !rpcData) {
+        if (rpcError?.code === '23505') {
+          if (isClientNumberAllocationExhausted(rpcError)) {
+            return {
+              status: 409,
+              payload: {
+                error:
+                  'Could not assign a client number after several attempts (high load). Please try again in a moment.',
+                error_code: 'client_number_allocation_exhausted',
+                retryable: true,
+              },
+            };
+          }
+          const hint =
+            `${rpcError.details ?? ''} ${rpcError.message ?? ''}`.toLowerCase();
+          const isClientNumber =
+            hint.includes('client_number') ||
+            hint.includes('idx_clients_org_id_client_number');
+          return {
+            status: 409,
+            payload: {
+              error: isClientNumber
+                ? 'This client number is already in use for your organization.'
+                : 'A record with the same unique value already exists.',
+            },
+          };
+        }
+        if (isCreateClientRpcResponseAssemblyFailure(rpcError)) {
+          return createClientResponseMalformed503(auth.orgId);
+        }
         const errorMessage =
           rpcError && typeof rpcError.message === 'string'
             ? rpcError.message
@@ -128,38 +187,17 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         );
       }
 
-      const { data: clientRaw, error: clientErr } = await auth.userSupabase
-        .from('clients')
-        .select(CLIENT_TABLE_SELECT)
-        .eq('id', newClientId)
-        .eq('org_id', auth.orgId!)
-        .single();
+      let client;
+      let connections: ClientInstrument[];
+      try {
+        client = validateClient(mapClientsTableRowToClient(rpcData.client));
 
-      if (clientErr || !clientRaw) {
-        throw errorHandler.handleSupabaseError(
-          clientErr ?? new Error('Client row missing after atomic create'),
-          'Load created client'
+        connections = rpcData.connections.map((row: unknown) =>
+          validateClientInstrument(row)
         );
+      } catch {
+        return createClientResponseMalformed503(auth.orgId);
       }
-
-      const client = validateClient(mapClientsTableRowToClient(clientRaw));
-
-      const { data: connRows, error: connErr } = await auth.userSupabase
-        .from('client_instruments')
-        .select(CONNECTION_LIST_COLUMNS)
-        .eq('client_id', newClientId)
-        .eq('org_id', auth.orgId!);
-
-      if (connErr) {
-        throw errorHandler.handleSupabaseError(
-          connErr,
-          'Load client connections after create'
-        );
-      }
-
-      const connections: ClientInstrument[] = (connRows ?? []).map(row =>
-        validateClientInstrument(row)
-      );
 
       return {
         payload: { data: { client, connections } },

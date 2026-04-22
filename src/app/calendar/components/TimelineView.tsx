@@ -14,6 +14,7 @@ import { MaintenanceTask } from '@/types';
 import { parseYMDLocal, taskDayKey } from '@/utils/dateParsing';
 import { parseISO, isValid } from 'date-fns';
 import { getDateStatus } from '@/utils/tasks/style';
+import { getCalendarPlacementDate } from '@/utils/calendar';
 
 interface TimelineViewProps {
   currentDate: Date;
@@ -59,34 +60,25 @@ export default function TimelineView({
     });
   }, [weekRange]);
 
-  // FIXED: Only extract time if task date has time component (timestamp)
-  // For date-only strings, use default 9:00 AM for visibility
-  // Note: This function is used in useMemo, so it must be defined before useMemo
+  /** Maintenance tasks are date-only; timeline buckets by day at hour 0 (no fake clock time). */
   const getTaskTime = useCallback(
     (task: MaintenanceTask): { hour: number; minute: number } => {
-      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
-      const taskDate =
-        task.due_date || task.personal_due_date || task.scheduled_date;
-      if (!taskDate) return { hour: 9, minute: 0 };
-
-      // Check if date string includes time component
+      const taskDate = getCalendarPlacementDate(task);
+      if (!taskDate) return { hour: 0, minute: 0 };
       const hasTime = taskDate.includes('T');
       if (!hasTime) {
-        // Date-only: use default time
-        return { hour: 9, minute: 0 };
+        return { hour: 0, minute: 0 };
       }
-
       try {
-        // Has time: extract from parsed date
         let date: Date | null = parseYMDLocal(taskDate);
         if (!date) {
           const isoDate = parseISO(taskDate);
           date = isValid(isoDate) ? isoDate : null;
         }
-        if (!date) return { hour: 9, minute: 0 };
+        if (!date) return { hour: 0, minute: 0 };
         return { hour: date.getHours(), minute: date.getMinutes() };
       } catch {
-        return { hour: 9, minute: 0 };
+        return { hour: 0, minute: 0 };
       }
     },
     []
@@ -99,9 +91,7 @@ export default function TimelineView({
 
     // Build map of all tasks by day key and hour
     for (const task of tasks) {
-      // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
-      const raw =
-        task.due_date || task.personal_due_date || task.scheduled_date;
+      const raw = getCalendarPlacementDate(task);
       if (!raw) continue;
 
       const dayKey = taskDayKey(raw);

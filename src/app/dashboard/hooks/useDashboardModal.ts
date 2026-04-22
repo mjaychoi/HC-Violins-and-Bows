@@ -10,6 +10,11 @@ export interface UseDashboardModalOptions {
    */
   onDelete: (id: string) => Promise<void>;
   /**
+   * Called when `onDelete` rejects so the UI can surface the error while
+   * keeping the confirm dialog open for retry.
+   */
+  onDeleteError?: (error: unknown) => void;
+  /**
    * When true the confirm dialog is forcibly closed and the add/edit modal
    * cannot be submitted.  Drive this from the dashboard's hasFatalError.
    */
@@ -51,9 +56,8 @@ export const useDashboardModal = (options?: UseDashboardModalOptions) => {
     try {
       await options.onDelete(confirmItemId);
       setConfirmItemId(null);
-    } catch {
-      // 에러는 onDelete에서 처리됨
-      // 실패 시 confirm 다이얼로그는 유지 (사용자가 재시도 가능)
+    } catch (error) {
+      options.onDeleteError?.(error);
     }
   }, [confirmItemId, options]);
 

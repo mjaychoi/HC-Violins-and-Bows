@@ -7,7 +7,6 @@ import {
   useUnifiedInstruments,
 } from '@/hooks/useUnifiedData';
 import { apiFetch } from '@/utils/apiFetch';
-import { generateClientNumber } from '@/utils/uniqueNumberGenerator';
 import {
   useClientInstruments,
   useClientView,
@@ -143,17 +142,15 @@ export default function ClientsPage() {
     failedLinks?: PendingInstrumentLink[];
   }> => {
     try {
-      // client_number가 없으면 자동 생성
-      // Create new object instead of mutating parameter (immutable pattern)
-      const withClientNumber: Omit<Client, 'id' | 'created_at'> = {
+      // client_number: 서버가 DB 기준으로 할당(비어 있으면 null — 프론트에서 추측하지 않음)
+      const normalizedClientNumber =
+        clientData.client_number != null &&
+        String(clientData.client_number).trim() !== ''
+          ? String(clientData.client_number).trim()
+          : null;
+      const createPayload: Omit<Client, 'id' | 'created_at'> = {
         ...clientData,
-        client_number:
-          clientData.client_number ??
-          generateClientNumber(
-            clients
-              .map(c => c.client_number)
-              .filter((num): num is string => num !== null && num !== undefined)
-          ),
+        client_number: normalizedClientNumber,
       };
 
       if (instruments && instruments.length > 0) {
@@ -163,7 +160,7 @@ export default function ClientsPage() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              ...withClientNumber,
+              ...createPayload,
               instrumentLinks: instruments.map(p => ({
                 instrument_id: p.instrument.id,
                 relationship_type: p.relationshipType,
@@ -229,12 +226,9 @@ export default function ClientsPage() {
         }
       }
 
-      const newClient = await createClient(withClientNumber);
+      const newClient = await createClient(createPayload);
       if (!newClient) {
-        handleError(
-          new Error('Client creation failed'),
-          'Failed to create client'
-        );
+        // CreateClient: ClientsContext가 실패 시 이미 토스트 처리함(중복 메시지 방지)
         return { status: 'full_failure' };
       }
 
@@ -285,7 +279,7 @@ export default function ClientsPage() {
       };
     }
 
-    showSuccess('Client and instrument links created successfully');
+    showSuccess('Remaining instrument links created successfully.');
     return { status: 'full_success' };
   };
 

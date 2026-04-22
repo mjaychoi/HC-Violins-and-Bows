@@ -9,6 +9,108 @@ import { validateUUID } from '@/utils/inputValidation';
 import { validatePartialInstrument, safeValidate } from '@/utils/typeGuards';
 import { errorHandler } from '@/utils/errorHandler';
 import { buildReservedStateUpdate } from '@/app/api/_utils/instrumentReservedState';
+import type { TablesUpdate } from '@/types/database';
+
+type InstrumentUpdateRow = TablesUpdate<'instruments'>;
+type PartialInstrumentUpdateInput = {
+  status?: 'Available' | 'Booked' | 'Sold' | 'Reserved' | 'Maintenance';
+  reserved_reason?: string | null;
+  reserved_by_user_id?: string | null;
+  reserved_connection_id?: string | null;
+  maker?: string | null;
+  type?: string;
+  subtype?: string | null;
+  year?: number | null;
+  certificate?: boolean;
+  has_certificate?: boolean;
+  size?: string | null;
+  weight?: string | null;
+  price?: number | null;
+  cost_price?: number | null;
+  consignment_price?: number | null;
+  ownership?: string | null;
+  note?: string | null;
+  serial_number?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+function normalizeNullableText(
+  value: string | null | undefined
+): string | null {
+  if (typeof value !== 'string') {
+    return value ?? null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+function toInstrumentUpdateRow(
+  input: PartialInstrumentUpdateInput
+): InstrumentUpdateRow {
+  const row: InstrumentUpdateRow = {};
+
+  if (Object.prototype.hasOwnProperty.call(input, 'status')) {
+    row.status = input.status;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'reserved_reason')) {
+    row.reserved_reason = normalizeNullableText(input.reserved_reason);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'reserved_by_user_id')) {
+    row.reserved_by_user_id = input.reserved_by_user_id ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'reserved_connection_id')) {
+    row.reserved_connection_id = input.reserved_connection_id ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'maker')) {
+    row.maker = normalizeNullableText(input.maker);
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(input, 'type') &&
+    typeof input.type === 'string'
+  ) {
+    row.type = input.type.trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'subtype')) {
+    row.subtype = normalizeNullableText(input.subtype);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'year')) {
+    row.year = input.year ?? null;
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(input, 'certificate') ||
+    Object.prototype.hasOwnProperty.call(input, 'has_certificate')
+  ) {
+    row.certificate = Boolean(input.certificate ?? input.has_certificate);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'size')) {
+    row.size = normalizeNullableText(input.size);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'weight')) {
+    row.weight = normalizeNullableText(input.weight);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'price')) {
+    row.price = input.price ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'cost_price')) {
+    row.cost_price = input.cost_price ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'consignment_price')) {
+    row.consignment_price = input.consignment_price ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'ownership')) {
+    row.ownership = normalizeNullableText(input.ownership);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'note')) {
+    row.note = normalizeNullableText(input.note);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'serial_number')) {
+    row.serial_number = normalizeNullableText(input.serial_number);
+  }
+
+  return row;
+}
 
 const getParams = async (context?: { params?: Promise<{ id: string }> }) => {
   if (!context?.params) {
@@ -194,12 +296,13 @@ async function patchHandlerInternal(
         validationResult.data = reservedStateResult.update;
       }
 
-      // Strip computed/relation-only fields not present in the DB schema
-      const { has_certificate, ...dbInstrumentUpdate } = validationResult.data;
-      void has_certificate;
       const { data, error } = await auth.userSupabase
         .from('instruments')
-        .update(dbInstrumentUpdate)
+        .update(
+          toInstrumentUpdateRow(
+            validationResult.data as PartialInstrumentUpdateInput
+          )
+        )
         .eq('id', id)
         .eq('org_id', auth.orgId!)
         .select('*')
