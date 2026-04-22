@@ -235,7 +235,11 @@ export default function DashboardPage() {
     handleRequestDelete,
     handleCancelDelete,
     handleConfirmDelete: handleConfirmDeleteFromHook,
-  } = useDashboardModal({ onDelete: handleDeleteItem, hasFatalError });
+  } = useDashboardModal({
+    onDelete: handleDeleteItem,
+    onDeleteError: error => handleError(error, 'Failed to delete item'),
+    hasFatalError,
+  });
 
   const handleConfirmDelete = handleConfirmDeleteFromHook;
 
@@ -266,11 +270,14 @@ export default function DashboardPage() {
   // ✅ onSubmit 함수들: inline 생성 줄이고, 로직을 callback으로 분리
   const handleSubmitCreate = useCallback(
     async (formData: InstrumentFormData) => {
-      if (hasFatalError) return;
-      const createdId = await handleCreateItem(formData);
-      if (!createdId) return;
+      if (hasFatalError) {
+        throw new Error(
+          'Dashboard failed to load — retry before making changes'
+        );
+      }
+      const created = await handleCreateItem(formData);
 
-      setNewlyCreatedItemId(createdId);
+      setNewlyCreatedItemId(created.id);
 
       const titleParts = [
         formData.maker ?? undefined,
@@ -279,15 +286,19 @@ export default function DashboardPage() {
       const label =
         (titleParts.length > 0 ? titleParts.join(' - ') : '새 악기') + '이(가)';
       showSuccess(`"${label}" 추가되었습니다.`);
+      return created;
     },
     [handleCreateItem, showSuccess, hasFatalError]
   );
 
   const handleSubmitUpdate = useCallback(
     async (id: string, formData: Partial<InstrumentFormData>) => {
-      if (hasFatalError) return;
+      if (hasFatalError) {
+        throw new Error(
+          'Dashboard failed to load — retry before making changes'
+        );
+      }
       const result = await handleUpdateItem(id, formData);
-      if (result == null) return;
 
       const titleParts = [
         formData.maker ?? undefined,
@@ -296,6 +307,7 @@ export default function DashboardPage() {
       const label =
         (titleParts.length > 0 ? titleParts.join(' - ') : '악기') + '이(가)';
       showSuccess(`"${label}" 수정되었습니다.`);
+      return result;
     },
     [handleUpdateItem, showSuccess, hasFatalError]
   );
@@ -361,12 +373,8 @@ export default function DashboardPage() {
 
       for (const instrument of sampleInstruments) {
         try {
-          const createdId = await handleCreateItem(instrument);
-          if (createdId) {
-            successCount++;
-          } else {
-            errorCount++;
-          }
+          await handleCreateItem(instrument);
+          successCount++;
         } catch (error) {
           errorCount++;
           if (process.env.NODE_ENV === 'development') {

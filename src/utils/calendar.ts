@@ -7,15 +7,10 @@ import { normalizeTaskStatusKey } from '@/utils/colorTokens';
  */
 
 /**
- * Get the primary date key for a task based on priority
- * Priority: due_date > personal_due_date > scheduled_date > received_date
- *
- * This is used for grouping and sorting tasks consistently across the calendar.
- *
- * @param task - Maintenance task
- * @returns Date string (YYYY-MM-DD) or null
+ * Single source of truth for which calendar date a task sits on (grid, year, timeline, list).
+ * Priority: due_date → personal_due_date → scheduled_date → received_date
  */
-export function getTaskDateKey(task: MaintenanceTask): string | null {
+export function getCalendarPlacementDate(task: MaintenanceTask): string | null {
   return (
     task.due_date ||
     task.personal_due_date ||
@@ -23,6 +18,29 @@ export function getTaskDateKey(task: MaintenanceTask): string | null {
     task.received_date ||
     null
   );
+}
+
+/**
+ * Which task field supplies {@link getCalendarPlacementDate} (for drag-and-drop date updates).
+ */
+export function getCalendarPlacementField(
+  task: MaintenanceTask
+):
+  | 'due_date'
+  | 'personal_due_date'
+  | 'scheduled_date'
+  | 'received_date'
+  | null {
+  if (task.due_date) return 'due_date';
+  if (task.personal_due_date) return 'personal_due_date';
+  if (task.scheduled_date) return 'scheduled_date';
+  if (task.received_date) return 'received_date';
+  return null;
+}
+
+/** Alias of {@link getCalendarPlacementDate} for list grouping and legacy imports. */
+export function getTaskDateKey(task: MaintenanceTask): string | null {
+  return getCalendarPlacementDate(task);
 }
 
 /**

@@ -4,6 +4,8 @@ import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import '@testing-library/jest-dom';
 import ClientForm from '../ClientForm';
 
+const mockHandleError = jest.fn();
+
 jest.mock('@/hooks/useDataState', () => ({
   useDataState: jest.fn(() => ({
     data: [],
@@ -45,7 +47,7 @@ jest.mock('@/contexts/ToastContext', () => {
   return {
     ...actual,
     useErrorHandler: jest.fn(() => ({
-      handleError: jest.fn(),
+      handleError: mockHandleError,
     })),
   };
 });
@@ -105,6 +107,7 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
         tags: [],
         interest: '',
         note: '',
+        client_number: '',
       },
       updateField: mockUpdateField,
       resetForm: jest.fn(),
@@ -141,11 +144,30 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
     expect(screen.getByText('Hide Instrument Search')).toBeInTheDocument();
   });
 
-  it('빈 폼 제출 시 onSubmit 호출(현재 컴포넌트 동작 기준)', () => {
+  it('빈 이름으로 제출하면 onSubmit을 호출하지 않고 에러를 표시한다', () => {
+    const mockUseFormState = jest.mocked(
+      require('@/hooks/useFormState')
+    ).useFormState;
+    mockUseFormState.mockReturnValue({
+      formData: {
+        last_name: '',
+        first_name: '',
+        contact_number: '',
+        email: '',
+        tags: [],
+        interest: '',
+        note: '',
+        client_number: '',
+      },
+      updateField: jest.fn(),
+      resetForm: jest.fn(),
+    });
+
     render(<ClientForm {...baseProps} />);
     const submitButton = screen.getByRole('button', { name: /add client/i });
     fireEvent.click(submitButton);
-    expect(baseProps.onSubmit).toHaveBeenCalled();
+    expect(baseProps.onSubmit).not.toHaveBeenCalled();
+    expect(mockHandleError).toHaveBeenCalled();
   });
 
   it('onSubmit에 instruments가 전달되지 않음 (선택된 instruments가 없을 때)', async () => {
@@ -366,6 +388,51 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
         'client-123',
         expect.any(Array)
       );
+    });
+  });
+
+  it('instrument links 없이 성공하면 client-only 성공 메시지를 보여준다', async () => {
+    const mockOnSubmit = jest.fn().mockResolvedValue({
+      status: 'full_success',
+      clientId: 'client-123',
+    });
+    const mockUseFormState = jest.mocked(
+      require('@/hooks/useFormState')
+    ).useFormState;
+
+    mockUseFormState.mockReturnValue({
+      formData: {
+        last_name: 'Doe',
+        first_name: 'John',
+        contact_number: '',
+        email: '',
+        tags: [],
+        interest: '',
+        note: '',
+        client_number: '',
+      },
+      updateField: jest.fn(),
+      resetForm: jest.fn(),
+    });
+    const mockUseDataState = jest.mocked(
+      require('@/hooks/useDataState')
+    ).useDataState;
+    mockUseDataState.mockReturnValue({
+      data: [],
+      addItem: jest.fn(),
+      removeItem: jest.fn(),
+      clearData: jest.fn(),
+      setItems: jest.fn(),
+    });
+
+    render(<ClientForm {...baseProps} onSubmit={mockOnSubmit} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /add client/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Client created successfully')
+      ).toBeInTheDocument();
     });
   });
 

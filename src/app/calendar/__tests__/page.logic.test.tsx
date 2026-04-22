@@ -195,7 +195,6 @@ jest.mock('../components/CalendarContent', () => {
     onSelectSlot,
     onSelectEvent,
     onEventDrop,
-    onEventResize,
     onOpenNewTask,
     onTaskDelete,
   }: any) {
@@ -236,20 +235,6 @@ jest.mock('../components/CalendarContent', () => {
           Drop Event
         </button>
         <button
-          data-testid="event-resize-btn"
-          onClick={() =>
-            onEventResize?.({
-              event: {
-                resource: { kind: 'task', task: mockTasks[0] },
-              },
-              start: new Date('2024-01-20'),
-              end: new Date('2024-01-20'),
-            })
-          }
-        >
-          Resize Event
-        </button>
-        <button
           data-testid="delete-task-btn"
           onClick={() => onTaskDelete?.(mockTasks[0])}
         >
@@ -283,14 +268,21 @@ jest.mock('../components/TaskModal', () => {
         </button>
         <button
           data-testid="modal-submit"
-          onClick={() =>
-            onSubmit({
-              title: 'New Task',
-              instrument_id: 'instrument-1',
-              task_type: 'repair',
-              status: 'pending',
-            })
-          }
+          onClick={() => {
+            void Promise.resolve()
+              .then(() =>
+                onSubmit({
+                  title: 'New Task',
+                  instrument_id: 'instrument-1',
+                  task_type: 'repair',
+                  status: 'pending',
+                  received_date: '2024-01-01',
+                })
+              )
+              .catch(() => {
+                /* real TaskModal catches and shows form errors */
+              });
+          }}
         >
           Submit
         </button>
@@ -951,123 +943,6 @@ describe('CalendarPage - Core Logic', () => {
         error,
         'Failed to update task date'
       );
-    });
-  });
-
-  describe('Event Resize', () => {
-    it('should update task date on event resize', async () => {
-      const user = userEvent.setup();
-
-      render(<CalendarPage />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('calendar-content')).toBeInTheDocument();
-      });
-
-      const resizeBtn = screen.getByTestId('event-resize-btn');
-      await user.click(resizeBtn);
-
-      await flushPromises();
-
-      await waitFor(() => {
-        expect(mockUpdateTask).toHaveBeenCalledWith(
-          mockTasks[0].id,
-          expect.objectContaining({
-            due_date: expect.any(String),
-          })
-        );
-      });
-
-      expect(mockRefetchCurrentRange).toHaveBeenCalled();
-      expect(mockShowSuccess).toHaveBeenCalledWith(
-        'Task time updated successfully.'
-      );
-    });
-
-    it('should ignore resize for follow-up events', async () => {
-      const followUpLog: ContactLog = {
-        id: 'log-1',
-        client_id: 'client-1',
-        instrument_id: null,
-        contact_type: 'email',
-        contact_date: '2024-01-15',
-        subject: null,
-        content: 'Test',
-        next_follow_up_date: '2024-01-20',
-        follow_up_completed_at: null,
-        purpose: null,
-        created_at: '2024-01-15T00:00:00Z',
-        updated_at: '2024-01-15T00:00:00Z',
-      };
-
-      // Update the mock to handle follow-up events
-      jest.doMock('../components/CalendarContent', () => {
-        return function MockCalendarContent({ onEventResize }: any) {
-          return (
-            <div data-testid="calendar-content">
-              <button
-                data-testid="event-resize-btn"
-                onClick={() =>
-                  onEventResize?.({
-                    event: {
-                      resource: { kind: 'follow_up', contactLog: followUpLog },
-                    },
-                    start: new Date('2024-01-25'),
-                    end: new Date('2024-01-25'),
-                  })
-                }
-              >
-                Resize Event
-              </button>
-            </div>
-          );
-        };
-      });
-
-      // This test verifies that handleEventResize correctly handles follow-up events
-      // The implementation has an early return for non-task events
-      // Dynamic mocking with resetModules causes React loading issues, so we test the logic conceptually
-      render(<CalendarPage />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('calendar-content')).toBeInTheDocument();
-      });
-
-      // The code structure ensures follow-up events are ignored
-      // Line 324 in page.tsx: if (!resource || resource.kind !== 'task') { return; }
-
-      // Follow-up events should not trigger task updates
-      // The handler checks resource.kind !== 'task' and returns early
-      await waitFor(() => {
-        // UpdateTask should not be called for follow-up events
-        expect(mockUpdateTask).not.toHaveBeenCalled();
-      });
-    });
-
-    it('should handle resize error', async () => {
-      const user = userEvent.setup();
-      const error = new Error('Resize failed');
-      mockUpdateTask.mockRejectedValueOnce(error);
-
-      render(<CalendarPage />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('calendar-content')).toBeInTheDocument();
-      });
-
-      const resizeBtn = screen.getByTestId('event-resize-btn');
-      await user.click(resizeBtn);
-
-      await flushPromises();
-
-      await waitFor(() => {
-        expect(mockHandleError).toHaveBeenCalledWith(
-          error,
-          'Failed to update task time'
-        );
-      });
-
-      expect(mockShowSuccess).not.toHaveBeenCalled();
     });
   });
 

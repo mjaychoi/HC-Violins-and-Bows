@@ -8,8 +8,6 @@ import { useFormState } from '@/hooks/useFormState';
 import { logError } from '@/utils/logger';
 import { classNames } from '@/utils/classNames';
 import { clientValidation, validateForm } from '@/utils/validationUtils';
-import { generateClientNumber } from '@/utils/uniqueNumberGenerator';
-import { useUnifiedClients } from '@/hooks/useUnifiedData';
 import { Button, Input } from '@/components/common/inputs';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { shouldShowInterestDropdown } from '@/policies/interest';
@@ -61,8 +59,6 @@ function ClientForm({
   onRetryInstrumentLinks,
   submitting,
 }: ClientFormProps) {
-  const { clients } = useUnifiedClients();
-
   const initialFormData = {
     last_name: '',
     first_name: '',
@@ -85,6 +81,7 @@ function ClientForm({
   const [submissionState, setSubmissionState] = useState<{
     status: 'full_success' | 'partial_success';
     clientId?: string;
+    successMessage?: string;
   } | null>(null);
 
   // New client instrument connection states using useDataState
@@ -133,6 +130,19 @@ function ClientForm({
 
   const removeInstrumentForNew = (instrumentId: string) => {
     removeSelectedInstrument(instrumentId);
+  };
+
+  const updateRelationshipTypeForNew = (
+    instrumentId: string,
+    relationshipType: ClientInstrument['relationship_type']
+  ) => {
+    setSelectedInstruments(
+      selectedInstrumentsForNew.map(item =>
+        item.instrument.id === instrumentId
+          ? { ...item, relationshipType }
+          : item
+      )
+    );
   };
 
   // Use useDataFetching for instrument search with parameter support
@@ -217,6 +227,20 @@ function ClientForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const clientName = [formData.first_name, formData.last_name]
+      .map(value => value.trim())
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    if (!clientName) {
+      handleError(
+        new Error('Client name is required'),
+        'Form validation failed'
+      );
+      return;
+    }
+
     // Validate form data
     const validationSchema = {
       email: [clientValidation.email[1]],
@@ -251,7 +275,18 @@ function ClientForm({
     }
 
     if (result.status === 'full_success') {
-      setSubmissionState({ status: 'full_success', clientId: result.clientId });
+      const successMessage =
+        submissionState?.status === 'partial_success'
+          ? 'Remaining instrument links created successfully'
+          : selectedLinks && selectedLinks.length > 0
+            ? 'Client and instrument links created successfully'
+            : 'Client created successfully';
+
+      setSubmissionState({
+        status: 'full_success',
+        clientId: result.clientId,
+        successMessage,
+      });
       return;
     }
 
@@ -289,6 +324,7 @@ function ClientForm({
       setSubmissionState({
         status: 'full_success',
         clientId: submissionState.clientId,
+        successMessage: 'Remaining instrument links created successfully',
       });
       return;
     }
@@ -307,13 +343,6 @@ function ClientForm({
     setShowInstrumentSearchForNew(false);
     setInstrumentSearchTermForNew('');
     clearSearchResults();
-
-    // Auto-generate new client number
-    const existingNumbers = clients
-      .map(c => c.client_number)
-      .filter((num): num is string => num !== null && num !== undefined);
-    const autoClientNumber = generateClientNumber(existingNumbers);
-    updateField('client_number', autoClientNumber);
   };
 
   const handleDone = () => {
@@ -338,17 +367,6 @@ function ClientForm({
       setSubmissionState(null);
     }
   }, [isOpen]);
-
-  // 자동으로 client number 생성
-  useEffect(() => {
-    if (isOpen && !formData.client_number) {
-      const existingNumbers = clients
-        .map(c => c.client_number)
-        .filter((num): num is string => num !== null && num !== undefined);
-      const autoClientNumber = generateClientNumber(existingNumbers);
-      updateField('client_number', autoClientNumber);
-    }
-  }, [isOpen, clients, formData.client_number, updateField]);
 
   // ✅ Debounced instrument search (prevents excessive API calls)
   useEffect(() => {
@@ -414,7 +432,8 @@ function ClientForm({
                 </svg>
                 <div className="ml-3 flex-1">
                   <h4 className="text-sm font-medium text-green-800">
-                    Client and instrument links created successfully
+                    {submissionState.successMessage ||
+                      'Client created successfully'}
                   </h4>
                   <p className="mt-1 text-sm text-green-700">
                     What would you like to do next?
@@ -558,7 +577,7 @@ function ClientForm({
               <label className={classNames.formLabel}>
                 Client Number
                 <span className="ml-2 text-xs text-gray-500">
-                  (Auto-generated)
+                  (server-assigned)
                 </span>
               </label>
               <input
@@ -568,10 +587,13 @@ function ClientForm({
                 onChange={handleInputChange}
                 disabled
                 className={classNames.input + ' bg-gray-100 cursor-not-allowed'}
-                placeholder="Auto-generated"
+                placeholder="Assigned on save (e.g. CL001)"
+                readOnly
+                aria-readonly="true"
               />
               <p className="mt-1 text-xs text-gray-500">
-                Will be automatically generated when adding a client
+                The app assigns a unique number when you save. The value shown
+                here is not final until the client is created.
               </p>
             </div>
 
@@ -665,20 +687,43 @@ function ClientForm({
                         {selectedInstrumentsForNew.map(item => (
                           <div
                             key={item.instrument.id}
-                            className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm"
+                            className="flex flex-col gap-2 bg-gray-50 p-2 rounded text-sm md:flex-row md:items-center md:justify-between"
                           >
-                            <span>
-                              {item.instrument.maker} - {item.instrument.type}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removeInstrumentForNew(item.instrument.id)
-                              }
-                              className="text-red-600 hover:text-red-800"
-                            >
-                              Remove
-                            </button>
+                            <div>
+                              <span>
+                                {item.instrument.maker} - {item.instrument.type}
+                              </span>
+                              <div className="mt-1 text-xs text-gray-500">
+                                Relationship type is saved with the client
+                                connection.
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={item.relationshipType}
+                                onChange={e =>
+                                  updateRelationshipTypeForNew(
+                                    item.instrument.id,
+                                    e.target
+                                      .value as ClientInstrument['relationship_type']
+                                  )
+                                }
+                                className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                              >
+                                <option value="Interested">Interested</option>
+                                <option value="Booked">Booked</option>
+                                <option value="Owned">Owned</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removeInstrumentForNew(item.instrument.id)
+                                }
+                                className="text-red-600 hover:text-red-800"
+                              >
+                                Remove
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>

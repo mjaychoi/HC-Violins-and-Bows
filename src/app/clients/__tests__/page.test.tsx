@@ -313,14 +313,6 @@ jest.mock('../components/ClientModal', () => {
   };
 });
 
-jest.mock('@/utils/uniqueNumberGenerator', () => ({
-  generateClientNumber: jest.fn((existingNumbers: string[]) => {
-    return (
-      'CL' + String((existingNumbers.length + 1).toString().padStart(3, '0'))
-    );
-  }),
-}));
-
 // AppLayout is already mocked in jest.setup.js
 // No need to mock it here
 
@@ -668,7 +660,7 @@ describe('ClientsPage', () => {
       );
     });
 
-    it('should generate client number when not provided', async () => {
+    it('should not send a frontend-invented client_number (null = server allocation)', async () => {
       const user = userEvent.setup();
       const newClient: Client = {
         id: '3',
@@ -701,7 +693,7 @@ describe('ClientsPage', () => {
       await waitFor(() => {
         expect(mockCreateClient).toHaveBeenCalledWith(
           expect.objectContaining({
-            client_number: expect.any(String),
+            client_number: null,
           })
         );
       });
@@ -730,6 +722,15 @@ describe('ClientsPage', () => {
           expect.objectContaining({ method: 'POST' })
         );
       });
+
+      const withConnCall = mockApiFetch.mock.calls.find(
+        c => c[0] === '/api/clients/with-connections'
+      );
+      expect(withConnCall).toBeDefined();
+      const parsed = JSON.parse(
+        (withConnCall![1] as RequestInit).body as string
+      );
+      expect(parsed.client_number).toBeNull();
 
       await waitFor(() => {
         expect(mockUpsertClient).toHaveBeenCalled();

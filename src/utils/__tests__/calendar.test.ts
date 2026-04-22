@@ -1,5 +1,7 @@
 import {
   getTaskDateKey,
+  getCalendarPlacementDate,
+  getCalendarPlacementField,
   getStatusLabel,
   getPriorityLabel,
   STATUS_LABELS,
@@ -37,6 +39,40 @@ const makeTask = (
 });
 
 describe('calendar utilities', () => {
+  describe('getCalendarPlacementDate / getTaskDateKey', () => {
+    it('getCalendarPlacementDate matches getTaskDateKey', () => {
+      const task = makeTask({ due_date: '2024-02-01' });
+      expect(getCalendarPlacementDate(task)).toBe(getTaskDateKey(task));
+    });
+  });
+
+  describe('getCalendarPlacementField', () => {
+    it('returns due_date when set', () => {
+      expect(
+        getCalendarPlacementField(
+          makeTask({
+            due_date: '2024-01-15',
+            scheduled_date: '2024-01-10',
+            received_date: '2024-01-01',
+          })
+        )
+      ).toBe('due_date');
+    });
+
+    it('returns received_date when higher-priority dates are empty', () => {
+      expect(
+        getCalendarPlacementField(
+          makeTask({
+            due_date: null,
+            personal_due_date: null,
+            scheduled_date: null,
+            received_date: '2024-01-01',
+          })
+        )
+      ).toBe('received_date');
+    });
+  });
+
   describe('getTaskDateKey', () => {
     it('should return due_date when available', () => {
       const task = makeTask({

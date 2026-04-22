@@ -244,7 +244,9 @@ describe('tenant-scoped provider hardening', () => {
           },
         })
       );
-      await mutationPromise;
+      await expect(mutationPromise!).rejects.toThrow(
+        'Instrument creation aborted'
+      );
     });
 
     expect(result.current.instruments).toEqual([]);

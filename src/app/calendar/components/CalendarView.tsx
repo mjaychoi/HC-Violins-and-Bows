@@ -7,9 +7,15 @@ import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 // This is the stable import path for react-big-calendar compatibility
 import { DndProvider } from 'react-dnd/dist/core';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { format, parse, startOfWeek, getDay } from 'date-fns';
+import {
+  format,
+  parse,
+  startOfWeek,
+  getDay,
+  startOfDay,
+  addDays,
+} from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { addHours } from 'date-fns';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 import { MaintenanceTask } from '@/types';
@@ -18,6 +24,7 @@ import TimelineView from './TimelineView';
 import { getDateStatus } from '@/utils/tasks/style';
 import { parseYMDLocal } from '@/utils/dateParsing';
 import { parseISO, isValid } from 'date-fns';
+import { getCalendarPlacementDate } from '@/utils/calendar';
 
 // Calendar styles are now in globals.css to avoid duplication and hydration issues
 
@@ -78,11 +85,6 @@ interface CalendarViewProps {
     end: Date;
     isAllDay?: boolean;
   }) => Promise<void> | void;
-  onEventResize?: (data: {
-    event: Event;
-    start: Date;
-    end: Date;
-  }) => Promise<void> | void;
   draggingEventId?: string | null; // Track currently dragging event for visual feedback
   currentDate?: Date;
   onNavigate?: (date: Date) => void;
@@ -100,11 +102,6 @@ type DragAndDropCalendarProps = CalendarProps & {
     end: Date;
     isAllDay?: boolean;
   }) => Promise<void> | void;
-  onEventResize?: (data: {
-    event: Event;
-    start: Date;
-    end: Date;
-  }) => Promise<void> | void;
   draggableAccessor?: (event: Event) => boolean;
   resizableAccessor?: (event: Event) => boolean;
 };
@@ -120,7 +117,6 @@ export default function CalendarView({
   onSelectEvent,
   onSelectSlot,
   onEventDrop,
-  onEventResize,
   draggingEventId,
   currentDate = new Date(),
   onNavigate,
@@ -150,16 +146,10 @@ export default function CalendarView({
   const events: Event[] = useMemo(() => {
     // Task events
     const taskEvents = tasks
-      .filter(
-        task => task.due_date || task.personal_due_date || task.scheduled_date
-      )
       .map(task => {
-        // FIXED: Use correct date priority: due_date > personal_due_date > scheduled_date
-        const raw =
-          task.due_date || task.personal_due_date || task.scheduled_date;
+        const raw = getCalendarPlacementDate(task);
         if (!raw) return null;
 
-        // FIXED: Safe date parsing - check format first
         const isYMD = /^\d{4}-\d{2}-\d{2}$/.test(raw);
         let date: Date | null = null;
         try {
@@ -175,12 +165,9 @@ export default function CalendarView({
 
         if (!date) return null;
 
-        // FIXED: For better visibility in week/agenda view, place events at 9AM (business hours)
-        // This avoids clustering at 00:00 which can be confusing for users
-        // Calendar UX: use date-only and set to 9AM for visibility
-        const start = new Date(date);
-        start.setHours(9, 0, 0, 0);
-        const endDate = addHours(start, 1);
+        // Date-only tasks: all-day events (no fake clock time)
+        const start = startOfDay(date);
+        const end = addDays(start, 1);
 
         // Get instrument info from instruments map if available
         const instrument = task.instrument_id
@@ -243,8 +230,9 @@ export default function CalendarView({
 
         const event: Event = {
           title: `${eventData.instrument} – ${eventData.description}`, // Single line for accessibility
-          start: start,
-          end: endDate,
+          start,
+          end,
+          allDay: true,
           resource: { kind: 'task', task, eventData } as CalendarResource,
         };
 
@@ -399,19 +387,13 @@ export default function CalendarView({
               },
               onSelectSlot,
               ...(onEventDrop && { onEventDrop }),
-              ...(onEventResize && { onEventResize }),
               draggableAccessor: (event: Event) => {
-                // Only allow dragging task events, not follow-up events
                 const resource = event.resource as CalendarResource | undefined;
                 return resource?.kind === 'task';
               },
-              resizableAccessor: (event: Event) => {
-                // Only allow resizing task events, not follow-up events
-                const resource = event.resource as CalendarResource | undefined;
-                return resource?.kind === 'task';
-              },
+              resizableAccessor: () => false,
               selectable: true,
-              resizable: true,
+              resizable: false,
               date: currentDate,
               onNavigate,
               view: view as View,

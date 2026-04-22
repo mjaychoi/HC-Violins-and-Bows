@@ -20,8 +20,9 @@ import {
   TableSkeleton,
 } from '@/components/common';
 import { Button } from '@/components/common/inputs';
-import type { MaintenanceTask, ContactLog } from '@/types';
+import type { MaintenanceTask } from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
+import { getCalendarPlacementField } from '@/utils/calendar';
 import { useCalendarNavigation, useCalendarView } from './hooks';
 import {
   CALENDAR_MESSAGES,
@@ -150,8 +151,8 @@ export default function CalendarPage() {
       let created: MaintenanceTask;
       try {
         created = await createTask(taskData);
-      } catch {
-        return;
+      } catch (err) {
+        throw err;
       }
 
       if (!created?.id) {
@@ -189,8 +190,8 @@ export default function CalendarPage() {
       let updated: MaintenanceTask;
       try {
         updated = await updateTask(selectedTask.id, taskData);
-      } catch {
-        return;
+      } catch (err) {
+        throw err;
       }
 
       if (!updated?.id) {
@@ -270,10 +271,8 @@ export default function CalendarPage() {
       const { event, start } = data;
       const resource = event.resource as
         | { kind: 'task'; task: MaintenanceTask }
-        | { kind: 'follow_up'; contactLog: ContactLog }
         | undefined;
 
-      // Only handle task events (not follow-up events)
       if (!resource || resource.kind !== 'task') {
         setDraggingEventId(null);
         return;
@@ -285,20 +284,13 @@ export default function CalendarPage() {
         return;
       }
 
-      // Store original date for rollback (use local variable to avoid stale state)
-      let originalDate: string;
-      let dateField: 'due_date' | 'personal_due_date' | 'scheduled_date';
-
-      if (task.due_date) {
-        originalDate = task.due_date;
-        dateField = 'due_date';
-      } else if (task.personal_due_date) {
-        originalDate = task.personal_due_date;
-        dateField = 'personal_due_date';
-      } else if (task.scheduled_date) {
-        originalDate = task.scheduled_date;
-        dateField = 'scheduled_date';
-      } else {
+      const dateField = getCalendarPlacementField(task);
+      if (!dateField) {
+        setDraggingEventId(null);
+        return;
+      }
+      const originalDate = task[dateField];
+      if (!originalDate) {
         setDraggingEventId(null);
         return;
       }
@@ -316,17 +308,9 @@ export default function CalendarPage() {
           // Convert Date to YYYY-MM-DD format (date-only, no time preserved)
           const newDate = toLocalYMD(start.toISOString());
 
-          // Determine which date field to update based on task's current date priority
-          // Priority: due_date > personal_due_date > scheduled_date
-          const updateData: Partial<MaintenanceTask> = {};
-
-          if (task.due_date) {
-            updateData.due_date = newDate;
-          } else if (task.personal_due_date) {
-            updateData.personal_due_date = newDate;
-          } else {
-            updateData.scheduled_date = newDate;
-          }
+          const updateData: Partial<MaintenanceTask> = {
+            [dateField]: newDate,
+          };
 
           updated = await updateTask(task.id, updateData);
         } catch (error) {
@@ -364,75 +348,6 @@ export default function CalendarPage() {
     [
       updateTask,
       navigation,
-      refreshCalendarAfterMutation,
-      showSuccess,
-      showWarning,
-      handleError,
-    ]
-  );
-
-  // Handle event resize: update task end time
-  const handleEventResize = useCallback(
-    async (data: { event: { resource?: unknown }; start: Date; end: Date }) => {
-      const { event, start } = data;
-      const resource = event.resource as
-        | { kind: 'task'; task: MaintenanceTask }
-        | { kind: 'follow_up'; contactLog: ContactLog }
-        | undefined;
-
-      // Only handle task events (not follow-up events)
-      if (!resource || resource.kind !== 'task') {
-        return;
-      }
-
-      const task = resource.task;
-      if (!task || !task.id) {
-        return;
-      }
-
-      setDraggingEventId(task.id);
-
-      try {
-        let updated: MaintenanceTask;
-        try {
-          // For resize, we update the date based on the start time
-          const newDate = toLocalYMD(start.toISOString());
-
-          const updateData: Partial<MaintenanceTask> = {};
-
-          if (task.due_date) {
-            updateData.due_date = newDate;
-          } else if (task.personal_due_date) {
-            updateData.personal_due_date = newDate;
-          } else {
-            updateData.scheduled_date = newDate;
-          }
-
-          updated = await updateTask(task.id, updateData);
-        } catch (error) {
-          handleError(error, 'Failed to update task time');
-          return;
-        }
-
-        if (!updated?.id) {
-          showWarning(
-            'The resize could not be confirmed. Please refresh the calendar.'
-          );
-          return;
-        }
-
-        const refreshed = await refreshCalendarAfterMutation(
-          CALENDAR_WARNING_MESSAGES.TIME_REFRESH_FAILED
-        );
-        if (refreshed) {
-          showSuccess('Task time updated successfully.');
-        }
-      } finally {
-        setDraggingEventId(null);
-      }
-    },
-    [
-      updateTask,
       refreshCalendarAfterMutation,
       showSuccess,
       showWarning,
@@ -570,7 +485,6 @@ export default function CalendarPage() {
           onSelectEvent={handleSelectEvent}
           onSelectSlot={handleSelectSlot}
           onEventDrop={handleEventDrop}
-          onEventResize={handleEventResize}
           draggingEventId={draggingEventId}
           onOpenNewTask={handleOpenNewTask}
           canCreateTask={canCreateTask && !loading.mutate}

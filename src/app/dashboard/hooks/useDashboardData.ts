@@ -5,7 +5,7 @@ import { Instrument, ClientInstrument } from '@/types';
 import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
 import { normalizeUnifiedResourceErrors } from '@/hooks/unifiedResourceErrors';
 import { useLoadingState } from '@/hooks/useLoadingState';
-import { useErrorHandler, useToast } from '@/contexts/ToastContext';
+import { useToast } from '@/contexts/ToastContext';
 import { format } from 'date-fns';
 
 type DashboardSaleTransition = {
@@ -16,7 +16,6 @@ type DashboardSaleTransition = {
 };
 
 export const useDashboardData = () => {
-  const { handleError } = useErrorHandler();
   const { showSuccess } = useToast();
   const { withSubmitting } = useLoadingState();
 
@@ -70,20 +69,20 @@ export const useDashboardData = () => {
   // Handle item creation
   const handleCreateItem = useCallback(
     async (formData: Omit<Instrument, 'id' | 'created_at'>) => {
-      if (hasFatalError) return null;
-      try {
-        let createdItemId: string | null = null;
-        await withSubmitting(async () => {
-          const result = await createInstrument(formData);
-          createdItemId = result?.id || null;
-        });
-        return createdItemId;
-      } catch (error) {
-        handleError(error, 'Failed to create item');
-        throw error; // Re-throw to allow form to handle error
+      if (hasFatalError) {
+        throw new Error(
+          'Dashboard failed to load — retry before making changes'
+        );
       }
+      return await withSubmitting(async () => {
+        const result = await createInstrument(formData);
+        if (!result?.id) {
+          throw new Error('Instrument creation failed');
+        }
+        return result;
+      });
     },
-    [hasFatalError, createInstrument, withSubmitting, handleError]
+    [hasFatalError, createInstrument, withSubmitting]
   );
 
   // Handle item update
@@ -92,95 +91,79 @@ export const useDashboardData = () => {
       itemId: string,
       formData: Partial<Omit<Instrument, 'id' | 'created_at'>>
     ) => {
-      if (hasFatalError) return null;
-      try {
-        // 이전 상태 확인 (O(1) lookup)
-        const previousInstrument = instrumentMap.get(itemId) as
-          | Instrument
-          | undefined;
-
-        // FIXED: Clearer status change logic
-        const nextStatus = formData.status; // possibly undefined
-        const statusIsChanging = nextStatus !== undefined;
-
-        const wasSold = previousInstrument?.status === 'Sold';
-        const isNowSold = nextStatus === 'Sold';
-        let updatePayload: Partial<Omit<Instrument, 'id' | 'created_at'>> & {
-          sale_transition?: DashboardSaleTransition;
-        } = { ...formData };
-
-        if (!statusIsChanging) {
-          const result = await updateInstrument(itemId, updatePayload);
-          if (!result) {
-            throw new Error('Failed to update item');
-          }
-
-          return result;
-        }
-
-        if (isNowSold && !wasSold && previousInstrument) {
-          const salePrice =
-            formData.price !== undefined && formData.price !== null
-              ? Number(formData.price)
-              : previousInstrument.price !== undefined &&
-                  previousInstrument.price !== null
-                ? Number(previousInstrument.price)
-                : null;
-
-          if (
-            typeof salePrice !== 'number' ||
-            !Number.isFinite(salePrice) ||
-            salePrice <= 0
-          ) {
-            throw new Error(
-              'Sale price is required when marking an instrument as Sold.'
-            );
-          }
-
-          const saleDate = format(new Date(), 'yyyy-MM-dd');
-          const soldConnection = soldConnectionsMap.get(itemId);
-
-          updatePayload = {
-            ...formData,
-            sale_transition: {
-              sale_price: salePrice,
-              sale_date: saleDate,
-              client_id: soldConnection?.client_id || null,
-              sales_note: 'Auto-created when instrument status changed to Sold',
-            },
-          };
-        } else if (wasSold && !isNowSold && previousInstrument) {
-          updatePayload = {
-            ...formData,
-            sale_transition: {
-              sales_note: `Auto-refunded when instrument status changed from Sold to ${
-                formData.status || 'Available'
-              } on ${format(new Date(), 'yyyy-MM-dd')}`,
-            },
-          };
-        }
-
-        const atomicResult = await updateInstrument(
-          itemId,
-          updatePayload as Partial<Instrument>
+      if (hasFatalError) {
+        throw new Error(
+          'Dashboard failed to load — retry before making changes'
         );
-        if (!atomicResult) {
-          throw new Error('Failed to update item');
+      }
+
+      // 이전 상태 확인 (O(1) lookup)
+      const previousInstrument = instrumentMap.get(itemId) as
+        | Instrument
+        | undefined;
+
+      // FIXED: Clearer status change logic
+      const nextStatus = formData.status; // possibly undefined
+      const statusIsChanging = nextStatus !== undefined;
+
+      const wasSold = previousInstrument?.status === 'Sold';
+      const isNowSold = nextStatus === 'Sold';
+      let updatePayload: Partial<Omit<Instrument, 'id' | 'created_at'>> & {
+        sale_transition?: DashboardSaleTransition;
+      } = { ...formData };
+
+      if (!statusIsChanging) {
+        return await updateInstrument(itemId, updatePayload);
+      }
+
+      if (isNowSold && !wasSold && previousInstrument) {
+        const salePrice =
+          formData.price !== undefined && formData.price !== null
+            ? Number(formData.price)
+            : previousInstrument.price !== undefined &&
+                previousInstrument.price !== null
+              ? Number(previousInstrument.price)
+              : null;
+
+        if (
+          typeof salePrice !== 'number' ||
+          !Number.isFinite(salePrice) ||
+          salePrice <= 0
+        ) {
+          throw new Error(
+            'Sale price is required when marking an instrument as Sold.'
+          );
         }
 
-        return atomicResult;
-      } catch (error) {
-        handleError(error, 'Failed to update item');
-        throw error; // Re-throw to allow form to handle error
+        const saleDate = format(new Date(), 'yyyy-MM-dd');
+        const soldConnection = soldConnectionsMap.get(itemId);
+
+        updatePayload = {
+          ...formData,
+          sale_transition: {
+            sale_price: salePrice,
+            sale_date: saleDate,
+            client_id: soldConnection?.client_id || null,
+            sales_note: 'Auto-created when instrument status changed to Sold',
+          },
+        };
+      } else if (wasSold && !isNowSold && previousInstrument) {
+        updatePayload = {
+          ...formData,
+          sale_transition: {
+            sales_note: `Auto-refunded when instrument status changed from Sold to ${
+              formData.status || 'Available'
+            } on ${format(new Date(), 'yyyy-MM-dd')}`,
+          },
+        };
       }
+
+      return await updateInstrument(
+        itemId,
+        updatePayload as Partial<Instrument>
+      );
     },
-    [
-      hasFatalError,
-      updateInstrument,
-      handleError,
-      instrumentMap,
-      soldConnectionsMap,
-    ]
+    [hasFatalError, updateInstrument, instrumentMap, soldConnectionsMap]
   );
 
   // Handle item update for inline editing (returns void)
@@ -198,16 +181,15 @@ export const useDashboardData = () => {
   // Handle item deletion
   const handleDeleteItem = useCallback(
     async (itemId: string) => {
-      if (hasFatalError) return;
-      try {
-        await deleteInstrument(itemId);
-        showSuccess('아이템이 성공적으로 삭제되었습니다.');
-      } catch (error) {
-        handleError(error, 'Failed to delete item');
-        throw error;
+      if (hasFatalError) {
+        throw new Error(
+          'Dashboard failed to load — retry before making changes'
+        );
       }
+      await deleteInstrument(itemId);
+      showSuccess('아이템이 성공적으로 삭제되었습니다.');
     },
-    [hasFatalError, deleteInstrument, showSuccess, handleError]
+    [hasFatalError, deleteInstrument, showSuccess]
   );
 
   const reloadDashboard = useCallback(async () => {

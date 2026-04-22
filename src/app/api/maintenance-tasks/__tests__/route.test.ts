@@ -87,6 +87,11 @@ describe('/api/maintenance-tasks', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    const { safeValidate } = require('@/utils/typeGuards');
+    (safeValidate as jest.Mock).mockImplementation((data: unknown) => ({
+      success: true,
+      data,
+    }));
     jest.spyOn(performance, 'now').mockReturnValue(0);
     const baseQuery = {
       select: jest.fn().mockReturnThis(),
@@ -604,6 +609,73 @@ describe('/api/maintenance-tasks', () => {
       expect(response.status).toBe(400);
       expect(json.message).toContain('Invalid maintenance task data');
     });
+
+    it('returns 422 when persisted row fails validateMaintenanceTask', async () => {
+      const actualTg = jest.requireActual('@/utils/typeGuards');
+      const tg = require('@/utils/typeGuards');
+      const { safeValidate } = tg;
+      (safeValidate as jest.Mock).mockImplementation(
+        (data: unknown, validator: unknown) => {
+          if (validator === tg.validateCreateMaintenanceTask) {
+            return actualTg.safeValidate(
+              data,
+              actualTg.validateCreateMaintenanceTask
+            );
+          }
+          if (validator === tg.validateMaintenanceTask) {
+            return { success: false, error: 'invalid persisted row' };
+          }
+          return { success: true, data };
+        }
+      );
+
+      const createData = {
+        instrument_id: mockTask.instrument_id,
+        client_id: null,
+        title: 'New task',
+        description: null,
+        status: 'pending' as const,
+        task_type: 'repair' as const,
+        priority: 'medium' as const,
+        scheduled_date: null,
+        due_date: null,
+        personal_due_date: null,
+        received_date: '2024-01-20',
+        completed_date: null,
+        estimated_hours: null,
+        actual_hours: null,
+        cost: null,
+        notes: null,
+      };
+
+      const mockQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+      (mockQuery.single as jest.Mock).mockResolvedValue({
+        data: { ...mockTask, ...createData },
+        error: null,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      };
+
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks',
+        {
+          method: 'POST',
+          body: JSON.stringify(createData),
+        }
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(422);
+      expect(json.error_code).toBe('maintenance_task_response_invalid');
+      expect(String(json.message)).toMatch(/validation|invalid/i);
+    });
   });
 
   describe('PATCH', () => {
@@ -720,6 +792,55 @@ describe('/api/maintenance-tasks', () => {
         'Invalid maintenance task status transition'
       );
       expect(updateQuery.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 422 when updated row fails validateMaintenanceTask', async () => {
+      const actualTg = jest.requireActual('@/utils/typeGuards');
+      const tg = require('@/utils/typeGuards');
+      const { safeValidate } = tg;
+      (safeValidate as jest.Mock).mockImplementation(
+        (data: unknown, validator: unknown) => {
+          if (validator === tg.validatePartialMaintenanceTask) {
+            return actualTg.safeValidate(
+              data,
+              actualTg.validatePartialMaintenanceTask
+            );
+          }
+          if (validator === tg.validateMaintenanceTask) {
+            return { success: false, error: 'invalid persisted row' };
+          }
+          return { success: true, data };
+        }
+      );
+
+      const updateQuery = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+      (updateQuery.single as jest.Mock).mockResolvedValue({
+        data: { ...mockTask, priority: 'low' },
+        error: null,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(updateQuery),
+      };
+
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ id: mockTask.id, priority: 'low' }),
+        }
+      );
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(422);
+      expect(json.error_code).toBe('maintenance_task_response_invalid');
+      expect(String(json.message)).toMatch(/validation|invalid/i);
     });
   });
 

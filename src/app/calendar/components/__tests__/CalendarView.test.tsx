@@ -23,9 +23,13 @@ jest.mock('react-big-calendar', () => {
   const React = require('react');
   return {
     Calendar: ({ events, onSelectEvent, onSelectSlot }: any) => {
+      const taskFromResource = (r: any) =>
+        r?.task && typeof r.task === 'object' ? r.task : r;
+
       const handleEventClick = (event: any) => {
-        if (onSelectEvent && event.resource) {
-          onSelectEvent(event.resource);
+        const task = taskFromResource(event.resource);
+        if (onSelectEvent && task) {
+          onSelectEvent(task);
         }
       };
 
@@ -35,7 +39,7 @@ jest.mock('react-big-calendar', () => {
               'div',
               { 'data-testid': 'calendar-events' },
               events.map((event: any) => {
-                const task = event.resource;
+                const task = taskFromResource(event.resource);
                 const eventId =
                   task?.id || event.title?.replace(/\s+/g, '-') || 'unknown';
                 return React.createElement(
@@ -230,6 +234,30 @@ describe('CalendarView', () => {
     await user.click(selectSlotButton);
 
     expect(mockOnSelectSlot).toHaveBeenCalled();
+  });
+
+  it('renders an event when only received_date is set (placement fallback)', () => {
+    const taskReceivedOnly: MaintenanceTask = {
+      ...mockTasks[0],
+      due_date: null,
+      personal_due_date: null,
+      scheduled_date: null,
+      received_date: '2024-02-01',
+    };
+
+    render(
+      <CalendarView
+        tasks={[taskReceivedOnly]}
+        instruments={mockInstruments}
+        onSelectEvent={mockOnSelectEvent}
+        onSelectSlot={mockOnSelectSlot}
+        currentDate={new Date()}
+        onNavigate={mockOnNavigate}
+      />
+    );
+
+    expect(screen.getByTestId('calendar-events')).toBeInTheDocument();
+    expect(screen.getByTestId('calendar-event-1')).toBeInTheDocument();
   });
 
   it('should render with empty tasks', () => {

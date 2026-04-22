@@ -170,4 +170,25 @@ describe('useDashboardModal', () => {
     expect(mockOnDelete).toHaveBeenCalledWith(mockInstrument.id);
     expect(result.current.confirmItemId).toBeNull();
   });
+
+  it('invokes onDeleteError and keeps confirm open when onDelete rejects', async () => {
+    const err = new Error('Delete failed');
+    const mockOnDelete = jest.fn().mockRejectedValue(err);
+    const onDeleteError = jest.fn();
+    const { result } = renderHook(() =>
+      useDashboardModal({ onDelete: mockOnDelete, onDeleteError })
+    );
+
+    act(() => {
+      result.current.handleRequestDelete(mockInstrument.id);
+    });
+
+    await act(async () => {
+      await result.current.handleConfirmDelete();
+    });
+
+    expect(mockOnDelete).toHaveBeenCalledWith(mockInstrument.id);
+    expect(onDeleteError).toHaveBeenCalledWith(err);
+    expect(result.current.confirmItemId).toBe(mockInstrument.id);
+  });
 });

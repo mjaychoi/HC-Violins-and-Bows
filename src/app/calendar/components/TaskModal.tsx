@@ -16,6 +16,7 @@ import { useOutsideClose } from '@/hooks/useOutsideClose';
 import { modalStyles } from '@/components/common/modals/modalStyles';
 import { ModalHeader } from '@/components/common/modals/ModalHeader';
 import { getStatusLabel } from '@/utils/calendar';
+import { getAllowedMaintenanceTaskNextStatuses } from '@/utils/maintenanceTaskTransitions';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -229,12 +230,16 @@ export default function TaskModal({
     'adjustment',
     'restoration',
   ];
-  const taskStatuses: TaskStatus[] = [
+  const allTaskStatuses: TaskStatus[] = [
     'pending',
     'in_progress',
     'completed',
     'cancelled',
   ];
+  const taskStatuses: TaskStatus[] =
+    isEditing && selectedTask
+      ? [...getAllowedMaintenanceTaskNextStatuses(selectedTask.status)]
+      : allTaskStatuses;
   const priorities: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];
 
   return (

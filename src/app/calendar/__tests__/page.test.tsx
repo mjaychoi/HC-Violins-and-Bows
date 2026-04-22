@@ -239,7 +239,6 @@ jest.mock('../components/CalendarView', () => {
     onSelectEvent,
     onSelectSlot,
     onEventDrop,
-    onEventResize,
   }: any) {
     return (
       <div data-testid="calendar-view">
@@ -271,19 +270,6 @@ jest.mock('../components/CalendarView', () => {
           }
         >
           Drop Event
-        </button>
-        <button
-          data-testid="event-resize-button"
-          onClick={() =>
-            tasks?.[0] &&
-            onEventResize?.({
-              event: { resource: { kind: 'task', task: tasks[0] } },
-              start: new Date('2024-01-10T00:00:00Z'),
-              end: new Date('2024-01-10T00:00:00Z'),
-            })
-          }
-        >
-          Resize Event
         </button>
       </div>
     );
@@ -645,26 +631,6 @@ describe('CalendarPage', () => {
     });
 
     await user.click(screen.getByTestId('event-drop-button'));
-
-    await waitFor(() => {
-      expect(mockUpdateTask).toHaveBeenCalled();
-    });
-
-    expect(mockShowSuccess).not.toHaveBeenCalled();
-    expect(mockHandleError).toHaveBeenCalled();
-  });
-
-  it('should not show success when event resize update fails', async () => {
-    const user = userEvent.setup();
-    mockUpdateTask.mockRejectedValueOnce(new Error('Resize failed'));
-
-    render(<CalendarPage />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('react-big-calendar')).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByTestId('event-resize-button'));
 
     await waitFor(() => {
       expect(mockUpdateTask).toHaveBeenCalled();

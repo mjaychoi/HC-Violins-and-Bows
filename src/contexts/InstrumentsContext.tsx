@@ -67,6 +67,20 @@ function getResponseError(
   });
 }
 
+function toError(error: unknown, fallbackMessage: string): Error {
+  if (
+    error != null &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
+  ) {
+    return error as Error;
+  }
+  return new Error(
+    typeof error === 'string' ? error : `${fallbackMessage}: ${String(error)}`
+  );
+}
+
 // Instruments 상태 타입
 interface InstrumentsState {
   instruments: Instrument[];
@@ -182,12 +196,12 @@ const InstrumentsContext = createContext<{
     fetchInstruments: (opts?: { all?: boolean }) => Promise<void>;
     createInstrument: (
       instrument: Omit<Instrument, 'id' | 'created_at'>
-    ) => Promise<Instrument | null>;
+    ) => Promise<Instrument>;
     updateInstrument: (
       id: string,
       instrument: Partial<Instrument>
-    ) => Promise<Instrument | null>;
-    deleteInstrument: (id: string) => Promise<boolean>;
+    ) => Promise<Instrument>;
+    deleteInstrument: (id: string) => Promise<void>;
     invalidateCache: () => void;
     resetState: () => void;
   };
@@ -304,7 +318,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
   const createInstrument = useCallback(
     async (
       instrument: Omit<Instrument, 'id' | 'created_at'>
-    ): Promise<Instrument | null> => {
+    ): Promise<Instrument> => {
       const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
@@ -324,28 +338,31 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
           );
         }
         if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-          return null;
+          throw new Error(
+            'Instrument creation aborted: organization context changed during request'
+          );
         }
-        if (result?.data) {
-          const parsedData = parseInstrumentType(result.data as Instrument);
-          dispatch({ type: 'ADD_INSTRUMENT', payload: parsedData });
-          return parsedData;
+        if (!result?.data) {
+          throw new Error('Instrument creation failed: empty response');
         }
-        return null;
+        const parsedData = parseInstrumentType(result.data as Instrument);
+        if (
+          !parsedData ||
+          typeof parsedData.id !== 'string' ||
+          parsedData.id.length === 0
+        ) {
+          throw new Error('Instrument creation failed: invalid payload');
+        }
+        dispatch({ type: 'ADD_INSTRUMENT', payload: parsedData });
+        return parsedData;
       } catch (error) {
         if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-          return null;
+          throw toError(error, 'Instrument creation aborted');
         }
         if (isAuthLikeTenantError(error)) {
           dispatch({ type: 'RESET_STATE' });
-          return null;
         }
-        const errorToHandle =
-          error instanceof Error
-            ? error
-            : new Error(`Failed to create instrument: ${String(error)}`);
-        handleErrorRef.current(errorToHandle, 'Create instrument');
-        return null;
+        throw toError(error, 'Failed to create instrument');
       } finally {
         if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
           dispatch({ type: 'SET_SUBMITTING', payload: false });
@@ -359,7 +376,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
     async (
       id: string,
       instrument: Partial<Instrument>
-    ): Promise<Instrument | null> => {
+    ): Promise<Instrument> => {
       const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
@@ -374,27 +391,38 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
         }
         const result = await safeJson(response);
         if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-          return null;
+          throw new Error(
+            'Instrument update aborted: organization context changed during request'
+          );
         }
-        if (result?.data) {
-          const parsedData = parseInstrumentType(result.data as Instrument);
-          dispatch({
-            type: 'UPDATE_INSTRUMENT',
-            payload: { id, instrument: parsedData },
-          });
-          return parsedData;
+        if (!result?.data) {
+          throw new Error('Instrument update failed: empty response');
         }
-        return null;
+        const parsedRaw = parseInstrumentType(result.data as Instrument);
+        if (!parsedRaw || typeof parsedRaw !== 'object') {
+          throw new Error('Instrument update failed: invalid payload');
+        }
+        const resolvedId =
+          typeof parsedRaw.id === 'string' && parsedRaw.id.length > 0
+            ? parsedRaw.id
+            : id;
+        if (resolvedId !== id) {
+          throw new Error('Instrument update failed: id mismatch');
+        }
+        const parsedData = { ...parsedRaw, id: resolvedId };
+        dispatch({
+          type: 'UPDATE_INSTRUMENT',
+          payload: { id, instrument: parsedData },
+        });
+        return parsedData;
       } catch (error) {
         if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-          return null;
+          throw toError(error, 'Instrument update aborted');
         }
         if (isAuthLikeTenantError(error)) {
           dispatch({ type: 'RESET_STATE' });
-          return null;
         }
-        handleErrorRef.current(error, 'Update instrument');
-        return null;
+        throw toError(error, 'Failed to update instrument');
       } finally {
         if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
           dispatch({ type: 'SET_SUBMITTING', payload: false });
@@ -404,7 +432,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const deleteInstrument = useCallback(async (id: string) => {
+  const deleteInstrument = useCallback(async (id: string): Promise<void> => {
     const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
     dispatch({ type: 'SET_SUBMITTING', payload: true });
     try {
@@ -416,20 +444,19 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
         throw getResponseError(body, response, 'Failed to delete instrument');
       }
       if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-        return false;
+        throw new Error(
+          'Instrument delete aborted: organization context changed during request'
+        );
       }
       dispatch({ type: 'REMOVE_INSTRUMENT', payload: id });
-      return true;
     } catch (error) {
       if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-        return false;
+        throw toError(error, 'Instrument delete aborted');
       }
       if (isAuthLikeTenantError(error)) {
         dispatch({ type: 'RESET_STATE' });
-        return false;
       }
-      handleErrorRef.current(error, 'Delete instrument');
-      return false;
+      throw toError(error, 'Failed to delete instrument');
     } finally {
       if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
         dispatch({ type: 'SET_SUBMITTING', payload: false });

@@ -10,7 +10,6 @@ import {
 } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import type { Client } from '@/types';
-import type { TablesInsert } from '@/types/database';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logDebug } from '@/utils/logger';
 import {
@@ -26,7 +25,12 @@ import {
   createClientInputToDbRow,
   mapClientsTableRowToClient,
   mergePartialClientIntoDbPatch,
+  type ClientsTableRow,
 } from '@/utils/clientDbMap';
+import {
+  insertClientWithClientNumber,
+  isClientNumberAllocationExhausted,
+} from '@/app/api/_utils/insertClientWithAllocatedNumber';
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
@@ -306,20 +310,69 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const insertRow: TablesInsert<'clients'> = {
-        ...createClientInputToDbRow(validation.data),
-        org_id: auth.orgId!,
-      };
+      const raw = validation.data;
+      // client_number is always server-assigned for standard create (ignore request body)
+      const insertRow = createClientInputToDbRow({
+        ...raw,
+        client_number: null,
+        tags: raw.tags ?? [],
+      });
+      const clientName = insertRow.name.trim();
+      if (!clientName) {
+        return {
+          payload: { error: 'Client name is required' },
+          status: 400,
+        };
+      }
 
-      const { data, error } = await auth.userSupabase
-        .from('clients')
-        .insert(insertRow)
-        .select(CLIENT_TABLE_SELECT)
-        .single();
+      const { data, error } = await insertClientWithClientNumber(
+        auth.userSupabase,
+        auth.orgId!,
+        {
+          name: clientName,
+          email: insertRow.email,
+          phone: insertRow.phone,
+          client_number: insertRow.client_number,
+          tags: insertRow.tags ?? [],
+          interest: insertRow.interest,
+          note: insertRow.note,
+        },
+        CLIENT_TABLE_SELECT
+      );
 
-      if (error) throw errorHandler.handleSupabaseError(error, 'Create client');
+      if (error) {
+        if (error.code === '23505') {
+          if (isClientNumberAllocationExhausted(error)) {
+            return {
+              status: 409,
+              payload: {
+                error:
+                  'Could not assign a client number after several attempts (high load). Please try again in a moment.',
+                error_code: 'client_number_allocation_exhausted',
+                retryable: true,
+              },
+            };
+          }
+          const hint =
+            `${error.details ?? ''} ${error.message ?? ''}`.toLowerCase();
+          const isClientNumber =
+            hint.includes('client_number') ||
+            hint.includes('idx_clients_org_id_client_number');
+          return {
+            status: 409,
+            payload: {
+              error: isClientNumber
+                ? 'This client number is already in use for your organization.'
+                : 'A record with the same unique value already exists.',
+            },
+          };
+        }
+        throw errorHandler.handleSupabaseError(error, 'Create client');
+      }
 
-      const validated = validateClient(mapClientsTableRowToClient(data));
+      const validated = validateClient(
+        mapClientsTableRowToClient(data as ClientsTableRow)
+      );
       return {
         payload: { data: validated },
         status: 201,
@@ -386,6 +439,16 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         typeof currentRow.name === 'string' ? currentRow.name : null,
         validation.data
       );
+      if (
+        Object.prototype.hasOwnProperty.call(dbPatch, 'name') &&
+        typeof dbPatch.name === 'string' &&
+        dbPatch.name.trim() === ''
+      ) {
+        return {
+          payload: { error: 'Client name is required' },
+          status: 400,
+        };
+      }
 
       if (Object.keys(dbPatch).length === 0) {
         return {

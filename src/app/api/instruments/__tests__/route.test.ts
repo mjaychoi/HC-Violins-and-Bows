@@ -377,6 +377,65 @@ describe('/api/instruments', () => {
   });
 
   describe('POST', () => {
+    it('should create a new instrument from a valid minimal payload', async () => {
+      const createData = {
+        type: 'Violin',
+      };
+
+      const createdInstrument = {
+        ...mockInstrument,
+        type: 'Violin',
+        maker: null,
+        subtype: null,
+        serial_number: null,
+        status: 'Available',
+        certificate: false,
+      };
+
+      const mockQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+      (mockQuery.single as jest.Mock).mockResolvedValue({
+        data: createdInstrument,
+        error: null,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify(createData),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(mockQuery.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          org_id: 'test-org',
+          type: 'Violin',
+          status: 'Available',
+          certificate: false,
+          serial_number: null,
+        })
+      );
+      expect(json.data).toEqual(
+        expect.objectContaining({
+          id: mockInstrument.id,
+          maker: null,
+          type: 'Violin',
+          serial_number: null,
+          status: 'Available',
+          certificate: false,
+          created_at: mockInstrument.created_at,
+        })
+      );
+    });
+
     it('should create a new instrument', async () => {
       const createData = {
         maker: 'Guarneri',
@@ -417,6 +476,184 @@ describe('/api/instruments', () => {
       expect(response.status).toBe(201);
       expect(json.data).toBeDefined();
       expect(mockQuery.insert).toHaveBeenCalled();
+    });
+
+    it('should strip unknown fields before inserting into the database', async () => {
+      const createData = {
+        maker: 'Guarneri',
+        type: 'Violin',
+        subtype: 'Classical',
+        serial_number: 'VI0000007',
+        certificate: true,
+        has_certificate: true,
+        certificate_name: 'Unsupported field',
+        image_url: 'https://example.com/test.jpg',
+        status: 'Available',
+      };
+
+      const mockQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+      (mockQuery.single as jest.Mock).mockResolvedValue({
+        data: { ...mockInstrument, ...createData },
+        error: null,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify(createData),
+      });
+      const response = await POST(request);
+
+      expect(response.status).toBe(201);
+      expect(mockQuery.insert).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          has_certificate: expect.anything(),
+          certificate_name: expect.anything(),
+          image_url: expect.anything(),
+        })
+      );
+      expect(mockQuery.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          certificate: true,
+          type: 'Violin',
+          serial_number: 'VI0000007',
+        })
+      );
+    });
+
+    it('should retry serial allocation after a serial unique conflict', async () => {
+      const createData = {
+        maker: 'Guarneri',
+        type: 'Violin',
+        serial_number: 'VI0000002',
+        status: 'Available',
+      };
+
+      const firstInsertQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: null,
+          error: {
+            code: '23505',
+            message: 'duplicate key value violates unique constraint',
+            details:
+              'Key (org_id, serial_number)=(test-org, VI0000002) already exists.',
+          },
+        }),
+      };
+      const serialLookupQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: [
+            { serial_number: 'VI0000001' },
+            { serial_number: 'VI0000002' },
+          ],
+          error: null,
+        }),
+      };
+      const secondInsertQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            ...mockInstrument,
+            ...createData,
+            serial_number: 'VI0000003',
+          },
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(firstInsertQuery)
+          .mockReturnValueOnce(serialLookupQuery)
+          .mockReturnValueOnce(secondInsertQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify(createData),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(firstInsertQuery.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ serial_number: 'VI0000002' })
+      );
+      expect(serialLookupQuery.select).toHaveBeenCalledWith('serial_number');
+      expect(serialLookupQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(secondInsertQuery.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ serial_number: 'VI0000003' })
+      );
+      expect(json.data.serial_number).toBe('VI0000003');
+    });
+
+    it('returns 500 when serial unique conflict persists after all retries', async () => {
+      const createData = {
+        maker: 'Guarneri',
+        type: 'Violin',
+        serial_number: 'VI0000002',
+        status: 'Available',
+      };
+
+      const serialConflictErr = {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint',
+        details:
+          'Key (org_id, serial_number)=(test-org, VI0000002) already exists.',
+      };
+
+      const insertFail = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: null,
+          error: serialConflictErr,
+        }),
+      };
+      const serialLookup = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: [{ serial_number: 'VI0000001' }],
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(insertFail)
+          .mockReturnValueOnce(serialLookup)
+          .mockReturnValueOnce(insertFail)
+          .mockReturnValueOnce(serialLookup)
+          .mockReturnValueOnce(insertFail)
+          .mockReturnValueOnce(serialLookup)
+          .mockReturnValueOnce(insertFail),
+      } as any;
+
+      mockErrorHandler.handleSupabaseError = jest
+        .fn()
+        .mockReturnValue(new Error('Create instrument failed'));
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify(createData),
+      });
+      const response = await POST(request);
+
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
     });
 
     it('should return 403 when the user is not an admin (matches instruments_insert RLS)', async () => {

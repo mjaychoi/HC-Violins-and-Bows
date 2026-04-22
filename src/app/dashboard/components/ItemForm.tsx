@@ -14,12 +14,13 @@ import {
 } from '@/utils/uniqueNumberGenerator';
 import { modalStyles } from '@/components/common/modals/modalStyles';
 import { ModalHeader } from '@/components/common/modals/ModalHeader';
-import OptimizedImage from '@/components/common/OptimizedImage';
 
 interface ItemFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (formData: Omit<Instrument, 'id' | 'created_at'>) => Promise<void>;
+  onSubmit: (
+    formData: Omit<Instrument, 'id' | 'created_at'>
+  ) => Promise<Instrument | void>;
   submitting: boolean;
   selectedItem?: Instrument | null;
   isEditing?: boolean;
@@ -47,10 +48,6 @@ function ItemForm({
     handleCostPriceChange,
     consignmentPriceInput,
     handleConsignmentPriceChange,
-    selectedFiles,
-    setSelectedFiles,
-    handleFileChange,
-    removeFile,
   } = useDashboardForm();
   const [errors, setErrors] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
@@ -60,14 +57,8 @@ function ItemForm({
     cost_price?: string;
     consignment_price?: string;
     serial_number?: string;
-    certificate_name?: string;
   }>({});
   const [success, setSuccess] = useState(false);
-  // ✅ FIXED: 이미지 미리보기 URL 생성 - file.name + size 기반 키 사용 (reorder 대비)
-  // index 기반은 drag & drop reorder 시 깨질 수 있음
-  const [imagePreviews, setImagePreviews] = useState<Map<string, string>>(
-    new Map()
-  );
   const lastInitializedItemId = useRef<string | null>(null);
   const hasInitializedCreate = useRef(false);
   const lastAutoSerialRef = useRef<string>('');
@@ -85,7 +76,6 @@ function ItemForm({
       'price',
       'cost_price',
       'consignment_price',
-      'certificate_name',
       'serial_number',
     ];
     for (const field of order) {
@@ -130,7 +120,6 @@ function ItemForm({
         'certificate',
         Boolean(selectedItem.has_certificate || selectedItem.certificate)
       );
-      updateField('certificate_name', selectedItem.certificate_name || '');
       updateField('size', selectedItem.size || '');
       updateField('weight', selectedItem.weight || '');
       updateField('ownership', selectedItem.ownership || '');
@@ -201,29 +190,11 @@ function ItemForm({
         if (msg.includes('Year')) mappedFieldErrors.year = msg;
         if (msg.includes('Price')) mappedFieldErrors.price = msg;
       });
-      if (
-        formData.certificate &&
-        !(formData.certificate_name || '').toString().trim()
-      ) {
-        mappedFieldErrors.certificate_name = 'Certificate name is required';
-      }
       if (Object.keys(mappedFieldErrors).length > 0) {
         setFieldErrors(mappedFieldErrors);
         focusFirstErrorField(mappedFieldErrors);
         return;
       }
-    }
-
-    if (formData.certificate && !(formData.certificate_name || '').trim()) {
-      const mappedFieldErrors = {
-        certificate_name: 'Certificate name is required',
-      };
-      setFieldErrors(mappedFieldErrors);
-      setErrors([
-        'Certificate name is required when certificate is marked yes',
-      ]);
-      focusFirstErrorField(mappedFieldErrors);
-      return;
     }
 
     try {
@@ -300,9 +271,6 @@ function ItemForm({
         })(),
         certificate: Boolean(formData.certificate),
         has_certificate: Boolean(formData.certificate),
-        certificate_name: formData.certificate
-          ? formData.certificate_name?.trim() || null
-          : null,
         cost_price: (() => {
           const normalizedPrice = costPriceInput.trim().replace(/,/g, '');
           if (normalizedPrice === '') return null;
@@ -324,7 +292,19 @@ function ItemForm({
         serial_number: serialValidation.normalizedSerial || normalizedSerial,
       };
 
-      await onSubmit(instrumentData);
+      const submitResult = await onSubmit(instrumentData);
+
+      if (!isEditing) {
+        if (
+          !submitResult ||
+          typeof submitResult !== 'object' ||
+          typeof submitResult.id !== 'string' ||
+          !submitResult.id
+        ) {
+          throw new Error('Create failed');
+        }
+      }
+
       setErrors([]);
       setFieldErrors({});
       setFormError(null);
@@ -337,62 +317,20 @@ function ItemForm({
       } else {
         // For creating, show success message with action buttons
         setSuccess(true);
-        // Store created item ID if available (might need to be passed from parent)
-        // For now, we'll just show success state
       }
-    } catch {
-      setFormError('저장에 실패했습니다. 입력 값을 다시 확인해 주세요.');
+    } catch (e) {
       setSuccess(false);
-      // Clear zombie previews so the UI does not imply files were staged after
-      // a failed submit.
-      setSelectedFiles([]);
-      setImagePreviews(new Map());
+      const message =
+        e instanceof Error
+          ? e.message
+          : '저장에 실패했습니다. 입력 값을 다시 확인해 주세요.';
+      setFormError(
+        message && message.trim().length > 0
+          ? message
+          : '저장에 실패했습니다. 입력 값을 다시 확인해 주세요.'
+      );
     }
   };
-
-  // ✅ FIXED: 이미지 파일 선택 시 미리보기 생성 - file.name + size 기반 키 사용
-  useEffect(() => {
-    selectedFiles.forEach(file => {
-      if (file.type.startsWith('image/')) {
-        // ✅ FIXED: file.name + size를 키로 사용하여 reorder 시에도 안정적
-        const fileKey = `${file.name}-${file.size}`;
-
-        // 이미 생성된 미리보기는 건너뛰기 (prev를 통해 확인)
-        setImagePreviews(prev => {
-          if (prev.has(fileKey)) return prev; // 이미 있으면 업데이트하지 않음
-
-          // 비동기로 미리보기 생성
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            if (reader.result) {
-              setImagePreviews(current => {
-                const updated = new Map(current);
-                updated.set(fileKey, reader.result as string);
-                return updated;
-              });
-            }
-          };
-          reader.readAsDataURL(file);
-
-          return prev; // 즉시 반환 (비동기 업데이트는 onloadend에서)
-        });
-      }
-    });
-    // 선택 해제된 파일의 미리보기 제거
-    setImagePreviews(prev => {
-      const updated = new Map(prev);
-      const currentFileKeys = new Set(
-        selectedFiles.map(f => `${f.name}-${f.size}`)
-      );
-      // 현재 선택된 파일이 아닌 미리보기 제거
-      for (const [key] of updated) {
-        if (!currentFileKeys.has(key)) {
-          updated.delete(key);
-        }
-      }
-      return updated;
-    });
-  }, [selectedFiles]);
 
   const handleInputChange = (
     e: React.ChangeEvent<
@@ -598,9 +536,14 @@ function ItemForm({
                   <option value="Available">Available</option>
                   <option value="Booked">Booked</option>
                   <option value="Sold">Sold</option>
-                  <option value="Reserved">Reserved</option>
+                  {isEditing && <option value="Reserved">Reserved</option>}
                   <option value="Maintenance">Maintenance</option>
                 </select>
+                {!isEditing && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Reserved status can be set after creation.
+                  </p>
+                )}
               </div>
 
               <Input
@@ -660,20 +603,11 @@ function ItemForm({
                   <option value="yes">Yes</option>
                 </select>
               </div>
-
-              {formData.certificate ? (
-                <Input
-                  id="certificate_name"
-                  label="Certificate Name"
-                  name="certificate_name"
-                  value={formData.certificate_name}
-                  onChange={handleInputChange}
-                  placeholder="Enter certificate name"
-                  error={fieldErrors.certificate_name}
-                />
-              ) : (
-                <div />
-              )}
+              <div className="flex items-end">
+                <p className="text-xs text-gray-500">
+                  Upload certificate files after the instrument is created.
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -749,70 +683,8 @@ function ItemForm({
               )}
             </div>
 
-            <div>
-              <label className={classNames.formLabel} htmlFor="images">
-                Images
-              </label>
-              <input
-                id="images"
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={e => handleFileChange(e.target.files)}
-                className={classNames.input}
-              />
-              {selectedFiles.length > 0 && (
-                <div className="mt-2 space-y-3">
-                  {selectedFiles.map((file, index) => {
-                    // ✅ FIXED: file.name + size 기반 키로 lookup
-                    const fileKey = `${file.name}-${file.size}`;
-                    const previewUrl = imagePreviews.get(fileKey);
-                    return (
-                      <div
-                        key={fileKey}
-                        className="flex items-start gap-3 p-2 border border-gray-200 rounded-lg"
-                      >
-                        {previewUrl && (
-                          <div className="relative w-20 h-20 shrink-0 rounded overflow-hidden bg-gray-100">
-                            <OptimizedImage
-                              src={previewUrl}
-                              alt={`Preview ${file.name}`}
-                              fill
-                              objectFit="cover"
-                              className="rounded"
-                            />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-gray-600 truncate">
-                              {file.name}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                removeFile(index);
-                                // ✅ FIXED: fileKey 기반으로 미리보기 제거
-                                setImagePreviews(prev => {
-                                  const updated = new Map(prev);
-                                  updated.delete(fileKey);
-                                  return updated;
-                                });
-                              }}
-                              className="ml-2 text-red-600 hover:text-red-800 text-sm font-medium"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {(file.size / 1024).toFixed(1)} KB
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Images are added after creation from the instrument detail view.
             </div>
 
             <div>

@@ -1121,13 +1121,7 @@ describe('ClientsPage', () => {
   });
 
   describe('Client form submission', () => {
-    it('should handle client creation with auto-generated client_number', async () => {
-      // generateClientNumber는 ClientsPage의 handleSubmit 내부에서 호출됨
-      // client_number가 없으면 자동 생성되는 로직이 있음을 검증
-      const { generateClientNumber } = require('@/utils/uniqueNumberGenerator');
-      expect(generateClientNumber).toBeDefined();
-
-      // mockCreateClient가 정의되어 있어야 함
+    it('should rely on API for persisted client_number (no page-level CL### generator)', () => {
       expect(mockCreateClient).toBeDefined();
     });
 

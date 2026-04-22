@@ -214,15 +214,29 @@ describe('/api/clients', () => {
   });
 
   describe('POST', () => {
-    it('should create a new client', async () => {
+    it('should create a new client with server-allocated client_number and persist interest/note', async () => {
       const createData = {
         first_name: 'Jane',
         last_name: 'Smith',
-        contact_number: '098-765-4321',
-        email: 'jane@example.com',
-        tags: [],
-        interest: '',
-        note: '',
+        contact_number: '   ',
+        email: '   ',
+        tags: ['Musician'],
+        interest: 'High',
+        note: 'Prefers older Italian instruments',
+      };
+
+      const dbRow = {
+        id: mockClient.id,
+        org_id: 'test-org',
+        client_number: 'CL001',
+        name: 'Jane Smith',
+        email: null,
+        phone: null,
+        tags: ['Musician'] as string[],
+        interest: 'High',
+        note: 'Prefers older Italian instruments',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: null,
       };
 
       const mockQuery = {
@@ -231,11 +245,14 @@ describe('/api/clients', () => {
         single: jest.fn(),
       };
       (mockQuery.single as jest.Mock).mockResolvedValue({
-        data: { ...mockClient, ...createData },
+        data: dbRow,
         error: null,
       });
 
+      const rpc = jest.fn().mockResolvedValue({ data: 0, error: null });
+
       mockUserSupabase = {
+        rpc,
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
@@ -248,7 +265,35 @@ describe('/api/clients', () => {
 
       expect(response.status).toBe(201);
       expect(json.data).toBeDefined();
+      expect(json.data.client_number).toBe('CL001');
+      expect(json.data.tags).toEqual(['Musician']);
+      expect(json.data.interest).toBe('High');
+      expect(json.data.note).toBe('Prefers older Italian instruments');
+      expect(rpc).toHaveBeenCalledWith('max_cl_suffix_for_org', {
+        p_org_id: 'test-org',
+      });
       expect(mockQuery.insert).toHaveBeenCalled();
+      const insertArg = (mockQuery.insert as jest.Mock).mock.calls[0][0];
+      expect(insertArg).toEqual({
+        name: 'Jane Smith',
+        email: null,
+        phone: null,
+        org_id: 'test-org',
+        client_number: 'CL001',
+        tags: ['Musician'],
+        interest: 'High',
+        note: 'Prefers older Italian instruments',
+      });
+      expect(Object.keys(insertArg).sort()).toEqual([
+        'client_number',
+        'email',
+        'interest',
+        'name',
+        'note',
+        'org_id',
+        'phone',
+        'tags',
+      ]);
     });
 
     it('should return 400 for invalid data', async () => {
@@ -271,8 +316,117 @@ describe('/api/clients', () => {
       expect(json.message).toContain('Invalid client data');
     });
 
-    it('should handle Supabase errors on create', async () => {
-      const mockError = { message: 'Duplicate key', code: '23505' };
+    it('should ignore request client_number and still server-allocate', async () => {
+      const dbRow = {
+        id: mockClient.id,
+        org_id: 'test-org',
+        client_number: 'CL001',
+        name: 'John Doe',
+        email: null,
+        phone: null,
+        tags: ['Owner'] as string[],
+        interest: null,
+        note: null,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: null,
+      };
+      const mockQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+      (mockQuery.single as jest.Mock).mockResolvedValue({
+        data: dbRow,
+        error: null,
+      });
+      const rpc = jest.fn().mockResolvedValue({ data: 0, error: null });
+      mockUserSupabase = {
+        rpc,
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/clients', {
+        method: 'POST',
+        body: JSON.stringify({
+          first_name: 'John',
+          last_name: 'Doe',
+          contact_number: null,
+          email: '',
+          client_number: 'CL999',
+          tags: ['Owner'],
+          interest: '',
+          note: '',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+      expect(response.status).toBe(201);
+      expect(json.data.client_number).toBe('CL001');
+      expect(json.data.tags).toEqual(['Owner']);
+      const insertArg = (mockQuery.insert as jest.Mock).mock.calls[0][0];
+      expect(insertArg.client_number).toBe('CL001');
+      expect(insertArg.tags).toEqual(['Owner']);
+    });
+
+    it('should return 400 when client name is empty after trimming', async () => {
+      const request = new NextRequest('http://localhost/api/clients', {
+        method: 'POST',
+        body: JSON.stringify({
+          first_name: '   ',
+          last_name: '',
+          contact_number: null,
+          email: '',
+          tags: [],
+          interest: '',
+          note: '',
+        }),
+      });
+
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error).toBe('Client name is required');
+    });
+
+    it('should return 409 with allocation_exhausted when bounded retries are exhausted', async () => {
+      const dup = {
+        message: 'dup',
+        code: '23505',
+        details: 'Key (org_id, client_number)=(o, CL001) already exists.',
+        hint: null,
+      };
+      const mockQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: null, error: dup }),
+      };
+      const rpc = jest.fn().mockResolvedValue({ data: 0, error: null });
+      mockUserSupabase = {
+        rpc,
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/clients', {
+        method: 'POST',
+        body: JSON.stringify({
+          first_name: 'John',
+          last_name: 'Doe',
+          contact_number: null,
+          email: '',
+          tags: [],
+          interest: '',
+          note: '',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('client_number_allocation_exhausted');
+    });
+
+    it('should return 500 for non-unique-violation errors on create', async () => {
+      const mockError = { message: 'RLS or policy error', code: 'PGRST301' };
       const mockQuery = {
         insert: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -283,12 +437,15 @@ describe('/api/clients', () => {
         error: mockError,
       });
 
+      const rpc = jest.fn().mockResolvedValue({ data: 0, error: null });
+
       mockUserSupabase = {
+        rpc,
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
       mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
-        code: '23505',
-        message: 'Duplicate key',
+        code: 'PGRST301',
+        message: 'RLS or policy error',
       });
 
       const request = new NextRequest('http://localhost/api/clients', {
@@ -305,23 +462,50 @@ describe('/api/clients', () => {
   });
 
   describe('PATCH', () => {
-    it('should update an existing client', async () => {
-      const updates = { first_name: 'Jane' };
-      const updatedClient = { ...mockClient, ...updates };
+    it('should update persisted fields and normalize empty strings to null', async () => {
+      const updates = {
+        first_name: 'Jane',
+        interest: 'Collector',
+        note: 'Updated note',
+        email: '   ',
+        contact_number: '',
+      };
 
-      const mockQuery = {
+      const currentQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { name: 'John Doe' },
+          error: null,
+        }),
+      };
+      const updateQuery = {
         update: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
-        single: jest.fn(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: mockClient.id,
+            org_id: 'test-org',
+            client_number: 'CL001',
+            name: 'Jane Doe',
+            email: null,
+            phone: null,
+            tags: ['Owner'],
+            interest: 'Collector',
+            note: 'Updated note',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+          error: null,
+        }),
       };
-      (mockQuery.single as jest.Mock).mockResolvedValue({
-        data: updatedClient,
-        error: null,
-      });
 
       mockUserSupabase = {
-        from: jest.fn().mockReturnValue(mockQuery),
+        from: jest
+          .fn()
+          .mockReturnValueOnce(currentQuery)
+          .mockReturnValueOnce(updateQuery),
       } as any;
 
       const request = new NextRequest('http://localhost/api/clients', {
@@ -333,9 +517,46 @@ describe('/api/clients', () => {
 
       expect(response.status).toBe(200);
       expect(json.data).toBeDefined();
-      expect(mockQuery.update).toHaveBeenCalled();
-      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockClient.id);
-      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(json.data.interest).toBe('Collector');
+      expect(json.data.note).toBe('Updated note');
+      expect(updateQuery.update).toHaveBeenCalledWith({
+        name: 'Jane Doe',
+        email: null,
+        phone: null,
+        interest: 'Collector',
+        note: 'Updated note',
+      });
+      expect(updateQuery.eq).toHaveBeenCalledWith('id', mockClient.id);
+      expect(updateQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    });
+
+    it('should return 400 when patch would clear the client name', async () => {
+      const currentQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { name: 'John Doe' },
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(currentQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/clients', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockClient.id,
+          first_name: '   ',
+          last_name: '',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error).toBe('Client name is required');
     });
 
     it('should return 400 when id is missing', async () => {
