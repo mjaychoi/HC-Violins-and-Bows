@@ -553,6 +553,36 @@ describe('/api/maintenance-tasks', () => {
       expect(mockQuery.insert).toHaveBeenCalled();
     });
 
+    it('should return 403 when the user is not an admin (matches maintenance_tasks_insert RLS)', async () => {
+      mockAuthContext = { ...mockAuthContext, role: 'member' };
+
+      const createData = {
+        instrument_id: mockTask.instrument_id,
+        title: 'T',
+        description: 'D',
+        status: 'pending' as const,
+        task_type: 'repair' as const,
+        priority: 'high' as const,
+        scheduled_date: '2024-02-01',
+        due_date: '2024-02-10',
+        received_date: '2024-01-20',
+      };
+
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks',
+        {
+          method: 'POST',
+          body: JSON.stringify(createData),
+        }
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.error).toBe('Admin role required');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should return 400 for invalid data', async () => {
       const request = new NextRequest(
         'http://localhost/api/maintenance-tasks',

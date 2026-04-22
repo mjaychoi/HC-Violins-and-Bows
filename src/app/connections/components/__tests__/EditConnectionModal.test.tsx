@@ -208,7 +208,7 @@ describe('EditConnectionModal', () => {
     });
   });
 
-  it('should call onClose after successful save', async () => {
+  it('should not call onClose after successful save (parent owns close after confirmed update)', async () => {
     const user = userEvent.setup();
     render(
       <EditConnectionModal
@@ -226,8 +226,8 @@ describe('EditConnectionModal', () => {
 
     await waitFor(() => {
       expect(mockOnSave).toHaveBeenCalled();
-      expect(mockOnClose).toHaveBeenCalled();
     });
+    expect(mockOnClose).not.toHaveBeenCalled();
   });
 
   it('should not call onClose when save fails', async () => {

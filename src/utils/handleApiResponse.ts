@@ -322,22 +322,60 @@ export async function readApiResponseEnvelope<T>(
   return body as ApiSuccessEnvelope<T>;
 }
 
+/** Options for {@link handleApiResponse} — use explicit flags instead of silent null. */
+export type HandleApiResponseOptions = {
+  /**
+   * When true, allows `data: null` in the success envelope (optional resource reads only).
+   * @default false — null/undefined `data` throws (avoids false success in mutations).
+   */
+  allowNullData?: boolean;
+  /**
+   * When true, allows `{ success: true }` with no `data` key (e.g. some DELETE success bodies).
+   * @default false
+   */
+  allowSuccessWithoutData?: boolean;
+};
+
+const MISSING_DATA_MESSAGE =
+  'The server response did not include the expected data.';
+
+const SUCCESS_FLAG_WITHOUT_DATA_MESSAGE =
+  'The server returned success without a data payload.';
+
 export async function handleApiResponse<T>(
   res: Response,
-  fallbackMessage: string
+  fallbackMessage: string,
+  options?: HandleApiResponseOptions
 ): Promise<T> {
   if (!res.ok) {
     throw await createApiResponseErrorFromResponse(res, fallbackMessage);
   }
 
+  const allowNullData = options?.allowNullData === true;
+  const allowSuccessWithoutData = options?.allowSuccessWithoutData === true;
+
   const body = await readApiSuccessBody(res);
 
   if (body && 'data' in body) {
-    return (body.data as T) ?? (null as T);
+    const raw = (body as { data: unknown }).data;
+    if (raw === null || raw === undefined) {
+      if (allowNullData) {
+        return raw as T;
+      }
+      throw createInvalidResponseError(res, MISSING_DATA_MESSAGE);
+    }
+    return raw as T;
   }
 
-  if (body?.success === true) {
-    return null as T;
+  if (
+    body &&
+    typeof body === 'object' &&
+    (body as { success?: unknown }).success === true
+  ) {
+    if (allowSuccessWithoutData) {
+      return null as T;
+    }
+    throw createInvalidResponseError(res, SUCCESS_FLAG_WITHOUT_DATA_MESSAGE);
   }
 
   if (body === null && (res.status === 204 || res.status === 205)) {

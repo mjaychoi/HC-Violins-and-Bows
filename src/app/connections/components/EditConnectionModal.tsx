@@ -52,8 +52,8 @@ export const EditConnectionModal = ({
         relationshipType,
         notes,
       });
-      // Only close modal on success - errors are handled by parent
-      onClose();
+      // Parent closes the modal only after a confirmed server result (e.g. valid updated row).
+      // Do not call onClose here: onSave may resolve with soft-failure semantics at the data layer.
     } catch {
       // Error is handled by parent component's error handler
       // Don't close modal on error - let user see the error and retry

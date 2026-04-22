@@ -575,7 +575,14 @@ describe('ConnectedClientsPage', () => {
   });
 
   it('should handle connection creation successfully', async () => {
-    mockCreateConnection.mockResolvedValue(undefined);
+    mockCreateConnection.mockResolvedValue({
+      id: 'new-conn',
+      client_id: 'client-1',
+      instrument_id: 'inst-1',
+      relationship_type: 'Interested',
+      notes: null,
+      created_at: '',
+    } as ClientInstrument);
 
     render(<ConnectedClientsPage />);
     const addButton = screen.getByText('Add Connection');
@@ -763,7 +770,9 @@ describe('ConnectedClientsPage', () => {
     expect(screen.getByTestId('edit-connection-modal')).toBeInTheDocument();
 
     const saveButton = screen.getByTestId('save-connection');
-    mockUpdateConnection.mockResolvedValue(undefined);
+    mockUpdateConnection.mockResolvedValue({
+      id: 'conn-1',
+    } as ClientInstrument);
 
     await act(async () => {
       fireEvent.click(saveButton);

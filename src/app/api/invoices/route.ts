@@ -3,7 +3,10 @@ import { NextRequest } from 'next/server';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
-import { requireOrgContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { errorHandler } from '@/utils/errorHandler';
 
@@ -544,6 +547,14 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       if (orgContextError) {
         return {
           payload: { error: 'Organization context required' },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required' },
           status: 403,
         };
       }

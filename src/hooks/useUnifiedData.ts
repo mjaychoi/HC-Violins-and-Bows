@@ -306,11 +306,7 @@ export function useUnifiedData() {
           }
         })();
 
-        try {
-          await ongoing[key].current;
-        } catch {
-          // fetchFn 내부에서 toast/error 처리할 가능성이 높아서 여기서 추가 처리 생략
-        }
+        await ongoing[key].current;
       };
 
       await Promise.all([
@@ -320,7 +316,11 @@ export function useUnifiedData() {
       ]);
     };
 
-    void load();
+    void load().catch(e => {
+      if (process.env.NODE_ENV === 'development') {
+        logDebug('[useUnifiedData] Initial parallel load had failures', e);
+      }
+    });
 
     return () => {
       cancelled = true;

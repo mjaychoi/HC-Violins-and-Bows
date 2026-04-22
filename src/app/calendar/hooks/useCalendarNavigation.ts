@@ -19,6 +19,8 @@ interface UseCalendarNavigationOptions {
     }
   ) => Promise<unknown>;
   onError?: (error: unknown) => void;
+  /** Fired when the initial range refetch (on mount / range change) fails, so the UI is not left silently stale. */
+  onRefetchFailure?: (error: unknown) => void;
 }
 
 export const useCalendarNavigation = ({
@@ -26,6 +28,7 @@ export const useCalendarNavigation = ({
   initialDate = new Date(),
   fetchTasksByDateRange,
   onError,
+  onRefetchFailure,
 }: UseCalendarNavigationOptions) => {
   const [currentDate, setCurrentDate] = useState(initialDate);
   const [calendarView, setCalendarView] = useState<ExtendedView>(initialView);
@@ -34,6 +37,7 @@ export const useCalendarNavigation = ({
   // FIXED: Stash fetchTasksByDateRange and onError in refs to avoid stale closure issues
   const fetchRef = useRef(fetchTasksByDateRange);
   const onErrorRef = useRef(onError);
+  const onRefetchFailureRef = useRef(onRefetchFailure);
 
   // Request deduplication: prevent duplicate fetches for the same range
   const lastRequestKeyRef = useRef<string>('');
@@ -49,6 +53,10 @@ export const useCalendarNavigation = ({
   useEffect(() => {
     onErrorRef.current = onError;
   }, [onError]);
+
+  useEffect(() => {
+    onRefetchFailureRef.current = onRefetchFailure;
+  }, [onRefetchFailure]);
 
   useEffect(() => {
     return () => {
@@ -150,7 +158,9 @@ export const useCalendarNavigation = ({
 
   // Fetch tasks when date or view changes (with deduplication)
   useEffect(() => {
-    void refetchCurrentRange().catch(() => {});
+    void refetchCurrentRange().catch((err: unknown) => {
+      onRefetchFailureRef.current?.(err);
+    });
   }, [refetchCurrentRange]);
 
   // Navigate to previous period

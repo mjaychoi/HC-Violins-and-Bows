@@ -26,7 +26,7 @@ interface DashboardContentProps {
     id: string,
     updates: Partial<Instrument>
   ) => Promise<void>;
-  onAddClick: () => void;
+  onAddClick?: () => void;
   newlyCreatedItemId?: string | null; // ID of newly created item for scroll/highlight
   onNewlyCreatedItemShown?: () => void; // Callback when newly created item is shown
   onLoadSampleData?: () => void; // Load sample data handler

@@ -136,4 +136,48 @@ describe('handleApiResponse', () => {
       status: 502,
     });
   });
+
+  it('throws when ok response has data: null (default contract)', async () => {
+    const response = {
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({ data: null }),
+    } as unknown as Response;
+
+    await expect(
+      handleApiResponse<{ id: string }>(response, 'fallback')
+    ).rejects.toMatchObject<Partial<ApiResponseError>>({
+      name: 'ApiResponseError',
+      message: 'The server response did not include the expected data.',
+    });
+  });
+
+  it('throws when ok response is success: true with no data payload (default contract)', async () => {
+    const response = {
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({ success: true }),
+    } as unknown as Response;
+
+    await expect(handleApiResponse(response, 'fallback')).rejects.toMatchObject<
+      Partial<ApiResponseError>
+    >({
+      name: 'ApiResponseError',
+      message: 'The server returned success without a data payload.',
+    });
+  });
+
+  it('allows success without data when allowSuccessWithoutData is true (e.g. DELETE)', async () => {
+    const response = {
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({ success: true }),
+    } as unknown as Response;
+
+    await expect(
+      handleApiResponse<null>(response, 'fallback', {
+        allowSuccessWithoutData: true,
+      })
+    ).resolves.toBeNull();
+  });
 });

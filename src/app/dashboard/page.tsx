@@ -43,8 +43,12 @@ type EnrichedInstrument = Instrument & { clients: ClientInstrument[] };
 
 export default function DashboardPage() {
   const { showSuccess, handleError } = useAppFeedback();
-  const { canCreateInstrument, canCreateSale, createSaleDisabledReason } =
-    usePermissions();
+  const {
+    canCreateInstrument,
+    createInstrumentDisabledReason,
+    canCreateSale,
+    createSaleDisabledReason,
+  } = usePermissions();
   const { submitting: isSubmittingSale, withSubmitting: withSaleSubmitting } =
     useLoadingState();
   const { tenantIdentityKey } = useTenantIdentity();
@@ -282,7 +286,8 @@ export default function DashboardPage() {
   const handleSubmitUpdate = useCallback(
     async (id: string, formData: Partial<InstrumentFormData>) => {
       if (hasFatalError) return;
-      await handleUpdateItem(id, formData);
+      const result = await handleUpdateItem(id, formData);
+      if (result == null) return;
 
       const titleParts = [
         formData.maker ?? undefined,
@@ -356,8 +361,12 @@ export default function DashboardPage() {
 
       for (const instrument of sampleInstruments) {
         try {
-          await handleCreateItem(instrument);
-          successCount++;
+          const createdId = await handleCreateItem(instrument);
+          if (createdId) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
         } catch (error) {
           errorCount++;
           if (process.env.NODE_ENV === 'development') {
@@ -410,16 +419,25 @@ export default function DashboardPage() {
       <AppLayout
         title="Dashboard"
         actionButton={
-          canCreateInstrument
+          canCreateInstrument || createInstrumentDisabledReason
             ? {
                 label: 'Add Item',
-                onClick: handleAddItem,
-                disabled: submitting.hasAnySubmitting || hasFatalError,
+                onClick: canCreateInstrument
+                  ? handleAddItem
+                  : () => {
+                      /* disabled — see disabledReason */
+                    },
+                disabled:
+                  !canCreateInstrument ||
+                  submitting.hasAnySubmitting ||
+                  hasFatalError,
                 disabledReason: hasFatalError
                   ? 'Dashboard failed to load — retry before making changes'
-                  : submitting.hasAnySubmitting
-                    ? 'Please wait for the current submission to finish'
-                    : undefined,
+                  : !canCreateInstrument
+                    ? createInstrumentDisabledReason
+                    : submitting.hasAnySubmitting
+                      ? 'Please wait for the current submission to finish'
+                      : undefined,
                 icon: (
                   <svg
                     className="h-4 w-4"
@@ -531,10 +549,12 @@ export default function DashboardPage() {
               loading={loading}
               onDeleteClick={item => handleRequestDelete(item.id)}
               onUpdateItemInline={handleUpdateItemInline}
-              onAddClick={handleAddItem}
+              onAddClick={canCreateInstrument ? handleAddItem : undefined}
               newlyCreatedItemId={newlyCreatedItemId}
               onNewlyCreatedItemShown={() => setNewlyCreatedItemId(null)}
-              onLoadSampleData={handleLoadSampleData}
+              onLoadSampleData={
+                canCreateInstrument ? handleLoadSampleData : undefined
+              }
             />
           </>
         )}

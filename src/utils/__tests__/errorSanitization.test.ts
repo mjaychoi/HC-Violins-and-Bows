@@ -196,6 +196,25 @@ describe('errorSanitization', () => {
       const result = getUserFriendlyErrorMessage(new Error('unknown error'));
       expect(result).toBe('An error occurred. Please try again.');
     });
+
+    it('maps RLS/permission-style errors to permission messaging, not generic database retry', () => {
+      Object.defineProperty(process.env, 'NODE_ENV', {
+        value: 'production',
+        writable: true,
+        configurable: true,
+      });
+      const rls = new Error(
+        'new row violates row-level security policy for table "maintenance_tasks"'
+      );
+      expect(getUserFriendlyErrorMessage(rls)).toBe(
+        'You do not have permission to perform this action.'
+      );
+
+      const withStatus = { status: 403, message: 'Forbidden' };
+      expect(getUserFriendlyErrorMessage(withStatus)).toBe(
+        'You do not have permission to perform this action.'
+      );
+    });
   });
 
   describe('createSafeErrorResponse', () => {

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { ErrorCodes } from '@/types/errors';
 
 let mockUserSupabase: any;
+let mockAuthRole: 'admin' | 'member' = 'admin';
 
 jest.mock('@/app/api/_utils/withSentryRoute', () => ({
   withSentryRoute: (fn: unknown) => fn,
@@ -19,7 +20,7 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
           accessToken: 'test-token',
           orgId: 'test-org',
           clientId: 'test-client',
-          role: 'admin',
+          role: mockAuthRole,
           userSupabase: mockUserSupabase,
           isTestBypass: true,
         },
@@ -462,6 +463,7 @@ describe('/api/invoices GET', () => {
 
 describe('/api/invoices POST', () => {
   beforeEach(() => {
+    mockAuthRole = 'admin';
     jest.clearAllMocks();
     const { safeValidate } = require('@/utils/typeGuards');
     safeValidate.mockImplementation((value: unknown) => ({
@@ -484,6 +486,20 @@ describe('/api/invoices POST', () => {
     attachSignedUrlsToInvoice.mockImplementation(
       async (_supabase: unknown, invoice: unknown) => invoice
     );
+  });
+
+  it('returns 403 for non-admin (matches invoices RLS and create_invoice_atomic)', async () => {
+    mockAuthRole = 'member';
+    const { POST } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'test-key-forbidden' },
+      body: JSON.stringify({}),
+    });
+    const response = await POST(request);
+    const json = await response.json();
+    expect(response.status).toBe(403);
+    expect(json.error).toBe('Admin role required');
   });
 
   it('scopes the created-invoice readback by org_id', async () => {

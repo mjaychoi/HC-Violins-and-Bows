@@ -120,6 +120,38 @@ describe('ErrorHandler - Extended Tests', () => {
       expect(error.message).toBe('Not null violation');
     });
 
+    it('should map SQLSTATE 42501 (insufficient privilege) to FORBIDDEN', () => {
+      const supabaseError = {
+        code: '42501',
+        message: 'permission denied for table maintenance_tasks',
+      };
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
+
+      expect(error.code).toBe(ErrorCodes.FORBIDDEN);
+      expect(error.message).toBe(
+        'You do not have permission to perform this action.'
+      );
+    });
+
+    it('should map RLS-style messages in default PG branch to FORBIDDEN', () => {
+      const supabaseError = {
+        code: 'PGRST000',
+        message: 'new row violates row-level security policy for table "x"',
+      };
+      const error = errorHandler.handleSupabaseError(
+        supabaseError,
+        'Test operation'
+      );
+
+      expect(error.code).toBe(ErrorCodes.FORBIDDEN);
+      expect(error.message).toBe(
+        'You do not have permission to perform this action.'
+      );
+    });
+
     it('should handle errors with details and hints', () => {
       const supabaseError = {
         code: '23505',

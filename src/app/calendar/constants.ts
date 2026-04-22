@@ -65,6 +65,12 @@ export const CALENDAR_WARNING_MESSAGES = {
     'Task date was updated, but the calendar failed to refresh. Please retry.',
   TIME_REFRESH_FAILED:
     'Task time was updated, but the calendar failed to refresh. Please retry.',
+  ROLLBACK_FAILED:
+    'Could not fully undo the last change. The calendar may be out of sync—please refresh the page.',
+  MANUAL_REFETCH_FAILED:
+    'Could not reload tasks. The list may be outdated; please try again or refresh the page.',
+  CALENDAR_DATA_LOAD_FAILED:
+    'Could not load tasks for this view. Please try again or refresh the page.',
 };
 
 export const CALENDAR_CONFIRM_MESSAGES = {

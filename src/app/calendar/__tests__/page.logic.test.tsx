@@ -7,6 +7,7 @@ import CalendarPage from '../page';
 import { MaintenanceTask, ContactLog } from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
 import { flushPromises } from '@/../tests/utils/flushPromises';
+import { CALENDAR_WARNING_MESSAGES } from '../constants';
 
 // Mock fetch
 global.fetch = jest.fn();
@@ -534,12 +535,8 @@ describe('CalendarPage - Core Logic', () => {
 
       await flushPromises();
 
-      await waitFor(() => {
-        expect(mockHandleError).toHaveBeenCalledWith(
-          error,
-          'Failed to create task'
-        );
-      });
+      // Errors are surfaced by useMaintenanceTasks (toast + throw); the page only returns early.
+      expect(mockHandleError).not.toHaveBeenCalled();
 
       expect(mockCloseModal).not.toHaveBeenCalled();
       expect(mockRefetchCurrentRange).not.toHaveBeenCalled();
@@ -708,12 +705,7 @@ describe('CalendarPage - Core Logic', () => {
 
       await flushPromises();
 
-      await waitFor(() => {
-        expect(mockHandleError).toHaveBeenCalledWith(
-          error,
-          'Failed to update task'
-        );
-      });
+      expect(mockHandleError).not.toHaveBeenCalled();
 
       expect(mockCloseModal).not.toHaveBeenCalled();
       expect(mockRefetchCurrentRange).not.toHaveBeenCalled();
@@ -835,12 +827,7 @@ describe('CalendarPage - Core Logic', () => {
 
       await flushPromises();
 
-      await waitFor(() => {
-        expect(mockHandleError).toHaveBeenCalledWith(
-          error,
-          'Failed to delete task'
-        );
-      });
+      expect(mockHandleError).not.toHaveBeenCalled();
 
       expect(mockRefetchCurrentRange).not.toHaveBeenCalled();
       expect(mockShowSuccess).not.toHaveBeenCalled();
@@ -943,8 +930,6 @@ describe('CalendarPage - Core Logic', () => {
         .mockRejectedValueOnce(error) // First update fails
         .mockRejectedValueOnce(rollbackError); // Rollback also fails
 
-      const consoleError = jest.spyOn(console, 'error').mockImplementation();
-
       render(<CalendarPage />);
 
       await waitFor(() => {
@@ -957,13 +942,15 @@ describe('CalendarPage - Core Logic', () => {
       await flushPromises();
 
       await waitFor(() => {
-        expect(consoleError).toHaveBeenCalledWith(
-          'Failed to rollback task date:',
-          rollbackError
+        expect(mockShowWarning).toHaveBeenCalledWith(
+          CALENDAR_WARNING_MESSAGES.ROLLBACK_FAILED
         );
       });
 
-      consoleError.mockRestore();
+      expect(mockHandleError).toHaveBeenCalledWith(
+        error,
+        'Failed to update task date'
+      );
     });
   });
 

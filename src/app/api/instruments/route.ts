@@ -162,6 +162,13 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      if (auth.role !== 'admin') {
+        return {
+          payload: { error: 'Admin role required', success: false },
+          status: 403,
+        };
+      }
+
       const body = await request.json();
 
       const validationResult = safeValidate(body, validateCreateInstrument);

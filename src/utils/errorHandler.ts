@@ -457,7 +457,21 @@ export class ErrorHandler {
           code = ErrorCodes.SESSION_EXPIRED;
           message = 'Session expired';
           break;
+        case '42501':
+          code = ErrorCodes.FORBIDDEN;
+          message = 'You do not have permission to perform this action.';
+          break;
         default:
+          if (
+            typeof pgError.message === 'string' &&
+            (pgError.message.toLowerCase().includes('row-level security') ||
+              pgError.message.toLowerCase().includes('permission denied') ||
+              pgError.message.toLowerCase().includes('insufficient_privilege'))
+          ) {
+            code = ErrorCodes.FORBIDDEN;
+            message = 'You do not have permission to perform this action.';
+            break;
+          }
           message =
             errorMessage || pgError.message || 'Database error occurred';
       }

@@ -50,6 +50,11 @@ export interface UsePageNotificationsOptions {
   showSuccess?: (message: string) => void;
 
   /**
+   * Non-success feedback for badge click (e.g. navigation) — preferred over success when no work completed.
+   */
+  showWarning?: (message: string) => void;
+
+  /**
    * Custom click handler (overrides default navigate/toast behavior)
    * If provided, onClick will call this instead of default behavior
    */
@@ -116,6 +121,7 @@ export function usePageNotifications(
     formatToastMessage,
     upcomingDays = 3,
     showSuccess,
+    showWarning,
     enableBrowserNotifications = true,
     browserNotificationInterval,
     customClickHandler,
@@ -139,8 +145,11 @@ export function usePageNotifications(
   const handleBadgeClick = () => {
     if (notifications.length === 0) return;
 
-    // Show toast if enabled (before custom handler, so toast always shows)
-    if (showToastOnClick && showSuccess) {
+    // Opening/navigating is not a completed "success" work item — use warning when custom handler runs.
+    const feedback =
+      customClickHandler && showWarning ? showWarning : showSuccess;
+
+    if (showToastOnClick && feedback) {
       const nextTask = notifications[0];
       const message = formatToastMessage
         ? formatToastMessage(nextTask.task, nextTask.type, nextTask.daysUntil)
@@ -149,16 +158,14 @@ export function usePageNotifications(
             nextTask.type,
             nextTask.daysUntil
           );
-      showSuccess(message);
+      feedback(message);
     }
 
-    // Use custom handler if provided (overrides navigation)
     if (customClickHandler) {
       customClickHandler();
       return;
     }
 
-    // Navigate to calendar or specified route (skip if empty string)
     if (navigateTo) {
       router.push(navigateTo);
     }

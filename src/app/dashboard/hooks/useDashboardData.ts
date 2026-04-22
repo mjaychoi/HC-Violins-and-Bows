@@ -76,7 +76,6 @@ export const useDashboardData = () => {
         await withSubmitting(async () => {
           const result = await createInstrument(formData);
           createdItemId = result?.id || null;
-          showSuccess('아이템이 성공적으로 생성되었습니다.');
         });
         return createdItemId;
       } catch (error) {
@@ -84,7 +83,7 @@ export const useDashboardData = () => {
         throw error; // Re-throw to allow form to handle error
       }
     },
-    [hasFatalError, createInstrument, withSubmitting, showSuccess, handleError]
+    [hasFatalError, createInstrument, withSubmitting, handleError]
   );
 
   // Handle item update
@@ -116,7 +115,6 @@ export const useDashboardData = () => {
             throw new Error('Failed to update item');
           }
 
-          showSuccess('아이템이 성공적으로 수정되었습니다.');
           return result;
         }
 
@@ -170,7 +168,6 @@ export const useDashboardData = () => {
           throw new Error('Failed to update item');
         }
 
-        showSuccess('아이템이 성공적으로 수정되었습니다.');
         return atomicResult;
       } catch (error) {
         handleError(error, 'Failed to update item');
@@ -180,7 +177,6 @@ export const useDashboardData = () => {
     [
       hasFatalError,
       updateInstrument,
-      showSuccess,
       handleError,
       instrumentMap,
       soldConnectionsMap,
@@ -194,8 +190,9 @@ export const useDashboardData = () => {
       formData: Partial<Omit<Instrument, 'id' | 'created_at'>>
     ) => {
       await handleUpdateItem(itemId, formData);
+      showSuccess('아이템이 성공적으로 수정되었습니다.');
     },
-    [handleUpdateItem]
+    [handleUpdateItem, showSuccess]
   );
 
   // Handle item deletion

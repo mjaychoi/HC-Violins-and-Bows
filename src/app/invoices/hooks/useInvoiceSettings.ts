@@ -54,7 +54,8 @@ export function useInvoiceSettings() {
       const data =
         (await handleApiResponse<Record<string, unknown> | null>(
           res,
-          'Failed to load invoice settings'
+          'Failed to load invoice settings',
+          { allowNullData: true }
         )) ?? {};
 
       setSettings({

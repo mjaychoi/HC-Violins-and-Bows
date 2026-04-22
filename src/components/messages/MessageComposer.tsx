@@ -45,7 +45,7 @@ export default function MessageComposer({
   onClose: _onClose, // Prefixed with _ to indicate intentionally unused
 }: MessageComposerProps) {
   void _onClose;
-  const { showSuccess } = useAppFeedback();
+  const { showSuccess, showWarning } = useAppFeedback();
   const [selectedTemplateKey, setSelectedTemplateKey] =
     useState<TemplateKey | null>(null);
   const [selectedChannel, setSelectedChannel] =
@@ -134,8 +134,10 @@ export default function MessageComposer({
     try {
       await navigator.clipboard.writeText(rendered.rendered);
       showSuccess('Copied to clipboard!');
-    } catch (error) {
-      console.error('Failed to copy:', error);
+    } catch {
+      showWarning(
+        'Could not copy to clipboard. Select the text and copy manually.'
+      );
     }
   };
 

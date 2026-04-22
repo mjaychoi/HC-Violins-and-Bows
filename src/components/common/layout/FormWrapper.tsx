@@ -7,6 +7,8 @@ import { logError } from '@/utils/logger';
 interface FormWrapperProps<T extends Record<string, unknown>> {
   initialData: T;
   onSubmit: (data: T) => Promise<void> | void;
+  /** When set, submit errors are forwarded here and are not rethrown. */
+  onSubmitError?: (error: unknown) => void;
   children: (formState: {
     formData: T;
     errors: Partial<Record<keyof T, string>>;
@@ -29,6 +31,7 @@ interface FormWrapperProps<T extends Record<string, unknown>> {
 export default function FormWrapper<T extends Record<string, unknown>>({
   initialData,
   onSubmit,
+  onSubmitError,
   children,
   className = '',
   validate,
@@ -69,6 +72,11 @@ export default function FormWrapper<T extends Record<string, unknown>>({
       logError('Form submission error', error, 'FormWrapper', {
         formData: Object.keys(formData),
       });
+      if (onSubmitError) {
+        onSubmitError(error);
+        return;
+      }
+      throw error;
     }
   };
 
@@ -96,6 +104,7 @@ export default function FormWrapper<T extends Record<string, unknown>>({
 interface SimpleFormWrapperProps<T extends Record<string, unknown>> {
   initialData: T;
   onSubmit: (data: T) => Promise<void> | void;
+  onSubmitError?: (error: unknown) => void;
   children: ReactNode;
   className?: string;
   validate?: (data: T) => Partial<Record<keyof T, string>>;
@@ -105,6 +114,7 @@ interface SimpleFormWrapperProps<T extends Record<string, unknown>> {
 export function SimpleFormWrapper<T extends Record<string, unknown>>({
   initialData,
   onSubmit,
+  onSubmitError,
   children,
   className = '',
   validate,
@@ -114,6 +124,7 @@ export function SimpleFormWrapper<T extends Record<string, unknown>>({
     <FormWrapper
       initialData={initialData}
       onSubmit={onSubmit}
+      onSubmitError={onSubmitError}
       className={className}
       validate={validate}
       submitting={submitting}

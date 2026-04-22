@@ -110,14 +110,15 @@ describe('FormWrapper', () => {
 
   it('should handle submit errors', async () => {
     const user = userEvent.setup();
-    const mockOnSubmit = jest
-      .fn()
-      .mockRejectedValue(new Error('Submit failed'));
+    const submitErr = new Error('Submit failed');
+    const mockOnSubmit = jest.fn().mockRejectedValue(submitErr);
+    const onSubmitError = jest.fn();
 
     render(
       <FormWrapper
         initialData={{ name: '', email: '' }}
         onSubmit={mockOnSubmit}
+        onSubmitError={onSubmitError}
       >
         {() => <button type="submit">Submit</button>}
       </FormWrapper>
@@ -132,6 +133,7 @@ describe('FormWrapper', () => {
         'FormWrapper',
         expect.any(Object)
       );
+      expect(onSubmitError).toHaveBeenCalledWith(submitErr);
     });
   });
 

@@ -20,9 +20,9 @@ export function usePermissions() {
 
     return {
       canCreateSale: canUseAdminOrgFeatures,
-      canCreateInvoice: canUseOrgScopedFeatures,
-      canCreateInstrument: canUseOrgScopedFeatures,
-      canCreateTask: canUseOrgScopedFeatures,
+      canCreateInvoice: canUseAdminOrgFeatures,
+      canCreateInstrument: canUseAdminOrgFeatures,
+      canCreateTask: canUseAdminOrgFeatures,
       canCreateContactLog: canUseOrgScopedFeatures,
       canCreateNote: isReady,
       canCreateConnection: canUseAdminOrgFeatures,
@@ -38,7 +38,23 @@ export function usePermissions() {
       canManageInstruments: canUseAdminOrgFeatures,
       canUploadInstrumentMedia: canUseAdminOrgFeatures,
       canManageClients: canUseAdminOrgFeatures,
-      canCreateClient: canUseOrgScopedFeatures,
+      canCreateClient: canUseAdminOrgFeatures,
+      createClientDisabledReason:
+        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
+          ? undefined
+          : adminOnlyReason,
+      createInvoiceDisabledReason:
+        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
+          ? undefined
+          : adminOnlyReason,
+      createTaskDisabledReason:
+        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
+          ? undefined
+          : adminOnlyReason,
+      createInstrumentDisabledReason:
+        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
+          ? undefined
+          : adminOnlyReason,
       createSaleDisabledReason:
         canUseAdminOrgFeatures || !canUseOrgScopedFeatures
           ? undefined

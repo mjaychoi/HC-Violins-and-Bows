@@ -295,41 +295,42 @@ function ConnectedClientsPageContent() {
           relationshipType,
           notes
         );
+        if (!connection) {
+          return;
+        }
+
         setShowConnectionModal(false);
         resetConnectionForm();
 
-        // 작업 완료 요약 메시지 생성
-        if (connection) {
-          const instrument = instruments.find(i => i.id === itemId);
-          const client = clients.find(c => c.id === clientId);
-          const instrumentName =
-            instrument?.maker && instrument?.serial_number
-              ? `${instrument.maker} (${instrument.serial_number})`
-              : instrument?.maker || instrument?.serial_number || '악기';
-          const clientName =
-            client?.first_name || client?.last_name
-              ? `${client.first_name || ''} ${client.last_name || ''}`.trim()
-              : client?.email || '클라이언트';
+        const instrument = instruments.find(i => i.id === itemId);
+        const client = clients.find(c => c.id === clientId);
+        const instrumentName =
+          instrument?.maker && instrument?.serial_number
+            ? `${instrument.maker} (${instrument.serial_number})`
+            : instrument?.maker || instrument?.serial_number || '악기';
+        const clientName =
+          client?.first_name || client?.last_name
+            ? `${client.first_name || ''} ${client.last_name || ''}`.trim()
+            : client?.email || '클라이언트';
 
-          const links: Array<{ label: string; href: string }> = [];
-          if (itemId) {
-            links.push({
-              label: '악기 보기',
-              href: `/dashboard?instrumentId=${itemId}`,
-            });
-          }
-          if (clientId) {
-            links.push({
-              label: '클라이언트 보기',
-              href: `/clients?clientId=${clientId}`,
-            });
-          }
-
-          showSuccess(
-            `연결이 추가되었습니다. ${instrumentName}과 ${clientName}이 연결되었습니다.`,
-            links.length > 0 ? links : undefined
-          );
+        const links: Array<{ label: string; href: string }> = [];
+        if (itemId) {
+          links.push({
+            label: '악기 보기',
+            href: `/dashboard?instrumentId=${itemId}`,
+          });
         }
+        if (clientId) {
+          links.push({
+            label: '클라이언트 보기',
+            href: `/clients?clientId=${clientId}`,
+          });
+        }
+
+        showSuccess(
+          `연결이 추가되었습니다. ${instrumentName}과 ${clientName}이 연결되었습니다.`,
+          links.length > 0 ? links : undefined
+        );
       });
     } catch (error) {
       handleError(error, 'Failed to create connection');
@@ -343,8 +344,10 @@ function ConnectedClientsPageContent() {
   ) => {
     try {
       await withSubmitting(async () => {
-        await updateConnection(connectionId, updates);
-        closeEditModal();
+        const updated = await updateConnection(connectionId, updates);
+        if (updated) {
+          closeEditModal();
+        }
       });
     } catch (error) {
       handleError(error, 'Failed to update connection');

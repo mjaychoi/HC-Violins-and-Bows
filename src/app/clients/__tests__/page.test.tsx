@@ -396,6 +396,7 @@ describe('ClientsPage', () => {
   const mockDeleteClient = jest.fn();
   const mockHandleError = jest.fn();
   const mockShowSuccess = jest.fn();
+  const mockShowWarning = jest.fn();
   const mockOpenModal = jest.fn();
   const mockCloseModal = jest.fn();
   const mockAddInstrumentRelationship = jest.fn();
@@ -483,6 +484,7 @@ describe('ClientsPage', () => {
     mockUseAppFeedback.mockReturnValue({
       handleError: mockHandleError,
       showSuccess: mockShowSuccess,
+      showWarning: mockShowWarning,
     } as any);
 
     mockUseModalState.mockReturnValue({
@@ -770,8 +772,8 @@ describe('ClientsPage', () => {
       await user.click(screen.getByTestId('retry-instrument-links-btn'));
 
       await waitFor(() => {
-        expect(mockShowSuccess).toHaveBeenCalledWith(
-          'Client created, but some instrument links failed'
+        expect(mockShowWarning).toHaveBeenCalledWith(
+          'Some instrument links could not be created. You can retry from the client profile.'
         );
       });
       expect(mockCloseModal).not.toHaveBeenCalled();
@@ -1170,7 +1172,14 @@ describe('ClientsPage', () => {
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
       } as any);
-      mockAddInstrumentRelationship.mockResolvedValue(undefined);
+      mockAddInstrumentRelationship.mockResolvedValue({
+        id: 'rel-new',
+        client_id: mockClients[0].id,
+        instrument_id: 'inst-123',
+        relationship_type: 'Interested',
+        notes: null,
+        created_at: '',
+      });
 
       render(
         <Suspense fallback={null}>
@@ -1191,7 +1200,8 @@ describe('ClientsPage', () => {
 
       expect(mockCloseInstrumentSearch).toHaveBeenCalled();
       expect(mockShowSuccess).toHaveBeenCalledWith(
-        'Instrument connection added.'
+        expect.stringContaining('연결이 추가되었습니다'),
+        expect.any(Array)
       );
     });
 
@@ -1245,7 +1255,7 @@ describe('ClientsPage', () => {
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
       } as any);
-      mockRemoveInstrumentRelationship.mockResolvedValue(undefined);
+      mockRemoveInstrumentRelationship.mockResolvedValue(true);
 
       render(
         <Suspense fallback={null}>
