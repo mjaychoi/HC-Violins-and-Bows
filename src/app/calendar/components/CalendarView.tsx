@@ -15,7 +15,7 @@ import {
   startOfDay,
   addDays,
 } from 'date-fns';
-import { ko } from 'date-fns/locale';
+import { enUS } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 import { MaintenanceTask } from '@/types';
@@ -29,16 +29,15 @@ import { getCalendarPlacementDate } from '@/utils/calendar';
 // Calendar styles are now in globals.css to avoid duplication and hydration issues
 
 const locales = {
-  ko: ko,
+  'en-US': enUS,
 };
 
-// FIXED: Explicitly set weekStartsOn to 0 (Sunday) for consistency
-// Note: Korean locale may not guarantee Monday start, so we explicitly set it
+// Explicitly set weekStartsOn to 0 (Sunday) for consistency
 const localizer = dateFnsLocalizer({
-  format: (date: Date, fmt: string, options?: { locale?: typeof ko }) =>
-    format(date, fmt, { locale: ko, ...options }),
+  format: (date: Date, fmt: string, options?: { locale?: typeof enUS }) =>
+    format(date, fmt, { locale: enUS, ...options }),
   parse: (value: string, fmt: string) =>
-    parse(value, fmt, new Date(), { locale: ko }),
+    parse(value, fmt, new Date(), { locale: enUS }),
   startOfWeek: (date: Date) => startOfWeek(date, { weekStartsOn: 0 }), // Explicitly Sunday start
   getDay,
   locales,
@@ -298,20 +297,19 @@ export default function CalendarView({
     [draggingEventId] // Include draggingEventId in dependencies
   );
 
-  // FIXED: Translate messages to Korean to match culture="ko"
   const messages = useMemo(
     () => ({
-      next: '다음',
-      previous: '이전',
-      today: '오늘',
-      month: '월',
-      week: '주',
-      agenda: '일정',
-      date: '날짜',
-      time: '시간',
-      event: '일정',
-      noEventsInRange: '이 기간에는 예정된 작업이 없습니다.',
-      showMore: (total: number) => `+${total} 더보기`,
+      next: 'Next',
+      previous: 'Previous',
+      today: 'Today',
+      month: 'Month',
+      week: 'Week',
+      agenda: 'Agenda',
+      date: 'Date',
+      time: 'Time',
+      event: 'Event',
+      noEventsInRange: 'No scheduled tasks in this range.',
+      showMore: (total: number) => `+${total} more`,
     }),
     []
   );
@@ -413,7 +411,7 @@ export default function CalendarView({
               showMultiDayTimes: true,
               step: 60,
               timeslots: 1,
-              culture: 'ko',
+              culture: 'en-US',
             } as unknown as DragAndDropCalendarProps)}
             components={{
               event: ({ event }: { event: Event }) => {

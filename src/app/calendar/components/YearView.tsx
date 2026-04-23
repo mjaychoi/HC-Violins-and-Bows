@@ -12,7 +12,7 @@ import {
   isSameDay,
   isSameMonth,
 } from 'date-fns';
-import { ko } from 'date-fns/locale';
+import { enUS } from 'date-fns/locale';
 import { MaintenanceTask } from '@/types';
 import { parseYMDLocal, taskDayKey } from '@/utils/dateParsing';
 import { parseISO, isValid } from 'date-fns';
@@ -147,7 +147,7 @@ export default function YearView({
     <div className="year-view">
       <div className="mb-6">
         <h2 className="text-2xl font-semibold text-gray-900">
-          {format(currentDate, 'yyyy', { locale: ko })}
+          {format(currentDate, 'yyyy', { locale: enUS })}
         </h2>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -160,10 +160,10 @@ export default function YearView({
               type="button"
               className="w-full text-left mb-3"
               onClick={() => onNavigate?.(month)}
-              aria-label={`View ${format(month, 'MMMM yyyy', { locale: ko })}`}
+              aria-label={`View ${format(month, 'MMMM yyyy', { locale: enUS })}`}
             >
               <h3 className="text-base font-semibold text-gray-900">
-                {format(month, 'MMMM', { locale: ko })}
+                {format(month, 'MMMM', { locale: enUS })}
               </h3>
               <p className="text-xs text-gray-500 mt-1">
                 {monthTasks.length} {monthTasks.length === 1 ? 'task' : 'tasks'}
@@ -241,7 +241,7 @@ export default function YearView({
                       e.stopPropagation();
                       onNavigate?.(day);
                     }}
-                    aria-label={`View ${format(day, 'MMMM d, yyyy', { locale: ko })}${dayTasks.length > 0 ? ` - ${dayTasks.length} tasks${statusText}` : ''}`}
+                    aria-label={`View ${format(day, 'MMMM d, yyyy', { locale: enUS })}${dayTasks.length > 0 ? ` - ${dayTasks.length} tasks${statusText}` : ''}`}
                   >
                     <span>{format(day, 'd')}</span>
                     {dayTasks.length > 0 && (

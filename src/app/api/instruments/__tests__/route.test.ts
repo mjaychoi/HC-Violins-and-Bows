@@ -1,9 +1,20 @@
 import { NextRequest } from 'next/server';
 import { GET, POST, PATCH, DELETE } from '../route';
 import { errorHandler } from '@/utils/errorHandler';
+import {
+  INSTRUMENT_PATCH_UPDATED_AT_REQUIRED_CODE,
+  resetInstrumentApiContractCacheForTests,
+} from '@/app/api/instruments/_shared/instrumentApiContract';
 
 jest.mock('@/utils/errorHandler');
-jest.mock('@/utils/logger');
+jest.mock('@/utils/logger', () => ({
+  logInfo: jest.fn(),
+  logError: jest.fn(),
+  logWarn: jest.fn(),
+  logDebug: jest.fn(),
+  logPerformance: jest.fn(),
+  logApiRequest: jest.fn(),
+}));
 jest.mock('@/utils/monitoring');
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
 let mockUserSupabase: any;
@@ -70,10 +81,12 @@ describe('/api/instruments', () => {
     certificate: false,
     status: 'Available',
     created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-02T00:00:00Z',
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetInstrumentApiContractCacheForTests();
     jest.spyOn(performance, 'now').mockReturnValue(0);
     mockUserSupabase = {
       from: jest.fn(),
@@ -387,23 +400,30 @@ describe('/api/instruments', () => {
         type: 'Violin',
         maker: null,
         subtype: null,
-        serial_number: null,
+        serial_number: 'VI0000001',
         status: 'Available',
         certificate: false,
       };
 
-      const mockQuery = {
+      const serialListQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: [], error: null }),
+      };
+      const insertQuery = {
         insert: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         single: jest.fn(),
       };
-      (mockQuery.single as jest.Mock).mockResolvedValue({
+      (insertQuery.single as jest.Mock).mockResolvedValue({
         data: createdInstrument,
         error: null,
       });
 
       mockUserSupabase = {
-        from: jest.fn().mockReturnValue(mockQuery),
+        from: jest
+          .fn()
+          .mockReturnValueOnce(serialListQuery)
+          .mockReturnValue(insertQuery),
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {
@@ -414,13 +434,13 @@ describe('/api/instruments', () => {
       const json = await response.json();
 
       expect(response.status).toBe(201);
-      expect(mockQuery.insert).toHaveBeenCalledWith(
+      expect(insertQuery.insert).toHaveBeenCalledWith(
         expect.objectContaining({
           org_id: 'test-org',
           type: 'Violin',
           status: 'Available',
           certificate: false,
-          serial_number: null,
+          serial_number: 'VI0000001',
         })
       );
       expect(json.data).toEqual(
@@ -428,12 +448,106 @@ describe('/api/instruments', () => {
           id: mockInstrument.id,
           maker: null,
           type: 'Violin',
-          serial_number: null,
+          serial_number: 'VI0000001',
           status: 'Available',
           certificate: false,
           created_at: mockInstrument.created_at,
         })
       );
+    });
+
+    it('returns existing instrument when Idempotency-Key matches stored mapping', async () => {
+      const createData = { type: 'Violin' };
+      const existing = {
+        ...mockInstrument,
+        type: 'Violin',
+        serial_number: 'VI0000001',
+      };
+
+      const idemSelectChain = () => {
+        const chain: Record<string, jest.Mock> = {};
+        chain.limit = jest.fn().mockResolvedValue({ data: null, error: null });
+        chain.eq = jest.fn().mockReturnValue(chain);
+        chain.maybeSingle = jest.fn().mockResolvedValue({
+          data: { instrument_id: existing.id },
+          error: null,
+        });
+        return chain;
+      };
+
+      const fetchInstrQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: existing,
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest.fn((table: string) => {
+          if (table === 'instrument_create_idempotency') {
+            return {
+              select: jest.fn().mockReturnValue(idemSelectChain()),
+            };
+          }
+          if (table === 'instruments') {
+            return fetchInstrQuery;
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'idem-1',
+        },
+        body: JSON.stringify(createData),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+      expect(response.status).toBe(201);
+      expect(json.data.id).toBe(existing.id);
+    });
+
+    it('returns 503 when idempotency table is missing (migration not applied)', async () => {
+      const createData = { type: 'Violin' };
+      const missingTableError = {
+        code: '42P01',
+        message:
+          'relation "public.instrument_create_idempotency" does not exist',
+      };
+
+      mockUserSupabase = {
+        from: jest.fn((table: string) => {
+          if (table === 'instrument_create_idempotency') {
+            return {
+              select: jest.fn(() => ({
+                limit: jest
+                  .fn()
+                  .mockResolvedValue({ data: null, error: missingTableError }),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'idem-missing-table',
+        },
+        body: JSON.stringify(createData),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('INSTRUMENT_SCHEMA_CONTRACT_MISSING');
+      expect(String(json.error)).toContain('database contract is missing');
     });
 
     it('should create a new instrument', async () => {
@@ -717,13 +831,11 @@ describe('/api/instruments', () => {
       const mockQuery = {
         update: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn(),
+        select: jest.fn().mockResolvedValue({
+          data: [updatedInstrument],
+          error: null,
+        }),
       };
-      (mockQuery.single as jest.Mock).mockResolvedValue({
-        data: updatedInstrument,
-        error: null,
-      });
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -731,7 +843,11 @@ describe('/api/instruments', () => {
 
       const request = new NextRequest('http://localhost/api/instruments', {
         method: 'PATCH',
-        body: JSON.stringify({ id: mockInstrument.id, ...updates }),
+        body: JSON.stringify({
+          id: mockInstrument.id,
+          updated_at: mockInstrument.updated_at,
+          ...updates,
+        }),
       });
       const response = await PATCH(request);
       const json = await response.json();
@@ -741,6 +857,63 @@ describe('/api/instruments', () => {
       expect(mockQuery.update).toHaveBeenCalled();
       expect(mockQuery.eq).toHaveBeenCalledWith('id', mockInstrument.id);
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockQuery.eq).toHaveBeenCalledWith(
+        'updated_at',
+        mockInstrument.updated_at
+      );
+    });
+
+    it('returns 400 when updated_at is missing', async () => {
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: mockInstrument.id, note: 'x' }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+      expect(response.status).toBe(400);
+      expect(String(json.message || json.error)).toContain('updated_at');
+      expect(json.error_code).toBe(INSTRUMENT_PATCH_UPDATED_AT_REQUIRED_CODE);
+    });
+
+    it('returns 409 when updated_at does not match current row', async () => {
+      const mockQuery = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        select: jest.fn(),
+      };
+      (mockQuery.select as jest.Mock).mockResolvedValueOnce({
+        data: [],
+        error: null,
+      });
+
+      const existsQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest
+          .fn()
+          .mockResolvedValue({ data: { id: mockInstrument.id }, error: null }),
+      };
+
+      let call = 0;
+      mockUserSupabase = {
+        from: jest.fn(() => {
+          call += 1;
+          return call === 1 ? mockQuery : existsQuery;
+        }),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockInstrument.id,
+          updated_at: mockInstrument.updated_at,
+          note: 'stale',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('INSTRUMENT_CONFLICT');
     });
 
     it('should return 400 when id is missing', async () => {
@@ -787,16 +960,23 @@ describe('/api/instruments', () => {
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(stateQuery),
-        rpc: jest.fn().mockResolvedValue({
-          data: { ...mockInstrument, status: 'Sold' },
-          error: null,
-        }),
+        rpc: jest
+          .fn()
+          .mockResolvedValueOnce({
+            data: null,
+            error: { message: 'instrument row not found for probe' },
+          })
+          .mockResolvedValueOnce({
+            data: { ...mockInstrument, status: 'Sold' },
+            error: null,
+          }),
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {
         method: 'PATCH',
         body: JSON.stringify({
           id: mockInstrument.id,
+          updated_at: mockInstrument.updated_at,
           status: 'Sold',
           sale_transition: {
             sale_price: 1500000,
@@ -811,7 +991,8 @@ describe('/api/instruments', () => {
 
       expect(response.status).toBe(200);
       expect(json.data.status).toBe('Sold');
-      expect(mockUserSupabase.rpc).toHaveBeenCalledWith(
+      expect(mockUserSupabase.rpc).toHaveBeenCalledTimes(2);
+      expect(mockUserSupabase.rpc).toHaveBeenLastCalledWith(
         'update_instrument_sale_transition_atomic',
         expect.objectContaining({
           p_instrument_id: mockInstrument.id,
@@ -819,8 +1000,44 @@ describe('/api/instruments', () => {
           p_sale_date: '2026-04-02',
           p_client_id: '123e4567-e89b-12d3-a456-426614174111',
           p_sales_note: 'Auto-created',
+          p_expected_updated_at: mockInstrument.updated_at,
         })
       );
+    });
+
+    it('returns 503 when sale RPC is missing (schema contract)', async () => {
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: jest.fn().mockResolvedValue({
+          data: null,
+          error: {
+            code: '42883',
+            message:
+              'function public.update_instrument_sale_transition_atomic(uuid,jsonb,...) does not exist',
+          },
+        }),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockInstrument.id,
+          updated_at: mockInstrument.updated_at,
+          status: 'Sold',
+          sale_transition: {
+            sale_price: 1500000,
+            sale_date: '2026-04-02',
+            client_id: '123e4567-e89b-12d3-a456-426614174111',
+            sales_note: 'x',
+          },
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('INSTRUMENT_SCHEMA_CONTRACT_MISSING');
+      expect(String(json.error)).toContain('database contract is missing');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
   });
 

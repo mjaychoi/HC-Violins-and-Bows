@@ -143,7 +143,7 @@ export default function FilterGroup({
               onClick={() => setIsExpanded(!isExpanded)}
               className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
               aria-expanded={isExpanded}
-              aria-label={`${title} ${isExpanded ? '접기' : '펼치기'}`}
+              aria-label={`${title} ${isExpanded ? 'collapse' : 'expand'}`}
               type="button"
             >
               <svg
@@ -171,7 +171,7 @@ export default function FilterGroup({
         <div className="mb-2">
           <input
             type="text"
-            placeholder={`${title} 검색...`}
+            placeholder={`Search ${title}...`}
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
@@ -185,11 +185,11 @@ export default function FilterGroup({
           id={`filter-group-${title.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`}
           className={`space-y-1.5 ${maxHeight} overflow-y-auto pr-1`}
           role="group"
-          aria-label={`${title} 필터 옵션`}
+          aria-label={`${title} filter options`}
         >
           {filteredOptions.length === 0 ? (
             <div className="text-xs text-gray-400 py-2 text-center">
-              검색 결과가 없습니다
+              No matching results
             </div>
           ) : (
             filteredOptions.map(option => {

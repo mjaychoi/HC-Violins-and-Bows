@@ -64,7 +64,7 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      expect(screen.getByText('알림 활성화')).toBeInTheDocument();
+      expect(screen.getByText('Enable notifications')).toBeInTheDocument();
     });
 
     it('should call requestNotificationPermission when button is clicked', async () => {
@@ -78,7 +78,7 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      const button = screen.getByText('알림 활성화');
+      const button = screen.getByText('Enable notifications');
       await user.click(button);
 
       expect(mockRequestNotificationPermission).toHaveBeenCalled();
@@ -95,7 +95,7 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      const button = screen.getByText('알림 활성화');
+      const button = screen.getByText('Enable notifications');
       await user.click(button);
 
       await waitFor(() => {
@@ -118,14 +118,14 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      const button = screen.getByText('알림 활성화');
+      const button = screen.getByText('Enable notifications');
       await user.click(button);
 
-      expect(screen.getByText('요청 중...')).toBeInTheDocument();
+      expect(screen.getByText('Requesting...')).toBeInTheDocument();
 
       resolvePermission!('granted');
       await waitFor(() => {
-        expect(screen.queryByText('요청 중...')).not.toBeInTheDocument();
+        expect(screen.queryByText('Requesting...')).not.toBeInTheDocument();
       });
     });
   });
@@ -140,7 +140,7 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      expect(screen.getByText('알림 활성화됨')).toBeInTheDocument();
+      expect(screen.getByText('Notifications on')).toBeInTheDocument();
     });
 
     it('should render icon variant when permission is granted', () => {
@@ -153,7 +153,7 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      const button = screen.getByLabelText('브라우저 알림 활성화됨');
+      const button = screen.getByLabelText('Browser notifications enabled');
       expect(button).toBeInTheDocument();
       // Icon variant doesn't have disabled attribute, but it's non-interactive
       expect(button).toBeInTheDocument();
@@ -169,7 +169,7 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      const button = screen.getByText('알림 활성화됨');
+      const button = screen.getByText('Notifications on');
       expect(button).toBeDisabled();
 
       await user.click(button);
@@ -188,7 +188,7 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      expect(screen.getByText('알림이 거부되었습니다')).toBeInTheDocument();
+      expect(screen.getByText('Notifications are blocked')).toBeInTheDocument();
     });
 
     it('should render disabled icon when permission is denied and variant is icon', () => {
@@ -201,7 +201,7 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      const button = screen.getByLabelText('브라우저 알림 거부됨');
+      const button = screen.getByLabelText('Browser notifications denied');
       expect(button).toBeInTheDocument();
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute('aria-disabled', 'true');
@@ -219,7 +219,7 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      expect(screen.getByText('알림 활성화')).toBeInTheDocument();
+      expect(screen.getByText('Enable notifications')).toBeInTheDocument();
 
       // Simulate permission change by rendering with new permission
       mockGetNotificationPermission.mockReturnValue('granted');
@@ -231,7 +231,7 @@ describe('NotificationPermissionButton', () => {
 
       // The component uses useEffect to update, so it should eventually show granted state
       // But in test environment, we'll just verify it renders correctly with granted state
-      expect(screen.getByText('알림 활성화됨')).toBeInTheDocument();
+      expect(screen.getByText('Notifications on')).toBeInTheDocument();
     });
 
     it('should handle error when requesting permission', async () => {
@@ -248,7 +248,7 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      const button = screen.getByText('알림 활성화');
+      const button = screen.getByText('Enable notifications');
       await user.click(button);
 
       await waitFor(() => {
@@ -273,7 +273,9 @@ describe('NotificationPermissionButton', () => {
         />
       );
 
-      const button = screen.getByLabelText('브라우저 알림 권한 요청');
+      const button = screen.getByLabelText(
+        'Request browser notification permission'
+      );
       expect(button).toBeInTheDocument();
     });
   });

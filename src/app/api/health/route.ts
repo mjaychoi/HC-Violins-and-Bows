@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import { checkMigrations } from '@/app/api/_utils/healthCheck';
+import { checkInstrumentApiContractAdmin } from '@/app/api/instruments/_shared/instrumentApiContract';
 
 export async function GET() {
-  const result = await checkMigrations();
+  const [result, instrumentContract] = await Promise.all([
+    checkMigrations(),
+    checkInstrumentApiContractAdmin(),
+  ]);
   const fallbackHealthy = result.allHealthy;
+  const allHealthy = result.allHealthy && instrumentContract.ok;
   const checks = {
     display_order: result.display_order,
     tenantIsolationMigration:
@@ -19,15 +24,19 @@ export async function GET() {
     invoiceImageStoragePathShapeValid:
       result.invoiceImageStoragePathShapeValid ?? fallbackHealthy,
     requiredColumnsPresent: result.requiredColumnsPresent ?? fallbackHealthy,
+    instrument_api_contract: {
+      ok: instrumentContract.ok,
+      missing: instrumentContract.missing,
+    },
   };
 
   return NextResponse.json(
     {
-      status: result.allHealthy ? 'ok' : 'error',
+      status: allHealthy ? 'ok' : 'error',
       version: process.env.NEXT_PUBLIC_APP_VERSION || 'dev',
       timestamp: new Date().toISOString(),
       checks,
     },
-    { status: result.allHealthy ? 200 : 503 }
+    { status: allHealthy ? 200 : 503 }
   );
 }

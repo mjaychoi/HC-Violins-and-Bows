@@ -47,36 +47,32 @@ describe('EmptyState', () => {
   it('opens guide modal when guideSteps are provided and calls action on close', () => {
     const handleAction = jest.fn();
     const guideSteps = [
-      '악기 정보를 입력하세요 (Maker, Type, Serial Number 등)',
-      '가격과 상태를 설정하세요',
+      'Enter instrument details (maker, type, serial number, etc.)',
+      'Set price and status',
     ];
 
     render(
       <EmptyState
-        actionButton={{ label: '시작하기', onClick: handleAction }}
+        actionButton={{ label: 'Get started', onClick: handleAction }}
         guideSteps={guideSteps}
       />
     );
 
-    // 처음에는 모달이 보이지 않음
     expect(
       screen.queryByText('다음 단계를 따라 첫 악기를 추가해보세요:')
     ).not.toBeInTheDocument();
 
-    // 버튼 클릭 시 가이드 모달 열림
-    fireEvent.click(screen.getByText('시작하기'));
+    fireEvent.click(screen.getByText('Get started'));
 
     expect(
       screen.getByText('다음 단계를 따라 첫 악기를 추가해보세요:')
     ).toBeInTheDocument();
     const guideStepElements = screen.getAllByText(
-      '악기 정보를 입력하세요 (Maker, Type, Serial Number 등)'
+      'Enter instrument details (maker, type, serial number, etc.)'
     );
     expect(guideStepElements.length).toBeGreaterThan(0);
 
-    // 모달의 "시작하기" 버튼 클릭 시 onClose가 호출되고, 그 안에서 actionButton.onClick이 다시 호출됨
-    const actionButtons = screen.getAllByText('시작하기');
-    fireEvent.click(actionButtons[1]);
+    fireEvent.click(screen.getByText('시작하기'));
     expect(handleAction).toHaveBeenCalledTimes(1);
   });
 
@@ -85,7 +81,7 @@ describe('EmptyState', () => {
 
     render(<EmptyState onLoadSampleData={handleLoadSampleData} />);
 
-    const sampleButton = screen.getByText('샘플 데이터로 시작하기');
+    const sampleButton = screen.getByText('Start with sample data');
     fireEvent.click(sampleButton);
     expect(handleLoadSampleData).toHaveBeenCalled();
   });
@@ -98,14 +94,14 @@ describe('EmptyState', () => {
     render(
       <EmptyState
         helpLink={{
-          label: '악기 추가 방법 알아보기',
+          label: 'Learn how to add an instrument',
           href: '#',
           onClick: handleHelpClick,
         }}
       />
     );
 
-    const link = screen.getByText('악기 추가 방법 알아보기');
+    const link = screen.getByText('Learn how to add an instrument');
     fireEvent.click(link);
     expect(handleHelpClick).toHaveBeenCalled();
   });

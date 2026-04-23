@@ -48,7 +48,7 @@ describe('ItemFilters', () => {
     render(<ItemFilters {...baseProps} />);
     // UX: Search bar is now in the page-level quick filters, not in ItemFilters
     // expect(screen.getByPlaceholderText('Search items...')).toBeInTheDocument();
-    expect(screen.getByText(/Status|상태/)).toBeInTheDocument();
+    expect(screen.getByText('Status')).toBeInTheDocument();
   });
 
   it('handles filter toggles', () => {
@@ -62,7 +62,7 @@ describe('ItemFilters', () => {
 
     // Filter panel should be open (showFilters: true)
     // Expand status group if collapsed
-    const statusHeader = screen.getByText(/상태|Status/i);
+    const statusHeader = screen.getByText(/Status/i);
     const statusGroup = statusHeader.closest('[class*="border"]');
     const expandButton = statusGroup?.querySelector('button[aria-label]');
     if (
@@ -91,11 +91,7 @@ describe('ItemFilters', () => {
       // If Available is not visible, try to expand the status group first
       const statusExpandBtn = screen
         .getAllByRole('button')
-        .find(
-          btn =>
-            btn.getAttribute('aria-label')?.includes('상태') ||
-            btn.getAttribute('aria-label')?.includes('Status')
-        );
+        .find(btn => btn.getAttribute('aria-label')?.includes('Status'));
       if (statusExpandBtn) {
         fireEvent.click(statusExpandBtn);
         const availableTextAfterExpand = screen.queryByText('Available');

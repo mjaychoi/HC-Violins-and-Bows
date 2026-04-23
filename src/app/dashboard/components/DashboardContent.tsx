@@ -30,6 +30,7 @@ interface DashboardContentProps {
   newlyCreatedItemId?: string | null; // ID of newly created item for scroll/highlight
   onNewlyCreatedItemShown?: () => void; // Callback when newly created item is shown
   onLoadSampleData?: () => void; // Load sample data handler
+  onInstrumentCertificatesChanged?: () => void;
 }
 
 function DashboardContentInner({
@@ -44,6 +45,7 @@ function DashboardContentInner({
   newlyCreatedItemId,
   onNewlyCreatedItemShown,
   onLoadSampleData,
+  onInstrumentCertificatesChanged,
 }: DashboardContentProps) {
   // Dashboard filters - use enrichedItems instead of instruments
   const {
@@ -187,6 +189,7 @@ function DashboardContentInner({
                 : undefined,
           }}
           onLoadSampleData={onLoadSampleData}
+          onInstrumentCertificatesChanged={onInstrumentCertificatesChanged}
           // Pagination props
           currentPage={currentPage}
           totalPages={totalPages}

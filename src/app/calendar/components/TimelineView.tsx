@@ -9,7 +9,7 @@ import {
   isSameDay,
   addWeeks,
 } from 'date-fns';
-import { ko } from 'date-fns/locale';
+import { enUS } from 'date-fns/locale';
 import { MaintenanceTask } from '@/types';
 import { parseYMDLocal, taskDayKey } from '@/utils/dateParsing';
 import { parseISO, isValid } from 'date-fns';
@@ -198,9 +198,9 @@ export default function TimelineView({
                       isToday ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
                     }`}
                   >
-                    <div>{format(day, 'EEE', { locale: ko })}</div>
+                    <div>{format(day, 'EEE', { locale: enUS })}</div>
                     <div className="text-xs mt-1">
-                      {format(day, 'M/d', { locale: ko })}
+                      {format(day, 'M/d', { locale: enUS })}
                     </div>
                   </div>
                 );

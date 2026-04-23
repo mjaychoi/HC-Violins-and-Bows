@@ -4,11 +4,11 @@ import { Instrument } from '@/types';
 import { buildFilterOptionsFromFields } from '@/utils/filterHelpers';
 
 export const DASHBOARD_FILTER_LABELS: DashboardFilterLabelMap = {
-  status: '상태',
-  maker: '제조사',
-  type: '타입',
-  subtype: '세부 타입',
-  ownership: '소유자',
+  status: 'Status',
+  maker: 'Maker',
+  type: 'Type',
+  subtype: 'Subtype',
+  ownership: 'Ownership',
 };
 
 // FIXED: Separate filter keys into option keys (for filter options/labels) and state keys (for filter state)
@@ -37,23 +37,24 @@ export const DASHBOARD_FILTER_KEYS = DASHBOARD_FILTER_STATE_KEYS;
 export type DashboardFilterKeyValue =
   (typeof DASHBOARD_FILTER_STATE_KEYS)[keyof typeof DASHBOARD_FILTER_STATE_KEYS];
 
-// 필터 라벨 상수
+// Filter label strings (UI)
 export const DASHBOARD_FILTER_LABEL_STRINGS = {
-  PRICE_RANGE: '가격 범위',
+  PRICE_RANGE: 'Price range',
   SEARCH: 'Search',
-  DATE_RANGE: '날짜',
-  FILTER_OPTIONS: '필터 옵션',
+  DATE_RANGE: 'Date',
+  FILTER_OPTIONS: 'Filter options',
   FILTERS: 'Filters',
-  CLEAR_FILTERS: '필터 초기화',
-  CLEAR_ALL: '전체 초기화',
-  APPLY: '적용',
-  ACTIVE_FILTERS: (count: number) => `${count}개의 필터가 적용 중`,
+  CLEAR_FILTERS: 'Clear filters',
+  CLEAR_ALL: 'Clear all',
+  APPLY: 'Apply',
+  ACTIVE_FILTERS: (count: number) =>
+    `${count} active filter${count === 1 ? '' : 's'}`,
 } as const;
 
-// 날짜 필드 라벨
+// Date field labels (advanced search)
 export const DASHBOARD_DATE_FIELD_LABELS = {
-  CREATED_AT: '생성일',
-  UPDATED_AT: '수정일',
+  CREATED_AT: 'Created',
+  UPDATED_AT: 'Updated',
 } as const;
 
 // FIXED: Removed re-export of DASHBOARD_SORT_FIELDS to avoid circular import risk

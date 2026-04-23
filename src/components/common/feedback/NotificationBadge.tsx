@@ -39,6 +39,8 @@ export default function NotificationBadge({
 
   if (total === 0) return null;
 
+  const ariaCountLabel = total > 99 ? '99개 이상' : `${total}개`;
+
   return (
     <div className="relative">
       <button
@@ -61,7 +63,7 @@ export default function NotificationBadge({
           }
         }}
         className="relative inline-flex items-center justify-center p-2 rounded-full hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        aria-label={`알림 ${total}개`}
+        aria-label={`알림 ${ariaCountLabel}`}
         aria-describedby={showTooltip ? tooltipId : undefined}
       >
         <svg
@@ -102,7 +104,7 @@ export default function NotificationBadge({
               <span className="text-red-600">⚠️</span>
               <span className="text-gray-700">지연된 작업:</span>
               <span className="font-semibold text-red-600">
-                {overdue > 99 ? '99+' : overdue}개
+                {overdue > 99 ? '99+' : `${overdue}개`}
               </span>
             </div>
           )}
@@ -111,7 +113,7 @@ export default function NotificationBadge({
               <span className="text-blue-600">📅</span>
               <span className="text-gray-700">오늘 마감:</span>
               <span className="font-semibold text-blue-600">
-                {today > 99 ? '99+' : today}개
+                {today > 99 ? '99+' : `${today}개`}
               </span>
             </div>
           )}
@@ -120,7 +122,7 @@ export default function NotificationBadge({
               <span className="text-yellow-600">⏰</span>
               <span className="text-gray-700">곧 마감 (3일 이내):</span>
               <span className="font-semibold text-yellow-600">
-                {upcoming > 99 ? '99+' : upcoming}개
+                {upcoming > 99 ? '99+' : `${upcoming}개`}
               </span>
             </div>
           )}

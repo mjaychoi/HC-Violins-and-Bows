@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Instrument, ClientInstrument } from '@/types';
 import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
 import { normalizeUnifiedResourceErrors } from '@/hooks/unifiedResourceErrors';
@@ -32,7 +32,10 @@ export const useDashboardData = () => {
     createInstrument,
     updateInstrument,
     deleteInstrument,
+    invalidateCache,
   } = useUnifiedDashboard();
+
+  const createIdempotencyKeyRef = useRef<string | null>(null);
 
   const safeErrors = useMemo(
     () => normalizeUnifiedResourceErrors(errors),
@@ -75,11 +78,22 @@ export const useDashboardData = () => {
         );
       }
       return await withSubmitting(async () => {
-        const result = await createInstrument(formData);
-        if (!result?.id) {
-          throw new Error('Instrument creation failed');
+        if (!createIdempotencyKeyRef.current) {
+          createIdempotencyKeyRef.current =
+            typeof crypto !== 'undefined' && 'randomUUID' in crypto
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         }
-        return result;
+        const idempotencyKey = createIdempotencyKeyRef.current;
+        try {
+          const result = await createInstrument(formData, { idempotencyKey });
+          if (!result?.id) {
+            throw new Error('Instrument creation failed');
+          }
+          return result;
+        } finally {
+          createIdempotencyKeyRef.current = null;
+        }
       });
     },
     [hasFatalError, createInstrument, withSubmitting]
@@ -108,9 +122,12 @@ export const useDashboardData = () => {
 
       const wasSold = previousInstrument?.status === 'Sold';
       const isNowSold = nextStatus === 'Sold';
+      const baseUpdatedAt =
+        formData.updated_at ?? previousInstrument?.updated_at;
+
       let updatePayload: Partial<Omit<Instrument, 'id' | 'created_at'>> & {
         sale_transition?: DashboardSaleTransition;
-      } = { ...formData };
+      } = { ...formData, updated_at: baseUpdatedAt };
 
       if (!statusIsChanging) {
         return await updateInstrument(itemId, updatePayload);
@@ -140,6 +157,7 @@ export const useDashboardData = () => {
 
         updatePayload = {
           ...formData,
+          updated_at: baseUpdatedAt,
           sale_transition: {
             sale_price: salePrice,
             sale_date: saleDate,
@@ -150,6 +168,7 @@ export const useDashboardData = () => {
       } else if (wasSold && !isNowSold && previousInstrument) {
         updatePayload = {
           ...formData,
+          updated_at: baseUpdatedAt,
           sale_transition: {
             sales_note: `Auto-refunded when instrument status changed from Sold to ${
               formData.status || 'Available'
@@ -173,7 +192,7 @@ export const useDashboardData = () => {
       formData: Partial<Omit<Instrument, 'id' | 'created_at'>>
     ) => {
       await handleUpdateItem(itemId, formData);
-      showSuccess('아이템이 성공적으로 수정되었습니다.');
+      showSuccess('Item updated successfully.');
     },
     [handleUpdateItem, showSuccess]
   );
@@ -187,9 +206,17 @@ export const useDashboardData = () => {
         );
       }
       await deleteInstrument(itemId);
-      showSuccess('아이템이 성공적으로 삭제되었습니다.');
+      invalidateCache('connections');
+      await fetchConnections({ all: true, force: true });
+      showSuccess('Item deleted successfully.');
     },
-    [hasFatalError, deleteInstrument, showSuccess]
+    [
+      hasFatalError,
+      deleteInstrument,
+      fetchConnections,
+      invalidateCache,
+      showSuccess,
+    ]
   );
 
   const reloadDashboard = useCallback(async () => {

@@ -16,6 +16,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { createApiResponseError } from '@/utils/handleApiResponse';
 import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
+import { logInfo } from '@/utils/logger';
 
 // Helper function to parse type field: if it contains "/", split into type and subtype
 type JsonRecord = Record<string, unknown>;
@@ -195,7 +196,8 @@ const InstrumentsContext = createContext<{
     /** @param all - `true` loads the full org instrument list (unbounded on server). Default context bootstrap uses this; bounded calls omit it. */
     fetchInstruments: (opts?: { all?: boolean }) => Promise<void>;
     createInstrument: (
-      instrument: Omit<Instrument, 'id' | 'created_at'>
+      instrument: Omit<Instrument, 'id' | 'created_at'>,
+      options?: { idempotencyKey?: string }
     ) => Promise<Instrument>;
     updateInstrument: (
       id: string,
@@ -317,16 +319,23 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
 
   const createInstrument = useCallback(
     async (
-      instrument: Omit<Instrument, 'id' | 'created_at'>
+      instrument: Omit<Instrument, 'id' | 'created_at'>,
+      options?: { idempotencyKey?: string }
     ): Promise<Instrument> => {
       const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
       dispatch({ type: 'SET_SUBMITTING', payload: true });
       try {
-        const response = await apiFetch('/api/instruments', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(instrument),
-        });
+        const response = await apiFetch(
+          '/api/instruments',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(instrument),
+          },
+          options?.idempotencyKey
+            ? { idempotencyKey: options.idempotencyKey }
+            : undefined
+        );
 
         const result = await safeJson(response);
 
@@ -387,6 +396,17 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
         });
         if (!response.ok) {
           const body = await safeJson(response);
+          if (response.status === 409) {
+            logInfo('instrument_update_conflict_client', 'InstrumentsContext', {
+              instrumentId: id,
+            });
+            await fetchInstruments({ all: true });
+            const msg =
+              typeof body?.error === 'string' && body.error.trim()
+                ? body.error
+                : 'This record was updated elsewhere. The list has been refreshed.';
+            throw new Error(msg);
+          }
           throw getResponseError(body, response, 'Failed to update instrument');
         }
         const result = await safeJson(response);
@@ -429,7 +449,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    []
+    [fetchInstruments]
   );
 
   const deleteInstrument = useCallback(async (id: string): Promise<void> => {

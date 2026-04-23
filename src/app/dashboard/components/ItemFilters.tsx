@@ -167,7 +167,7 @@ function ItemFilters({
     if (dateRange?.from || dateRange?.to) {
       badges.push({
         key: 'dateRange',
-        label: `${DASHBOARD_FILTER_LABEL_STRINGS.DATE_RANGE}: ${dateRange.from || '시작'} ~ ${dateRange.to || '종료'}`,
+        label: `${DASHBOARD_FILTER_LABEL_STRINGS.DATE_RANGE}: ${dateRange.from || 'start'} ~ ${dateRange.to || 'end'}`,
         remove: () => onDateRangeChange?.(null),
       });
     }
@@ -189,7 +189,7 @@ function ItemFilters({
     return (
       <div className="border-b border-gray-100 pb-3 last:border-b-0">
         <h4 className="text-sm font-semibold text-gray-900 mb-3">
-          가격 범위
+          {DASHBOARD_FILTER_LABEL_STRINGS.PRICE_RANGE}
           {(filters.priceRange.min || filters.priceRange.max) && (
             <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-medium text-white bg-blue-600 rounded-full">
               1
@@ -200,7 +200,7 @@ function ItemFilters({
           <div className="flex items-center gap-2">
             <input
               type="number"
-              placeholder="최소"
+              placeholder="Min"
               value={filters.priceRange.min}
               onChange={e => onPriceRangeChange('min', e.target.value)}
               className="flex-1 h-10 px-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
@@ -214,7 +214,7 @@ function ItemFilters({
             </span>
             <input
               type="number"
-              placeholder="최대"
+              placeholder="Max"
               value={filters.priceRange.max}
               onChange={e => onPriceRangeChange('max', e.target.value)}
               className="flex-1 h-10 px-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"

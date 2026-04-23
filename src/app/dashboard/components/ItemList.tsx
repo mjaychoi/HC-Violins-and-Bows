@@ -75,6 +75,8 @@ interface ItemListProps {
   onNewlyCreatedItemShown?: () => void;
   // UX: Load sample data
   onLoadSampleData?: () => void;
+  /** Refresh instrument list after certificate files change (e.g. upload). */
+  onInstrumentCertificatesChanged?: () => void;
 }
 
 const ItemList = memo(function ItemList({
@@ -96,6 +98,7 @@ const ItemList = memo(function ItemList({
   newlyCreatedItemId,
   onNewlyCreatedItemShown,
   onLoadSampleData,
+  onInstrumentCertificatesChanged,
 }: ItemListProps) {
   const { showSuccess } = useSuccessToastContext();
   const { handleError } = useErrorContext();
@@ -179,7 +182,7 @@ const ItemList = memo(function ItemList({
       const msg =
         e instanceof Error && e.message.trim().length > 0
           ? e.message
-          : '저장에 실패했습니다.';
+          : 'Could not save.';
       setInlineSaveError(msg);
       handleError(
         e instanceof Error ? e : new Error(String(e)),
@@ -202,12 +205,6 @@ const ItemList = memo(function ItemList({
       setExpandedInstrumentId(null);
     }
   }, [expandedInstrumentId, items]);
-
-  useEffect(() => {
-    if (editingItem && expandedInstrumentId === editingItem) {
-      setExpandedInstrumentId(null);
-    }
-  }, [editingItem, expandedInstrumentId]);
 
   // Track newly created item for scroll/highlight
   const newlyCreatedItemRef = useRef<string | null>(null);
@@ -318,7 +315,7 @@ const ItemList = memo(function ItemList({
             return (
               <span
                 className="text-gray-400 text-sm italic"
-                title="클라이언트 정보 로딩 중..."
+                title="Loading client information..."
               >
                 Loading...
               </span>
@@ -332,7 +329,7 @@ const ItemList = memo(function ItemList({
           return (
             <span
               className="text-gray-400 text-xs font-mono"
-              title={`클라이언트를 찾을 수 없습니다 (로드된 클라이언트 ${clientsMap.size}명)`}
+              title={`Client not found (${clientsMap.size} client(s) loaded)`}
             >
               {shortenUuidForDisplay(item.ownership)}
             </span>
@@ -714,7 +711,6 @@ const ItemList = memo(function ItemList({
                 const ownerMeta = resolveOwnerMeta(item);
 
                 const toggleRowExpanded = () => {
-                  if (editingItem === item.id) return;
                   setExpandedInstrumentId(prev =>
                     prev === item.id ? null : item.id
                   );
@@ -1040,6 +1036,9 @@ const ItemList = memo(function ItemList({
                         clients={item.clients}
                         ownerLabel={ownerMeta?.label}
                         ownerClient={ownerMeta?.client || null}
+                        onInstrumentCertificatesChanged={
+                          onInstrumentCertificatesChanged
+                        }
                       />
                     )}
                   </Fragment>
