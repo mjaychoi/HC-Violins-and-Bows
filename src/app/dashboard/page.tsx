@@ -62,9 +62,9 @@ export default function DashboardPage() {
 
   const { createSale } = useSalesHistory();
 
-  // 최근 거래한 클라이언트 ID 리스트
+  // Recently sold-to client IDs (sale modal)
   const [recentClientIds, setRecentClientIds] = useState<string[]>([]);
-  const [recentClientsLoaded, setRecentClientsLoaded] = useState(false); // ✅ 캐시 플래그
+  const [recentClientsLoaded, setRecentClientsLoaded] = useState(false); // one-shot cache flag
 
   // --- Dashboard data and CRUD operations ---
   const {
@@ -123,7 +123,7 @@ export default function DashboardPage() {
     return `Some data could not be loaded: ${parts.join(' and ')}. Some features may be limited.`;
   }, [safeErrors]);
 
-  // ✅ 개선 1) enrichedItems: 캐스팅 제거 + O(1) map
+  // enrichedItems: O(1) client lookup per instrument
   const enrichedItems = useMemo<EnrichedInstrument[]>(() => {
     const byInstrument = new Map<string, ClientInstrument[]>();
 
@@ -142,21 +142,20 @@ export default function DashboardPage() {
     }));
   }, [instruments, clientRelationships]);
 
-  // ✅ 개선 2) Dashboard에 tasks가 없어서 usePageNotifications 제거
-  // 필요하면 나중에 Calendar/Tasks 있는 페이지에서만 badge 쓰는 게 더 깔끔
+  // Dashboard has no tasks — notification badge is a no-op placeholder
   const notificationBadge = useMemo(
     () => ({
       overdue: 0,
       upcoming: 0,
       today: 0,
       onClick: () => {
-        // no-op (dashboard에서는 사용 안 함)
+        // no-op
       },
     }),
     []
   );
 
-  // ✅ 개선 3) 최근 거래 클라이언트 fetch: AbortController + 모달 열릴 때만 + 1회 캐시
+  // Recent clients: fetch once when sale modal opens, with abort on unmount
   useEffect(() => {
     if (!showSaleModal) return;
     if (recentClientsLoaded) return;
@@ -170,7 +169,7 @@ export default function DashboardPage() {
         const response = await apiFetch(url, { signal: ac.signal });
 
         if (!response.ok) {
-          // 선택 기능이라 에러는 조용히 무시 (dev만 로그)
+          // Optional UX: ignore errors quietly (log in dev)
           if (process.env.NODE_ENV === 'development') {
             console.error(
               'Failed to fetch recent clients:',
@@ -198,7 +197,7 @@ export default function DashboardPage() {
         setRecentClientIds(ids);
         setRecentClientsLoaded(true);
       } catch (err) {
-        // Abort는 정상 흐름
+        // Abort is expected on unmount
         if ((err as { name?: string })?.name === 'AbortError') return;
 
         if (process.env.NODE_ENV === 'development') {
@@ -267,7 +266,7 @@ export default function DashboardPage() {
     }
   }, [hasFatalError]);
 
-  // ✅ onSubmit 함수들: inline 생성 줄이고, 로직을 callback으로 분리
+  // Submit handlers (memoized)
   const handleSubmitCreate = useCallback(
     async (formData: InstrumentFormData) => {
       if (hasFatalError) {
@@ -283,9 +282,8 @@ export default function DashboardPage() {
         formData.maker ?? undefined,
         formData.type ?? undefined,
       ].filter(Boolean);
-      const label =
-        (titleParts.length > 0 ? titleParts.join(' - ') : '새 악기') + '이(가)';
-      showSuccess(`"${label}" 추가되었습니다.`);
+      const label = titleParts.length > 0 ? titleParts.join(' - ') : 'New item';
+      showSuccess(`"${label}" has been added.`);
       return created;
     },
     [handleCreateItem, showSuccess, hasFatalError]
@@ -304,15 +302,14 @@ export default function DashboardPage() {
         formData.maker ?? undefined,
         formData.type ?? undefined,
       ].filter(Boolean);
-      const label =
-        (titleParts.length > 0 ? titleParts.join(' - ') : '악기') + '이(가)';
-      showSuccess(`"${label}" 수정되었습니다.`);
+      const label = titleParts.length > 0 ? titleParts.join(' - ') : 'Item';
+      showSuccess(`"${label}" has been updated.`);
       return result;
     },
     [handleUpdateItem, showSuccess, hasFatalError]
   );
 
-  // 판매 기록 저장 핸들러
+  // Sale record submit
   const handleSaleSubmit = useCallback(
     async (
       payload: Omit<SalesHistory, 'id' | 'created_at'>,
@@ -326,13 +323,13 @@ export default function DashboardPage() {
           if (!result) return;
 
           void options;
-          showSuccess('판매 기록이 추가되었습니다.');
+          showSuccess('Sale record added.');
 
           setShowSaleModal(false);
           setSelectedInstrumentForSale(null);
           setSelectedClientForSale(null);
         } catch (error) {
-          handleError(error, '판매 기록 생성 실패');
+          handleError(error, 'Failed to create sale record');
         }
       });
     },
@@ -361,7 +358,7 @@ export default function DashboardPage() {
     [isEditing, selectedItem, handleSubmitUpdate, handleSubmitCreate]
   );
 
-  // 예시 데이터 로드 핸들러 (sequential 유지, 필요하면 나중에 병렬/배치로)
+  // Load sample instruments (sequential)
   const handleLoadSampleData = useCallback(async () => {
     try {
       const sampleInstruments = generateSampleInstruments(
@@ -384,22 +381,22 @@ export default function DashboardPage() {
       }
 
       if (successCount > 0 && errorCount === 0) {
-        showSuccess(
-          `예시 데이터 ${successCount}개가 성공적으로 추가되었습니다.`
-        );
+        showSuccess(`Successfully added ${successCount} sample instrument(s).`);
       }
       if (successCount > 0 && errorCount > 0) {
         showSuccess(
-          `예시 데이터 ${successCount}개가 추가되었지만 ${errorCount}개는 실패했습니다.`
+          `Added ${successCount} sample instrument(s); ${errorCount} failed.`
         );
       } else if (errorCount > 0) {
         handleError(
-          new Error(`일부 예시 데이터 추가 실패 (${errorCount}개)`),
-          '예시 데이터 로드'
+          new Error(
+            `Failed to add some sample instruments (${errorCount} error(s)).`
+          ),
+          'Sample data load'
         );
       }
     } catch (error) {
-      handleError(error, '예시 데이터 로드 실패');
+      handleError(error, 'Sample data load failed');
     }
   }, [existingSerialNumbers, handleCreateItem, showSuccess, handleError]);
 
@@ -563,6 +560,7 @@ export default function DashboardPage() {
               onLoadSampleData={
                 canCreateInstrument ? handleLoadSampleData : undefined
               }
+              onInstrumentCertificatesChanged={() => void reloadDashboard()}
             />
           </>
         )}

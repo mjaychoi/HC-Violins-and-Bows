@@ -1220,7 +1220,7 @@ describe('ClientsPage', () => {
 
       expect(mockCloseInstrumentSearch).toHaveBeenCalled();
       expect(mockShowSuccess).toHaveBeenCalledWith(
-        expect.stringContaining('연결이 추가되었습니다'),
+        expect.stringContaining('Connection added:'),
         expect.any(Array)
       );
     });

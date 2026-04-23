@@ -81,15 +81,15 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
       if (revenueDrop > 30) {
         result.push({
           type: 'error',
-          title: '최근 매출 변화 (참고용)',
-          message: `최근 7일 매출이 이전 7일 대비 ${Math.round(revenueDrop)}% 감소했습니다. (${currency.format(recentRevenue)} vs ${currency.format(previousRevenue)})`,
+          title: 'Recent revenue change (for reference)',
+          message: `Revenue in the last 7 days is down about ${Math.round(revenueDrop)}% vs. the prior 7 days (${currency.format(recentRevenue)} vs ${currency.format(previousRevenue)}).`,
           severity: revenueDrop > 50 ? 'high' : 'medium',
         });
       } else if (revenueDrop > 15) {
         result.push({
           type: 'warning',
-          title: '매출 하락 경고',
-          message: `최근 7일 매출이 이전 7일 대비 ${Math.round(revenueDrop)}% 감소했습니다.`,
+          title: 'Revenue decline warning',
+          message: `Revenue in the last 7 days is down about ${Math.round(revenueDrop)}% vs. the prior 7 days.`,
           severity: 'low',
         });
       }
@@ -111,16 +111,16 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
       if (refundIncrease > 50) {
         result.push({
           type: 'error',
-          title: '최근 환불 변화 (참고용)',
-          message: `최근 7일 환불이 이전 7일 대비 ${Math.round(refundIncrease)}% 증가했습니다. (${currency.format(recentRefundAmount)} vs ${currency.format(previousRefundAmount)})`,
+          title: 'Recent refund change (for reference)',
+          message: `Refunds in the last 7 days are up about ${Math.round(refundIncrease)}% vs. the prior 7 days (${currency.format(recentRefundAmount)} vs ${currency.format(previousRefundAmount)}).`,
           severity: refundIncrease > 100 ? 'high' : 'medium',
         });
       }
     } else if (recentRefundAmount > 0 && previousRefundAmount === 0) {
       result.push({
         type: 'warning',
-        title: '환불 발생',
-        message: `최근 7일 동안 ${currency.format(recentRefundAmount)}의 환불이 발생했습니다.`,
+        title: 'Refunds recorded',
+        message: `Refunds in the last 7 days total ${currency.format(recentRefundAmount)}.`,
         severity: 'low',
       });
     }
@@ -161,16 +161,16 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
         ) {
           result.push({
             type: 'error',
-            title: `${maker} 환불 급증`,
-            message: `${maker} 제품의 환불이 이전 7일 대비 ${Math.round(increase)}% 증가했습니다.`,
+            title: `${maker} refund spike`,
+            message: `Refunds for ${maker} are up about ${Math.round(increase)}% vs. the prior 7 days.`,
             severity: 'high',
           });
         }
       } else if (data.recent > 0) {
         result.push({
           type: 'warning',
-          title: `${maker} 환불 발생`,
-          message: `${maker} 제품에서 ${currency.format(data.recent)}의 환불이 발생했습니다.`,
+          title: `${maker} refunds`,
+          message: `Refunds on ${maker} items total ${currency.format(data.recent)} in the last 7 days.`,
           severity: 'medium',
         });
       }
@@ -200,13 +200,13 @@ export default function SalesAlerts({ sales }: SalesAlertsProps) {
     });
 
     const dayNames = [
-      '일요일',
-      '월요일',
-      '화요일',
-      '수요일',
-      '목요일',
-      '금요일',
-      '토요일',
+      'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
     ];
     weekdayMap.forEach((data, dayOfWeek) => {
       if (data.previous > 0) {

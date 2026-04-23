@@ -152,7 +152,7 @@ export default function EmptyState({
                         setShowGuideModal(false);
                         actionButton.onClick();
                       }}
-                      title="악기 추가 가이드"
+                      title="Add instrument guide"
                       steps={guideSteps}
                     />
                   )}
@@ -177,7 +177,7 @@ export default function EmptyState({
                       d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
                     />
                   </svg>
-                  샘플 데이터로 시작하기
+                  Start with sample data
                 </button>
               )}
             </div>

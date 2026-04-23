@@ -2,12 +2,12 @@ import { Instrument } from '@/types';
 import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
 
 /**
- * 예시 악기 데이터 생성
+ * Build sample instruments for dashboard demo data.
  */
 export function generateSampleInstruments(
   existingSerialNumbers: string[] = []
 ): Array<Omit<Instrument, 'id' | 'created_at'>> {
-  // 각 악기를 생성할 때마다 serial numbers를 업데이트하여 중복 방지
+  // Track serials as we go to avoid duplicates
   const currentSerialNumbers = [...existingSerialNumbers];
 
   const sampleInstruments: Array<Omit<Instrument, 'id' | 'created_at'>> = [
@@ -22,7 +22,7 @@ export function generateSampleInstruments(
       size: '4/4',
       weight: null,
       ownership: null,
-      note: '예시 데이터: 유명한 Stradivarius 바이올린',
+      note: 'Sample data: famous Stradivarius violin',
       serial_number: (() => {
         const serial = generateInstrumentSerialNumber(
           'Violin',
@@ -43,7 +43,7 @@ export function generateSampleInstruments(
       size: '4/4',
       weight: null,
       ownership: null,
-      note: '예시 데이터: Guarneri 바이올린',
+      note: 'Sample data: Guarneri violin',
       serial_number: (() => {
         const serial = generateInstrumentSerialNumber(
           'Violin',
@@ -64,7 +64,7 @@ export function generateSampleInstruments(
       size: null,
       weight: '60g',
       ownership: null,
-      note: '예시 데이터: Tourte 활',
+      note: 'Sample data: Tourte bow',
       serial_number: (() => {
         const serial = generateInstrumentSerialNumber(
           'Bow',
@@ -85,7 +85,7 @@ export function generateSampleInstruments(
       size: '4/4',
       weight: null,
       ownership: null,
-      note: '예시 데이터: Montagnana 첼로',
+      note: 'Sample data: Montagnana cello',
       serial_number: (() => {
         const serial = generateInstrumentSerialNumber(
           'Cello',
@@ -106,7 +106,7 @@ export function generateSampleInstruments(
       size: '16.5"',
       weight: null,
       ownership: null,
-      note: '예시 데이터: Amati 비올라',
+      note: 'Sample data: Amati viola',
       serial_number: (() => {
         const serial = generateInstrumentSerialNumber(
           'Viola',

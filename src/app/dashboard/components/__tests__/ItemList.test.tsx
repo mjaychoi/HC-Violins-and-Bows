@@ -103,9 +103,7 @@ describe('ItemList', () => {
         onSort={jest.fn()}
       />
     );
-    expect(
-      screen.getByText(/등록된 아이템이 없습니다|No items/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/No items/i)).toBeInTheDocument();
   });
 
   it('renders items and triggers edit/save/delete', async () => {

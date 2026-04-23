@@ -353,28 +353,28 @@ export default function ClientsPage() {
         const instrumentName =
           instrument?.maker && instrument?.serial_number
             ? `${instrument.maker} (${instrument.serial_number})`
-            : instrument?.maker || instrument?.serial_number || '악기';
+            : instrument?.maker || instrument?.serial_number || 'Instrument';
         const clientName =
           selectedClient.first_name || selectedClient.last_name
             ? `${selectedClient.first_name || ''} ${selectedClient.last_name || ''}`.trim()
-            : selectedClient.email || '클라이언트';
+            : selectedClient.email || 'Client';
 
         const links: Array<{ label: string; href: string }> = [];
         if (instrumentId) {
           links.push({
-            label: '악기 보기',
+            label: 'View instrument',
             href: `/dashboard?instrumentId=${instrumentId}`,
           });
         }
         if (selectedClient.id) {
           links.push({
-            label: '클라이언트 보기',
+            label: 'View client',
             href: `/clients?clientId=${selectedClient.id}`,
           });
         }
 
         showSuccess(
-          `연결이 추가되었습니다. ${instrumentName}과 ${clientName}이 연결되었습니다.`,
+          `Connection added: ${instrumentName} and ${clientName} are now linked.`,
           links.length > 0 ? links : undefined
         );
       }

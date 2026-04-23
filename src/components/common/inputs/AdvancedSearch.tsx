@@ -102,15 +102,15 @@ export default function AdvancedSearch({
                 </button>
               </div>
 
-              {/* 날짜 범위 검색 */}
+              {/* Date range */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  날짜 범위
+                  Date range
                 </label>
                 <div className="space-y-2">
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">
-                      시작일
+                      Start date
                     </label>
                     <input
                       type="date"

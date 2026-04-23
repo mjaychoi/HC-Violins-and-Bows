@@ -3,33 +3,25 @@ import { errorHandler } from '@/utils/errorHandler';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
-import { buildReservedStateUpdate } from '@/app/api/_utils/instrumentReservedState';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
+import { executeInstrumentPatch } from '@/app/api/instruments/_shared/executeInstrumentPatch';
+import {
+  ensureInstrumentIdempotencyTableContract,
+  instrumentSchemaContractMissingResult,
+  isInstrumentIdempotencyTableMissingError,
+} from '@/app/api/instruments/_shared/instrumentApiContract';
 import {
   validateInstrument,
-  validatePartialInstrument,
   validateCreateInstrument,
   safeValidate,
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
 import { Instrument } from '@/types';
-import type { TablesInsert, TablesUpdate } from '@/types/database';
-
-type InstrumentUpdateInput = Partial<
-  Omit<Instrument, 'id' | 'created_at' | 'updated_at'>
-> & {
-  id: string;
-  sale_transition?: {
-    sale_price: number;
-    sale_date: string;
-    client_id: string;
-    sales_note?: string | null;
-  };
-};
+import type { TablesInsert } from '@/types/database';
+import { logInfo, logWarn } from '@/utils/logger';
 
 type InstrumentInsertRow = TablesInsert<'instruments'>;
-type InstrumentUpdateRow = TablesUpdate<'instruments'>;
 type CreateInstrumentInput = {
   status?: Instrument['status'];
   reserved_reason?: string | null;
@@ -47,10 +39,6 @@ type CreateInstrumentInput = {
   ownership?: string | null;
   note?: string | null;
   serial_number?: string | null;
-};
-type PartialInstrumentInput = Partial<CreateInstrumentInput> & {
-  reserved_by_user_id?: string | null;
-  reserved_connection_id?: string | null;
 };
 type InstrumentInsertInput = CreateInstrumentInput & {
   org_id: string;
@@ -99,70 +87,15 @@ function toInstrumentInsertRow(
   };
 }
 
-function toInstrumentUpdateRow(
-  input: PartialInstrumentInput
-): InstrumentUpdateRow {
-  const row: InstrumentUpdateRow = {};
-
-  if (Object.prototype.hasOwnProperty.call(input, 'status')) {
-    row.status = input.status;
+function normalizeIdempotencyKey(headerValue: string | null): string | null {
+  if (!headerValue) {
+    return null;
   }
-  if (Object.prototype.hasOwnProperty.call(input, 'reserved_reason')) {
-    row.reserved_reason = normalizeNullableText(input.reserved_reason);
+  const trimmed = headerValue.trim();
+  if (!trimmed || trimmed.length > 200) {
+    return null;
   }
-  if (Object.prototype.hasOwnProperty.call(input, 'maker')) {
-    row.maker = normalizeNullableText(input.maker);
-  }
-  if (
-    Object.prototype.hasOwnProperty.call(input, 'type') &&
-    typeof input.type === 'string'
-  ) {
-    row.type = input.type.trim();
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'subtype')) {
-    row.subtype = normalizeNullableText(input.subtype);
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'year')) {
-    row.year = input.year ?? null;
-  }
-  if (
-    Object.prototype.hasOwnProperty.call(input, 'certificate') ||
-    Object.prototype.hasOwnProperty.call(input, 'has_certificate')
-  ) {
-    row.certificate = Boolean(input.certificate ?? input.has_certificate);
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'size')) {
-    row.size = normalizeNullableText(input.size);
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'weight')) {
-    row.weight = normalizeNullableText(input.weight);
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'price')) {
-    row.price = input.price ?? null;
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'cost_price')) {
-    row.cost_price = input.cost_price ?? null;
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'consignment_price')) {
-    row.consignment_price = input.consignment_price ?? null;
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'ownership')) {
-    row.ownership = normalizeNullableText(input.ownership);
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'note')) {
-    row.note = normalizeNullableText(input.note);
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'serial_number')) {
-    row.serial_number = normalizeNullableText(input.serial_number);
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'reserved_by_user_id')) {
-    row.reserved_by_user_id = input.reserved_by_user_id ?? null;
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'reserved_connection_id')) {
-    row.reserved_connection_id = input.reserved_connection_id ?? null;
-  }
-
-  return row;
+  return trimmed;
 }
 
 function isRetryableSerialConflict(error: unknown): boolean {
@@ -414,8 +347,94 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      const idempotencyKey = normalizeIdempotencyKey(
+        request.headers.get('idempotency-key')
+      );
+
+      if (idempotencyKey) {
+        const idempotencyContract =
+          await ensureInstrumentIdempotencyTableContract(auth.userSupabase);
+        if (idempotencyContract) {
+          return idempotencyContract;
+        }
+
+        const { data: existingMap, error: mapLookupError } =
+          await auth.userSupabase
+            .from('instrument_create_idempotency')
+            .select('instrument_id')
+            .eq('org_id', auth.orgId)
+            .eq('idempotency_key', idempotencyKey)
+            .maybeSingle();
+
+        if (mapLookupError) {
+          if (isInstrumentIdempotencyTableMissingError(mapLookupError)) {
+            logWarn(
+              'instrument_idempotency_lookup_schema_missing',
+              'InstrumentsAPI',
+              {
+                orgId: auth.orgId,
+              }
+            );
+            return instrumentSchemaContractMissingResult([
+              'instrument_create_idempotency',
+            ]);
+          }
+          logWarn('instrument_idempotency_lookup_failed', 'InstrumentsAPI', {
+            orgId: auth.orgId,
+            code: (mapLookupError as { code?: string }).code,
+          });
+          throw errorHandler.handleSupabaseError(
+            mapLookupError,
+            'Idempotency lookup'
+          );
+        }
+
+        if (existingMap?.instrument_id) {
+          const { data: existingRow, error: existingErr } =
+            await auth.userSupabase
+              .from('instruments')
+              .select('*')
+              .eq('id', existingMap.instrument_id)
+              .eq('org_id', auth.orgId)
+              .single();
+
+          if (existingErr || !existingRow) {
+            throw errorHandler.handleSupabaseError(
+              existingErr,
+              'Fetch idempotent instrument'
+            );
+          }
+
+          logInfo('instrument_create_idempotent_hit', 'InstrumentsAPI', {
+            orgId: auth.orgId,
+            instrumentId: existingRow.id,
+          });
+
+          return {
+            payload: { data: validateInstrument(existingRow) },
+            status: 201,
+            metadata: {
+              instrumentId: existingRow.id,
+              idempotentReplay: true,
+            },
+          };
+        }
+      }
+
+      let resolvedSerial = normalizeNullableText(
+        createInput.serial_number ?? null
+      );
+      if (!resolvedSerial) {
+        const existingSerials = await getOrgSerialNumbers(auth, auth.orgId);
+        resolvedSerial = generateInstrumentSerialNumber(
+          createInput.type?.trim() || null,
+          existingSerials
+        );
+      }
+
       const instrumentInsert = toInstrumentInsertRow({
         ...createInput,
+        serial_number: resolvedSerial,
         status: nextStatus,
         org_id: auth.orgId,
         reserved_reason:
@@ -428,7 +447,103 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
 
       const data = await createInstrumentWithRetry(auth, instrumentInsert);
 
+      if (idempotencyKey) {
+        const { error: mapInsertError } = await auth.userSupabase
+          .from('instrument_create_idempotency')
+          .insert({
+            org_id: auth.orgId,
+            idempotency_key: idempotencyKey,
+            instrument_id: data.id,
+            created_by_user_id: auth.user.id,
+          });
+
+        if (mapInsertError?.code === '23505') {
+          logInfo('instrument_create_idempotent_race', 'InstrumentsAPI', {
+            orgId: auth.orgId,
+          });
+          const { data: winner, error: winnerErr } = await auth.userSupabase
+            .from('instrument_create_idempotency')
+            .select('instrument_id')
+            .eq('org_id', auth.orgId)
+            .eq('idempotency_key', idempotencyKey)
+            .single();
+
+          if (winnerErr || !winner?.instrument_id) {
+            throw errorHandler.handleSupabaseError(
+              winnerErr,
+              'Resolve idempotent instrument'
+            );
+          }
+
+          if (winner.instrument_id !== data.id) {
+            await auth.userSupabase
+              .from('instruments')
+              .delete()
+              .eq('id', data.id)
+              .eq('org_id', auth.orgId);
+            logInfo(
+              'instrument_create_duplicate_row_removed',
+              'InstrumentsAPI',
+              {
+                droppedId: data.id,
+                canonicalId: winner.instrument_id,
+              }
+            );
+          }
+
+          const { data: canonical, error: canonicalErr } =
+            await auth.userSupabase
+              .from('instruments')
+              .select('*')
+              .eq('id', winner.instrument_id)
+              .eq('org_id', auth.orgId)
+              .single();
+
+          if (canonicalErr || !canonical) {
+            throw errorHandler.handleSupabaseError(
+              canonicalErr,
+              'Fetch canonical instrument'
+            );
+          }
+
+          return {
+            payload: { data: validateInstrument(canonical) },
+            status: 201,
+            metadata: {
+              instrumentId: canonical.id,
+              idempotentReplay: true,
+            },
+          };
+        }
+
+        if (mapInsertError) {
+          if (isInstrumentIdempotencyTableMissingError(mapInsertError)) {
+            logWarn(
+              'instrument_idempotency_insert_schema_missing',
+              'InstrumentsAPI',
+              { orgId: auth.orgId }
+            );
+            return instrumentSchemaContractMissingResult([
+              'instrument_create_idempotency',
+            ]);
+          }
+          throw errorHandler.handleSupabaseError(
+            mapInsertError,
+            'Idempotency insert'
+          );
+        }
+
+        logInfo('instrument_create_idempotent_registered', 'InstrumentsAPI', {
+          orgId: auth.orgId,
+          instrumentId: data.id,
+        });
+      }
+
       const validatedResponse = validateInstrument(data);
+
+      logInfo('instrument_create_success', 'InstrumentsAPI', {
+        instrumentId: validatedResponse.id,
+      });
 
       return {
         payload: { data: validatedResponse },
@@ -448,20 +563,6 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       context: 'InstrumentsAPI',
     },
     async () => {
-      if (!auth.orgId) {
-        return {
-          payload: { error: 'Organization context required', success: false },
-          status: 403,
-        };
-      }
-
-      if (auth.role !== 'admin') {
-        return {
-          payload: { error: 'Admin role required', success: false },
-          status: 403,
-        };
-      }
-
       const body = await request.json();
 
       if (!isObject(body) || typeof body.id !== 'string') {
@@ -471,110 +572,19 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const { id, sale_transition, ...updates } =
-        body as unknown as InstrumentUpdateInput;
-
-      if (!validateUUID(id)) {
+      if (!validateUUID(body.id)) {
         return {
           payload: { error: 'Invalid instrument ID format', success: false },
           status: 400,
         };
       }
 
-      const orgId = auth.orgId;
-
-      if (updates.status === 'Sold' && sale_transition) {
-        const { error: rpcError, data: rpcData } = await auth.userSupabase.rpc(
-          'update_instrument_sale_transition_atomic',
-          {
-            p_instrument_id: id,
-            p_sale_price: sale_transition.sale_price,
-            p_sale_date: sale_transition.sale_date,
-            p_client_id: sale_transition.client_id,
-            p_sales_note: sale_transition.sales_note || null,
-          }
-        );
-
-        if (rpcError) {
-          throw errorHandler.handleSupabaseError(rpcError, 'Update sale');
-        }
-
-        return {
-          payload: { data: rpcData },
-          status: 200,
-          metadata: { instrumentId: id, transition: 'Sold' },
-        };
-      }
-
-      if (
-        updates.status ||
-        Object.prototype.hasOwnProperty.call(updates, 'reserved_reason')
-      ) {
-        const { data: current, error: fetchError } = await auth.userSupabase
-          .from('instruments')
-          .select(
-            'status, reserved_reason, reserved_by_user_id, reserved_connection_id'
-          )
-          .eq('id', id)
-          .eq('org_id', orgId)
-          .single();
-
-        if (fetchError || !current) {
-          throw errorHandler.handleSupabaseError(
-            fetchError,
-            'Fetch current status'
-          );
-        }
-
-        const reservedUpdateResult = buildReservedStateUpdate(
-          (current.status ?? 'Available') as Instrument['status'],
-          current.reserved_reason,
-          current.reserved_by_user_id,
-          current.reserved_connection_id,
-          updates,
-          auth.user.id
-        );
-
-        if (reservedUpdateResult.error) {
-          return {
-            payload: { error: reservedUpdateResult.error, success: false },
-            status: 400,
-          };
-        }
-
-        Object.assign(updates, reservedUpdateResult.update);
-      }
-
-      const validationResult = safeValidate(updates, validatePartialInstrument);
-      if (!validationResult.success) {
-        return {
-          payload: {
-            error: `Invalid instrument updates: ${validationResult.error}`,
-            success: false,
-          },
-          status: 400,
-        };
-      }
-
-      const { data, error } = await auth.userSupabase
-        .from('instruments')
-        .update(
-          toInstrumentUpdateRow(validationResult.data as PartialInstrumentInput)
-        )
-        .eq('id', id)
-        .eq('org_id', orgId)
-        .select()
-        .single();
-
-      if (error) {
-        throw errorHandler.handleSupabaseError(error, 'Update instrument');
-      }
-
-      return {
-        payload: { data: validateInstrument(data) },
-        status: 200,
-        metadata: { instrumentId: id },
-      };
+      return executeInstrumentPatch(auth, {
+        mode: 'collection',
+        instrumentId: body.id,
+        body,
+        apiPath: 'InstrumentsAPI',
+      });
     }
   );
 }
@@ -639,6 +649,12 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
           status: 404,
         };
       }
+
+      logInfo('instrument_delete_success', 'InstrumentsAPI', {
+        instrumentId: id,
+        orgId,
+        deletedRows: count,
+      });
 
       return {
         payload: { success: true, id },

@@ -226,11 +226,11 @@ function ItemForm({
         // 중복된 항목에 대한 추가 정보 및 해결 방법 제시
         if (serialValidation.duplicateInfo) {
           errorMessages.push(
-            '다른 Serial Number를 입력하거나 기존 악기를 수정하세요.'
+            'Enter a different serial number or edit the existing instrument.'
           );
           if (serialValidation.duplicateInfo.id) {
             errorMessages.push(
-              `중복된 악기 ID: ${serialValidation.duplicateInfo.id}`
+              `Duplicate instrument ID: ${serialValidation.duplicateInfo.id}`
             );
           }
         }
@@ -323,11 +323,11 @@ function ItemForm({
       const message =
         e instanceof Error
           ? e.message
-          : '저장에 실패했습니다. 입력 값을 다시 확인해 주세요.';
+          : 'Could not save. Please check your input and try again.';
       setFormError(
         message && message.trim().length > 0
           ? message
-          : '저장에 실패했습니다. 입력 값을 다시 확인해 주세요.'
+          : 'Could not save. Please check your input and try again.'
       );
     }
   };
@@ -644,7 +644,7 @@ function ItemForm({
                 Serial Number
                 {!isEditing && (
                   <span className="ml-2 text-xs text-gray-500">
-                    (자동 생성)
+                    (auto-generated)
                   </span>
                 )}
               </label>
@@ -668,7 +668,7 @@ function ItemForm({
                 placeholder={
                   isEditing
                     ? 'Enter serial number (e.g., VI0000123, BO0000456)'
-                    : '자동 생성됨'
+                    : 'Auto-generated'
                 }
               />
               {fieldErrors.serial_number && (
@@ -678,7 +678,7 @@ function ItemForm({
               )}
               {!isEditing && (
                 <p className="mt-1 text-xs text-gray-500 italic">
-                  타입 입력 시 자동으로 생성됩니다
+                  Updates automatically when you change the type.
                 </p>
               )}
             </div>

@@ -5,6 +5,8 @@ import { Instrument, ClientInstrument } from '@/types';
 const mockCreateInstrument = jest.fn();
 const mockUpdateInstrument = jest.fn();
 const mockDeleteInstrument = jest.fn();
+const mockFetchConnections = jest.fn().mockResolvedValue(undefined);
+const mockInvalidateCache = jest.fn();
 const mockWithSubmitting = jest.fn(async (cb: () => Promise<unknown>) => cb());
 const mockShowSuccess = jest.fn();
 
@@ -25,6 +27,8 @@ jest.mock('@/hooks/useUnifiedData', () => ({
     createInstrument: mockCreateInstrument,
     updateInstrument: mockUpdateInstrument,
     deleteInstrument: mockDeleteInstrument,
+    fetchConnections: mockFetchConnections,
+    invalidateCache: mockInvalidateCache,
   })),
 }));
 
@@ -59,6 +63,7 @@ describe('useDashboardData', () => {
     certificate: false,
     status: 'Available',
     created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-02T00:00:00Z',
   };
 
   const mockSoldConnection: ClientInstrument = {
@@ -88,6 +93,8 @@ describe('useDashboardData', () => {
       createInstrument: mockCreateInstrument,
       updateInstrument: mockUpdateInstrument,
       deleteInstrument: mockDeleteInstrument,
+      fetchConnections: mockFetchConnections,
+      invalidateCache: mockInvalidateCache,
       ...overrides,
     });
   }
@@ -146,7 +153,10 @@ describe('useDashboardData', () => {
       });
     });
 
-    expect(mockCreateInstrument).toHaveBeenCalled();
+    expect(mockCreateInstrument).toHaveBeenCalledWith(
+      expect.objectContaining({ maker: 'Maker', type: 'Violin' }),
+      expect.objectContaining({ idempotencyKey: expect.any(String) })
+    );
     expect(mockShowSuccess).not.toHaveBeenCalled();
     expect((created as Instrument | null)?.id ?? null).toBe(mockInstrument.id);
   });
@@ -218,6 +228,7 @@ describe('useDashboardData', () => {
 
     expect(mockUpdateInstrument).toHaveBeenCalledWith(mockInstrument.id, {
       maker: 'Updated Maker',
+      updated_at: mockInstrument.updated_at,
     });
     expect(mockShowSuccess).not.toHaveBeenCalled();
   });
@@ -242,6 +253,7 @@ describe('useDashboardData', () => {
       mockInstrument.id,
       expect.objectContaining({
         status: 'Sold',
+        updated_at: mockInstrument.updated_at,
         sale_transition: expect.objectContaining({
           sale_price: 1500000,
           client_id: 'client-1',
@@ -272,6 +284,7 @@ describe('useDashboardData', () => {
       mockInstrument.id,
       expect.objectContaining({
         price: 2000000,
+        updated_at: mockInstrument.updated_at,
         sale_transition: expect.objectContaining({
           sale_price: 2000000,
         }),
@@ -322,6 +335,7 @@ describe('useDashboardData', () => {
       mockInstrument.id,
       expect.objectContaining({
         status: 'Available',
+        updated_at: mockInstrument.updated_at,
         sale_transition: expect.objectContaining({
           sales_note: expect.stringContaining(
             'Auto-refunded when instrument status changed from Sold to Available'
@@ -358,9 +372,7 @@ describe('useDashboardData', () => {
     });
 
     expect(mockUpdateInstrument).toHaveBeenCalled();
-    expect(mockShowSuccess).toHaveBeenCalledWith(
-      '아이템이 성공적으로 수정되었습니다.'
-    );
+    expect(mockShowSuccess).toHaveBeenCalledWith('Item updated successfully.');
   });
 
   it('handleUpdateItemInline does not show success when update rejects', async () => {
@@ -387,9 +399,12 @@ describe('useDashboardData', () => {
     });
 
     expect(mockDeleteInstrument).toHaveBeenCalledWith(mockInstrument.id);
-    expect(mockShowSuccess).toHaveBeenCalledWith(
-      '아이템이 성공적으로 삭제되었습니다.'
-    );
+    expect(mockInvalidateCache).toHaveBeenCalledWith('connections');
+    expect(mockFetchConnections).toHaveBeenCalledWith({
+      all: true,
+      force: true,
+    });
+    expect(mockShowSuccess).toHaveBeenCalledWith('Item deleted successfully.');
   });
 
   it('handleDeleteItem propagates delete failures', async () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Instrument, InstrumentImage, ClientInstrument, Client } from '@/types';
 import OptimizedImage from '@/components/common/OptimizedImage';
 import {
@@ -22,6 +22,7 @@ interface InstrumentExpandedRowProps {
   clients?: ClientInstrument[];
   ownerLabel?: string;
   ownerClient?: Client | null;
+  onInstrumentCertificatesChanged?: () => void;
 }
 
 interface CertificateFile {
@@ -49,6 +50,7 @@ export function InstrumentExpandedRow({
   clients = [],
   ownerLabel,
   ownerClient,
+  onInstrumentCertificatesChanged,
 }: InstrumentExpandedRowProps) {
   const { canUploadInstrumentMedia } = usePermissions();
   const { tenantIdentityKey } = useTenantIdentity();
@@ -70,6 +72,8 @@ export function InstrumentExpandedRow({
   } | null>(null);
   const { showSuccess, showWarning, handleError } = useAppFeedback();
   const hasCertificateFile = certificateFiles.length > 0;
+  const certFileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingCertificate, setUploadingCertificate] = useState(false);
 
   // Request ID counters to handle concurrent requests
   const imageReqIdRef = useRef(0);
@@ -271,6 +275,43 @@ export function InstrumentExpandedRow({
       handleError(error, 'CertificateDownload');
     } finally {
       setDownloadingFile(null);
+    }
+  };
+
+  const handleCertificateFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !instrument?.id || !canUploadInstrumentMedia) return;
+
+    setUploadingCertificate(true);
+    try {
+      const fd = new FormData();
+      fd.append('certificate', file);
+      const response = await apiFetch(
+        `/api/instruments/${instrument.id}/certificates`,
+        { method: 'POST', body: fd }
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+      };
+      if (!response.ok) {
+        handleError(
+          new Error(body.error || 'Failed to upload certificate'),
+          'CertificateUpload'
+        );
+        return;
+      }
+      showSuccess(body.message || 'Certificate uploaded successfully.');
+      certificateCache.delete(instrument.id);
+      await fetchCertificates(instrument.id, () => true, true);
+      onInstrumentCertificatesChanged?.();
+    } catch (error) {
+      handleError(error, 'CertificateUpload');
+    } finally {
+      setUploadingCertificate(false);
     }
   };
 
@@ -643,6 +684,32 @@ export function InstrumentExpandedRow({
                   No certificate files uploaded yet.
                 </p>
               )}
+              {canUploadInstrumentMedia ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <input
+                    ref={certFileInputRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="sr-only"
+                    aria-label="Upload certificate PDF"
+                    onChange={handleCertificateFileChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      certFileInputRef.current?.click();
+                    }}
+                    disabled={uploadingCertificate || loadingCertificates}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {uploadingCertificate ? 'Uploading…' : 'Upload PDF'}
+                  </button>
+                  <span className="text-xs text-gray-500">
+                    PDF only, max 100MB
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             {/* Delete Confirmation Dialog */}

@@ -111,7 +111,7 @@ export default function ErrorToast({
                 onClick={onRetry}
                 className="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-2"
               >
-                <span className="sr-only">다시 시도</span>
+                <span className="sr-only">Retry</span>
                 🔄
               </button>
             )}

@@ -217,6 +217,30 @@ export type Database = {
           },
         ];
       };
+      instrument_create_idempotency: {
+        Row: {
+          org_id: string;
+          idempotency_key: string;
+          instrument_id: string;
+          created_by_user_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          org_id: string;
+          idempotency_key: string;
+          instrument_id: string;
+          created_by_user_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          org_id?: string;
+          idempotency_key?: string;
+          instrument_id?: string;
+          created_by_user_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       instrument_images: {
         Row: {
           created_at: string | null;
@@ -855,10 +879,12 @@ export type Database = {
       update_instrument_sale_transition_atomic: {
         Args: {
           p_instrument_id: string;
-          p_sale_price: number;
-          p_sale_date: string;
+          p_patch?: Json;
+          p_sale_price?: number | null;
+          p_sale_date?: string | null;
           p_client_id?: string | null;
           p_sales_note?: string | null;
+          p_expected_updated_at?: string | null;
         };
         Returns: Json;
       };

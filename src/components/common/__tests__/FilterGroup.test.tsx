@@ -125,7 +125,7 @@ describe('FilterGroup', () => {
     expect(screen.queryByText('Option 1')).not.toBeInTheDocument();
 
     // Click expand button
-    const expandButton = screen.getByLabelText(/Test Filter.*펼치기/);
+    const expandButton = screen.getByLabelText(/Test Filter expand/i);
     fireEvent.click(expandButton);
 
     expect(screen.getByText('Option 1')).toBeInTheDocument();
@@ -160,7 +160,7 @@ describe('FilterGroup', () => {
     );
 
     expect(
-      screen.getByPlaceholderText(/Test Filter 검색/i)
+      screen.getByPlaceholderText(/Search Test Filter/i)
     ).toBeInTheDocument();
   });
 
@@ -176,7 +176,7 @@ describe('FilterGroup', () => {
       />
     );
 
-    const searchInput = screen.getByPlaceholderText(/Test Filter 검색/i);
+    const searchInput = screen.getByPlaceholderText(/Search Test Filter/i);
     fireEvent.change(searchInput, { target: { value: 'Item 1' } });
 
     await waitFor(() => {
@@ -320,7 +320,7 @@ describe('FilterGroup', () => {
     );
   });
 
-  it('shows "검색 결과가 없습니다" when search yields no results', async () => {
+  it('shows empty search message when search yields no results', async () => {
     const manyOptions = Array.from({ length: 10 }, (_, i) => `Option ${i + 1}`);
     render(
       <FilterGroup
@@ -332,11 +332,11 @@ describe('FilterGroup', () => {
       />
     );
 
-    const searchInput = screen.getByPlaceholderText(/Test Filter 검색/i);
+    const searchInput = screen.getByPlaceholderText(/Search Test Filter/i);
     fireEvent.change(searchInput, { target: { value: 'NonExistent' } });
 
     await waitFor(() => {
-      expect(screen.getByText('검색 결과가 없습니다')).toBeInTheDocument();
+      expect(screen.getByText('No matching results')).toBeInTheDocument();
     });
   });
 

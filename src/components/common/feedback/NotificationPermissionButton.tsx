@@ -141,8 +141,8 @@ export default function NotificationPermissionButton({
         <button
           type="button"
           className={`p-1.5 rounded-md hover:bg-gray-100 transition-colors ${className}`}
-          title="브라우저 알림 활성화됨"
-          aria-label="브라우저 알림 활성화됨"
+          title="Browser notifications enabled"
+          aria-label="Browser notifications enabled"
         >
           <svg
             className="w-5 h-5 text-green-600"
@@ -166,7 +166,7 @@ export default function NotificationPermissionButton({
         type="button"
         className={`inline-flex items-center gap-2 px-3 py-1.5 text-sm text-green-600 bg-green-50 rounded-md ${className}`}
         disabled
-        title="브라우저 알림 활성화됨"
+        title="Browser notifications enabled"
       >
         <svg
           className="w-4 h-4"
@@ -181,7 +181,7 @@ export default function NotificationPermissionButton({
             d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
           />
         </svg>
-        알림 활성화됨
+        Notifications on
       </button>
     );
   }
@@ -196,8 +196,8 @@ export default function NotificationPermissionButton({
           disabled
           aria-disabled="true"
           className={`p-1.5 rounded-md transition-colors cursor-not-allowed opacity-60 ${className}`}
-          title="브라우저 알림이 거부되었습니다. 브라우저 설정에서 허용해주세요."
-          aria-label="브라우저 알림 거부됨"
+          title="Browser notifications are blocked. Enable them in your browser settings."
+          aria-label="Browser notifications denied"
         >
           <svg
             className="w-5 h-5 text-gray-400"
@@ -218,7 +218,7 @@ export default function NotificationPermissionButton({
 
     return (
       <div className={`text-xs text-gray-500 ${className}`}>
-        알림이 거부되었습니다
+        Notifications are blocked
       </div>
     );
   }
@@ -231,8 +231,8 @@ export default function NotificationPermissionButton({
         onClick={handleRequestPermission}
         disabled={isRequesting}
         className={`p-1.5 rounded-md hover:bg-gray-100 transition-colors disabled:opacity-50 ${className}`}
-        title="브라우저 알림 권한 요청"
-        aria-label="브라우저 알림 권한 요청"
+        title="Request browser notification permission"
+        aria-label="Request browser notification permission"
       >
         <svg
           className="w-5 h-5 text-gray-600"
@@ -280,7 +280,7 @@ export default function NotificationPermissionButton({
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
             />
           </svg>
-          요청 중...
+          Requesting...
         </>
       ) : (
         <>
@@ -297,7 +297,7 @@ export default function NotificationPermissionButton({
               d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
             />
           </svg>
-          알림 활성화
+          Enable notifications
         </>
       )}
     </button>
