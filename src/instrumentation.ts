@@ -32,12 +32,14 @@ export async function register() {
     await assertSchemaReadiness({ bypassCache: true });
   } catch (error) {
     const { Logger } = await import('./utils/logger');
-    Logger.error(
-      '[instrumentation] Schema readiness check failed',
-      error,
-      'instrumentation'
+    Logger.warn(
+      '[instrumentation] Schema readiness check failed — server will start but some API routes may return 503 until migrations are applied',
+      'instrumentation',
+      { reason: error instanceof Error ? error.message : String(error) }
     );
-    throw error;
+    // Do not re-throw: a missing migration should degrade gracefully rather than
+    // prevent the server from starting entirely. Routes that depend on the
+    // missing schema will return 503 on their own.
   }
 
   // ✅ CRITICAL: Dynamic import to prevent webpack from including Sentry in client bundle

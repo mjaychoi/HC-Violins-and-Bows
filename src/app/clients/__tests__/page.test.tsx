@@ -1018,6 +1018,44 @@ describe('ClientsPage', () => {
       });
     });
 
+    it('should report failure when deleteClient returns false', async () => {
+      const user = userEvent.setup();
+      mockDeleteClient.mockResolvedValue(false);
+
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
+
+      const deleteButton = screen.getByTestId('delete-client-btn');
+      await user.click(deleteButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Delete client?')).toBeInTheDocument();
+      });
+
+      const deleteButtons = screen.getAllByText('Delete');
+      const confirmButton = deleteButtons[deleteButtons.length - 1];
+      await user.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockDeleteClient).toHaveBeenCalledWith(mockClients[0].id);
+      });
+
+      await waitFor(() => {
+        expect(mockHandleError).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: 'Client could not be deleted. Please try again.',
+          }),
+          'Failed to delete client'
+        );
+      });
+
+      expect(mockShowSuccess).not.toHaveBeenCalled();
+      expect(mockCloseClientView).not.toHaveBeenCalled();
+    });
+
     it('should cancel delete confirmation', async () => {
       const user = userEvent.setup();
       render(

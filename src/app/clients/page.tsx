@@ -303,6 +303,11 @@ export default function ClientsPage() {
       if (success) {
         closeClientView();
         showSuccess('Client deleted successfully.');
+      } else {
+        handleError(
+          new Error('Client could not be deleted. Please try again.'),
+          'Failed to delete client'
+        );
       }
     } catch (error) {
       handleError(error, 'Failed to delete client');

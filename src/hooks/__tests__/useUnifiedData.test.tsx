@@ -6,6 +6,8 @@ import {
 import React from 'react';
 import {
   __resetUnifiedDataGlobalsForTests,
+  __getGlobalFetchedForTests,
+  markAllResourcesStale,
   useUnifiedData,
   useUnifiedClients,
   useUnifiedInstruments,
@@ -62,11 +64,11 @@ const mockActions = {
   deleteClient: jest.fn().mockResolvedValue(true),
   createInstrument: jest.fn().mockResolvedValue(null),
   updateInstrument: jest.fn().mockResolvedValue(null),
-  deleteInstrument: jest.fn().mockResolvedValue(true),
+  deleteInstrument: jest.fn().mockResolvedValue(undefined),
   createConnection: jest.fn().mockResolvedValue(null),
   updateConnection: jest.fn().mockResolvedValue(null),
   deleteConnection: jest.fn().mockResolvedValue(true),
-  invalidateCache: jest.fn(),
+  invalidateConnectionsCache: jest.fn(),
   resetState: jest.fn(() => {
     mockState.clients = [];
     mockState.instruments = [];
@@ -201,7 +203,7 @@ describe('useUnifiedData', () => {
         createConnection: mockActions.createConnection,
         updateConnection: mockActions.updateConnection,
         deleteConnection: mockActions.deleteConnection,
-        invalidateCache: jest.fn(),
+        invalidateCache: mockActions.invalidateConnectionsCache,
         resetState: mockActions.resetState,
       },
     }));
@@ -1124,6 +1126,540 @@ describe('useUnifiedData', () => {
       expect(mockResetClients).toHaveBeenCalled();
       expect(mockResetInstruments).toHaveBeenCalled();
       expect(mockResetConnections).toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // globalFetched coordination — the critical cache-freshness invariants
+  // ---------------------------------------------------------------------------
+
+  describe('globalFetched coordination', () => {
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <>{children}</>
+    );
+
+    /**
+     * Render useUnifiedData and wait until all three auto-fetches complete and
+     * set their globalFetched flags to true.  This is the natural path that
+     * commits the tenant key (preventing useLayoutEffect from resetting flags)
+     * AND sets all three globalFetched flags via the mock-resolved fetches.
+     */
+    async function setupAllFetched() {
+      const hookResult = rtlRenderHook(() => useUnifiedData(), { wrapper });
+      await waitFor(() =>
+        expect(__getGlobalFetchedForTests()).toEqual({
+          clients: true,
+          instruments: true,
+          connections: true,
+        })
+      );
+      return hookResult;
+    }
+
+    // -------------------------------------------------------------------------
+    // invalidateCache must reset globalFetched for the targeted resource only
+    // -------------------------------------------------------------------------
+
+    describe('invalidateCache resets globalFetched for the target resource', () => {
+      it('invalidateCache(clients) sets globalFetched.clients to false, leaves others', async () => {
+        const { result } = await setupAllFetched();
+
+        act(() => {
+          result.current.invalidateCache('clients');
+        });
+
+        expect(__getGlobalFetchedForTests().clients).toBe(false);
+        expect(__getGlobalFetchedForTests().instruments).toBe(true);
+        expect(__getGlobalFetchedForTests().connections).toBe(true);
+      });
+
+      it('invalidateCache(instruments) sets globalFetched.instruments to false, leaves others', async () => {
+        const { result } = await setupAllFetched();
+
+        act(() => {
+          result.current.invalidateCache('instruments');
+        });
+
+        expect(__getGlobalFetchedForTests().instruments).toBe(false);
+        expect(__getGlobalFetchedForTests().clients).toBe(true);
+        expect(__getGlobalFetchedForTests().connections).toBe(true);
+      });
+
+      it('invalidateCache(connections) sets globalFetched.connections to false, leaves others', async () => {
+        const { result } = await setupAllFetched();
+
+        act(() => {
+          result.current.invalidateCache('connections');
+        });
+
+        expect(__getGlobalFetchedForTests().connections).toBe(false);
+        expect(__getGlobalFetchedForTests().clients).toBe(true);
+        expect(__getGlobalFetchedForTests().instruments).toBe(true);
+      });
+
+      it('useUnifiedDashboard invalidateCache also resets globalFetched', async () => {
+        // Use useUnifiedData first to commit tenant key + set globalFetched
+        await setupAllFetched();
+
+        // useUnifiedDashboard has no auto-fetch useEffect; globalFetched stays true
+        const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+          wrapper,
+        });
+
+        act(() => {
+          result.current.invalidateCache('clients');
+        });
+
+        expect(__getGlobalFetchedForTests().clients).toBe(false);
+        expect(__getGlobalFetchedForTests().instruments).toBe(true);
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // Mutation + invalidate — after create/update/delete the caller can signal
+    // staleness and allow the next empty-state mount to auto-refetch
+    // -------------------------------------------------------------------------
+
+    describe('mutation paths allow invalidation to unblock future auto-fetch', () => {
+      it('after createClient, globalFetched is unchanged; invalidateCache then resets it', async () => {
+        const { result } = await setupAllFetched();
+
+        mockActions.createClient.mockResolvedValueOnce({
+          id: 'c2',
+          first_name: 'Bob',
+        } as Client);
+
+        await act(async () => {
+          await result.current.createClient({ first_name: 'Bob' } as Omit<
+            Client,
+            'id' | 'created_at'
+          >);
+        });
+
+        // In-place optimistic update: globalFetched must stay true (not reset by mutation)
+        expect(__getGlobalFetchedForTests().clients).toBe(true);
+
+        // Caller signals the server copy may differ and a fresh fetch is needed
+        act(() => {
+          result.current.invalidateCache('clients');
+        });
+
+        // globalFetched.clients is now false → next empty-state mount will auto-refetch
+        expect(__getGlobalFetchedForTests().clients).toBe(false);
+      });
+
+      it('after updateClient, stale cached clients are not permanently reused after invalidate', async () => {
+        const { result } = await setupAllFetched();
+
+        mockActions.updateClient.mockResolvedValueOnce({
+          id: 'c1',
+          first_name: 'Updated',
+        } as Client);
+
+        await act(async () => {
+          await result.current.updateClient('c1', { first_name: 'Updated' });
+        });
+
+        // Update alone must not clear the fetch guard
+        expect(__getGlobalFetchedForTests().clients).toBe(true);
+
+        act(() => {
+          result.current.invalidateCache('clients');
+        });
+
+        // After invalidation the guard is cleared; a fresh fetch can occur
+        expect(__getGlobalFetchedForTests().clients).toBe(false);
+      });
+
+      it('after deleteClient, list can refresh via invalidateCache', async () => {
+        const { result } = await setupAllFetched();
+
+        mockActions.deleteClient.mockResolvedValueOnce(true);
+
+        await act(async () => {
+          await result.current.deleteClient('c1');
+        });
+
+        expect(__getGlobalFetchedForTests().clients).toBe(true);
+
+        act(() => {
+          result.current.invalidateCache('clients');
+        });
+
+        expect(__getGlobalFetchedForTests().clients).toBe(false);
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // useUnifiedCache.invalidateAll and reset must clear all globalFetched flags
+    // -------------------------------------------------------------------------
+
+    describe('useUnifiedCache bulk operations', () => {
+      it('invalidateAll resets all globalFetched flags', async () => {
+        // Commit tenant key + set globalFetched via useUnifiedData auto-fetch
+        await setupAllFetched();
+
+        // useUnifiedCache has no useLayoutEffect — flags stay true
+        const { result } = rtlRenderHook(() => useUnifiedCache(), { wrapper });
+
+        act(() => {
+          result.current.invalidateAll();
+        });
+
+        const flags = __getGlobalFetchedForTests();
+        expect(flags.clients).toBe(false);
+        expect(flags.instruments).toBe(false);
+        expect(flags.connections).toBe(false);
+      });
+
+      it('reset clears all globalFetched flags and ongoing fetch state', async () => {
+        await setupAllFetched();
+
+        const { result } = rtlRenderHook(() => useUnifiedCache(), { wrapper });
+
+        act(() => {
+          result.current.reset();
+        });
+
+        const flags = __getGlobalFetchedForTests();
+        expect(flags.clients).toBe(false);
+        expect(flags.instruments).toBe(false);
+        expect(flags.connections).toBe(false);
+      });
+    });
+
+    describe('resetState synchronizes globalFetched and allows auto-refetch', () => {
+      it('useUnifiedData.resetState clears fetch guards and triggers another fetch wave when state is empty', async () => {
+        const { result } = await setupAllFetched();
+        expect(mockActions.fetchClients).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          result.current.resetState();
+        });
+
+        await waitFor(() => {
+          expect(mockActions.fetchClients).toHaveBeenCalledTimes(2);
+          expect(mockActions.fetchInstruments).toHaveBeenCalledTimes(2);
+          expect(mockActions.fetchConnections).toHaveBeenCalledTimes(2);
+        });
+      });
+
+      it('useUnifiedDashboard.resetState notifies auto-fetch so connections refill after guard reset', async () => {
+        await setupAllFetched();
+        jest.clearAllMocks();
+
+        const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+          wrapper,
+        });
+
+        await act(async () => {
+          result.current.resetState();
+        });
+
+        await waitFor(() => {
+          expect(mockActions.fetchClients).toHaveBeenCalled();
+          expect(mockActions.fetchInstruments).toHaveBeenCalled();
+          expect(mockActions.fetchConnections).toHaveBeenCalled();
+        });
+      });
+    });
+
+    describe('delete client/instrument cascades connections refresh', () => {
+      it('successful deleteClient invalidates connections and force-fetches all', async () => {
+        const { result } = await setupAllFetched();
+
+        mockActions.deleteClient.mockResolvedValueOnce(true);
+        await act(async () => {
+          await result.current.deleteClient('c1');
+        });
+
+        expect(mockActions.invalidateConnectionsCache).toHaveBeenCalled();
+        expect(mockActions.fetchConnections).toHaveBeenCalledWith({
+          all: true,
+          force: true,
+          suppressErrorToast: true,
+          rejectOnError: true,
+        });
+      });
+
+      it('failed deleteClient does not cascade connections refresh', async () => {
+        const { result } = await setupAllFetched();
+        jest.clearAllMocks();
+
+        mockActions.deleteClient.mockResolvedValueOnce(false);
+        await act(async () => {
+          await result.current.deleteClient('c1');
+        });
+
+        expect(mockActions.invalidateConnectionsCache).not.toHaveBeenCalled();
+        expect(mockActions.fetchConnections).not.toHaveBeenCalled();
+      });
+
+      it('successful deleteInstrument invalidates connections and force-fetches all', async () => {
+        const { result } = await setupAllFetched();
+
+        await act(async () => {
+          await result.current.deleteInstrument('i1');
+        });
+
+        expect(mockActions.invalidateConnectionsCache).toHaveBeenCalled();
+        expect(mockActions.fetchConnections).toHaveBeenCalledWith({
+          all: true,
+          force: true,
+          suppressErrorToast: true,
+          rejectOnError: true,
+        });
+      });
+
+      it('useUnifiedDashboard deleteClient cascades connections refresh', async () => {
+        await setupAllFetched();
+        mockActions.deleteClient.mockResolvedValueOnce(true);
+        jest.clearAllMocks();
+
+        const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+          wrapper,
+        });
+
+        await act(async () => {
+          await result.current.deleteClient('c1');
+        });
+
+        expect(mockActions.invalidateConnectionsCache).toHaveBeenCalled();
+        expect(mockActions.fetchConnections).toHaveBeenCalledWith({
+          all: true,
+          force: true,
+          suppressErrorToast: true,
+          rejectOnError: true,
+        });
+      });
+    });
+
+    describe('delete cascade tolerates connections refresh failure', () => {
+      it('deleteClient still returns true when connections refetch rejects', async () => {
+        const { result } = await setupAllFetched();
+        mockActions.deleteClient.mockResolvedValueOnce(true);
+        mockActions.fetchConnections.mockRejectedValueOnce(
+          new Error('connections refresh failed')
+        );
+
+        let ok = false;
+        await act(async () => {
+          ok = await result.current.deleteClient('c1');
+        });
+
+        expect(ok).toBe(true);
+        expect(mockActions.invalidateConnectionsCache).toHaveBeenCalled();
+        expect(mockActions.fetchConnections).toHaveBeenCalledWith({
+          all: true,
+          force: true,
+          suppressErrorToast: true,
+          rejectOnError: true,
+        });
+      });
+
+      it('connections globalFetched stays false after refresh failure so retry can recover', async () => {
+        const { result } = await setupAllFetched();
+        expect(__getGlobalFetchedForTests().connections).toBe(true);
+
+        mockActions.deleteClient.mockResolvedValueOnce(true);
+        mockActions.fetchConnections.mockRejectedValueOnce(
+          new Error('connections refresh failed')
+        );
+
+        await act(async () => {
+          await result.current.deleteClient('c1');
+        });
+
+        expect(__getGlobalFetchedForTests().connections).toBe(false);
+      });
+    });
+
+    describe('useUnifiedClients mirrors structural-delete connections cascade', () => {
+      it('successful deleteClient invalidates connections and force-fetches all', async () => {
+        await setupAllFetched();
+        jest.clearAllMocks();
+        mockActions.deleteClient.mockResolvedValueOnce(true);
+
+        const { result } = rtlRenderHook(() => useUnifiedClients(), {
+          wrapper,
+        });
+
+        await act(async () => {
+          await result.current.deleteClient('c1');
+        });
+
+        expect(mockActions.invalidateConnectionsCache).toHaveBeenCalled();
+        expect(mockActions.fetchConnections).toHaveBeenCalledWith({
+          all: true,
+          force: true,
+          suppressErrorToast: true,
+          rejectOnError: true,
+        });
+      });
+
+      it('failed deleteClient does not cascade connections refresh', async () => {
+        await setupAllFetched();
+        jest.clearAllMocks();
+
+        mockActions.deleteClient.mockResolvedValueOnce(false);
+
+        const { result } = rtlRenderHook(() => useUnifiedClients(), {
+          wrapper,
+        });
+
+        await act(async () => {
+          await result.current.deleteClient('c1');
+        });
+
+        expect(mockActions.invalidateConnectionsCache).not.toHaveBeenCalled();
+        expect(mockActions.fetchConnections).not.toHaveBeenCalled();
+      });
+
+      it('deleteClient still returns true when connections refetch rejects', async () => {
+        await setupAllFetched();
+        jest.clearAllMocks();
+
+        mockActions.deleteClient.mockResolvedValueOnce(true);
+        mockActions.fetchConnections.mockRejectedValueOnce(
+          new Error('connections refresh failed')
+        );
+
+        const { result } = rtlRenderHook(() => useUnifiedClients(), {
+          wrapper,
+        });
+
+        let ok = false;
+        await act(async () => {
+          ok = await result.current.deleteClient('c1');
+        });
+
+        expect(ok).toBe(true);
+        expect(mockActions.invalidateConnectionsCache).toHaveBeenCalled();
+      });
+
+      it('connections globalFetched stays false after refresh failure so retry can recover', async () => {
+        await setupAllFetched();
+        jest.clearAllMocks();
+
+        expect(__getGlobalFetchedForTests().connections).toBe(true);
+
+        mockActions.deleteClient.mockResolvedValueOnce(true);
+        mockActions.fetchConnections.mockRejectedValueOnce(
+          new Error('connections refresh failed')
+        );
+
+        const { result } = rtlRenderHook(() => useUnifiedClients(), {
+          wrapper,
+        });
+
+        await act(async () => {
+          await result.current.deleteClient('c1');
+        });
+
+        expect(__getGlobalFetchedForTests().connections).toBe(false);
+      });
+    });
+
+    describe('markAllResourcesStale guardrail', () => {
+      it('clears every globalFetched flag', async () => {
+        await setupAllFetched();
+
+        act(() => {
+          markAllResourcesStale();
+        });
+
+        expect(__getGlobalFetchedForTests()).toEqual({
+          clients: false,
+          instruments: false,
+          connections: false,
+        });
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // Failed fetch must not permanently set globalFetched to true
+    // -------------------------------------------------------------------------
+
+    describe('failed fetch safety', () => {
+      it('a fetch that throws leaves globalFetched false', async () => {
+        mockActions.fetchClients.mockRejectedValueOnce(
+          new Error('Network error')
+        );
+
+        rtlRenderHook(() => useUnifiedData(), { wrapper });
+
+        await waitFor(() => {
+          expect(mockActions.fetchClients).toHaveBeenCalled();
+        });
+
+        // Allow any remaining microtasks (e.g. the catch block) to settle
+        await act(async () => Promise.resolve());
+
+        expect(__getGlobalFetchedForTests().clients).toBe(false);
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // Tenant switch must reset ALL resource caches including globalFetched
+    // -------------------------------------------------------------------------
+
+    describe('tenant switch correctness', () => {
+      it('switching tenant resets globalFetched (evidenced by fresh fetch being triggered)', async () => {
+        // setupAllFetched: initial load fires fetch once per resource
+        const { rerender } = await setupAllFetched();
+
+        expect(__getGlobalFetchedForTests().clients).toBe(true);
+
+        mockUseAuth.mockReturnValue({
+          user: { id: 'mock-user' },
+          session: { access_token: 'token-b' },
+          orgId: 'org-b',
+          loading: false,
+        });
+
+        await act(async () => {
+          rerender();
+        });
+
+        // Without the globalFetched reset, needClients would be false and NO
+        // second fetch would fire.  Seeing a second call proves the guard was
+        // cleared by resetGlobalsForTenantChange() inside useLayoutEffect.
+        await waitFor(() => {
+          expect(mockActions.fetchClients).toHaveBeenCalledTimes(2);
+          expect(mockActions.fetchInstruments).toHaveBeenCalledTimes(2);
+          expect(mockActions.fetchConnections).toHaveBeenCalledTimes(2);
+        });
+      });
+
+      it('cross-tenant stale data is not rendered during tenant transition', () => {
+        mockState.clients = [
+          { id: 'stale-c', first_name: 'Tenant A' } as Client,
+        ];
+
+        mockUseAuth.mockReturnValue({
+          user: { id: 'mock-user' },
+          session: { access_token: 'token-a' },
+          orgId: 'org-a',
+          loading: false,
+        });
+
+        // First mount commits the org-a tenant key into globalTenantIdentityKeyRef
+        rtlRenderHook(() => useUnifiedData(), { wrapper });
+
+        // Tenant switches before second hook instance reads state
+        mockUseAuth.mockReturnValue({
+          user: { id: 'mock-user' },
+          session: { access_token: 'token-b' },
+          orgId: 'org-b',
+          loading: false,
+        });
+
+        const { result } = rtlRenderHook(() => useUnifiedData(), { wrapper });
+
+        // isTenantTransitioning=true because global key (org-a) ≠ new tenant key (org-b)
+        // The stale array is masked to [] to prevent cross-tenant data leaks
+        expect(result.current.clients).toEqual([]);
+      });
     });
   });
 });

@@ -32,7 +32,6 @@ export const useDashboardData = () => {
     createInstrument,
     updateInstrument,
     deleteInstrument,
-    invalidateCache,
   } = useUnifiedDashboard();
 
   const createIdempotencyKeyRef = useRef<string | null>(null);
@@ -206,17 +205,9 @@ export const useDashboardData = () => {
         );
       }
       await deleteInstrument(itemId);
-      invalidateCache('connections');
-      await fetchConnections({ all: true, force: true });
       showSuccess('Item deleted successfully.');
     },
-    [
-      hasFatalError,
-      deleteInstrument,
-      fetchConnections,
-      invalidateCache,
-      showSuccess,
-    ]
+    [hasFatalError, deleteInstrument, showSuccess]
   );
 
   const reloadDashboard = useCallback(async () => {

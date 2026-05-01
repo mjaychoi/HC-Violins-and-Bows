@@ -399,11 +399,6 @@ describe('useDashboardData', () => {
     });
 
     expect(mockDeleteInstrument).toHaveBeenCalledWith(mockInstrument.id);
-    expect(mockInvalidateCache).toHaveBeenCalledWith('connections');
-    expect(mockFetchConnections).toHaveBeenCalledWith({
-      all: true,
-      force: true,
-    });
     expect(mockShowSuccess).toHaveBeenCalledWith('Item deleted successfully.');
   });
 
