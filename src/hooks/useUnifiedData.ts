@@ -3,14 +3,27 @@
 /**
  * Unified data management hooks
  *
+ * Dual-layer cache (must stay aligned after invalidateCache, resetState, tenant switch,
+ * and delete cascades):
+ *
+ * - **globalFetched** (module-level): empty-state fetch guard. When true, we assume the
+ *   corresponding context slice was successfully loaded at least once while empty, so we
+ *   do not auto-fire another initial fetch. Reset via markResourceStale / markAllResourcesStale
+ *   / resetAllGlobalFetchState (tenant switch & resetState).
+ *
+ * - **lastUpdated** (per-context): freshness signal inside Clients / Instruments /
+ *   Connections reducers. Cleared by each context’s invalidateCache / resetState — always
+ *   pair those with the globalFetched side above when resetting user-visible cache policy.
+ *
+ * `resetAllGlobalFetchState` also notifies mounted `useUnifiedData` instances so the
+ * empty-state auto-fetch effect can re-run even when list lengths were already 0.
+ *
  * 업데이트 포인트(핵심):
  * - ✅ 전역 ref "fetched" 플래그를 'true 선점'하지 않음 → fetch 성공 시에만 true로 set
- *   (기존 코드는 fetch 실패/취소에도 영구적으로 true가 되어 다시 못 가져오는 버그 가능)
- * - ✅ auth user 변경(로그아웃/로그인, 다른 유저) 시 전역 ref/ongoing promise 리셋
- * - ✅ StrictMode/다중 인스턴스에서도 중복 fetch 방지: "ongoing promise"를 1급으로 사용
- * - ✅ need 판정은 state.length === 0 + not fetched 조합 유지하되, fetched가 false일 때만 시도
- * - ✅ 불필요 import 제거(DataContext 훅/RelationshipType 등 실제 사용만 남김)
- * - ✅ return shape 유지(호환) + deprecated any 필드 유지
+ * - ✅ auth user 변경 시 전역 ref/ongoing promise 리셋 + resetState
+ * - ✅ StrictMode/다중 인스턴스: ongoing promise로 중복 fetch 방지
+ * - ✅ resetState / useUnifiedCache.reset: 항상 resetAllGlobalFetchState → 그 다음 context resetState
+ * - ✅ 클라이언트·악기 삭제 성공 시 connections 슬라이스 재동기화 (invalidate + force fetch)
  */
 
 import {
@@ -19,6 +32,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react';
 
 import { useClientsContext } from '@/contexts/ClientsContext';
@@ -38,7 +52,7 @@ import type {
   Instrument,
   ClientInstrument,
 } from '@/types';
-import { logInfo, logDebug } from '@/utils/logger';
+import { logInfo, logDebug, logWarn } from '@/utils/logger';
 import { normalizeUnifiedResourceErrors } from './unifiedResourceErrors';
 
 // ----------------------------
@@ -61,6 +75,25 @@ const ongoing = {
 
 const globalTenantIdentityKeyRef = { current: null as string | null };
 
+const refetchScheduleListeners = new Set<() => void>();
+
+function subscribeRefetchSchedule(listener: () => void): () => void {
+  refetchScheduleListeners.add(listener);
+  return () => {
+    refetchScheduleListeners.delete(listener);
+  };
+}
+
+function notifyRefetchScheduleListeners() {
+  refetchScheduleListeners.forEach(fn => {
+    try {
+      fn();
+    } catch {
+      /* noop */
+    }
+  });
+}
+
 function resetGlobalsForTenantChange() {
   globalFetched.clients.current = false;
   globalFetched.instruments.current = false;
@@ -71,9 +104,93 @@ function resetGlobalsForTenantChange() {
   ongoing.connections.current = null;
 }
 
+/** Clears module-level fetch guards and in-flight dedupe handles, then wakes auto-fetch subscribers. */
+function resetAllGlobalFetchState() {
+  resetGlobalsForTenantChange();
+  notifyRefetchScheduleListeners();
+}
+
+/**
+ * Clears every globalFetched flag only (does not clear ongoing promises).
+ * Use when all resources should be treated as needing an empty-state refetch without a hard reset.
+ */
+export function markAllResourcesStale() {
+  globalFetched.clients.current = false;
+  globalFetched.instruments.current = false;
+  globalFetched.connections.current = false;
+}
+
+/**
+ * Mark a single resource as stale so the next render with empty state can
+ * re-trigger the auto-fetch guard in useUnifiedData's useEffect.
+ *
+ * Only resets globalFetched — does NOT cancel the ongoing promise to avoid
+ * race conditions with in-flight requests.  Use resetAllGlobalFetchState
+ * (via useUnifiedCache.reset / resetState) when you need a hard reset of all state.
+ */
+function markResourceStale(
+  resource: 'clients' | 'instruments' | 'connections'
+) {
+  globalFetched[resource].current = false;
+}
+
+/** Options for forced full-list refetch after client/instrument delete (partial-success UX). */
+const CONNECTIONS_REFETCH_AFTER_STRUCTURE_DELETE_OPTS = {
+  all: true,
+  force: true,
+  suppressErrorToast: true,
+  rejectOnError: true,
+} as const;
+
+async function refreshConnectionsAfterStructuralDeleteFromActions(actions: {
+  fetchConnections: (opts?: {
+    force?: boolean;
+    all?: boolean;
+    page?: number;
+    pageSize?: number;
+    suppressErrorToast?: boolean;
+    rejectOnError?: boolean;
+  }) => Promise<void>;
+  invalidateCache: () => void;
+}) {
+  markResourceStale('connections');
+  actions.invalidateCache();
+  try {
+    await actions.fetchConnections(
+      CONNECTIONS_REFETCH_AFTER_STRUCTURE_DELETE_OPTS
+    );
+  } catch (err) {
+    logWarn(
+      'connections_refresh_after_structural_delete_failed',
+      'useUnifiedData',
+      {
+        message: err instanceof Error ? err.message : String(err ?? 'unknown'),
+      }
+    );
+    markResourceStale('connections');
+    actions.invalidateCache();
+  }
+}
+
 export function __resetUnifiedDataGlobalsForTests() {
   globalTenantIdentityKeyRef.current = null;
   resetGlobalsForTenantChange();
+}
+
+/** Read globalFetched snapshot — test-only. */
+export function __getGlobalFetchedForTests() {
+  return {
+    clients: globalFetched.clients.current,
+    instruments: globalFetched.instruments.current,
+    connections: globalFetched.connections.current,
+  };
+}
+
+/** Simulate a completed initial load — test-only. */
+export function __markAllFetchedForTests() {
+  globalFetched.clients.current = true;
+  globalFetched.instruments.current = true;
+  globalFetched.connections.current = true;
 }
 
 function useTenantScopeGuard() {
@@ -105,6 +222,14 @@ export function useUnifiedData() {
   const clientsContext = useClientsContext();
   const instrumentsContext = useInstrumentsContext();
   const connectionsContext = useConnectionsContext();
+
+  const [refetchScheduleEpoch, setRefetchScheduleEpoch] = useState(0);
+
+  useEffect(() => {
+    return subscribeRefetchSchedule(() => {
+      setRefetchScheduleEpoch(e => e + 1);
+    });
+  }, []);
 
   const { user, session, orgId, loading: authLoading } = useAuth();
   const tenantIdentityKey = useMemo(
@@ -147,17 +272,31 @@ export function useUnifiedData() {
     [clientsContext.state, instrumentsContext.state, connectionsContext.state]
   );
 
-  const actions = useMemo(
-    () => ({
+  const actions = useMemo(() => {
+    const refreshConnectionsAfterStructuralDelete = async () =>
+      refreshConnectionsAfterStructuralDeleteFromActions(
+        connectionsContext.actions
+      );
+
+    return {
       fetchClients: clientsContext.actions.fetchClients,
       createClient: clientsContext.actions.createClient,
       updateClient: clientsContext.actions.updateClient,
-      deleteClient: clientsContext.actions.deleteClient,
+      deleteClient: async (id: string) => {
+        const ok = await clientsContext.actions.deleteClient(id);
+        if (ok) {
+          await refreshConnectionsAfterStructuralDelete();
+        }
+        return ok;
+      },
 
       fetchInstruments: instrumentsContext.actions.fetchInstruments,
       createInstrument: instrumentsContext.actions.createInstrument,
       updateInstrument: instrumentsContext.actions.updateInstrument,
-      deleteInstrument: instrumentsContext.actions.deleteInstrument,
+      deleteInstrument: async (id: string) => {
+        await instrumentsContext.actions.deleteInstrument(id);
+        await refreshConnectionsAfterStructuralDelete();
+      },
 
       fetchConnections: connectionsContext.actions.fetchConnections,
       createConnection: connectionsContext.actions.createConnection,
@@ -167,6 +306,7 @@ export function useUnifiedData() {
       invalidateCache: (
         dataType: 'clients' | 'instruments' | 'connections'
       ) => {
+        markResourceStale(dataType);
         if (dataType === 'clients') clientsContext.actions.invalidateCache();
         else if (dataType === 'instruments')
           instrumentsContext.actions.invalidateCache();
@@ -174,17 +314,17 @@ export function useUnifiedData() {
       },
 
       resetState: () => {
+        resetAllGlobalFetchState();
         clientsContext.actions.resetState();
         instrumentsContext.actions.resetState();
         connectionsContext.actions.resetState();
       },
-    }),
-    [
-      clientsContext.actions,
-      instrumentsContext.actions,
-      connectionsContext.actions,
-    ]
-  );
+    };
+  }, [
+    clientsContext.actions,
+    instrumentsContext.actions,
+    connectionsContext.actions,
+  ]);
 
   const actionsRef = useRef(actions);
   const stateRef = useRef(state);
@@ -199,7 +339,6 @@ export function useUnifiedData() {
     }
 
     globalTenantIdentityKeyRef.current = tenantIdentityKey;
-    resetGlobalsForTenantChange();
     actionsRef.current.resetState();
   }, [authLoading, tenantIdentityKey]);
 
@@ -324,7 +463,15 @@ export function useUnifiedData() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, tenantIdentityKey, user]);
+  }, [
+    authLoading,
+    tenantIdentityKey,
+    user,
+    state.clients.length,
+    state.instruments.length,
+    state.connections.length,
+    refetchScheduleEpoch,
+  ]);
 
   const hasAnyLoading =
     state.loading.clients ||
@@ -383,9 +530,25 @@ export function useUnifiedData() {
 
 export function useUnifiedClients() {
   const clientsHook = useClients();
+  const connectionsContext = useConnectionsContext();
   const { isTenantTransitioning } = useTenantScopeGuard();
+
+  const deleteClient = useCallback(
+    async (id: string) => {
+      const ok = await clientsHook.deleteClient(id);
+      if (ok) {
+        await refreshConnectionsAfterStructuralDeleteFromActions(
+          connectionsContext.actions
+        );
+      }
+      return ok;
+    },
+    [clientsHook, connectionsContext.actions]
+  );
+
   return {
     ...clientsHook,
+    deleteClient,
     clients: isTenantTransitioning ? [] : clientsHook.clients,
     loading: {
       clients: isTenantTransitioning ? true : clientsHook.loading,
@@ -457,16 +620,30 @@ export function useUnifiedDashboard() {
     [clientsContext.state, instrumentsContext.state, connectionsContext.state]
   );
 
-  const actions = useMemo(
-    () => ({
+  const actions = useMemo(() => {
+    const refreshConnectionsAfterStructuralDelete = async () =>
+      refreshConnectionsAfterStructuralDeleteFromActions(
+        connectionsContext.actions
+      );
+
+    return {
       fetchClients: clientsContext.actions.fetchClients,
       createClient: clientsContext.actions.createClient,
       updateClient: clientsContext.actions.updateClient,
-      deleteClient: clientsContext.actions.deleteClient,
+      deleteClient: async (id: string) => {
+        const ok = await clientsContext.actions.deleteClient(id);
+        if (ok) {
+          await refreshConnectionsAfterStructuralDelete();
+        }
+        return ok;
+      },
       fetchInstruments: instrumentsContext.actions.fetchInstruments,
       createInstrument: instrumentsContext.actions.createInstrument,
       updateInstrument: instrumentsContext.actions.updateInstrument,
-      deleteInstrument: instrumentsContext.actions.deleteInstrument,
+      deleteInstrument: async (id: string) => {
+        await instrumentsContext.actions.deleteInstrument(id);
+        await refreshConnectionsAfterStructuralDelete();
+      },
       fetchConnections: connectionsContext.actions.fetchConnections,
       createConnection: connectionsContext.actions.createConnection,
       updateConnection: connectionsContext.actions.updateConnection,
@@ -474,23 +651,24 @@ export function useUnifiedDashboard() {
       invalidateCache: (
         dataType: 'clients' | 'instruments' | 'connections'
       ) => {
+        markResourceStale(dataType);
         if (dataType === 'clients') clientsContext.actions.invalidateCache();
         else if (dataType === 'instruments')
           instrumentsContext.actions.invalidateCache();
         else connectionsContext.actions.invalidateCache();
       },
       resetState: () => {
+        resetAllGlobalFetchState();
         clientsContext.actions.resetState();
         instrumentsContext.actions.resetState();
         connectionsContext.actions.resetState();
       },
-    }),
-    [
-      clientsContext.actions,
-      instrumentsContext.actions,
-      connectionsContext.actions,
-    ]
-  );
+    };
+  }, [
+    clientsContext.actions,
+    instrumentsContext.actions,
+    connectionsContext.actions,
+  ]);
 
   type EnrichedConnection = ClientInstrument & {
     client: Client;
@@ -753,6 +931,7 @@ export function useUnifiedCache() {
 
   const invalidate = useCallback(
     (dataType: 'clients' | 'instruments' | 'connections') => {
+      markResourceStale(dataType);
       if (dataType === 'clients') clientsContext.actions.invalidateCache();
       else if (dataType === 'instruments')
         instrumentsContext.actions.invalidateCache();
@@ -766,6 +945,7 @@ export function useUnifiedCache() {
   );
 
   const invalidateAll = useCallback(() => {
+    resetAllGlobalFetchState();
     clientsContext.actions.invalidateCache();
     instrumentsContext.actions.invalidateCache();
     connectionsContext.actions.invalidateCache();
@@ -776,10 +956,10 @@ export function useUnifiedCache() {
   ]);
 
   const reset = useCallback(() => {
+    resetAllGlobalFetchState();
     clientsContext.actions.resetState();
     instrumentsContext.actions.resetState();
     connectionsContext.actions.resetState();
-    resetGlobalsForTenantChange();
   }, [
     clientsContext.actions,
     instrumentsContext.actions,

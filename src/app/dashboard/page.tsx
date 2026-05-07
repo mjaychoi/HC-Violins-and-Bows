@@ -18,6 +18,7 @@ import { normalizeUnifiedResourceErrors } from '@/hooks/unifiedResourceErrors';
 import { useDashboardModal } from './hooks/useDashboardModal';
 import { useDashboardData } from './hooks/useDashboardData';
 import { ItemForm, DashboardContent } from './components';
+import InstrumentModal from './components/InstrumentModal';
 
 import { useSalesHistory } from '@/app/sales/hooks/useSalesHistory';
 import { generateSampleInstruments } from './utils/sampleData';
@@ -52,6 +53,20 @@ export default function DashboardPage() {
   const { submitting: isSubmittingSale, withSubmitting: withSaleSubmitting } =
     useLoadingState();
   const { tenantIdentityKey } = useTenantIdentity();
+
+  // --- Details modal (images + certificates) ---
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [detailsModalInstrument, setDetailsModalInstrument] =
+    useState<Instrument | null>(null);
+
+  const openDetailsModal = useCallback((item: Instrument) => {
+    setDetailsModalInstrument(item);
+    setDetailsModalOpen(true);
+  }, []);
+
+  const closeDetailsModal = useCallback(() => {
+    setDetailsModalOpen(false);
+  }, []);
 
   // --- Sale modal state ---
   const [showSaleModal, setShowSaleModal] = useState(false);
@@ -230,6 +245,7 @@ export default function DashboardPage() {
     selectedItem,
     closeModal,
     handleAddItem,
+    openEditModal,
     isConfirmDialogOpen,
     handleRequestDelete,
     handleCancelDelete,
@@ -553,6 +569,8 @@ export default function DashboardPage() {
               clientsLoading={clientsLoading}
               loading={loading}
               onDeleteClick={item => handleRequestDelete(item.id)}
+              onEditClick={openEditModal}
+              onRowClick={openDetailsModal}
               onUpdateItemInline={handleUpdateItemInline}
               onAddClick={canCreateInstrument ? handleAddItem : undefined}
               newlyCreatedItemId={newlyCreatedItemId}
@@ -589,6 +607,13 @@ export default function DashboardPage() {
             submittingLabel="Deleting..."
           />
         )}
+
+        <InstrumentModal
+          isOpen={detailsModalOpen}
+          onClose={closeDetailsModal}
+          instrument={detailsModalInstrument}
+          onInstrumentCertificatesChanged={() => void reloadDashboard()}
+        />
 
         <SaleForm
           isOpen={showSaleModal}

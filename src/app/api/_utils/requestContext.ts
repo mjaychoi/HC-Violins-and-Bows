@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto';
 import type { NextRequest, NextResponse } from 'next/server';
 
 export const REQUEST_ID_HEADER = 'x-request-id';
@@ -6,7 +5,7 @@ export const REQUEST_ID_HEADER = 'x-request-id';
 type RequestLike = Pick<NextRequest, 'headers'> | { headers?: Headers | null };
 
 export function generateRequestId(): string {
-  return randomUUID();
+  return crypto.randomUUID();
 }
 
 export function getOrCreateRequestId(request: RequestLike): string {

@@ -22,6 +22,8 @@ interface DashboardContentProps {
     hasAnyLoading: boolean;
   };
   onDeleteClick: (item: Instrument) => void;
+  onEditClick?: (item: Instrument) => void;
+  onRowClick?: (item: Instrument) => void;
   onUpdateItemInline: (
     id: string,
     updates: Partial<Instrument>
@@ -40,6 +42,8 @@ function DashboardContentInner({
   clientsLoading,
   loading,
   onDeleteClick,
+  onEditClick,
+  onRowClick,
   onUpdateItemInline,
   onAddClick,
   newlyCreatedItemId,
@@ -165,6 +169,8 @@ function DashboardContentInner({
           items={paginatedItems}
           loading={loading.hasAnyLoading}
           onDeleteClick={onDeleteClick}
+          onEditClick={onEditClick}
+          onRowClick={onRowClick}
           onUpdateItem={onUpdateItemInline}
           clientRelationships={clientRelationships}
           allClients={clients}

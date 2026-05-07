@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useFilters } from '../hooks/useFilters';
 import ClientList from './ClientList';
@@ -37,6 +37,18 @@ function ClientsListContentInner({
 }: ClientsListContentProps) {
   const searchParams = useSearchParams();
   const clientIdFromURL = searchParams.get('clientId');
+
+  // Auto-open ClientModal when navigating to /clients?clientId=...
+  const autoOpenedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!clientIdFromURL || loading.hasAnyLoading) return;
+    if (autoOpenedRef.current === clientIdFromURL) return;
+    const match = clients.find(c => c.id === clientIdFromURL);
+    if (match) {
+      autoOpenedRef.current = clientIdFromURL;
+      onClientClick(match);
+    }
+  }, [clientIdFromURL, clients, loading.hasAnyLoading, onClientClick]);
 
   const {
     searchTerm,

@@ -128,6 +128,10 @@ type ConnectionsContextValue = {
       all?: boolean;
       page?: number;
       pageSize?: number;
+      /** When true, skip global error toast (caller handles UX — e.g. partial success after delete). */
+      suppressErrorToast?: boolean;
+      /** When true, reject after updating slice error state so callers can show softer messaging. */
+      rejectOnError?: boolean;
     }) => Promise<void>;
     createConnection: (
       connection: Omit<ClientInstrument, 'id' | 'created_at'>
@@ -262,11 +266,15 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       all?: boolean;
       page?: number;
       pageSize?: number;
+      suppressErrorToast?: boolean;
+      rejectOnError?: boolean;
     }) => {
       const force = opts?.force ?? false;
       const all = opts?.all === true;
       const page = opts?.page ?? CONNECTIONS_DEFAULT_PAGE;
       const pageSize = opts?.pageSize ?? CONNECTIONS_DEFAULT_PAGE_SIZE;
+      const suppressErrorToast = opts?.suppressErrorToast ?? false;
+      const rejectOnError = opts?.rejectOnError ?? false;
 
       if (!force) {
         if (all) {
@@ -329,7 +337,12 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
             return;
           }
           dispatch({ type: 'SET_ERROR', payload: err });
-          handleErrorRef.current(err, 'Fetch connections');
+          if (!suppressErrorToast) {
+            handleErrorRef.current(err, 'Fetch connections');
+          }
+          if (rejectOnError) {
+            throw err instanceof Error ? err : new Error(String(err));
+          }
         } finally {
           if (tenantIdentityKeyRef.current === fetchTenantIdentityKey) {
             dispatch({ type: 'SET_LOADING', payload: false });

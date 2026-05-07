@@ -138,7 +138,13 @@ export function useDashboardFilters(
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [baseFilters.searchTerm, baseFilters.filters, dateRange]);
+  }, [
+    baseFilters.searchTerm,
+    baseFilters.filters,
+    dateRange,
+    instrumentIdFromURL,
+    clientIdFromURL,
+  ]);
 
   // Paginated items
   const paginatedItems = useMemo(() => {

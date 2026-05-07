@@ -32,7 +32,6 @@ export const useDashboardData = () => {
     createInstrument,
     updateInstrument,
     deleteInstrument,
-    invalidateCache,
   } = useUnifiedDashboard();
 
   const createIdempotencyKeyRef = useRef<string | null>(null);
@@ -134,7 +133,7 @@ export const useDashboardData = () => {
       }
 
       if (isNowSold && !wasSold && previousInstrument) {
-        const salePrice =
+        const rawPrice =
           formData.price !== undefined && formData.price !== null
             ? Number(formData.price)
             : previousInstrument.price !== undefined &&
@@ -143,14 +142,16 @@ export const useDashboardData = () => {
               : null;
 
         if (
-          typeof salePrice !== 'number' ||
-          !Number.isFinite(salePrice) ||
-          salePrice <= 0
+          typeof rawPrice !== 'number' ||
+          !Number.isFinite(rawPrice) ||
+          rawPrice < 0
         ) {
           throw new Error(
             'Sale price is required when marking an instrument as Sold.'
           );
         }
+
+        const salePrice = rawPrice;
 
         const saleDate = format(new Date(), 'yyyy-MM-dd');
         const soldConnection = soldConnectionsMap.get(itemId);
@@ -206,17 +207,9 @@ export const useDashboardData = () => {
         );
       }
       await deleteInstrument(itemId);
-      invalidateCache('connections');
-      await fetchConnections({ all: true, force: true });
       showSuccess('Item deleted successfully.');
     },
-    [
-      hasFatalError,
-      deleteInstrument,
-      fetchConnections,
-      invalidateCache,
-      showSuccess,
-    ]
+    [hasFatalError, deleteInstrument, showSuccess]
   );
 
   const reloadDashboard = useCallback(async () => {

@@ -103,7 +103,8 @@
     "whatwg-fetch": "^3.6.20"
   },
   "overrides": {
-    "fast-xml-parser": ">=5.7.0"
+    "fast-xml-parser": ">=5.7.0",
+    "postcss": ">=8.5.10"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
