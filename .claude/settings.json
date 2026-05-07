@@ -11,7 +11,12 @@
       "Bash(grep -n \"partial\" /Users/soyeonhong/HC-Violins-and-Bows/src/app/invoices/components/*.tsx)",
       "Bash(npm run:*)",
       "Bash(xxd /Users/soyeonhong/HC-Violins-and-Bows/src/types/database.ts)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(supabase status *)",
+      "Bash(supabase migration *)",
+      "Bash(supabase db *)",
+      "Bash(npm install *)",
+      "Bash(npm audit *)"
     ]
   }
 }
