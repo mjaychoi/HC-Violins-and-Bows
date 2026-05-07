@@ -42,6 +42,8 @@ interface ItemListProps {
   items: EnrichedInstrument[];
   loading: boolean;
   onDeleteClick: (item: Instrument) => void;
+  onEditClick?: (item: Instrument) => void;
+  onRowClick?: (item: EnrichedInstrument) => void;
   onUpdateItem?: (
     itemId: string,
     updates: Partial<Instrument>
@@ -83,6 +85,8 @@ const ItemList = memo(function ItemList({
   items,
   loading,
   onDeleteClick,
+  onEditClick,
+  onRowClick,
   onUpdateItem,
   getSortArrow,
   onSort,
@@ -554,6 +558,7 @@ const ItemList = memo(function ItemList({
               }
             : undefined
         }
+        onLoadSampleData={!hasFilters ? onLoadSampleData : undefined}
       />
     );
   }
@@ -716,9 +721,13 @@ const ItemList = memo(function ItemList({
                   );
                 };
 
+                const handleRowClick = onRowClick
+                  ? () => onRowClick(item)
+                  : toggleRowExpanded;
+
                 const rowLabel = item.serial_number
-                  ? `Toggle details for ${item.serial_number}`
-                  : `Toggle details for instrument ${item.id}`;
+                  ? `${onRowClick ? 'View details for' : 'Toggle details for'} ${item.serial_number}`
+                  : `${onRowClick ? 'View details for' : 'Toggle details for'} instrument ${item.id}`;
 
                 return (
                   <Fragment key={item.id}>
@@ -730,17 +739,17 @@ const ItemList = memo(function ItemList({
                         isNewlyCreated && 'ring-2 ring-green-400 bg-green-50',
                         'cursor-pointer'
                       )}
-                      onClick={toggleRowExpanded}
+                      onClick={handleRowClick}
                       onKeyDown={e => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          toggleRowExpanded();
+                          handleRowClick();
                         }
                       }}
                       role="button"
                       tabIndex={0}
                       aria-label={rowLabel}
-                      aria-expanded={isExpanded}
+                      aria-expanded={onRowClick ? undefined : isExpanded}
                     >
                       <td className={cn(classNames.tableCell, 'text-right')}>
                         {isEditing ? (
@@ -835,7 +844,11 @@ const ItemList = memo(function ItemList({
 
                             <div onClick={e => e.stopPropagation()}>
                               <RowActions
-                                onEdit={() => startEditing(item)}
+                                onEdit={() =>
+                                  onEditClick
+                                    ? onEditClick(item)
+                                    : startEditing(item)
+                                }
                                 onDelete={() => onDeleteClick(item)}
                                 currentStatus={item.status}
                                 itemId={item.id}
@@ -1030,7 +1043,7 @@ const ItemList = memo(function ItemList({
                         ) : null}
                       </td>
                     </tr>
-                    {isExpanded && (
+                    {!onRowClick && isExpanded && (
                       <InstrumentExpandedRow
                         instrument={item}
                         clients={item.clients}

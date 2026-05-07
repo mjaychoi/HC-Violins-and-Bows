@@ -392,6 +392,10 @@ export default function ClientsPage() {
     try {
       const ok = await removeInstrumentRelationshipHook(relationshipId);
       if (!ok) {
+        handleError(
+          new Error('Failed to remove instrument connection'),
+          'Remove connection'
+        );
         return;
       }
 

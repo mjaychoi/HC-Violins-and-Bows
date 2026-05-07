@@ -415,8 +415,6 @@ const ClientList = memo(function ClientList({
   onNewlyCreatedClientShown,
   selectedClientIdFromURL,
 }: ClientListProps) {
-  // Keep interface-compatible prop referenced without using it.
-  void _onClientClick;
   const [editingClient, setEditingClient] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Client>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -454,19 +452,6 @@ const ClientList = memo(function ClientList({
   // const dropdownRef = useRef<HTMLDivElement>(null);
 
   // ✅ Removed unused: clientInstrumentCounts, clientLastActivity, formatRelativeTime
-
-  const startEditing = useCallback((client: Client) => {
-    setEditingClient(client.id);
-    setEditData({
-      first_name: client.first_name || '',
-      last_name: client.last_name || '',
-      email: client.email || '',
-      contact_number: client.contact_number || '',
-      interest: client.interest || '',
-      note: client.note || '',
-      tags: client.tags || [],
-    });
-  }, []);
 
   const cancelEditing = useCallback(() => {
     setEditingClient(null);
@@ -836,7 +821,7 @@ const ClientList = memo(function ClientList({
                             </div>
                           ) : (
                             <RowActions
-                              onEdit={() => startEditing(client)}
+                              onEdit={() => _onClientClick(client)}
                               onDelete={
                                 onDeleteClient
                                   ? () => onDeleteClient(client)

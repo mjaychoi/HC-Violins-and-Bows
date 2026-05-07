@@ -40,14 +40,22 @@ function normalizeClientTags(tags: string[] | null | undefined): string[] {
 }
 
 /**
- * DB row → API Client (legacy shape: full name in first_name).
+ * DB row → API Client. Splits DB `name` on first space into first_name / last_name.
  */
 export function mapClientsTableRowToClient(row: ClientsTableRow): Client {
-  const name = normalizeOptionalText(row.name) ?? '';
+  const name = normalizeOptionalText(row.name);
+  const spaceIdx = name ? name.indexOf(' ') : -1;
+  const first_name = name
+    ? spaceIdx > -1
+      ? name.slice(0, spaceIdx)
+      : name
+    : null;
+  const last_name =
+    name && spaceIdx > -1 ? name.slice(spaceIdx + 1).trim() || null : null;
   return {
     id: row.id,
-    first_name: name || null,
-    last_name: null,
+    first_name,
+    last_name,
     email: normalizeOptionalText(row.email),
     contact_number: normalizeOptionalText(row.phone),
     tags: normalizeClientTags(row.tags),
