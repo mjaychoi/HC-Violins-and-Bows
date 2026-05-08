@@ -225,6 +225,8 @@ function CalendarContentInner({
         return;
       }
 
+      setFilterOperator('OR');
+
       if (preset === 'overdue') {
         setDateRange({ to: fmt(subDays(today, 1)) });
         setFilterStatus('pending');
@@ -242,7 +244,7 @@ function CalendarContentInner({
         to: fmt(addDays(today, 7)),
       });
     },
-    [resetFilters, navigation, setDateRange, setFilterStatus]
+    [resetFilters, navigation, setDateRange, setFilterOperator, setFilterStatus]
   );
 
   const handleSummaryCardClick = useCallback(

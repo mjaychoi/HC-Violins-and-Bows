@@ -412,6 +412,7 @@ export default function ClientsPage() {
     <ErrorBoundary>
       <AppLayout
         title="Clients"
+        hideSidebar={showModal || showViewModal}
         actionButton={
           canCreateClient || createClientDisabledReason
             ? {

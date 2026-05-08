@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@/test-utils/render';
 import CalendarContent from '../CalendarContent';
 import type { MaintenanceTask, Instrument, Client } from '@/types';
 import type { ExtendedView } from '../CalendarView';
+import { todayLocalYMD } from '@/utils/dateParsing';
 
 jest.mock('../CalendarView', () => ({
   __esModule: true,
@@ -196,5 +197,40 @@ describe('CalendarContent', () => {
     // 단순히 브랜치 실행을 보장하기 위한 상호작용이므로,
     // 여기서는 예외 없이 렌더되고 동작하는지만 확인하면 충분하다.
     expect(screen.getByText('All Tasks')).toBeInTheDocument();
+  });
+
+  it('keeps tasks with a today due date visible when other date fields are outside today', () => {
+    const navigation = createNavigationOverrides();
+    const todayTask: MaintenanceTask = {
+      ...baseTask,
+      id: 'today-task',
+      title: 'Due Today',
+      received_date: '2024-01-01',
+      due_date: todayLocalYMD(),
+      scheduled_date: null,
+    };
+
+    render(
+      <CalendarContent
+        tasks={[todayTask]}
+        instruments={[baseInstrument]}
+        clients={[baseClient]}
+        loading={{ fetch: false, mutate: false }}
+        navigation={navigation}
+        view="list"
+        setView={jest.fn()}
+        onTaskClick={jest.fn()}
+        onTaskDelete={jest.fn()}
+        onSelectEvent={jest.fn()}
+        onSelectSlot={jest.fn()}
+        draggingEventId={null}
+        onOpenNewTask={jest.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^today$/i })[0]);
+
+    expect(screen.getByText('Due Today')).toBeInTheDocument();
+    expect(screen.queryByText('No tasks found')).not.toBeInTheDocument();
   });
 });

@@ -401,7 +401,8 @@ function mapInvoiceSettingsRow(row: InvoiceSettingsRow) {
 
 async function getOrCreateSettingsRow(
   supabase: SupabaseClient,
-  orgId: string
+  orgId: string,
+  options?: { allowDefaultFallback?: boolean }
 ): Promise<InvoiceSettingsRow> {
   const insertPayload: InvoiceSettingsInsertRow = {
     org_id: orgId,
@@ -444,6 +445,26 @@ async function getOrCreateSettingsRow(
     return data as unknown as InvoiceSettingsRow;
   }
 
+  if (options?.allowDefaultFallback) {
+    return {
+      id: '',
+      org_id: orgId,
+      business_name: '',
+      business_address: null,
+      business_phone: null,
+      business_email: null,
+      bank_account_holder: null,
+      bank_name: null,
+      bank_swift_code: null,
+      bank_account_number: null,
+      default_conditions: null,
+      default_exchange_rate: null,
+      default_currency: 'USD',
+      created_at: null,
+      updated_at: null,
+    } as unknown as InvoiceSettingsRow;
+  }
+
   throw new Error('Invoice settings row was not available after upsert');
 }
 
@@ -479,7 +500,9 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const row = await getOrCreateSettingsRow(auth.userSupabase, auth.orgId!);
+      const row = await getOrCreateSettingsRow(auth.userSupabase, auth.orgId!, {
+        allowDefaultFallback: true,
+      });
 
       return {
         payload: {

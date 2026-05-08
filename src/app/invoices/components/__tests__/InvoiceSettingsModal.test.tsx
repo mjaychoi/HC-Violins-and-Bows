@@ -7,6 +7,12 @@ import { useAppFeedback } from '@/hooks/useAppFeedback';
 
 jest.mock('@/utils/apiFetch');
 jest.mock('@/hooks/useAppFeedback');
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: () => ({
+    tenantIdentityKey: 'user:test-org:session',
+    isTenantTransitioning: false,
+  }),
+}));
 jest.mock('@/components/common/modals/Modal', () => ({
   __esModule: true,
   default: ({ isOpen, children, title }: any) =>
@@ -97,5 +103,82 @@ describe('InvoiceSettingsModal', () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue('HC Violins')).toBeInTheDocument();
     });
+  });
+
+  it('renders default empty state when settings response data is null', async () => {
+    mockApiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: null, success: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }) as any
+    );
+
+    render(<InvoiceSettingsModal isOpen onClose={mockOnClose} />);
+
+    expect(await screen.findByText('Banking Information')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('USD')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Failed to load invoice settings')
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows meaningful permission errors from the API envelope', async () => {
+    mockApiFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'ADMIN_REQUIRED',
+            message: 'Admin role required',
+            retryable: false,
+          },
+        }),
+        {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        }
+      ) as any
+    );
+
+    render(<InvoiceSettingsModal isOpen onClose={mockOnClose} />);
+
+    expect(
+      await screen.findByText('Failed to load invoice settings')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Admin role required')).toBeInTheDocument();
+  });
+
+  it('handles malformed successful responses without crashing the UI', async () => {
+    mockApiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ result: {} }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }) as any
+    );
+
+    render(<InvoiceSettingsModal isOpen onClose={mockOnClose} />);
+
+    expect(
+      await screen.findByText('Failed to load invoice settings')
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Business name')).not.toBeInTheDocument();
+  });
+
+  it('does not show load failure for an aborted request', async () => {
+    mockApiFetch.mockRejectedValueOnce(
+      new DOMException('Request aborted', 'AbortError')
+    );
+
+    render(<InvoiceSettingsModal isOpen onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText('Failed to load invoice settings')
+      ).not.toBeInTheDocument();
+    });
+    expect(mockHandleError).not.toHaveBeenCalled();
   });
 });
