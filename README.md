@@ -154,7 +154,10 @@ npm run test:coverage
 ### E2E Tests
 
 ```bash
-npm run test:e2e
+npm run test:e2e                  # Chromium-only
+npm run test:e2e:invoice-settings # Chromium-only smoke
+npm run test:e2e:install          # Install all configured Playwright browsers
+npm run test:e2e:all-browsers     # Requires installed Firefox/WebKit projects
 npm run test:e2e:ui
 ```
 

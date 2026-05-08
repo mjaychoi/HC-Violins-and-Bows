@@ -13,16 +13,19 @@ import {
   validateClientInstrument,
   validateCreateClientInstrument,
   validatePartialClientInstrument,
+  normalizeInstrument,
   safeValidate,
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 import type { ClientInstrument } from '@/types';
+import { mapClientsTableRowToClient } from '@/utils/clientDbMap';
 import {
   claimCreateIdempotency,
   clearCreateIdempotency,
   completeCreateIdempotency,
   createRequestHash,
 } from '@/app/api/_utils/createIdempotency';
+import { assertClientConnectionsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 
 const CONNECTION_SELECT_COLUMNS =
   'id, client_id, instrument_id, relationship_type, notes, display_order, created_at';
@@ -35,6 +38,31 @@ const CONNECTION_DETAIL_SELECT = `
   client:clients(*),
   instrument:instruments(*)
 `;
+
+type ConnectionDetailRow = Record<string, unknown> & {
+  client?: Record<string, unknown> | null;
+  instrument?: Record<string, unknown> | null;
+};
+
+function mapConnectionDetailRow(row: unknown): unknown {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    return row;
+  }
+
+  const detailRow = row as ConnectionDetailRow;
+
+  return {
+    ...detailRow,
+    client: detailRow.client
+      ? mapClientsTableRowToClient(
+          detailRow.client as Parameters<typeof mapClientsTableRowToClient>[0]
+        )
+      : detailRow.client,
+    instrument: detailRow.instrument
+      ? normalizeInstrument(detailRow.instrument)
+      : detailRow.instrument,
+  };
+}
 
 function parsePage(input: string | null): number {
   const parsed = Number.parseInt(input ?? '', 10);
@@ -69,6 +97,10 @@ async function fetchConnectionById(auth: AuthContext, connectionId: string) {
     throw new Error('Organization context required for connection lookup');
   }
 
+  await assertClientConnectionsSchemaReadiness({
+    supabase: auth.userSupabase,
+  });
+
   const { data, error } = await auth.userSupabase
     .from('client_instruments')
     .select(CONNECTION_DETAIL_SELECT)
@@ -80,7 +112,7 @@ async function fetchConnectionById(auth: AuthContext, connectionId: string) {
     throw errorHandler.handleSupabaseError(error, 'Fetch connection');
   }
 
-  return validateClientInstrument(data);
+  return validateClientInstrument(mapConnectionDetailRow(data));
 }
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
@@ -133,6 +165,10 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           status: 400,
         };
       }
+
+      await assertClientConnectionsSchemaReadiness({
+        supabase: auth.userSupabase,
+      });
 
       let query = auth.userSupabase
         .from('client_instruments')
@@ -300,6 +336,10 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      await assertClientConnectionsSchemaReadiness({
+        supabase: auth.userSupabase,
+      });
+
       const idempotency = await claimCreateIdempotency(
         request,
         auth,
@@ -432,6 +472,10 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
       // Use validated updates, not raw updates.
       const validatedUpdates = validationResult.data;
+
+      await assertClientConnectionsSchemaReadiness({
+        supabase: auth.userSupabase,
+      });
 
       const { data: connectionId, error } = await auth.userSupabase.rpc(
         'update_connection_atomic',
@@ -598,6 +642,10 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
         }
       }
 
+      await assertClientConnectionsSchemaReadiness({
+        supabase: auth.userSupabase,
+      });
+
       const { error: reorderError } = await auth.userSupabase.rpc(
         'reorder_connections_atomic',
         { p_orders: orders }
@@ -625,7 +673,8 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
           `
         )
         .in('id', ids)
-        .eq('org_id', auth.orgId!);
+        .eq('org_id', auth.orgId!)
+        .order('display_order', { ascending: true });
 
       if (fetchError) {
         throw errorHandler.handleSupabaseError(

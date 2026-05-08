@@ -10,6 +10,19 @@ import {
   rpcCreateClientWithConnectionsAtomic,
 } from '../insertClientWithAllocatedNumber';
 
+jest.mock('../schemaReadiness', () => ({
+  assertClientsSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-05-08T00:00:00.000Z',
+    missingColumns: [],
+  }),
+  assertClientConnectionsSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-05-08T00:00:00.000Z',
+    missingColumns: [],
+  }),
+}));
+
 function buildInsertChain(
   onSingle: () => Promise<{ data: unknown; error: PostgrestError | null }>
 ) {

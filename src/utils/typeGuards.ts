@@ -226,9 +226,10 @@ export const clientInstrumentSchema: z.ZodType<ClientInstrument> = z.object({
   instrument_id: uuidSchema,
   relationship_type: relationshipTypeSchema,
   notes: z.string().nullable(),
+  display_order: z.number().optional(),
   created_at: z.string(),
-  client: clientSchema.optional(),
-  instrument: instrumentSchema.optional(),
+  client: clientSchema.nullable().optional(),
+  instrument: instrumentSchema.nullable().optional(),
 });
 
 /**

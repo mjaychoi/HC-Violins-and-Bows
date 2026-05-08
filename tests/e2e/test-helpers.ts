@@ -1,4 +1,94 @@
-import { Page } from '@playwright/test';
+import { BrowserContext, Page } from '@playwright/test';
+
+const SUPABASE_AUTH_COOKIE_NAME = 'hcv-sb-auth';
+
+type PageOrContext = Page | BrowserContext;
+
+function isPage(value: PageOrContext): value is Page {
+  return typeof (value as Page).evaluate === 'function';
+}
+
+function summarizeCookie(cookie: {
+  name: string;
+  domain?: string;
+  path?: string;
+  sameSite?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  expires?: number;
+}) {
+  return {
+    name: cookie.name,
+    domain: cookie.domain ?? null,
+    path: cookie.path ?? null,
+    sameSite: cookie.sameSite ?? null,
+    secure: cookie.secure ?? null,
+    httpOnly: cookie.httpOnly ?? null,
+    expires: cookie.expires ?? null,
+  };
+}
+
+export async function getCookieDiagnostics(target: PageOrContext) {
+  const context = isPage(target) ? target.context() : target;
+  const cookies = await context.cookies();
+  const authCookies = cookies.filter(
+    cookie =>
+      cookie.name === SUPABASE_AUTH_COOKIE_NAME ||
+      cookie.name.startsWith(`${SUPABASE_AUTH_COOKIE_NAME}.`)
+  );
+
+  return {
+    hasAuthCookie: authCookies.length > 0,
+    cookieNames: cookies.map(cookie => cookie.name).sort(),
+    authCookies: authCookies.map(summarizeCookie),
+  };
+}
+
+export async function hasCookieBackedSupabaseAuth(
+  page: Page
+): Promise<boolean> {
+  return page
+    .evaluate(cookieName => {
+      return document.cookie
+        .split(';')
+        .map(part => part.trim())
+        .some(
+          part =>
+            part.startsWith(`${cookieName}=`) ||
+            part.startsWith(`${cookieName}.0=`)
+        );
+    }, SUPABASE_AUTH_COOKIE_NAME)
+    .catch(() => false);
+}
+
+export async function assertCookieBackedAuth(
+  target: PageOrContext
+): Promise<void> {
+  if (isPage(target)) {
+    const pageHasCookie = await hasCookieBackedSupabaseAuth(target);
+    if (pageHasCookie) return;
+  }
+
+  const diagnostics = await getCookieDiagnostics(target);
+  if (diagnostics.hasAuthCookie) return;
+
+  throw new Error(
+    `Cookie-backed Supabase auth missing. Cookie names present: ${diagnostics.cookieNames.join(', ') || '(none)'}`
+  );
+}
+
+export async function validateProtectedApiAccess(
+  page: Page,
+  apiPath = '/api/clients?limit=1'
+): Promise<{ status: number; bodySnippet: string }> {
+  const response = await page.request.get(apiPath);
+  const body = await response.text().catch(() => '');
+
+  return {
+    status: response.status(),
+    bodySnippet: body.slice(0, 300),
+  };
+}
 
 /**
  * Detect if we're on Mobile Safari based on browser type and project name
@@ -345,7 +435,7 @@ export async function ensureSidebarOpen(
 export async function loginUser(
   page: Page,
   email = 'test@test.com',
-  password = 'test'
+  password = 'test123'
 ): Promise<boolean> {
   try {
     // Check current URL first
@@ -394,57 +484,10 @@ export async function loginUser(
       }
     }
 
-    // Check if already logged in by verifying auth token exists
-    // Check both localStorage and sessionStorage (Supabase can use either)
-    const isAlreadyAuthenticated = await page
-      .evaluate(() => {
-        try {
-          // Check localStorage
-          const localStorageKeys = Object.keys(localStorage);
-          for (const key of localStorageKeys) {
-            if (key.includes('supabase') && key.includes('auth')) {
-              const value = localStorage.getItem(key);
-              if (value) {
-                try {
-                  const parsed = JSON.parse(value);
-                  if (parsed.access_token || parsed.session?.access_token) {
-                    return true;
-                  }
-                } catch {
-                  if (value.includes('access_token')) {
-                    return true;
-                  }
-                }
-              }
-            }
-          }
-
-          // Check sessionStorage (Supabase might use this instead)
-          const sessionStorageKeys = Object.keys(sessionStorage);
-          for (const key of sessionStorageKeys) {
-            if (key.includes('supabase') && key.includes('auth')) {
-              const value = sessionStorage.getItem(key);
-              if (value) {
-                try {
-                  const parsed = JSON.parse(value);
-                  if (parsed.access_token || parsed.session?.access_token) {
-                    return true;
-                  }
-                } catch {
-                  if (value.includes('access_token')) {
-                    return true;
-                  }
-                }
-              }
-            }
-          }
-
-          return false;
-        } catch {
-          return false;
-        }
-      })
-      .catch(() => false);
+    // Check if already logged in by verifying the cookie-backed auth token
+    // that Next.js API routes require. Legacy localStorage-only state is not
+    // sufficient because server routes cannot read it.
+    const isAlreadyAuthenticated = await hasCookieBackedSupabaseAuth(page);
 
     if (isAlreadyAuthenticated) {
       // Verify by checking if we can access a protected route
@@ -535,60 +578,35 @@ export async function loginUser(
       : submitByType;
     await safeClick(page, actualSubmitButton);
 
-    // ✅ CRITICAL: Wait for auth token to be created (localStorage OR sessionStorage)
+    // Critical: wait for the cookie-backed session required by Next.js routes.
     // Then verify with app-level signals (protected route access + UI indicators)
     try {
-      // Wait for Supabase auth token to appear in localStorage OR sessionStorage
+      // Wait for Supabase auth to appear in the cookie-backed storage used by
+      // the app. localStorage/sessionStorage alone cannot authenticate API
+      // routes in this app.
       await page.waitForFunction(
-        () => {
+        cookieName => {
           try {
-            // Check localStorage
-            const localStorageKeys = Object.keys(localStorage);
-            for (const key of localStorageKeys) {
-              if (key.includes('supabase') && key.includes('auth')) {
-                const value = localStorage.getItem(key);
-                if (value) {
-                  try {
-                    const parsed = JSON.parse(value);
-                    if (parsed.access_token || parsed.session?.access_token) {
-                      return true;
-                    }
-                  } catch {
-                    if (value.includes('access_token')) {
-                      return true;
-                    }
-                  }
-                }
-              }
-            }
-
-            // Check sessionStorage
-            const sessionStorageKeys = Object.keys(sessionStorage);
-            for (const key of sessionStorageKeys) {
-              if (key.includes('supabase') && key.includes('auth')) {
-                const value = sessionStorage.getItem(key);
-                if (value) {
-                  try {
-                    const parsed = JSON.parse(value);
-                    if (parsed.access_token || parsed.session?.access_token) {
-                      return true;
-                    }
-                  } catch {
-                    if (value.includes('access_token')) {
-                      return true;
-                    }
-                  }
-                }
-              }
-            }
-
-            return false;
+            return document.cookie
+              .split(';')
+              .map(part => part.trim())
+              .some(
+                part =>
+                  part.startsWith(`${cookieName}=`) ||
+                  part.startsWith(`${cookieName}.0=`)
+              );
           } catch {
             return false;
           }
         },
+        SUPABASE_AUTH_COOKIE_NAME,
         { timeout: 15000 }
       );
+
+      const hasCookieAuth = await hasCookieBackedSupabaseAuth(page);
+      if (!hasCookieAuth) {
+        return false;
+      }
 
       // Token exists - now wait for redirect to protected route
       // LoginRedirect component uses useEffect which is asynchronous

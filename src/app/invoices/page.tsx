@@ -769,8 +769,9 @@ function InvoicesPageContent() {
         return;
       }
       const appError =
-        handleError(error, 'Load invoice settings') ??
-        errorHandler.normalizeError(error, 'Load invoice settings');
+        handleError(error, 'Load invoice settings', undefined, {
+          notify: false,
+        }) ?? errorHandler.normalizeError(error, 'Load invoice settings');
       logError('Failed to load invoice settings:', appError.message);
       setInvoiceSettings(null);
       setInvoiceSettingsStatus('error');

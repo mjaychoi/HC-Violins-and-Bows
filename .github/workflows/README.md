@@ -121,8 +121,18 @@ npm run type-check
 npm run lint
 npm run test -- --ci --coverage
 npm run build
+npm run test:e2e:install
+npm run test:e2e:invoice-settings
 npm run test:e2e
 ```
+
+`ci.yml` currently keeps the full E2E job disabled. Before re-enabling any
+full cross-browser Playwright job, install all browser engines with
+`npm run test:e2e:install`; otherwise WebKit/Mobile Safari projects can fail in
+CI or on a fresh local machine even when Chromium-only runs pass. The
+`test:e2e` and `test:e2e:invoice-settings` are intentionally Chromium-only; use
+`test:e2e:all-browsers` or `test:e2e:invoice-settings:all-browsers` after
+installing every configured browser project.
 
 ### Security 검증
 

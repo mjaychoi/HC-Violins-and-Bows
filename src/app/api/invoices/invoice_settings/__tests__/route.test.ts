@@ -4,6 +4,7 @@ import { GET, PUT } from '../route';
 let mockUserSupabase: any;
 let mockOrgId: string | null = 'test-org';
 let mockRole: 'admin' | 'member' = 'admin';
+const mockAssertInvoiceSchemaReadiness = jest.fn();
 
 jest.mock('@/app/api/_utils/withSentryRoute', () => ({
   withSentryRoute: (fn: unknown) => fn,
@@ -28,6 +29,11 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
   };
 });
 
+jest.mock('@/app/api/_utils/schemaReadiness', () => ({
+  assertInvoiceSchemaReadiness: (...args: unknown[]) =>
+    mockAssertInvoiceSchemaReadiness(...args),
+}));
+
 jest.mock('@/utils/errorHandler', () => ({
   errorHandler: {
     handleSupabaseError: jest.fn(
@@ -46,6 +52,11 @@ describe('/api/invoices/invoice_settings', () => {
     jest.clearAllMocks();
     mockOrgId = 'test-org';
     mockRole = 'admin';
+    mockAssertInvoiceSchemaReadiness.mockResolvedValue({
+      ready: true,
+      checkedAt: new Date().toISOString(),
+      missingColumns: [],
+    });
   });
 
   it('returns settings after a concurrent first-access unique violation', async () => {
@@ -98,6 +109,9 @@ describe('/api/invoices/invoice_settings', () => {
       { onConflict: 'org_id', ignoreDuplicates: true }
     );
     expect(selectQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    expect(mockAssertInvoiceSchemaReadiness).toHaveBeenCalledWith({
+      supabase: mockUserSupabase,
+    });
   });
 
   it('returns default settings envelope when no row exists after first read', async () => {
@@ -212,6 +226,237 @@ describe('/api/invoices/invoice_settings', () => {
     expect(json.message).toBe('Admin role required');
     expect(json.error_code).toBe('ADMIN_REQUIRED');
     expect(mockUserSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it('returns a meaningful organization-context envelope when tenant is missing', async () => {
+    mockOrgId = null;
+    mockUserSupabase = {
+      from: jest.fn(),
+    };
+
+    const response = await GET(
+      new NextRequest('http://localhost/api/invoices/invoice_settings')
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(json.message).toBe('Organization context required');
+    expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    expect(mockAssertInvoiceSchemaReadiness).not.toHaveBeenCalled();
+  });
+
+  it('returns a schema readiness error before querying missing invoice settings columns', async () => {
+    mockUserSupabase = {
+      from: jest.fn(),
+    };
+    mockAssertInvoiceSchemaReadiness.mockRejectedValueOnce(
+      Object.assign(
+        new Error(
+          'Database migration required: missing public.invoice_settings.business_name'
+        ),
+        {
+          code: 'SCHEMA_OUT_OF_DATE',
+          error_code: 'SCHEMA_OUT_OF_DATE',
+          status: 503,
+          retryable: false,
+          details: {
+            missingColumns: ['public.invoice_settings.business_name'],
+          },
+        }
+      )
+    );
+
+    const response = await GET(
+      new NextRequest('http://localhost/api/invoices/invoice_settings')
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(json.message).toBe('Database migration required.');
+    expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+    expect(mockUserSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it('updates settings with an authoritative tenant-scoped response envelope', async () => {
+    const upsertQuery = {
+      upsert: jest.fn().mockResolvedValue({ error: null }),
+    };
+    const existingQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: {
+          id: 'settings-1',
+          org_id: 'test-org',
+          business_name: '',
+          business_address: null,
+          business_phone: null,
+          business_email: null,
+          bank_account_holder: null,
+          bank_name: null,
+          bank_swift_code: null,
+          bank_account_number: null,
+          default_conditions: null,
+          default_exchange_rate: null,
+          default_currency: 'USD',
+        },
+        error: null,
+      }),
+    };
+    const updateQuery = {
+      update: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({
+        data: {
+          id: 'settings-1',
+          org_id: 'test-org',
+          business_name: 'Updated Studio',
+          business_address: '123 Main',
+          business_phone: '555-0100',
+          business_email: 'billing@example.com',
+          bank_account_holder: null,
+          bank_name: null,
+          bank_swift_code: null,
+          bank_account_number: null,
+          default_conditions: 'Net 15',
+          default_exchange_rate: 1300,
+          default_currency: 'KRW',
+        },
+        error: null,
+      }),
+    };
+
+    let callCount = 0;
+    mockUserSupabase = {
+      from: jest.fn(() => {
+        callCount += 1;
+        if (callCount === 1) return upsertQuery;
+        if (callCount === 2) return existingQuery;
+        return updateQuery;
+      }),
+    };
+
+    const request = new NextRequest(
+      'http://localhost/api/invoices/invoice_settings',
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          org_id: 'forged-org',
+          business_name: 'Updated Studio',
+          address: '123 Main',
+          phone: '555-0100',
+          email: 'billing@example.com',
+          default_conditions: 'Net 15',
+          default_exchange_rate: '1300',
+          default_currency: 'krw',
+        }),
+      }
+    );
+
+    const response = await PUT(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json).toMatchObject({
+      data: {
+        org_id: 'test-org',
+        business_name: 'Updated Studio',
+        address: '123 Main',
+        phone: '555-0100',
+        email: 'billing@example.com',
+        default_conditions: 'Net 15',
+        default_exchange_rate: '1300',
+        default_currency: 'KRW',
+      },
+      success: true,
+    });
+    expect(updateQuery.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        business_name: 'Updated Studio',
+        business_address: '123 Main',
+        business_phone: '555-0100',
+        business_email: 'billing@example.com',
+        default_conditions: 'Net 15',
+        default_exchange_rate: 1300,
+        default_currency: 'KRW',
+      })
+    );
+    expect(updateQuery.update).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        org_id: 'forged-org',
+      })
+    );
+    expect(updateQuery.eq).toHaveBeenCalledWith('id', 'settings-1');
+    expect(updateQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    expect(updateQuery.eq).not.toHaveBeenCalledWith('org_id', 'forged-org');
+  });
+
+  it('returns a safe failure envelope when update returns no authoritative row', async () => {
+    const upsertQuery = {
+      upsert: jest.fn().mockResolvedValue({ error: null }),
+    };
+    const existingQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: {
+          id: 'settings-1',
+          org_id: 'test-org',
+          business_name: '',
+          business_address: null,
+          business_phone: null,
+          business_email: null,
+          bank_account_holder: null,
+          bank_name: null,
+          bank_swift_code: null,
+          bank_account_number: null,
+          default_conditions: null,
+          default_exchange_rate: null,
+          default_currency: 'USD',
+        },
+        error: null,
+      }),
+    };
+    const updateQuery = {
+      update: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({
+        data: null,
+        error: null,
+      }),
+    };
+
+    let callCount = 0;
+    mockUserSupabase = {
+      from: jest.fn(() => {
+        callCount += 1;
+        if (callCount === 1) return upsertQuery;
+        if (callCount === 2) return existingQuery;
+        return updateQuery;
+      }),
+    };
+
+    const request = new NextRequest(
+      'http://localhost/api/invoices/invoice_settings',
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          business_name: 'Updated Studio',
+        }),
+      }
+    );
+
+    const response = await PUT(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(json.success).toBe(false);
+    expect(json.message).toBe('Server error occurred. Please try again later.');
+    expect(updateQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
   });
 
   it('returns 400 for invalid JSON in PUT', async () => {

@@ -20,30 +20,63 @@ export interface SchemaReadinessResult {
 
 const SCHEMA_READINESS_CACHE_TTL_MS = 30_000;
 
-const REQUIRED_COLUMNS: readonly RequiredColumnSpec[] = [
-  {
-    schema: 'public',
-    table: 'invoices',
-    column: 'invoice_number',
-  },
-] as const;
+const REQUIRED_COLUMNS_BY_TABLE = {
+  invoices: ['invoice_number'],
+  invoice_settings: [
+    'business_name',
+    'business_address',
+    'business_phone',
+    'business_email',
+    'bank_account_holder',
+    'bank_name',
+    'bank_swift_code',
+    'bank_account_number',
+    'default_conditions',
+    'default_exchange_rate',
+    'default_currency',
+  ],
+  instrument_images: [
+    'storage_key',
+    'file_name',
+    'file_size',
+    'mime_type',
+    'display_order',
+  ],
+  client_instruments: ['display_order'],
+  clients: ['client_number'],
+} as const satisfies Record<string, readonly string[]>;
 
-let cachedResult: SchemaReadinessResult | null = null;
-let cacheExpiresAt = 0;
+type RequiredTableName = keyof typeof REQUIRED_COLUMNS_BY_TABLE;
+
+const ALL_REQUIRED_COLUMNS: readonly RequiredColumnSpec[] = Object.entries(
+  REQUIRED_COLUMNS_BY_TABLE
+).flatMap(([table, columns]) =>
+  columns.map(column => ({ schema: 'public' as const, table, column }))
+);
+
+const cachedResults = new Map<
+  string,
+  { result: SchemaReadinessResult; expiresAt: number }
+>();
 
 function getColumnKey(spec: RequiredColumnSpec): string {
   return `${spec.schema}.${spec.table}.${spec.column}`;
 }
 
-function buildDefaultResult(): SchemaReadinessResult {
+function buildDefaultResult(
+  requiredColumns: readonly RequiredColumnSpec[]
+): SchemaReadinessResult {
   return {
     ready: false,
     checkedAt: new Date().toISOString(),
-    missingColumns: REQUIRED_COLUMNS.map(getColumnKey),
+    missingColumns: requiredColumns.map(getColumnKey),
   };
 }
 
-function isMissingInvoiceSchemaError(error: unknown): boolean {
+function isMissingSchemaError(
+  error: unknown,
+  requiredColumns: readonly RequiredColumnSpec[]
+): boolean {
   if (!error || typeof error !== 'object') {
     return false;
   }
@@ -65,13 +98,28 @@ function isMissingInvoiceSchemaError(error: unknown): boolean {
     code === '42P01' ||
     haystacks.some(
       text =>
-        text.includes('invoice_number') ||
+        requiredColumns.some(spec => text.includes(spec.column)) ||
         text.includes('schema cache') ||
         text.includes('column') ||
         text.includes('does not exist') ||
         text.includes('relation')
     )
   );
+}
+
+function groupRequiredColumnsByTable(
+  requiredColumns: readonly RequiredColumnSpec[]
+): Map<string, RequiredColumnSpec[]> {
+  const grouped = new Map<string, RequiredColumnSpec[]>();
+
+  for (const spec of requiredColumns) {
+    const tableKey = `${spec.schema}.${spec.table}`;
+    const specs = grouped.get(tableKey) ?? [];
+    specs.push(spec);
+    grouped.set(tableKey, specs);
+  }
+
+  return grouped;
 }
 
 function buildSchemaNotReadyMessage(missingColumns: string[]): string {
@@ -87,46 +135,93 @@ export class SchemaNotReadyError extends Error {
   error_code = ErrorCodes.SCHEMA_OUT_OF_DATE;
   status = 503;
   retryable = false;
-  details: { missingColumns: string[] };
+  details: { missingColumns: string[]; context?: string };
 
-  constructor(missingColumns: string[]) {
+  constructor(missingColumns: string[], context?: string) {
     super(buildSchemaNotReadyMessage(missingColumns));
     this.name = 'SchemaNotReadyError';
-    this.details = { missingColumns };
+    this.details = { missingColumns, context };
   }
 }
 
+function getSpecsForTables(
+  tables: readonly RequiredTableName[]
+): RequiredColumnSpec[] {
+  return tables.flatMap(table =>
+    REQUIRED_COLUMNS_BY_TABLE[table].map(column => ({
+      schema: 'public' as const,
+      table,
+      column,
+    }))
+  );
+}
+
+function getCacheKey(requiredColumns: readonly RequiredColumnSpec[]): string {
+  return requiredColumns.map(getColumnKey).sort().join('|');
+}
+
 export function __resetSchemaReadinessCacheForTests() {
-  cachedResult = null;
-  cacheExpiresAt = 0;
+  cachedResults.clear();
 }
 
 export async function checkSchemaReadiness(options?: {
   bypassCache?: boolean;
   supabase?: SchemaReadinessClient;
+  tables?: readonly RequiredTableName[];
+  requiredColumns?: readonly RequiredColumnSpec[];
 }): Promise<SchemaReadinessResult> {
   const bypassCache = options?.bypassCache === true;
   const now = Date.now();
+  const requiredColumns =
+    options?.requiredColumns ??
+    (options?.tables
+      ? getSpecsForTables(options.tables)
+      : ALL_REQUIRED_COLUMNS);
+  const cacheKey = getCacheKey(requiredColumns);
+  const cached = cachedResults.get(cacheKey);
 
-  if (!bypassCache && cachedResult && now < cacheExpiresAt) {
-    return cachedResult;
+  if (!bypassCache && cached && now < cached.expiresAt) {
+    return cached.result;
   }
 
   try {
     const supabase = (options?.supabase ??
       getAdminSupabase()) as SchemaReadinessClient;
 
-    const { error } = await supabase
-      .from('invoices')
-      .select('invoice_number')
-      .limit(1);
+    const missingColumns: string[] = [];
 
-    if (error && isMissingInvoiceSchemaError(error)) {
-      throw error;
+    for (const specs of groupRequiredColumnsByTable(requiredColumns).values()) {
+      const table = specs[0]?.table;
+      if (!table) continue;
+
+      const { error } = await supabase
+        .from(table)
+        .select(specs.map(spec => spec.column).join(','))
+        .limit(1);
+
+      if (error && isMissingSchemaError(error, specs)) {
+        missingColumns.push(...specs.map(getColumnKey));
+        continue;
+      }
+
+      if (error) {
+        throw error;
+      }
     }
 
-    if (error) {
-      throw error;
+    if (missingColumns.length > 0) {
+      const result: SchemaReadinessResult = {
+        ready: false,
+        checkedAt: new Date().toISOString(),
+        missingColumns,
+      };
+
+      cachedResults.set(cacheKey, {
+        result,
+        expiresAt: now + SCHEMA_READINESS_CACHE_TTL_MS,
+      });
+
+      return result;
     }
 
     const result: SchemaReadinessResult = {
@@ -135,14 +230,18 @@ export async function checkSchemaReadiness(options?: {
       missingColumns: [],
     };
 
-    cachedResult = result;
-    cacheExpiresAt = now + SCHEMA_READINESS_CACHE_TTL_MS;
+    cachedResults.set(cacheKey, {
+      result,
+      expiresAt: now + SCHEMA_READINESS_CACHE_TTL_MS,
+    });
 
     return result;
   } catch {
-    const fallback = buildDefaultResult();
-    cachedResult = fallback;
-    cacheExpiresAt = now + SCHEMA_READINESS_CACHE_TTL_MS;
+    const fallback = buildDefaultResult(requiredColumns);
+    cachedResults.set(cacheKey, {
+      result: fallback,
+      expiresAt: now + SCHEMA_READINESS_CACHE_TTL_MS,
+    });
     return fallback;
   }
 }
@@ -150,19 +249,82 @@ export async function checkSchemaReadiness(options?: {
 export async function assertSchemaReadiness(options?: {
   bypassCache?: boolean;
   supabase?: SchemaReadinessClient;
+  tables?: readonly RequiredTableName[];
+  requiredColumns?: readonly RequiredColumnSpec[];
+  context?: string;
 }): Promise<SchemaReadinessResult> {
   const result = await checkSchemaReadiness(options);
 
   if (!result.ready) {
-    throw new SchemaNotReadyError(result.missingColumns);
+    throw new SchemaNotReadyError(result.missingColumns, options?.context);
   }
 
   return result;
+}
+
+export async function assertTableColumnsReady(
+  tableName: RequiredTableName,
+  requiredColumns: readonly string[],
+  context: string,
+  options?: {
+    bypassCache?: boolean;
+    supabase?: SchemaReadinessClient;
+  }
+): Promise<SchemaReadinessResult> {
+  return assertSchemaReadiness({
+    ...options,
+    context,
+    requiredColumns: requiredColumns.map(column => ({
+      schema: 'public' as const,
+      table: tableName,
+      column,
+    })),
+  });
 }
 
 export async function assertInvoiceSchemaReadiness(options?: {
   bypassCache?: boolean;
   supabase?: SchemaReadinessClient;
 }): Promise<SchemaReadinessResult> {
-  return assertSchemaReadiness(options);
+  return assertSchemaReadiness({
+    ...options,
+    tables: ['invoices', 'invoice_settings'],
+    context: 'invoice schema readiness',
+  });
+}
+
+export async function assertInstrumentImagesSchemaReadiness(options?: {
+  bypassCache?: boolean;
+  supabase?: SchemaReadinessClient;
+}): Promise<SchemaReadinessResult> {
+  return assertTableColumnsReady(
+    'instrument_images',
+    REQUIRED_COLUMNS_BY_TABLE.instrument_images,
+    'instrument images schema readiness',
+    options
+  );
+}
+
+export async function assertClientConnectionsSchemaReadiness(options?: {
+  bypassCache?: boolean;
+  supabase?: SchemaReadinessClient;
+}): Promise<SchemaReadinessResult> {
+  return assertTableColumnsReady(
+    'client_instruments',
+    REQUIRED_COLUMNS_BY_TABLE.client_instruments,
+    'client connections schema readiness',
+    options
+  );
+}
+
+export async function assertClientsSchemaReadiness(options?: {
+  bypassCache?: boolean;
+  supabase?: SchemaReadinessClient;
+}): Promise<SchemaReadinessResult> {
+  return assertTableColumnsReady(
+    'clients',
+    REQUIRED_COLUMNS_BY_TABLE.clients,
+    'clients schema readiness',
+    options
+  );
 }

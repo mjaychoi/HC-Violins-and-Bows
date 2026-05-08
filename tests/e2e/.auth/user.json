@@ -1,25 +1,15 @@
 {
   "cookies": [
     {
-      "name": "__next_hmr_refresh_hash__",
-      "value": "8e3d8751e0a3203ca07054ab91745096a8909727eea36a75",
+      "name": "hcv-sb-auth",
+      "value": "%7B%22access_token%22%3A%22eyJhbGciOiJIUzI1NiIsImtpZCI6IkZoT0duUWJqWDZsYml2VFIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2RtaWxtbGhxdXR0Y296eGxwZnh3LnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJlYjY5NjAwZC1iNGE4LTQ2M2QtYmRlNS04ZGI0ZjNjOGZlYTgiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzc4Mjc5MTM1LCJpYXQiOjE3NzgyNzU1MzUsImVtYWlsIjoidGVzdEB0ZXN0LmNvbSIsInBob25lIjoiIiwiYXBwX21ldGFkYXRhIjp7Im9yZ19pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDBlMiIsInByb3ZpZGVyIjoiZW1haWwiLCJwcm92aWRlcnMiOlsiZW1haWwiXSwicm9sZSI6ImFkbWluIn0sInVzZXJfbWV0YWRhdGEiOnsiZW1haWxfdmVyaWZpZWQiOnRydWV9LCJyb2xlIjoiYXV0aGVudGljYXRlZCIsImFhbCI6ImFhbDEiLCJhbXIiOlt7Im1ldGhvZCI6InBhc3N3b3JkIiwidGltZXN0YW1wIjoxNzc4Mjc1NTM1fV0sInNlc3Npb25faWQiOiI0YTM3ZDE5OS1hNGE0LTRkOTQtYWI0OC03MTg0YTA0MzRmZTciLCJpc19hbm9ueW1vdXMiOmZhbHNlfQ.ZnU79Y-nm8WP5i74ppVI0tjdUYvx8mk6QzmmulLkARM%22%2C%22token_type%22%3A%22bearer%22%2C%22expires_in%22%3A3600%2C%22expires_at%22%3A1778279135%2C%22refresh_token%22%3A%22qhkbxzsoysfn%22%2C%22user%22%3A%7B%22id%22%3A%22eb69600d-b4a8-463d-bde5-8db4f3c8fea8%22%2C%22aud%22%3A%22authenticated%22%2C%22role%22%3A%22authenticated%22%2C%22email%22%3A%22test%40test.com%22%2C%22email_confirmed_at%22%3A%222026-05-08T21%3A25%3A35.816576Z%22%2C%22phone%22%3A%22%22%2C%22confirmed_at%22%3A%222026-05-08T21%3A25%3A35.816576Z%22%2C%22last_sign_in_at%22%3A%222026-05-08T21%3A25%3A35.973989398Z%22%2C%22app_metadata%22%3A%7B%22org_id%22%3A%2200000000-0000-4000-8000-0000000000e2%22%2C%22provider%22%3A%22email%22%2C%22providers%22%3A%5B%22email%22%5D%2C%22role%22%3A%22admin%22%7D%2C%22user_metadata%22%3A%7B%22email_verified%22%3Atrue%7D%2C%22identities%22%3A%5B%7B%22identity_id%22%3A%2299878bda-8fca-429e-a52e-0afe0d9b1495%22%2C%22id%22%3A%22eb69600d-b4a8-463d-bde5-8db4f3c8fea8%22%2C%22user_id%22%3A%22eb69600d-b4a8-463d-bde5-8db4f3c8fea8%22%2C%22identity_data%22%3A%7B%22email%22%3A%22test%40test.com%22%2C%22email_verified%22%3Afalse%2C%22phone_verified%22%3Afalse%2C%22sub%22%3A%22eb69600d-b4a8-463d-bde5-8db4f3c8fea8%22%7D%2C%22provider%22%3A%22email%22%2C%22last_sign_in_at%22%3A%222026-04-12T21%3A57%3A27.766051Z%22%2C%22created_at%22%3A%222026-04-12T21%3A57%3A27.766098Z%22%2C%22updated_at%22%3A%222026-04-12T21%3A57%3A27.766098Z%22%2C%22email%22%3A%22test%40test.com%22%7D%5D%2C%22created_at%22%3A%222026-04-12T21%3A57%3A27.764068Z%22%2C%22updated_at%22%3A%222026-05-08T21%3A25%3A35.976953Z%22%2C%22is_anonymous%22%3Afalse%7D%2C%22weak_password%22%3Anull%7D",
       "domain": "localhost",
       "path": "/",
-      "expires": -1,
+      "expires": 1778279135,
       "httpOnly": false,
       "secure": false,
       "sameSite": "Lax"
     }
   ],
-  "origins": [
-    {
-      "origin": "http://localhost:3000",
-      "localStorage": [
-        {
-          "name": "sb-dmilmlhquttcozxlpfxw-auth-token",
-          "value": "{\"access_token\":\"eyJhbGciOiJIUzI1NiIsImtpZCI6IkZoT0duUWJqWDZsYml2VFIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2RtaWxtbGhxdXR0Y296eGxwZnh3LnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJhOWExZmY3NS1iMjYyLTQ3NTQtOGYyNy1kYzgzNzUyYzY2ZGUiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzY2MDk1NTI4LCJpYXQiOjE3NjYwOTE5MjgsImVtYWlsIjoidGVzdEB0ZXN0LmNvbSIsInBob25lIjoiIiwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiZW1haWwiLCJwcm92aWRlcnMiOlsiZW1haWwiXX0sInVzZXJfbWV0YWRhdGEiOnsiZW1haWxfdmVyaWZpZWQiOnRydWV9LCJyb2xlIjoiYXV0aGVudGljYXRlZCIsImFhbCI6ImFhbDEiLCJhbXIiOlt7Im1ldGhvZCI6InBhc3N3b3JkIiwidGltZXN0YW1wIjoxNzY2MDkxOTI4fV0sInNlc3Npb25faWQiOiIwOTQzMzA0Ny04MjViLTQ0MDgtOTY1Yy05NDc1OGFjYTE0ODgiLCJpc19hbm9ueW1vdXMiOmZhbHNlfQ.8xpbXHHO74NAQzw30Nr4DKAZfRiTCega63O0TnhC4ak\",\"token_type\":\"bearer\",\"expires_in\":3600,\"expires_at\":1766095528,\"refresh_token\":\"4leceusqzrcs\",\"user\":{\"id\":\"a9a1ff75-b262-4754-8f27-dc83752c66de\",\"aud\":\"authenticated\",\"role\":\"authenticated\",\"email\":\"test@test.com\",\"email_confirmed_at\":\"2025-07-17T03:29:11.885001Z\",\"phone\":\"\",\"confirmed_at\":\"2025-07-17T03:29:11.885001Z\",\"last_sign_in_at\":\"2025-12-18T21:05:28.030072128Z\",\"app_metadata\":{\"provider\":\"email\",\"providers\":[\"email\"]},\"user_metadata\":{\"email_verified\":true},\"identities\":[{\"identity_id\":\"68d253fa-895f-47b7-bc98-aa9bae13fa4f\",\"id\":\"a9a1ff75-b262-4754-8f27-dc83752c66de\",\"user_id\":\"a9a1ff75-b262-4754-8f27-dc83752c66de\",\"identity_data\":{\"email\":\"test@test.com\",\"email_verified\":false,\"phone_verified\":false,\"sub\":\"a9a1ff75-b262-4754-8f27-dc83752c66de\"},\"provider\":\"email\",\"last_sign_in_at\":\"2025-07-17T03:29:11.880585Z\",\"created_at\":\"2025-07-17T03:29:11.88064Z\",\"updated_at\":\"2025-07-17T03:29:11.88064Z\",\"email\":\"test@test.com\"}],\"created_at\":\"2025-07-17T03:29:11.878305Z\",\"updated_at\":\"2025-12-18T21:05:28.037301Z\",\"is_anonymous\":false},\"weak_password\":{\"message\":\"Password should be at least 6 characters.\",\"reasons\":[\"length\"]}}"
-        }
-      ]
-    }
-  ]
+  "origins": []
 }

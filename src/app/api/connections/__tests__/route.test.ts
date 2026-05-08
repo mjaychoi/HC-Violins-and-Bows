@@ -5,6 +5,13 @@ jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 jest.mock('@/utils/typeGuards');
 jest.mock('@/utils/inputValidation');
+jest.mock('@/app/api/_utils/schemaReadiness', () => ({
+  assertClientConnectionsSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-05-08T00:00:00.000Z',
+    missingColumns: [],
+  }),
+}));
 let mockUserSupabase: any;
 let mockAuthContext: any;
 
@@ -53,6 +60,8 @@ describe('/api/connections', () => {
     id: '123e4567-e89b-12d3-a456-426614174000',
     client_id: '123e4567-e89b-12d3-a456-426614174001',
     instrument_id: '123e4567-e89b-12d3-a456-426614174002',
+    relationship_type: 'Interested',
+    notes: null,
     display_order: 0,
     created_at: '2024-01-01T00:00:00Z',
     client: null,
@@ -61,6 +70,14 @@ describe('/api/connections', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    const {
+      assertClientConnectionsSchemaReadiness,
+    } = require('@/app/api/_utils/schemaReadiness');
+    assertClientConnectionsSchemaReadiness.mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-05-08T00:00:00.000Z',
+      missingColumns: [],
+    });
     jest.spyOn(performance, 'now').mockReturnValue(0);
     mockUserSupabase = { from: jest.fn(), rpc: jest.fn() };
     mockAuthContext = {
@@ -251,6 +268,38 @@ describe('/api/connections', () => {
       expect(response.status).toBe(400);
       expect(json.error).toBe('Invalid client_id format');
     });
+
+    it('fails fast when client_instruments.display_order is missing', async () => {
+      const {
+        assertClientConnectionsSchemaReadiness,
+      } = require('@/app/api/_utils/schemaReadiness');
+      assertClientConnectionsSchemaReadiness.mockRejectedValueOnce(
+        Object.assign(new Error('Database migration required'), {
+          code: 'SCHEMA_OUT_OF_DATE',
+          error_code: 'SCHEMA_OUT_OF_DATE',
+          status: 503,
+          retryable: false,
+          details: {
+            missingColumns: ['public.client_instruments.display_order'],
+          },
+        })
+      );
+
+      mockUserSupabase = {
+        from: jest.fn(() => {
+          throw new Error('connection query should not run');
+        }),
+      };
+
+      const request = new NextRequest('http://localhost/api/connections');
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+      expect(json.message).toBe('Database migration required.');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST', () => {
@@ -289,12 +338,183 @@ describe('/api/connections', () => {
 
       expect(response.status).toBe(201);
       expect(json.data).toBeDefined();
+      expect(json.data.display_order).toBe(0);
       expect(mockRpc).toHaveBeenCalledWith('create_connection_atomic', {
         p_client_id: mockConnection.client_id,
         p_instrument_id: mockConnection.instrument_id,
         p_relationship_type: 'Owned',
         p_notes: null,
       });
+      expect(mockFetchQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    });
+
+    it('should ignore body org_id and use server-derived org scope', async () => {
+      const createData = {
+        client_id: mockConnection.client_id,
+        instrument_id: mockConnection.instrument_id,
+        relationship_type: 'Interested',
+        org_id: 'forged-org-id',
+      };
+
+      const mockFetchQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: mockConnection,
+          error: null,
+        }),
+      };
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockConnection.id,
+        error: null,
+      });
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockFetchQuery),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify(createData),
+      });
+      const response = await POST(request);
+
+      expect(response.status).toBe(201);
+      expect(mockRpc).toHaveBeenCalledWith('create_connection_atomic', {
+        p_client_id: mockConnection.client_id,
+        p_instrument_id: mockConnection.instrument_id,
+        p_relationship_type: 'Interested',
+        p_notes: null,
+      });
+      expect(mockFetchQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    });
+
+    it('should normalize joined DB rows before response validation', async () => {
+      const dbConnection = {
+        ...mockConnection,
+        client: {
+          id: mockConnection.client_id,
+          name: 'Ada Lovelace',
+          email: 'ada@example.com',
+          phone: '555-111-2222',
+          client_number: 'CL001',
+          tags: ['VIP'],
+          interest: 'Violin',
+          note: 'Test client',
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      };
+      const mockFetchQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: dbConnection,
+          error: null,
+        }),
+      };
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockConnection.id,
+        error: null,
+      });
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockFetchQuery),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Interested',
+        }),
+      });
+      const response = await POST(request);
+      const { validateClientInstrument } = require('@/utils/typeGuards');
+
+      expect(response.status).toBe(201);
+      expect(validateClientInstrument).toHaveBeenCalledWith(
+        expect.objectContaining({
+          client: expect.objectContaining({
+            first_name: 'Ada',
+            last_name: 'Lovelace',
+            contact_number: '555-111-2222',
+            client_number: 'CL001',
+          }),
+        })
+      );
+    });
+
+    it('fails fast when client_instruments.display_order is missing on create', async () => {
+      const {
+        assertClientConnectionsSchemaReadiness,
+      } = require('@/app/api/_utils/schemaReadiness');
+      assertClientConnectionsSchemaReadiness.mockRejectedValueOnce(
+        Object.assign(new Error('Database migration required'), {
+          code: 'SCHEMA_OUT_OF_DATE',
+          error_code: 'SCHEMA_OUT_OF_DATE',
+          status: 503,
+          retryable: false,
+          details: {
+            missingColumns: ['public.client_instruments.display_order'],
+          },
+        })
+      );
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Interested',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('handles malformed authoritative DB response safely', async () => {
+      const mockFetchQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { ...mockConnection, id: undefined },
+          error: null,
+        }),
+      };
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockConnection.id,
+        error: null,
+      });
+      const { validateClientInstrument } = require('@/utils/typeGuards');
+      validateClientInstrument.mockImplementationOnce(() => {
+        throw new Error('Invalid ClientInstrument: id is required');
+      });
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockFetchQuery),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Interested',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(json.message).toBe(
+        'Server error occurred. Please try again later.'
+      );
+      expect(mockRpc).toHaveBeenCalled();
     });
 
     it('should return 400 for invalid data', async () => {
@@ -413,6 +633,14 @@ describe('/api/connections', () => {
       const mockSelectQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockResolvedValue({
+          data: orders.map(o => ({
+            ...mockConnection,
+            id: o.id,
+            display_order: o.display_order,
+          })),
+          error: null,
+        }),
         data: orders.map(o => ({
           ...mockConnection,
           id: o.id,
@@ -450,6 +678,9 @@ describe('/api/connections', () => {
         'id',
         orders.map(order => order.id)
       );
+      expect(mockSelectQuery.order).toHaveBeenCalledWith('display_order', {
+        ascending: true,
+      });
     });
 
     it('should return 500 and skip follow-up fetch when atomic reorder fails', async () => {
