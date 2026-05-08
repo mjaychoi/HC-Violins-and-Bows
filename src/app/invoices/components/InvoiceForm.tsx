@@ -11,6 +11,8 @@ import {
 import { apiFetch } from '@/utils/apiFetch';
 import OptimizedImage from '@/components/common/OptimizedImage';
 import { logError } from '@/utils/logger';
+import { todayLocalYMD } from '@/utils/dateParsing';
+import { readApiResponseBody } from '@/utils/handleApiResponse';
 
 interface InvoiceFormItem {
   id: string; // 임시 ID (로컬 상태 관리용)
@@ -89,8 +91,7 @@ function InvoiceForm({
 
   const initialFormData = {
     client_id: invoice?.client_id || null,
-    invoice_date:
-      invoice?.invoice_date || new Date().toISOString().split('T')[0],
+    invoice_date: invoice?.invoice_date || todayLocalYMD(),
     due_date: invoice?.due_date || null,
     subtotal: invoice?.subtotal || 0,
     tax: invoice?.tax || null,
@@ -393,12 +394,10 @@ function InvoiceForm({
           body: formData,
         });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to upload image');
-        }
-
-        const result = await response.json();
+        const result = await readApiResponseBody<{
+          filePath: string;
+          signedUrl: string;
+        }>(response, 'Failed to upload image');
 
         // Replace preview URL with signed display URL while preserving the storage key for persistence
         updateItem(itemId, 'image_url', result.signedUrl);

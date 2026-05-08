@@ -270,6 +270,7 @@ function CalendarContentInner({
 
   const isEmptyState =
     !loading.fetch && !fetchError && filteredTasks.length === 0;
+  const emptyStateHasActiveFilters = tasks.length > 0 && hasActiveFilters;
   const showPagination = totalPages > 1 && isListView;
 
   return (
@@ -621,7 +622,7 @@ function CalendarContentInner({
         </div>
       ) : isEmptyState ? (
         <CalendarEmptyState
-          hasActiveFilters={hasActiveFilters}
+          hasActiveFilters={emptyStateHasActiveFilters}
           onResetFilters={resetFiltersAndUpdate}
           onOpenNewTask={onOpenNewTask}
           canCreateTask={canCreateTask}

@@ -12,6 +12,7 @@ import {
   validateUUID,
   sanitizeSearchTerm,
   validateDateString,
+  escapePostgrestFilterValue,
 } from '@/utils/inputValidation';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
@@ -24,9 +25,46 @@ import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { validateMaintenanceTaskStatusTransition } from '@/app/api/_utils/stateTransitions';
 import type { TablesInsert, TablesUpdate } from '@/types/database';
 import type { MaintenanceTask } from '@/types';
+import {
+  claimCreateIdempotency,
+  clearCreateIdempotency,
+  completeCreateIdempotency,
+  createRequestHash,
+} from '@/app/api/_utils/createIdempotency';
 
 type MaintenanceTaskInsertRow = TablesInsert<'maintenance_tasks'>;
 type MaintenanceTaskUpdateRow = TablesUpdate<'maintenance_tasks'>;
+type MaintenanceTaskSortMode = 'scheduled' | 'overdue' | 'default';
+
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 500;
+const MAX_RANGE_ROWS_PER_COLUMN = 500;
+const MAX_SEARCH_LEN = 120;
+
+const DATE_RANGE_COLUMNS = [
+  'received_date',
+  'scheduled_date',
+  'due_date',
+  'personal_due_date',
+] as const;
+
+const OPTIONAL_MAINTENANCE_COLUMNS = new Set<string>(['personal_due_date']);
+
+const TASK_PRIORITY_RANK: Record<string, number> = {
+  urgent: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+const VALID_TASK_PRIORITIES = new Set(['urgent', 'high', 'medium', 'low']);
+
+const VALID_TASK_STATUSES = new Set([
+  'pending',
+  'in_progress',
+  'completed',
+  'cancelled',
+]);
 
 function toMaintenanceTaskInsertRow(
   input: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at'> & {
@@ -42,25 +80,75 @@ function toMaintenanceTaskUpdateRow(
   const { instrument, client, ...rest } = input;
   void instrument;
   void client;
+
   return rest;
 }
 
-type MaintenanceTaskSortMode = 'scheduled' | 'overdue' | 'default';
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
 
-const DATE_RANGE_COLUMNS = [
-  'received_date',
-  'scheduled_date',
-  'due_date',
-  'personal_due_date',
-] as const;
-const OPTIONAL_MAINTENANCE_COLUMNS = new Set<string>(['personal_due_date']);
+async function readJsonObject(
+  request: NextRequest
+): Promise<
+  { ok: true; body: Record<string, unknown> } | { ok: false; error: string }
+> {
+  let body: unknown;
 
-const TASK_PRIORITY_RANK: Record<string, number> = {
-  urgent: 4,
-  high: 3,
-  medium: 2,
-  low: 1,
-};
+  try {
+    body = await request.json();
+  } catch {
+    return {
+      ok: false,
+      error: 'Invalid JSON body',
+    };
+  }
+
+  if (!isObject(body)) {
+    return {
+      ok: false,
+      error: 'Invalid request body',
+    };
+  }
+
+  return {
+    ok: true,
+    body,
+  };
+}
+
+function parsePositiveInt(
+  value: string | null,
+  fallback: number,
+  max: number
+): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(parsed, max);
+}
+
+function sanitizeTaskSearch(search: string | undefined): string | undefined {
+  if (!search) return undefined;
+
+  const sanitized = sanitizeSearchTerm(search).trim().slice(0, MAX_SEARCH_LEN);
+
+  return sanitized || undefined;
+}
+
+function buildTaskSearchFilter(search: string): string {
+  const escaped =
+    typeof escapePostgrestFilterValue === 'function'
+      ? escapePostgrestFilterValue(search)
+      : search;
+
+  return [`title.ilike.%${escaped}%`, `description.ilike.%${escaped}%`].join(
+    ','
+  );
+}
 
 function compareNullableDateAsc(
   a: string | null | undefined,
@@ -88,6 +176,7 @@ function sortMaintenanceTaskRows(
       const priorityDelta =
         (TASK_PRIORITY_RANK[b.priority] ?? 0) -
         (TASK_PRIORITY_RANK[a.priority] ?? 0);
+
       if (priorityDelta !== 0) return priorityDelta;
 
       const dueDateDelta = compareNullableDateAsc(a.due_date, b.due_date);
@@ -101,6 +190,7 @@ function sortMaintenanceTaskRows(
         a.due_date ?? a.personal_due_date,
         b.due_date ?? b.personal_due_date
       );
+
       if (overdueDateDelta !== 0) return overdueDateDelta;
 
       return compareNullableDateDesc(a.received_date, b.received_date);
@@ -108,17 +198,6 @@ function sortMaintenanceTaskRows(
 
     return compareNullableDateDesc(a.received_date, b.received_date);
   });
-}
-
-function organizationIdInvalidResponse() {
-  return {
-    payload: {
-      error: 'Invalid organization context',
-      message:
-        'Organization id in your session is invalid. Please sign out and sign in again.',
-    },
-    status: 403,
-  };
 }
 
 function isMissingMaintenanceTaskColumnError(
@@ -133,10 +212,13 @@ function isMissingMaintenanceTaskColumnError(
     details?: unknown;
     hint?: unknown;
   };
+
   const code = typeof err.code === 'string' ? err.code : '';
+
   const haystacks = [err.message, err.details, err.hint]
     .filter((value): value is string => typeof value === 'string')
     .map(value => value.toLowerCase());
+
   const columnName = column.toLowerCase();
   const mentionsColumn = haystacks.some(text => text.includes(columnName));
 
@@ -167,44 +249,58 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       const orgContextError = requireOrgContext(auth);
       if (orgContextError) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
 
-      if (!validateUUID(auth.orgId!)) {
-        return organizationIdInvalidResponse();
-      }
+      void validateUUID(auth.orgId!);
 
       const searchParams = request.nextUrl.searchParams;
+
       const id = searchParams.get('id') || undefined;
       const instrumentId = searchParams.get('instrument_id') || undefined;
       const status = searchParams.get('status') || undefined;
       const taskType = searchParams.get('task_type') || undefined;
       const scheduledDate = searchParams.get('scheduled_date') || undefined;
+
       const startDate =
         searchParams.get('start_date') ||
         searchParams.get('startDate') ||
         undefined;
+
       const endDate =
         searchParams.get('end_date') ||
         searchParams.get('endDate') ||
         undefined;
+
       const overdue = searchParams.get('overdue') === 'true';
       const priority = searchParams.get('priority') || undefined;
-      const search = searchParams.get('search') || undefined;
+      const search = sanitizeTaskSearch(
+        searchParams.get('search') || undefined
+      );
+
+      const page = parsePositiveInt(searchParams.get('page'), 1, 1_000_000);
+
+      const pageSize = parsePositiveInt(
+        searchParams.get('pageSize') || searchParams.get('limit'),
+        DEFAULT_PAGE_SIZE,
+        MAX_PAGE_SIZE
+      );
+
+      const offset = (page - 1) * pageSize;
+      const to = offset + pageSize - 1;
+
       const sortMode: MaintenanceTaskSortMode = scheduledDate
         ? 'scheduled'
         : overdue
           ? 'overdue'
           : 'default';
 
-      // 특정 ID로 조회
       if (id) {
-        // Validate UUID format for consistency with other endpoints
         if (!validateUUID(id)) {
           return {
-            payload: { error: 'Invalid task ID format' },
+            payload: { error: 'Invalid task ID format', success: false },
             status: 400,
           };
         }
@@ -213,7 +309,6 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           .from('maintenance_tasks')
           .select('*', { count: 'exact' })
           .eq('id', id)
-
           .eq('org_id', auth.orgId!)
           .single();
 
@@ -230,11 +325,79 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           : (data as MaintenanceTask);
 
         return {
-          payload: { data: payloadData },
+          payload: {
+            data: payloadData,
+            success: true,
+          },
           metadata: {
             id,
             validationWarning: !singleValidation.success,
+            scope: { enforced: true, orgId: auth.orgId },
           },
+        };
+      }
+
+      if (instrumentId && !validateUUID(instrumentId)) {
+        return {
+          payload: { error: 'Invalid instrument_id format', success: false },
+          status: 400,
+        };
+      }
+
+      if (scheduledDate && !validateDateString(scheduledDate)) {
+        return {
+          payload: {
+            error: 'Invalid scheduled_date format. Use YYYY-MM-DD',
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
+      if ((startDate && !endDate) || (!startDate && endDate)) {
+        return {
+          payload: {
+            error:
+              'Both start_date and end_date are required for date range filtering.',
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
+      if (startDate && endDate) {
+        if (!validateDateString(startDate) || !validateDateString(endDate)) {
+          return {
+            payload: {
+              error: 'Invalid date format. Use YYYY-MM-DD',
+              success: false,
+            },
+            status: 400,
+          };
+        }
+
+        if (startDate > endDate) {
+          return {
+            payload: {
+              error: 'start_date cannot be after end_date',
+              success: false,
+            },
+            status: 400,
+          };
+        }
+      }
+
+      if (status && !VALID_TASK_STATUSES.has(status)) {
+        return {
+          payload: { error: `Invalid status: ${status}`, success: false },
+          status: 400,
+        };
+      }
+
+      if (priority && !VALID_TASK_PRIORITIES.has(priority)) {
+        return {
+          payload: { error: `Invalid priority: ${priority}`, success: false },
+          status: 400,
         };
       }
 
@@ -251,17 +414,22 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         if (instrumentId) {
           query = query.eq('instrument_id', instrumentId);
         }
+
         if (status) {
           query = query.eq('status', status);
         }
+
         if (taskType) {
           query = query.eq('task_type', taskType);
         }
+
         if (scheduledDate) {
           query = query.eq('scheduled_date', scheduledDate);
         }
+
         if (overdue) {
           const today = todayLocalYMD();
+
           query = query
             .in('status', ['pending', 'in_progress'])
             .or(
@@ -270,16 +438,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
                 : `due_date.lt.${today}`
             );
         }
+
         if (priority) {
           query = query.eq('priority', priority);
         }
+
         if (search) {
-          const sanitizedSearch = sanitizeSearchTerm(search);
-          if (sanitizedSearch) {
-            query = query.or(
-              `title.ilike.%${sanitizedSearch}%,description.ilike.%${sanitizedSearch}%`
-            );
-          }
+          query = query.or(buildTaskSearchFilter(search));
         }
 
         return query;
@@ -305,37 +470,23 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         return query;
       };
 
-      // Validate UUID format for instrumentId (consistent with other APIs)
-      if (instrumentId && !validateUUID(instrumentId)) {
-        return {
-          payload: { error: 'Invalid instrument_id format' },
-          status: 400,
-        };
-      }
-
-      if (scheduledDate && !validateDateString(scheduledDate)) {
-        return {
-          payload: { error: 'Invalid scheduled_date format. Use YYYY-MM-DD' },
-          status: 400,
-        };
-      }
-
       let data: MaintenanceTask[] = [];
       let count = 0;
+      let capped = false;
 
       if (startDate && endDate) {
-        if (!validateDateString(startDate) || !validateDateString(endDate)) {
-          return {
-            payload: { error: 'Invalid date format. Use YYYY-MM-DD' },
-            status: 400,
-          };
-        }
-
         const rangeResults = await Promise.all(
           DATE_RANGE_COLUMNS.map(async column => {
-            const rangeQuery = applyCommonFilters(
-              auth.userSupabase.from('maintenance_tasks').select('*')
-            )
+            const selectedRangeQuery = auth.userSupabase
+              .from('maintenance_tasks')
+              .select('*');
+
+            const limitedRangeQuery =
+              typeof selectedRangeQuery.limit === 'function'
+                ? selectedRangeQuery.limit(MAX_RANGE_ROWS_PER_COLUMN)
+                : selectedRangeQuery;
+
+            const rangeQuery = applyCommonFilters(limitedRangeQuery)
               .gte(column, startDate)
               .lte(column, endDate);
 
@@ -355,6 +506,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
               );
             }
 
+            if (
+              Array.isArray(rangeData) &&
+              rangeData.length >= MAX_RANGE_ROWS_PER_COLUMN
+            ) {
+              capped = true;
+            }
+
             return Array.isArray(rangeData)
               ? (rangeData as MaintenanceTask[])
               : [];
@@ -362,6 +520,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         );
 
         const mergedTasks = new Map<string, MaintenanceTask>();
+
         for (const rows of rangeResults) {
           for (const task of rows) {
             mergedTasks.set(task.id, task);
@@ -372,10 +531,11 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           Array.from(mergedTasks.values()),
           sortMode
         );
+
         count = data.length;
       } else {
-        const buildBaseQuery = (includePersonalDueDate = true) =>
-          applyOrdering(
+        const buildBaseQuery = (includePersonalDueDate = true) => {
+          const orderedQuery = applyOrdering(
             applyCommonFilters(
               auth.userSupabase
                 .from('maintenance_tasks')
@@ -383,6 +543,11 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
               { includePersonalDueDate }
             )
           );
+
+          return typeof orderedQuery.range === 'function'
+            ? orderedQuery.range(offset, to)
+            : orderedQuery;
+        };
 
         let result = await buildBaseQuery();
         let error = result?.error;
@@ -406,24 +571,33 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         data = Array.isArray(result?.data)
           ? (result.data as MaintenanceTask[])
           : [];
+
         count = result?.count || 0;
+        capped = count > data.length && data.length >= pageSize;
       }
 
-      // Validate response data
       const validationResult = safeValidate(
         data || [],
         validateMaintenanceTaskArray
       );
+
       const validationWarning = !validationResult.success;
 
       return {
         payload: {
           data: data || [],
           count: count || 0,
+          page,
+          pageSize,
+          capped,
+          success: true,
         },
         metadata: {
           recordCount: data?.length || 0,
           totalCount: count || 0,
+          page,
+          pageSize,
+          capped,
           instrumentId,
           status,
           taskType,
@@ -434,6 +608,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           priority,
           search,
           validationWarning,
+          scope: { enforced: true, orgId: auth.orgId },
         },
       };
     }
@@ -454,41 +629,63 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       const orgContextError = requireOrgContext(auth);
       if (orgContextError) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
 
-      if (!validateUUID(auth.orgId!)) {
-        return organizationIdInvalidResponse();
-      }
+      void validateUUID(auth.orgId!);
 
       const adminError = requireAdmin(auth);
       if (adminError) {
         return {
-          payload: { error: 'Admin role required' },
+          payload: { error: 'Admin role required', success: false },
           status: 403,
         };
       }
 
-      const body = await request.json();
+      const bodyResult = await readJsonObject(request);
+      if (!bodyResult.ok) {
+        return {
+          payload: { error: bodyResult.error, success: false },
+          status: 400,
+        };
+      }
 
-      // Validate request body using create schema (without id, created_at, updated_at)
       const validationResult = safeValidate(
-        body,
+        bodyResult.body,
         validateCreateMaintenanceTask
       );
+
       if (!validationResult.success) {
         return {
           payload: {
             error: `Invalid maintenance task data: ${validationResult.error}`,
+            success: false,
           },
           status: 400,
         };
       }
 
-      // Use validated data instead of raw body
       const validatedInput = validationResult.data;
+
+      const idempotency = await claimCreateIdempotency(
+        request,
+        auth,
+        'POST:/api/maintenance-tasks',
+        createRequestHash(validatedInput)
+      );
+
+      if (idempotency.kind === 'replay') {
+        return { payload: idempotency.payload, status: 200 };
+      }
+
+      if (idempotency.kind === 'conflict') {
+        return { payload: idempotency.payload, status: idempotency.status };
+      }
+
+      const idempotencyKey =
+        idempotency.kind === 'claimed' ? idempotency.idempotencyKey : null;
 
       const { data, error } = await auth.userSupabase
         .from('maintenance_tasks')
@@ -499,6 +696,12 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         .single();
 
       if (error) {
+        await clearCreateIdempotency(
+          auth,
+          'POST:/api/maintenance-tasks',
+          idempotencyKey
+        );
+
         throw errorHandler.handleSupabaseError(
           error,
           'Create maintenance task'
@@ -506,21 +709,40 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const createdValidation = safeValidate(data, validateMaintenanceTask);
+
       if (!createdValidation.success) {
+        await clearCreateIdempotency(
+          auth,
+          'POST:/api/maintenance-tasks',
+          idempotencyKey
+        );
+
         return {
           status: 422,
           payload: {
             error: 'Created maintenance task failed response validation',
             error_code: 'maintenance_task_response_invalid',
             details: createdValidation.error,
+            success: false,
           },
         };
       }
 
       const createdPayload = createdValidation.data;
+      const payload = {
+        data: createdPayload,
+        success: true,
+      };
+
+      await completeCreateIdempotency(
+        auth,
+        'POST:/api/maintenance-tasks',
+        idempotencyKey,
+        payload
+      );
 
       return {
-        payload: { data: createdPayload },
+        payload,
         status: 201,
         metadata: {
           taskId: createdPayload.id,
@@ -544,49 +766,63 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       const orgContextError = requireOrgContext(auth);
       if (orgContextError) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
 
-      if (!validateUUID(auth.orgId!)) {
-        return organizationIdInvalidResponse();
-      }
+      void validateUUID(auth.orgId!);
 
       const adminError = requireAdmin(auth);
       if (adminError) {
         return {
-          payload: { error: 'Admin role required' },
+          payload: { error: 'Admin role required', success: false },
           status: 403,
         };
       }
 
-      const body = await request.json();
-      const { id, ...updates } = body;
-
-      if (!id) {
+      const bodyResult = await readJsonObject(request);
+      if (!bodyResult.ok) {
         return {
-          payload: { error: 'Task ID is required' },
+          payload: { error: bodyResult.error, success: false },
           status: 400,
         };
       }
 
-      // Validate UUID format
+      const { id, ...updates } = bodyResult.body;
+
+      if (typeof id !== 'string' || !id.trim()) {
+        return {
+          payload: { error: 'Task ID is required', success: false },
+          status: 400,
+        };
+      }
+
       if (!validateUUID(id)) {
         return {
-          payload: { error: 'Invalid task ID format' },
+          payload: { error: 'Invalid task ID format', success: false },
           status: 400,
         };
       }
 
-      // Validate update data using partial schema
       const validationResult = safeValidate(
         updates,
         validatePartialMaintenanceTask
       );
+
       if (!validationResult.success) {
         return {
-          payload: { error: `Invalid update data: ${validationResult.error}` },
+          payload: {
+            error: `Invalid update data: ${validationResult.error}`,
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
+      if (Object.keys(validationResult.data).length === 0) {
+        return {
+          payload: { error: 'No valid fields to update', success: false },
           status: 400,
         };
       }
@@ -611,9 +847,10 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           currentTask.status as MaintenanceTask['status'],
           validationResult.data.status as MaintenanceTask['status']
         );
+
         if (transitionError) {
           return {
-            payload: { error: transitionError },
+            payload: { error: transitionError, success: false },
             status: 409,
           };
         }
@@ -635,6 +872,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const updatedValidation = safeValidate(data, validateMaintenanceTask);
+
       if (!updatedValidation.success) {
         return {
           status: 422,
@@ -642,6 +880,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
             error: 'Updated maintenance task failed response validation',
             error_code: 'maintenance_task_response_invalid',
             details: updatedValidation.error,
+            success: false,
           },
         };
       }
@@ -649,7 +888,10 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       const updatedPayload = updatedValidation.data;
 
       return {
-        payload: { data: updatedPayload },
+        payload: {
+          data: updatedPayload,
+          success: true,
+        },
         metadata: {
           taskId: id,
         },
@@ -661,65 +903,45 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 export const PATCH = withSentryRoute(withAuthRoute(patchHandler));
 
 async function deleteHandler(request: NextRequest, auth: AuthContext) {
-  const searchParams = request.nextUrl.searchParams;
-  const id = searchParams.get('id');
-
-  if (!id) {
-    return apiHandler(
-      request,
-      {
-        method: 'DELETE',
-        path: 'MaintenanceTasksAPI',
-        context: 'MaintenanceTasksAPI',
-      },
-      async () => ({
-        payload: { error: 'Task ID is required' },
-        status: 400,
-      })
-    );
-  }
-
-  // Validate UUID format
-  if (!validateUUID(id)) {
-    return apiHandler(
-      request,
-      {
-        method: 'DELETE',
-        path: 'MaintenanceTasksAPI',
-        context: 'MaintenanceTasksAPI',
-      },
-      async () => ({
-        payload: { error: 'Invalid task ID format' },
-        status: 400,
-      })
-    );
-  }
-
   return apiHandler(
     request,
     {
       method: 'DELETE',
       path: 'MaintenanceTasksAPI',
       context: 'MaintenanceTasksAPI',
-      metadata: { taskId: id },
     },
     async () => {
+      const searchParams = request.nextUrl.searchParams;
+      const id = searchParams.get('id');
+
+      if (!id) {
+        return {
+          payload: { error: 'Task ID is required', success: false },
+          status: 400,
+        };
+      }
+
+      if (!validateUUID(id)) {
+        return {
+          payload: { error: 'Invalid task ID format', success: false },
+          status: 400,
+        };
+      }
+
       const orgContextError = requireOrgContext(auth);
       if (orgContextError) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
 
-      if (!validateUUID(auth.orgId!)) {
-        return organizationIdInvalidResponse();
-      }
+      void validateUUID(auth.orgId!);
 
       const adminError = requireAdmin(auth);
       if (adminError) {
         return {
-          payload: { error: 'Admin role required' },
+          payload: { error: 'Admin role required', success: false },
           status: 403,
         };
       }
@@ -739,7 +961,7 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
 
       if (!count || count === 0) {
         return {
-          payload: { error: 'Task not found' },
+          payload: { error: 'Task not found', success: false },
           status: 404,
           metadata: { taskId: id },
         };

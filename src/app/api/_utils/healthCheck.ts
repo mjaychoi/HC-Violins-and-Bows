@@ -69,6 +69,12 @@ const REQUIRED_MIGRATION_VERSIONS = [
   '00000000000003', // triggers
   '00000000000004', // functions
   '00000000000005', // indexes
+
+  // Client create RPC readiness
+  '00000000000054', // create_client_with_connections_atomic
+  '00000000000060', // create_client_with_connections returns JSONB payload
+  '00000000000061', // clients tags support
+  '20260422133936', // clients interest/note persistence
 ] as const;
 
 // With consolidated migrations the "tenant isolation" and "role-enforced write
@@ -503,6 +509,7 @@ function buildPartialFailureResult(params: {
 export async function checkMigrations(): Promise<MigrationCheckResult> {
   try {
     const supabase = getAdminSupabase();
+
     // Cast to allow querying system/internal schemas not in the public schema type manifest.
     // These are admin-only health check queries: supabase_migrations, pg_proc, pg_policies.
     const sysSupa = supabase as typeof supabase & {
@@ -532,6 +539,7 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
     const missingMigrationVersions = REQUIRED_MIGRATION_VERSIONS.filter(
       version => !appliedVersions.has(version)
     );
+
     const schemaReadiness = await checkSchemaReadiness({ bypassCache: true });
 
     const { data: functionRows, error: functionError } = await sysSupa
@@ -570,6 +578,7 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
     const parsedPolicyRows = parsePolicyRows(
       (policyRows ?? []) as PgPolicyRow[]
     );
+
     const presentPolicyKeys = getPresentPolicyKeys(parsedPolicyRows);
 
     const missingPolicies = getMissingPolicies(presentPolicyKeys);
@@ -578,22 +587,28 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
     const unsafePolicies = getUnsafePolicies(parsedPolicyRows);
 
     const requiredMigrationsPresent = missingMigrationVersions.length === 0;
+
     const tenantIsolationMigration = getMigrationFlag(
       missingMigrationVersions,
       TENANT_ISOLATION_MIGRATION_VERSION
     );
+
     const roleEnforcedWritePoliciesMigration = getMigrationFlag(
       missingMigrationVersions,
       ROLE_ENFORCED_WRITE_POLICIES_MIGRATION_VERSION
     );
+
     const requiredPoliciesPresent = missingPolicies.length === 0;
     const forbiddenPoliciesAbsent = forbiddenPoliciesPresent.length === 0;
     const authOrgIdHelperValid = !invalidHelpers.includes('public.org_id');
     const authIsAdminHelperValid = !invalidHelpers.includes('public.is_admin');
+
     const criticalPolicyPredicatesValid =
       unsafePolicies.length === 0 && missingPolicies.length === 0;
+
     const invoiceImageStoragePathShapeValid =
       isInvoiceImageStoragePathInvariantValid();
+
     const requiredColumnsPresent = schemaReadiness.ready;
 
     const allHealthy =

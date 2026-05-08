@@ -394,11 +394,17 @@ describe('useMaintenanceTasks', () => {
       );
 
       expect(createdTaskResult).toEqual(createdTask);
-      expect(apiFetch).toHaveBeenCalledWith('/api/maintenance-tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newTaskData),
-      });
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/api/maintenance-tasks',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newTaskData),
+        },
+        {
+          idempotencyKey: expect.stringMatching(/^maintenance-task-create-/),
+        }
+      );
     });
 
     it('should handle create task error', async () => {

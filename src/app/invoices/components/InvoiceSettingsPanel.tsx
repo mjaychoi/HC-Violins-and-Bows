@@ -6,7 +6,7 @@ import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { Button } from '@/components/common/inputs';
 import { logError } from '@/utils/logger';
 import { errorHandler } from '@/utils/errorHandler';
-import { createApiResponseErrorFromResponse } from '@/utils/handleApiResponse';
+import { handleApiResponse } from '@/utils/handleApiResponse';
 import type { AppError } from '@/types/errors';
 type InvoiceSettings = {
   business_name: string;
@@ -64,25 +64,13 @@ export default function InvoiceSettingsPanel({
     try {
       const res = await apiFetch('/api/invoices/invoice_settings');
 
-      // Check content type before parsing JSON
-      const contentType = res.headers.get('content-type');
-      const isJson = contentType?.includes('application/json');
-
-      if (!res.ok) {
-        throw await createApiResponseErrorFromResponse(
-          res,
-          'Failed to load invoice settings'
-        );
-      }
-
-      if (!isJson) {
-        throw new Error(`Expected JSON response but got ${contentType}`);
-      }
-
-      const json = await res.json();
+      const data = await handleApiResponse<Partial<InvoiceSettings>>(
+        res,
+        'Failed to load invoice settings'
+      );
       setForm({
         ...empty,
-        ...(json.data || {}),
+        ...(data || {}),
       });
       setStatus('success');
     } catch (e) {
@@ -113,15 +101,11 @@ export default function InvoiceSettingsPanel({
         body: JSON.stringify(form),
       });
 
-      if (!res.ok) {
-        throw await createApiResponseErrorFromResponse(
-          res,
-          'Failed to save invoice settings'
-        );
-      }
-
-      const json = await res.json();
-      setForm({ ...empty, ...(json.data || {}) });
+      const data = await handleApiResponse<Partial<InvoiceSettings>>(
+        res,
+        'Failed to save invoice settings'
+      );
+      setForm({ ...empty, ...(data || {}) });
       showSuccess('Invoice settings saved');
       onSaved?.();
     } catch (e) {

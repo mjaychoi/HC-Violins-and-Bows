@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Invoice, InvoiceStatus } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 import { useErrorHandler } from '@/contexts/ToastContext';
@@ -13,6 +13,8 @@ import {
 } from '@/utils/handleApiResponse';
 import { errorHandler } from '@/utils/errorHandler';
 import type { AppError } from '@/types/errors';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
+import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
 
 interface FetchInvoicesOptions {
   page?: number;
@@ -152,6 +154,29 @@ export function useInvoices() {
   const { handleError } = useErrorHandler();
   const abortRef = useRef<AbortController | null>(null);
   const createIdempotencyRef = useRef<string | null>(null);
+  const { tenantIdentityKey } = useTenantIdentity();
+  const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+
+  useEffect(() => {
+    tenantIdentityKeyRef.current = tenantIdentityKey;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    createIdempotencyRef.current = null;
+    setInvoices([]);
+    setStatus('loading');
+    setPageState(1);
+    setTotalCount(0);
+    setTotalPages(1);
+    setScopeInfo(null);
+    setListDiagnostics({
+      partial: false,
+      droppedCount: 0,
+      returnedCount: 0,
+    });
+    setError(null);
+    setDisplayError(null);
+    setLoading(false);
+  }, [tenantIdentityKey]);
 
   const setPage = useCallback((nextPage: number) => {
     setPageState(nextPage);
@@ -160,6 +185,7 @@ export function useInvoices() {
   const fetchInvoices = useCallback(
     async (options: FetchInvoicesOptions = {}) => {
       const controller = new AbortController();
+      const requestTenantIdentityKey = tenantIdentityKeyRef.current;
       abortRef.current?.abort();
       abortRef.current = controller;
 
@@ -193,6 +219,10 @@ export function useInvoices() {
           signal: controller.signal,
         });
 
+        if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
+          return [];
+        }
+
         const result = await readApiResponseEnvelope<Invoice[]>(
           response,
           `Failed to fetch invoices (${response.status})`
@@ -211,7 +241,11 @@ export function useInvoices() {
         const warning =
           typeof result.warning === 'string' ? result.warning : undefined;
 
-        if (abortRef.current === controller && !controller.signal.aborted) {
+        if (
+          abortRef.current === controller &&
+          !controller.signal.aborted &&
+          tenantIdentityKeyRef.current === requestTenantIdentityKey
+        ) {
           setInvoices(data);
           setStatus(data.length > 0 || partial ? 'success' : 'empty');
           setTotalCount(safeCount);
@@ -261,13 +295,19 @@ export function useInvoices() {
           'Error fetching invoices:',
           error instanceof Error ? error.message : String(error)
         );
+        if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
+          return [];
+        }
         setError(error);
         const appError =
           handleError(error, 'Fetch invoices', undefined, {
             notify: !options.suppressErrorToast,
           }) ?? errorHandler.normalizeError(error, 'Fetch invoices');
         setDisplayError(appError);
-        if (abortRef.current === controller) {
+        if (
+          abortRef.current === controller &&
+          tenantIdentityKeyRef.current === requestTenantIdentityKey
+        ) {
           setInvoices([]);
           setStatus('error');
           setTotalCount(0);
@@ -284,7 +324,11 @@ export function useInvoices() {
         }
         return [];
       } finally {
-        if (abortRef.current === controller && !controller.signal.aborted) {
+        if (
+          abortRef.current === controller &&
+          !controller.signal.aborted &&
+          tenantIdentityKeyRef.current === requestTenantIdentityKey
+        ) {
           setLoading(false);
         }
       }
@@ -316,6 +360,7 @@ export function useInvoices() {
       },
       options?: { idempotencyKey?: string }
     ): Promise<CreateInvoiceResult> => {
+      const requestTenantIdentityKey = tenantIdentityKeyRef.current;
       try {
         if (!createIdempotencyRef.current) {
           createIdempotencyRef.current =
@@ -336,6 +381,13 @@ export function useInvoices() {
           },
           { idempotencyKey }
         );
+
+        if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
+          throw new DOMException(
+            'Tenant changed during createInvoice',
+            'AbortError'
+          );
+        }
 
         if (!response.ok) {
           let errorMessage = 'Failed to create invoice';
@@ -396,6 +448,12 @@ export function useInvoices() {
           response,
           `Failed to create invoice (${response.status})`
         );
+        if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
+          throw new DOMException(
+            'Tenant changed during createInvoice',
+            'AbortError'
+          );
+        }
         if (isConfirmedSuccess(result)) {
           createIdempotencyRef.current = null;
         }
@@ -420,6 +478,12 @@ export function useInvoices() {
               : null,
         };
       } catch (error) {
+        if (
+          tenantIdentityKeyRef.current !== requestTenantIdentityKey ||
+          isAuthLikeTenantError(error)
+        ) {
+          createIdempotencyRef.current = null;
+        }
         if (!shouldPreserveIdempotencyKey(error)) {
           createIdempotencyRef.current = null;
         }
@@ -454,6 +518,7 @@ export function useInvoices() {
         }>;
       }>
     ): Promise<UpdateInvoiceResult> => {
+      const requestTenantIdentityKey = tenantIdentityKeyRef.current;
       try {
         // Filter out undefined values to avoid validation errors
         // Keep null values as they are valid for nullable fields
@@ -469,6 +534,13 @@ export function useInvoices() {
           body: JSON.stringify(cleanedData),
         });
 
+        if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
+          throw new DOMException(
+            'Tenant changed during updateInvoice',
+            'AbortError'
+          );
+        }
+
         if (!response.ok) {
           throw await createApiResponseErrorFromResponse(
             response,
@@ -480,6 +552,12 @@ export function useInvoices() {
           response,
           `Failed to update invoice (${response.status})`
         );
+        if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
+          throw new DOMException(
+            'Tenant changed during updateInvoice',
+            'AbortError'
+          );
+        }
         return {
           invoice: result.data,
           result:
@@ -496,6 +574,9 @@ export function useInvoices() {
               : null,
         };
       } catch (error) {
+        if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
+          throw error;
+        }
         handleError(error, 'Update invoice');
         throw error;
       }
@@ -505,10 +586,18 @@ export function useInvoices() {
 
   const deleteInvoice = useCallback(
     async (id: string) => {
+      const requestTenantIdentityKey = tenantIdentityKeyRef.current;
       try {
         const response = await apiFetch(`/api/invoices/${id}`, {
           method: 'DELETE',
         });
+
+        if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
+          throw new DOMException(
+            'Tenant changed during deleteInvoice',
+            'AbortError'
+          );
+        }
 
         if (!response.ok) {
           throw await createApiResponseErrorFromResponse(
@@ -521,8 +610,17 @@ export function useInvoices() {
           response,
           `Failed to delete invoice (${response.status})`
         );
+        if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
+          throw new DOMException(
+            'Tenant changed during deleteInvoice',
+            'AbortError'
+          );
+        }
         return true;
       } catch (error) {
+        if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
+          throw error;
+        }
         handleError(error, 'Delete invoice');
         throw error;
       }

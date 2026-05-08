@@ -43,7 +43,10 @@ export const useFilters = (
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20; // Clients per page
   // usePageFilters를 기반으로 필터링 로직 구현
-  const normalizedInitialFilters = normalizeFilterState(EMPTY_FILTER_STATE);
+  const normalizedInitialFilters = useMemo(
+    () => normalizeFilterState(EMPTY_FILTER_STATE),
+    []
+  );
   const baseFilters = usePageFilters<Record<string, unknown>>({
     items: clients as unknown as Record<string, unknown>[],
     filterOptionsConfig: {

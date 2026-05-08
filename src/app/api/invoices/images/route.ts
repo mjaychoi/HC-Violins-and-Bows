@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
-import { ErrorSeverity } from '@/types/errors';
+import { ErrorSeverity, ErrorCodes } from '@/types/errors';
 import {
   createSafeErrorResponse,
   createLogErrorInfo,
@@ -26,12 +26,53 @@ import { recordInvoiceImageUpload } from '../imageUploadTracking';
 export const runtime = 'nodejs';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_MULTIPART_BODY_SIZE = 12 * 1024 * 1024; // file + multipart overhead
 const ALLOWED_MIME_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
 };
+
+const EXTENSION_TO_MIME: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
+
+function nowMs(): number {
+  return typeof globalThis.performance !== 'undefined'
+    ? globalThis.performance.now()
+    : Date.now();
+}
+
+function getContentLength(request: NextRequest): number | null {
+  const raw = request.headers?.get('content-length');
+  if (!raw) return null;
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function rejectOversizedMultipartRequest(
+  request: NextRequest
+): NextResponse | null {
+  const contentLength = getContentLength(request);
+
+  if (contentLength && contentLength > MAX_MULTIPART_BODY_SIZE) {
+    return createApiErrorResponse(
+      {
+        message: `Request body must be less than ${Math.round(
+          MAX_MULTIPART_BODY_SIZE / 1024 / 1024
+        )}MB`,
+      },
+      413
+    );
+  }
+
+  return null;
+}
 
 const isValidImageSignature = (buffer: Buffer, mimeType: string): boolean => {
   if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
@@ -42,6 +83,7 @@ const isValidImageSignature = (buffer: Buffer, mimeType: string): boolean => {
       buffer[2] === 0xff
     );
   }
+
   if (mimeType === 'image/png') {
     return (
       buffer.length >= 8 &&
@@ -55,6 +97,7 @@ const isValidImageSignature = (buffer: Buffer, mimeType: string): boolean => {
       buffer[7] === 0x0a
     );
   }
+
   if (mimeType === 'image/webp') {
     return (
       buffer.length >= 12 &&
@@ -68,14 +111,8 @@ const isValidImageSignature = (buffer: Buffer, mimeType: string): boolean => {
       buffer[11] === 0x50
     );
   }
-  return false;
-};
 
-const EXTENSION_TO_MIME: Record<string, string> = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
+  return false;
 };
 
 const detectMimeTypeFromSignature = (buffer: Buffer): string | null => {
@@ -87,6 +124,7 @@ const detectMimeTypeFromSignature = (buffer: Buffer): string | null => {
   ) {
     return 'image/jpeg';
   }
+
   if (
     buffer.length >= 8 &&
     buffer[0] === 0x89 &&
@@ -100,6 +138,7 @@ const detectMimeTypeFromSignature = (buffer: Buffer): string | null => {
   ) {
     return 'image/png';
   }
+
   if (
     buffer.length >= 12 &&
     buffer[0] === 0x52 &&
@@ -113,15 +152,55 @@ const detectMimeTypeFromSignature = (buffer: Buffer): string | null => {
   ) {
     return 'image/webp';
   }
+
   return null;
 };
 
+function resolveImageMimeType(file: File, buffer: Buffer): string | null {
+  const rawType = (file.type || '').toLowerCase();
+  const normalizedType = rawType === 'image/jpg' ? 'image/jpeg' : rawType;
+
+  const baseName = file.name || '';
+  const extension = baseName.includes('.')
+    ? baseName.split('.').pop()?.toLowerCase()
+    : '';
+
+  const extensionType = extension ? EXTENSION_TO_MIME[extension] : undefined;
+  const signatureType = detectMimeTypeFromSignature(buffer);
+
+  const resolvedType = ALLOWED_MIME_TYPES[normalizedType]
+    ? normalizedType
+    : extensionType && ALLOWED_MIME_TYPES[extensionType]
+      ? extensionType
+      : signatureType && ALLOWED_MIME_TYPES[signatureType]
+        ? signatureType
+        : null;
+
+  if (!resolvedType) return null;
+
+  if (!isValidImageSignature(buffer, resolvedType)) {
+    return null;
+  }
+
+  return resolvedType;
+}
+
+function isSupabaseLikeError(error: unknown): boolean {
+  return (
+    Boolean(error) &&
+    typeof error === 'object' &&
+    (((error as { code?: string }).code ?? '').startsWith('PGRST') ||
+      (error as { name?: string }).name === 'PostgrestError' ||
+      typeof (error as { code?: unknown }).code === 'string')
+  );
+}
+
 /**
  * POST /api/invoices/images
- * Upload an image for invoice item to Supabase Storage
+ * Upload an image for invoice item to Supabase Storage.
  */
 async function postHandler(request: NextRequest, auth: AuthContext) {
-  const startTime = performance.now();
+  const startTime = nowMs();
 
   try {
     const orgContextError = requireOrgContext(auth);
@@ -130,14 +209,29 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
     const adminError = requireAdmin(auth);
     if (adminError) return adminError;
 
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+    const oversizedRequest = rejectOversizedMultipartRequest(request);
+    if (oversizedRequest) return oversizedRequest;
 
-    if (!file) {
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return createApiErrorResponse(
+        { message: 'Invalid multipart form data' },
+        400
+      );
+    }
+
+    const file = formData.get('file');
+
+    if (!(file instanceof File)) {
       return createApiErrorResponse({ message: 'No file provided' }, 400);
     }
 
-    // Validate file size
+    if (file.size <= 0) {
+      return createApiErrorResponse({ message: 'Image file is empty' }, 400);
+    }
+
     if (file.size > MAX_FILE_SIZE) {
       return createApiErrorResponse(
         {
@@ -150,45 +244,35 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const rawType = (file.type || '').toLowerCase();
-    const normalizedType = rawType === 'image/jpg' ? 'image/jpeg' : rawType;
-    const baseName = file.name || '';
-    const extension = baseName.includes('.')
-      ? baseName.split('.').pop()?.toLowerCase()
-      : '';
-    const extensionType = extension ? EXTENSION_TO_MIME[extension] : undefined;
-    const signatureType = detectMimeTypeFromSignature(buffer);
-    const resolvedType = ALLOWED_MIME_TYPES[normalizedType]
-      ? normalizedType
-      : extensionType && ALLOWED_MIME_TYPES[extensionType]
-        ? extensionType
-        : signatureType && ALLOWED_MIME_TYPES[signatureType]
-          ? signatureType
-          : '';
+    if (buffer.length <= 0) {
+      return createApiErrorResponse({ message: 'Image file is empty' }, 400);
+    }
 
-    if (!resolvedType) {
+    if (buffer.length > MAX_FILE_SIZE) {
       return createApiErrorResponse(
-        { message: 'File must be a supported image type' },
+        {
+          message: `File size must be less than ${MAX_FILE_SIZE / 1024 / 1024}MB`,
+        },
         400
       );
     }
 
-    if (!isValidImageSignature(buffer, resolvedType)) {
+    const resolvedType = resolveImageMimeType(file, buffer);
+
+    if (!resolvedType) {
       return createApiErrorResponse(
-        { message: 'Invalid image file content' },
+        { message: 'Invalid or unsupported image file content' },
         400
       );
     }
 
     const fileExt = ALLOWED_MIME_TYPES[resolvedType];
 
-    // Generate unique file path
     const timestamp = Date.now();
     const fileId = randomUUID();
     const fileName = `invoice-item-${timestamp}-${fileId}.${fileExt}`;
     const filePath = buildInvoiceImageStoragePath(auth.orgId!, fileName);
 
-    // Upload with the caller's user-scoped Supabase client so storage auth stays session-bound.
     const { error: uploadError } = await auth.userSupabase.storage
       .from(INVOICE_IMAGE_BUCKET)
       .upload(filePath, buffer, {
@@ -214,6 +298,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       await auth.userSupabase.storage
         .from(INVOICE_IMAGE_BUCKET)
         .remove([filePath]);
+
       throw errorHandler.handleSupabaseError(
         trackingError,
         'Record invoice image upload'
@@ -226,10 +311,15 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
     );
 
     if (!signedUrl) {
+      await auth.userSupabase.storage
+        .from(INVOICE_IMAGE_BUCKET)
+        .remove([filePath]);
+
       throw new Error('Failed to create signed URL for uploaded image');
     }
 
-    const duration = Math.round(performance.now() - startTime);
+    const duration = Math.round(nowMs() - startTime);
+
     logApiRequest(
       'POST',
       '/api/invoices/images',
@@ -240,6 +330,9 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         fileName,
         fileSize: file.size,
         contentType: resolvedType,
+        idempotencyKeyPresent: Boolean(
+          request.headers?.get('Idempotency-Key')?.trim()
+        ),
       }
     );
 
@@ -248,13 +341,25 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       filePath,
       signedUrl,
       message: 'Image uploaded successfully',
+      metadata: {
+        idempotencyKeyPresent: Boolean(
+          request.headers?.get('Idempotency-Key')?.trim()
+        ),
+      },
     });
   } catch (error) {
-    const duration = Math.round(performance.now() - startTime);
-    const appError = errorHandler.handleSupabaseError(
-      error || new Error('Failed to upload image'),
-      'Upload invoice item image'
-    );
+    const duration = Math.round(nowMs() - startTime);
+
+    const appError = isSupabaseLikeError(error)
+      ? errorHandler.handleSupabaseError(error, 'Upload invoice item image')
+      : {
+          code: ErrorCodes.UNKNOWN_ERROR,
+          message: 'Invoice image upload failed',
+          details:
+            error instanceof Error ? error.message : 'Failed to upload image',
+          timestamp: new Date().toISOString(),
+        };
+
     const logInfo = createLogErrorInfo(appError);
 
     logApiRequest(

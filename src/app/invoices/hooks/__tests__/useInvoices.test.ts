@@ -8,6 +8,9 @@ jest.mock('@/utils/apiFetch');
 jest.mock('@/contexts/ToastContext', () => ({
   useErrorHandler: jest.fn(),
 }));
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: () => ({ tenantIdentityKey: 'tenant-test' }),
+}));
 
 const mockHandleError = jest.fn();
 const mockInvoices = [

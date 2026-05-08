@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { errorHandler } from '@/utils/errorHandler';
 import { validateUUID } from '@/utils/inputValidation';
-import { InstrumentImage } from '@/types';
+import type { InstrumentImage } from '@/types';
 import { getStorage } from '@/utils/storage';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
@@ -13,11 +13,15 @@ import {
   requireOrgContext,
 } from '@/app/api/_utils/withAuthRoute';
 import { logError } from '@/utils/logger';
+
+export const runtime = 'nodejs';
+
 // Limits
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB per image
+const MAX_IMAGE_FILES_PER_REQUEST = 10;
+const MAX_TOTAL_UPLOAD_SIZE = 20 * 1024 * 1024; // 20MB total per request
 
 // Signed URL TTL
-// 60초는 UI에서 금방 만료될 수 있어서, 10분 정도 권장
 const SIGNED_URL_TTL_SECONDS = 600;
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
@@ -49,23 +53,31 @@ type UploadFileLike = {
   arrayBuffer?: () => Promise<ArrayBuffer>;
 };
 
+type ValidatedImageUpload = {
+  file: UploadFileLike;
+  originalFileName: string;
+  normalizedType: string;
+  fileSize: number;
+  extension: string;
+};
+
 /**
- * Legacy helper: if you ever store public URLs in DB, you can derive storage path.
- * NOTE: This will NOT work for signed URLs. Use file_name when possible.
- * Also handles S3 URLs (s3://bucket/key or https://bucket.s3.region.amazonaws.com/key)
+ * Legacy helper: if public URLs are stored in DB, derive storage path.
+ * NOTE: This will NOT work for signed URLs. Prefer storage_key/file_name.
  */
 const getStoragePathFromPublicUrl = (url: string): string | null => {
-  // Supabase Storage URL marker
   const supabaseMarker = '/storage/v1/object/public/instrument-images/';
   const supabaseIdx = url.indexOf(supabaseMarker);
+
   if (supabaseIdx !== -1) {
     return url.slice(supabaseIdx + supabaseMarker.length);
   }
 
-  // S3 URL patterns
-  // https://bucket.s3.region.amazonaws.com/key or https://s3.region.amazonaws.com/bucket/key
+  // S3 URL pattern:
+  // https://bucket.s3.region.amazonaws.com/key
   const s3Pattern = /https?:\/\/([^.]+)\.s3[.-]([^.]+)\.amazonaws\.com\/(.+)/;
   const s3Match = url.match(s3Pattern);
+
   if (s3Match && s3Match[3]) {
     return decodeURIComponent(s3Match[3]);
   }
@@ -73,7 +85,6 @@ const getStoragePathFromPublicUrl = (url: string): string | null => {
   return null;
 };
 
-// this is a legacy function that is used to resolve the storage key from the image url
 function resolveLegacyStorageKey(
   storageKey: string | null | undefined,
   imageUrl: string | null | undefined
@@ -87,6 +98,20 @@ function resolveLegacyStorageKey(
   }
 
   return null;
+}
+
+function sanitizeImageBaseName(input: string): string {
+  const baseName = input.replace(/\.[^/.]+$/, '');
+
+  const sanitized = baseName
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .trim()
+    .slice(0, 120);
+
+  return sanitized || 'image';
 }
 
 function getInstrumentImageStorageKey(
@@ -105,16 +130,106 @@ function stripInstrumentScope<T extends { instruments?: unknown }>(
   return rest;
 }
 
+function normalizeUploadMimeType(file: UploadFileLike): string | null {
+  const mimeType = (file.type || '').toLowerCase();
+  let normalizedType = mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
+
+  const originalFileName = typeof file.name === 'string' ? file.name : '';
+  const extension = originalFileName.split('.').pop()?.toLowerCase() || '';
+
+  if (!ALLOWED_MIME_TYPES[normalizedType]) {
+    const inferredType = EXTENSION_MIME_TYPES[extension];
+    if (inferredType) {
+      normalizedType = inferredType;
+    }
+  }
+
+  return ALLOWED_MIME_TYPES[normalizedType] ? normalizedType : null;
+}
+
+function validateImageUploads(
+  files: UploadFileLike[]
+): ValidatedImageUpload[] | NextResponse {
+  if (!files || files.length === 0) {
+    return createApiErrorResponse({ message: 'No image files provided' }, 400);
+  }
+
+  if (files.length > MAX_IMAGE_FILES_PER_REQUEST) {
+    return createApiErrorResponse(
+      {
+        message: `Cannot upload more than ${MAX_IMAGE_FILES_PER_REQUEST} images at once`,
+      },
+      400
+    );
+  }
+
+  let totalSize = 0;
+  const validated: ValidatedImageUpload[] = [];
+
+  for (const file of files) {
+    if (!file) {
+      return createApiErrorResponse(
+        { message: 'Invalid image file payload' },
+        400
+      );
+    }
+
+    const originalFileName = typeof file.name === 'string' ? file.name : '';
+    const fileSize = file.size ?? 0;
+
+    if (!originalFileName || typeof file.arrayBuffer !== 'function') {
+      return createApiErrorResponse(
+        { message: 'Invalid image file payload' },
+        400
+      );
+    }
+
+    if (fileSize <= 0) {
+      return createApiErrorResponse({ message: 'Image file is empty' }, 400);
+    }
+
+    if (fileSize > MAX_FILE_SIZE) {
+      return createApiErrorResponse(
+        { message: 'Image file size must be less than 5MB' },
+        400
+      );
+    }
+
+    totalSize += fileSize;
+    if (totalSize > MAX_TOTAL_UPLOAD_SIZE) {
+      return createApiErrorResponse(
+        {
+          message: `Total image upload size must be less than ${Math.round(
+            MAX_TOTAL_UPLOAD_SIZE / 1024 / 1024
+          )}MB`,
+        },
+        400
+      );
+    }
+
+    const normalizedType = normalizeUploadMimeType(file);
+    if (!normalizedType) {
+      return createApiErrorResponse({ message: 'Unsupported image type' }, 400);
+    }
+
+    validated.push({
+      file,
+      originalFileName,
+      normalizedType,
+      fileSize,
+      extension: ALLOWED_MIME_TYPES[normalizedType],
+    });
+  }
+
+  return validated;
+}
+
 async function ensureOwnedInstrument(
   auth: AuthContext,
   id: string
 ): Promise<NextResponse | null> {
-  if (!auth.orgId) {
-    return createApiErrorResponse(
-      { message: 'Organization context required' },
-      403
-    );
-  }
+  const orgContextError = requireOrgContext(auth);
+  if (orgContextError) return orgContextError;
 
   const { data: instrument, error } = await auth.userSupabase
     .from('instruments')
@@ -130,6 +245,19 @@ async function ensureOwnedInstrument(
   return null;
 }
 
+async function ensureAdminOwnedInstrument(
+  auth: AuthContext,
+  id: string
+): Promise<NextResponse | null> {
+  const orgContextError = requireOrgContext(auth);
+  if (orgContextError) return orgContextError;
+
+  const adminError = requireAdmin(auth);
+  if (adminError) return adminError;
+
+  return ensureOwnedInstrument(auth, id);
+}
+
 async function getHandlerInternal(
   _request: NextRequest,
   auth: AuthContext,
@@ -137,6 +265,7 @@ async function getHandlerInternal(
 ) {
   try {
     const storage = getStorage();
+
     if (!validateUUID(id)) {
       return createApiErrorResponse(
         { message: 'Invalid instrument ID format' },
@@ -144,14 +273,9 @@ async function getHandlerInternal(
       );
     }
 
-    const orgContextError = requireOrgContext(auth);
-    if (orgContextError) return orgContextError;
-
     const ownershipError = await ensureOwnedInstrument(auth, id);
     if (ownershipError) return ownershipError;
 
-    // Fetch images for the instrument
-    // Explicitly select columns (excluding alt_text which may not exist in all schemas)
     const { data, error } = await auth.userSupabase
       .from('instrument_images')
       .select(
@@ -184,6 +308,7 @@ async function getHandlerInternal(
           imageId: image.id,
           imageUrl: image.image_url ?? null,
         });
+
         return createApiErrorResponse(
           { message: 'Media object not found' },
           404
@@ -200,6 +325,7 @@ async function getHandlerInternal(
           fileKey,
           error: error instanceof Error ? error.message : String(error),
         });
+
         return createApiErrorResponse(
           { message: 'Failed to verify media object' },
           500
@@ -212,6 +338,7 @@ async function getHandlerInternal(
           imageId: image.id,
           fileKey,
         });
+
         return createApiErrorResponse(
           { message: 'Media object not found' },
           404
@@ -224,6 +351,7 @@ async function getHandlerInternal(
           imageId: image.id,
           fileKey,
         });
+
         return createApiErrorResponse(
           { message: 'Failed to generate access URL' },
           500
@@ -240,6 +368,7 @@ async function getHandlerInternal(
           fileKey,
           error: error instanceof Error ? error.message : String(error),
         });
+
         return createApiErrorResponse(
           { message: 'Failed to generate access URL' },
           500
@@ -252,6 +381,7 @@ async function getHandlerInternal(
           imageId: image.id,
           fileKey,
         });
+
         return createApiErrorResponse(
           { message: 'Failed to generate access URL' },
           500
@@ -277,7 +407,7 @@ async function getHandlerInternal(
 
 /**
  * POST /api/instruments/[id]/images
- * Upload one or more images for an instrument
+ * Upload one or more images for an instrument.
  */
 async function postHandlerInternal(
   request: NextRequest,
@@ -287,12 +417,6 @@ async function postHandlerInternal(
   try {
     const storage = getStorage();
 
-    const orgContextError = requireOrgContext(auth);
-    if (orgContextError) return orgContextError;
-
-    const adminError = requireAdmin(auth);
-    if (adminError) return adminError;
-
     if (!validateUUID(id)) {
       return createApiErrorResponse(
         { message: 'Invalid instrument ID format' },
@@ -300,7 +424,7 @@ async function postHandlerInternal(
       );
     }
 
-    const ownershipError = await ensureOwnedInstrument(auth, id);
+    const ownershipError = await ensureAdminOwnedInstrument(auth, id);
     if (ownershipError) return ownershipError;
 
     let formData: FormData;
@@ -312,53 +436,14 @@ async function postHandlerInternal(
         400
       );
     }
+
     const files = formData.getAll('images') as UploadFileLike[];
+    const validatedUploads = validateImageUploads(files);
 
-    if (!files || files.length === 0) {
-      return createApiErrorResponse(
-        { message: 'No image files provided' },
-        400
-      );
+    if (!Array.isArray(validatedUploads)) {
+      return validatedUploads;
     }
 
-    // Validate all files before touching storage or DB
-    for (const file of files) {
-      if (!file) {
-        return createApiErrorResponse(
-          { message: 'Invalid image file payload' },
-          400
-        );
-      }
-
-      const mimeType = (file.type || '').toLowerCase();
-      let normalizedType = mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
-      const originalFileName = typeof file.name === 'string' ? file.name : '';
-      const extension = originalFileName.split('.').pop()?.toLowerCase() || '';
-      if (!ALLOWED_MIME_TYPES[normalizedType]) {
-        const inferredType = EXTENSION_MIME_TYPES[extension];
-        if (inferredType) normalizedType = inferredType;
-      }
-      if (!ALLOWED_MIME_TYPES[normalizedType]) {
-        return createApiErrorResponse(
-          { message: 'Unsupported image type' },
-          400
-        );
-      }
-      if ((file.size ?? 0) > MAX_FILE_SIZE) {
-        return createApiErrorResponse(
-          { message: 'Image file size must be less than 5MB' },
-          400
-        );
-      }
-      if (typeof file.arrayBuffer !== 'function' || !originalFileName) {
-        return createApiErrorResponse(
-          { message: 'Invalid image file payload' },
-          400
-        );
-      }
-    }
-
-    // Tracks every committed (storage + DB) write so we can undo them all on failure.
     const committed: Array<{ storedKey: string; insertedId: string }> = [];
 
     async function rollbackAll() {
@@ -367,59 +452,56 @@ async function postHandlerInternal(
           await auth.userSupabase
             .from('instrument_images')
             .delete()
-            .eq('id', insertedId);
+            .eq('id', insertedId)
+            .eq('instrument_id', id);
         } catch (e) {
-          logError(
-            'rollback: failed to delete DB record',
-            { insertedId },
-            e instanceof Error ? e.message : String(e)
-          );
+          logError('rollback: failed to delete DB record', {
+            insertedId,
+            error: e instanceof Error ? e.message : String(e),
+          });
         }
+
         try {
           await storage.deleteFile(storedKey);
         } catch (e) {
-          logError(
-            'rollback: failed to delete storage file',
-            { storedKey },
-            e instanceof Error ? e.message : String(e)
-          );
+          logError('rollback: failed to delete storage file', {
+            storedKey,
+            error: e instanceof Error ? e.message : String(e),
+          });
         }
       }
     }
 
     const uploads: InstrumentImage[] = [];
 
-    for (const file of files) {
-      const mimeType = (file.type || '').toLowerCase();
-      let normalizedType = mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
-      const originalFileName = typeof file.name === 'string' ? file.name : '';
-      const extension = originalFileName.split('.').pop()?.toLowerCase() || '';
-      if (!ALLOWED_MIME_TYPES[normalizedType]) {
-        const inferredType = EXTENSION_MIME_TYPES[extension];
-        if (inferredType) normalizedType = inferredType;
-      }
-      const fileSize = file.size ?? 0;
+    for (const upload of validatedUploads) {
+      const { file, originalFileName, normalizedType, fileSize, extension } =
+        upload;
 
       const arrayBuffer = await file.arrayBuffer!();
       const buffer = Buffer.from(arrayBuffer);
-      const fileExt = ALLOWED_MIME_TYPES[normalizedType];
 
-      const baseName = originalFileName.replace(/\.[^/.]+$/, '');
-      const safeName = baseName
-        .replace(/[^a-zA-Z0-9.-]/g, '_')
-        .replace(/\s+/g, '_');
+      if (buffer.length <= 0) {
+        await rollbackAll();
+        return createApiErrorResponse({ message: 'Image file is empty' }, 400);
+      }
+
+      const safeName = sanitizeImageBaseName(originalFileName);
       const fileNameBase = `${Date.now()}-${randomUUID()}-${safeName}`;
-      const fileName = `${fileNameBase}.${fileExt}`;
+      const fileName = `${fileNameBase}.${extension}`;
       const fileKey = getInstrumentImageStorageKey(auth.orgId!, id, fileName);
 
       let storedKey: string;
       let storedFileName: string;
 
       try {
+        storage.validateFile?.(originalFileName, normalizedType, fileSize);
+
         storedKey = await storage.saveFile(buffer, fileKey, normalizedType);
         storedFileName = storedKey.split('/').pop() ?? fileName;
       } catch (uploadError) {
         await rollbackAll();
+
         throw new Error(
           `Failed to upload image: ${
             uploadError instanceof Error
@@ -442,25 +524,23 @@ async function postHandlerInternal(
         });
 
       if (insertError || typeof insertedId !== 'string') {
-        // This file's storage write has no matching DB record yet — clean it up
-        // before rolling back prior committed files.
         try {
           await storage.deleteFile(storedKey);
         } catch (e) {
-          logError(
-            'rollback: failed to delete orphaned storage file',
-            { storedKey },
-            e instanceof Error ? e.message : String(e)
-          );
+          logError('rollback: failed to delete orphaned storage file', {
+            storedKey,
+            error: e instanceof Error ? e.message : String(e),
+          });
         }
+
         await rollbackAll();
+
         throw errorHandler.handleSupabaseError(
           insertError,
           'Save instrument image'
         );
       }
 
-      // Storage + DB are now both committed for this file.
       committed.push({ storedKey, insertedId });
 
       const { data: inserted, error: fetchInsertedError } =
@@ -474,6 +554,7 @@ async function postHandlerInternal(
 
       if (fetchInsertedError || !inserted) {
         await rollbackAll();
+
         throw errorHandler.handleSupabaseError(
           fetchInsertedError,
           'Fetch saved instrument image'
@@ -486,25 +567,30 @@ async function postHandlerInternal(
           ? await storage.presignGet(storedKey, SIGNED_URL_TTL_SECONDS)
           : publicUrl;
       } catch (presignError) {
-        logError(
-          'Failed to generate presigned URL:',
-          presignError instanceof Error
-            ? presignError.message
-            : String(presignError)
-        );
+        logError('Failed to generate presigned URL:', {
+          error:
+            presignError instanceof Error
+              ? presignError.message
+              : String(presignError),
+        });
+
         signedUrl = inserted.image_url || publicUrl;
       }
 
       uploads.push({
         ...stripInstrumentScope(
-          // DB row lacks alt_text (added by domain type); safe cast since we never read alt_text here
           inserted as unknown as InstrumentImage & { instruments?: unknown }
         ),
         image_url: signedUrl,
       });
     }
 
-    return NextResponse.json({ data: uploads });
+    return NextResponse.json({
+      data: uploads,
+      metadata: {
+        uploadedCount: uploads.length,
+      },
+    });
   } catch (error) {
     const errorMessage =
       error instanceof Error
@@ -524,10 +610,9 @@ async function postHandlerInternal(
         ? String((error as { details?: string }).details)
         : undefined;
 
-    logError(
-      'Instrument image upload error:',
-      error instanceof Error ? error.message : String(error)
-    );
+    logError('Instrument image upload error:', {
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     return createApiErrorResponse(
       {
@@ -543,7 +628,7 @@ async function postHandlerInternal(
 
 /**
  * DELETE /api/instruments/[id]/images?imageId=...
- * Delete a specific image for an instrument
+ * Delete a specific image for an instrument.
  */
 async function deleteHandlerInternal(
   request: NextRequest,
@@ -553,12 +638,6 @@ async function deleteHandlerInternal(
   try {
     const storage = getStorage();
 
-    const orgContextError = requireOrgContext(auth);
-    if (orgContextError) return orgContextError;
-
-    const adminError = requireAdmin(auth);
-    if (adminError) return adminError;
-
     if (!validateUUID(id)) {
       return createApiErrorResponse(
         { message: 'Invalid instrument ID format' },
@@ -566,7 +645,7 @@ async function deleteHandlerInternal(
       );
     }
 
-    const ownershipError = await ensureOwnedInstrument(auth, id);
+    const ownershipError = await ensureAdminOwnedInstrument(auth, id);
     if (ownershipError) return ownershipError;
 
     const url = new URL(request.url);
@@ -593,21 +672,26 @@ async function deleteHandlerInternal(
     if (!fileKey) {
       logError(
         'Instrument image deletion blocked: storage key could not be resolved',
-        `imageId=${imageId} instrumentId=${id}`
+        {
+          imageId,
+          instrumentId: id,
+        }
       );
+
       return createApiErrorResponse(
         { message: 'Image storage key could not be resolved' },
         409
       );
     }
 
-    // 1) DB record 먼저 삭제
+    // Delete DB record first. Storage cleanup is best-effort and reflected in payload.
+    // Do not filter by org_id here unless instrument_images has a direct org_id column.
+    // Tenant scope is established by the prior instruments!inner(org_id) lookup.
     const { error: deleteError } = await auth.userSupabase
       .from('instrument_images')
       .delete()
       .eq('id', imageId)
-      .eq('instrument_id', id)
-      .eq('org_id', auth.orgId!);
+      .eq('instrument_id', id);
 
     if (deleteError) {
       throw errorHandler.handleSupabaseError(
@@ -618,7 +702,6 @@ async function deleteHandlerInternal(
 
     let storageDeleted = false;
 
-    // 2) storage 삭제는 best-effort이지만 결과는 payload에 반영
     try {
       storageDeleted = Boolean(await storage.deleteFile(fileKey));
     } catch (storageDeleteError) {

@@ -10,6 +10,13 @@ export function usePermissions() {
     const isReady = !loading && Boolean(user);
     const canUseOrgScopedFeatures = isReady && hasOrgContext;
     const canUseAdminOrgFeatures = canUseOrgScopedFeatures && role === 'admin';
+
+    const orgScopedReason = !isReady
+      ? 'Checking permissions'
+      : !hasOrgContext
+        ? 'Organization context required'
+        : undefined;
+
     const adminOnlyReason = !isReady
       ? 'Checking permissions'
       : !hasOrgContext
@@ -26,6 +33,7 @@ export function usePermissions() {
       canCreateContactLog: canUseOrgScopedFeatures,
       canCreateNote: isReady,
       canCreateConnection: canUseAdminOrgFeatures,
+
       canManageContactLogs: canUseAdminOrgFeatures,
       canManageTasks: canUseAdminOrgFeatures,
       canManageSales: canUseAdminOrgFeatures,
@@ -39,30 +47,36 @@ export function usePermissions() {
       canUploadInstrumentMedia: canUseAdminOrgFeatures,
       canManageClients: canUseAdminOrgFeatures,
       canCreateClient: canUseAdminOrgFeatures,
-      createClientDisabledReason:
-        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
-          ? undefined
-          : adminOnlyReason,
-      createInvoiceDisabledReason:
-        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
-          ? undefined
-          : adminOnlyReason,
-      createTaskDisabledReason:
-        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
-          ? undefined
-          : adminOnlyReason,
-      createInstrumentDisabledReason:
-        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
-          ? undefined
-          : adminOnlyReason,
-      createSaleDisabledReason:
-        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
-          ? undefined
-          : adminOnlyReason,
-      exportSalesDisabledReason:
-        canUseAdminOrgFeatures || !canUseOrgScopedFeatures
-          ? undefined
-          : adminOnlyReason,
+
+      createClientDisabledReason: canUseAdminOrgFeatures
+        ? undefined
+        : adminOnlyReason,
+
+      createInvoiceDisabledReason: canUseAdminOrgFeatures
+        ? undefined
+        : adminOnlyReason,
+
+      createTaskDisabledReason: canUseAdminOrgFeatures
+        ? undefined
+        : adminOnlyReason,
+
+      createInstrumentDisabledReason: canUseAdminOrgFeatures
+        ? undefined
+        : adminOnlyReason,
+
+      createSaleDisabledReason: canUseAdminOrgFeatures
+        ? undefined
+        : adminOnlyReason,
+
+      exportSalesDisabledReason: canUseAdminOrgFeatures
+        ? undefined
+        : adminOnlyReason,
+
+      createContactLogDisabledReason: canUseOrgScopedFeatures
+        ? undefined
+        : orgScopedReason,
+
+      createNoteDisabledReason: isReady ? undefined : 'Checking permissions',
     };
   }, [loading, user, role, hasOrgContext]);
 }

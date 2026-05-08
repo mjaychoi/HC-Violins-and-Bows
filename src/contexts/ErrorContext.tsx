@@ -5,17 +5,25 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useEffect,
+  useMemo,
+  useRef,
   ReactNode,
 } from 'react';
 import { AppError, ErrorCodes, ErrorSeverity } from '@/types/errors';
 import { errorHandler } from '@/utils/errorHandler';
 import { captureException } from '@/utils/monitoring';
 
-// Extended error type with stable toast ID and dedup metadata
 export type ToastError = AppError & {
   _toastId: string;
   _dedupKey: string;
   _createdAt: number;
+};
+
+type RetryResult = {
+  error: AppError | null;
+  data?: unknown;
+  attempts?: number;
 };
 
 interface ErrorContextValue {
@@ -38,7 +46,7 @@ interface ErrorContextValue {
     operationId: string,
     context?: string,
     maxRetries?: number
-  ) => Promise<{ error: AppError | null; data?: unknown }>;
+  ) => Promise<RetryResult>;
   getErrorStats: () => Map<ErrorCodes, number>;
   getErrorCount: (code: ErrorCodes) => number;
   getRecoverySuggestions: (error: AppError) => string[];
@@ -46,49 +54,87 @@ interface ErrorContextValue {
 
 const ErrorContext = createContext<ErrorContextValue | undefined>(undefined);
 
+const DEDUP_WINDOW_MS = 5000;
+
+function createToastId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+function createDedupKey(error: AppError, context?: string): string {
+  return `${error.code}:${error.message}:${context ?? ''}`;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export function ErrorProvider({ children }: { children: ReactNode }) {
   const [errors, setErrors] = useState<ToastError[]>([]);
 
-  // Error handling
+  const mountedRef = useRef(true);
+  const recentErrorMapRef = useRef(new Map<string, number>());
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const pruneRecentErrors = useCallback((now: number) => {
+    for (const [key, timestamp] of recentErrorMapRef.current.entries()) {
+      if (now - timestamp >= DEDUP_WINDOW_MS) {
+        recentErrorMapRef.current.delete(key);
+      }
+    }
+  }, []);
+
   const addError = useCallback(
     (
       error: AppError,
       severity: ErrorSeverity = ErrorSeverity.MEDIUM,
       context?: string
     ) => {
-      // severity는 로깅에서만 사용 (handleError에서 처리)
       void severity;
-      const toastId =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-      const dedupKey = `${error.code}:${error.message}:${context ?? ''}`;
+      if (!mountedRef.current) return;
+
       const createdAt = Date.now();
+      const dedupKey = createDedupKey(error, context);
 
-      setErrors(prev => {
-        const DEDUP_WINDOW_MS = 5000;
-        const isDuplicate = prev.some(existingError => {
-          const timeDiff = createdAt - existingError._createdAt;
-          return (
-            existingError._dedupKey === dedupKey && timeDiff < DEDUP_WINDOW_MS
-          );
-        });
+      pruneRecentErrors(createdAt);
 
-        if (isDuplicate) return prev;
+      const previousCreatedAt = recentErrorMapRef.current.get(dedupKey);
 
-        return [
-          ...prev,
-          {
-            ...error,
-            _toastId: toastId,
-            _dedupKey: dedupKey,
-            _createdAt: createdAt,
-          },
-        ];
-      });
+      if (
+        previousCreatedAt !== undefined &&
+        createdAt - previousCreatedAt < DEDUP_WINDOW_MS
+      ) {
+        return;
+      }
+
+      recentErrorMapRef.current.set(dedupKey, createdAt);
+
+      const toastId = createToastId();
+
+      setErrors(prev => [
+        ...prev,
+        {
+          ...error,
+          _toastId: toastId,
+          _dedupKey: dedupKey,
+          _createdAt: createdAt,
+        },
+      ]);
     },
-    []
+    [pruneRecentErrors]
   );
 
   const removeError = useCallback((toastId: string) => {
@@ -96,6 +142,7 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const clearErrors = useCallback(() => {
+    recentErrorMapRef.current.clear();
     setErrors([]);
     errorHandler.clearErrorLogs();
   }, []);
@@ -109,8 +156,8 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
     ) => {
       const appError = errorHandler.normalizeError(error, context);
 
-      // 로깅/모니터링은 handleError에서만
       errorHandler.logError(appError, severity);
+
       captureException(
         appError,
         context,
@@ -122,8 +169,7 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
         severity
       );
 
-      const shouldNotify = options?.notify !== false;
-      if (shouldNotify) {
+      if (options?.notify !== false) {
         addError(appError, severity, context);
       }
 
@@ -138,20 +184,41 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
       operationId: string,
       context?: string,
       maxRetries: number = 3
-    ) => {
+    ): Promise<RetryResult> => {
       let lastError: AppError | null = null;
 
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+        if (!mountedRef.current) {
+          return {
+            error: lastError,
+            data: undefined,
+          };
+        }
+
         try {
           const result = await operation();
+
           errorHandler.clearRetryAttempts(operationId);
-          return { error: null, data: result };
+
+          return {
+            error: null,
+            data: result,
+          };
         } catch (error) {
           const isFinalAttempt = attempt === maxRetries;
+
           const appError = handleError(error, context, ErrorSeverity.MEDIUM, {
             notify: isFinalAttempt,
           });
+
           lastError = appError;
+
+          if (!mountedRef.current) {
+            return {
+              error: lastError,
+              data: undefined,
+            };
+          }
 
           if (!errorHandler.shouldRetry(appError, operationId)) {
             break;
@@ -160,30 +227,58 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
           errorHandler.recordRetryAttempt(operationId);
 
           if (attempt < maxRetries) {
-            const base = process.env.NODE_ENV === 'test' ? 20 : 1000;
-            const delay = Math.pow(2, attempt) * base;
-            await new Promise(resolve => setTimeout(resolve, delay));
+            const baseDelay = process.env.NODE_ENV === 'test' ? 20 : 1000;
+            const retryDelay = Math.pow(2, attempt) * baseDelay;
+
+            await delay(retryDelay);
           }
         }
       }
 
-      return { error: lastError, data: undefined };
+      return {
+        error: lastError,
+        data: undefined,
+      };
     },
     [handleError]
   );
 
-  const value: ErrorContextValue = {
-    errors,
-    addError,
-    removeError,
-    clearErrors,
-    handleError,
-    handleErrorWithRetry,
-    getErrorStats: () => errorHandler.getErrorStats(),
-    getErrorCount: (code: ErrorCodes) => errorHandler.getErrorCount(code),
-    getRecoverySuggestions: (error: AppError) =>
-      errorHandler.getRecoverySuggestions(error),
-  };
+  const getErrorStats = useCallback(() => {
+    return errorHandler.getErrorStats();
+  }, []);
+
+  const getErrorCount = useCallback((code: ErrorCodes) => {
+    return errorHandler.getErrorCount(code);
+  }, []);
+
+  const getRecoverySuggestions = useCallback((error: AppError) => {
+    return errorHandler.getRecoverySuggestions(error);
+  }, []);
+
+  const value = useMemo<ErrorContextValue>(
+    () => ({
+      errors,
+      addError,
+      removeError,
+      clearErrors,
+      handleError,
+      handleErrorWithRetry,
+      getErrorStats,
+      getErrorCount,
+      getRecoverySuggestions,
+    }),
+    [
+      errors,
+      addError,
+      removeError,
+      clearErrors,
+      handleError,
+      handleErrorWithRetry,
+      getErrorStats,
+      getErrorCount,
+      getRecoverySuggestions,
+    ]
+  );
 
   return (
     <ErrorContext.Provider value={value}>{children}</ErrorContext.Provider>
@@ -192,8 +287,10 @@ export function ErrorProvider({ children }: { children: ReactNode }) {
 
 export function useErrorContext() {
   const context = useContext(ErrorContext);
+
   if (!context) {
     throw new Error('useErrorContext must be used within ErrorProvider');
   }
+
   return context;
 }

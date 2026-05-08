@@ -33,6 +33,7 @@ function createClientResponseMalformed503(orgId: string | null | undefined) {
     'ClientsWithConnectionsAPI',
     { orgId }
   );
+
   return {
     status: 503 as const,
     payload: {
@@ -84,6 +85,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const body = await request.json();
+
       const parsed = createClientWithInstrumentLinksSchema.safeParse(body);
       if (!parsed.success) {
         return {
@@ -112,6 +114,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         ...clientPayload,
         client_number: null,
       });
+
       const clientName = (dbRow.name ?? '').trim();
       if (!clientName) {
         return {
@@ -154,11 +157,14 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
               },
             };
           }
+
           const hint =
             `${rpcError.details ?? ''} ${rpcError.message ?? ''}`.toLowerCase();
+
           const isClientNumber =
             hint.includes('client_number') ||
             hint.includes('idx_clients_org_id_client_number');
+
           return {
             status: 409,
             payload: {
@@ -168,9 +174,11 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
             },
           };
         }
+
         if (isCreateClientRpcResponseAssemblyFailure(rpcError)) {
           return createClientResponseMalformed503(auth.orgId);
         }
+
         const errorMessage =
           rpcError && typeof rpcError.message === 'string'
             ? rpcError.message
@@ -189,6 +197,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
 
       let client;
       let connections: ClientInstrument[];
+
       try {
         client = validateClient(mapClientsTableRowToClient(rpcData.client));
 
@@ -202,7 +211,10 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       return {
         payload: { data: { client, connections } },
         status: 201,
-        metadata: { clientId: client.id, connectionCount: connections.length },
+        metadata: {
+          clientId: client.id,
+          connectionCount: connections.length,
+        },
       };
     }
   );

@@ -5,6 +5,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { todayLocalYMD } from '@/utils/dateParsing';
+import { handleApiResponse } from '@/utils/handleApiResponse';
 
 interface UseContactLogsOptions {
   clientId?: string;
@@ -13,6 +14,17 @@ interface UseContactLogsOptions {
 }
 
 type ContactLogsStatus = 'loading' | 'success' | 'empty' | 'error';
+
+function generateContactCreateIdempotencyKey(): string {
+  if (
+    typeof globalThis.crypto !== 'undefined' &&
+    typeof globalThis.crypto.randomUUID === 'function'
+  ) {
+    return `contact-create:${globalThis.crypto.randomUUID()}`;
+  }
+
+  return `contact-create:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
 
 export function useContactLogs({
   clientId,
@@ -54,17 +66,15 @@ export function useContactLogs({
       const response = await apiFetch(`/api/contacts?${params.toString()}`, {
         signal: controller.signal,
       });
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to fetch contact logs');
-      }
+      const nextLogs = await handleApiResponse<ContactLog[]>(
+        response,
+        'Failed to fetch contact logs'
+      );
 
       if (requestId !== requestIdRef.current) {
         return;
       }
 
-      const nextLogs = result.data || [];
       setContactLogs(nextLogs);
       setStatus(nextLogs.length > 0 ? 'success' : 'empty');
     } catch (error) {
@@ -124,22 +134,27 @@ export function useContactLogs({
     ) => {
       return withSubmitting(async () => {
         try {
-          const response = await apiFetch('/api/contacts', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
+          const response = await apiFetch(
+            '/api/contacts',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(contact),
             },
-            body: JSON.stringify(contact),
-          });
+            {
+              idempotencyKey: generateContactCreateIdempotencyKey(),
+            }
+          );
 
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || 'Failed to create contact log');
-          }
+          const data = await handleApiResponse<ContactLog>(
+            response,
+            'Failed to create contact log'
+          );
 
           await fetchContactLogs();
-          return result.data as ContactLog;
+          return data;
         } catch (error) {
           handleError(error, 'Create contact log');
           throw error;
@@ -161,14 +176,13 @@ export function useContactLogs({
             body: JSON.stringify({ id, ...updates }),
           });
 
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || 'Failed to update contact log');
-          }
+          const data = await handleApiResponse<ContactLog>(
+            response,
+            'Failed to update contact log'
+          );
 
           await fetchContactLogs();
-          return result.data as ContactLog;
+          return data;
         } catch (error) {
           handleError(error, 'Update contact log');
           throw error;
@@ -187,11 +201,11 @@ export function useContactLogs({
             method: 'DELETE',
           });
 
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || 'Failed to delete contact log');
-          }
+          await handleApiResponse<{ success: boolean }>(
+            response,
+            'Failed to delete contact log',
+            { allowSuccessWithoutData: true }
+          );
 
           await fetchContactLogs();
         } catch (error) {
@@ -253,14 +267,13 @@ export function useContactLogs({
             }),
           });
 
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || 'Failed to complete follow-up');
-          }
+          const data = await handleApiResponse<ContactLog>(
+            response,
+            'Failed to complete follow-up'
+          );
 
           await fetchContactLogs();
-          return result.data as ContactLog;
+          return data;
         } catch (error) {
           handleError(error, 'Complete follow-up');
           throw error;
@@ -288,14 +301,13 @@ export function useContactLogs({
             }),
           });
 
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || 'Failed to postpone follow-up');
-          }
+          const data = await handleApiResponse<ContactLog>(
+            response,
+            'Failed to postpone follow-up'
+          );
 
           await fetchContactLogs();
-          return result.data as ContactLog;
+          return data;
         } catch (error) {
           handleError(error, 'Postpone follow-up');
           throw error;

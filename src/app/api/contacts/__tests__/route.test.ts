@@ -62,6 +62,165 @@ describe('/api/contacts', () => {
     instrument: null,
   };
 
+  function createIdempotencyTableMock() {
+    const table: any = {
+      insert: jest.fn().mockReturnThis(),
+      update: jest.fn().mockReturnThis(),
+      delete: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({
+        data: {
+          org_id: 'test-org',
+          user_id: 'test-user',
+          route_key: 'POST:/api/contacts',
+          idempotency_key: 'test-key',
+          request_hash: 'hash',
+          status: 'in_progress',
+          response_payload: null,
+        },
+        error: null,
+      }),
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: null,
+        error: null,
+      }),
+    };
+
+    return table;
+  }
+
+  function createStatefulContactPostSupabase(options?: {
+    failNextContactInsert?: boolean;
+  }) {
+    const idempotencyRows = new Map<string, any>();
+    let contactInsertCount = 0;
+    let failNextContactInsert = options?.failNextContactInsert === true;
+
+    const idempotencyTable = () => {
+      const filters: Record<string, unknown> = {};
+      let insertRow: any = null;
+      let updateRow: any = null;
+      let deleteMode = false;
+
+      const table: any = {
+        insert: jest.fn(row => {
+          insertRow = row;
+          return table;
+        }),
+        update: jest.fn(row => {
+          updateRow = row;
+          return table;
+        }),
+        delete: jest.fn(() => {
+          deleteMode = true;
+          return table;
+        }),
+        select: jest.fn(() => table),
+        eq: jest.fn((column: string, value: unknown) => {
+          filters[column] = value;
+          if (column === 'idempotency_key') {
+            const key = [
+              filters.org_id,
+              filters.user_id,
+              filters.route_key,
+              filters.idempotency_key,
+            ].join(':');
+
+            if (updateRow && idempotencyRows.has(key)) {
+              idempotencyRows.set(key, {
+                ...idempotencyRows.get(key),
+                ...updateRow,
+              });
+            }
+
+            if (deleteMode) {
+              idempotencyRows.delete(key);
+            }
+          }
+          return table;
+        }),
+        single: jest.fn(async () => {
+          const key = [
+            insertRow.org_id,
+            insertRow.user_id,
+            insertRow.route_key,
+            insertRow.idempotency_key,
+          ].join(':');
+
+          if (idempotencyRows.has(key)) {
+            return {
+              data: null,
+              error: { code: '23505', message: 'duplicate' },
+            };
+          }
+
+          idempotencyRows.set(key, insertRow);
+          return { data: insertRow, error: null };
+        }),
+        maybeSingle: jest.fn(async () => {
+          const key = [
+            filters.org_id,
+            filters.user_id,
+            filters.route_key,
+            filters.idempotency_key,
+          ].join(':');
+
+          return { data: idempotencyRows.get(key) ?? null, error: null };
+        }),
+      };
+
+      return table;
+    };
+
+    const clientQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: { id: mockContactLog.client_id },
+        error: null,
+      }),
+    };
+
+    const contactInsertQuery = {
+      insert: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      single: jest.fn(async () => {
+        if (failNextContactInsert) {
+          failNextContactInsert = false;
+          return {
+            data: null,
+            error: { code: 'PGRST500', message: 'Insert failed' },
+          };
+        }
+
+        contactInsertCount += 1;
+        return {
+          data: {
+            ...mockContactLog,
+            id: `123e4567-e89b-12d3-a456-${String(contactInsertCount).padStart(
+              12,
+              '0'
+            )}`,
+          },
+          error: null,
+        };
+      }),
+    };
+
+    const supabase = {
+      from: jest.fn((table: string) => {
+        if (table === 'api_create_idempotency') return idempotencyTable();
+        if (table === 'clients') return clientQuery;
+        if (table === 'contact_logs') return contactInsertQuery;
+        return contactInsertQuery;
+      }),
+      getContactInsertCount: () => contactInsertCount,
+    };
+
+    return supabase;
+  }
+
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
@@ -577,6 +736,8 @@ describe('/api/contacts', () => {
 
       mockUserSupabase = {
         from: jest.fn((table: string) => {
+          if (table === 'api_create_idempotency')
+            return createIdempotencyTableMock();
           if (table === 'clients') return mockClientQuery;
           if (table === 'instruments') return mockInstrumentQuery;
           return mockInsertQuery;
@@ -610,6 +771,157 @@ describe('/api/contacts', () => {
       expect(mockInsertQuery.insert).toHaveBeenCalled();
     });
 
+    it('should return 400 when Idempotency-Key is missing', async () => {
+      const request = new NextRequest('http://localhost/api/contacts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: mockContactLog.client_id,
+          contact_type: 'email',
+          content: 'Test content',
+          contact_date: '2024-01-15',
+        }),
+      });
+
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error_code).toBe('IDEMPOTENCY_KEY_REQUIRED');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('should replay same-key same-payload contact creates without inserting twice', async () => {
+      const supabase = createStatefulContactPostSupabase();
+      mockUserSupabase = supabase;
+      const body = {
+        client_id: mockContactLog.client_id,
+        contact_type: 'email',
+        content: 'Test content',
+        contact_date: '2024-01-15',
+      };
+
+      const first = await POST(
+        new NextRequest('http://localhost/api/contacts', {
+          method: 'POST',
+          headers: {
+            'Idempotency-Key': 'contact-key-1',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        })
+      );
+      const firstJson = await first.json();
+
+      const replay = await POST(
+        new NextRequest('http://localhost/api/contacts', {
+          method: 'POST',
+          headers: {
+            'Idempotency-Key': 'contact-key-1',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        })
+      );
+      const replayJson = await replay.json();
+
+      expect(first.status).toBe(201);
+      expect(replay.status).toBe(200);
+      expect(replayJson.idempotentReplay).toBe(true);
+      expect(replayJson.data.id).toBe(firstJson.data.id);
+      expect(supabase.getContactInsertCount()).toBe(1);
+    });
+
+    it('should reject same-key different-payload contact creates', async () => {
+      const supabase = createStatefulContactPostSupabase();
+      mockUserSupabase = supabase;
+      const baseBody = {
+        client_id: mockContactLog.client_id,
+        contact_type: 'email',
+        content: 'Test content',
+        contact_date: '2024-01-15',
+      };
+
+      const first = await POST(
+        new NextRequest('http://localhost/api/contacts', {
+          method: 'POST',
+          headers: {
+            'Idempotency-Key': 'contact-key-2',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(baseBody),
+        })
+      );
+
+      const conflict = await POST(
+        new NextRequest('http://localhost/api/contacts', {
+          method: 'POST',
+          headers: {
+            'Idempotency-Key': 'contact-key-2',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...baseBody,
+            content: 'Different content',
+          }),
+        })
+      );
+      const conflictJson = await conflict.json();
+
+      expect(first.status).toBe(201);
+      expect(conflict.status).toBe(409);
+      expect(conflictJson.error_code).toBe('IDEMPOTENCY_KEY_REUSED');
+      expect(supabase.getContactInsertCount()).toBe(1);
+    });
+
+    it('should not cache a successful idempotency result when contact create fails', async () => {
+      mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
+        code: 'DATABASE_ERROR',
+        message: 'Insert failed',
+        status: 500,
+      });
+      const supabase = createStatefulContactPostSupabase({
+        failNextContactInsert: true,
+      });
+      mockUserSupabase = supabase;
+      const body = {
+        client_id: mockContactLog.client_id,
+        contact_type: 'email',
+        content: 'Test content',
+        contact_date: '2024-01-15',
+      };
+
+      const failed = await POST(
+        new NextRequest('http://localhost/api/contacts', {
+          method: 'POST',
+          headers: {
+            'Idempotency-Key': 'contact-key-3',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        })
+      );
+
+      const retry = await POST(
+        new NextRequest('http://localhost/api/contacts', {
+          method: 'POST',
+          headers: {
+            'Idempotency-Key': 'contact-key-3',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        })
+      );
+      const retryJson = await retry.json();
+
+      expect(failed.status).toBe(500);
+      expect(retry.status).toBe(201);
+      expect(retryJson.idempotentReplay).toBeUndefined();
+      expect(supabase.getContactInsertCount()).toBe(1);
+    });
+
     it('should reject instrument_id outside caller org', async () => {
       const instrumentId = '123e4567-e89b-12d3-a456-426614174002';
       const mockClientQuery = {
@@ -636,6 +948,8 @@ describe('/api/contacts', () => {
 
       mockUserSupabase = {
         from: jest.fn((table: string) => {
+          if (table === 'api_create_idempotency')
+            return createIdempotencyTableMock();
           if (table === 'clients') return mockClientQuery;
           if (table === 'instruments') return mockInstrumentQuery;
           return mockInsertQuery;
@@ -704,6 +1018,8 @@ describe('/api/contacts', () => {
 
       mockUserSupabase = {
         from: jest.fn((table: string) => {
+          if (table === 'api_create_idempotency')
+            return createIdempotencyTableMock();
           if (table === 'clients') return mockClientQuery;
           if (table === 'instruments') return mockInstrumentQuery;
           return mockInsertQuery;

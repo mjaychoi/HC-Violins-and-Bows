@@ -5,7 +5,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
-import { requireOrgContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest, logWarn } from '@/utils/logger';
@@ -25,19 +28,42 @@ import {
   withRequestIdHeader,
 } from '@/app/api/_utils/requestContext';
 
-// FIXED: Ensure Node.js runtime for PDF generation (Edge runtime breaks react-pdf)
+// Ensure Node.js runtime for PDF generation. Edge runtime breaks react-pdf.
 export const runtime = 'nodejs';
 
-// Maximum PDF size in bytes (20MB) - prevents OOM from large PDFs
+// Maximum PDF size in bytes (20MB) - prevents returning oversized PDFs.
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
+
+// Maximum time to spend generating a PDF.
+const PDF_GENERATION_TIMEOUT_MS = 15_000;
 
 const nowMs = () =>
   typeof globalThis.performance !== 'undefined'
     ? globalThis.performance.now()
     : Date.now();
 
-// FIXED: Promise cache to prevent race conditions on concurrent requests
-// In development, we invalidate cache to allow hot reloading
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
+}
+
+// Promise cache prevents race conditions on concurrent requests.
+// In development, invalidate cache to allow hot reloading.
 let reactPdfLoader: Promise<{
   renderToBuffer: typeof import('@react-pdf/renderer').renderToBuffer;
   CertificateDocument: React.ComponentType<{
@@ -53,7 +79,8 @@ async function loadReactPDF() {
 
   if (!reactPdfLoader || isDev) {
     reactPdfLoader = (async () => {
-      // React 19 + Next.js 15 server env: make React available to react-pdf reconciler
+      // React 19 + Next.js 15 server env:
+      // make React available to react-pdf reconciler.
       if (
         typeof global !== 'undefined' &&
         !(global as Record<string, unknown>).React
@@ -83,7 +110,7 @@ async function loadReactPDF() {
 }
 
 /**
- * Sanitize filename for safe use in Content-Disposition header
+ * Sanitize filename for safe use in Content-Disposition header.
  */
 function sanitizeFilename(input: string): string {
   const safe = String(input)
@@ -96,17 +123,19 @@ function sanitizeFilename(input: string): string {
 }
 
 /**
- * Create safe Content-Disposition header with RFC 5987 encoding for international characters
+ * Create safe Content-Disposition header with RFC 5987 encoding
+ * for international characters.
  */
 function createContentDisposition(filename: string): string {
   const safeFilename = sanitizeFilename(filename);
   const baseFilename = `certificate-${safeFilename}.pdf`;
   const encoded = encodeURIComponent(baseFilename);
+
   return `attachment; filename="${baseFilename}"; filename*=UTF-8''${encoded}`;
 }
 
 /**
- * Build a URL-safe verify code
+ * Build a URL-safe verify code.
  */
 function buildVerifyUrl(instrument: Instrument): string {
   const serial = (instrument.serial_number ?? '').trim();
@@ -114,23 +143,23 @@ function buildVerifyUrl(instrument: Instrument): string {
   const year = new Date().getFullYear();
   const code = `CERT-${baseId}-${year}`;
 
-  // Make it URL-safe
   return `https://www.hcviolins.com/verify/${encodeURIComponent(code)}`;
 }
 
 /**
- * Load logo as data URI if possible; otherwise fallback to absolute URL (best-effort).
- * (react-pdf may or may not successfully fetch remote URLs depending on environment)
+ * Load logo as data URI if possible; otherwise fallback to absolute URL.
+ * react-pdf may or may not successfully fetch remote URLs depending on environment.
  */
 async function resolveLogoSrc(): Promise<string | undefined> {
   try {
     const logoPath = path.join(process.cwd(), 'public', 'logo.png');
     const logoBuf = await fs.readFile(logoPath);
+
     return `data:image/png;base64,${logoBuf.toString('base64')}`;
   } catch (e) {
-    // Fallback to absolute URL
     const absoluteUrl =
       process.env.NEXT_PUBLIC_LOGO_URL || 'https://www.hcviolins.com/logo.png';
+
     logWarn(
       'Failed to read logo from public folder; falling back to absolute URL',
       'CertificatesAPI',
@@ -138,6 +167,7 @@ async function resolveLogoSrc(): Promise<string | undefined> {
         reason: e instanceof Error ? e.message : String(e),
       }
     );
+
     return absoluteUrl || undefined;
   }
 }
@@ -170,6 +200,28 @@ async function getHandlerInternal(
           {
             message: 'Organization context required',
             error_code: 'ORG_CONTEXT_REQUIRED',
+            retryable: false,
+          },
+          403
+        ),
+        requestId
+      );
+    }
+
+    const adminError = requireAdmin(auth);
+    if (adminError) {
+      logApiRequest('GET', routePath, 403, durationMs(), 'CertificatesAPI', {
+        instrumentId: id,
+        requestId,
+        error: true,
+        errorCode: 'ADMIN_ROLE_REQUIRED',
+      });
+
+      return withRequestIdHeader(
+        createApiErrorResponse(
+          {
+            message: 'Admin role required',
+            error_code: 'ADMIN_ROLE_REQUIRED',
             retryable: false,
           },
           403
@@ -211,6 +263,7 @@ async function getHandlerInternal(
     // 2b) Optional owner fetch
     let ownerName: string | null = null;
     type InstrumentWithOwnership = Instrument & { ownership?: unknown };
+
     const ownershipValue = (instrument as InstrumentWithOwnership)?.ownership;
     const ownerId =
       typeof ownershipValue === 'string' && validateUUID(ownershipValue)
@@ -309,6 +362,7 @@ async function getHandlerInternal(
         }
       } catch (ownerError) {
         const status = 503;
+
         logApiRequest(
           'GET',
           routePath,
@@ -323,6 +377,7 @@ async function getHandlerInternal(
             ownerId,
           }
         );
+
         captureException(
           ownerError,
           'CertificatesAPI.GET.ownerLookup',
@@ -351,7 +406,7 @@ async function getHandlerInternal(
       );
       const logInfo = createLogErrorInfo(appError);
 
-      // PGRST116: "No rows" (common not-found)
+      // PGRST116: "No rows" - common not-found
       const errorWithCode = error as { code?: string } | null;
       const status = errorWithCode?.code === 'PGRST116' ? 404 : 500;
 
@@ -380,6 +435,7 @@ async function getHandlerInternal(
 
     // 3) Validate instrument structure
     let validatedInstrument: Instrument;
+
     try {
       validatedInstrument = validateInstrument(instrument);
     } catch (validationError) {
@@ -426,16 +482,20 @@ async function getHandlerInternal(
     const { renderToBuffer: renderToBufferFn, CertificateDocument: CertDoc } =
       await loadReactPDF();
 
-    // 6) Generate PDF buffer
-    const pdfBuffer = await renderToBufferFn(
-      React.createElement(CertDoc, {
-        instrument: validatedInstrument,
-        // NOTE: If react-pdf <Image> crashes on undefined, fix inside CertificateDocument:
-        // render <Image> only when logoSrc is truthy.
-        logoSrc,
-        verifyUrl: buildVerifyUrl(validatedInstrument),
-        ownerName: ownerName ?? undefined,
-      }) as React.ReactElement<DocumentProps>
+    // 6) Generate PDF buffer with timeout
+    const pdfBuffer = await withTimeout(
+      renderToBufferFn(
+        React.createElement(CertDoc, {
+          instrument: validatedInstrument,
+          // If react-pdf <Image> crashes on undefined, fix inside CertificateDocument:
+          // render <Image> only when logoSrc is truthy.
+          logoSrc,
+          verifyUrl: buildVerifyUrl(validatedInstrument),
+          ownerName: ownerName ?? undefined,
+        }) as React.ReactElement<DocumentProps>
+      ),
+      PDF_GENERATION_TIMEOUT_MS,
+      `PDF generation exceeded ${PDF_GENERATION_TIMEOUT_MS}ms`
     );
 
     // 7) Enforce size limit
@@ -504,6 +564,7 @@ async function getHandlerInternal(
         (error as { name?: string }).name === 'PostgrestError');
 
     const paramsId = id;
+
     const appError: AppError = isSupabaseError
       ? errorHandler.handleSupabaseError(error, 'Generate certificate PDF')
       : errorHandler.createError(
@@ -554,6 +615,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const p: unknown = context.params;
+
   const params =
     typeof (p as { then?: unknown })?.then === 'function'
       ? await (p as Promise<{ id: string }>)

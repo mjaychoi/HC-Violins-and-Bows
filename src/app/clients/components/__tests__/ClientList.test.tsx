@@ -1,7 +1,6 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
+import { render, screen, fireEvent } from '@/test-utils/render';
 import '@testing-library/jest-dom';
-import userEvent from '@testing-library/user-event';
 import ClientList from '../ClientList';
 import { Client } from '@/types';
 

@@ -5,7 +5,9 @@ import { useUnifiedClients } from '@/hooks/useUnifiedData';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { compareDatesDesc } from '@/utils/dateParsing';
 import { apiFetch } from '@/utils/apiFetch';
+import { handleApiResponse } from '@/utils/handleApiResponse';
 import { logInfo, logDebug, logError } from '@/utils/logger';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 // Client sales summary type (from API)
 export interface ClientSalesSummary {
@@ -25,6 +27,7 @@ type CustomersStatus = 'loading' | 'success' | 'empty' | 'error';
 export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
   const { clients, loading: clientsLoading } = useUnifiedClients();
   const { handleError } = useErrorHandler();
+  const { tenantIdentityKey } = useTenantIdentity();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<CustomersStatus>('empty');
   const [purchaseHistoryByClient, setPurchaseHistoryByClient] = useState<
@@ -56,9 +59,27 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
   // Track if we've already fetched to prevent duplicate fetches
   const hasFetchedRef = useRef(false);
   const fetchSalesHistoryRef = useRef<(() => Promise<void>) | null>(null);
+  const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+
+  useEffect(() => {
+    tenantIdentityKeyRef.current = tenantIdentityKey;
+    hasFetchedRef.current = false;
+    purchaseHistoryRequestIdRef.current += 1;
+    setLoading(false);
+    setStatus('empty');
+    setPurchaseHistoryByClient(new Map());
+    setSalesSummaryByClient(new Map());
+    setPurchaseHistoryStatusByClient(new Map());
+    setDetailLoading(false);
+    setSelectedCustomerPurchases([]);
+    setSelectedCustomerPurchasesStatus('idle');
+    setSelectedCustomerPurchasesError(null);
+  }, [tenantIdentityKey]);
 
   // Fetch sales summary (aggregated by client) only.
   const fetchSalesHistory = useCallback(async () => {
+    const startedTenantIdentityKey = tenantIdentityKeyRef.current;
+
     // Prevent duplicate fetches
     if (hasFetchedRef.current) {
       if (
@@ -76,27 +97,37 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
       // ✅ OPTIMIZED: Fetch aggregated summary first (much smaller data transfer)
       // This provides total_spend, purchase_count, last_purchase_date for sorting/filtering
       const summaryResponse = await apiFetch('/api/sales/summary-by-client');
-      const summaryResult = await summaryResponse.json();
-
-      if (!summaryResponse.ok) {
-        logError('[useCustomers] Sales summary API error:', {
-          status: summaryResponse.status,
-          error: summaryResult.error,
-        });
-        throw summaryResult.error || new Error('Failed to fetch sales summary');
+      if (tenantIdentityKeyRef.current !== startedTenantIdentityKey) {
+        return;
       }
 
-      const summaries = (summaryResult.data || []) as ClientSalesSummary[];
+      const summaries = await handleApiResponse<ClientSalesSummary[]>(
+        summaryResponse,
+        'Failed to fetch sales summary'
+      );
+      if (tenantIdentityKeyRef.current !== startedTenantIdentityKey) {
+        return;
+      }
+
       const summaryMap = new Map<string, ClientSalesSummary>();
       summaries.forEach(summary => {
         summaryMap.set(summary.client_id, summary);
       });
+      if (tenantIdentityKeyRef.current !== startedTenantIdentityKey) {
+        return;
+      }
+
       setSalesSummaryByClient(summaryMap);
 
       // ✅ FIXED: Mark as fetched only after successful completion
       hasFetchedRef.current = true;
       setStatus(clients.length > 0 ? 'success' : 'empty');
     } catch (error) {
+      if (tenantIdentityKeyRef.current !== startedTenantIdentityKey) {
+        return;
+      }
+
+      logError('[useCustomers] Sales summary API error:', error);
       setSalesSummaryByClient(new Map());
       setPurchaseHistoryByClient(new Map());
       setPurchaseHistoryStatusByClient(new Map());
@@ -108,13 +139,16 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
       // Reset hasFetchedRef on error so we can retry
       hasFetchedRef.current = false;
     } finally {
-      setLoading(false);
+      if (tenantIdentityKeyRef.current === startedTenantIdentityKey) {
+        setLoading(false);
+      }
     }
   }, [clients.length, handleError]);
 
   const fetchSelectedCustomerPurchases = useCallback(
     async (clientId: string) => {
       const currentRequestId = ++purchaseHistoryRequestIdRef.current;
+      const startedTenantIdentityKey = tenantIdentityKeyRef.current;
 
       setSelectedCustomerPurchases([]);
       setSelectedCustomerPurchasesError(null);
@@ -130,16 +164,24 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         const response = await apiFetch(
           `/api/sales?client_id=${clientId}&page=1&pageSize=200`
         );
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw result.error || new Error('Failed to fetch customer purchases');
+        if (tenantIdentityKeyRef.current !== startedTenantIdentityKey) {
+          return;
         }
 
-        const sales = (result.data || []) as SalesHistory[];
+        const sales = await handleApiResponse<SalesHistory[]>(
+          response,
+          'Failed to fetch customer purchases'
+        );
+        if (tenantIdentityKeyRef.current !== startedTenantIdentityKey) {
+          return;
+        }
+
         const purchases = sales.map(sale => salesHistoryToPurchase(sale));
 
-        if (currentRequestId !== purchaseHistoryRequestIdRef.current) {
+        if (
+          currentRequestId !== purchaseHistoryRequestIdRef.current ||
+          tenantIdentityKeyRef.current !== startedTenantIdentityKey
+        ) {
           return;
         }
 
@@ -158,7 +200,10 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
           purchases.length > 0 ? 'success' : 'empty'
         );
       } catch (error) {
-        if (currentRequestId !== purchaseHistoryRequestIdRef.current) {
+        if (
+          currentRequestId !== purchaseHistoryRequestIdRef.current ||
+          tenantIdentityKeyRef.current !== startedTenantIdentityKey
+        ) {
           return;
         }
 
@@ -181,7 +226,10 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         );
         handleError(error, 'Failed to fetch customer purchases');
       } finally {
-        if (currentRequestId === purchaseHistoryRequestIdRef.current) {
+        if (
+          currentRequestId === purchaseHistoryRequestIdRef.current &&
+          tenantIdentityKeyRef.current === startedTenantIdentityKey
+        ) {
           setDetailLoading(false);
         }
       }
@@ -238,7 +286,7 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
         );
       }
     }
-  }, [enabled, clientsLoading, clients.length]);
+  }, [enabled, clientsLoading, clients.length, tenantIdentityKey]);
   // Note: fetchSalesHistoryRef.current is used instead of fetchSalesHistory to prevent infinite loops
   // The ref is updated whenever fetchSalesHistory changes, but doesn't trigger re-renders
 
@@ -358,10 +406,18 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
   useEffect(() => {
     if (!selectedCustomerId) {
       purchaseHistoryRequestIdRef.current += 1;
-      setSelectedCustomerPurchases([]);
-      setSelectedCustomerPurchasesStatus('idle');
-      setSelectedCustomerPurchasesError(null);
-      setDetailLoading(false);
+      if (selectedCustomerPurchases.length > 0) {
+        setSelectedCustomerPurchases([]);
+      }
+      if (selectedCustomerPurchasesStatus !== 'idle') {
+        setSelectedCustomerPurchasesStatus('idle');
+      }
+      if (selectedCustomerPurchasesError !== null) {
+        setSelectedCustomerPurchasesError(null);
+      }
+      if (detailLoading) {
+        setDetailLoading(false);
+      }
       return;
     }
 
@@ -390,6 +446,10 @@ export function useCustomers({ enabled = true }: UseCustomersOptions = {}) {
     purchaseHistoryByClient,
     purchaseHistoryStatusByClient,
     fetchSelectedCustomerPurchases,
+    selectedCustomerPurchases.length,
+    selectedCustomerPurchasesStatus,
+    selectedCustomerPurchasesError,
+    detailLoading,
   ]);
 
   const refetchSelectedCustomer = useCallback(() => {

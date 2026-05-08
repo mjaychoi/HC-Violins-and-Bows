@@ -3,7 +3,6 @@ import DashboardPage from '../page';
 import { useUnifiedDashboard } from '@/hooks/useUnifiedData';
 import { useDashboardFilters, useDashboardForm } from '../hooks';
 import { useModalState } from '@/hooks/useModalState';
-import { useLoadingState } from '@/hooks/useLoadingState';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -13,7 +12,6 @@ jest.mock('@/hooks/useUnifiedData', () => ({
     // In tests, we don't need actual fetching
   }),
   useUnifiedDashboard: jest.fn(),
-  // Provide simple stubs for SaleForm dependencies
   useUnifiedClients: jest.fn(() => ({
     clients: [],
     loading: { clients: false, any: false, hasAnyLoading: false },
@@ -25,19 +23,20 @@ jest.mock('@/hooks/useUnifiedData', () => ({
     submitting: { instruments: false, any: false, hasAnySubmitting: false },
   })),
 }));
+
 jest.mock('../hooks', () => ({
   useDashboardFilters: jest.fn(),
   useDashboardForm: jest.fn(() => ({ resetForm: jest.fn() })),
 }));
+
 jest.mock('@/hooks/useModalState', () => ({
   useModalState: jest.fn(),
 }));
-jest.mock('@/hooks/useLoadingState', () => ({
-  useLoadingState: jest.fn(),
-}));
+
 jest.mock('@/hooks/usePermissions', () => ({
   usePermissions: jest.fn(),
 }));
+
 // ✅ FIXED: ToastProvider도 export하도록 mock 수정
 jest.mock('@/contexts/ToastContext', () => {
   const actual = jest.requireActual('@/contexts/ToastContext');
@@ -48,6 +47,7 @@ jest.mock('@/contexts/ToastContext', () => {
     })),
   };
 });
+
 jest.mock('@/components/layout', () => ({
   AppLayout: ({ children, headerActions }: any) => (
     <div data-testid="app-layout">
@@ -56,6 +56,7 @@ jest.mock('@/components/layout', () => ({
     </div>
   ),
 }));
+
 jest.mock('@/components/common', () => ({
   ErrorBoundary: ({ children }: any) => (
     <div data-testid="error-boundary">{children}</div>
@@ -68,6 +69,7 @@ jest.mock('@/components/common', () => ({
   },
   SuccessToast: () => null,
 }));
+
 jest.mock('next/navigation', () => ({
   __esModule: true,
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -139,11 +141,11 @@ describe('DashboardPage', () => {
   const fetchInstruments = jest.fn().mockResolvedValue(undefined);
   const fetchConnections = jest.fn().mockResolvedValue(undefined);
   const handleError = jest.fn();
-  const withSubmitting = jest.fn(async (cb: any) => await cb());
   const ErrorToasts = () => <div>errors</div>;
 
   beforeEach(() => {
     jest.spyOn(window, 'confirm').mockReturnValue(true);
+
     (useUnifiedDashboard as jest.Mock).mockReturnValue({
       instruments: [mockInstrument],
       clients: [],
@@ -210,19 +212,14 @@ describe('DashboardPage', () => {
       selectedItem: null,
     });
 
-    (useLoadingState as jest.Mock).mockReturnValue({
-      withSubmitting,
-    });
-
     (useErrorHandler as jest.Mock).mockReturnValue({
       ErrorToasts,
       handleError,
     });
 
     mockUsePermissions.mockReturnValue({
-      canCreateSale: true,
-      canCreateInvoice: true,
       canCreateInstrument: true,
+      canCreateInvoice: true,
       canCreateTask: true,
       canCreateContactLog: true,
       canCreateNote: true,
@@ -240,7 +237,7 @@ describe('DashboardPage', () => {
       canUploadInstrumentMedia: true,
       canManageClients: true,
       canCreateClient: true,
-      createSaleDisabledReason: undefined,
+      createInstrumentDisabledReason: undefined,
       exportSalesDisabledReason: undefined,
     } as any);
   });
@@ -269,20 +266,6 @@ describe('DashboardPage', () => {
 
     fireEvent.click(screen.getByText('delete'));
     expect(deleteInstrument).toHaveBeenCalledWith('1');
-  });
-
-  it('shows disabled new sale action with a permission reason for non-admin users', () => {
-    mockUsePermissions.mockReturnValue({
-      ...mockUsePermissions.mock.results.at(-1)?.value,
-      canCreateSale: false,
-      createSaleDisabledReason: 'Admin only',
-    } as any);
-
-    render(<DashboardPage />);
-
-    const button = screen.getByText('New Sale').closest('button');
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute('title', 'Admin only');
   });
 
   it('renders explicit dashboard error state instead of empty UI and retries bootstrap fetches', async () => {

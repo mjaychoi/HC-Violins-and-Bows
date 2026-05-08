@@ -31,6 +31,23 @@ const eslintConfig = [
   },
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
   {
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@/utils',
+              message:
+                'Import from a specific utils boundary such as @/utils/shared, @/utils/client, @/utils/server, or the leaf module.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: [
       '**/*.test.ts',
       '**/*.test.tsx',
@@ -96,6 +113,11 @@ const eslintConfig = [
               name: '@/services/dataService',
               message:
                 'Use apiFetch-based API routes instead of deprecated dataService in hooks/contexts.',
+            },
+            {
+              name: '@/utils',
+              message:
+                'Import from a specific utils boundary such as @/utils/shared, @/utils/client, @/utils/server, or the leaf module.',
             },
           ],
         },

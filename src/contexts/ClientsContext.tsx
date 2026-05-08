@@ -13,7 +13,10 @@ import React, {
 import { Client } from '@/types';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
-import { createApiResponseError } from '@/utils/handleApiResponse';
+import {
+  createApiResponseErrorFromResponse,
+  readApiResponseEnvelope,
+} from '@/utils/handleApiResponse';
 import { logInfo, logWarn } from '@/utils/logger';
 import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
@@ -21,13 +24,15 @@ import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 interface ClientsState {
   clients: Client[];
   loading: boolean;
+  loadingCount: number;
   submitting: boolean;
   error: unknown | null;
   lastUpdated: Date | null;
 }
 
 type ClientsAction =
-  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'START_LOADING' }
+  | { type: 'END_LOADING' }
   | { type: 'SET_SUBMITTING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: unknown | null }
   | { type: 'SET_CLIENTS'; payload: Client[] }
@@ -41,6 +46,7 @@ type ClientsAction =
 const initialState: ClientsState = {
   clients: [],
   loading: false,
+  loadingCount: 0,
   submitting: false,
   error: null,
   lastUpdated: null,
@@ -51,16 +57,33 @@ function clientsReducer(
   action: ClientsAction
 ): ClientsState {
   switch (action.type) {
-    case 'SET_LOADING':
-      return { ...state, loading: action.payload };
+    case 'START_LOADING': {
+      const next = state.loadingCount + 1;
+      return {
+        ...state,
+        loadingCount: next,
+        loading: true,
+      };
+    }
+
+    case 'END_LOADING': {
+      const next = Math.max(0, state.loadingCount - 1);
+      return {
+        ...state,
+        loadingCount: next,
+        loading: next > 0,
+      };
+    }
+
     case 'SET_SUBMITTING':
       return { ...state, submitting: action.payload };
+
     case 'SET_ERROR':
-      // null = fetch-start housekeeping; non-null = fatal failure, clear stale data.
       if (action.payload === null) {
         return { ...state, error: null };
       }
       return { ...state, clients: [], error: action.payload };
+
     case 'SET_CLIENTS':
       return {
         ...state,
@@ -68,45 +91,61 @@ function clientsReducer(
         error: null,
         lastUpdated: new Date(),
       };
+
     case 'ADD_CLIENT':
       return {
         ...state,
-        clients: [action.payload, ...state.clients],
+        clients: [
+          action.payload,
+          ...state.clients.filter(client => client.id !== action.payload.id),
+        ],
         lastUpdated: new Date(),
       };
+
     case 'UPDATE_CLIENT':
       return {
         ...state,
-        clients: state.clients.map(c =>
-          c.id === action.payload.id ? action.payload.client : c
+        clients: state.clients.map(client =>
+          client.id === action.payload.id ? action.payload.client : client
         ),
         lastUpdated: new Date(),
       };
+
     case 'REMOVE_CLIENT':
       return {
         ...state,
-        clients: state.clients.filter(c => c.id !== action.payload),
+        clients: state.clients.filter(client => client.id !== action.payload),
         lastUpdated: new Date(),
       };
+
     case 'UPSERT_CLIENT': {
-      const c = action.payload;
-      const idx = state.clients.findIndex(x => x.id === c.id);
+      const client = action.payload;
+      const idx = state.clients.findIndex(item => item.id === client.id);
+
       if (idx === -1) {
         return {
           ...state,
-          clients: [c, ...state.clients],
+          clients: [client, ...state.clients],
           lastUpdated: new Date(),
         };
       }
+
       const next = [...state.clients];
-      next[idx] = c;
-      return { ...state, clients: next, lastUpdated: new Date() };
+      next[idx] = client;
+
+      return {
+        ...state,
+        clients: next,
+        lastUpdated: new Date(),
+      };
     }
+
     case 'INVALIDATE_CACHE':
-      // Stale-while-revalidate: preserve data, clear freshness only.
       return { ...state, lastUpdated: null };
+
     case 'RESET_STATE':
       return initialState;
+
     default:
       return state;
   }
@@ -125,7 +164,6 @@ type ClientsContextValue = {
       client: Partial<Client>
     ) => Promise<Client | null>;
     deleteClient: (id: string) => Promise<boolean>;
-    /** Merge by id: insert or replace without a network round-trip */
     upsertClient: (client: Client) => void;
     invalidateCache: () => void;
     resetState: () => void;
@@ -134,75 +172,68 @@ type ClientsContextValue = {
 
 const CLIENTS_DEFAULT_PAGE = 1;
 const CLIENTS_DEFAULT_PAGE_SIZE = 150;
+const NO_TENANT_SCOPE_KEY = '__no-tenant__';
 
 const ClientsContext = createContext<ClientsContextValue | null>(null);
 
-type JsonRecord = Record<string, unknown>;
-const NO_TENANT_SCOPE_KEY = '__no-tenant__';
-
-async function safeJson(res: Response): Promise<JsonRecord | null> {
-  try {
-    const json = await res.json();
-    if (json && typeof json === 'object') {
-      return json as JsonRecord;
-    }
-    return null;
-  } catch {
-    return null;
+function generateIdempotencyKey(prefix: string): string {
+  if (
+    typeof globalThis.crypto !== 'undefined' &&
+    typeof globalThis.crypto.randomUUID === 'function'
+  ) {
+    return `${prefix}-${globalThis.crypto.randomUUID()}`;
   }
-}
 
-function getResponseError(
-  body: JsonRecord | null,
-  res: Response,
-  fallbackMessage: string
-): Error {
-  return createApiResponseError(body, {
-    status: res.status,
-    fallbackMessage,
-  });
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
 function sameClientList(a: Client[], b: Client[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
 
-  // Cheap stable comparison: id + updated_at(if exists) ordering match
-  for (let i = 0; i < a.length; i++) {
+  for (let i = 0; i < a.length; i += 1) {
     if (a[i]?.id !== b[i]?.id) return false;
-    const au = (a[i] as Client & { updated_at?: string })?.updated_at;
-    const bu = (b[i] as Client & { updated_at?: string })?.updated_at;
-    if (au && bu && au !== bu) return false;
+
+    const au = (a[i] as Client & { updated_at?: string })?.updated_at ?? null;
+    const bu = (b[i] as Client & { updated_at?: string })?.updated_at ?? null;
+
+    if (au !== bu) return false;
   }
+
   return true;
 }
 
 export function ClientsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(clientsReducer, initialState);
+
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
   const { handleError } = useErrorHandler();
   const handleErrorRef = useRef(handleError);
+
   useEffect(() => {
     handleErrorRef.current = handleError;
   }, [handleError]);
 
   const { tenantIdentityKey } = useTenantIdentity();
 
-  // In-flight request deduplication is tenant-scoped.
   const inflight = useRef(new Map<string, Promise<void>>());
   const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
   const previousTenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
 
   useEffect(() => {
     if (previousTenantIdentityKeyRef.current !== tenantIdentityKey) {
+      inflight.current.clear();
       dispatch({ type: 'RESET_STATE' });
     }
+
     tenantIdentityKeyRef.current = tenantIdentityKey;
     previousTenantIdentityKeyRef.current = tenantIdentityKey;
   }, [tenantIdentityKey]);
+
   const deduped = useCallback(
     <T extends () => Promise<void>>(
       tenantKey: string,
@@ -211,13 +242,14 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
       const existing = inflight.current.get(tenantKey);
       if (existing) return existing;
 
-      const p = fn().finally(() => {
-        if (inflight.current.get(tenantKey) === p) {
+      const promise = fn().finally(() => {
+        if (inflight.current.get(tenantKey) === promise) {
           inflight.current.delete(tenantKey);
         }
       });
-      inflight.current.set(tenantKey, p);
-      return p;
+
+      inflight.current.set(tenantKey, promise);
+      return promise;
     },
     []
   );
@@ -227,6 +259,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resetState = useCallback(() => {
+    inflight.current.clear();
     dispatch({ type: 'RESET_STATE' });
   }, []);
 
@@ -238,20 +271,16 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
     async (opts?: { force?: boolean }) => {
       const force = opts?.force ?? false;
 
-      // Optional cache check (very light): if not forced and already loaded, skip
-      // Reads latest state via ref so the callback identity stays stable.
       if (!force) {
-        const { lastUpdated, clients: cur } = stateRef.current;
-        if (lastUpdated && cur.length > 0) {
-          return;
-        }
+        const { lastUpdated, clients } = stateRef.current;
+        if (lastUpdated && clients.length > 0) return;
       }
 
       const fetchTenantIdentityKey = tenantIdentityKeyRef.current;
       const inflightKey = fetchTenantIdentityKey ?? NO_TENANT_SCOPE_KEY;
 
       return deduped(inflightKey, async () => {
-        dispatch({ type: 'SET_LOADING', payload: true });
+        dispatch({ type: 'START_LOADING' });
         dispatch({ type: 'SET_ERROR', payload: null });
 
         try {
@@ -259,25 +288,16 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
             `/api/clients?orderBy=created_at&ascending=false&page=${CLIENTS_DEFAULT_PAGE}&pageSize=${CLIENTS_DEFAULT_PAGE_SIZE}`
           );
 
-          if (!res.ok) {
-            const body = await safeJson(res);
-            const err = getResponseError(body, res, 'Failed to fetch clients');
-
-            if (isAuthLikeTenantError(err)) {
-              throw err;
-            }
-
-            throw err;
-          }
-
-          const body = await safeJson(res);
-          const clients = Array.isArray(body?.data)
-            ? (body?.data as Client[])
-            : [];
+          const body = await readApiResponseEnvelope<Client[]>(
+            res,
+            `Failed to fetch clients (${res.status})`
+          );
+          const clients = Array.isArray(body.data) ? body.data : [];
 
           logInfo(
             `[ClientsContext] fetchClients: Received ${clients.length} clients`
           );
+
           if (clients.length === 0) {
             logWarn(
               '[ClientsContext] fetchClients: Received empty array (could be valid)'
@@ -288,7 +308,6 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
             return;
           }
 
-          // Avoid unnecessary re-renders if identical
           if (!sameClientList(stateRef.current.clients, clients)) {
             dispatch({ type: 'SET_CLIENTS', payload: clients });
           }
@@ -296,6 +315,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
           if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
             return;
           }
+
           if (isAuthLikeTenantError(err)) {
             dispatch({ type: 'RESET_STATE' });
             logWarn(
@@ -303,11 +323,12 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
             );
             return;
           }
+
           dispatch({ type: 'SET_ERROR', payload: err });
           handleErrorRef.current(err, 'Fetch clients');
         } finally {
           if (tenantIdentityKeyRef.current === fetchTenantIdentityKey) {
-            dispatch({ type: 'SET_LOADING', payload: false });
+            dispatch({ type: 'END_LOADING' });
           }
         }
       });
@@ -318,34 +339,53 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
   const createClient = useCallback(
     async (client: Omit<Client, 'id' | 'created_at'>) => {
       const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
+
       dispatch({ type: 'SET_SUBMITTING', payload: true });
+
       try {
-        const res = await apiFetch('/api/clients', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(client),
-        });
+        const res = await apiFetch(
+          '/api/clients',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(client),
+          },
+          { idempotencyKey: generateIdempotencyKey('client-create') }
+        );
 
         if (!res.ok) {
-          const body = await safeJson(res);
-          throw getResponseError(body, res, 'Failed to create client');
+          throw await createApiResponseErrorFromResponse(
+            res,
+            `Failed to create client (${res.status})`
+          );
         }
 
-        const body = await safeJson(res);
+        const body = await readApiResponseEnvelope<Client>(
+          res,
+          `Failed to create client (${res.status})`
+        );
+
         if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
           return null;
         }
-        const created = body?.data as Client | undefined;
-        if (created) dispatch({ type: 'ADD_CLIENT', payload: created });
+
+        const created = body.data;
+
+        if (created) {
+          dispatch({ type: 'ADD_CLIENT', payload: created });
+        }
+
         return created ?? null;
       } catch (err) {
         if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
           return null;
         }
+
         if (isAuthLikeTenantError(err)) {
           dispatch({ type: 'RESET_STATE' });
           return null;
         }
+
         handleErrorRef.current(err, 'Create client');
         return null;
       } finally {
@@ -360,7 +400,9 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
   const updateClient = useCallback(
     async (id: string, client: Partial<Client>) => {
       const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
+
       dispatch({ type: 'SET_SUBMITTING', payload: true });
+
       try {
         const res = await apiFetch('/api/clients', {
           method: 'PATCH',
@@ -369,27 +411,41 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
         });
 
         if (!res.ok) {
-          const body = await safeJson(res);
-          throw getResponseError(body, res, 'Failed to update client');
+          throw await createApiResponseErrorFromResponse(
+            res,
+            `Failed to update client (${res.status})`
+          );
         }
 
-        const body = await safeJson(res);
+        const body = await readApiResponseEnvelope<Client>(
+          res,
+          `Failed to update client (${res.status})`
+        );
+
         if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
           return null;
         }
-        const updated = body?.data as Client | undefined;
+
+        const updated = body.data;
+
         if (updated) {
-          dispatch({ type: 'UPDATE_CLIENT', payload: { id, client: updated } });
+          dispatch({
+            type: 'UPDATE_CLIENT',
+            payload: { id, client: updated },
+          });
         }
+
         return updated ?? null;
       } catch (err) {
         if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
           return null;
         }
+
         if (isAuthLikeTenantError(err)) {
           dispatch({ type: 'RESET_STATE' });
           return null;
         }
+
         handleErrorRef.current(err, 'Update client');
         return null;
       } finally {
@@ -403,31 +459,37 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
   const deleteClient = useCallback(async (id: string) => {
     const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
+
     dispatch({ type: 'SET_SUBMITTING', payload: true });
+
     try {
-      // ✅ FIXED: Use apiFetch for consistency (auth/cookies/error handling)
       const res = await apiFetch(`/api/clients?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
 
       if (!res.ok) {
-        const body = await safeJson(res);
-        throw getResponseError(body, res, 'Failed to delete client');
+        throw await createApiResponseErrorFromResponse(
+          res,
+          `Failed to delete client (${res.status})`
+        );
       }
 
       if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
         return false;
       }
+
       dispatch({ type: 'REMOVE_CLIENT', payload: id });
       return true;
     } catch (err) {
       if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
         return false;
       }
+
       if (isAuthLikeTenantError(err)) {
         dispatch({ type: 'RESET_STATE' });
         return false;
       }
+
       handleErrorRef.current(err, 'Delete client');
       return false;
     } finally {
@@ -460,7 +522,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
   const contextValue = useMemo(
     () => ({ state, dispatch, actions }),
-    [state, dispatch, actions]
+    [state, actions]
   );
 
   return (
@@ -472,13 +534,17 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
 export function useClientsContext() {
   const ctx = useContext(ClientsContext);
-  if (!ctx)
+
+  if (!ctx) {
     throw new Error('useClientsContext must be used within a ClientsProvider');
+  }
+
   return ctx;
 }
 
 export function useClients() {
   const { state, actions } = useClientsContext();
+
   return {
     clients: state.clients,
     loading: state.loading,

@@ -3,14 +3,17 @@ import { errorHandler } from '@/utils/errorHandler';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
-import { requireOrgContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { validateDateString } from '@/utils/inputValidation';
 
 /**
- * Client sales summary aggregation endpoint
- * Returns aggregated sales data grouped by client_id
- * This reduces data transfer compared to fetching all sales records
+ * Client sales summary aggregation endpoint.
+ * Returns aggregated sales data grouped by client_id.
+ * This reduces data transfer compared to fetching all sales records.
  */
 export interface ClientSalesSummary {
   client_id: string;
@@ -27,27 +30,118 @@ type SalesSummaryQuery = {
   not: (column: string, operator: string, value: null) => SalesSummaryQuery;
 };
 
-function applySalesSummaryFilters<T>(
-  query: T,
-  filters: {
-    orgId: string;
-    fromDate?: string;
-    toDate?: string;
+type SalesSummaryFilters = {
+  orgId: string;
+  fromDate?: string;
+  toDate?: string;
+};
+
+function parseDateFilters(
+  fromDate?: string,
+  toDate?: string
+):
+  | { ok: true; filters: { fromDate?: string; toDate?: string } }
+  | { ok: false; payload: { error: string; success: false }; status: 400 } {
+  if (fromDate && !validateDateString(fromDate)) {
+    return {
+      ok: false,
+      payload: {
+        error: `Invalid fromDate. Expected YYYY-MM-DD, received: ${fromDate}`,
+        success: false,
+      },
+      status: 400,
+    };
   }
-) {
+
+  if (toDate && !validateDateString(toDate)) {
+    return {
+      ok: false,
+      payload: {
+        error: `Invalid toDate. Expected YYYY-MM-DD, received: ${toDate}`,
+        success: false,
+      },
+      status: 400,
+    };
+  }
+
+  if (fromDate && toDate && fromDate > toDate) {
+    return {
+      ok: false,
+      payload: {
+        error: 'fromDate cannot be after toDate',
+        success: false,
+      },
+      status: 400,
+    };
+  }
+
+  return {
+    ok: true,
+    filters: {
+      fromDate,
+      toDate,
+    },
+  };
+}
+
+function applySalesSummaryFilters<T>(query: T, filters: SalesSummaryFilters) {
   let scopedQuery = (query as T & SalesSummaryQuery)
     .eq('org_id', filters.orgId)
     .not('client_id', 'is', null);
 
-  if (filters.fromDate && validateDateString(filters.fromDate)) {
+  if (filters.fromDate) {
     scopedQuery = scopedQuery.gte('sale_date', filters.fromDate);
   }
 
-  if (filters.toDate && validateDateString(filters.toDate)) {
+  if (filters.toDate) {
     scopedQuery = scopedQuery.lte('sale_date', filters.toDate);
   }
 
   return scopedQuery as T;
+}
+
+function readMoney(value: unknown): number {
+  const numberValue = Number(value ?? 0);
+
+  if (!Number.isFinite(numberValue) || numberValue < 0) {
+    return 0;
+  }
+
+  return Math.round(numberValue * 100) / 100;
+}
+
+function readCount(value: unknown): number {
+  const numberValue = Number(value ?? 0);
+
+  if (!Number.isFinite(numberValue) || numberValue < 0) {
+    return 0;
+  }
+
+  return Math.trunc(numberValue);
+}
+
+function normalizeSalesSummaryRow(
+  row: Record<string, unknown>
+): ClientSalesSummary | null {
+  const clientId = typeof row.client_id === 'string' ? row.client_id : '';
+
+  if (!clientId) {
+    return null;
+  }
+
+  return {
+    client_id: clientId,
+    total_spend: readMoney(row.total_spend),
+    purchase_count: readCount(row.purchase_count),
+    last_purchase_date:
+      typeof row.last_purchase_date === 'string'
+        ? row.last_purchase_date
+        : null,
+    first_purchase_date:
+      typeof row.first_purchase_date === 'string'
+        ? row.first_purchase_date
+        : null,
+  };
 }
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
@@ -67,10 +161,28 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       const orgContextError = requireOrgContext(auth);
       if (orgContextError) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required', success: false },
+          status: 403,
+        };
+      }
+
+      const dateFilters = parseDateFilters(fromDate, toDate);
+      if (!dateFilters.ok) {
+        return dateFilters;
+      }
+
+      const filters: SalesSummaryFilters = {
+        orgId: auth.orgId!,
+        ...dateFilters.filters,
+      };
 
       const aggregateQuery = applySalesSummaryFilters(
         auth.userSupabase
@@ -84,11 +196,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
               'first_purchase_date:sale_date.min()',
             ].join(', ')
           ),
-        {
-          orgId: auth.orgId!,
-          fromDate,
-          toDate,
-        }
+        filters
       );
 
       const { data, error } = await aggregateQuery;
@@ -104,11 +212,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         auth.userSupabase
           .from('sales_history')
           .select('id', { count: 'exact', head: true }),
-        {
-          orgId: auth.orgId!,
-          fromDate,
-          toDate,
-        }
+        filters
       );
 
       const { count, error: countError } = await countQuery;
@@ -120,31 +224,33 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         );
       }
 
-      const summaries = (
-        (data ?? []) as unknown as Array<Record<string, unknown>>
-      ).map(row => ({
-        client_id: String(row.client_id ?? ''),
-        total_spend: Number(row.total_spend ?? 0),
-        purchase_count: Number(row.purchase_count ?? 0),
-        last_purchase_date:
-          typeof row.last_purchase_date === 'string'
-            ? row.last_purchase_date
-            : null,
-        first_purchase_date:
-          typeof row.first_purchase_date === 'string'
-            ? row.first_purchase_date
-            : null,
-      }));
+      const rawRows = Array.isArray(data)
+        ? (data as unknown as Array<Record<string, unknown>>)
+        : [];
 
+      const summaries = rawRows
+        .map(normalizeSalesSummaryRow)
+        .filter((summary): summary is ClientSalesSummary => Boolean(summary));
+
+      const droppedRows = rawRows.length - summaries.length;
       return {
         payload: {
           data: summaries,
           count: summaries.length,
           totalSales: count || 0,
+          droppedRows,
+          success: true,
         },
         metadata: {
           clientCount: summaries.length,
           totalSales: count || 0,
+          droppedRows,
+          fromDate,
+          toDate,
+          scope: {
+            enforced: true,
+            orgId: auth.orgId,
+          },
         },
       };
     }

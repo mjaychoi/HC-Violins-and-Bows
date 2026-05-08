@@ -413,6 +413,7 @@ describe('SaleForm', () => {
 
   it('should close modal when clicking cancel', async () => {
     const user = userEvent.setup();
+
     render(
       <SaleForm
         isOpen={true}

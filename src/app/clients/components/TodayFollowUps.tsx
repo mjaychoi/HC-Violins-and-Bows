@@ -28,7 +28,7 @@
 //         let errorMessage = 'Failed to fetch follow-ups';
 //         let errorDetails: unknown = null;
 //         try {
-//           const result = await response.json();
+//           const result = await central API response helper;
 //           // Handle different error response formats
 //           errorMessage = result.error || result.message || errorMessage;
 //           errorDetails = result;
@@ -53,7 +53,7 @@
 //         return;
 //       }
 
-//       const result = await response.json();
+//       const result = await central API response helper;
 //       setFollowUps(result.data || []);
 //     } catch (error) {
 //       // Silently handle errors - don't show toast for background data fetching
@@ -103,7 +103,7 @@
 //           }),
 //         });
 
-//         const result = await response.json();
+//         const result = await central API response helper;
 
 //         if (!response.ok) {
 //           throw new Error(result.error || 'Failed to complete follow-up');
@@ -145,7 +145,7 @@
 //           }),
 //         });
 
-//         const result = await response.json();
+//         const result = await central API response helper;
 
 //         if (!response.ok) {
 //           throw new Error(result.error || 'Failed to postpone follow-up');

@@ -5,6 +5,7 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useMemo,
   useRef,
   ReactNode,
 } from 'react';
@@ -35,10 +36,10 @@ const SuccessToastContext = createContext<SuccessToastContextValue | undefined>(
   undefined
 );
 
+const MAX_TOASTS = 5;
+
 export function SuccessToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-
-  // ✅ FIXED: useRef로 카운터를 관리하여 안정적인 ID 생성 (Math.random() 제거)
   const toastIdCounterRef = useRef(0);
 
   const showToast = useCallback(
@@ -50,7 +51,8 @@ export function SuccessToastProvider({ children }: { children: ReactNode }) {
         links,
         variant,
       };
-      setToasts(prev => [...prev, toast]);
+
+      setToasts(prev => [...prev, toast].slice(-MAX_TOASTS));
     },
     []
   );
@@ -73,12 +75,15 @@ export function SuccessToastProvider({ children }: { children: ReactNode }) {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   }, []);
 
-  const value: SuccessToastContextValue = {
-    toasts,
-    showSuccess,
-    showWarning,
-    removeToast,
-  };
+  const value = useMemo<SuccessToastContextValue>(
+    () => ({
+      toasts,
+      showSuccess,
+      showWarning,
+      removeToast,
+    }),
+    [toasts, showSuccess, showWarning, removeToast]
+  );
 
   return (
     <SuccessToastContext.Provider value={value}>
@@ -89,10 +94,12 @@ export function SuccessToastProvider({ children }: { children: ReactNode }) {
 
 export function useSuccessToastContext() {
   const context = useContext(SuccessToastContext);
+
   if (!context) {
     throw new Error(
       'useSuccessToastContext must be used within SuccessToastProvider'
     );
   }
+
   return context;
 }

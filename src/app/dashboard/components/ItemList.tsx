@@ -75,8 +75,6 @@ interface ItemListProps {
   // UX: Newly created item feedback
   newlyCreatedItemId?: string | null;
   onNewlyCreatedItemShown?: () => void;
-  // UX: Load sample data
-  onLoadSampleData?: () => void;
   /** Refresh instrument list after certificate files change (e.g. upload). */
   onInstrumentCertificatesChanged?: () => void;
 }
@@ -101,7 +99,6 @@ const ItemList = memo(function ItemList({
   onPageChange,
   newlyCreatedItemId,
   onNewlyCreatedItemShown,
-  onLoadSampleData,
   onInstrumentCertificatesChanged,
 }: ItemListProps) {
   const { showSuccess } = useSuccessToastContext();
@@ -558,7 +555,6 @@ const ItemList = memo(function ItemList({
               }
             : undefined
         }
-        onLoadSampleData={!hasFilters ? onLoadSampleData : undefined}
       />
     );
   }

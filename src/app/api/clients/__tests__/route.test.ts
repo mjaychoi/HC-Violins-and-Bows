@@ -113,6 +113,35 @@ describe('/api/clients', () => {
       expect(json.count).toBe(1);
     });
 
+    it('should hard-cap and mark truncated all=true lists', async () => {
+      const rows = Array.from({ length: 1001 }, () => mockClient);
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({
+          data: rows,
+          error: null,
+          count: 1001,
+        }),
+        order: jest.fn().mockReturnThis(),
+      };
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/clients?all=true');
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data).toHaveLength(1000);
+      expect(json.count).toBe(1001);
+      expect(json.truncated).toBe(true);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockQuery.limit).toHaveBeenCalledWith(1001);
+    });
+
     it.skip('should filter clients by search query', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),

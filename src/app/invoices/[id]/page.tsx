@@ -15,7 +15,10 @@ import OptimizedImage from '@/components/common/OptimizedImage';
 import { cn } from '@/utils/classNames';
 import InvoiceSettingsPanel from '../components/InvoiceSettingsPanel';
 import { errorHandler } from '@/utils/errorHandler';
-import { createApiResponseErrorFromResponse } from '@/utils/handleApiResponse';
+import {
+  createApiResponseErrorFromResponse,
+  handleApiResponse,
+} from '@/utils/handleApiResponse';
 import type { AppError } from '@/types/errors';
 
 const InvoiceModalDynamic = dynamic(
@@ -103,8 +106,11 @@ export default function InvoiceDetailPage() {
         );
       }
 
-      const result = await response.json();
-      setInvoice(result.data as Invoice);
+      const data = await handleApiResponse<Invoice>(
+        response,
+        'Failed to fetch invoice'
+      );
+      setInvoice(data);
       setFetchState('success');
     } catch (error) {
       const appError =
@@ -166,8 +172,10 @@ export default function InvoiceDetailPage() {
           );
         }
 
-        const result = await response.json();
-        const next = result?.data as Invoice | undefined;
+        const next = await handleApiResponse<Invoice>(
+          response,
+          'Failed to update invoice'
+        );
         if (!next?.id) {
           throw new Error(
             'Invalid response: missing invoice data after update'

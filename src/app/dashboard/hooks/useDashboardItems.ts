@@ -274,7 +274,7 @@ export function useDashboardItems() {
       } catch (error) {
         logError('Error creating item', error, 'useDashboardItems', {
           operation: 'createItem',
-          itemData: itemData,
+          fields: Object.keys(itemData),
         });
         throw error;
       } finally {
@@ -324,7 +324,7 @@ export function useDashboardItems() {
         logError('Error updating item', error, 'useDashboardItems', {
           operation: 'updateItem',
           id,
-          itemData,
+          fields: Object.keys(itemData),
         });
         throw error;
       } finally {

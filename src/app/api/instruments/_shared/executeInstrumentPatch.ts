@@ -8,7 +8,7 @@ import {
   isInstrumentSaleRpcMissingOrArityError,
   requireInstrumentPatchUpdatedAt,
 } from '@/app/api/instruments/_shared/instrumentApiContract';
-import { validateUUID } from '@/utils/inputValidation';
+import { validateDateString, validateUUID } from '@/utils/inputValidation';
 import * as typeGuards from '@/utils/typeGuards';
 import { errorHandler } from '@/utils/errorHandler';
 import { logInfo, logWarn } from '@/utils/logger';
@@ -39,11 +39,21 @@ type PartialInstrumentInput = Partial<{
 }>;
 
 type SaleTransitionPayload = {
-  sale_price?: number | null;
-  sale_date?: string | null;
-  client_id?: string | null;
-  sales_note?: string | null;
+  sale_price: number | null;
+  sale_date: string | null;
+  client_id: string | null;
+  sales_note: string | null;
 };
+
+type SaleTransitionParseResult =
+  | {
+      ok: true;
+      data: SaleTransitionPayload | null;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
 
 const RPC_PATCH_KEYS = [
   'status',
@@ -65,8 +75,21 @@ const RPC_PATCH_KEYS = [
   'reserved_connection_id',
 ] as const;
 
+const SALE_TRANSITION_KEYS = [
+  'sale_price',
+  'sale_date',
+  'client_id',
+  'sales_note',
+] as const;
+
+const MAX_SALES_NOTE_LENGTH = 2_000;
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasOwn(obj: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
 function normalizeNullableText(
@@ -80,6 +103,149 @@ function normalizeNullableText(
   return trimmed === '' ? null : trimmed;
 }
 
+function normalizeOptionalText(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error('Expected text value');
+  }
+
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+function parseSaleTransition(
+  hasSaleTransition: boolean,
+  value: unknown
+): SaleTransitionParseResult {
+  if (!hasSaleTransition || value === undefined || value === null) {
+    return { ok: true, data: null };
+  }
+
+  if (!isObject(value)) {
+    return {
+      ok: false,
+      error: 'sale_transition must be an object',
+    };
+  }
+
+  const unknownKeys = Object.keys(value).filter(
+    key =>
+      !SALE_TRANSITION_KEYS.includes(
+        key as (typeof SALE_TRANSITION_KEYS)[number]
+      )
+  );
+
+  if (unknownKeys.length > 0) {
+    return {
+      ok: false,
+      error: `sale_transition contains unsupported fields: ${unknownKeys.join(
+        ', '
+      )}`,
+    };
+  }
+
+  let salePrice: number | null = null;
+  if (hasOwn(value, 'sale_price')) {
+    const rawSalePrice = value.sale_price;
+
+    if (rawSalePrice === null || rawSalePrice === undefined) {
+      salePrice = null;
+    } else if (
+      typeof rawSalePrice === 'number' &&
+      Number.isFinite(rawSalePrice)
+    ) {
+      if (rawSalePrice === 0) {
+        return {
+          ok: false,
+          error: 'sale_transition.sale_price must be non-zero when provided',
+        };
+      }
+
+      salePrice = rawSalePrice;
+    } else {
+      return {
+        ok: false,
+        error: 'sale_transition.sale_price must be a finite number',
+      };
+    }
+  }
+
+  let saleDate: string | null = null;
+  if (hasOwn(value, 'sale_date')) {
+    const rawSaleDate = value.sale_date;
+
+    if (
+      rawSaleDate === null ||
+      rawSaleDate === undefined ||
+      rawSaleDate === ''
+    ) {
+      saleDate = null;
+    } else if (
+      typeof rawSaleDate === 'string' &&
+      validateDateString(rawSaleDate)
+    ) {
+      saleDate = rawSaleDate;
+    } else {
+      return {
+        ok: false,
+        error: 'sale_transition.sale_date must be a valid date string',
+      };
+    }
+  }
+
+  let clientId: string | null = null;
+  if (hasOwn(value, 'client_id')) {
+    const rawClientId = value.client_id;
+
+    if (
+      rawClientId === null ||
+      rawClientId === undefined ||
+      rawClientId === ''
+    ) {
+      clientId = null;
+    } else if (typeof rawClientId === 'string' && validateUUID(rawClientId)) {
+      clientId = rawClientId;
+    } else {
+      return {
+        ok: false,
+        error: 'sale_transition.client_id must be a valid UUID',
+      };
+    }
+  }
+
+  let salesNote: string | null = null;
+  if (hasOwn(value, 'sales_note')) {
+    try {
+      salesNote = normalizeOptionalText(value.sales_note);
+    } catch {
+      return {
+        ok: false,
+        error: 'sale_transition.sales_note must be a string',
+      };
+    }
+
+    if (salesNote && salesNote.length > MAX_SALES_NOTE_LENGTH) {
+      return {
+        ok: false,
+        error: `sale_transition.sales_note cannot exceed ${MAX_SALES_NOTE_LENGTH} characters`,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    data: {
+      sale_price: salePrice,
+      sale_date: saleDate,
+      client_id: clientId,
+      sales_note: salesNote,
+    },
+  };
+}
+
 function toInstrumentUpdateRow(
   input: PartialInstrumentInput
 ): InstrumentUpdateRow {
@@ -88,57 +254,73 @@ function toInstrumentUpdateRow(
   if (Object.prototype.hasOwnProperty.call(input, 'status')) {
     row.status = input.status;
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'reserved_reason')) {
     row.reserved_reason = normalizeNullableText(input.reserved_reason);
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'maker')) {
     row.maker = normalizeNullableText(input.maker);
   }
+
   if (
     Object.prototype.hasOwnProperty.call(input, 'type') &&
     typeof input.type === 'string'
   ) {
     row.type = input.type.trim();
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'subtype')) {
     row.subtype = normalizeNullableText(input.subtype);
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'year')) {
     row.year = input.year ?? null;
   }
+
   if (
     Object.prototype.hasOwnProperty.call(input, 'certificate') ||
     Object.prototype.hasOwnProperty.call(input, 'has_certificate')
   ) {
     row.certificate = Boolean(input.certificate ?? input.has_certificate);
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'size')) {
     row.size = normalizeNullableText(input.size);
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'weight')) {
     row.weight = normalizeNullableText(input.weight);
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'price')) {
     row.price = input.price ?? null;
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'cost_price')) {
     row.cost_price = input.cost_price ?? null;
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'consignment_price')) {
     row.consignment_price = input.consignment_price ?? null;
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'ownership')) {
     row.ownership = normalizeNullableText(input.ownership);
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'note')) {
     row.note = normalizeNullableText(input.note);
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'serial_number')) {
     row.serial_number = normalizeNullableText(input.serial_number);
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'reserved_by_user_id')) {
     row.reserved_by_user_id = input.reserved_by_user_id ?? null;
   }
+
   if (Object.prototype.hasOwnProperty.call(input, 'reserved_connection_id')) {
     row.reserved_connection_id = input.reserved_connection_id ?? null;
   }
@@ -148,6 +330,7 @@ function toInstrumentUpdateRow(
 
 function toRpcPatchJson(data: Partial<Instrument>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+
   for (const key of RPC_PATCH_KEYS) {
     if (Object.prototype.hasOwnProperty.call(data, key)) {
       const v = data[key];
@@ -156,14 +339,8 @@ function toRpcPatchJson(data: Partial<Instrument>): Record<string, unknown> {
       }
     }
   }
-  return out;
-}
 
-function asSaleTransition(value: unknown): SaleTransitionPayload | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-  return value as SaleTransitionPayload;
+  return out;
 }
 
 export async function executeInstrumentPatch(
@@ -222,19 +399,48 @@ export async function executeInstrumentPatch(
   if (!updatedAtGate.ok) {
     return updatedAtGate.result;
   }
+
   const expectedUpdatedAt = updatedAtGate.expectedUpdatedAt;
 
   const updates: Record<string, unknown> = { ...body };
+  const hasSaleTransition = hasOwn(body, 'sale_transition');
+
   delete updates.id;
   delete updates.updated_at;
   delete updates.sale_transition;
 
-  const saleTransition = asSaleTransition(body.sale_transition);
+  const saleTransitionResult = parseSaleTransition(
+    hasSaleTransition,
+    body.sale_transition
+  );
+
+  if (!saleTransitionResult.ok) {
+    return {
+      payload: {
+        error: saleTransitionResult.error,
+        success: false,
+      },
+      status: 400,
+    };
+  }
+
+  const saleTransition = saleTransitionResult.data;
 
   if (saleTransition) {
+    if (updates.status !== 'Sold') {
+      return {
+        payload: {
+          error: 'sale_transition requires status to be set to Sold.',
+          success: false,
+        },
+        status: 400,
+      };
+    }
+
     const saleContract = await ensureInstrumentSaleRpcContract(
       auth.userSupabase
     );
+
     if (saleContract) {
       return saleContract;
     }
@@ -282,6 +488,7 @@ export async function executeInstrumentPatch(
       updates,
       typeGuards.validatePartialInstrument
     );
+
     if (!validationResult.success) {
       return {
         payload: {
@@ -301,10 +508,10 @@ export async function executeInstrumentPatch(
       {
         p_instrument_id: instrumentId,
         p_patch: p_patch as Json,
-        p_sale_price: saleTransition.sale_price ?? null,
-        p_sale_date: saleTransition.sale_date ?? null,
-        p_client_id: saleTransition.client_id ?? null,
-        p_sales_note: saleTransition.sales_note ?? null,
+        p_sale_price: saleTransition.sale_price,
+        p_sale_date: saleTransition.sale_date,
+        p_client_id: saleTransition.client_id,
+        p_sales_note: saleTransition.sales_note,
         p_expected_updated_at: expectedUpdatedAt,
       }
     );
@@ -315,17 +522,21 @@ export async function executeInstrumentPatch(
           instrumentId,
           code: (rpcError as { code?: string }).code,
         });
+
         return instrumentSchemaContractMissingResult([
           'update_instrument_sale_transition_atomic',
         ]);
       }
+
       const msg = String(rpcError.message ?? '');
+
       if (msg.includes('instrument_concurrency_conflict')) {
         logInfo('instrument_sale_transition_conflict', input.apiPath, {
           instrumentId,
           event: 'instrument_patch_conflict',
           http_status: 409,
         });
+
         return {
           payload: {
             error: 'This record was updated elsewhere. Refresh and try again.',
@@ -336,6 +547,7 @@ export async function executeInstrumentPatch(
           metadata: { instrumentId },
         };
       }
+
       throw errorHandler.handleSupabaseError(rpcError, 'Update sale');
     }
 
@@ -356,6 +568,7 @@ export async function executeInstrumentPatch(
     updates,
     typeGuards.validatePartialInstrument
   );
+
   if (!validationResult.success) {
     return {
       payload: {
@@ -366,7 +579,9 @@ export async function executeInstrumentPatch(
     };
   }
 
-  if (validationResult.data.status !== undefined) {
+  let validatedUpdates = validationResult.data;
+
+  if (validatedUpdates.status !== undefined) {
     const { data: currentInstrument, error: currentInstrumentError } =
       await auth.userSupabase
         .from('instruments')
@@ -386,7 +601,7 @@ export async function executeInstrumentPatch(
 
     if (
       currentInstrument.status === 'Sold' &&
-      validationResult.data.status !== 'Sold'
+      validatedUpdates.status !== 'Sold'
     ) {
       return {
         payload: {
@@ -399,7 +614,7 @@ export async function executeInstrumentPatch(
 
     if (
       currentInstrument.status !== 'Sold' &&
-      validationResult.data.status === 'Sold'
+      validatedUpdates.status === 'Sold'
     ) {
       return {
         payload: {
@@ -413,10 +628,12 @@ export async function executeInstrumentPatch(
 
     const currentStatus = (currentInstrument.status ??
       'Available') as Instrument['status'];
+
     const transitionError = validateInstrumentStatusTransition(
       currentStatus,
-      validationResult.data.status as Instrument['status']
+      validatedUpdates.status as Instrument['status']
     );
+
     if (transitionError) {
       return {
         payload: { error: transitionError, success: false },
@@ -429,7 +646,7 @@ export async function executeInstrumentPatch(
       currentInstrument.reserved_reason,
       currentInstrument.reserved_by_user_id,
       currentInstrument.reserved_connection_id,
-      validationResult.data as Partial<Instrument>,
+      validatedUpdates as Partial<Instrument>,
       auth.user.id
     );
 
@@ -440,13 +657,9 @@ export async function executeInstrumentPatch(
       };
     }
 
-    validationResult.data =
-      reservedStateResult.update as typeof validationResult.data;
+    validatedUpdates = reservedStateResult.update as typeof validatedUpdates;
   } else if (
-    Object.prototype.hasOwnProperty.call(
-      validationResult.data,
-      'reserved_reason'
-    )
+    Object.prototype.hasOwnProperty.call(validatedUpdates, 'reserved_reason')
   ) {
     const { data: currentInstrument, error: currentInstrumentError } =
       await auth.userSupabase
@@ -470,7 +683,7 @@ export async function executeInstrumentPatch(
       currentInstrument.reserved_reason,
       currentInstrument.reserved_by_user_id,
       currentInstrument.reserved_connection_id,
-      validationResult.data as Partial<Instrument>,
+      validatedUpdates as Partial<Instrument>,
       auth.user.id
     );
 
@@ -481,13 +694,10 @@ export async function executeInstrumentPatch(
       };
     }
 
-    validationResult.data =
-      reservedStateResult.update as typeof validationResult.data;
+    validatedUpdates = reservedStateResult.update as typeof validatedUpdates;
   }
 
-  const row = toInstrumentUpdateRow(
-    validationResult.data as PartialInstrumentInput
-  );
+  const row = toInstrumentUpdateRow(validatedUpdates as PartialInstrumentInput);
 
   if (Object.keys(row).length === 0) {
     return {

@@ -108,18 +108,22 @@ describe('/api/connections', () => {
       expect(json.count).toBe(1);
     });
 
-    it('should not apply range when all=true (full list for an org filter)', async () => {
+    it('should hard-cap and mark truncated all=true lists', async () => {
+      const rows = Array.from({ length: 1001 }, (_, index) => ({
+        ...mockConnection,
+        id: `123e4567-e89b-12d3-a456-${String(index).padStart(12, '0')}`,
+      }));
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({
+          data: rows,
+          error: null,
+          count: 1001,
+        }),
         range: jest.fn().mockReturnThis(),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [mockConnection],
-        error: null,
-        count: 1,
-      });
 
       mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
 
@@ -130,7 +134,15 @@ describe('/api/connections', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
-      expect(json.data).toEqual([mockConnection]);
+      expect(json.data).toHaveLength(1000);
+      expect(json.truncated).toBe(true);
+      expect(json.pagination).toEqual({
+        page: 1,
+        pageSize: 1000,
+        totalCount: 1001,
+        totalPages: 1,
+      });
+      expect(mockQuery.limit).toHaveBeenCalledWith(1001);
       expect(mockQuery.range).not.toHaveBeenCalled();
     });
 

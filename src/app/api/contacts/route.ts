@@ -13,10 +13,17 @@ import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { logError } from '@/utils/logger';
 import { mapClientsTableRowToClient } from '@/utils/clientDbMap';
+import {
+  claimCreateIdempotency,
+  clearCreateIdempotency,
+  completeCreateIdempotency,
+  createRequestHash,
+} from '@/app/api/_utils/createIdempotency';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 const MAX_CLIENT_IDS = 50;
+const CONTACT_CREATE_ROUTE_KEY = 'POST:/api/contacts';
 
 function parsePage(input: string | null): number {
   const parsed = Number.parseInt(input ?? '', 10);
@@ -26,7 +33,54 @@ function parsePage(input: string | null): number {
 function parsePageSize(input: string | null): number {
   const parsed = Number.parseInt(input ?? '', 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_PAGE_SIZE;
+
   return Math.min(parsed, MAX_PAGE_SIZE);
+}
+
+function parseClientIdsParam(input: string | null): {
+  rawClientIds: string[];
+  validClientIds: string[];
+  invalidClientIds: string[];
+} {
+  const rawClientIds = input
+    ? input
+        .split(',')
+        .map(id => id.trim())
+        .filter(Boolean)
+    : [];
+
+  const invalidClientIds = rawClientIds.filter(id => !validateUUID(id));
+  const validClientIds = rawClientIds.filter(id => validateUUID(id));
+
+  return {
+    rawClientIds,
+    validClientIds,
+    invalidClientIds,
+  };
+}
+
+function requireIdempotencyKey(request: NextRequest) {
+  const idempotencyKey = request.headers.get('Idempotency-Key')?.trim();
+
+  if (!idempotencyKey) {
+    return {
+      ok: false as const,
+      response: {
+        payload: {
+          error: 'Idempotency-Key header is required.',
+          error_code: 'IDEMPOTENCY_KEY_REQUIRED',
+          retryable: false,
+          success: false,
+        },
+        status: 400,
+      },
+    };
+  }
+
+  return {
+    ok: true as const,
+    idempotencyKey,
+  };
 }
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
@@ -48,22 +102,63 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       const searchParams = request.nextUrl.searchParams;
       const clientId = searchParams.get('clientId');
-      const clientIdsParam = searchParams.get('clientIds'); // Batch query: comma-separated UUIDs
+      const clientIdsParam = searchParams.get('clientIds');
       const instrumentId = searchParams.get('instrumentId');
       const fromDate = searchParams.get('fromDate');
       const toDate = searchParams.get('toDate');
       const page = parsePage(searchParams.get('page'));
       const pageSize = parsePageSize(searchParams.get('pageSize'));
       const hasFollowUp = searchParams.get('hasFollowUp') === 'true';
-      const followUpDate = searchParams.get('followUpDate'); // 오늘 연락해야 할 사람 필터
-      const followUpDue = searchParams.get('followUpDue') === 'true'; // 오늘 및 지난 Follow-up 필터
+      const followUpDate = searchParams.get('followUpDate');
+      const followUpDue = searchParams.get('followUpDue') === 'true';
 
-      const batchClientIds = clientIdsParam
-        ? clientIdsParam
-            .split(',')
-            .map(id => id.trim())
-            .filter(id => validateUUID(id))
-        : [];
+      const { rawClientIds, validClientIds, invalidClientIds } =
+        parseClientIdsParam(clientIdsParam);
+
+      if (clientIdsParam && rawClientIds.length === 0) {
+        return {
+          payload: {
+            error: 'clientIds must contain at least one valid UUID.',
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
+      if (rawClientIds.length > MAX_CLIENT_IDS) {
+        return {
+          payload: {
+            error: `clientIds cannot exceed ${MAX_CLIENT_IDS} IDs`,
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
+      if (invalidClientIds.length > 0) {
+        return {
+          payload: {
+            error: 'clientIds contains invalid UUID values.',
+            invalidClientIds,
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
+      if (clientId && !validateUUID(clientId)) {
+        return {
+          payload: { error: 'Invalid clientId format', success: false },
+          status: 400,
+        };
+      }
+
+      if (instrumentId && !validateUUID(instrumentId)) {
+        return {
+          payload: { error: 'Invalid instrumentId format', success: false },
+          status: 400,
+        };
+      }
 
       if (fromDate && !validateDateString(fromDate)) {
         return {
@@ -79,70 +174,56 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      if (batchClientIds.length > MAX_CLIENT_IDS) {
+      if (followUpDate && !validateDateString(followUpDate)) {
         return {
-          payload: {
-            error: `clientIds cannot exceed ${MAX_CLIENT_IDS} IDs`,
-            success: false,
-          },
+          payload: { error: 'Invalid followUpDate format', success: false },
           status: 400,
         };
       }
 
-      // FIXED: Use separate queries to avoid Supabase relationship issues
-      // Fetch contact logs first, then enrich with client and instrument data
+      // Fetch contact logs first, then enrich with client and instrument data.
       let query = auth.userSupabase
         .from('contact_logs')
         .select('*', { count: 'exact' })
         .eq('org_id', auth.orgId!);
 
-      // Filter by client_id(s) - support both single and batch
+      // Filter by client_id(s): batch mode takes precedence over single clientId.
       if (clientIdsParam) {
-        if (batchClientIds.length > 0) {
-          query = query.in('client_id', batchClientIds);
-        }
-      } else if (clientId && validateUUID(clientId)) {
-        // Single client query (backward compatibility)
+        query = query.in('client_id', validClientIds);
+      } else if (clientId) {
         query = query.eq('client_id', clientId);
       }
 
-      // Filter by instrument_id
-      if (instrumentId && validateUUID(instrumentId)) {
+      if (instrumentId) {
         query = query.eq('instrument_id', instrumentId);
       }
 
-      // Filter by date range
       if (fromDate) {
         query = query.gte('contact_date', fromDate);
       }
+
       if (toDate) {
         query = query.lte('contact_date', toDate);
       }
 
-      // Filter by follow-up date (오늘 연락해야 할 사람)
       if (followUpDate) {
         query = query.eq('next_follow_up_date', followUpDate);
       } else if (followUpDue) {
-        // FIXED: Get today and overdue follow-ups (next_follow_up_date <= today AND not null AND not completed)
-        // Use todayLocalYMD() utility to avoid timezone bugs (single source of truth)
-        const today = todayLocalYMD(); // local date 기준
+        const today = todayLocalYMD();
+
         query = query
           .not('next_follow_up_date', 'is', null)
           .lte('next_follow_up_date', today)
-          .is('follow_up_completed_at', null); // Only incomplete follow-ups
+          .is('follow_up_completed_at', null);
       } else if (hasFollowUp) {
-        // Follow-up이 있는 것만
         query = query.not('next_follow_up_date', 'is', null);
       }
 
-      // FIXED: Order by next_follow_up_date for follow-up queries, contact_date otherwise
       if (followUpDue || followUpDate) {
-        // Follow-up 대시보드: next_follow_up_date가 급한 순, 같은 날짜면 최근 contact_date 순
         query = query
           .order('next_follow_up_date', { ascending: true })
           .order('contact_date', { ascending: false });
       } else {
-        // 일반 조회: contact_date 최신순
         query = query.order('contact_date', { ascending: false });
       }
 
@@ -151,7 +232,6 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       const { data: logs, error, count } = await query.range(from, to);
 
-      // 개발 환경에서 더 자세한 에러 정보 로깅
       if (error && process.env.NODE_ENV === 'development') {
         logError('contacts.get.supabase_error', error, 'ContactsAPI', {
           code: error.code,
@@ -165,25 +245,32 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         throw errorHandler.handleSupabaseError(error, 'Fetch contact logs');
       }
 
-      // Enrich logs with client and instrument data
-      // Collect unique client_ids and instrument_ids to batch fetch
       const clientIdSet = new Set<string>();
       const instrumentIds = new Set<string>();
+
       (logs || []).forEach(log => {
         if (log.client_id) clientIdSet.add(log.client_id);
         if (log.instrument_id) instrumentIds.add(log.instrument_id);
       });
 
-      // Batch fetch clients and instruments
       const clientsMap = new Map<string, Client>();
       const instrumentsMap = new Map<string, Instrument>();
 
       if (clientIdSet.size > 0) {
-        const { data: clientsData } = await auth.userSupabase
-          .from('clients')
-          .select('*')
-          .eq('org_id', auth.orgId!)
-          .in('id', Array.from(clientIdSet));
+        const { data: clientsData, error: clientsError } =
+          await auth.userSupabase
+            .from('clients')
+            .select('*')
+            .eq('org_id', auth.orgId!)
+            .in('id', Array.from(clientIdSet));
+
+        if (clientsError) {
+          throw errorHandler.handleSupabaseError(
+            clientsError,
+            'Fetch contact log clients'
+          );
+        }
+
         if (clientsData) {
           clientsData.forEach(row => {
             clientsMap.set(row.id, mapClientsTableRowToClient(row));
@@ -192,20 +279,27 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       }
 
       if (instrumentIds.size > 0) {
-        const { data: instrumentsData } = await auth.userSupabase
-          .from('instruments')
-          .select('*')
-          .eq('org_id', auth.orgId!)
-          .in('id', Array.from(instrumentIds));
+        const { data: instrumentsData, error: instrumentsError } =
+          await auth.userSupabase
+            .from('instruments')
+            .select('*')
+            .eq('org_id', auth.orgId!)
+            .in('id', Array.from(instrumentIds));
+
+        if (instrumentsError) {
+          throw errorHandler.handleSupabaseError(
+            instrumentsError,
+            'Fetch contact log instruments'
+          );
+        }
+
         if (instrumentsData) {
           instrumentsData.forEach(row => {
-            // DB status is string|null; domain type is stricter enum — cast is safe here
             instrumentsMap.set(row.id, row as unknown as Instrument);
           });
         }
       }
 
-      // Enrich logs with fetched data
       const enrichedLogs = (logs || []).map(log => ({
         ...log,
         client: log.client_id ? clientsMap.get(log.client_id) || null : null,
@@ -226,7 +320,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         metadata: {
           clientId,
           clientIds: clientIdsParam
-            ? `${clientIdsParam.split(',').length} clients`
+            ? `${validClientIds.length} clients`
             : undefined,
           instrumentId,
           fromDate,
@@ -236,7 +330,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           followUpDue,
           page,
           pageSize,
-          recordCount: enrichedLogs?.length || 0,
+          recordCount: enrichedLogs.length,
           totalCount: count || 0,
         },
       };
@@ -263,15 +357,9 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const idempotencyKey = request.headers.get('Idempotency-Key')?.trim();
-      if (!idempotencyKey) {
-        return {
-          payload: {
-            error: 'Idempotency-Key header is required.',
-            success: false,
-          },
-          status: 400,
-        };
+      const idempotency = requireIdempotencyKey(request);
+      if (!idempotency.ok) {
+        return idempotency.response;
       }
 
       const body = await request.json();
@@ -285,12 +373,15 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         next_follow_up_date,
         purpose,
       } = body;
+
       const normalizedContactType =
         typeof contact_type === 'string'
           ? contact_type.trim().toLowerCase().replace(/\s+/g, '_')
           : '';
+
       const dbContactType =
         normalizedContactType === 'call' ? 'phone' : normalizedContactType;
+
       const normalizedContent =
         typeof content === 'string' && content.trim().length > 0
           ? content.trim()
@@ -299,12 +390,12 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
             : typeof subject === 'string' && subject.trim().length > 0
               ? subject.trim()
               : null;
+
       const normalizedContactDate =
         typeof contact_date === 'string' && contact_date.trim().length > 0
           ? contact_date
           : todayLocalYMD();
 
-      // Validation
       if (!client_id || !validateUUID(client_id)) {
         return {
           payload: { error: 'Valid client_id is required', success: false },
@@ -331,7 +422,6 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // Validate instrument_id if provided
       if (instrument_id && !validateUUID(instrument_id)) {
         return {
           payload: { error: 'Invalid instrument_id format', success: false },
@@ -404,19 +494,58 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         }
       }
 
+      const insertPayload = {
+        client_id,
+        instrument_id: instrument_id || null,
+        contact_type: dbContactType,
+        subject: subject || null,
+        content: normalizedContent,
+        contact_date: normalizedContactDate,
+        next_follow_up_date: next_follow_up_date || null,
+        purpose: purpose || null,
+        org_id: auth.orgId!,
+      };
+
+      const idempotencyClaim = await claimCreateIdempotency(
+        request,
+        auth,
+        CONTACT_CREATE_ROUTE_KEY,
+        createRequestHash(insertPayload)
+      );
+
+      if (idempotencyClaim.kind === 'replay') {
+        return {
+          payload: idempotencyClaim.payload,
+          status: 200,
+          metadata: {
+            client_id,
+            contact_type: dbContactType,
+            idempotencyKeyPresent: true,
+            idempotentReplay: true,
+          },
+        };
+      }
+
+      if (idempotencyClaim.kind === 'conflict') {
+        return {
+          payload: idempotencyClaim.payload,
+          status: idempotencyClaim.status,
+          metadata: {
+            client_id,
+            contact_type: dbContactType,
+            idempotencyKeyPresent: true,
+          },
+        };
+      }
+
+      const idempotencyKey =
+        idempotencyClaim.kind === 'claimed'
+          ? idempotencyClaim.idempotencyKey
+          : null;
+
       const { data, error } = await auth.userSupabase
         .from('contact_logs')
-        .insert({
-          client_id,
-          instrument_id: instrument_id || null,
-          contact_type: dbContactType,
-          subject: subject || null,
-          content: normalizedContent,
-          contact_date: normalizedContactDate,
-          next_follow_up_date: next_follow_up_date || null,
-          purpose: purpose || null,
-          org_id: auth.orgId!,
-        })
+        .insert(insertPayload)
         .select(
           `
           *,
@@ -427,18 +556,33 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         .single();
 
       if (error) {
+        await clearCreateIdempotency(
+          auth,
+          CONTACT_CREATE_ROUTE_KEY,
+          idempotencyKey
+        );
         throw errorHandler.handleSupabaseError(error, 'Create contact log');
       }
 
+      const responsePayload = {
+        data,
+        success: true,
+      };
+
+      await completeCreateIdempotency(
+        auth,
+        CONTACT_CREATE_ROUTE_KEY,
+        idempotencyKey,
+        responsePayload
+      );
+
       return {
-        payload: {
-          data,
-          success: true,
-        },
+        payload: responsePayload,
         status: 201,
         metadata: {
           client_id,
           contact_type: dbContactType,
+          idempotencyKeyPresent: true,
         },
       };
     }
@@ -473,7 +617,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const body = await request.json();
-      const { id, ...updates } = body;
+      const { id, ...updates } = body || {};
 
       if (!id || !validateUUID(id)) {
         return {
@@ -482,7 +626,6 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // Validate updates
       if (updates.client_id && !validateUUID(updates.client_id)) {
         return {
           payload: { error: 'Invalid client_id format', success: false },
@@ -535,21 +678,36 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // Clean up updates (remove undefined values and relation-only fields)
       const cleanUpdates: Partial<Omit<ContactLog, 'client' | 'instrument'>> =
         {};
-      if (updates.subject !== undefined) cleanUpdates.subject = updates.subject;
-      if (updates.content !== undefined)
+
+      if (updates.subject !== undefined) {
+        cleanUpdates.subject = updates.subject;
+      }
+
+      if (updates.content !== undefined) {
         cleanUpdates.content = updates.content?.trim();
-      if (updates.contact_date !== undefined)
+      }
+
+      if (updates.contact_date !== undefined) {
         cleanUpdates.contact_date = updates.contact_date;
-      if (updates.next_follow_up_date !== undefined)
+      }
+
+      if (updates.next_follow_up_date !== undefined) {
         cleanUpdates.next_follow_up_date = updates.next_follow_up_date;
-      if (updates.follow_up_completed_at !== undefined)
+      }
+
+      if (updates.follow_up_completed_at !== undefined) {
         cleanUpdates.follow_up_completed_at = updates.follow_up_completed_at;
-      if (updates.purpose !== undefined) cleanUpdates.purpose = updates.purpose;
-      if (updates.contact_type !== undefined)
+      }
+
+      if (updates.purpose !== undefined) {
+        cleanUpdates.purpose = updates.purpose;
+      }
+
+      if (updates.contact_type !== undefined) {
         cleanUpdates.contact_type = updates.contact_type;
+      }
 
       const { data, error } = await auth.userSupabase
         .from('contact_logs')

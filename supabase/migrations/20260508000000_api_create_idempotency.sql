@@ -1,0 +1,43 @@
+CREATE TABLE IF NOT EXISTS public.api_create_idempotency (
+  org_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  route_key TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  request_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'in_progress'
+    CHECK (status IN ('in_progress', 'completed')),
+  response_payload JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (org_id, user_id, route_key, idempotency_key)
+);
+
+ALTER TABLE public.api_create_idempotency ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY api_create_idempotency_select
+  ON public.api_create_idempotency
+  FOR SELECT
+  TO authenticated
+  USING (org_id = public.org_id() AND user_id = auth.uid());
+
+CREATE POLICY api_create_idempotency_insert
+  ON public.api_create_idempotency
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (org_id = public.org_id() AND user_id = auth.uid());
+
+CREATE POLICY api_create_idempotency_update
+  ON public.api_create_idempotency
+  FOR UPDATE
+  TO authenticated
+  USING (org_id = public.org_id() AND user_id = auth.uid())
+  WITH CHECK (org_id = public.org_id() AND user_id = auth.uid());
+
+CREATE POLICY api_create_idempotency_delete
+  ON public.api_create_idempotency
+  FOR DELETE
+  TO authenticated
+  USING (org_id = public.org_id() AND user_id = auth.uid());
+
+REVOKE ALL ON TABLE public.api_create_idempotency FROM PUBLIC;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.api_create_idempotency TO authenticated;

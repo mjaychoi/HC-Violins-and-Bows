@@ -31,10 +31,17 @@ import {
   insertClientWithClientNumber,
   isClientNumberAllocationExhausted,
 } from '@/app/api/_utils/insertClientWithAllocatedNumber';
+import {
+  claimCreateIdempotency,
+  clearCreateIdempotency,
+  completeCreateIdempotency,
+  createRequestHash,
+} from '@/app/api/_utils/createIdempotency';
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
 const MAX_LIMIT = 5000;
+const MAX_ALL_LIMIT = 1000;
 
 type ListQuery = {
   orderBy: string;
@@ -87,7 +94,7 @@ function parseLimit(
   limitParam: string | null,
   all: boolean
 ): number | undefined {
-  if (all) return undefined;
+  if (all) return MAX_ALL_LIMIT;
   if (!limitParam) return DEFAULT_PAGE_SIZE;
 
   const parsed = parsePositiveInt(limitParam, { min: 1, max: MAX_LIMIT });
@@ -127,15 +134,17 @@ function parseListQuery(request: NextRequest): { q: ListQuery } {
       (hasPageSize || hasPage
         ? (resolvedPageSize ?? DEFAULT_PAGE_SIZE)
         : DEFAULT_PAGE_SIZE))
-    : undefined;
+    : MAX_ALL_LIMIT;
 
-  const shouldApplyRange = baseLimit !== undefined && (hasPage || hasPageSize);
+  const shouldApplyRange =
+    !all && baseLimit !== undefined && (hasPage || hasPageSize);
   const pageNumber = page ?? 1;
 
   const rangeStart =
     shouldApplyRange && typeof baseLimit === 'number'
       ? (pageNumber - 1) * baseLimit
       : undefined;
+
   const rangeEnd =
     typeof rangeStart === 'number'
       ? rangeStart + (baseLimit ?? 0) - 1
@@ -196,7 +205,7 @@ async function runClientsQuery(
   ) {
     query = query.range(q.rangeStart, q.rangeEnd);
   } else if (q.limit !== undefined) {
-    query = query.limit(q.limit);
+    query = query.limit(q.all ? q.limit + 1 : q.limit);
   }
 
   return query;
@@ -211,6 +220,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
     { method: 'GET', path: 'ClientsAPI', context: 'ClientsAPI' },
     async () => {
       const { q } = parseListQuery(request);
+
       if (!auth.orgId) {
         return {
           payload: { error: 'Organization context required', success: false },
@@ -218,7 +228,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const query = runClientsQuery(auth.userSupabase, q, auth.orgId!);
+      const query = runClientsQuery(auth.userSupabase, q, auth.orgId);
       const { data, error, count } = await query;
 
       debugQueryResult({
@@ -233,11 +243,16 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         orderBy: q.orderBy,
         ascending: q.ascending,
         search: q.search,
+        all: q.all,
       });
 
       if (error) throw errorHandler.handleSupabaseError(error, 'Fetch clients');
 
-      const normalized = normalizeClientRows(data ?? []);
+      const rawRows = data ?? [];
+      const truncated =
+        q.all && q.limit !== undefined && rawRows.length > q.limit;
+      const rows = truncated ? rawRows.slice(0, q.limit) : rawRows;
+      const normalized = normalizeClientRows(rows);
 
       const recordCount = normalized.length;
       const totalCount = count ?? 0;
@@ -257,7 +272,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       const validationWarning = !validationResult.success;
 
       return {
-        payload: { data: normalized, count: totalCount },
+        payload: { data: normalized, count: totalCount, truncated },
         metadata: {
           recordCount,
           totalCount,
@@ -267,6 +282,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           limit: q.limit,
           page: q.page,
           pageSize: q.pageSize,
+          all: q.all,
           validationWarning,
         },
       };
@@ -311,12 +327,14 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const raw = validation.data;
+
       // client_number is always server-assigned for standard create (ignore request body)
       const insertRow = createClientInputToDbRow({
         ...raw,
         client_number: null,
         tags: raw.tags ?? [],
       });
+
       const clientName = insertRow.name.trim();
       if (!clientName) {
         return {
@@ -324,6 +342,31 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           status: 400,
         };
       }
+
+      const idempotency = await claimCreateIdempotency(
+        request,
+        auth,
+        'POST:/api/clients',
+        createRequestHash({
+          name: clientName,
+          email: insertRow.email,
+          phone: insertRow.phone,
+          tags: insertRow.tags ?? [],
+          interest: insertRow.interest,
+          note: insertRow.note,
+        })
+      );
+
+      if (idempotency.kind === 'replay') {
+        return { payload: idempotency.payload, status: 200 };
+      }
+
+      if (idempotency.kind === 'conflict') {
+        return { payload: idempotency.payload, status: idempotency.status };
+      }
+
+      const idempotencyKey =
+        idempotency.kind === 'claimed' ? idempotency.idempotencyKey : null;
 
       const { data, error } = await insertClientWithClientNumber(
         auth.userSupabase,
@@ -341,6 +384,8 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       );
 
       if (error) {
+        await clearCreateIdempotency(auth, 'POST:/api/clients', idempotencyKey);
+
         if (error.code === '23505') {
           if (isClientNumberAllocationExhausted(error)) {
             return {
@@ -353,11 +398,14 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
               },
             };
           }
+
           const hint =
             `${error.details ?? ''} ${error.message ?? ''}`.toLowerCase();
+
           const isClientNumber =
             hint.includes('client_number') ||
             hint.includes('idx_clients_org_id_client_number');
+
           return {
             status: 409,
             payload: {
@@ -367,16 +415,28 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
             },
           };
         }
+
         throw errorHandler.handleSupabaseError(error, 'Create client');
       }
 
       const validated = validateClient(
         mapClientsTableRowToClient(data as ClientsTableRow)
       );
+      const payload = { data: validated };
+
+      await completeCreateIdempotency(
+        auth,
+        'POST:/api/clients',
+        idempotencyKey,
+        payload
+      );
+
       return {
-        payload: { data: validated },
+        payload,
         status: 201,
-        metadata: { clientId: validated.id },
+        metadata: {
+          clientId: validated.id,
+        },
       };
     }
   );
@@ -411,10 +471,13 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       const body = await request.json();
       const { id, ...updates } = body || {};
 
-      if (!id)
+      if (!id) {
         return { payload: { error: 'Client ID is required' }, status: 400 };
-      if (!validateUUID(id))
+      }
+
+      if (!validateUUID(id)) {
         return { payload: { error: 'Invalid client ID format' }, status: 400 };
+      }
 
       const validation = safeValidate(updates, validatePartialClient);
       if (!validation.success) {
@@ -439,6 +502,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         typeof currentRow.name === 'string' ? currentRow.name : null,
         validation.data
       );
+
       if (
         Object.prototype.hasOwnProperty.call(dbPatch, 'name') &&
         typeof dbPatch.name === 'string' &&
@@ -465,10 +529,16 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         .select(CLIENT_TABLE_SELECT)
         .single();
 
-      if (error) throw errorHandler.handleSupabaseError(error, 'Update client');
+      if (error) {
+        throw errorHandler.handleSupabaseError(error, 'Update client');
+      }
 
       const validated = validateClient(mapClientsTableRowToClient(data));
-      return { payload: { data: validated }, metadata: { clientId: id } };
+
+      return {
+        payload: { data: validated },
+        metadata: { clientId: id },
+      };
     }
   );
 }
@@ -500,10 +570,14 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const id = request.nextUrl.searchParams.get('id');
-      if (!id)
+
+      if (!id) {
         return { payload: { error: 'Client ID is required' }, status: 400 };
-      if (!validateUUID(id))
+      }
+
+      if (!validateUUID(id)) {
         return { payload: { error: 'Invalid client ID format' }, status: 400 };
+      }
 
       // userSupabase + RLS prevents cross-tenant deletes
       const { error, count } = await auth.userSupabase
@@ -520,7 +594,10 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
         return { payload: { error: 'Client not found' }, status: 404 };
       }
 
-      return { payload: { success: true }, metadata: { clientId: id } };
+      return {
+        payload: { success: true },
+        metadata: { clientId: id },
+      };
     }
   );
 }

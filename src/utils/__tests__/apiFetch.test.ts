@@ -104,6 +104,38 @@ describe('apiFetch', () => {
     );
   });
 
+  it('preserves auth error envelope metadata on ApiFetchAuthError', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      headers: new Headers({ 'x-request-id': 'header-request-id' }),
+      json: async () => ({
+        error: {
+          code: 'ORG_CONTEXT_REQUIRED',
+          message: 'Organization context required',
+          details: { scope: 'clients' },
+          retryable: false,
+          request_id: 'body-request-id',
+        },
+      }),
+      clone() {
+        return this;
+      },
+    } as unknown as Response);
+
+    const { apiFetch } = await import('../apiFetch');
+
+    await expect(apiFetch('/api/clients')).rejects.toMatchObject({
+      name: 'ApiFetchAuthError',
+      message: 'Organization context required',
+      status: 403,
+      error_code: 'ORG_CONTEXT_REQUIRED',
+      retryable: false,
+      details: { scope: 'clients' },
+      request_id: 'body-request-id',
+    });
+  });
+
   it('throws ApiFetchNetworkError for network failures', async () => {
     global.fetch = jest
       .fn()

@@ -1,7 +1,7 @@
 'use client';
 
 // DEPRECATED: backward compatibility layer
-import React, { ReactNode, useEffect, useMemo } from 'react';
+import React, { ReactNode, useEffect, useMemo, useRef } from 'react';
 import {
   useClientsContext,
   useClients as useClientsFromContext,
@@ -15,37 +15,50 @@ import {
   useConnections as useConnectionsFromContext,
 } from './ConnectionsContext';
 
+type DeprecatedDispatchAction = {
+  type: string;
+  payload?: unknown;
+};
+
 let didWarnProvider = false;
 let didWarnDispatch = false;
 
 function warnOnce(kind: 'provider' | 'dispatch') {
-  if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test')
+  if (
+    process.env.NODE_ENV !== 'development' &&
+    process.env.NODE_ENV !== 'test'
+  ) {
     return;
+  }
+
   if (kind === 'provider') {
     if (didWarnProvider) return;
     didWarnProvider = true;
     console.warn(
       'DataProvider is deprecated. Use individual context providers instead.'
     );
-  } else {
-    if (didWarnDispatch) return;
-    didWarnDispatch = true;
-    console.warn(
-      'DataContext.dispatch is deprecated. Use individual context actions instead.'
-    );
+    return;
   }
+
+  if (didWarnDispatch) return;
+  didWarnDispatch = true;
+  console.warn(
+    'DataContext.dispatch is deprecated. Use individual context actions instead.'
+  );
 }
 
-// DEPRECATED: DataProvider is no longer used
 export function DataProvider({ children }: { children: ReactNode }) {
+  const warnedRef = useRef(false);
+
   useEffect(() => {
+    if (warnedRef.current) return;
+    warnedRef.current = true;
     warnOnce('provider');
   }, []);
 
   return <>{children}</>;
 }
 
-// Backward-compat unified interface
 export function useDataContext() {
   const clientsContext = useClientsContext();
   const instrumentsContext = useInstrumentsContext();
@@ -88,127 +101,253 @@ export function useDataContext() {
     ]
   );
 
+  const {
+    fetchClients,
+    createClient,
+    updateClient,
+    deleteClient,
+    invalidateCache: invalidateClientsCache,
+    resetState: resetClientsState,
+  } = clientsContext.actions;
+
+  const {
+    fetchInstruments,
+    createInstrument,
+    updateInstrument,
+    deleteInstrument,
+    invalidateCache: invalidateInstrumentsCache,
+    resetState: resetInstrumentsState,
+  } = instrumentsContext.actions;
+
+  const {
+    fetchConnections,
+    createConnection,
+    updateConnection,
+    deleteConnection,
+    invalidateCache: invalidateConnectionsCache,
+    resetState: resetConnectionsState,
+  } = connectionsContext.actions;
+
   const actions = useMemo(
     () => ({
-      fetchClients: clientsContext.actions.fetchClients,
-      createClient: clientsContext.actions.createClient,
-      updateClient: clientsContext.actions.updateClient,
-      deleteClient: clientsContext.actions.deleteClient,
+      fetchClients,
+      createClient,
+      updateClient,
+      deleteClient,
 
-      fetchInstruments: instrumentsContext.actions.fetchInstruments,
-      createInstrument: instrumentsContext.actions.createInstrument,
-      updateInstrument: instrumentsContext.actions.updateInstrument,
-      deleteInstrument: instrumentsContext.actions.deleteInstrument,
+      fetchInstruments,
+      createInstrument,
+      updateInstrument,
+      deleteInstrument,
 
-      fetchConnections: connectionsContext.actions.fetchConnections,
-      createConnection: connectionsContext.actions.createConnection,
-      updateConnection: connectionsContext.actions.updateConnection,
-      deleteConnection: connectionsContext.actions.deleteConnection,
+      fetchConnections,
+      createConnection,
+      updateConnection,
+      deleteConnection,
 
       invalidateCache: (
         dataType: 'clients' | 'instruments' | 'connections'
       ) => {
-        if (dataType === 'clients') clientsContext.actions.invalidateCache();
-        else if (dataType === 'instruments')
-          instrumentsContext.actions.invalidateCache();
-        else connectionsContext.actions.invalidateCache();
+        if (dataType === 'clients') {
+          invalidateClientsCache();
+        } else if (dataType === 'instruments') {
+          invalidateInstrumentsCache();
+        } else {
+          invalidateConnectionsCache();
+        }
       },
 
       resetState: () => {
-        clientsContext.actions.resetState();
-        instrumentsContext.actions.resetState();
-        connectionsContext.actions.resetState();
+        resetClientsState();
+        resetInstrumentsState();
+        resetConnectionsState();
       },
     }),
     [
-      clientsContext.actions,
-      instrumentsContext.actions,
-      connectionsContext.actions,
+      fetchClients,
+      createClient,
+      updateClient,
+      deleteClient,
+      invalidateClientsCache,
+      resetClientsState,
+
+      fetchInstruments,
+      createInstrument,
+      updateInstrument,
+      deleteInstrument,
+      invalidateInstrumentsCache,
+      resetInstrumentsState,
+
+      fetchConnections,
+      createConnection,
+      updateConnection,
+      deleteConnection,
+      invalidateConnectionsCache,
+      resetConnectionsState,
     ]
   );
 
-  // Keep dispatch for backward compatibility, but do not crash the app
-  const dispatch = useMemo(
-    () => () => {
+  const dispatch = useMemo<React.Dispatch<DeprecatedDispatchAction>>(
+    () => action => {
       warnOnce('dispatch');
-      // no-op
+
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(
+          '[DEPRECATED] Ignored DataContext.dispatch action:',
+          action
+        );
+      }
     },
     []
   );
 
   return useMemo(
-    () => ({ state, dispatch, actions }),
+    () => ({
+      state,
+      dispatch,
+      actions,
+    }),
     [state, dispatch, actions]
   );
 }
 
-// Delegate specialized hooks (deprecated file, but safe)
 export function useClients() {
   return useClientsFromContext();
 }
+
 export function useInstruments() {
   return useInstrumentsFromContext();
 }
+
 export function useConnections() {
   return useConnectionsFromContext();
 }
 
-// Legacy "all data" hook
 export function useAllData() {
   const clients = useClients();
   const instruments = useInstruments();
   const connections = useConnections();
+
+  const {
+    fetchClients,
+    createClient,
+    updateClient,
+    deleteClient,
+    invalidateCache: invalidateClientsCache,
+    resetState: resetClientsState,
+  } = clients;
+
+  const {
+    fetchInstruments,
+    createInstrument,
+    updateInstrument,
+    deleteInstrument,
+    invalidateCache: invalidateInstrumentsCache,
+    resetState: resetInstrumentsState,
+  } = instruments;
+
+  const {
+    fetchConnections,
+    createConnection,
+    updateConnection,
+    deleteConnection,
+    invalidateCache: invalidateConnectionsCache,
+    resetState: resetConnectionsState,
+  } = connections;
 
   return useMemo(
     () => ({
       clients: clients.clients,
       instruments: instruments.instruments,
       connections: connections.connections,
+
       loading: {
         clients: clients.loading,
         instruments: instruments.loading,
         connections: connections.loading,
       },
+
       submitting: {
         clients: clients.submitting,
         instruments: instruments.submitting,
         connections: connections.submitting,
       },
+
       lastUpdated: {
         clients: clients.lastUpdated,
         instruments: instruments.lastUpdated,
         connections: connections.lastUpdated,
       },
 
-      fetchClients: clients.fetchClients,
-      createClient: clients.createClient,
-      updateClient: clients.updateClient,
-      deleteClient: clients.deleteClient,
+      fetchClients,
+      createClient,
+      updateClient,
+      deleteClient,
 
-      fetchInstruments: instruments.fetchInstruments,
-      createInstrument: instruments.createInstrument,
-      updateInstrument: instruments.updateInstrument,
-      deleteInstrument: instruments.deleteInstrument,
+      fetchInstruments,
+      createInstrument,
+      updateInstrument,
+      deleteInstrument,
 
-      fetchConnections: connections.fetchConnections,
-      createConnection: connections.createConnection,
-      updateConnection: connections.updateConnection,
-      deleteConnection: connections.deleteConnection,
+      fetchConnections,
+      createConnection,
+      updateConnection,
+      deleteConnection,
 
       invalidateCache: (
         dataType: 'clients' | 'instruments' | 'connections'
       ) => {
-        if (dataType === 'clients') clients.invalidateCache();
-        else if (dataType === 'instruments') instruments.invalidateCache();
-        else connections.invalidateCache();
+        if (dataType === 'clients') {
+          invalidateClientsCache();
+        } else if (dataType === 'instruments') {
+          invalidateInstrumentsCache();
+        } else {
+          invalidateConnectionsCache();
+        }
       },
 
       resetState: () => {
-        clients.resetState();
-        instruments.resetState();
-        connections.resetState();
+        resetClientsState();
+        resetInstrumentsState();
+        resetConnectionsState();
       },
     }),
-    [clients, instruments, connections]
+    [
+      clients.clients,
+      clients.loading,
+      clients.submitting,
+      clients.lastUpdated,
+
+      instruments.instruments,
+      instruments.loading,
+      instruments.submitting,
+      instruments.lastUpdated,
+
+      connections.connections,
+      connections.loading,
+      connections.submitting,
+      connections.lastUpdated,
+
+      fetchClients,
+      createClient,
+      updateClient,
+      deleteClient,
+      invalidateClientsCache,
+      resetClientsState,
+
+      fetchInstruments,
+      createInstrument,
+      updateInstrument,
+      deleteInstrument,
+      invalidateInstrumentsCache,
+      resetInstrumentsState,
+
+      fetchConnections,
+      createConnection,
+      updateConnection,
+      deleteConnection,
+      invalidateConnectionsCache,
+      resetConnectionsState,
+    ]
   );
 }

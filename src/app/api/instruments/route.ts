@@ -47,6 +47,7 @@ type InstrumentInsertInput = CreateInstrumentInput & {
 };
 
 const SERIAL_CONFLICT_MAX_RETRIES = 3;
+const MAX_ALL_RESULTS = 1000;
 
 function normalizeNullableText(
   value: string | null | undefined
@@ -225,17 +226,18 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         const ownership = searchParams.get('ownership') || 'all';
         const search = searchParams.get('search');
         const limitParam = searchParams.get('limit');
-        /**
-         * `all=true` = intentional unbounded list for admin/inventory UIs.
-         * Otherwise, cap rows when `limit` is omitted (PostgREST default is unbounded).
-         */
         const listAll = searchParams.get('all') === 'true';
         const DEFAULT_LIST_LIMIT = 200;
-        const limit = listAll
-          ? undefined
-          : limitParam
-            ? parseInt(limitParam, 10)
-            : DEFAULT_LIST_LIMIT;
+        const MAX_LIST_LIMIT = MAX_ALL_RESULTS;
+        const parsedLimit = limitParam ? parseInt(limitParam, 10) : NaN;
+        const requestedLimit = Number.isFinite(parsedLimit)
+          ? parsedLimit
+          : DEFAULT_LIST_LIMIT;
+        const responseLimit = Math.min(
+          MAX_LIST_LIMIT,
+          Math.max(1, listAll ? MAX_LIST_LIMIT : requestedLimit)
+        );
+        const queryLimit = listAll ? MAX_ALL_RESULTS + 1 : responseLimit;
 
         let query = auth.userSupabase
           .from('instruments')
@@ -253,8 +255,12 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
 
         // ✅ limit은 non-reassigning 형태로 호출 (mock chain 대응)
-        if (typeof limit === 'number' && !Number.isNaN(limit) && limit > 0) {
-          query = query.limit(limit);
+        if (
+          typeof queryLimit === 'number' &&
+          !Number.isNaN(queryLimit) &&
+          queryLimit > 0
+        ) {
+          query = query.limit(queryLimit);
         }
 
         // order
@@ -274,15 +280,30 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
 
         // ✅ 🔥 핵심: has_certificate 추가
-        const transformed = (data || []).map(item => ({
+        const rawRows = data || [];
+        const truncated = listAll && rawRows.length > MAX_ALL_RESULTS;
+        const rows = truncated ? rawRows.slice(0, MAX_ALL_RESULTS) : rawRows;
+
+        const transformed = rows.map(item => ({
           ...item,
           has_certificate: !!item.certificate,
         }));
+        const responsePageSize = listAll ? transformed.length : responseLimit;
 
         return {
           payload: {
             data: transformed,
             count: count || 0,
+            pagination: {
+              page: 1,
+              pageSize: responsePageSize,
+              totalCount: count || 0,
+              totalPages: listAll
+                ? 1
+                : Math.max(1, Math.ceil((count || 0) / responseLimit)),
+            },
+            scope: listAll ? 'all' : 'paged',
+            truncated,
           },
         };
       } catch (err) {

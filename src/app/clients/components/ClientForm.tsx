@@ -12,6 +12,7 @@ import { Button, Input } from '@/components/common/inputs';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { shouldShowInterestDropdown } from '@/policies/interest';
 import { apiFetch } from '@/utils/apiFetch';
+import { handleApiResponse } from '@/utils/handleApiResponse';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
 import { ClientRelationshipType } from '../types';
@@ -160,17 +161,15 @@ function ClientForm({
         const response = await apiFetch(
           `/api/instruments?${params.toString()}`
         );
-        if (!response.ok) {
-          throw new Error(
-            `Failed to search instruments: ${response.statusText}`
-          );
-        }
-        const result = await response.json();
+        const data = await handleApiResponse<Instrument[]>(
+          response,
+          'Failed to search instruments'
+        );
         // Filter out instruments already selected to prevent duplicates
         const selectedIds = new Set(
           selectedInstrumentsForNew.map(si => si.instrument.id)
         );
-        return (result.data || []).filter(
+        return (data || []).filter(
           (inst: Instrument) => !selectedIds.has(inst.id)
         );
       } catch (error) {

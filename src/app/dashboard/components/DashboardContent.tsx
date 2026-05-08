@@ -6,7 +6,6 @@ import { ItemList, ItemFilters } from './';
 import { SearchInput } from '@/components/common';
 import type { Instrument, Client, ClientInstrument } from '@/types';
 
-// FIXED: Use explicit EnrichedInstrument type
 type EnrichedInstrument = Instrument & {
   clients: ClientInstrument[];
 };
@@ -29,9 +28,8 @@ interface DashboardContentProps {
     updates: Partial<Instrument>
   ) => Promise<void>;
   onAddClick?: () => void;
-  newlyCreatedItemId?: string | null; // ID of newly created item for scroll/highlight
-  onNewlyCreatedItemShown?: () => void; // Callback when newly created item is shown
-  onLoadSampleData?: () => void; // Load sample data handler
+  newlyCreatedItemId?: string | null;
+  onNewlyCreatedItemShown?: () => void;
   onInstrumentCertificatesChanged?: () => void;
 }
 
@@ -48,10 +46,8 @@ function DashboardContentInner({
   onAddClick,
   newlyCreatedItemId,
   onNewlyCreatedItemShown,
-  onLoadSampleData,
   onInstrumentCertificatesChanged,
 }: DashboardContentProps) {
-  // Dashboard filters - use enrichedItems instead of instruments
   const {
     searchTerm,
     setSearchTerm,
@@ -67,13 +63,13 @@ function DashboardContentInner({
     getActiveFiltersCount,
     dateRange,
     setDateRange,
-    // Pagination
     currentPage,
     totalPages,
     totalCount,
     pageSize,
     setPage,
   } = useDashboardFilters(enrichedItems);
+
   const hasActiveFilters =
     getActiveFiltersCount() > 0 ||
     Boolean(searchTerm) ||
@@ -82,10 +78,8 @@ function DashboardContentInner({
 
   return (
     <div className="p-6 space-y-4">
-      {/* Search and Filters */}
       <div className="mb-6 space-y-4">
         <div className="flex flex-wrap items-center gap-3">
-          {/* Search Input - FIXED: Max width limit for better layout */}
           <div className="flex-1 min-w-[260px] max-w-[600px]">
             <SearchInput
               placeholder="Search items by maker, type, serial..."
@@ -96,9 +90,9 @@ function DashboardContentInner({
             />
           </div>
 
-          {/* UX: Quick Filter Pills - Common use cases */}
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              type="button"
               onClick={() => setShowFilters(!showFilters)}
               className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors flex items-center gap-2 ${
                 showFilters || getActiveFiltersCount() > 0
@@ -127,14 +121,15 @@ function DashboardContentInner({
                 </span>
               )}
             </button>
+
             {hasActiveFilters && (
               <button
+                type="button"
                 onClick={() => {
                   clearAllFilters();
                   setShowFilters(false);
                 }}
                 className="px-3 py-1.5 text-sm font-medium rounded-lg border text-gray-700 border-gray-300 bg-white hover:bg-gray-50 transition-colors"
-                type="button"
               >
                 Clear filters
               </button>
@@ -142,7 +137,6 @@ function DashboardContentInner({
           </div>
         </div>
 
-        {/* Advanced Filters Panel - Collapsible */}
         {showFilters && (
           <ItemFilters
             items={enrichedItems}
@@ -163,8 +157,6 @@ function DashboardContentInner({
           />
         )}
 
-        {/* Items List */}
-        {/* FIXED: paginatedItems is already EnrichedInstrument[], pass directly */}
         <ItemList
           items={paginatedItems}
           loading={loading.hasAnyLoading}
@@ -181,22 +173,12 @@ function DashboardContentInner({
           newlyCreatedItemId={newlyCreatedItemId}
           onNewlyCreatedItemShown={onNewlyCreatedItemShown}
           emptyState={{
-            hasActiveFilters:
-              getActiveFiltersCount() > 0 ||
-              Boolean(searchTerm) ||
-              Boolean(dateRange?.from) ||
-              Boolean(dateRange?.to),
-            message:
-              getActiveFiltersCount() > 0 ||
-              Boolean(searchTerm) ||
-              Boolean(dateRange?.from) ||
-              Boolean(dateRange?.to)
-                ? 'No items found matching your filters'
-                : undefined,
+            hasActiveFilters,
+            message: hasActiveFilters
+              ? 'No items found matching your filters'
+              : undefined,
           }}
-          onLoadSampleData={onLoadSampleData}
           onInstrumentCertificatesChanged={onInstrumentCertificatesChanged}
-          // Pagination props
           currentPage={currentPage}
           totalPages={totalPages}
           totalCount={totalCount}
@@ -209,7 +191,5 @@ function DashboardContentInner({
 }
 
 export default function DashboardContent(props: DashboardContentProps) {
-  // FIXED: Removed Suspense wrapper as it's not needed (DashboardContentInner is not lazy-loaded)
-  // If lazy loading is needed in the future, add Suspense back with React.lazy()
   return <DashboardContentInner {...props} />;
 }

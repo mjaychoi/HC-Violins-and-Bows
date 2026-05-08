@@ -21,9 +21,18 @@ import {
   validateUUID,
   sanitizeSearchTerm,
   validateDateString,
+  escapePostgrestFilterValue,
 } from '@/utils/inputValidation';
 
-const PAGE_SIZE = 10;
+const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
+const MAX_SEARCH_LEN = 160;
+const MAX_NOTES_LENGTH = 5_000;
+const MAX_SALE_PRICE_ABS = 1_000_000_000;
+const DEFAULT_PAGE_SIZE = 10;
+const MAX_PAGE_SIZE = 100;
+const MAX_ALL_RESULTS = 1000;
+const MAX_EXPORT_PAGE_SIZE = 5_000;
+
 const SALES_SELECT_COLUMNS = `
   id,
   instrument_id,
@@ -52,14 +61,335 @@ type SalesTotals = {
   refundRate: number;
 };
 
-function buildSaleCreateRequestHash(input: {
+type SalesCreateInput = {
   sale_price: number;
   sale_date: string;
   client_id: string | null;
   instrument_id: string | null;
   notes: string | null;
-}): string {
+};
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function readJsonObject(
+  request: NextRequest
+): Promise<
+  { ok: true; body: Record<string, unknown> } | { ok: false; error: string }
+> {
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return {
+      ok: false,
+      error: 'Invalid JSON body',
+    };
+  }
+
+  if (!isObject(body)) {
+    return {
+      ok: false,
+      error: 'Invalid request body',
+    };
+  }
+
+  return {
+    ok: true,
+    body,
+  };
+}
+
+function readRequiredIdempotencyKey(request: NextRequest):
+  | { ok: true; idempotencyKey: string }
+  | {
+      ok: false;
+      result: {
+        payload: {
+          error: string;
+          error_code: string;
+          retryable: false;
+          success: false;
+        };
+        status: 400;
+      };
+    } {
+  const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() ?? '';
+
+  if (!idempotencyKey) {
+    return {
+      ok: false,
+      result: {
+        payload: {
+          error: 'Idempotency key is required.',
+          error_code: 'IDEMPOTENCY_KEY_REQUIRED',
+          retryable: false,
+          success: false,
+        },
+        status: 400,
+      },
+    };
+  }
+
+  if (idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+    return {
+      ok: false,
+      result: {
+        payload: {
+          error: `Idempotency-Key cannot exceed ${MAX_IDEMPOTENCY_KEY_LENGTH} characters.`,
+          error_code: 'IDEMPOTENCY_KEY_INVALID',
+          retryable: false,
+          success: false,
+        },
+        status: 400,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    idempotencyKey,
+  };
+}
+
+function parsePageNumber(value: string | null): number {
+  const parsed = Number.parseInt(value ?? '1', 10);
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1;
+  }
+
+  return Math.min(parsed, 1_000_000);
+}
+
+function parsePageSize(value: string | null, isExport: boolean): number {
+  const parsed = Number.parseInt(value ?? String(DEFAULT_PAGE_SIZE), 10);
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_PAGE_SIZE;
+  }
+
+  return Math.min(parsed, isExport ? MAX_EXPORT_PAGE_SIZE : MAX_PAGE_SIZE);
+}
+
+function parseDateFilters(
+  fromDate?: string,
+  toDate?: string
+):
+  | { ok: true; fromDate?: string; toDate?: string }
+  | { ok: false; payload: { error: string; success: false }; status: 400 } {
+  if (fromDate && !validateDateString(fromDate)) {
+    return {
+      ok: false,
+      payload: {
+        error: `Invalid fromDate. Expected YYYY-MM-DD, received: ${fromDate}`,
+        success: false,
+      },
+      status: 400,
+    };
+  }
+
+  if (toDate && !validateDateString(toDate)) {
+    return {
+      ok: false,
+      payload: {
+        error: `Invalid toDate. Expected YYYY-MM-DD, received: ${toDate}`,
+        success: false,
+      },
+      status: 400,
+    };
+  }
+
+  if (fromDate && toDate && fromDate > toDate) {
+    return {
+      ok: false,
+      payload: {
+        error: 'fromDate cannot be after toDate',
+        success: false,
+      },
+      status: 400,
+    };
+  }
+
+  return {
+    ok: true,
+    fromDate,
+    toDate,
+  };
+}
+
+function normalizeSearch(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+
+  const sanitized = sanitizeSearchTerm(value).trim().slice(0, MAX_SEARCH_LEN);
+
+  return sanitized || undefined;
+}
+
+function normalizeOptionalUuid(
+  value: unknown,
+  fieldName: string
+):
+  | { ok: true; value: string | null }
+  | { ok: false; error: string; status: 400 } {
+  if (value === undefined || value === null || value === '') {
+    return { ok: true, value: null };
+  }
+
+  if (typeof value !== 'string') {
+    return {
+      ok: false,
+      error: `${fieldName} must be a UUID string`,
+      status: 400,
+    };
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return { ok: true, value: null };
+  }
+
+  if (!validateUUID(trimmed)) {
+    return {
+      ok: false,
+      error: `Invalid ${fieldName} format`,
+      status: 400,
+    };
+  }
+
+  return {
+    ok: true,
+    value: trimmed,
+  };
+}
+
+function normalizeNotes(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    return String(value).trim() || null;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed ? trimmed.slice(0, MAX_NOTES_LENGTH) : null;
+}
+
+function parseSalePrice(
+  value: unknown
+): { ok: true; value: number } | { ok: false; error: string; status: 400 } {
+  if (value === undefined || value === null || value === '') {
+    return {
+      ok: false,
+      error: 'Sale price is required.',
+      status: 400,
+    };
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return {
+      ok: false,
+      error: 'Sale price must be a number.',
+      status: 400,
+    };
+  }
+
+  if (parsed === 0) {
+    return {
+      ok: false,
+      error: 'Sale price cannot be zero.',
+      status: 400,
+    };
+  }
+
+  if (Math.abs(parsed) > MAX_SALE_PRICE_ABS) {
+    return {
+      ok: false,
+      error: 'Sale price exceeds the maximum allowed amount.',
+      status: 400,
+    };
+  }
+
+  return {
+    ok: true,
+    value: Math.round(parsed * 100) / 100,
+  };
+}
+
+function parseCreateSaleInput(
+  body: Record<string, unknown>
+):
+  | { ok: true; value: SalesCreateInput }
+  | { ok: false; error: string; status: 400 } {
+  if (
+    body.sale_price === undefined ||
+    body.sale_price === null ||
+    body.sale_date === undefined ||
+    body.sale_date === null ||
+    body.sale_date === ''
+  ) {
+    return {
+      ok: false,
+      error: 'Sale price and date are required.',
+      status: 400,
+    };
+  }
+
+  const salePrice = parseSalePrice(body.sale_price);
+  if (!salePrice.ok) return salePrice;
+
+  if (typeof body.sale_date !== 'string' || !body.sale_date.trim()) {
+    return {
+      ok: false,
+      error: 'Sale date is required.',
+      status: 400,
+    };
+  }
+
+  const saleDate = body.sale_date.trim();
+
+  if (!validateDateString(saleDate)) {
+    return {
+      ok: false,
+      error: 'sale_date must be a valid date string (YYYY-MM-DD).',
+      status: 400,
+    };
+  }
+
+  const clientId = normalizeOptionalUuid(body.client_id, 'client_id');
+  if (!clientId.ok) return clientId;
+
+  const instrumentId = normalizeOptionalUuid(
+    body.instrument_id,
+    'instrument_id'
+  );
+  if (!instrumentId.ok) return instrumentId;
+
+  return {
+    ok: true,
+    value: {
+      sale_price: salePrice.value,
+      sale_date: saleDate,
+      client_id: clientId.value,
+      instrument_id: instrumentId.value,
+      notes: normalizeNotes(body.notes),
+    },
+  };
+}
+
+function buildSaleCreateRequestHash(input: SalesCreateInput): string {
   return createHash('sha256').update(JSON.stringify(input)).digest('hex');
+}
+
+function escapeIlikePattern(value: string): string {
+  return `%${escapePostgrestFilterValue(value)}%`;
 }
 
 async function fetchSalesTotals(
@@ -77,21 +407,21 @@ async function fetchSalesTotals(
     .eq('org_id', auth.orgId!)
     .gt('sale_price', 0);
 
-  if (filters.fromDate && validateDateString(filters.fromDate)) {
+  if (filters.fromDate) {
     positiveTotalsQuery = positiveTotalsQuery.gte(
       'sale_date',
       filters.fromDate
     );
   }
 
-  if (filters.toDate && validateDateString(filters.toDate)) {
+  if (filters.toDate) {
     positiveTotalsQuery = positiveTotalsQuery.lte('sale_date', filters.toDate);
   }
 
   if (filters.search) {
     positiveTotalsQuery = positiveTotalsQuery.ilike(
       'notes',
-      `%${filters.search}%`
+      escapeIlikePattern(filters.search)
     );
   }
 
@@ -124,16 +454,19 @@ async function fetchSalesTotals(
     .eq('org_id', auth.orgId!)
     .lt('sale_price', 0);
 
-  if (filters.fromDate && validateDateString(filters.fromDate)) {
+  if (filters.fromDate) {
     refundTotalsQuery = refundTotalsQuery.gte('sale_date', filters.fromDate);
   }
 
-  if (filters.toDate && validateDateString(filters.toDate)) {
+  if (filters.toDate) {
     refundTotalsQuery = refundTotalsQuery.lte('sale_date', filters.toDate);
   }
 
   if (filters.search) {
-    refundTotalsQuery = refundTotalsQuery.ilike('notes', `%${filters.search}%`);
+    refundTotalsQuery = refundTotalsQuery.ilike(
+      'notes',
+      escapeIlikePattern(filters.search)
+    );
   }
 
   if (filters.hasClient !== undefined) {
@@ -159,8 +492,8 @@ async function fetchSalesTotals(
     );
   }
 
-  const revenue = Number(positiveTotals?.revenue ?? 0);
-  const avgTicket = Number(positiveTotals?.avg_ticket ?? 0);
+  const revenue = Math.max(0, Number(positiveTotals?.revenue ?? 0));
+  const avgTicket = Math.max(0, Number(positiveTotals?.avg_ticket ?? 0));
   const refund = Math.abs(Number(refundTotals?.refund_total ?? 0));
   const totalSalesAmount = revenue + refund;
   const refundRate =
@@ -218,63 +551,78 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       const orgContextError = requireOrgContext(auth);
       if (orgContextError) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
 
       const searchParams = request.nextUrl.searchParams;
       const isExport = searchParams.get('export') === 'true';
+      const fetchAll = searchParams.get('all') === 'true';
+      const allScope = isExport || fetchAll;
 
-      if (isExport) {
+      if (allScope) {
         const adminError = requireAdmin(auth);
         if (adminError) {
           return {
             payload: {
               error: 'Admin role required',
               error_code: 'ADMIN_REQUIRED',
+              success: false,
             },
             status: 403,
           };
         }
       }
 
-      let page = parseInt(searchParams.get('page') || '1', 10);
-      let pageSize = parseInt(
-        searchParams.get('pageSize') || PAGE_SIZE.toString(),
-        10
-      );
+      let page = parsePageNumber(searchParams.get('page'));
+      const pageSize = fetchAll
+        ? MAX_ALL_RESULTS
+        : parsePageSize(searchParams.get('pageSize'), isExport);
 
-      if (!Number.isFinite(page) || page < 1) page = 1;
-      if (!Number.isFinite(pageSize) || pageSize < 1) pageSize = PAGE_SIZE;
-
-      if (isExport) {
-        pageSize = Math.min(5000, pageSize);
+      if (allScope) {
         page = 1;
-      } else {
-        if (pageSize > 100) pageSize = 100;
       }
 
-      const fromDate = searchParams.get('fromDate') || undefined;
-      const toDate = searchParams.get('toDate') || undefined;
-      const search = searchParams.get('search') || undefined;
+      const rawFromDate = searchParams.get('fromDate') || undefined;
+      const rawToDate = searchParams.get('toDate') || undefined;
+      const dateFilters = parseDateFilters(rawFromDate, rawToDate);
+
+      const fromDate = dateFilters.ok ? dateFilters.fromDate : undefined;
+      const toDate = dateFilters.ok ? dateFilters.toDate : undefined;
+
+      const search = normalizeSearch(searchParams.get('search') || undefined);
+
       const hasClientParam = searchParams.get('hasClient');
       const hasClient =
         hasClientParam === 'true'
           ? true
           : hasClientParam === 'false'
             ? false
-            : undefined;
-      const instrumentId = searchParams.get('instrument_id') || undefined;
-      const sortColumn = searchParams.get('sortColumn') || 'sale_date';
-      const sortDirection = searchParams.get('sortDirection') || 'desc';
+            : hasClientParam
+              ? null
+              : undefined;
 
-      if (instrumentId && !validateUUID(instrumentId)) {
+      if (hasClient === null) {
         return {
-          payload: { error: 'Invalid instrument_id format' },
+          payload: {
+            error: 'hasClient must be true or false',
+            success: false,
+          },
           status: 400,
         };
       }
+
+      const instrumentId = searchParams.get('instrument_id') || undefined;
+      if (instrumentId && !validateUUID(instrumentId)) {
+        return {
+          payload: { error: 'Invalid instrument_id format', success: false },
+          status: 400,
+        };
+      }
+
+      const sortColumn = searchParams.get('sortColumn') || 'sale_date';
+      const sortDirection = searchParams.get('sortDirection') || 'desc';
 
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
@@ -284,35 +632,16 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         .select(SALES_SELECT_COLUMNS, { count: 'exact' })
         .eq('org_id', auth.orgId!);
 
-      let fromFilter = fromDate;
-      let toFilter = toDate;
-
-      if (
-        fromFilter &&
-        toFilter &&
-        validateDateString(fromFilter) &&
-        validateDateString(toFilter)
-      ) {
-        if (fromFilter > toFilter) {
-          [fromFilter, toFilter] = [toFilter, fromFilter];
-        }
-        query = query.gte('sale_date', fromFilter).lte('sale_date', toFilter);
-      } else {
-        if (fromFilter && validateDateString(fromFilter)) {
-          query = query.gte('sale_date', fromFilter);
-        }
-        if (toFilter && validateDateString(toFilter)) {
-          query = query.lte('sale_date', toFilter);
-        }
+      if (fromDate) {
+        query = query.gte('sale_date', fromDate);
       }
 
-      const sanitizedSearch = search ? sanitizeSearchTerm(search) : undefined;
-      const normalizedSearch = sanitizedSearch?.trim()
-        ? sanitizedSearch
-        : undefined;
+      if (toDate) {
+        query = query.lte('sale_date', toDate);
+      }
 
-      if (normalizedSearch) {
-        query = query.ilike('notes', `%${normalizedSearch}%`);
+      if (search) {
+        query = query.ilike('notes', escapeIlikePattern(search));
       }
 
       if (hasClient !== undefined) {
@@ -326,6 +655,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const ascending = sortDirection === 'asc';
+
       let orderColumn: string;
       switch (sortColumn) {
         case 'sale_date':
@@ -338,15 +668,19 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           orderColumn = 'sale_date';
       }
 
-      const { data, error, count } = isExport
-        ? await query.order(orderColumn, { ascending }).limit(pageSize)
+      const { data, error, count } = allScope
+        ? await query
+            .order(orderColumn, { ascending })
+            .limit(fetchAll ? pageSize + 1 : pageSize)
         : await query.order(orderColumn, { ascending }).range(from, to);
 
       if (error) {
         throw errorHandler.handleSupabaseError(error, 'Fetch sales history');
       }
 
-      const rows = data || [];
+      const rawRows = data || [];
+      const truncated = fetchAll && rawRows.length > pageSize;
+      const rows = truncated ? rawRows.slice(0, pageSize) : rawRows;
       const validationResult = safeValidate(rows, validateSalesHistoryArray);
       const validationWarning = !validationResult.success;
 
@@ -358,13 +692,14 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       }
 
       let totals = null;
-      if (!isExport && count !== null && count > 0) {
+
+      if (!allScope && count !== null && count > 0) {
         totals = await fetchSalesTotals(
           auth,
           {
-            fromDate: fromFilter,
-            toDate: toFilter,
-            search: normalizedSearch,
+            fromDate,
+            toDate,
+            search,
             hasClient,
             instrumentId,
           },
@@ -372,12 +707,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         );
       }
 
-      if (isExport) {
+      if (allScope) {
         if (!validationResult.success) {
           return {
             payload: {
               error:
                 'Sales export failed: invalid data detected in database rows.',
+              success: false,
             },
             status: 500,
           };
@@ -386,16 +722,28 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         return {
           payload: {
             data: validationResult.data,
+            pagination: {
+              page: 1,
+              pageSize: fetchAll ? validationResult.data.length : pageSize,
+              totalCount: count || 0,
+              totalPages: 1,
+            },
+            scope: 'all',
+            truncated,
+            success: true,
           },
           metadata: {
             page,
             recordCount: validationResult.data.length,
             totalCount: count || 0,
-            sortColumn,
-            sortDirection,
+            sortColumn: orderColumn,
+            sortDirection: ascending ? 'asc' : 'desc',
             instrumentId,
             isExport,
+            fetchAll,
             validationWarning: false,
+            scope: { enforced: true, orgId: auth.orgId },
+            truncated,
           },
         };
       }
@@ -409,18 +757,21 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
             totalCount: count || 0,
             totalPages: Math.max(1, Math.ceil((count || 0) / pageSize)),
           },
+          scope: 'paged',
           totals: totals || undefined,
+          success: true,
         },
         metadata: {
           page,
           recordCount: rows.length,
           totalCount: count || 0,
-          sortColumn,
-          sortDirection,
+          sortColumn: orderColumn,
+          sortDirection: ascending ? 'asc' : 'desc',
           instrumentId,
           isExport,
           hasTotals: totals !== null,
           validationWarning,
+          scope: { enforced: true, orgId: auth.orgId },
         },
       };
     }
@@ -441,7 +792,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       const orgContextError = requireOrgContext(auth);
       if (orgContextError) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
@@ -452,103 +803,57 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           payload: {
             error: 'Admin role required',
             error_code: 'ADMIN_REQUIRED',
+            success: false,
           },
           status: 403,
         };
       }
 
-      const body = await request.json();
-      const {
-        sale_price,
-        sale_date,
-        client_id,
-        instrument_id,
-        notes,
-        idempotency_key,
-      } = body;
+      const idempotency = readRequiredIdempotencyKey(request);
+      if (!idempotency.ok) {
+        return idempotency.result;
+      }
 
-      // 1. Domain Validation First (per revised plan)
-      if (
-        sale_price === undefined ||
-        sale_price === null ||
-        sale_date == null ||
-        sale_date === ''
-      ) {
+      const bodyResult = await readJsonObject(request);
+      if (!bodyResult.ok) {
         return {
-          payload: { error: 'Sale price and date are required.' },
+          payload: { error: bodyResult.error, success: false },
           status: 400,
         };
       }
 
-      if (!validateDateString(sale_date)) {
+      const parsedInput = parseCreateSaleInput(bodyResult.body);
+      if (!parsedInput.ok) {
         return {
-          payload: {
-            error: 'sale_date must be a valid date string (YYYY-MM-DD).',
-          },
-          status: 400,
+          payload: { error: parsedInput.error, success: false },
+          status: parsedInput.status,
         };
       }
 
-      const parsedPrice = Number(sale_price);
-      if (Number.isNaN(parsedPrice)) {
-        return {
-          payload: { error: 'Sale price must be a number.' },
-          status: 400,
-        };
-      }
-
-      if (parsedPrice === 0) {
-        return {
-          payload: { error: 'Sale price cannot be zero.' },
-          status: 400,
-        };
-      }
-
-      // 2. Idempotency Key Check Second
-      const idempotencyKey =
-        request.headers.get('Idempotency-Key')?.trim() ||
-        (typeof idempotency_key === 'string' ? idempotency_key.trim() : '');
-
-      if (!idempotencyKey) {
-        return {
-          payload: { error: 'Idempotency key is required.' },
-          status: 400,
-        };
-      }
+      const normalizedSaleInput = parsedInput.value;
 
       const validationResult = safeValidate(
-        {
-          sale_price: parsedPrice,
-          sale_date,
-          client_id: client_id || null,
-          instrument_id: instrument_id || null,
-          notes: notes || null,
-        },
+        normalizedSaleInput,
         validateCreateSalesHistory
       );
+
       if (!validationResult.success) {
         return {
           payload: {
             error: `Invalid sales history data: ${validationResult.error}`,
+            success: false,
           },
           status: 400,
         };
       }
 
-      const normalizedSaleInput = {
-        sale_price: parsedPrice,
-        sale_date,
-        client_id: client_id || null,
-        instrument_id: instrument_id || null,
-        notes: notes || null,
-      };
       const requestHash = buildSaleCreateRequestHash(normalizedSaleInput);
 
       const { data: saleId, error: createError } = await auth.userSupabase.rpc(
         'create_sale_atomic_idempotent',
         {
           p_route_key: 'POST:/api/sales',
-          p_idempotency_key: idempotencyKey,
+          p_idempotency_key: idempotency.idempotencyKey,
           p_request_hash: requestHash,
           p_sale_price: normalizedSaleInput.sale_price,
           p_sale_date: normalizedSaleInput.sale_date,
@@ -571,7 +876,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           errorMessage.includes('Idempotent request is already in progress')
         ) {
           return {
-            payload: { error: errorMessage },
+            payload: { error: errorMessage, success: false },
             status: 409,
           };
         }
@@ -582,7 +887,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           errorMessage.includes('Instrument not found')
         ) {
           return {
-            payload: { error: errorMessage },
+            payload: { error: errorMessage, success: false },
             status: 409,
           };
         }
@@ -590,21 +895,26 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         throw errorHandler.handleSupabaseError(createError, 'Create sale');
       }
 
-      // Production path: saleId is a UUID string → fetch and return full record
       if (typeof saleId === 'string') {
         const validatedData = await fetchSaleById(auth, saleId);
+
         return {
-          payload: { data: validatedData },
+          payload: { data: validatedData, success: true },
           status: 201,
-          metadata: { recordId: validatedData.id },
+          metadata: {
+            recordId: validatedData.id,
+            idempotencyKeyPresent: true,
+          },
         };
       }
 
-      // Mock/object path: RPC returned a non-null object (e.g. { sale_id: '...' })
       if (saleId !== null && typeof saleId === 'object') {
         return {
-          payload: { data: saleId },
+          payload: { data: saleId, success: true },
           status: 201,
+          metadata: {
+            idempotencyKeyPresent: true,
+          },
         };
       }
 
@@ -627,7 +937,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       const orgContextError = requireOrgContext(auth);
       if (orgContextError) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
@@ -638,75 +948,91 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           payload: {
             error: 'Admin role required',
             error_code: 'ADMIN_REQUIRED',
+            success: false,
           },
           status: 403,
         };
       }
 
-      const body = await request.json();
-      const { id, sale_price, notes } = body;
-
-      if (!id) {
+      const bodyResult = await readJsonObject(request);
+      if (!bodyResult.ok) {
         return {
-          payload: { error: 'Sale ID is required.' },
+          payload: { error: bodyResult.error, success: false },
+          status: 400,
+        };
+      }
+
+      const { id, sale_price, notes } = bodyResult.body;
+
+      if (typeof id !== 'string' || !id.trim()) {
+        return {
+          payload: { error: 'Sale ID is required.', success: false },
           status: 400,
         };
       }
 
       if (!validateUUID(id)) {
         return {
-          payload: { error: 'Invalid sale ID format' },
+          payload: { error: 'Invalid sale ID format', success: false },
           status: 400,
         };
       }
 
       let normalizedPrice: number | undefined = undefined;
+
       if (sale_price !== undefined && sale_price !== null) {
-        const parsed = Number(sale_price);
-        if (Number.isNaN(parsed)) {
+        const parsedPrice = parseSalePrice(sale_price);
+        if (!parsedPrice.ok) {
           return {
-            payload: { error: 'Sale price must be a number.' },
-            status: 400,
+            payload: { error: parsedPrice.error, success: false },
+            status: parsedPrice.status,
           };
         }
-        if (parsed === 0) {
-          return {
-            payload: { error: 'Sale price cannot be zero.' },
-            status: 400,
-          };
-        }
-        normalizedPrice = parsed;
+
+        normalizedPrice = parsedPrice.value;
       }
 
+      const normalizedNotes =
+        notes === undefined ? undefined : normalizeNotes(notes);
+
       const validationResult = safeValidate(
-        { sale_price: normalizedPrice, notes },
+        { sale_price: normalizedPrice, notes: normalizedNotes },
         validatePartialSalesHistory
       );
+
       if (!validationResult.success) {
         return {
-          payload: { error: `Invalid update data: ${validationResult.error}` },
+          payload: {
+            error: `Invalid update data: ${validationResult.error}`,
+            success: false,
+          },
           status: 400,
         };
       }
 
       if (normalizedPrice === undefined && notes === undefined) {
         return {
-          payload: { error: 'No fields to update.' },
+          payload: { error: 'No fields to update.', success: false },
           status: 400,
         };
       }
 
       const currentSale = await fetchSaleById(auth, id);
+
       const hasPriceChange =
         normalizedPrice !== undefined &&
         normalizedPrice !== currentSale.sale_price;
+
       const noteOnlyUpdate =
-        !hasPriceChange && notes !== undefined && notes !== currentSale.notes;
+        !hasPriceChange &&
+        notes !== undefined &&
+        normalizedNotes !== currentSale.notes;
 
       if (hasPriceChange) {
         const isRefundRequest =
           currentSale.sale_price > 0 &&
           normalizedPrice === -Math.abs(currentSale.sale_price);
+
         const isUndoRefundRequest =
           currentSale.sale_price < 0 &&
           normalizedPrice === Math.abs(currentSale.sale_price);
@@ -716,18 +1042,20 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
             payload: {
               error:
                 'Direct sale amount rewrites are not allowed. Record an adjustment instead.',
+              success: false,
             },
             status: 409,
           };
         }
 
         const adjustmentKind = isRefundRequest ? 'refund' : 'undo_refund';
+
         const { data: adjustmentId, error } = await auth.userSupabase.rpc(
           'create_sale_adjustment_atomic',
           {
             p_source_sale_id: id,
             p_adjustment_kind: adjustmentKind,
-            p_notes: notes ?? currentSale.notes ?? null,
+            p_notes: normalizedNotes ?? currentSale.notes ?? null,
           }
         );
 
@@ -738,7 +1066,6 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
               : 'Failed to create sale adjustment';
 
           if (isSaleConflict(errorMessage)) {
-            // Adjustment already exists — idempotent retry: return the existing record.
             const { data: existing } = await auth.userSupabase
               .from('sales_history')
               .select('*')
@@ -749,13 +1076,17 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
             if (existing) {
               return {
-                payload: { data: existing },
-                metadata: { id: existing.id },
+                payload: { data: existing, success: true },
+                metadata: {
+                  id: existing.id,
+                  idempotencyKeyPresent: true,
+                  replayedAdjustment: true,
+                },
               };
             }
 
             return {
-              payload: { error: errorMessage },
+              payload: { error: errorMessage, success: false },
               status: 409,
             };
           }
@@ -769,15 +1100,22 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         const adjustmentSale = await fetchSaleById(auth, adjustmentId);
 
         return {
-          payload: { data: adjustmentSale },
-          metadata: { id: adjustmentId },
+          payload: { data: adjustmentSale, success: true },
+          metadata: {
+            id: adjustmentId,
+            idempotencyKeyPresent: true,
+          },
         };
       }
 
       if (!noteOnlyUpdate) {
         return {
-          payload: { data: currentSale },
-          metadata: { id },
+          payload: { data: currentSale, success: true },
+          metadata: {
+            id,
+            idempotencyKeyPresent: true,
+            noOp: true,
+          },
         };
       }
 
@@ -785,7 +1123,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         'update_sale_notes_atomic',
         {
           p_sale_id: id,
-          p_notes: notes ?? null,
+          p_notes: normalizedNotes ?? null,
         }
       );
 
@@ -797,7 +1135,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
         if (isSaleConflict(errorMessage)) {
           return {
-            payload: { error: errorMessage },
+            payload: { error: errorMessage, success: false },
             status: 409,
           };
         }
@@ -808,8 +1146,11 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       const validatedData = await fetchSaleById(auth, updatedSaleId);
 
       return {
-        payload: { data: validatedData },
-        metadata: { id },
+        payload: { data: validatedData, success: true },
+        metadata: {
+          id,
+          idempotencyKeyPresent: true,
+        },
       };
     }
   );
