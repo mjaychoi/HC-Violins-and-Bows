@@ -15,6 +15,7 @@ interface AppLayoutProps {
   children: React.ReactNode;
   actionButton?: AppHeaderActionButton;
   headerActions?: React.ReactNode;
+  hideSidebar?: boolean;
 }
 
 export default function AppLayout({
@@ -22,6 +23,7 @@ export default function AppLayout({
   children,
   actionButton,
   headerActions = null,
+  hideSidebar = false,
 }: AppLayoutProps) {
   const { isExpanded, toggleSidebar } = useSidebarState();
   const pathname = usePathname();
@@ -95,15 +97,18 @@ export default function AppLayout({
       <AppHeader
         title={title}
         onToggleSidebar={toggleSidebar}
+        hideSidebarToggle={hideSidebar}
         actionButton={actionButton}
         headerActions={headerActions}
       />
 
       <div className="flex flex-1 overflow-hidden relative">
         {/* Sidebar - 모바일에서도 닫힌 상태로 항상 표시 (사라지지 않게) */}
-        <div className="flex-shrink-0 transition-all duration-300 ease-in-out z-50">
-          <AppSidebar isExpanded={isExpanded} currentPath={pathname} />
-        </div>
+        {!hideSidebar && (
+          <div className="flex-shrink-0 transition-all duration-300 ease-in-out z-50">
+            <AppSidebar isExpanded={isExpanded} currentPath={pathname} />
+          </div>
+        )}
 
         {/* Main Content */}
         <div className="flex-1 overflow-auto pb-8">{children}</div>

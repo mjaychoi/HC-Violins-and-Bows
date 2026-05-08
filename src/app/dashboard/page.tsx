@@ -268,6 +268,7 @@ export default function DashboardPage() {
     <ErrorBoundary>
       <AppLayout
         title="Dashboard"
+        hideSidebar={isModalOpen || detailsModalOpen}
         actionButton={
           canCreateInstrument || createInstrumentDisabledReason
             ? {
@@ -402,7 +403,6 @@ export default function DashboardPage() {
           isOpen={detailsModalOpen}
           onClose={closeDetailsModal}
           instrument={detailsModalInstrument}
-          onInstrumentCertificatesChanged={() => void reloadDashboard()}
         />
       </AppLayout>
     </ErrorBoundary>

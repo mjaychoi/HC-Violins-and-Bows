@@ -210,7 +210,7 @@ describe('InstrumentModal', () => {
     });
   });
 
-  it('should fetch certificates when modal opens and instrument has certificate', async () => {
+  it('does not fetch or render certificate controls in instrument details', async () => {
     mockApiFetch.mockResolvedValue({
       ok: true,
       json: async () => ({ data: [] }),
@@ -226,41 +226,85 @@ describe('InstrumentModal', () => {
 
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        '/api/instruments/inst-1/certificates'
+        '/api/instruments/inst-1/images'
       );
     });
+    expect(mockApiFetch).not.toHaveBeenCalledWith(
+      '/api/instruments/inst-1/certificates'
+    );
+    expect(screen.queryByText(/^Certificate/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Upload certificate PDF')
+    ).not.toBeInTheDocument();
   });
 
-  it('should not fetch certificates when instrument does not have certificate', async () => {
-    const instrumentWithoutCert = {
-      ...mockInstrument,
-      certificate: false,
-      certificate_name: null,
-      cost_price: null,
-      consignment_price: null,
-    };
+  it('uploads multiple instrument images from details', async () => {
+    const user = userEvent.setup();
+    const uploadedImages = [
+      {
+        id: 'img-2',
+        instrument_id: 'inst-1',
+        image_url: '/image2.jpg',
+        alt_text: null,
+        display_order: 1,
+        created_at: '2024-01-02T00:00:00Z',
+      },
+      {
+        id: 'img-3',
+        instrument_id: 'inst-1',
+        image_url: '/image3.jpg',
+        alt_text: null,
+        display_order: 2,
+        created_at: '2024-01-03T00:00:00Z',
+      },
+    ];
+
+    mockApiFetch.mockImplementation(async (_url, init) => {
+      if (init?.method === 'POST') {
+        return {
+          ok: true,
+          json: async () => ({ data: uploadedImages }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ data: [] }),
+      } as Response;
+    });
 
     render(
       <InstrumentModal
         isOpen={true}
         onClose={mockOnClose}
-        instrument={instrumentWithoutCert}
+        instrument={mockInstrument}
       />
     );
 
+    const input = screen.getByLabelText('Upload instrument images');
+    await user.upload(input, [
+      new File(['one'], 'one.png', { type: 'image/png' }),
+      new File(['two'], 'two.webp', { type: 'image/webp' }),
+    ]);
+
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        '/api/instruments/inst-1/images'
+        '/api/instruments/inst-1/images',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.any(FormData),
+        })
       );
     });
 
-    // ✅ 변경: InstrumentModal은 항상 certificates를 fetch하도록 수정됨
-    // (certificate section을 항상 표시하고 명확한 상태 메시지를 보여주기 위해)
-    await waitFor(() => {
-      expect(mockApiFetch).toHaveBeenCalledWith(
-        '/api/instruments/inst-1/certificates'
-      );
-    });
+    const uploadCall = mockApiFetch.mock.calls.find(
+      ([, init]) => init?.method === 'POST'
+    );
+    const body = uploadCall?.[1]?.body as FormData;
+    expect(body.getAll('images')).toHaveLength(2);
+    expect(mockShowSuccess).toHaveBeenCalledWith(
+      '2 images uploaded successfully.'
+    );
   });
 
   it('should display loading state for images', async () => {
@@ -351,96 +395,6 @@ describe('InstrumentModal', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('optimized-image')).toBeInTheDocument();
-    });
-  });
-
-  it('shows certificate fetch failure separately from empty state', async () => {
-    mockApiFetchByUrl({
-      '/api/instruments/inst-1/images': { data: [] },
-      '/api/instruments/inst-1/certificates': async () => {
-        throw new Error('certificate error');
-      },
-    });
-
-    render(
-      <InstrumentModal
-        isOpen={true}
-        onClose={mockOnClose}
-        instrument={mockInstrument}
-      />
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getAllByText('Failed to load media').length
-      ).toBeGreaterThan(0);
-    });
-    expect(
-      screen.queryByText('No certificate files uploaded yet.')
-    ).not.toBeInTheDocument();
-  });
-
-  it('shows warning when certificate delete returns partial_success', async () => {
-    const user = userEvent.setup();
-
-    mockApiFetchByUrl({
-      '/api/instruments/inst-1/images': { data: [] },
-      '/api/instruments/inst-1/certificates': {
-        data: [
-          {
-            id: 'cert-1',
-            name: '1234567890_cert-1.pdf',
-            path: '/certificates/cert-1.pdf',
-            size: 1024,
-            createdAt: '2024-01-01T00:00:00Z',
-          },
-        ],
-      },
-      '/api/instruments/inst-1/certificates?id=cert-1': {
-        ok: true,
-        json: async () => ({
-          result: 'partial_success',
-          message:
-            'Certificate removed from the app, but storage cleanup failed.',
-        }),
-      },
-    });
-
-    render(
-      <InstrumentModal
-        isOpen={true}
-        onClose={mockOnClose}
-        instrument={mockInstrument}
-      />
-    );
-
-    const deleteButtons = await screen.findAllByRole('button', {
-      name: /^delete$/i,
-    });
-    await user.click(deleteButtons[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText('Delete Certificate')).toBeInTheDocument();
-    });
-
-    const confirmButton = screen
-      .getAllByRole('button')
-      .filter(
-        btn =>
-          btn.textContent === 'Delete' && btn.className.includes('bg-red-600')
-      );
-
-    if (confirmButton.length > 0) {
-      await user.click(confirmButton[confirmButton.length - 1]);
-    }
-
-    await waitFor(() => {
-      expect(mockShowWarning).toHaveBeenCalledWith(
-        'Certificate removed from the app, but storage cleanup failed.'
-      );
-      expect(mockShowSuccess).not.toHaveBeenCalledWith(
-        'Certificate deleted successfully'
-      );
     });
   });
 });

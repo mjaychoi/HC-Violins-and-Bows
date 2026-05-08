@@ -7,30 +7,16 @@ import OptimizedImage from '@/components/common/OptimizedImage';
 import {
   formatInstrumentPrice,
   formatInstrumentYear,
-  formatFileSize,
 } from '../utils/dashboardUtils';
 import { apiFetch } from '@/utils/apiFetch';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { usePermissions } from '@/hooks/usePermissions';
-import { downloadCertificatePdf } from '../utils/certificateDownload';
-import {
-  handleApiResponse,
-  readApiResponseBody,
-} from '@/utils/handleApiResponse';
+import { handleApiResponse } from '@/utils/handleApiResponse';
 
 interface InstrumentModalProps {
   isOpen: boolean;
   onClose: () => void;
   instrument: Instrument | null;
-  onInstrumentCertificatesChanged?: () => void;
-}
-
-interface CertificateFile {
-  id?: string;
-  name: string;
-  path: string;
-  size: number;
-  createdAt: string | null;
 }
 
 type MediaLoadState = 'loading' | 'success' | 'empty' | 'error';
@@ -39,34 +25,19 @@ export default function InstrumentModal({
   isOpen,
   onClose,
   instrument,
-  onInstrumentCertificatesChanged,
 }: InstrumentModalProps) {
   const { canUploadInstrumentMedia } = usePermissions();
   const modalRef = useRef<HTMLDivElement>(null);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
   const [images, setImages] = useState<InstrumentImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [imageState, setImageState] = useState<MediaLoadState>('loading');
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const [certificateFiles, setCertificateFiles] = useState<CertificateFile[]>(
-    []
-  );
-  const [loadingCertificates, setLoadingCertificates] = useState(false);
-  const [certificateState, setCertificateState] =
-    useState<MediaLoadState>('loading');
-  const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
-  const [deletingFile, setDeletingFile] = useState<string | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<{
-    id?: string;
-    fileName: string;
-  } | null>(null);
-  const { showSuccess, showWarning, handleError } = useAppFeedback();
-  const hasCertificate = Boolean(instrument?.has_certificate);
-  const certFileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadingCertificate, setUploadingCertificate] = useState(false);
+  const { showSuccess, handleError } = useAppFeedback();
 
   // Request ID counters to handle concurrent requests
   const imageReqIdRef = useRef(0);
-  const certificateReqIdRef = useRef(0);
 
   useOutsideClose(modalRef, {
     isOpen,
@@ -115,161 +86,49 @@ export default function InstrumentModal({
     [handleError]
   );
 
-  const fetchCertificates = useCallback(
-    async (instrumentId: string) => {
-      const reqId = ++certificateReqIdRef.current;
-      setLoadingCertificates(true);
-      setCertificateState('loading');
-      try {
-        const response = await apiFetch(
-          `/api/instruments/${instrumentId}/certificates`
-        );
-        if (!response.ok) {
-          throw new Error(
-            `Failed to fetch certificates: ${response.statusText}`
-          );
-        }
-
-        if (certificateReqIdRef.current === reqId) {
-          const files = await handleApiResponse<CertificateFile[]>(
-            response,
-            'Failed to fetch certificates'
-          );
-          setCertificateFiles(files);
-          setCertificateState(files.length > 0 ? 'success' : 'empty');
-        }
-      } catch (error) {
-        if (certificateReqIdRef.current === reqId) {
-          setCertificateFiles([]);
-          setCertificateState('error');
-          handleError(error, 'InstrumentCertificatesFetch');
-        }
-      } finally {
-        if (certificateReqIdRef.current === reqId) {
-          setLoadingCertificates(false);
-        }
-      }
-    },
-    [handleError]
-  );
-
-  // Fetch images and certificates when modal opens
+  // Fetch images when modal opens
   useEffect(() => {
     if (isOpen && instrument?.id) {
       setSelectedImageIndex(0);
       fetchImages(instrument.id);
-      fetchCertificates(instrument.id);
     } else {
       setImages([]);
       setImageState('empty');
       setSelectedImageIndex(0);
-      setCertificateFiles([]);
-      setCertificateState('empty');
     }
-  }, [fetchCertificates, fetchImages, isOpen, instrument?.id]);
+  }, [fetchImages, isOpen, instrument?.id]);
 
-  const handleCertificateFileChange = async (
+  const handleImageFileChange = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = '';
-    if (!file || !instrument?.id || !canUploadInstrumentMedia) return;
-
-    setUploadingCertificate(true);
-    try {
-      const fd = new FormData();
-      fd.append('certificate', file);
-      const response = await apiFetch(
-        `/api/instruments/${instrument.id}/certificates`,
-        { method: 'POST', body: fd }
-      );
-      const body = await readApiResponseBody<{ message?: string }>(
-        response,
-        'Failed to upload certificate'
-      );
-      showSuccess(body.message || 'Certificate uploaded successfully.');
-      await fetchCertificates(instrument.id);
-      onInstrumentCertificatesChanged?.();
-    } catch (error) {
-      handleError(error, 'CertificateUpload');
-    } finally {
-      setUploadingCertificate(false);
-    }
-  };
-
-  const handleDownloadCertificate = async (file: CertificateFile) => {
-    if (!instrument?.id) return;
-    if (!file?.name && !file?.id) {
-      handleError(
-        new Error('No certificate file selected'),
-        'CertificateDownload'
-      );
+    if (files.length === 0 || !instrument?.id || !canUploadInstrumentMedia) {
       return;
     }
-    // Use id as key if available, otherwise fall back to name
-    const fileKey = file.id || file.name;
-    setDownloadingFile(fileKey);
-    try {
-      const query = file.id
-        ? `id=${encodeURIComponent(file.id)}`
-        : `file=${encodeURIComponent(file.name)}`;
-      const safe =
-        instrument.serial_number?.replace(/[^a-zA-Z0-9]/g, '_') ||
-        instrument.id.slice(0, 8);
-      const downloadFileName = file.name.replace(/^\d+_/, '');
-      await downloadCertificatePdf({
-        url: `/api/instruments/${instrument.id}/certificates?${query}`,
-        downloadFileName: safe
-          ? `${safe}_${downloadFileName}`
-          : downloadFileName,
-        errorContext: 'CertificateDownload',
-        showSuccess,
-        handleError,
-      });
-    } catch (error) {
-      handleError(error, 'CertificateDownload');
-    } finally {
-      setDownloadingFile(null);
-    }
-  };
 
-  const handleDeleteCertificate = async (file: CertificateFile) => {
-    if (!canUploadInstrumentMedia) return;
-    if (!instrument?.id) return;
-    // Use id as key if available, otherwise fall back to name
-    const fileKey = file.id || file.name;
-    setDeletingFile(fileKey);
+    setUploadingImages(true);
     try {
-      const query = file.id
-        ? `id=${encodeURIComponent(file.id)}`
-        : `file=${encodeURIComponent(file.name)}`;
+      const fd = new FormData();
+      files.forEach(file => fd.append('images', file));
       const response = await apiFetch(
-        `/api/instruments/${instrument.id}/certificates?${query}`,
-        {
-          method: 'DELETE',
-        }
+        `/api/instruments/${instrument.id}/images`,
+        { method: 'POST', body: fd }
       );
-
-      const result = await readApiResponseBody<{
-        result?: 'full_success' | 'partial_success';
-        message?: string;
-      }>(response, 'Failed to delete certificate');
-
-      if (result.result === 'partial_success') {
-        showWarning(
-          result.message ||
-            'Deleted from the app, but storage cleanup failed. Please contact support if needed.'
-        );
-      } else {
-        showSuccess(result.message || 'Certificate deleted successfully');
-      }
-      // Refresh certificate list
-      await fetchCertificates(instrument.id);
-      setShowDeleteConfirm(null);
+      const uploaded = await handleApiResponse<InstrumentImage[]>(
+        response,
+        'Failed to upload images'
+      );
+      showSuccess(
+        uploaded.length === 1
+          ? 'Image uploaded successfully.'
+          : `${uploaded.length} images uploaded successfully.`
+      );
+      await fetchImages(instrument.id);
     } catch (error) {
-      handleError(error, 'CertificateDelete');
+      handleError(error, 'InstrumentImageUpload');
     } finally {
-      setDeletingFile(null);
+      setUploadingImages(false);
     }
   };
 
@@ -285,8 +144,6 @@ export default function InstrumentModal({
 
   const selectedImage = images[selectedImageIndex];
   const hasImageContent = imageState === 'success' && images.length > 0;
-  const hasCertificateContent =
-    certificateState === 'success' && certificateFiles.length > 0;
 
   return (
     <div
@@ -458,264 +315,32 @@ export default function InstrumentModal({
                 </div>
               )}
 
-              {/* Certificate Section - Always show */}
-              <div className="pt-4 border-t border-gray-200">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">
-                  Certificate{certificateFiles.length > 1 ? 's' : ''}
-                </h4>
-                {loadingCertificates ? (
-                  <div className="space-y-2">
-                    {[1, 2].map(i => (
-                      <div
-                        key={i}
-                        className="animate-pulse flex items-center justify-between p-2 border border-gray-200 rounded-lg"
-                      >
-                        <div className="flex items-center gap-2 flex-1">
-                          <div className="h-5 w-5 bg-gray-300 rounded"></div>
-                          <div className="flex-1">
-                            <div className="h-4 bg-gray-300 rounded w-3/4 mb-2"></div>
-                            <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                          </div>
-                        </div>
-                        <div className="h-8 w-20 bg-gray-300 rounded"></div>
-                      </div>
-                    ))}
-                  </div>
-                ) : certificateState === 'error' ? (
-                  <div className="flex items-center justify-between gap-3 p-3 border border-red-200 rounded-lg bg-red-50">
-                    <p className="text-xs text-red-700">Failed to load media</p>
+              {canUploadInstrumentMedia ? (
+                <div className="pt-4 border-t border-gray-200">
+                  <input
+                    ref={imageFileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    multiple
+                    className="sr-only"
+                    aria-label="Upload instrument images"
+                    onChange={handleImageFileChange}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        instrument?.id && fetchCertificates(instrument.id)
-                      }
-                      className="px-3 py-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-md hover:bg-red-100"
-                    >
-                      Retry
-                    </button>
-                  </div>
-                ) : hasCertificateContent ? (
-                  <div className="space-y-2">
-                    {certificateFiles.map(file => {
-                      // Use id as key if available, otherwise fall back to name
-                      const fileKey = file.id || file.name;
-                      const isDownloading = downloadingFile === fileKey;
-                      const isDeleting = deletingFile === fileKey;
-                      return (
-                        <div
-                          key={file.name}
-                          className="flex items-center justify-between p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <svg
-                                className="h-5 w-5 text-red-600 shrink-0"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-                                />
-                              </svg>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-gray-700 truncate">
-                                  {file.name.replace(/^\d+_/, '')}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {file.createdAt && (
-                                    <span>
-                                      {new Date(
-                                        file.createdAt
-                                      ).toLocaleDateString()}
-                                    </span>
-                                  )}
-                                  {file.size > 0 && (
-                                    <span
-                                      className={file.createdAt ? ' · ' : ''}
-                                    >
-                                      {formatFileSize(file.size)}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="ml-3 flex items-center gap-2 shrink-0">
-                            <button
-                              onClick={() => handleDownloadCertificate(file)}
-                              disabled={isDownloading || isDeleting}
-                              className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                            >
-                              {isDownloading ? (
-                                <>
-                                  <svg
-                                    className="animate-spin h-3 w-3"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <circle
-                                      className="opacity-25"
-                                      cx="12"
-                                      cy="12"
-                                      r="10"
-                                      stroke="currentColor"
-                                      strokeWidth="4"
-                                    ></circle>
-                                    <path
-                                      className="opacity-75"
-                                      fill="currentColor"
-                                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                    ></path>
-                                  </svg>
-                                  Downloading
-                                </>
-                              ) : (
-                                'Download'
-                              )}
-                            </button>
-                            <button
-                              onClick={() =>
-                                canUploadInstrumentMedia &&
-                                setShowDeleteConfirm({
-                                  id: file.id,
-                                  fileName: file.name,
-                                })
-                              }
-                              title={
-                                canUploadInstrumentMedia
-                                  ? 'Delete certificate'
-                                  : 'Admin only'
-                              }
-                              disabled={
-                                isDownloading ||
-                                isDeleting ||
-                                !canUploadInstrumentMedia
-                              }
-                              className="px-3 py-1.5 bg-red-600 text-white text-xs rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                            >
-                              {isDeleting ? (
-                                <>
-                                  <svg
-                                    className="animate-spin h-3 w-3"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <circle
-                                      className="opacity-25"
-                                      cx="12"
-                                      cy="12"
-                                      r="10"
-                                      stroke="currentColor"
-                                      strokeWidth="4"
-                                    ></circle>
-                                    <path
-                                      className="opacity-75"
-                                      fill="currentColor"
-                                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                    ></path>
-                                  </svg>
-                                  Deleting
-                                </>
-                              ) : (
-                                'Delete'
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-500">
-                    {hasCertificate
-                      ? 'No certificate files uploaded yet.'
-                      : 'Marked as no certificate'}
-                  </p>
-                )}
-                {canUploadInstrumentMedia ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <input
-                      ref={certFileInputRef}
-                      type="file"
-                      accept="application/pdf,.pdf"
-                      className="sr-only"
-                      aria-label="Upload certificate PDF"
-                      onChange={handleCertificateFileChange}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => certFileInputRef.current?.click()}
-                      disabled={uploadingCertificate || loadingCertificates}
+                      onClick={() => imageFileInputRef.current?.click()}
+                      disabled={uploadingImages || loadingImages}
                       className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {uploadingCertificate ? 'Uploading…' : 'Upload PDF'}
+                      {uploadingImages ? 'Uploading...' : 'Upload Images'}
                     </button>
                     <span className="text-xs text-gray-500">
-                      PDF only, max 100MB
+                      JPG, PNG, or WebP. You can select multiple files.
                     </span>
                   </div>
-                ) : null}
-              </div>
-
-              {/* Delete Confirmation Dialog */}
-              {showDeleteConfirm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">
-                      Delete Certificate
-                    </h3>
-                    <p className="text-sm text-gray-600 mb-6">
-                      Are you sure you want to delete &quot;
-                      {showDeleteConfirm.fileName.replace(/^\d+_/, '')}
-                      &quot;? This action cannot be undone.
-                    </p>
-                    <div className="flex justify-end gap-3">
-                      <button
-                        onClick={() => setShowDeleteConfirm(null)}
-                        disabled={
-                          deletingFile ===
-                          (showDeleteConfirm.id || showDeleteConfirm.fileName)
-                        }
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={() =>
-                          handleDeleteCertificate({
-                            id: showDeleteConfirm.id,
-                            name: showDeleteConfirm.fileName,
-                            path: '',
-                            size: 0,
-                            createdAt: null,
-                          })
-                        }
-                        title={
-                          canUploadInstrumentMedia ? undefined : 'Admin only'
-                        }
-                        disabled={
-                          deletingFile ===
-                            (showDeleteConfirm.id ||
-                              showDeleteConfirm.fileName) ||
-                          !canUploadInstrumentMedia
-                        }
-                        className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {deletingFile ===
-                        (showDeleteConfirm.id || showDeleteConfirm.fileName)
-                          ? 'Deleting...'
-                          : 'Delete'}
-                      </button>
-                    </div>
-                  </div>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* Right Column - Details */}
@@ -785,13 +410,6 @@ export default function InstrumentModal({
                     </div>
                   </div>
                 )}
-
-                <div className="col-span-2">
-                  <div className="text-xs text-gray-500 mb-1">Certificate</div>
-                  <div className="text-sm text-gray-900">
-                    {hasCertificate ? 'Yes' : 'No'}
-                  </div>
-                </div>
 
                 {instrument.note && (
                   <div className="col-span-2">
