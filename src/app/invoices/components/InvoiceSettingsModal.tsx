@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Modal from '@/components/common/modals/Modal';
 import { apiFetch } from '@/utils/apiFetch';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
@@ -9,6 +9,7 @@ import { logError } from '@/utils/logger';
 import { errorHandler } from '@/utils/errorHandler';
 import { handleApiResponse } from '@/utils/handleApiResponse';
 import type { AppError } from '@/types/errors';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 type InvoiceSettings = {
   business_name: string;
@@ -40,6 +41,24 @@ const empty: InvoiceSettings = {
   default_currency: 'USD',
 };
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+function normalizeInvoiceSettings(
+  data: Partial<InvoiceSettings> | null | undefined
+): InvoiceSettings {
+  return {
+    ...empty,
+    ...(data || {}),
+    default_exchange_rate:
+      data?.default_exchange_rate === null ||
+      data?.default_exchange_rate === undefined
+        ? ''
+        : String(data.default_exchange_rate),
+  };
+}
+
 interface InvoiceSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -52,6 +71,10 @@ export default function InvoiceSettingsModal({
   onSaved,
 }: InvoiceSettingsModalProps) {
   const { showSuccess, handleError } = useAppFeedback();
+  const { tenantIdentityKey, isTenantTransitioning } = useTenantIdentity();
+  const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+  const requestIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
@@ -65,23 +88,61 @@ export default function InvoiceSettingsModal({
     []
   );
 
+  useEffect(() => {
+    tenantIdentityKeyRef.current = tenantIdentityKey;
+    requestIdRef.current += 1;
+    abortRef.current?.abort();
+    setForm(empty);
+    setLoadError(null);
+    setStatus(isTenantTransitioning ? 'loading' : 'success');
+    setLoading(isOpen && isTenantTransitioning);
+  }, [isOpen, isTenantTransitioning, tenantIdentityKey]);
+
   const load = useCallback(async () => {
+    if (isTenantTransitioning) return;
+
+    const startedTenantIdentityKey = tenantIdentityKeyRef.current;
+    const requestId = ++requestIdRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setStatus('loading');
     setLoadError(null);
     try {
-      const res = await apiFetch('/api/invoices/invoice_settings');
-
-      const data = await handleApiResponse<Partial<InvoiceSettings>>(
-        res,
-        'Failed to load invoice settings'
-      );
-      setForm({
-        ...empty,
-        ...(data || {}),
+      const res = await apiFetch('/api/invoices/invoice_settings', {
+        signal: controller.signal,
       });
+      if (
+        requestId !== requestIdRef.current ||
+        tenantIdentityKeyRef.current !== startedTenantIdentityKey
+      ) {
+        return;
+      }
+
+      const data = await handleApiResponse<Partial<InvoiceSettings> | null>(
+        res,
+        'Failed to load invoice settings',
+        { allowNullData: true }
+      );
+      if (
+        requestId !== requestIdRef.current ||
+        tenantIdentityKeyRef.current !== startedTenantIdentityKey
+      ) {
+        return;
+      }
+
+      setForm(normalizeInvoiceSettings(data));
       setStatus('success');
     } catch (e) {
+      if (isAbortError(e)) return;
+      if (
+        requestId !== requestIdRef.current ||
+        tenantIdentityKeyRef.current !== startedTenantIdentityKey
+      ) {
+        return;
+      }
       const appError =
         handleError(e, 'Load invoice settings') ??
         errorHandler.normalizeError(e, 'Load invoice settings');
@@ -89,14 +150,23 @@ export default function InvoiceSettingsModal({
       setStatus('error');
       setLoadError(appError);
     } finally {
-      setLoading(false);
+      if (
+        requestId === requestIdRef.current &&
+        tenantIdentityKeyRef.current === startedTenantIdentityKey
+      ) {
+        setLoading(false);
+      }
     }
-  }, [handleError]);
+  }, [handleError, isTenantTransitioning]);
 
   useEffect(() => {
     if (isOpen) {
       void load();
     }
+    return () => {
+      requestIdRef.current += 1;
+      abortRef.current?.abort();
+    };
   }, [isOpen, load]);
 
   const set = (k: keyof InvoiceSettings) => (v: string) =>

@@ -28,9 +28,12 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { logError } from '@/utils/logger';
 import { useRouter } from 'next/navigation';
 import { errorHandler } from '@/utils/errorHandler';
-import { createApiResponseErrorFromResponse } from '@/utils/handleApiResponse';
-import { handleApiResponse } from '@/utils/handleApiResponse';
+import {
+  createApiResponseErrorFromResponse,
+  handleApiResponse,
+} from '@/utils/handleApiResponse';
 import type { AppError } from '@/types/errors';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 const DEFAULT_SORT_COLUMN: InvoiceSortColumn = 'invoice_date';
 const DEFAULT_SORT_DIRECTION = 'desc';
 const INVOICE_SORT_COLUMNS_SET = new Set(INVOICE_SORT_COLUMNS);
@@ -68,6 +71,7 @@ function InvoicesPageContent() {
     listDiagnostics,
   } = useInvoices();
   const { showSuccess, showWarning, handleError } = useAppFeedback();
+  const { tenantIdentityKey, isTenantTransitioning } = useTenantIdentity();
   const {
     canCreateInvoice,
     createInvoiceDisabledReason,
@@ -151,6 +155,11 @@ function InvoicesPageContent() {
   >('idle');
   const [invoiceSettingsError, setInvoiceSettingsError] =
     useState<AppError | null>(null);
+  const invoiceSettingsTenantIdentityKeyRef = useRef<string | null>(
+    tenantIdentityKey
+  );
+  const invoiceSettingsRequestIdRef = useRef(0);
+  const invoiceSettingsAbortRef = useRef<AbortController | null>(null);
 
   // Confirmation dialog state
   const [confirmDeleteInvoice, setConfirmDeleteInvoice] =
@@ -680,17 +689,36 @@ function InvoicesPageContent() {
     setInvoiceSettingsError(null);
   }, []);
 
+  useEffect(() => {
+    invoiceSettingsTenantIdentityKeyRef.current = tenantIdentityKey;
+    invoiceSettingsRequestIdRef.current += 1;
+    invoiceSettingsAbortRef.current?.abort();
+    setInvoiceSettings(null);
+    setInvoiceSettingsStatus('idle');
+    setInvoiceSettingsError(null);
+  }, [tenantIdentityKey]);
+
   const loadInvoiceSettingsForCreate = useCallback(async () => {
+    if (isTenantTransitioning) return;
+
+    const startedTenantIdentityKey =
+      invoiceSettingsTenantIdentityKeyRef.current;
+    const requestId = ++invoiceSettingsRequestIdRef.current;
+    invoiceSettingsAbortRef.current?.abort();
+    const controller = new AbortController();
+    invoiceSettingsAbortRef.current = controller;
+
     setInvoiceSettingsStatus('loading');
     setInvoiceSettingsError(null);
     try {
-      const res = await apiFetch('/api/invoices/invoice_settings');
-
-      if (!res.ok) {
-        throw await createApiResponseErrorFromResponse(
-          res,
-          'Failed to load invoice settings'
-        );
+      const res = await apiFetch('/api/invoices/invoice_settings', {
+        signal: controller.signal,
+      });
+      if (
+        requestId !== invoiceSettingsRequestIdRef.current ||
+        invoiceSettingsTenantIdentityKeyRef.current !== startedTenantIdentityKey
+      ) {
+        return;
       }
 
       const data =
@@ -706,7 +734,16 @@ function InvoicesPageContent() {
           default_conditions?: string;
           default_exchange_rate?: string;
           default_currency?: string;
-        }>(res, 'Failed to load invoice settings')) || {};
+        } | null>(res, 'Failed to load invoice settings', {
+          allowNullData: true,
+        })) || {};
+      if (
+        requestId !== invoiceSettingsRequestIdRef.current ||
+        invoiceSettingsTenantIdentityKeyRef.current !== startedTenantIdentityKey
+      ) {
+        return;
+      }
+
       setInvoiceSettings({
         business_name: data.business_name,
         address: data.address,
@@ -722,6 +759,15 @@ function InvoicesPageContent() {
       });
       setInvoiceSettingsStatus('success');
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+      if (
+        requestId !== invoiceSettingsRequestIdRef.current ||
+        invoiceSettingsTenantIdentityKeyRef.current !== startedTenantIdentityKey
+      ) {
+        return;
+      }
       const appError =
         handleError(error, 'Load invoice settings') ??
         errorHandler.normalizeError(error, 'Load invoice settings');
@@ -730,13 +776,17 @@ function InvoicesPageContent() {
       setInvoiceSettingsStatus('error');
       setInvoiceSettingsError(appError);
     }
-  }, [handleError]);
+  }, [handleError, isTenantTransitioning]);
 
   // Load invoice settings when modal opens
   useEffect(() => {
     if (isModalOpen && !editingInvoice) {
       void loadInvoiceSettingsForCreate();
     }
+    return () => {
+      invoiceSettingsRequestIdRef.current += 1;
+      invoiceSettingsAbortRef.current?.abort();
+    };
   }, [isModalOpen, editingInvoice, loadInvoiceSettingsForCreate]);
 
   // Handle add new invoice
