@@ -6,7 +6,10 @@ import path from 'path';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
-import { requireOrgContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 
 import { errorHandler } from '@/utils/errorHandler';
 import { logApiRequest, logWarn } from '@/utils/logger';
@@ -29,11 +32,59 @@ import {
   getOrCreateRequestId,
   withRequestIdHeader,
 } from '@/app/api/_utils/requestContext';
+import { todayLocalYMD } from '@/utils/dateParsing';
 
-// FIXED: Ensure Node.js runtime for PDF generation (Edge runtime breaks react-pdf)
 export const runtime = 'nodejs';
 
-// FIXED: Promise cache to prevent race conditions on concurrent requests
+const MAX_PDF_SIZE = 20 * 1024 * 1024;
+const PDF_GENERATION_TIMEOUT_MS = 15_000;
+
+const nowMs = () =>
+  typeof globalThis.performance !== 'undefined'
+    ? globalThis.performance.now()
+    : Date.now();
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
+}
+
+function isSupabaseLikeError(error: unknown): boolean {
+  return (
+    Boolean(error) &&
+    typeof error === 'object' &&
+    (((error as { code?: string }).code ?? '').startsWith('PGRST') ||
+      (error as { name?: string }).name === 'PostgrestError')
+  );
+}
+
+function getPostgrestStatus(error: unknown): number {
+  if (
+    error &&
+    typeof error === 'object' &&
+    (error as { code?: string }).code === 'PGRST116'
+  ) {
+    return 404;
+  }
+
+  return 500;
+}
+
 let reactPdfLoader: Promise<{
   renderToBuffer: typeof import('@react-pdf/renderer').renderToBuffer;
   InvoiceDocument: React.ComponentType<InvoiceDocumentProps>;
@@ -72,12 +123,11 @@ async function loadReactPDF() {
   return reactPdfLoader;
 }
 
-const MAX_PDF_SIZE = 20 * 1024 * 1024;
-
 function sanitizeFilename(input: string): string {
   const safe = String(input)
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
     .trim()
     .substring(0, 200);
 
@@ -86,10 +136,10 @@ function sanitizeFilename(input: string): string {
 
 function createContentDisposition(filename: string, inline: boolean): string {
   const safeFilename = sanitizeFilename(filename);
-  // filename already includes "invoice-" prefix, so don't add it again
   const baseFilename = `${safeFilename}.pdf`;
   const encoded = encodeURIComponent(baseFilename);
   const disposition = inline ? 'inline' : 'attachment';
+
   return `${disposition}; filename="${baseFilename}"; filename*=UTF-8''${encoded}`;
 }
 
@@ -110,29 +160,113 @@ const BANKING_INFO = {
   accountNumber: process.env.NEXT_PUBLIC_BANK_ACCOUNT || '',
 };
 
-// Load logo as base64, fallback to absolute URL
 async function resolveLogoSrc(): Promise<string | null> {
   try {
     const logoPath = path.join(process.cwd(), 'public', 'logo.png');
     const logoBuf = await fs.readFile(logoPath);
+
     return `data:image/png;base64,${logoBuf.toString('base64')}`;
   } catch (error) {
     const absoluteUrl =
       process.env.NEXT_PUBLIC_LOGO_URL || 'https://www.hcviolins.com/logo.png';
+
     logWarn(
       'Failed to read logo from public folder, will try absolute URL:',
       error instanceof Error ? error.message : String(error)
     );
+
     return absoluteUrl || null;
   }
 }
 
-/**
- * GET /api/invoices/[id]/pdf
- * Generate and download PDF invoice for an invoice record
- *
- * FIXED: Next.js 15+ route handlers receive params as Promise<{ id: string }>
- */
+type NormalizedInvoice = {
+  invoice_date?: string | null;
+  due_date?: string | null;
+  invoice_number?: string | null;
+  currency?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  subtotal?: number | null;
+  tax?: number | null;
+  total?: number | null;
+  business_name?: string | null;
+  business_address?: string | null;
+  business_phone?: string | null;
+  business_email?: string | null;
+  bank_account_holder?: string | null;
+  bank_name?: string | null;
+  bank_swift_code?: string | null;
+  bank_account_number?: string | null;
+  default_conditions?: string | null;
+  default_exchange_rate?: string | null;
+  client: {
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+    contact_number?: string | null;
+    address?: string | null;
+  } | null;
+  items: {
+    description: string;
+    qty: number;
+    rate: number;
+    amount: number;
+    image_url: string | null;
+    item_number?: string | null;
+  }[];
+};
+
+function readStringField(
+  record: Record<string, unknown>,
+  key: string
+): string | null {
+  const value = record[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function readNumberField(
+  record: Record<string, unknown>,
+  key: string
+): number | null {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeInvoiceRecord(invoice: unknown): NormalizedInvoice {
+  const invoiceRecord = invoice as Record<string, unknown>;
+
+  return {
+    invoice_date: readStringField(invoiceRecord, 'invoice_date'),
+    due_date: readStringField(invoiceRecord, 'due_date'),
+    invoice_number: readStringField(invoiceRecord, 'invoice_number'),
+    currency: readStringField(invoiceRecord, 'currency'),
+    status: readStringField(invoiceRecord, 'status'),
+    notes: readStringField(invoiceRecord, 'notes'),
+    subtotal: readNumberField(invoiceRecord, 'subtotal'),
+    tax: readNumberField(invoiceRecord, 'tax'),
+    total: readNumberField(invoiceRecord, 'total'),
+
+    business_name: readStringField(invoiceRecord, 'business_name'),
+    business_address: readStringField(invoiceRecord, 'business_address'),
+    business_phone: readStringField(invoiceRecord, 'business_phone'),
+    business_email: readStringField(invoiceRecord, 'business_email'),
+
+    bank_account_holder: readStringField(invoiceRecord, 'bank_account_holder'),
+    bank_name: readStringField(invoiceRecord, 'bank_name'),
+    bank_swift_code: readStringField(invoiceRecord, 'bank_swift_code'),
+    bank_account_number: readStringField(invoiceRecord, 'bank_account_number'),
+
+    default_conditions: readStringField(invoiceRecord, 'default_conditions'),
+    default_exchange_rate: readStringField(
+      invoiceRecord,
+      'default_exchange_rate'
+    ),
+
+    client: null,
+    items: [],
+  };
+}
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -153,28 +287,23 @@ async function generateInvoicePdfResponse(
   auth: AuthContext,
   id: string
 ): Promise<Response> {
-  const startTime = performance.now();
+  const startTime = nowMs();
   const requestId = getOrCreateRequestId(req);
+  const routePath = `/api/invoices/${id}/pdf`;
 
   try {
     const inline = new URL(req.url).searchParams.get('inline') === 'true';
-    const orgContextError = requireOrgContext(auth);
 
+    const orgContextError = requireOrgContext(auth);
     if (orgContextError) {
-      const duration = Math.round(performance.now() - startTime);
-      logApiRequest(
-        'GET',
-        `/api/invoices/${id}/pdf`,
-        403,
-        duration,
-        'InvoicesAPI',
-        {
-          invoiceId: id,
-          requestId,
-          error: true,
-          errorCode: 'ORG_CONTEXT_REQUIRED',
-        }
-      );
+      const duration = Math.round(nowMs() - startTime);
+
+      logApiRequest('GET', routePath, 403, duration, 'InvoicesAPI', {
+        invoiceId: id,
+        requestId,
+        error: true,
+        errorCode: 'ORG_CONTEXT_REQUIRED',
+      });
 
       return withRequestIdHeader(
         createApiErrorResponse(
@@ -189,22 +318,39 @@ async function generateInvoicePdfResponse(
       );
     }
 
-    // 1) Validate UUID
-    if (!validateUUID(id)) {
-      const duration = Math.round(performance.now() - startTime);
-      logApiRequest(
-        'GET',
-        `/api/invoices/${id}/pdf`,
-        400,
-        duration,
-        'InvoicesAPI',
-        {
-          invoiceId: id,
-          requestId,
-          error: true,
-          errorCode: 'INVALID_UUID',
-        }
+    const adminError = requireAdmin(auth);
+    if (adminError) {
+      const duration = Math.round(nowMs() - startTime);
+
+      logApiRequest('GET', routePath, 403, duration, 'InvoicesAPI', {
+        invoiceId: id,
+        requestId,
+        error: true,
+        errorCode: 'ADMIN_ROLE_REQUIRED',
+      });
+
+      return withRequestIdHeader(
+        createApiErrorResponse(
+          {
+            message: 'Admin role required',
+            error_code: 'ADMIN_ROLE_REQUIRED',
+            retryable: false,
+          },
+          403
+        ),
+        requestId
       );
+    }
+
+    if (!validateUUID(id)) {
+      const duration = Math.round(nowMs() - startTime);
+
+      logApiRequest('GET', routePath, 400, duration, 'InvoicesAPI', {
+        invoiceId: id,
+        requestId,
+        error: true,
+        errorCode: 'INVALID_UUID',
+      });
 
       return withRequestIdHeader(
         createApiErrorResponse(
@@ -219,11 +365,8 @@ async function generateInvoicePdfResponse(
       );
     }
 
-    // 2) Fetch invoice (optionally scoped)
     const orgId = auth.orgId!;
 
-    // NOTE: some supabase typings can be annoying about conditional chaining;
-    // use `any` for safe conditional org scoping without blowing up TS.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query: any = auth.userSupabase
       .from('invoices')
@@ -244,27 +387,21 @@ async function generateInvoicePdfResponse(
     const { data: invoice, error: invoiceError } = await query.single();
 
     if (invoiceError || !invoice) {
-      const duration = Math.round(performance.now() - startTime);
+      const duration = Math.round(nowMs() - startTime);
       const appError = errorHandler.handleSupabaseError(
         invoiceError || new Error('Invoice not found'),
         'Fetch invoice for PDF'
       );
       const logInfo = createLogErrorInfo(appError);
+      const status = getPostgrestStatus(invoiceError);
 
-      logApiRequest(
-        'GET',
-        `/api/invoices/${id}/pdf`,
-        undefined,
-        duration,
-        'InvoicesAPI',
-        {
-          invoiceId: id,
-          requestId,
-          error: true,
-          errorCode: (appError as { code?: string })?.code,
-          logMessage: logInfo.message,
-        }
-      );
+      logApiRequest('GET', routePath, status, duration, 'InvoicesAPI', {
+        invoiceId: id,
+        requestId,
+        error: true,
+        errorCode: (appError as { code?: string })?.code,
+        logMessage: logInfo.message,
+      });
 
       captureException(
         appError,
@@ -273,92 +410,21 @@ async function generateInvoicePdfResponse(
         ErrorSeverity.MEDIUM
       );
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const status = (invoiceError as any)?.code === 'PGRST116' ? 404 : 500;
-      const safeError = createSafeErrorResponse(appError, status);
       return withRequestIdHeader(
-        NextResponse.json(safeError, { status }),
+        NextResponse.json(createSafeErrorResponse(appError, status), {
+          status,
+        }),
         requestId
       );
     }
 
-    // Note: Invoice settings were previously loaded here but were not used.
-    // If fallback to invoice_settings is needed in the future, uncomment and use this code.
-
-    // 4) Normalize invoice data
-    type NormalizedInvoice = {
-      invoice_date?: string | null;
-      due_date?: string | null;
-      invoice_number?: string | null;
-      currency?: string | null;
-      status?: string | null;
-      notes?: string | null;
-      subtotal?: number | null;
-      tax?: number | null;
-      total?: number | null;
-      business_name?: string | null;
-      business_address?: string | null;
-      business_phone?: string | null;
-      business_email?: string | null;
-      bank_account_holder?: string | null;
-      bank_name?: string | null;
-      bank_swift_code?: string | null;
-      bank_account_number?: string | null;
-      default_conditions?: string | null;
-      default_exchange_rate?: string | null;
-      client: {
-        first_name?: string | null;
-        last_name?: string | null;
-        email?: string | null;
-        contact_number?: string | null;
-        address?: string | null;
-      } | null;
-      items: {
-        description: string;
-        qty: number;
-        rate: number;
-        amount: number;
-        image_url: string | null;
-        item_number?: string | null;
-      }[];
-    };
-
     const invoiceRecord = invoice as Record<string, unknown>;
-    const normalizedInvoice: NormalizedInvoice = {
-      invoice_date:
-        typeof invoiceRecord.invoice_date === 'string'
-          ? invoiceRecord.invoice_date
-          : null,
-      due_date:
-        typeof invoiceRecord.due_date === 'string'
-          ? invoiceRecord.due_date
-          : null,
-      invoice_number:
-        typeof invoiceRecord.invoice_number === 'string'
-          ? invoiceRecord.invoice_number
-          : null,
-      currency:
-        typeof invoiceRecord.currency === 'string'
-          ? invoiceRecord.currency
-          : null,
-      status:
-        typeof invoiceRecord.status === 'string' ? invoiceRecord.status : null,
-      notes:
-        typeof invoiceRecord.notes === 'string' ? invoiceRecord.notes : null,
-      subtotal:
-        typeof invoiceRecord.subtotal === 'number'
-          ? invoiceRecord.subtotal
-          : null,
-      tax: typeof invoiceRecord.tax === 'number' ? invoiceRecord.tax : null,
-      total:
-        typeof invoiceRecord.total === 'number' ? invoiceRecord.total : null,
-      client: null,
-      items: [],
-    };
+    const normalizedInvoice = normalizeInvoiceRecord(invoiceRecord);
 
     const { client: normalizedClient } = normalizeSupabaseClientJoin(
       invoiceRecord.clients ?? invoiceRecord.client
     );
+
     normalizedInvoice.client = normalizedClient
       ? {
           first_name: normalizedClient.first_name ?? null,
@@ -372,6 +438,7 @@ async function generateInvoicePdfResponse(
     const normalizedItems = normalizeSupabaseInvoiceItemsJoin(
       invoiceRecord.invoice_items ?? invoiceRecord.items
     );
+
     const hydratedItems = await attachSignedUrlsToInvoiceItems(
       auth.userSupabase,
       normalizedItems.map(item => ({
@@ -389,12 +456,9 @@ async function generateInvoicePdfResponse(
       item_number: item.instrument?.serial_number || null,
     }));
 
-    // 5) Load logo
     const logoSrc = await resolveLogoSrc();
 
-    // 6) Prepare invoice data
-    const invoiceDate =
-      normalizedInvoice.invoice_date ?? new Date().toISOString().split('T')[0];
+    const invoiceDate = normalizedInvoice.invoice_date ?? todayLocalYMD();
     const formattedDate = invoiceDate.replace(/-/g, '.');
 
     const items = normalizedInvoice.items.map(item => ({
@@ -406,25 +470,28 @@ async function generateInvoicePdfResponse(
     }));
 
     const pdfClient = normalizedInvoice.client;
+
     const clientName = pdfClient
       ? (() => {
           const fullName =
             `${pdfClient.first_name || ''} ${pdfClient.last_name || ''}`.trim();
+
           if (fullName) return fullName;
           if (pdfClient.email) return pdfClient.email;
+
           return 'Customer';
         })()
       : 'Customer';
 
-    // Prepare company info (from invoice or settings, with fallback)
     const companyName = normalizedInvoice.business_name || STORE_INFO.name;
+
     const companyAddress = normalizedInvoice.business_address
       ? normalizedInvoice.business_address.split('\n').filter(Boolean)
       : STORE_INFO.addressLines;
+
     const companyPhone = normalizedInvoice.business_phone || STORE_INFO.phone;
     const companyEmail = normalizedInvoice.business_email || STORE_INFO.email;
 
-    // Prepare banking info (from invoice or settings, with fallback)
     const bankingAccountHolder =
       normalizedInvoice.bank_account_holder || BANKING_INFO.accountHolder;
     const bankingBankName =
@@ -434,90 +501,82 @@ async function generateInvoicePdfResponse(
     const bankingAccountNumber =
       normalizedInvoice.bank_account_number || BANKING_INFO.accountNumber;
 
-    // Find first item with item_number (serial_number)
     const itemWithNumber = normalizedInvoice.items.find(
       item => item.item_number && item.item_number.trim()
     );
     const itemNumber = itemWithNumber?.item_number || undefined;
 
-    // Prepare conditions (use default_conditions if available, otherwise notes)
     const conditions =
       normalizedInvoice.default_conditions ||
       normalizedInvoice.notes ||
       undefined;
 
-    // 7) Load React PDF
     const { renderToBuffer: renderToBufferFn, InvoiceDocument: InvoiceDoc } =
       await loadReactPDF();
 
-    // 8) Generate PDF buffer
-    const pdfBuffer = await renderToBufferFn(
-      React.createElement(InvoiceDoc, {
-        logoSrc: logoSrc || undefined,
-        company: {
-          name: companyName,
-          addressLines: companyAddress,
-          phone: companyPhone,
-          email: companyEmail,
-        },
-        billTo: {
-          name: clientName,
-          addressLines: pdfClient?.address ? [pdfClient.address] : undefined,
-          phone: pdfClient?.contact_number || undefined,
-        },
-        shipTo: undefined,
-        invoice: {
-          invoiceNumber: normalizedInvoice.invoice_number || id,
-          itemNumber: itemNumber,
-          date: formattedDate,
-          dueDate: normalizedInvoice.due_date
-            ? normalizedInvoice.due_date.replace(/-/g, '.')
-            : undefined,
-          currency: normalizedInvoice.currency || 'USD',
-          status: normalizedInvoice.status || undefined,
-          exchangeRate: normalizedInvoice.default_exchange_rate || undefined,
-          note: normalizedInvoice.notes || undefined,
-        },
-        items,
-        banking: {
-          accountHolder: bankingAccountHolder || undefined,
-          bankName: bankingBankName || undefined,
-          swiftCode: bankingSwiftCode || undefined,
-          accountNumber: bankingAccountNumber || undefined,
-        },
-        totals: {
-          subtotal: normalizedInvoice.subtotal ?? 0,
-          tax: normalizedInvoice.tax ?? undefined,
-          total: normalizedInvoice.total ?? 0,
-        },
-        conditions: conditions,
-      }) as React.ReactElement<DocumentProps>
+    const pdfBuffer = await withTimeout(
+      renderToBufferFn(
+        React.createElement(InvoiceDoc, {
+          logoSrc: logoSrc || undefined,
+          company: {
+            name: companyName,
+            addressLines: companyAddress,
+            phone: companyPhone,
+            email: companyEmail,
+          },
+          billTo: {
+            name: clientName,
+            addressLines: pdfClient?.address ? [pdfClient.address] : undefined,
+            phone: pdfClient?.contact_number || undefined,
+          },
+          shipTo: undefined,
+          invoice: {
+            invoiceNumber: normalizedInvoice.invoice_number || id,
+            itemNumber,
+            date: formattedDate,
+            dueDate: normalizedInvoice.due_date
+              ? normalizedInvoice.due_date.replace(/-/g, '.')
+              : undefined,
+            currency: normalizedInvoice.currency || 'USD',
+            status: normalizedInvoice.status || undefined,
+            exchangeRate: normalizedInvoice.default_exchange_rate || undefined,
+            note: normalizedInvoice.notes || undefined,
+          },
+          items,
+          banking: {
+            accountHolder: bankingAccountHolder || undefined,
+            bankName: bankingBankName || undefined,
+            swiftCode: bankingSwiftCode || undefined,
+            accountNumber: bankingAccountNumber || undefined,
+          },
+          totals: {
+            subtotal: normalizedInvoice.subtotal ?? 0,
+            tax: normalizedInvoice.tax ?? undefined,
+            total: normalizedInvoice.total ?? 0,
+          },
+          conditions,
+        }) as React.ReactElement<DocumentProps>
+      ),
+      PDF_GENERATION_TIMEOUT_MS,
+      `Invoice PDF generation exceeded ${PDF_GENERATION_TIMEOUT_MS}ms`
     );
 
-    // 9) Check PDF size
     if (pdfBuffer.length > MAX_PDF_SIZE) {
       const appError = errorHandler.createError(
         ErrorCodes.FILE_TOO_LARGE,
         'PDF file too large',
         `Generated PDF exceeds maximum size of ${MAX_PDF_SIZE / 1024 / 1024}MB`
       );
-      const duration = Math.round(performance.now() - startTime);
+      const duration = Math.round(nowMs() - startTime);
       const logInfo = createLogErrorInfo(appError);
 
-      logApiRequest(
-        'GET',
-        `/api/invoices/${id}/pdf`,
-        413,
-        duration,
-        'InvoicesAPI',
-        {
-          invoiceId: id,
-          requestId,
-          error: true,
-          logMessage: logInfo.message,
-          pdfSize: pdfBuffer.length,
-        }
-      );
+      logApiRequest('GET', routePath, 413, duration, 'InvoicesAPI', {
+        invoiceId: id,
+        requestId,
+        error: true,
+        logMessage: logInfo.message,
+        pdfSize: pdfBuffer.length,
+      });
 
       captureException(
         appError,
@@ -526,30 +585,23 @@ async function generateInvoicePdfResponse(
         ErrorSeverity.HIGH
       );
 
-      const safeError = createSafeErrorResponse(appError, 413);
       return withRequestIdHeader(
-        NextResponse.json(safeError, { status: 413 }),
+        NextResponse.json(createSafeErrorResponse(appError, 413), {
+          status: 413,
+        }),
         requestId
       );
     }
 
-    // 9) Return PDF response
-    const duration = Math.round(performance.now() - startTime);
+    const duration = Math.round(nowMs() - startTime);
     const filename = `invoice-${normalizedInvoice.invoice_number || id}`;
 
-    logApiRequest(
-      'GET',
-      `/api/invoices/${id}/pdf`,
-      200,
-      duration,
-      'InvoicesAPI',
-      {
-        invoiceId: id,
-        invoiceNumber: normalizedInvoice.invoice_number || undefined,
-        pdfSize: pdfBuffer.length,
-        requestId,
-      }
-    );
+    logApiRequest('GET', routePath, 200, duration, 'InvoicesAPI', {
+      invoiceId: id,
+      invoiceNumber: normalizedInvoice.invoice_number || undefined,
+      pdfSize: pdfBuffer.length,
+      requestId,
+    });
 
     return withRequestIdHeader(
       new NextResponse(new Uint8Array(pdfBuffer), {
@@ -558,34 +610,40 @@ async function generateInvoicePdfResponse(
           'Content-Type': 'application/pdf',
           'Content-Disposition': createContentDisposition(filename, inline),
           'Content-Length': pdfBuffer.length.toString(),
-          // ✅ important for user-specific PDFs
           'Cache-Control': 'private, no-store',
         },
       }),
       requestId
     );
   } catch (error) {
-    const duration = Math.round(performance.now() - startTime);
+    const duration = Math.round(nowMs() - startTime);
+
     const appError = errorHandler.handleSupabaseError(
-      error || new Error('Failed to generate invoice PDF'),
+      isSupabaseLikeError(error)
+        ? error
+        : errorHandler.createError(
+            ErrorCodes.UNKNOWN_ERROR,
+            'Invoice PDF generation failed',
+            error instanceof Error
+              ? error.message
+              : 'Failed to generate invoice PDF',
+            {
+              invoiceId: id,
+              errorType: error instanceof Error ? error.name : typeof error,
+            }
+          ),
       'Generate invoice PDF'
     );
+
     const logInfo = createLogErrorInfo(appError);
 
-    logApiRequest(
-      'GET',
-      `/api/invoices/${id}/pdf`,
-      500,
-      duration,
-      'InvoicesAPI',
-      {
-        invoiceId: id,
-        requestId,
-        error: true,
-        errorCode: (appError as { code?: string })?.code,
-        logMessage: logInfo.message,
-      }
-    );
+    logApiRequest('GET', routePath, 500, duration, 'InvoicesAPI', {
+      invoiceId: id,
+      requestId,
+      error: true,
+      errorCode: (appError as { code?: string })?.code,
+      logMessage: logInfo.message,
+    });
 
     captureException(
       appError,
@@ -594,9 +652,10 @@ async function generateInvoicePdfResponse(
       ErrorSeverity.HIGH
     );
 
-    const safeError = createSafeErrorResponse(appError, 500);
     return withRequestIdHeader(
-      NextResponse.json(safeError, { status: 500 }),
+      NextResponse.json(createSafeErrorResponse(appError, 500), {
+        status: 500,
+      }),
       requestId
     );
   }

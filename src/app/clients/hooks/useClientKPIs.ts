@@ -4,6 +4,8 @@ import { useErrorHandler } from '@/contexts/ToastContext';
 import { getMostRecentDate } from '@/utils/dateParsing';
 import { apiFetch } from '@/utils/apiFetch';
 import type { ClientSalesSummary } from '@/app/clients/analytics/hooks/useCustomers';
+import { handleApiResponse } from '@/utils/handleApiResponse';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 
 export interface ClientKPIs {
   totalCustomers: number;
@@ -24,14 +26,25 @@ export function useClientKPIs(
 ): ClientKPIs {
   const enabled = opts?.enabled ?? true;
   const { handleError } = useErrorHandler();
+  const { tenantIdentityKey } = useTenantIdentity();
   const [loading, setLoading] = useState(false);
   const [salesSummaryByClient, setSalesSummaryByClient] = useState<
     Map<string, ClientSalesSummary>
   >(new Map());
   const hasFetchedRef = useRef(false);
+  const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+
+  useEffect(() => {
+    tenantIdentityKeyRef.current = tenantIdentityKey;
+    hasFetchedRef.current = false;
+    setSalesSummaryByClient(new Map());
+    setLoading(false);
+  }, [tenantIdentityKey]);
 
   // Fetch summarized sales metrics instead of loading the full sales dataset.
   const fetchSalesHistory = useCallback(async () => {
+    const startedTenantIdentityKey = tenantIdentityKeyRef.current;
+
     // Prevent duplicate fetches
     if (hasFetchedRef.current) {
       return;
@@ -42,26 +55,41 @@ export function useClientKPIs(
       hasFetchedRef.current = true;
 
       const response = await apiFetch('/api/sales/summary-by-client');
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw result.error || new Error('Failed to fetch sales summary');
+      if (tenantIdentityKeyRef.current !== startedTenantIdentityKey) {
+        return;
       }
 
-      const summaryData = (result.data || []) as ClientSalesSummary[];
+      const summaryData = await handleApiResponse<ClientSalesSummary[]>(
+        response,
+        'Failed to fetch sales summary'
+      );
+      if (tenantIdentityKeyRef.current !== startedTenantIdentityKey) {
+        return;
+      }
+
       const summaryMap = new Map<string, ClientSalesSummary>();
       summaryData.forEach(summary => {
         summaryMap.set(summary.client_id, summary);
       });
 
+      if (tenantIdentityKeyRef.current !== startedTenantIdentityKey) {
+        return;
+      }
+
       setSalesSummaryByClient(summaryMap);
     } catch (error) {
+      if (tenantIdentityKeyRef.current !== startedTenantIdentityKey) {
+        return;
+      }
+
       setSalesSummaryByClient(new Map());
       handleError(error, 'Failed to fetch sales for KPIs');
       // Reset flag on error so it can retry
       hasFetchedRef.current = false;
     } finally {
-      setLoading(false);
+      if (tenantIdentityKeyRef.current === startedTenantIdentityKey) {
+        setLoading(false);
+      }
     }
   }, [handleError]);
 
@@ -70,7 +98,7 @@ export function useClientKPIs(
     if (!enabled) return;
     if (clients.length === 0) return;
     fetchSalesHistory();
-  }, [enabled, clients.length, fetchSalesHistory]);
+  }, [enabled, clients.length, fetchSalesHistory, tenantIdentityKey]);
 
   // Calculate KPIs
   const kpis = useCallback((): ClientKPIs => {
@@ -142,14 +170,12 @@ export function useClientSalesData(clientId: string | null) {
         const response = await apiFetch(
           `/api/sales?client_id=${clientId}&page=1&pageSize=200`
         );
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw result.error || new Error('Failed to fetch client sales');
-        }
 
         // ✅ Server already filtered, no need to filter client-side
-        const clientSales = (result.data || []) as SalesHistory[];
+        const clientSales = await handleApiResponse<SalesHistory[]>(
+          response,
+          'Failed to fetch client sales'
+        );
         if (requestId !== requestIdRef.current) {
           return;
         }

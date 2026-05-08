@@ -17,11 +17,19 @@ import {
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 import type { ClientInstrument } from '@/types';
+import {
+  claimCreateIdempotency,
+  clearCreateIdempotency,
+  completeCreateIdempotency,
+  createRequestHash,
+} from '@/app/api/_utils/createIdempotency';
 
 const CONNECTION_SELECT_COLUMNS =
   'id, client_id, instrument_id, relationship_type, notes, display_order, created_at';
+
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
+const MAX_ALL_RESULTS = 1000;
 const CONNECTION_DETAIL_SELECT = `
   *,
   client:clients(*),
@@ -39,6 +47,7 @@ function parsePageSize(input: string | null): number {
   if (!input) return DEFAULT_PAGE_SIZE;
   const parsed = Number.parseInt(input, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_PAGE_SIZE;
+
   return Math.min(parsed, MAX_PAGE_SIZE);
 }
 
@@ -100,7 +109,10 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       );
       const ascending = searchParams.get('ascending') !== 'false';
 
-      /** When true, return all rows for the (optional) org filters — no `range` window. */
+      /**
+       * When true, return all rows for the optional org filters,
+       * but still cap the result size to avoid unbounded reads.
+       */
       const fetchAll = searchParams.get('all') === 'true';
 
       const page = parsePage(searchParams.get('page'));
@@ -109,8 +121,12 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         : DEFAULT_PAGE_SIZE;
 
       if (clientId && !validateUUID(clientId)) {
-        return { payload: { error: 'Invalid client_id format' }, status: 400 };
+        return {
+          payload: { error: 'Invalid client_id format' },
+          status: 400,
+        };
       }
+
       if (instrumentId && !validateUUID(instrumentId)) {
         return {
           payload: { error: 'Invalid instrument_id format' },
@@ -123,17 +139,22 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' })
         .eq('org_id', auth.orgId!);
 
-      if (clientId) query = query.eq('client_id', clientId);
-      if (instrumentId) query = query.eq('instrument_id', instrumentId);
+      if (clientId) {
+        query = query.eq('client_id', clientId);
+      }
 
-      // If you want display_order priority, add:
-      // query = query.order('display_order', { ascending: true });
+      if (instrumentId) {
+        query = query.eq('instrument_id', instrumentId);
+      }
+
       query = query.order(orderBy, { ascending });
 
-      const offset = fetchAll ? 0 : (page - 1) * pageSize;
-      const to = fetchAll ? 0 : offset + pageSize - 1;
+      const offset = (page - 1) * pageSize;
+      const to = offset + pageSize - 1;
 
-      if (!fetchAll) {
+      if (fetchAll) {
+        query = query.limit(MAX_ALL_RESULTS + 1);
+      } else {
         query = query.range(offset, to);
       }
 
@@ -150,13 +171,19 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' })
           .eq('org_id', auth.orgId!);
 
-        if (clientId) retryQuery = retryQuery.eq('client_id', clientId);
-        if (instrumentId)
+        if (clientId) {
+          retryQuery = retryQuery.eq('client_id', clientId);
+        }
+
+        if (instrumentId) {
           retryQuery = retryQuery.eq('instrument_id', instrumentId);
+        }
 
         retryQuery = retryQuery.order(orderBy, { ascending });
 
-        if (!fetchAll) {
+        if (fetchAll) {
+          retryQuery = retryQuery.limit(MAX_ALL_RESULTS + 1);
+        } else {
           retryQuery = retryQuery.range(offset, to);
         }
 
@@ -170,27 +197,41 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         throw errorHandler.handleSupabaseError(error, 'Fetch connections');
       }
 
+      const rawData = data || [];
+      const truncated = fetchAll && rawData.length > MAX_ALL_RESULTS;
+      const responseData = truncated
+        ? rawData.slice(0, MAX_ALL_RESULTS)
+        : rawData;
+      const totalCount = count || 0;
+      const recordCount = responseData.length;
       const responsePage = fetchAll ? 1 : page;
-      const responsePageSize = fetchAll
-        ? (count ?? data?.length ?? 0)
-        : pageSize;
+      const responsePageSize = fetchAll ? recordCount : pageSize;
       const responseTotalPages = fetchAll
         ? 1
         : page && pageSize && count
           ? Math.ceil(count / pageSize)
           : undefined;
+      const totalPages = responseTotalPages ?? 1;
 
       return {
         payload: {
-          data: data || [],
-          count: count || 0,
+          data: responseData,
+          count: totalCount,
           page: responsePage,
           pageSize: responsePageSize,
-          totalPages: responseTotalPages,
+          totalPages,
+          pagination: {
+            page: responsePage,
+            pageSize: responsePageSize,
+            totalCount,
+            totalPages,
+          },
+          scope: fetchAll ? 'all' : 'paged',
+          truncated,
         },
         metadata: {
-          recordCount: data?.length || 0,
-          totalCount: count || 0,
+          recordCount,
+          totalCount,
           page: responsePage,
           pageSize: responsePageSize,
           fetchAll,
@@ -237,6 +278,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         body,
         validateCreateClientInstrument
       );
+
       if (!validationResult.success) {
         return {
           payload: {
@@ -258,6 +300,29 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      const idempotency = await claimCreateIdempotency(
+        request,
+        auth,
+        'POST:/api/connections',
+        createRequestHash({
+          client_id: validatedInput.client_id,
+          instrument_id: validatedInput.instrument_id,
+          relationship_type: validatedInput.relationship_type,
+          notes: validatedInput.notes ?? null,
+        })
+      );
+
+      if (idempotency.kind === 'replay') {
+        return { payload: idempotency.payload, status: 200 };
+      }
+
+      if (idempotency.kind === 'conflict') {
+        return { payload: idempotency.payload, status: idempotency.status };
+      }
+
+      const idempotencyKey =
+        idempotency.kind === 'claimed' ? idempotency.idempotencyKey : null;
+
       const { data: connectionId, error } = await auth.userSupabase.rpc(
         'create_connection_atomic',
         {
@@ -269,6 +334,12 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       );
 
       if (error || typeof connectionId !== 'string') {
+        await clearCreateIdempotency(
+          auth,
+          'POST:/api/connections',
+          idempotencyKey
+        );
+
         const errorMessage =
           error && typeof error.message === 'string'
             ? error.message
@@ -283,11 +354,21 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const validatedResponse = await fetchConnectionById(auth, connectionId);
+      const payload = { data: validatedResponse };
+
+      await completeCreateIdempotency(
+        auth,
+        'POST:/api/connections',
+        idempotencyKey,
+        payload
+      );
 
       return {
-        payload: { data: validatedResponse },
+        payload,
         status: 201,
-        metadata: { connectionId: validatedResponse.id },
+        metadata: {
+          connectionId: validatedResponse.id,
+        },
       };
     }
   );
@@ -323,8 +404,13 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       const body = await request.json();
       const { id, ...updates } = body || {};
 
-      if (!id)
-        return { payload: { error: 'Connection ID is required' }, status: 400 };
+      if (!id) {
+        return {
+          payload: { error: 'Connection ID is required' },
+          status: 400,
+        };
+      }
+
       if (!validateUUID(id)) {
         return {
           payload: { error: 'Invalid connection ID format' },
@@ -336,6 +422,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         updates,
         validatePartialClientInstrument
       );
+
       if (!validationResult.success) {
         return {
           payload: { error: `Invalid update data: ${validationResult.error}` },
@@ -343,15 +430,15 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // ✅ IMPORTANT: use validated updates, not raw updates
+      // Use validated updates, not raw updates.
       const validatedUpdates = validationResult.data;
 
       const { data: connectionId, error } = await auth.userSupabase.rpc(
         'update_connection_atomic',
         {
           p_connection_id: id,
-          // ClientInstrument relation fields (client, instrument) are stripped by validation;
-          // remaining fields are JSON-serializable. Cast is safe here.
+          // ClientInstrument relation fields are stripped by validation.
+          // Remaining fields are JSON-serializable.
           p_updates: validatedUpdates as unknown as Json,
         }
       );
@@ -409,8 +496,13 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
 
       const id = request.nextUrl.searchParams.get('id');
 
-      if (!id)
-        return { payload: { error: 'Connection ID is required' }, status: 400 };
+      if (!id) {
+        return {
+          payload: { error: 'Connection ID is required' },
+          status: 400,
+        };
+      }
+
       if (!validateUUID(id)) {
         return {
           payload: { error: 'Invalid connection ID format' },
@@ -439,7 +531,10 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
         throw errorHandler.handleSupabaseError(error, 'Delete connection');
       }
 
-      return { payload: { success: true }, metadata: { connectionId: id } };
+      return {
+        payload: { success: true },
+        metadata: { connectionId: id },
+      };
     }
   );
 }
@@ -475,7 +570,10 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
       const { orders } = body || {};
 
       if (!Array.isArray(orders)) {
-        return { payload: { error: 'orders must be an array' }, status: 400 };
+        return {
+          payload: { error: 'orders must be an array' },
+          status: 400,
+        };
       }
 
       if (orders.length === 0) {
@@ -489,6 +587,7 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
             status: 400,
           };
         }
+
         if (typeof order.display_order !== 'number') {
           return {
             payload: {
@@ -515,6 +614,7 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const ids = orders.map(o => o.id);
+
       const { data, error: fetchError } = await auth.userSupabase
         .from('client_instruments')
         .select(
@@ -533,9 +633,6 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
           'Fetch updated connections'
         );
       }
-
-      // validate each row if you want:
-      // const validated = (data || []).map(validateClientInstrument);
 
       return {
         payload: { data: (data || []) as ClientInstrument[] },

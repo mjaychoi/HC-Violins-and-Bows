@@ -13,6 +13,10 @@ import { apiFetch } from '@/utils/apiFetch';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { usePermissions } from '@/hooks/usePermissions';
 import { downloadCertificatePdf } from '../utils/certificateDownload';
+import {
+  handleApiResponse,
+  readApiResponseBody,
+} from '@/utils/handleApiResponse';
 
 interface InstrumentModalProps {
   isOpen: boolean;
@@ -83,8 +87,11 @@ export default function InstrumentModal({
         }
 
         if (imageReqIdRef.current === reqId) {
-          const result = await response.json();
-          const sortedImages = (result.data || []).sort(
+          const data = await handleApiResponse<InstrumentImage[]>(
+            response,
+            'Failed to fetch images'
+          );
+          const sortedImages = (data || []).sort(
             (a: InstrumentImage, b: InstrumentImage) =>
               a.display_order - b.display_order
           );
@@ -124,8 +131,10 @@ export default function InstrumentModal({
         }
 
         if (certificateReqIdRef.current === reqId) {
-          const result = await response.json();
-          const files = result.data || [];
+          const files = await handleApiResponse<CertificateFile[]>(
+            response,
+            'Failed to fetch certificates'
+          );
           setCertificateFiles(files);
           setCertificateState(files.length > 0 ? 'success' : 'empty');
         }
@@ -174,17 +183,10 @@ export default function InstrumentModal({
         `/api/instruments/${instrument.id}/certificates`,
         { method: 'POST', body: fd }
       );
-      const body = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        message?: string;
-      };
-      if (!response.ok) {
-        handleError(
-          new Error(body.error || 'Failed to upload certificate'),
-          'CertificateUpload'
-        );
-        return;
-      }
+      const body = await readApiResponseBody<{ message?: string }>(
+        response,
+        'Failed to upload certificate'
+      );
       showSuccess(body.message || 'Certificate uploaded successfully.');
       await fetchCertificates(instrument.id);
       onInstrumentCertificatesChanged?.();
@@ -248,19 +250,10 @@ export default function InstrumentModal({
         }
       );
 
-      if (!response.ok) {
-        const error = await response.json();
-        handleError(
-          new Error(error.error || 'Failed to delete certificate'),
-          'CertificateDelete'
-        );
-        return;
-      }
-
-      const result = (await response.json()) as {
+      const result = await readApiResponseBody<{
         result?: 'full_success' | 'partial_success';
         message?: string;
-      };
+      }>(response, 'Failed to delete certificate');
 
       if (result.result === 'partial_success') {
         showWarning(

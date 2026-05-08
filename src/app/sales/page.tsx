@@ -113,6 +113,10 @@ import {
 import { currency, dateFormat } from './utils/salesFormatters';
 import { SaleStatus } from './types';
 import { apiFetch } from '@/utils/apiFetch';
+import {
+  createApiResponseErrorFromResponse,
+  readApiResponseEnvelope,
+} from '@/utils/handleApiResponse';
 
 // Component that uses useSearchParams - must be wrapped in Suspense
 function SalesPageContent() {
@@ -445,8 +449,10 @@ function SalesPageContent() {
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to update sale');
+          throw await createApiResponseErrorFromResponse(
+            response,
+            'Failed to update sale'
+          );
         }
 
         try {
@@ -504,15 +510,10 @@ function SalesPageContent() {
       }
 
       const response = await apiFetch(`/api/sales?${params.toString()}`);
-      const result = await response.json();
-
-      if (!response.ok) {
-        handleError(
-          new Error(result.error || 'Failed to export CSV'),
-          'Export CSV'
-        );
-        return;
-      }
+      const result = await readApiResponseEnvelope<SalesHistory[]>(
+        response,
+        'Failed to export CSV'
+      );
 
       const allSales = (result.data || []) as SalesHistory[];
 

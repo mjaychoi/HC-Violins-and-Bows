@@ -101,6 +101,7 @@ function createInvoicesGetQueryMock(result: {
     eq: jest.fn().mockReturnThis(),
     order: jest.fn().mockReturnThis(),
     range: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     gte: jest.fn().mockReturnThis(),
     lte: jest.fn().mockReturnThis(),
     or: jest.fn().mockReturnThis(),
@@ -166,6 +167,57 @@ describe('/api/invoices GET', () => {
     expect(json.count).toBe(1);
     expect(json.warning).toBeUndefined();
     expect(json.data).toHaveLength(1);
+  });
+
+  it('hard-caps and marks truncated all=true lists', async () => {
+    const rows = Array.from({ length: 1001 }, (_, index) => ({
+      id: `123e4567-e89b-12d3-a456-${String(index).padStart(12, '0')}`,
+      invoice_number: `INV-${String(index).padStart(3, '0')}`,
+      client_id: '123e4567-e89b-12d3-a456-426614174001',
+      invoice_date: '2026-04-03',
+      due_date: '2026-04-10',
+      subtotal: 100,
+      tax: 0,
+      total: 100,
+      currency: 'USD',
+      status: 'draft',
+      notes: null,
+      created_at: '2026-04-03T00:00:00.000Z',
+      updated_at: '2026-04-03T00:00:00.000Z',
+      clients: null,
+      invoice_items: [],
+    }));
+
+    const query = createInvoicesGetQueryMock({
+      data: rows,
+      error: null,
+      count: 1001,
+    });
+
+    mockUserSupabase = {
+      from: jest.fn(() => query),
+    };
+
+    const { GET } = await import('../route');
+    const request = new NextRequest(
+      'http://localhost/api/invoices?all=true&sortColumn=created_at'
+    );
+    const response = await GET(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.data).toHaveLength(1000);
+    expect(json.truncated).toBe(true);
+    expect(json.pagination).toEqual({
+      page: 1,
+      pageSize: 1000,
+      totalCount: 1001,
+      totalPages: 1,
+    });
+    expect(json.scope).toBe('all');
+    expect(query.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    expect(query.limit).toHaveBeenCalledWith(1001);
+    expect(query.range).not.toHaveBeenCalled();
   });
 
   it('searches clients.name and clients.email (single name column in DB)', async () => {

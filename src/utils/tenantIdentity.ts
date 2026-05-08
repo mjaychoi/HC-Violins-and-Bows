@@ -12,27 +12,17 @@ function getSessionIdentity(session: Session | null): string | null {
   if (!session) return null;
 
   if (
-    typeof session.refresh_token === 'string' &&
-    session.refresh_token.trim().length > 0
-  ) {
-    return session.refresh_token.trim();
-  }
-
-  if (
     typeof session.user?.last_sign_in_at === 'string' &&
     session.user.last_sign_in_at.trim().length > 0
   ) {
     return session.user.last_sign_in_at.trim();
   }
 
-  if (
-    typeof session.access_token === 'string' &&
-    session.access_token.trim().length > 0
-  ) {
-    return session.access_token.trim();
+  if (typeof session.expires_at === 'number' && session.expires_at > 0) {
+    return String(session.expires_at);
   }
 
-  return null;
+  return 'session-present';
 }
 
 export function getTenantIdentityKey({
@@ -51,11 +41,18 @@ export function getTenantIdentityKey({
 }
 
 export function isAuthLikeTenantError(error: unknown): boolean {
-  if (error instanceof ApiFetchAuthError) {
+  if (
+    typeof ApiFetchAuthError === 'function' &&
+    error instanceof ApiFetchAuthError
+  ) {
     return true;
   }
 
-  if (error instanceof ApiFetchError && error.code === 'AUTH') {
+  if (
+    typeof ApiFetchError === 'function' &&
+    error instanceof ApiFetchError &&
+    error.code === 'AUTH'
+  ) {
     return true;
   }
 

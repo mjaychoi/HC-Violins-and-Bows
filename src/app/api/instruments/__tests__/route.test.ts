@@ -164,7 +164,11 @@ describe('/api/instruments', () => {
       expect(mockQuery.limit).toHaveBeenCalledWith(200);
     });
 
-    it('should omit default limit when all=true (full list intent)', async () => {
+    it('should hard-cap and mark truncated all=true lists', async () => {
+      const rows = Array.from({ length: 1001 }, (_, index) => ({
+        ...mockInstrument,
+        id: `123e4567-e89b-12d3-a456-${String(index).padStart(12, '0')}`,
+      }));
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -172,9 +176,9 @@ describe('/api/instruments', () => {
         order: jest.fn().mockReturnThis(),
       };
       (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [mockInstrument],
+        data: rows,
         error: null,
-        count: 1,
+        count: 1001,
       });
 
       mockUserSupabase = {
@@ -189,8 +193,16 @@ describe('/api/instruments', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
-      expect(json.data).toHaveLength(1);
-      expect(mockQuery.limit).not.toHaveBeenCalled();
+      expect(json.data).toHaveLength(1000);
+      expect(json.truncated).toBe(true);
+      expect(mockQuery.limit).toHaveBeenCalledWith(1001);
+      expect(json.pagination).toEqual({
+        page: 1,
+        pageSize: 1000,
+        totalCount: 1001,
+        totalPages: 1,
+      });
+      expect(json.scope).toBe('all');
     });
 
     it('should prevent cross-org reads by filtering with the caller org_id', async () => {

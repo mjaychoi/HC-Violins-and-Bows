@@ -1,7 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { SalesHistory } from '@/types';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
+import {
+  createApiResponseErrorFromResponse,
+  readApiResponseEnvelope,
+} from '@/utils/handleApiResponse';
 
 const PAGE_SIZE = 10;
 
@@ -52,6 +56,17 @@ export function useSalesHistory() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const { handleError } = useErrorHandler();
+  const loadingCountRef = useRef(0);
+
+  const startLoading = useCallback(() => {
+    loadingCountRef.current += 1;
+    setLoading(true);
+  }, []);
+
+  const endLoading = useCallback(() => {
+    loadingCountRef.current = Math.max(0, loadingCountRef.current - 1);
+    setLoading(loadingCountRef.current > 0);
+  }, []);
 
   const setPage = useCallback((nextPage: number) => {
     setPageState(nextPage);
@@ -60,7 +75,7 @@ export function useSalesHistory() {
   // FIXED: Make fetchSales pure - always require page to avoid stale closure issues
   const fetchSales = useCallback(
     async (options: FetchOptions) => {
-      setLoading(true);
+      startLoading();
       setError(null);
       // FIXED: Always use options.page (required parameter) - never use state to avoid stale closure
       const currentPage = options.page;
@@ -92,14 +107,10 @@ export function useSalesHistory() {
         }
 
         const response = await apiFetch(`/api/sales?${params.toString()}`);
-        const result = await response.json();
-
-        if (!response.ok) {
-          const error = result.error || new Error('Failed to fetch sales');
-          setError(error);
-          handleError(error, 'Fetch sales history');
-          return;
-        }
+        const result = await readApiResponseEnvelope<SalesHistory[]>(
+          response,
+          `Failed to fetch sales (${response.status})`
+        );
 
         setSales((result.data || []) as SalesHistory[]);
         if (result.pagination) {
@@ -125,16 +136,16 @@ export function useSalesHistory() {
         const appError = handleError(err, 'Fetch sales history');
         setError(appError);
       } finally {
-        setLoading(false);
+        endLoading();
       }
     },
-    [handleError]
+    [handleError, startLoading, endLoading]
   );
 
   const createSale = useCallback(
     async (payload: Omit<SalesHistory, 'id' | 'created_at'>) => {
       try {
-        setLoading(true);
+        startLoading();
         setError(null);
 
         const response = await apiFetch(
@@ -151,14 +162,20 @@ export function useSalesHistory() {
           }
         );
 
-        const result = await response.json();
-
         if (!response.ok) {
-          const error = result.error || new Error('Failed to create sale');
+          const error = await createApiResponseErrorFromResponse(
+            response,
+            `Failed to create sale (${response.status})`
+          );
           setError(error);
           handleError(error, 'Create sale');
           return null;
         }
+
+        const result = await readApiResponseEnvelope<SalesHistory>(
+          response,
+          `Failed to create sale (${response.status})`
+        );
 
         // Refresh the first page so the new sale shows up at the top
         await fetchSales({ page: 1 });
@@ -166,16 +183,16 @@ export function useSalesHistory() {
         // Note: 성공 메시지는 호출하는 컴포넌트에서 표시합니다
         // (Sales 페이지나 다른 페이지에서 showSuccess 호출)
 
-        return result.data as SalesHistory;
+        return result.data;
       } catch (err) {
         const appError = handleError(err, 'Create sale');
         setError(appError);
         return null;
       } finally {
-        setLoading(false);
+        endLoading();
       }
     },
-    [fetchSales, handleError]
+    [fetchSales, handleError, startLoading, endLoading]
   );
 
   const refundSale = useCallback(
@@ -186,7 +203,7 @@ export function useSalesHistory() {
         : sale.notes;
 
       try {
-        setLoading(true);
+        startLoading();
         setError(null);
 
         const response = await apiFetch('/api/sales', {
@@ -201,14 +218,19 @@ export function useSalesHistory() {
           }),
         });
 
-        const result = await response.json();
-
         if (!response.ok) {
-          const error = result.error || new Error('Failed to refund sale');
+          const error = await createApiResponseErrorFromResponse(
+            response,
+            `Failed to refund sale (${response.status})`
+          );
           setError(error);
           handleError(error, 'Refund sale');
           return null;
         }
+        const result = await readApiResponseEnvelope<SalesHistory>(
+          response,
+          `Failed to refund sale (${response.status})`
+        );
 
         // Note: Caller should refresh data with current filters to update KPI totals
         // await fetchSales({ page: page });
@@ -218,10 +240,10 @@ export function useSalesHistory() {
         setError(appError);
         return null;
       } finally {
-        setLoading(false);
+        endLoading();
       }
     },
-    [handleError]
+    [handleError, startLoading, endLoading]
   );
 
   // 환불 취소 (Undo Refund)
@@ -239,7 +261,7 @@ export function useSalesHistory() {
         : sale.notes;
 
       try {
-        setLoading(true);
+        startLoading();
         setError(null);
 
         const response = await apiFetch('/api/sales', {
@@ -254,14 +276,19 @@ export function useSalesHistory() {
           }),
         });
 
-        const result = await response.json();
-
         if (!response.ok) {
-          const error = result.error || new Error('Failed to undo refund');
+          const error = await createApiResponseErrorFromResponse(
+            response,
+            `Failed to undo refund (${response.status})`
+          );
           setError(error);
           handleError(error, 'Undo refund');
           return null;
         }
+        const result = await readApiResponseEnvelope<SalesHistory>(
+          response,
+          `Failed to undo refund (${response.status})`
+        );
 
         // Note: Caller should refresh data with current filters to update KPI totals
         // await fetchSales({ page: page });
@@ -271,10 +298,10 @@ export function useSalesHistory() {
         setError(appError);
         return null;
       } finally {
-        setLoading(false);
+        endLoading();
       }
     },
-    [handleError]
+    [handleError, startLoading, endLoading]
   );
 
   // Note: 초기 fetch는 SalesPage에서 관리합니다.

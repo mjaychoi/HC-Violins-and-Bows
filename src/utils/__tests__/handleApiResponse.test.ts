@@ -42,6 +42,60 @@ describe('handleApiResponse', () => {
     });
   });
 
+  it('preserves nested backend error metadata from thrown responses', async () => {
+    const response = {
+      ok: false,
+      status: 409,
+      json: jest.fn().mockResolvedValue({
+        error: {
+          error_code: 'IDEMPOTENCY_KEY_REUSED',
+          message: 'Idempotency key was already used for a different payload.',
+          retryable: false,
+          details: { operation: 'POST:/api/contacts' },
+          request_id: 'req-conflict-1',
+        },
+      }),
+    } as unknown as Response;
+
+    await expect(handleApiResponse(response, 'fallback')).rejects.toMatchObject<
+      Partial<ApiResponseError>
+    >({
+      name: 'ApiResponseError',
+      message: 'Idempotency key was already used for a different payload.',
+      status: 409,
+      error_code: 'IDEMPOTENCY_KEY_REUSED',
+      retryable: false,
+      details: { operation: 'POST:/api/contacts' },
+      request_id: 'req-conflict-1',
+    });
+  });
+
+  it('preserves retryable and request_id from 503 envelopes', async () => {
+    const response = {
+      ok: false,
+      status: 503,
+      json: jest.fn().mockResolvedValue({
+        error: {
+          code: 'UPSTREAM_UNAVAILABLE',
+          message: 'Upstream unavailable',
+          retryable: true,
+          request_id: 'req-503-1',
+        },
+      }),
+    } as unknown as Response;
+
+    await expect(handleApiResponse(response, 'fallback')).rejects.toMatchObject<
+      Partial<ApiResponseError>
+    >({
+      name: 'ApiResponseError',
+      message: 'Upstream unavailable',
+      status: 503,
+      error_code: 'UPSTREAM_UNAVAILABLE',
+      retryable: true,
+      request_id: 'req-503-1',
+    });
+  });
+
   it('uses a server-specific fallback message for 500 responses without a body message', async () => {
     const response = {
       ok: false,
@@ -109,7 +163,8 @@ describe('handleApiResponse', () => {
       readApiResponseEnvelope<unknown[]>(response, 'fallback')
     ).rejects.toMatchObject<Partial<ApiResponseError>>({
       name: 'ApiResponseError',
-      message: 'The server returned an unexpected response. Please try again.',
+      message:
+        'The server response did not include the expected data (empty response).',
       error_code: 'INVALID_RESPONSE',
       status: 502,
     });

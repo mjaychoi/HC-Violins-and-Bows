@@ -195,9 +195,66 @@ describe('/api/sales', () => {
 
       expect(response.status).toBe(200);
       expect(body.data).toEqual(mockData);
-      expect(body.pagination).toBeUndefined();
+      expect(body.pagination).toEqual({
+        page: 1,
+        pageSize: 5000,
+        totalCount: 1,
+        totalPages: 1,
+      });
+      expect(body.scope).toBe('all');
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
       expect(mockQuery.limit).toHaveBeenCalledWith(5000);
+    });
+
+    it('should hard-cap and mark truncated all=true lists', async () => {
+      const mockData = Array.from({ length: 1001 }, () => ({
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        instrument_id: '123e4567-e89b-12d3-a456-426614174001',
+        client_id: '123e4567-e89b-12d3-a456-426614174002',
+        sale_price: 2500.0,
+        sale_date: '2024-01-15',
+        notes: 'All sale',
+        created_at: '2024-01-15T10:30:00Z',
+        entry_kind: 'sale',
+        adjustment_of_sale_id: null,
+      }));
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({
+          data: mockData,
+          error: null,
+          count: 1001,
+        }),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        is: jest.fn().mockReturnThis(),
+      };
+
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
+
+      const request = new NextRequest(
+        'http://localhost:3000/api/sales?all=true'
+      );
+      const response = await GET(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data).toHaveLength(1000);
+      expect(body.truncated).toBe(true);
+      expect(body.pagination).toEqual({
+        page: 1,
+        pageSize: 1000,
+        totalCount: 1001,
+        totalPages: 1,
+      });
+      expect(body.scope).toBe('all');
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockQuery.limit).toHaveBeenCalledWith(1001);
     });
 
     it('should return paginated sales data', async () => {

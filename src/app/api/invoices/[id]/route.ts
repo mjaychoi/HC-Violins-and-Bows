@@ -28,6 +28,8 @@ import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 type InvoiceMutationResult = 'full_success' | 'partial_success';
 type JsonObject = { [key: string]: Json | undefined };
 
+const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
+
 function buildApiMeta(
   req: NextRequest,
   method: 'GET' | 'PUT' | 'DELETE',
@@ -38,6 +40,91 @@ function buildApiMeta(
     context: 'InvoicesAPI',
     path: req.nextUrl.pathname,
     metadata: { invoiceId },
+  };
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function readJsonObject(
+  request: NextRequest
+): Promise<
+  { ok: true; body: Record<string, unknown> } | { ok: false; error: string }
+> {
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return {
+      ok: false,
+      error: 'Invalid JSON body',
+    };
+  }
+
+  if (!isObject(body)) {
+    return {
+      ok: false,
+      error: 'Invalid request body',
+    };
+  }
+
+  return {
+    ok: true,
+    body,
+  };
+}
+
+function requireIdempotencyKey(request: NextRequest):
+  | { ok: true; idempotencyKey: string }
+  | {
+      ok: false;
+      result: {
+        payload: {
+          error: string;
+          error_code: string;
+          retryable: false;
+          success: false;
+        };
+        status: 400;
+      };
+    } {
+  const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() ?? '';
+
+  if (!idempotencyKey) {
+    return {
+      ok: false,
+      result: {
+        payload: {
+          error: 'Idempotency-Key header is required.',
+          error_code: 'IDEMPOTENCY_KEY_REQUIRED',
+          retryable: false,
+          success: false,
+        },
+        status: 400,
+      },
+    };
+  }
+
+  if (idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+    return {
+      ok: false,
+      result: {
+        payload: {
+          error: `Idempotency-Key cannot exceed ${MAX_IDEMPOTENCY_KEY_LENGTH} characters.`,
+          error_code: 'IDEMPOTENCY_KEY_INVALID',
+          retryable: false,
+          success: false,
+        },
+        status: 400,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    idempotencyKey,
   };
 }
 
@@ -60,15 +147,122 @@ function toInvoiceItemsJson(
 ): Json {
   if (items === null) return null;
 
-  return (items ?? []).map(item => ({
-    instrument_id: item.instrument_id,
+  return (items ?? []).map((item, index) => ({
+    instrument_id: item.instrument_id ?? null,
     description: item.description,
     qty: item.qty,
     rate: item.rate,
     amount: item.amount,
-    image_url: item.image_url,
-    display_order: item.display_order,
-  }));
+    image_url: item.image_url ?? null,
+    display_order: item.display_order ?? index,
+  })) as Json;
+}
+
+function assignIfProvided<T extends keyof CreateInvoiceInput>(
+  target: JsonObject,
+  source: Partial<CreateInvoiceInput>,
+  key: T
+): void {
+  if (source[key] !== undefined) {
+    target[key] = source[key] as Json;
+  }
+}
+
+async function assertClientBelongsToOrg(
+  auth: AuthContext,
+  orgId: string,
+  clientId: string | null | undefined
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  if (clientId === undefined || clientId === null) {
+    return { ok: true };
+  }
+
+  if (!validateUUID(clientId)) {
+    return {
+      ok: false,
+      error: 'Invalid client_id format',
+      status: 400,
+    };
+  }
+
+  const { data, error } = await auth.userSupabase
+    .from('clients')
+    .select('id')
+    .eq('id', clientId)
+    .eq('org_id', orgId)
+    .maybeSingle();
+
+  if (error) {
+    throw errorHandler.handleSupabaseError(error, 'Validate invoice client');
+  }
+
+  if (!data) {
+    return {
+      ok: false,
+      error: 'Client not found in organization',
+      status: 400,
+    };
+  }
+
+  return { ok: true };
+}
+
+async function assertInvoiceItemInstrumentsBelongToOrg(
+  auth: AuthContext,
+  orgId: string,
+  items: CreateInvoiceInput['items'] | null | undefined
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  if (!items || items.length === 0) {
+    return { ok: true };
+  }
+
+  const instrumentIds = Array.from(
+    new Set(
+      items
+        .map(item => item.instrument_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    )
+  );
+
+  if (instrumentIds.length === 0) {
+    return { ok: true };
+  }
+
+  const invalidIds = instrumentIds.filter(id => !validateUUID(id));
+  if (invalidIds.length > 0) {
+    return {
+      ok: false,
+      error: 'Invoice items contain invalid instrument_id values',
+      status: 400,
+    };
+  }
+
+  const { data, error } = await auth.userSupabase
+    .from('instruments')
+    .select('id')
+    .eq('org_id', orgId)
+    .in('id', instrumentIds);
+
+  if (error) {
+    throw errorHandler.handleSupabaseError(
+      error,
+      'Validate invoice item instruments'
+    );
+  }
+
+  const foundIds = new Set((data ?? []).map(row => row.id));
+  const missingIds = instrumentIds.filter(id => !foundIds.has(id));
+
+  if (missingIds.length > 0) {
+    return {
+      ok: false,
+      error:
+        'One or more invoice item instruments were not found in organization',
+      status: 400,
+    };
+  }
+
+  return { ok: true };
 }
 
 /**
@@ -83,16 +277,27 @@ async function getInvoiceHandler(
     const orgContextError = requireOrgContext(auth);
     if (orgContextError) {
       return {
-        payload: { error: 'Organization context required' },
+        payload: { error: 'Organization context required', success: false },
         status: 403,
       };
     }
 
-    await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
+    const adminError = requireAdmin(auth);
+    if (adminError) {
+      return {
+        payload: { error: 'Admin role required', success: false },
+        status: 403,
+      };
+    }
 
     if (!validateUUID(id)) {
-      return { payload: { error: `Invalid invoice id: ${id}` }, status: 400 };
+      return {
+        payload: { error: `Invalid invoice id: ${id}`, success: false },
+        status: 400,
+      };
     }
+
+    await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
 
     const orgId = auth.orgId!;
 
@@ -131,9 +336,11 @@ async function getInvoiceHandler(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { normalized, metadata } = normalizeInvoiceRecord(data as any);
     const validationResult = validateInvoice(normalized);
+
     if (!validationResult.success) {
       throw new Error(validationResult.error);
     }
+
     const hydratedInvoice = await attachSignedUrlsToInvoice(
       auth.userSupabase,
       validationResult.data
@@ -152,8 +359,11 @@ async function getInvoiceHandler(
 
 /**
  * PUT /api/invoices/[id]
- * - Supports partial invoice fields + optional items replacement
- * - Uses DB RPC to update invoice + items in one transaction
+ * Supports partial invoice fields + optional full items replacement.
+ *
+ * NOTE:
+ * Idempotency-Key is currently a presence guard only.
+ * For true replay-safe idempotency, add a DB-backed invoice_update_idempotency map.
  */
 async function updateInvoiceHandler(
   request: NextRequest,
@@ -164,49 +374,65 @@ async function updateInvoiceHandler(
     const orgContextError = requireOrgContext(auth);
     if (orgContextError) {
       return {
-        payload: { error: 'Organization context required' },
+        payload: { error: 'Organization context required', success: false },
         status: 403,
       };
     }
 
     const adminError = requireAdmin(auth);
     if (adminError) {
-      return { payload: { error: 'Admin role required' }, status: 403 };
+      return {
+        payload: { error: 'Admin role required', success: false },
+        status: 403,
+      };
     }
-
-    await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
 
     if (!validateUUID(id)) {
-      return { payload: { error: `Invalid invoice id: ${id}` }, status: 400 };
-    }
-
-    const idempotencyKey = request.headers.get('Idempotency-Key')?.trim();
-    if (!idempotencyKey) {
       return {
-        payload: { error: 'Idempotency-Key header is required.' },
+        payload: { error: `Invalid invoice id: ${id}`, success: false },
         status: 400,
       };
     }
 
-    // JSON parse safety
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return { payload: { error: 'Invalid JSON body' }, status: 400 };
+    const idempotency = requireIdempotencyKey(request);
+    if (!idempotency.ok) {
+      return idempotency.result;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const validationResult = safeValidate(body as any, validatePartialInvoice);
+    const bodyResult = await readJsonObject(request);
+    if (!bodyResult.ok) {
+      return {
+        payload: { error: bodyResult.error, success: false },
+        status: 400,
+      };
+    }
+
+    if (
+      typeof bodyResult.body.id === 'string' &&
+      bodyResult.body.id.trim() !== id
+    ) {
+      return {
+        payload: { error: 'Invoice ID mismatch', success: false },
+        status: 400,
+      };
+    }
+
+    const validationResult = safeValidate(
+      bodyResult.body,
+      validatePartialInvoice
+    );
 
     if (!validationResult.success) {
       return {
         payload: {
           error: `Invalid invoice update data: ${validationResult.error}`,
+          success: false,
         },
         status: 400,
       };
     }
+
+    await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
 
     const validatedInput = validationResult.data as Partial<CreateInvoiceInput>;
     const orgId = auth.orgId!;
@@ -215,6 +441,32 @@ async function updateInvoiceHandler(
       validatedInput,
       'items'
     );
+
+    const clientScope = await assertClientBelongsToOrg(
+      auth,
+      orgId,
+      validatedInput.client_id
+    );
+
+    if (!clientScope.ok) {
+      return {
+        payload: { error: clientScope.error, success: false },
+        status: clientScope.status,
+      };
+    }
+
+    const itemInstrumentScope = await assertInvoiceItemInstrumentsBelongToOrg(
+      auth,
+      orgId,
+      itemsProvided ? validatedInput.items : null
+    );
+
+    if (!itemInstrumentScope.ok) {
+      return {
+        payload: { error: itemInstrumentScope.error, success: false },
+        status: itemInstrumentScope.status,
+      };
+    }
 
     if (
       itemsProvided ||
@@ -243,24 +495,31 @@ async function updateInvoiceHandler(
       const currentItems = Array.isArray(currentInvoice.invoice_items)
         ? currentInvoice.invoice_items
         : [];
+
       if (validatedInput.status !== undefined) {
         if (typeof currentInvoice.status !== 'string') {
           return {
-            payload: { error: 'Current invoice status is invalid.' },
+            payload: {
+              error: 'Current invoice status is invalid.',
+              success: false,
+            },
             status: 409,
           };
         }
+
         const transitionError = validateInvoiceStatusTransition(
           currentInvoice.status as NonNullable<CreateInvoiceInput['status']>,
           validatedInput.status as NonNullable<CreateInvoiceInput['status']>
         );
+
         if (transitionError) {
           return {
-            payload: { error: transitionError },
+            payload: { error: transitionError, success: false },
             status: 409,
           };
         }
       }
+
       const financialSnapshot: InvoiceFinancialSnapshot = {
         subtotal:
           validatedInput.subtotal !== undefined
@@ -294,56 +553,43 @@ async function updateInvoiceHandler(
       const financialError = validateInvoiceFinancials(financialSnapshot);
       if (financialError) {
         return {
-          payload: { error: financialError },
+          payload: { error: financialError, success: false },
           status: 400,
         };
       }
     }
 
-    // Build invoice update object (only apply provided fields)
     const invoiceUpdate: JsonObject = {};
-    if (validatedInput.client_id !== undefined)
-      invoiceUpdate.client_id = validatedInput.client_id;
-    if (validatedInput.invoice_date !== undefined)
-      invoiceUpdate.invoice_date = validatedInput.invoice_date;
-    if (validatedInput.due_date !== undefined)
-      invoiceUpdate.due_date = validatedInput.due_date;
-    if (validatedInput.subtotal !== undefined)
-      invoiceUpdate.subtotal = validatedInput.subtotal;
-    if (validatedInput.tax !== undefined)
-      invoiceUpdate.tax = validatedInput.tax;
-    if (validatedInput.total !== undefined)
-      invoiceUpdate.total = validatedInput.total;
-    if (validatedInput.currency !== undefined)
-      invoiceUpdate.currency = validatedInput.currency;
-    if (validatedInput.status !== undefined)
-      invoiceUpdate.status = validatedInput.status;
-    if (validatedInput.notes !== undefined)
-      invoiceUpdate.notes = validatedInput.notes;
-    // Business info fields
-    if (validatedInput.business_name !== undefined)
-      invoiceUpdate.business_name = validatedInput.business_name;
-    if (validatedInput.business_address !== undefined)
-      invoiceUpdate.business_address = validatedInput.business_address;
-    if (validatedInput.business_phone !== undefined)
-      invoiceUpdate.business_phone = validatedInput.business_phone;
-    if (validatedInput.business_email !== undefined)
-      invoiceUpdate.business_email = validatedInput.business_email;
-    // Banking info fields
-    if (validatedInput.bank_account_holder !== undefined)
-      invoiceUpdate.bank_account_holder = validatedInput.bank_account_holder;
-    if (validatedInput.bank_name !== undefined)
-      invoiceUpdate.bank_name = validatedInput.bank_name;
-    if (validatedInput.bank_swift_code !== undefined)
-      invoiceUpdate.bank_swift_code = validatedInput.bank_swift_code;
-    if (validatedInput.bank_account_number !== undefined)
-      invoiceUpdate.bank_account_number = validatedInput.bank_account_number;
-    // Additional fields
-    if (validatedInput.default_conditions !== undefined)
-      invoiceUpdate.default_conditions = validatedInput.default_conditions;
-    if (validatedInput.default_exchange_rate !== undefined)
-      invoiceUpdate.default_exchange_rate =
-        validatedInput.default_exchange_rate;
+
+    assignIfProvided(invoiceUpdate, validatedInput, 'client_id');
+    assignIfProvided(invoiceUpdate, validatedInput, 'invoice_date');
+    assignIfProvided(invoiceUpdate, validatedInput, 'due_date');
+    assignIfProvided(invoiceUpdate, validatedInput, 'subtotal');
+    assignIfProvided(invoiceUpdate, validatedInput, 'tax');
+    assignIfProvided(invoiceUpdate, validatedInput, 'total');
+    assignIfProvided(invoiceUpdate, validatedInput, 'currency');
+    assignIfProvided(invoiceUpdate, validatedInput, 'status');
+    assignIfProvided(invoiceUpdate, validatedInput, 'notes');
+
+    assignIfProvided(invoiceUpdate, validatedInput, 'business_name');
+    assignIfProvided(invoiceUpdate, validatedInput, 'business_address');
+    assignIfProvided(invoiceUpdate, validatedInput, 'business_phone');
+    assignIfProvided(invoiceUpdate, validatedInput, 'business_email');
+
+    assignIfProvided(invoiceUpdate, validatedInput, 'bank_account_holder');
+    assignIfProvided(invoiceUpdate, validatedInput, 'bank_name');
+    assignIfProvided(invoiceUpdate, validatedInput, 'bank_swift_code');
+    assignIfProvided(invoiceUpdate, validatedInput, 'bank_account_number');
+
+    assignIfProvided(invoiceUpdate, validatedInput, 'default_conditions');
+    assignIfProvided(invoiceUpdate, validatedInput, 'default_exchange_rate');
+
+    if (Object.keys(invoiceUpdate).length === 0 && !itemsProvided) {
+      return {
+        payload: { error: 'No valid fields to update', success: false },
+        status: 400,
+      };
+    }
 
     const { error: updateError } = await auth.userSupabase.rpc(
       'update_invoice_atomic',
@@ -360,7 +606,6 @@ async function updateInvoiceHandler(
       throw errorHandler.handleSupabaseError(updateError, 'Update invoice');
     }
 
-    // Re-fetch the updated invoice
     const fetchQuery = auth.userSupabase
       .from('invoices')
       .select(
@@ -397,6 +642,7 @@ async function updateInvoiceHandler(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { normalized, metadata } = normalizeInvoiceRecord(updated as any);
     const validated = validateInvoice(normalized);
+
     if (!validated.success) {
       throw new Error(validated.error);
     }
@@ -412,6 +658,7 @@ async function updateInvoiceHandler(
       id,
       itemsProvided ? validatedInput.items : null
     );
+
     const result = getInvoiceMutationResult(imageTracking);
 
     return {
@@ -426,6 +673,7 @@ async function updateInvoiceHandler(
         ...metadata,
         scope: { enforced: true, orgId },
         imageTracking,
+        idempotencyKeyPresent: true,
       },
     };
   });
@@ -443,21 +691,27 @@ async function deleteInvoiceHandler(
     const orgContextError = requireOrgContext(auth);
     if (orgContextError) {
       return {
-        payload: { error: 'Organization context required' },
+        payload: { error: 'Organization context required', success: false },
         status: 403,
       };
     }
 
     const adminError = requireAdmin(auth);
     if (adminError) {
-      return { payload: { error: 'Admin role required' }, status: 403 };
+      return {
+        payload: { error: 'Admin role required', success: false },
+        status: 403,
+      };
+    }
+
+    if (!validateUUID(id)) {
+      return {
+        payload: { error: `Invalid invoice id: ${id}`, success: false },
+        status: 400,
+      };
     }
 
     await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
-
-    if (!validateUUID(id)) {
-      return { payload: { error: `Invalid invoice id: ${id}` }, status: 400 };
-    }
 
     const orgId = auth.orgId!;
 
@@ -473,7 +727,7 @@ async function deleteInvoiceHandler(
 
     if (!count || count === 0) {
       return {
-        payload: { error: 'Invoice not found' },
+        payload: { error: 'Invoice not found', success: false },
         status: 404,
         metadata: { scope: { enforced: true, orgId } },
       };
@@ -495,9 +749,11 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
+
   const handler = withSentryRoute(
     withAuthRoute(async (r, auth) => getInvoiceHandler(r, auth, id))
   );
+
   return handler(req);
 }
 
@@ -506,9 +762,11 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
+
   const handler = withSentryRoute(
     withAuthRoute(async (r, auth) => updateInvoiceHandler(r, auth, id))
   );
+
   return handler(req);
 }
 
@@ -517,8 +775,10 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
+
   const handler = withSentryRoute(
     withAuthRoute(async (r, auth) => deleteInvoiceHandler(r, auth, id))
   );
+
   return handler(req);
 }

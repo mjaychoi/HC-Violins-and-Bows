@@ -67,6 +67,7 @@ describe('EmptyState', () => {
     expect(
       screen.getByText('다음 단계를 따라 첫 악기를 추가해보세요:')
     ).toBeInTheDocument();
+
     const guideStepElements = screen.getAllByText(
       'Enter instrument details (maker, type, serial number, etc.)'
     );
@@ -74,16 +75,6 @@ describe('EmptyState', () => {
 
     fireEvent.click(screen.getByText('시작하기'));
     expect(handleAction).toHaveBeenCalledTimes(1);
-  });
-
-  it('calls onLoadSampleData when sample data button is clicked', () => {
-    const handleLoadSampleData = jest.fn();
-
-    render(<EmptyState onLoadSampleData={handleLoadSampleData} />);
-
-    const sampleButton = screen.getByText('Start with sample data');
-    fireEvent.click(sampleButton);
-    expect(handleLoadSampleData).toHaveBeenCalled();
   });
 
   it('calls helpLink.onClick when help link is clicked', () => {

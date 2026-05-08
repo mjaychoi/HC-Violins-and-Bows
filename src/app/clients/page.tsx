@@ -33,6 +33,7 @@ import { ErrorBoundary, ConfirmDialog } from '@/components/common';
 import React, { useEffect, useState } from 'react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
+import { readApiResponseBody } from '@/utils/handleApiResponse';
 
 type PendingInstrumentLink = {
   instrument: Instrument;
@@ -169,14 +170,14 @@ export default function ClientsPage() {
             }),
           });
 
-          const body = (await res.json().catch(() => null)) as {
+          const body = await readApiResponseBody<{
             data?: {
               client?: Client;
               connections?: ClientInstrument[];
             };
             error?: string;
             message?: string;
-          } | null;
+          }>(res, 'Failed to create client');
 
           if (!res.ok) {
             const errMsg =

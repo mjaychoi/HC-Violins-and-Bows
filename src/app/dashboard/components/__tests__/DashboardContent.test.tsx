@@ -373,7 +373,6 @@ describe('DashboardContent', () => {
         {...defaultProps}
         newlyCreatedItemId="inst-1"
         onNewlyCreatedItemShown={jest.fn()}
-        onLoadSampleData={jest.fn()}
       />
     );
 

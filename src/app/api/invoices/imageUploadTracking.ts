@@ -17,20 +17,69 @@ export type InvoiceImageClaimResult = {
   missingPaths: string[];
 };
 
+const INVOICE_IMAGE_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_IMAGE_CLAIM_PATHS = 200;
+const MAX_FILE_PATH_LENGTH = 1_024;
+
+function isValidStoragePath(filePath: string): boolean {
+  const trimmed = filePath.trim();
+
+  if (!trimmed) return false;
+  if (trimmed.length > MAX_FILE_PATH_LENGTH) return false;
+  if (trimmed.includes('\0')) return false;
+  if (trimmed.includes('..')) return false;
+  if (trimmed.startsWith('/')) return false;
+  if (trimmed.includes('\\')) return false;
+
+  return true;
+}
+
+function normalizeStoragePath(filePath: string): string | null {
+  const trimmed = filePath.trim();
+
+  if (!isValidStoragePath(trimmed)) {
+    return null;
+  }
+
+  return trimmed;
+}
+
+function getUniqueValidImagePaths(items: InvoiceItemsLike): string[] {
+  const rawPaths = extractInvoiceImageStoragePaths(items);
+
+  return Array.from(
+    new Set(
+      rawPaths
+        .map(path => normalizeStoragePath(path))
+        .filter((path): path is string => Boolean(path))
+    )
+  );
+}
+
 export async function recordInvoiceImageUpload(
   supabase: SupabaseClient,
   orgId: string,
   userId: string,
   filePath: string
 ): Promise<{ error: unknown | null }> {
+  const normalizedPath = normalizeStoragePath(filePath);
+
+  if (!normalizedPath) {
+    return {
+      error: new Error('Invalid invoice image storage path'),
+    };
+  }
+
   const { error } = await supabase.from('invoice_image_uploads').upsert(
     {
       org_id: orgId,
-      file_path: filePath,
+      file_path: normalizedPath,
       uploaded_by_user_id: userId,
       linked_invoice_id: null,
       claimed_at: null,
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      expires_at: new Date(
+        Date.now() + INVOICE_IMAGE_UPLOAD_TTL_MS
+      ).toISOString(),
     },
     {
       onConflict: 'org_id,file_path',
@@ -46,7 +95,8 @@ export async function claimInvoiceImageUploads(
   invoiceId: string,
   items: InvoiceItemsLike
 ): Promise<InvoiceImageClaimResult> {
-  const filePaths = Array.from(new Set(extractInvoiceImageStoragePaths(items)));
+  const filePaths = getUniqueValidImagePaths(items);
+
   if (filePaths.length === 0) {
     return {
       status: 'not_requested',
@@ -57,16 +107,42 @@ export async function claimInvoiceImageUploads(
     };
   }
 
-  const { data, error } = await supabase
+  if (filePaths.length > MAX_IMAGE_CLAIM_PATHS) {
+    logWarn(
+      'invoice-image.claim-tracking.too-many-paths',
+      `invoiceId=${invoiceId} orgId=${orgId} requested=${filePaths.length}`
+    );
+
+    return {
+      status: 'failed',
+      requestedCount: filePaths.length,
+      claimedCount: 0,
+      missingCount: filePaths.length,
+      missingPaths: filePaths,
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+
+  let claimQuery = supabase
     .from('invoice_image_uploads')
     .update({
       linked_invoice_id: invoiceId,
-      claimed_at: new Date().toISOString(),
+      claimed_at: nowIso,
       expires_at: null,
     })
     .select('file_path')
-    .eq('org_id', orgId)
-    .in('file_path', filePaths);
+    .eq('org_id', orgId);
+
+  if ('is' in claimQuery && typeof claimQuery.is === 'function') {
+    claimQuery = claimQuery.is('linked_invoice_id', null);
+  }
+
+  if ('gt' in claimQuery && typeof claimQuery.gt === 'function') {
+    claimQuery = claimQuery.gt('expires_at', nowIso);
+  }
+
+  const { data, error } = await claimQuery.in('file_path', filePaths);
 
   if (error) {
     logError('Invoice image claim tracking failed:', error);
@@ -74,6 +150,7 @@ export async function claimInvoiceImageUploads(
       'invoice-image.claim-tracking.failed',
       `invoiceId=${invoiceId} orgId=${orgId} fileCount=${filePaths.length}`
     );
+
     return {
       status: 'failed',
       requestedCount: filePaths.length,
@@ -98,6 +175,7 @@ export async function claimInvoiceImageUploads(
   const missingPaths = filePaths.filter(
     filePath => !claimedPaths.has(filePath)
   );
+
   if (missingPaths.length > 0) {
     logWarn(
       'invoice-image.claim-tracking.partial',

@@ -59,11 +59,14 @@ export const defaultAuthContextValue: AuthContextType = {
   refreshSession: async () => undefined,
 };
 
+function now(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
 function extractOrgId(user: User | null): string | null {
   if (!user) return null;
 
   const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
-
   const candidates = [appMeta.org_id, appMeta.orgId];
 
   for (const value of candidates) {
@@ -79,7 +82,6 @@ function extractRole(user: User | null): AuthRole {
   if (!user) return 'member';
 
   const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
-
   const candidates = [appMeta.role, appMeta.app_role];
 
   for (const value of candidates) {
@@ -95,6 +97,7 @@ function extractRole(user: User | null): AuthRole {
 
 function isInvalidRefreshTokenError(message?: string) {
   if (!message) return false;
+
   return (
     message.includes('Invalid Refresh Token') ||
     message.includes('Refresh Token Not Found')
@@ -116,12 +119,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [orgId, setOrgId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Keep a single Supabase client instance for the lifetime of this provider.
   const supabaseRef = useRef<SupabaseClient | null>(null);
-
-  // Guards to avoid setState after unmount & to reduce initial-load race issues.
   const mountedRef = useRef(true);
   const initialLoadedRef = useRef(false);
+  const authEventIdRef = useRef(0);
 
   const ensureSupabase = useCallback(async (): Promise<SupabaseClient> => {
     if (supabaseRef.current) return supabaseRef.current;
@@ -129,7 +130,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let client = getSupabaseClientSync();
     if (!client) client = await getSupabaseClient();
 
-    if (!client) throw new Error('Failed to initialize Supabase client');
     supabaseRef.current = client;
     return client;
   }, []);
@@ -150,15 +150,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const handleInvalidRefreshToken = useCallback(
     async (where: string, err?: unknown) => {
+      const eventId = ++authEventIdRef.current;
+
       logInfo(
         'Invalid refresh token detected, clearing session',
         'AuthContext',
         { where }
       );
-      if (err)
+
+      if (err) {
         logError('Invalid refresh token error detail', err, 'AuthContext', {
           where,
         });
+      }
 
       try {
         const supabase = await ensureSupabase();
@@ -166,36 +170,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // ignore
       } finally {
+        if (!mountedRef.current || eventId !== authEventIdRef.current) return;
         clearAuthState();
+        setLoading(false);
       }
     },
     [clearAuthState, ensureSupabase]
   );
 
-  // Initialize auth state + subscribe to changes (once)
   useEffect(() => {
     mountedRef.current = true;
+    initialLoadedRef.current = false;
 
     let subscription: { unsubscribe: () => void } | null = null;
 
     const init = async () => {
+      const initEventId = ++authEventIdRef.current;
+
       try {
         const supabase = await ensureSupabase();
 
-        // 1) Subscribe FIRST to reduce race window.
         const { data } = supabase.auth.onAuthStateChange(
           (event, newSession) => {
+            const eventId = ++authEventIdRef.current;
+
             if (!mountedRef.current) return;
-            // Avoid noisy logs in prod if you want; keeping as-is.
+
             logInfo('Auth state changed', 'AuthContext', {
               event,
               hasSession: !!newSession,
               userId: newSession?.user?.id,
             });
 
-            // If initial load hasn't finished yet, still accept this as truth.
-            // But prevent initial loader from overriding later.
             initialLoadedRef.current = true;
+
+            if (eventId !== authEventIdRef.current) return;
 
             applySessionState(newSession);
             setLoading(false);
@@ -204,9 +213,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         subscription = data.subscription;
 
-        // 2) Load initial session (once)
         const { data: sessionData, error } = await supabase.auth.getSession();
-        if (!mountedRef.current) return;
+
+        if (
+          !mountedRef.current ||
+          initEventId !== authEventIdRef.current ||
+          initialLoadedRef.current
+        ) {
+          setLoading(false);
+          return;
+        }
 
         if (error) {
           if (isInvalidRefreshTokenError(error.message)) {
@@ -215,12 +231,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             logError('Failed to get initial session', error, 'AuthContext');
             clearAuthState();
           }
-          return;
-        }
-
-        // If an auth event already set state, don't override it.
-        if (initialLoadedRef.current) {
-          setLoading(false);
           return;
         }
 
@@ -255,10 +265,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    init();
+    void init();
 
     return () => {
       mountedRef.current = false;
+      authEventIdRef.current += 1;
       subscription?.unsubscribe();
     };
   }, [
@@ -270,11 +281,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp: AuthContextType['signUp'] = useCallback(
     async (email, password) => {
-      const startTime = performance.now();
+      const startTime = now();
+
       try {
         const supabase = await ensureSupabase();
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        const duration = Math.round(performance.now() - startTime);
+
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+
+        const duration = Math.round(now() - startTime);
 
         if (error) {
           logApiRequest(
@@ -289,13 +306,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               errorCode: error.message,
             }
           );
+
           logError('Sign up failed', error, 'AuthContext', { email });
           return { error };
         }
 
-        // Note: Supabase signUp may not create a session if email confirmation is required.
         if (data.session) {
-          applySessionState(data.session);
+          const eventId = ++authEventIdRef.current;
+          if (mountedRef.current && eventId === authEventIdRef.current) {
+            applySessionState(data.session);
+            setLoading(false);
+          }
         }
 
         logApiRequest('POST', 'auth/signup', 200, duration, 'AuthContext', {
@@ -305,24 +326,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         return { error: null };
       } catch (err) {
-        const duration = Math.round(performance.now() - startTime);
-        logError('Sign up exception', err, 'AuthContext', { email, duration });
+        const duration = Math.round(now() - startTime);
+
+        logError('Sign up exception', err, 'AuthContext', {
+          email,
+          duration,
+        });
+
         return { error: err as AuthError };
       }
     },
     [ensureSupabase, applySessionState]
   );
 
-  const signIn = useCallback<AuthContextType['signIn']>(
+  const signIn: AuthContextType['signIn'] = useCallback(
     async (email, password) => {
-      const startTime = performance.now();
+      const startTime = now();
+
       try {
         const supabase = await ensureSupabase();
+
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
-        const duration = Math.round(performance.now() - startTime);
+
+        const duration = Math.round(now() - startTime);
 
         if (error) {
           logApiRequest(
@@ -337,13 +366,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               errorCode: error.message,
             }
           );
+
           logError('Sign in failed', error, 'AuthContext', { email });
           return { error };
         }
 
-        // onAuthStateChange will also fire; setting state here is okay but optional.
         if (data.session) {
-          applySessionState(data.session);
+          const eventId = ++authEventIdRef.current;
+          if (mountedRef.current && eventId === authEventIdRef.current) {
+            applySessionState(data.session);
+            setLoading(false);
+          }
         }
 
         logApiRequest('POST', 'auth/signin', 200, duration, 'AuthContext', {
@@ -353,8 +386,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         return { error: null };
       } catch (err) {
-        const duration = Math.round(performance.now() - startTime);
-        logError('Sign in exception', err, 'AuthContext', { email, duration });
+        const duration = Math.round(now() - startTime);
+
+        logError('Sign in exception', err, 'AuthContext', {
+          email,
+          duration,
+        });
+
         return { error: err as AuthError };
       }
     },
@@ -362,13 +400,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const userId = user?.id;
+
   const signOut = useCallback(async () => {
-    const startTime = performance.now();
+    const startTime = now();
+    const eventId = ++authEventIdRef.current;
 
     try {
       const supabase = await ensureSupabase();
       const { error } = await supabase.auth.signOut();
-      const duration = Math.round(performance.now() - startTime);
+      const duration = Math.round(now() - startTime);
 
       if (error) {
         logApiRequest(
@@ -382,76 +422,115 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             error: true,
           }
         );
-        logError('Sign out failed', error, 'AuthContext', { userId });
+
+        if (isInvalidRefreshTokenError(error.message)) {
+          logInfo(
+            'Ignoring invalid refresh token during signOut',
+            'AuthContext',
+            { userId }
+          );
+        } else {
+          logError('Sign out failed', error, 'AuthContext', { userId });
+        }
       } else {
         logApiRequest('POST', 'auth/signout', 200, duration, 'AuthContext', {
           operation: 'signOut',
           userId,
         });
+
         logInfo('User signed out successfully', 'AuthContext', { userId });
       }
     } catch (err) {
-      const duration = Math.round(performance.now() - startTime);
-      logError('Sign out exception', err, 'AuthContext', { userId, duration });
+      const duration = Math.round(now() - startTime);
+      const message = err instanceof Error ? err.message : String(err);
+
+      if (isInvalidRefreshTokenError(message)) {
+        logInfo(
+          'Ignoring invalid refresh token exception during signOut',
+          'AuthContext',
+          { userId, duration }
+        );
+      } else {
+        logError('Sign out exception', err, 'AuthContext', {
+          userId,
+          duration,
+        });
+      }
     } finally {
-      // State-only policy: AppLayout handles redirects.
+      if (!mountedRef.current || eventId !== authEventIdRef.current) return;
       clearAuthState();
+      setLoading(false);
     }
   }, [ensureSupabase, clearAuthState, userId]);
 
-  const refreshSession = useCallback<
-    AuthContextType['refreshSession']
-  >(async () => {
-    const startTime = performance.now();
+  const refreshSession: AuthContextType['refreshSession'] =
+    useCallback(async () => {
+      const startTime = now();
+      const eventId = ++authEventIdRef.current;
 
-    try {
-      const supabase = await ensureSupabase();
-      const { data, error } = await supabase.auth.refreshSession();
-      const duration = Math.round(performance.now() - startTime);
+      try {
+        const supabase = await ensureSupabase();
+        const { data, error } = await supabase.auth.refreshSession();
+        const duration = Math.round(now() - startTime);
 
-      if (error) {
-        logApiRequest(
-          'POST',
-          'auth/refresh',
-          undefined,
-          duration,
-          'AuthContext',
-          {
-            operation: 'refreshSession',
-            error: true,
+        if (!mountedRef.current || eventId !== authEventIdRef.current) return;
+
+        if (error) {
+          logApiRequest(
+            'POST',
+            'auth/refresh',
+            undefined,
+            duration,
+            'AuthContext',
+            {
+              operation: 'refreshSession',
+              error: true,
+            }
+          );
+
+          logError('Session refresh failed', error, 'AuthContext');
+
+          if (isInvalidRefreshTokenError(error.message)) {
+            await handleInvalidRefreshToken('refreshSession', error);
           }
-        );
-        logError('Session refresh failed', error, 'AuthContext');
 
-        if (isInvalidRefreshTokenError(error.message)) {
-          await handleInvalidRefreshToken('refreshSession', error);
+          return;
         }
-        return;
+
+        const nextSession = data.session ?? null;
+        applySessionState(nextSession);
+        setLoading(false);
+
+        logApiRequest('POST', 'auth/refresh', 200, duration, 'AuthContext', {
+          operation: 'refreshSession',
+          userId: nextSession?.user?.id,
+        });
+
+        if (!nextSession) {
+          logInfo(
+            'No session after refresh; auth state cleared',
+            'AuthContext'
+          );
+        }
+      } catch (err) {
+        const duration = Math.round(now() - startTime);
+        const message = err instanceof Error ? err.message : String(err);
+
+        logError('Session refresh exception', err, 'AuthContext', {
+          duration,
+        });
+
+        if (
+          mountedRef.current &&
+          eventId === authEventIdRef.current &&
+          isInvalidRefreshTokenError(message)
+        ) {
+          await handleInvalidRefreshToken('refreshSession-catch', err);
+        }
       }
+    }, [ensureSupabase, handleInvalidRefreshToken, applySessionState]);
 
-      const nextSession = data.session ?? null;
-      applySessionState(nextSession);
-
-      logApiRequest('POST', 'auth/refresh', 200, duration, 'AuthContext', {
-        operation: 'refreshSession',
-        userId: nextSession?.user?.id,
-      });
-
-      if (!nextSession) {
-        logInfo('No session after refresh; auth state cleared', 'AuthContext');
-      }
-    } catch (err) {
-      const duration = Math.round(performance.now() - startTime);
-      logError('Session refresh exception', err, 'AuthContext', { duration });
-
-      const message = err instanceof Error ? err.message : String(err);
-      if (isInvalidRefreshTokenError(message)) {
-        await handleInvalidRefreshToken('refreshSession-catch', err);
-      }
-    }
-  }, [ensureSupabase, handleInvalidRefreshToken, applySessionState]);
-
-  const value = useMemo(
+  const value = useMemo<AuthContextType>(
     () => ({
       user,
       session,
@@ -482,7 +561,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+
+  if (!ctx) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+
   return ctx;
 }
 

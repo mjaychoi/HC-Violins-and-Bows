@@ -4,6 +4,7 @@ import { useDataState } from '@/hooks/useDataState';
 import { logError } from '@/utils/logger';
 import { apiFetch } from '@/utils/apiFetch';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
+import { handleApiResponse } from '@/utils/handleApiResponse';
 // Removed direct supabase import to reduce bundle size - using API routes instead
 
 export function useDashboardClients() {
@@ -45,15 +46,15 @@ export function useDashboardClients() {
         limit: '10',
       });
       const response = await apiFetch(`/api/clients?${params.toString()}`);
-      if (!response.ok) {
-        throw new Error(`Failed to search clients: ${response.statusText}`);
-      }
-      const result = await response.json();
+      const data = await handleApiResponse<Client[]>(
+        response,
+        'Failed to search clients'
+      );
 
       // Ignore stale responses
       if (reqId !== requestIdRef.current) return [];
 
-      return result.data || [];
+      return data || [];
     } catch (error) {
       // Only log error if this is still the latest request
       if (reqId === requestIdRef.current) {

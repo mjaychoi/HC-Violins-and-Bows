@@ -3,6 +3,7 @@ import { ContactLog } from '@/types';
 import { todayLocalYMD, formatDisplayDate } from '@/utils/dateParsing';
 import { differenceInDays, parseISO, isValid } from 'date-fns';
 import { apiFetch } from '@/utils/apiFetch';
+import { handleApiResponse } from '@/utils/handleApiResponse';
 
 type ContactInfoStatus = 'loading' | 'success' | 'empty' | 'error';
 
@@ -83,12 +84,12 @@ export function useClientsContactInfo({
             const response = await apiFetch(
               `/api/contacts?clientIds=${encodeURIComponent(clientIdsParam)}`
             );
-            const result = await response.json();
-            if (!response.ok) {
-              throw result.error || new Error('Failed to fetch contact logs');
-            }
-            if (result.data) {
-              allLogs.push(...(result.data as ContactLog[]));
+            const data = await handleApiResponse<ContactLog[]>(
+              response,
+              'Failed to fetch contact logs'
+            );
+            if (data) {
+              allLogs.push(...data);
             }
           } catch (error) {
             throw error;

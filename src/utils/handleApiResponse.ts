@@ -131,7 +131,9 @@ function parseApiErrorBody(
         ? body.error_code
         : typeof nestedError?.code === 'string'
           ? nestedError.code
-          : undefined,
+          : typeof nestedError?.error_code === 'string'
+            ? nestedError.error_code
+            : undefined,
     retryable:
       typeof body?.retryable === 'boolean'
         ? body.retryable
@@ -316,10 +318,30 @@ export async function readApiResponseEnvelope<T>(
   const body = await readApiSuccessBody(res);
 
   if (!body || !('data' in body)) {
-    throw createInvalidResponseError(res);
+    throw createInvalidResponseError(
+      res,
+      'The server response did not include the expected data (empty response).'
+    );
   }
 
   return body as ApiSuccessEnvelope<T>;
+}
+
+export async function readApiResponseBody<T extends JsonRecord>(
+  res: Response,
+  fallbackMessage: string
+): Promise<T> {
+  if (!res.ok) {
+    throw await createApiResponseErrorFromResponse(res, fallbackMessage);
+  }
+
+  const body = await readApiSuccessBody(res);
+
+  if (!body) {
+    throw createInvalidResponseError(res);
+  }
+
+  return body as T;
 }
 
 /** Options for {@link handleApiResponse} — use explicit flags instead of silent null. */

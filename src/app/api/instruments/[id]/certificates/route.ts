@@ -12,8 +12,9 @@ import { errorHandler } from '@/utils/errorHandler';
 import { logError } from '@/utils/logger';
 import { createApiResponse } from '@/app/api/_utils/apiErrors';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
+
 const SIGNED_URL_TTL_SECONDS = 600;
-const MAX_CERTIFICATE_SIZE = 100 * 1024 * 1024;
+const MAX_CERTIFICATE_SIZE = 20 * 1024 * 1024;
 
 function routeJson(payload: unknown, status = 200): NextResponse {
   return createApiResponse(payload, status);
@@ -41,7 +42,25 @@ function ensureRequestWithNextUrl(request: NextRequest): NextRequest {
 }
 
 function sanitizeCertificateFilename(filename: string): string {
-  return filename.replace(/[^a-zA-Z0-9.-]/g, '_').replace(/\s+/g, '_');
+  const sanitized = filename
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .trim()
+    .slice(0, 180);
+
+  return sanitized || 'certificate.pdf';
+}
+
+function isPdfUpload(file: File): boolean {
+  const normalizedType = (file.type || '').toLowerCase();
+  const isPdfType =
+    normalizedType === 'application/pdf' ||
+    normalizedType === 'application/x-pdf';
+  const hasPdfExtension = file.name.toLowerCase().endsWith('.pdf');
+
+  return isPdfType || hasPdfExtension;
 }
 
 function getCertificateStorageKey(
@@ -100,6 +119,26 @@ async function ensureOwnedInstrument(
   return { instrument };
 }
 
+async function ensureAdminOwnedInstrument(
+  auth: AuthContext,
+  instrumentId: string
+): Promise<
+  | { instrument: { id: string; serial_number?: string | null } }
+  | { response: NextResponse }
+> {
+  const orgContextError = requireOrgContext(auth);
+  if (orgContextError) {
+    return { response: orgContextError };
+  }
+
+  const adminError = requireAdmin(auth);
+  if (adminError) {
+    return { response: adminError };
+  }
+
+  return ensureOwnedInstrument(auth, instrumentId);
+}
+
 function scopedCertificateQuery(auth: AuthContext, instrumentId: string) {
   return auth.userSupabase
     .from('instrument_certificates')
@@ -123,11 +162,41 @@ async function rollbackUploadedCertificate(
   }
 }
 
-// Note: S3Storage doesn't have list functionality, so we rely on metadata table only
+async function validateCertificateFileFromRequest(
+  request: NextRequest
+): Promise<File | NextResponse> {
+  const formData = await request.formData();
+  const file = formData.get('certificate') as File | null;
+
+  if (!file) {
+    return routeJson({ error: 'No certificate file provided' }, 400);
+  }
+
+  if (!isPdfUpload(file)) {
+    return routeJson({ error: 'Certificate must be a PDF file' }, 400);
+  }
+
+  if (file.size <= 0) {
+    return routeJson({ error: 'Certificate file is empty' }, 400);
+  }
+
+  if (file.size > MAX_CERTIFICATE_SIZE) {
+    return routeJson(
+      {
+        error: `Certificate file size must be less than ${Math.round(
+          MAX_CERTIFICATE_SIZE / 1024 / 1024
+        )}MB`,
+      },
+      400
+    );
+  }
+
+  return file;
+}
 
 /**
  * GET /api/instruments/[id]/certificates
- * List all certificate files for an instrument
+ * List all certificate files for an instrument.
  */
 async function getHandlerInternal(
   request: NextRequest,
@@ -137,13 +206,9 @@ async function getHandlerInternal(
   try {
     const storage = getStorage();
 
-    // Validate UUID
     if (!validateUUID(id)) {
       return routeJson({ error: 'Invalid instrument ID format' }, 400);
     }
-
-    const orgContextError = requireOrgContext(auth);
-    if (orgContextError) return orgContextError;
 
     const ownership = await ensureOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
@@ -153,94 +218,94 @@ async function getHandlerInternal(
       id
     ).order('created_at', { ascending: false });
 
-    if (!certError && certRows && certRows.length > 0) {
-      const certificateFiles = [];
-
-      for (const row of certRows as ScopedCertificateRow[]) {
-        const fileKey = row.storage_path?.trim();
-
-        if (!fileKey) {
-          logError('Certificate object missing storage path', {
-            instrumentId: id,
-            certificateId: row.id,
-          });
-          return routeJson({ error: 'Media object not found' }, 404);
-        }
-
-        let exists = false;
-        try {
-          exists = await storage.fileExists(fileKey);
-        } catch (error) {
-          logError('Failed to verify certificate object', {
-            instrumentId: id,
-            certificateId: row.id,
-            fileKey,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return routeJson({ error: 'Failed to verify media object' }, 500);
-        }
-
-        if (!exists) {
-          logError('Certificate object not found', {
-            instrumentId: id,
-            certificateId: row.id,
-            fileKey,
-          });
-          return routeJson({ error: 'Media object not found' }, 404);
-        }
-
-        if (!storage.presignGet) {
-          logError('Certificate presign unavailable', {
-            instrumentId: id,
-            certificateId: row.id,
-            fileKey,
-          });
-          return routeJson({ error: 'Failed to generate access URL' }, 500);
-        }
-
-        let signedUrl = '';
-        try {
-          signedUrl = await storage.presignGet(fileKey, SIGNED_URL_TTL_SECONDS);
-        } catch (error) {
-          logError('Failed to generate certificate access URL', {
-            instrumentId: id,
-            certificateId: row.id,
-            fileKey,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return routeJson({ error: 'Failed to generate access URL' }, 500);
-        }
-
-        if (!signedUrl.trim()) {
-          logError('Certificate access URL was empty', {
-            instrumentId: id,
-            certificateId: row.id,
-            fileKey,
-          });
-          return routeJson({ error: 'Failed to generate access URL' }, 500);
-        }
-
-        const name = row.original_name || getStorageFilename(fileKey);
-        certificateFiles.push({
-          id: row.id,
-          name,
-          path: fileKey,
-          size: row.size || 0,
-          createdAt: row.created_at || null,
-          signedUrl,
-        });
-      }
-
-      return routeJson({ data: certificateFiles }, 200);
-    }
-
     if (certError) {
       logError('Certificate list error:', certError);
       return routeJson({ error: 'Failed to list certificate files' }, 500);
     }
 
-    // No certificates found
-    return routeJson({ data: [] }, 200);
+    if (!certRows || certRows.length === 0) {
+      return routeJson({ data: [] }, 200);
+    }
+
+    const certificateFiles = [];
+
+    for (const row of certRows as ScopedCertificateRow[]) {
+      const fileKey = row.storage_path?.trim();
+
+      if (!fileKey) {
+        logError('Certificate object missing storage path', {
+          instrumentId: id,
+          certificateId: row.id,
+        });
+        return routeJson({ error: 'Media object not found' }, 404);
+      }
+
+      let exists = false;
+      try {
+        exists = await storage.fileExists(fileKey);
+      } catch (error) {
+        logError('Failed to verify certificate object', {
+          instrumentId: id,
+          certificateId: row.id,
+          fileKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return routeJson({ error: 'Failed to verify media object' }, 500);
+      }
+
+      if (!exists) {
+        logError('Certificate object not found', {
+          instrumentId: id,
+          certificateId: row.id,
+          fileKey,
+        });
+        return routeJson({ error: 'Media object not found' }, 404);
+      }
+
+      if (!storage.presignGet) {
+        logError('Certificate presign unavailable', {
+          instrumentId: id,
+          certificateId: row.id,
+          fileKey,
+        });
+        return routeJson({ error: 'Failed to generate access URL' }, 500);
+      }
+
+      let signedUrl = '';
+      try {
+        signedUrl = await storage.presignGet(fileKey, SIGNED_URL_TTL_SECONDS);
+      } catch (error) {
+        logError('Failed to generate certificate access URL', {
+          instrumentId: id,
+          certificateId: row.id,
+          fileKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return routeJson({ error: 'Failed to generate access URL' }, 500);
+      }
+
+      if (!signedUrl.trim()) {
+        logError('Certificate access URL was empty', {
+          instrumentId: id,
+          certificateId: row.id,
+          fileKey,
+        });
+        return routeJson({ error: 'Failed to generate access URL' }, 500);
+      }
+
+      const name = row.original_name || getStorageFilename(fileKey);
+
+      certificateFiles.push({
+        id: row.id,
+        name,
+        path: fileKey,
+        size: row.size || 0,
+        createdAt: row.created_at || null,
+        signedUrl,
+      });
+    }
+
+    return routeJson({ data: certificateFiles }, 200);
   } catch (error) {
     logError('Certificate list error:', error);
     return routeJson(
@@ -257,7 +322,7 @@ async function getHandlerInternal(
 
 /**
  * POST /api/instruments/[id]/certificates
- * Upload certificate file for an instrument
+ * Upload certificate file for an instrument.
  */
 async function postHandlerInternal(
   request: NextRequest,
@@ -271,45 +336,22 @@ async function postHandlerInternal(
       return routeJson({ error: 'Invalid instrument ID format' }, 400);
     }
 
-    const formData = await request.formData();
-    const file = formData.get('certificate') as File | null;
-
-    if (!file) {
-      return routeJson({ error: 'No certificate file provided' }, 400);
-    }
-
-    const normalizedType = (file.type || '').toLowerCase();
-    const isPdfType =
-      normalizedType === 'application/pdf' ||
-      normalizedType === 'application/x-pdf';
-    const hasPdfExtension = file.name.toLowerCase().endsWith('.pdf');
-    if (!isPdfType && !hasPdfExtension) {
-      return routeJson({ error: 'Certificate must be a PDF file' }, 400);
-    }
-
-    if (file.size > MAX_CERTIFICATE_SIZE) {
-      return routeJson(
-        { error: 'Certificate file size must be less than 100MB' },
-        400
-      );
-    }
-
-    const orgContextError = requireOrgContext(auth);
-    if (orgContextError) return orgContextError;
-
-    const adminError = requireAdmin(auth);
-    if (adminError) return adminError;
-
-    const ownership = await ensureOwnedInstrument(auth, id);
+    const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
+
+    const fileOrResponse = await validateCertificateFileFromRequest(request);
+    if (fileOrResponse instanceof Response) {
+      return fileOrResponse;
+    }
+
+    const file = fileOrResponse;
+
+    storage.validateFile(file.name, 'application/pdf', file.size);
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
     const fileKey = getCertificateStorageKey(auth.orgId!, id, file.name);
-
-    // Validate file before upload
-    storage.validateFile(file.name, 'application/pdf', file.size);
 
     let canonicalStoredKey: string;
     try {
@@ -334,6 +376,7 @@ async function postHandlerInternal(
     }
 
     let insertedId: string | null = null;
+
     const { data: createdCertificateId, error: insertError } =
       await auth.userSupabase.rpc('create_instrument_certificate_metadata', {
         p_instrument_id: id,
@@ -345,11 +388,11 @@ async function postHandlerInternal(
       });
 
     if (insertError) {
-      try {
-        await storage.deleteFile(canonicalStoredKey);
-      } catch (deleteError) {
-        logError('Failed to rollback file upload:', deleteError);
-      }
+      await rollbackUploadedCertificate(
+        canonicalStoredKey,
+        'Failed to rollback certificate upload after metadata insert error:'
+      );
+
       throw errorHandler.handleSupabaseError(
         insertError,
         'Save certificate metadata'
@@ -370,13 +413,15 @@ async function postHandlerInternal(
         await auth.userSupabase
           .from('instrument_certificates')
           .delete()
-          .eq('id', insertedId);
+          .eq('id', insertedId)
+          .eq('instrument_id', id);
       }
-      try {
-        await storage.deleteFile(canonicalStoredKey);
-      } catch (deleteError) {
-        logError('Failed to rollback file upload:', deleteError);
-      }
+
+      await rollbackUploadedCertificate(
+        canonicalStoredKey,
+        'Failed to rollback certificate upload after instrument update error:'
+      );
+
       throw errorHandler.handleSupabaseError(updateError, 'Update instrument');
     }
 
@@ -413,7 +458,7 @@ async function postHandlerInternal(
 
 /**
  * PUT /api/instruments/[id]/certificates?file=...
- * Replace an existing certificate file with a new PDF
+ * Replace an existing certificate file with a new PDF.
  */
 async function putHandlerInternal(
   request: NextRequest,
@@ -433,39 +478,16 @@ async function putHandlerInternal(
       return routeJson({ error: 'File name is required' }, 400);
     }
 
-    const formData = await request.formData();
-    const file = formData.get('certificate') as File | null;
-
-    if (!file) {
-      return routeJson({ error: 'No certificate file provided' }, 400);
-    }
-
-    const normalizedType = (file.type || '').toLowerCase();
-    const isPdfType =
-      normalizedType === 'application/pdf' ||
-      normalizedType === 'application/x-pdf';
-    const hasPdfExtension = file.name.toLowerCase().endsWith('.pdf');
-    if (!isPdfType && !hasPdfExtension) {
-      return routeJson({ error: 'Certificate must be a PDF file' }, 400);
-    }
-
-    if (file.size > MAX_CERTIFICATE_SIZE) {
-      return routeJson(
-        { error: 'Certificate file size must be less than 100MB' },
-        400
-      );
-    }
-
-    const orgContextError = requireOrgContext(auth);
-    if (orgContextError) return orgContextError;
-
-    const adminError = requireAdmin(auth);
-    if (adminError) return adminError;
-
-    const ownership = await ensureOwnedInstrument(auth, id);
+    const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
 
-    // Find certificate by fileName in metadata table
+    const fileOrResponse = await validateCertificateFileFromRequest(request);
+    if (fileOrResponse instanceof Response) {
+      return fileOrResponse;
+    }
+
+    const file = fileOrResponse;
+
     const { data: certRows, error: certError } = await scopedCertificateQuery(
       auth,
       id
@@ -486,11 +508,10 @@ async function putHandlerInternal(
     const oldFileKey = existing.storage_path;
     const fileKey = getCertificateStorageKey(auth.orgId!, id, file.name);
 
+    storage.validateFile(file.name, 'application/pdf', file.size);
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-
-    // Validate file before upload
-    storage.validateFile(file.name, 'application/pdf', file.size);
 
     let canonicalStoredKey: string;
     try {
@@ -514,9 +535,6 @@ async function putHandlerInternal(
       throw new Error('Certificate replacement did not return a storage key');
     }
 
-    // org_id is enforced via RLS (join through instruments) and ensureOwnedInstrument.
-    // instrument_certificates has no direct org_id column; instrument_id + storage_path
-    // is the narrowest safe scope available at the application layer.
     const { error: updateMetaError } = await auth.userSupabase
       .from('instrument_certificates')
       .update({
@@ -533,6 +551,7 @@ async function putHandlerInternal(
         canonicalStoredKey,
         'Failed to rollback replaced certificate upload:'
       );
+
       throw errorHandler.handleSupabaseError(
         updateMetaError,
         'Update certificate metadata'
@@ -544,10 +563,15 @@ async function putHandlerInternal(
         await storage.deleteFile(oldFileKey);
       } catch (deleteError) {
         logError('Failed to delete legacy certificate path:', deleteError);
+
         return routeJson(
           {
             error:
               'Failed to delete previous certificate file from storage. Please retry.',
+            filePath: canonicalStoredKey,
+            cleanup: {
+              oldStorageDeleted: false,
+            },
           },
           503
         );
@@ -569,6 +593,9 @@ async function putHandlerInternal(
       filePath: canonicalStoredKey,
       publicUrl: signedUrl,
       message: 'Certificate replaced successfully',
+      cleanup: {
+        oldStorageDeleted: true,
+      },
     });
   } catch (error) {
     logError('Certificate replace error:', error);
@@ -586,7 +613,7 @@ async function putHandlerInternal(
 
 /**
  * DELETE /api/instruments/[id]/certificates
- * Delete a specific certificate file for an instrument
+ * Delete a specific certificate file for an instrument.
  */
 async function deleteHandlerInternal(
   request: NextRequest,
@@ -611,19 +638,17 @@ async function deleteHandlerInternal(
       );
     }
 
-    const orgContextError = requireOrgContext(auth);
-    if (orgContextError) return orgContextError;
-
-    const adminError = requireAdmin(auth);
-    if (adminError) return adminError;
-
-    const ownership = await ensureOwnedInstrument(auth, id);
+    const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
 
     let filePath: string | null = null;
     let deleteByCertificateId: string | null = null;
 
     if (certificateId) {
+      if (!validateUUID(certificateId)) {
+        return routeJson({ error: 'Invalid certificate id format' }, 400);
+      }
+
       const { data: certRow, error: certError } = await auth.userSupabase
         .from('instrument_certificates')
         .select('id, storage_path, instruments!inner(org_id)')
@@ -642,7 +667,6 @@ async function deleteHandlerInternal(
     }
 
     if (!filePath && fileName) {
-      // Find certificate by fileName in metadata table
       const { data: certRows, error: certError } = await scopedCertificateQuery(
         auth,
         id
@@ -670,9 +694,6 @@ async function deleteHandlerInternal(
       );
     }
 
-    // Delete DB metadata first. If storage cleanup fails afterward it is
-    // best-effort — a stale storage object is less harmful than a DB record
-    // that points to a file that no longer exists.
     const deleteMetaQuery = deleteByCertificateId
       ? auth.userSupabase
           .from('instrument_certificates')
@@ -697,7 +718,8 @@ async function deleteHandlerInternal(
 
     let storageDeleted = false;
     try {
-      storageDeleted = Boolean(await storage.deleteFile(filePath));
+      const deleteResult = await storage.deleteFile(filePath);
+      storageDeleted = deleteResult !== false;
     } catch (deleteError) {
       logError(
         'Certificate storage cleanup failed (metadata already removed):',
@@ -713,12 +735,23 @@ async function deleteHandlerInternal(
       );
     }
 
-    // Check if any certificates remain using metadata table
-    const { data: remainingCerts } = await auth.userSupabase
-      .from('instrument_certificates')
-      .select('id')
-      .eq('instrument_id', id)
-      .limit(1);
+    const { data: remainingCerts, error: remainingCertsError } =
+      await scopedCertificateQuery(auth, id).limit(1);
+
+    if (remainingCertsError) {
+      logError('Failed to check remaining certificates:', remainingCertsError);
+
+      return routeJson(
+        {
+          error:
+            'Certificate metadata was deleted, but remaining certificate check failed. Please retry or reconcile the instrument state.',
+          cleanup: {
+            storageDeleted,
+          },
+        },
+        500
+      );
+    }
 
     if (!remainingCerts || remainingCerts.length === 0) {
       const { error: updateError } = await auth.userSupabase
@@ -729,10 +762,14 @@ async function deleteHandlerInternal(
 
       if (updateError) {
         logError('Failed to update instrument certificate flag:', updateError);
+
         return routeJson(
           {
             error:
               'Certificate file and metadata were deleted, but the instrument certificate flag update failed. Please retry or reconcile the instrument state.',
+            cleanup: {
+              storageDeleted,
+            },
           },
           500
         );
@@ -775,8 +812,8 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  // FIXED: Next.js 15+ route handlers: params is Promise<{ id: string }>
   const p: unknown = context.params;
+
   const params =
     typeof (p as { then?: unknown })?.then === 'function'
       ? await (p as Promise<{ id: string }>)
@@ -784,7 +821,6 @@ export async function GET(
 
   const { id } = params;
 
-  // Wrap handler with auth and sentry
   const handler = withSentryRoute(
     withAuthRoute(async (req: NextRequest, auth: AuthContext) => {
       return apiHandler(
@@ -808,6 +844,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   const p: unknown = context.params;
+
   const params =
     typeof (p as { then?: unknown })?.then === 'function'
       ? await (p as Promise<{ id: string }>)
@@ -838,6 +875,7 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   const p: unknown = context.params;
+
   const params =
     typeof (p as { then?: unknown })?.then === 'function'
       ? await (p as Promise<{ id: string }>)
@@ -868,6 +906,7 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   const p: unknown = context.params;
+
   const params =
     typeof (p as { then?: unknown })?.then === 'function'
       ? await (p as Promise<{ id: string }>)

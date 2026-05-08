@@ -6,6 +6,7 @@ import {
   NormalizedRowDefaults,
 } from '@/test/fixtures/rows';
 import { apiFetch } from '@/utils/apiFetch';
+import { logError } from '@/utils/logger';
 
 jest.mock('@/utils/apiFetch', () => ({
   apiFetch: jest.fn(),
@@ -19,6 +20,7 @@ jest.mock('@/utils/logger', () => ({
 type NormalizedInstrument = Instrument & NormalizedRowDefaults;
 
 const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;
+const mockLogError = logError as jest.MockedFunction<typeof logError>;
 
 const mockInstrument: NormalizedInstrument = withNormalizedDefaults<Instrument>(
   {
@@ -240,6 +242,87 @@ describe('useDashboardItems', () => {
     });
     expect(result.current.items).toHaveLength(1);
     expect(result.current.submitting).toBe(false);
+  });
+
+  it('redacts raw item data from create/update error logs', async () => {
+    mockApiFetch.mockImplementation(async (url, options) => {
+      if (
+        url === '/api/instruments?orderBy=created_at&ascending=false&all=true'
+      ) {
+        return jsonResponse({ data: [] });
+      }
+      if (
+        url ===
+        '/api/connections?orderBy=created_at&ascending=false&pageSize=100'
+      ) {
+        return jsonResponse({ data: [] });
+      }
+      if (url === '/api/clients?orderBy=created_at&ascending=false&all=true') {
+        return jsonResponse({ data: [] });
+      }
+      if (url === '/api/instruments' && options?.method) {
+        return jsonResponse(
+          {
+            error: 'failed',
+          },
+          { status: 500 }
+        );
+      }
+      return jsonResponse({ data: null });
+    });
+
+    const { result } = renderHook(() => useDashboardItems());
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.createItem({
+          maker: 'Private Owner',
+          type: 'Violin',
+          subtype: null,
+          year: 1900,
+          certificate: false,
+          size: null,
+          weight: null,
+          price: 123456,
+          ownership: null,
+          note: 'sensitive note',
+          serial_number: 'SECRET-SERIAL',
+          status: 'Available',
+        })
+      ).rejects.toBeTruthy();
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.updateItem('inst1', {
+          maker: 'Private Owner',
+          price: 654321,
+          note: 'another sensitive note',
+          serial_number: 'UPDATE-SECRET',
+        })
+      ).rejects.toBeTruthy();
+    });
+
+    const metadataArgs = mockLogError.mock.calls.map(call => call[3]);
+    expect(metadataArgs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: 'createItem',
+          fields: expect.arrayContaining(['maker', 'note', 'serial_number']),
+        }),
+        expect.objectContaining({
+          operation: 'updateItem',
+          fields: expect.arrayContaining(['maker', 'note', 'serial_number']),
+        }),
+      ])
+    );
+    expect(JSON.stringify(metadataArgs)).not.toContain('sensitive note');
+    expect(JSON.stringify(metadataArgs)).not.toContain('SECRET-SERIAL');
+    expect(JSON.stringify(metadataArgs)).not.toContain('654321');
   });
 
   it('should update item', async () => {

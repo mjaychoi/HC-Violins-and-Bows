@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { Client, Instrument } from '@/types';
 import { logError } from '@/utils/logger';
 import { apiFetch } from '@/utils/apiFetch';
+import { handleApiResponse } from '@/utils/handleApiResponse';
 // Removed direct supabase import to reduce bundle size - using API routes instead
 
 export function useOwnedItems() {
@@ -55,12 +56,10 @@ export function useOwnedItems() {
         signal: controller.signal,
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch owned items: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      const items = result.data || [];
+      const items = await handleApiResponse<Instrument[]>(
+        response,
+        'Failed to fetch owned items'
+      );
 
       if (requestId !== requestIdRef.current) {
         return;

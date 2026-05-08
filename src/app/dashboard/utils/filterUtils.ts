@@ -3,6 +3,7 @@
 import { Instrument } from '@/types';
 import { DashboardFilters } from '../types';
 import { DateRange } from '@/types/search';
+import { parseYMDLocal } from '@/utils/dateParsing';
 import { DASHBOARD_FILTER_KEYS } from '../constants';
 
 const ensureArray = <T>(value: T[] | undefined | null): T[] =>
@@ -23,13 +24,15 @@ export function filterDashboardItems(
   if (dateRange?.from || dateRange?.to) {
     filtered = filtered.filter(item => {
       try {
-        const itemDate = new Date(item.created_at);
+        const itemDate = parseYMDLocal(item.created_at);
         const fromDate = dateRange.from
-          ? new Date(dateRange.from)
-          : new Date('1900-01-01');
+          ? parseYMDLocal(dateRange.from)
+          : parseYMDLocal('1900-01-01');
         const toDate = dateRange.to
-          ? new Date(dateRange.to)
-          : new Date('9999-12-31');
+          ? parseYMDLocal(dateRange.to)
+          : parseYMDLocal('9999-12-31');
+
+        if (!itemDate || !fromDate || !toDate) return false;
         // Normalize to start/end of day for date-only semantics
         fromDate.setHours(0, 0, 0, 0);
         toDate.setHours(23, 59, 59, 999);

@@ -7,22 +7,44 @@ type RequestScope = 'same-origin-api' | 'same-origin' | 'external';
 
 export class ApiFetchError extends Error {
   code: 'AUTH' | 'NETWORK' | 'CLIENT';
+  error_code?: string;
+  retryable?: boolean;
+  details?: unknown;
+  request_id?: string;
 
   constructor(
     message: string,
     code: 'AUTH' | 'NETWORK' | 'CLIENT',
-    options?: ErrorOptions
+    options?: ErrorOptions & {
+      error_code?: string;
+      retryable?: boolean;
+      details?: unknown;
+      request_id?: string;
+    }
   ) {
     super(message, options);
     this.name = 'ApiFetchError';
     this.code = code;
+    this.error_code = options?.error_code;
+    this.retryable = options?.retryable;
+    this.details = options?.details;
+    this.request_id = options?.request_id;
   }
 }
 
 export class ApiFetchAuthError extends ApiFetchError {
   status: number;
 
-  constructor(message: string, status: number, options?: ErrorOptions) {
+  constructor(
+    message: string,
+    status: number,
+    options?: ErrorOptions & {
+      error_code?: string;
+      retryable?: boolean;
+      details?: unknown;
+      request_id?: string;
+    }
+  ) {
     super(message, 'AUTH', options);
     this.name = 'ApiFetchAuthError';
     this.status = status;
@@ -95,19 +117,60 @@ async function throwIfAuthFailure(
   if (response.status !== 401 && response.status !== 403) return;
 
   let message = 'Authentication required';
+  let error_code: string | undefined;
+  let retryable: boolean | undefined;
+  let details: unknown;
+  let request_id = response.headers?.get('x-request-id')?.trim() || undefined;
 
   try {
     const clone = response.clone();
     const body = (await clone.json()) as Record<string, unknown>;
-    const candidate = body.message ?? body.error;
+    const nestedError =
+      body.error && typeof body.error === 'object'
+        ? (body.error as Record<string, unknown>)
+        : null;
+    const candidate =
+      body.message ??
+      (typeof body.error === 'string' ? body.error : undefined) ??
+      nestedError?.message;
+
     if (typeof candidate === 'string' && candidate.trim()) {
       message = candidate;
     }
+    error_code =
+      typeof body.error_code === 'string'
+        ? body.error_code
+        : typeof nestedError?.code === 'string'
+          ? nestedError.code
+          : typeof nestedError?.error_code === 'string'
+            ? nestedError.error_code
+            : undefined;
+    retryable =
+      typeof body.retryable === 'boolean'
+        ? body.retryable
+        : typeof nestedError?.retryable === 'boolean'
+          ? nestedError.retryable
+          : undefined;
+    details = body.details ?? nestedError?.details;
+    const bodyRequestId =
+      typeof body.request_id === 'string' && body.request_id
+        ? body.request_id
+        : undefined;
+    const nestedRequestId =
+      typeof nestedError?.request_id === 'string' && nestedError.request_id
+        ? nestedError.request_id
+        : undefined;
+    request_id = bodyRequestId ?? nestedRequestId ?? request_id;
   } catch {
     // Keep default message if the response body is not JSON.
   }
 
-  throw new ApiFetchAuthError(message, response.status);
+  throw new ApiFetchAuthError(message, response.status, {
+    error_code,
+    retryable,
+    details,
+    request_id,
+  });
 }
 
 function classifyFetchError(error: unknown): never {

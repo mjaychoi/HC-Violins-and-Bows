@@ -29,6 +29,7 @@ import { logError } from '@/utils/logger';
 import { useRouter } from 'next/navigation';
 import { errorHandler } from '@/utils/errorHandler';
 import { createApiResponseErrorFromResponse } from '@/utils/handleApiResponse';
+import { handleApiResponse } from '@/utils/handleApiResponse';
 import type { AppError } from '@/types/errors';
 const DEFAULT_SORT_COLUMN: InvoiceSortColumn = 'invoice_date';
 const DEFAULT_SORT_DIRECTION = 'desc';
@@ -692,8 +693,20 @@ function InvoicesPageContent() {
         );
       }
 
-      const json = await res.json();
-      const data = json.data || {};
+      const data =
+        (await handleApiResponse<{
+          business_name?: string;
+          address?: string;
+          phone?: string;
+          email?: string;
+          bank_account_holder?: string;
+          bank_name?: string;
+          bank_swift_code?: string;
+          bank_account_number?: string;
+          default_conditions?: string;
+          default_exchange_rate?: string;
+          default_currency?: string;
+        }>(res, 'Failed to load invoice settings')) || {};
       setInvoiceSettings({
         business_name: data.business_name,
         address: data.address,

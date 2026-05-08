@@ -39,7 +39,9 @@ import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
+const MAX_ALL_RESULTS = 1000;
 const MAX_SEARCH_LEN = 200;
+const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 
 type AnyRecord = Record<string, unknown>;
 type JsonObject = { [key: string]: Json | undefined };
@@ -59,10 +61,96 @@ function clampInt(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function readJsonObject(
+  request: NextRequest
+): Promise<
+  { ok: true; body: Record<string, unknown> } | { ok: false; error: string }
+> {
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return {
+      ok: false,
+      error: 'Invalid JSON body',
+    };
+  }
+
+  if (!isObject(body)) {
+    return {
+      ok: false,
+      error: 'Invalid request body',
+    };
+  }
+
+  return {
+    ok: true,
+    body,
+  };
+}
+
+function readRequiredIdempotencyKey(request: NextRequest):
+  | { ok: true; idempotencyKey: string }
+  | {
+      ok: false;
+      result: {
+        payload: {
+          error: string;
+          error_code: string;
+          retryable: false;
+          success: false;
+        };
+        status: 400;
+      };
+    } {
+  const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() ?? '';
+
+  if (!idempotencyKey) {
+    return {
+      ok: false,
+      result: {
+        payload: {
+          error: 'Idempotency-Key header is required.',
+          error_code: 'IDEMPOTENCY_KEY_REQUIRED',
+          retryable: false,
+          success: false,
+        },
+        status: 400,
+      },
+    };
+  }
+
+  if (idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+    return {
+      ok: false,
+      result: {
+        payload: {
+          error: `Idempotency-Key cannot exceed ${MAX_IDEMPOTENCY_KEY_LENGTH} characters.`,
+          error_code: 'IDEMPOTENCY_KEY_INVALID',
+          retryable: false,
+          success: false,
+        },
+        status: 400,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    idempotencyKey,
+  };
+}
+
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
-  if (typeof err === 'object' && err && 'message' in err)
+  if (typeof err === 'object' && err && 'message' in err) {
     return String((err as { message?: unknown }).message);
+  }
   return String(err);
 }
 
@@ -80,6 +168,7 @@ function parseErrorDetailsObject(
   if (!details) return null;
   if (typeof details === 'object') return details as Record<string, unknown>;
   if (typeof details !== 'string') return null;
+
   try {
     const parsed = JSON.parse(details) as unknown;
     if (parsed && typeof parsed === 'object') {
@@ -88,21 +177,27 @@ function parseErrorDetailsObject(
   } catch {
     return null;
   }
+
   return null;
 }
 
 function getExplicitErrorCode(err: unknown): string | undefined {
   if (!err || typeof err !== 'object') return undefined;
+
   const e = err as PostgrestErrorLike;
   if (typeof e.error_code === 'string') return e.error_code;
+
   const details = parseErrorDetailsObject(e.details);
   const detailCode = details?.error_code;
+
   return typeof detailCode === 'string' ? detailCode : undefined;
 }
 
 function extractExistingInvoiceIdFromError(err: unknown): string | null {
   if (!err || typeof err !== 'object') return null;
+
   const e = err as PostgrestErrorLike & { existing_invoice_id?: unknown };
+
   if (
     typeof e.existing_invoice_id === 'string' &&
     e.existing_invoice_id.trim()
@@ -112,9 +207,11 @@ function extractExistingInvoiceIdFromError(err: unknown): string | null {
 
   const details = parseErrorDetailsObject(e.details);
   const detailId = details?.existing_invoice_id;
+
   if (typeof detailId === 'string' && detailId.trim()) {
     return detailId.trim();
   }
+
   return null;
 }
 
@@ -133,16 +230,18 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
-/** List GET must not return rows we cannot sign image URLs for (missing / not found). */
 function shouldFailClosedOnInvoiceImageHydrationError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
+
   const o = err as {
     context?: { invoiceImageHydration?: boolean };
     status?: number;
     code?: string;
   };
+
   if (!o.context?.invoiceImageHydration) return false;
   if (o.status === 404) return true;
+
   return o.code === ErrorCodes.RECORD_NOT_FOUND;
 }
 
@@ -161,6 +260,7 @@ function buildInvoiceMutationPayload(
   if (input.currency !== undefined) payload.currency = input.currency;
   if (input.status !== undefined) payload.status = input.status;
   if (input.notes !== undefined) payload.notes = input.notes;
+
   if (input.business_name !== undefined)
     payload.business_name = input.business_name;
   if (input.business_address !== undefined)
@@ -169,6 +269,7 @@ function buildInvoiceMutationPayload(
     payload.business_phone = input.business_phone;
   if (input.business_email !== undefined)
     payload.business_email = input.business_email;
+
   if (input.bank_account_holder !== undefined)
     payload.bank_account_holder = input.bank_account_holder;
   if (input.bank_name !== undefined) payload.bank_name = input.bank_name;
@@ -176,6 +277,7 @@ function buildInvoiceMutationPayload(
     payload.bank_swift_code = input.bank_swift_code;
   if (input.bank_account_number !== undefined)
     payload.bank_account_number = input.bank_account_number;
+
   if (input.default_conditions !== undefined)
     payload.default_conditions = input.default_conditions;
   if (input.default_exchange_rate !== undefined)
@@ -187,15 +289,15 @@ function buildInvoiceMutationPayload(
 function toInvoiceItemsJson(
   items: CreateInvoiceInput['items'] | null | undefined
 ): Json {
-  return (items ?? []).map(item => ({
-    instrument_id: item.instrument_id,
+  return (items ?? []).map((item, index) => ({
+    instrument_id: item.instrument_id ?? null,
     description: item.description,
     qty: item.qty,
     rate: item.rate,
     amount: item.amount,
-    image_url: item.image_url,
-    display_order: item.display_order,
-  }));
+    image_url: item.image_url ?? null,
+    display_order: item.display_order ?? index,
+  })) as Json;
 }
 
 function buildInvoiceCreateRequestHash(
@@ -223,7 +325,7 @@ function getCreateInvoiceMessage(result: InvoiceMutationResult): string {
 
 function buildInvoiceSearchFilter(search: string): string {
   const escaped = escapePostgrestFilterValue(search);
-  // DB `clients` uses single `name` + `email` (not first_name / last_name).
+
   return [
     `invoice_number.ilike.%${escaped}%`,
     `notes.ilike.%${escaped}%`,
@@ -245,7 +347,15 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       const orgContextError = requireOrgContext(auth);
       if (orgContextError) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
+          status: 403,
+        };
+      }
+
+      const adminError = requireAdmin(auth);
+      if (adminError) {
+        return {
+          payload: { error: 'Admin role required', success: false },
           status: 403,
         };
       }
@@ -254,12 +364,14 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       try {
         const searchParams = request.nextUrl.searchParams;
+        const fetchAll = searchParams.get('all') === 'true';
 
         const page = clampInt(
           Number(searchParams.get('page') || '1'),
           1,
           1_000_000
         );
+
         const pageSize = clampInt(
           Number(searchParams.get('pageSize') || String(DEFAULT_PAGE_SIZE)),
           1,
@@ -268,7 +380,6 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
         const rawFromDate = searchParams.get('fromDate') || undefined;
         const rawToDate = searchParams.get('toDate') || undefined;
-
         const rawSearch = searchParams.get('search') || undefined;
         const clientId = searchParams.get('client_id') || undefined;
         const status = searchParams.get('status') || undefined;
@@ -278,41 +389,43 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           searchParams.get('sortDirection') || 'desc'
         ).toLowerCase();
 
-        // Date validation
         if (rawFromDate && !validateDateString(rawFromDate)) {
           return {
             payload: {
               error: `Invalid fromDate. Expected YYYY-MM-DD, received: ${rawFromDate}`,
+              success: false,
             },
             status: 400,
             metadata: { invalidFromDate: true },
           };
         }
+
         if (rawToDate && !validateDateString(rawToDate)) {
           return {
             payload: {
               error: `Invalid toDate. Expected YYYY-MM-DD, received: ${rawToDate}`,
+              success: false,
             },
             status: 400,
             metadata: { invalidToDate: true },
           };
         }
 
-        // Search sanitization + length cap
         let search: string | undefined = rawSearch
           ? sanitizeSearchTerm(rawSearch)
           : undefined;
+
         if (search) {
           search = search.trim();
           if (!search) search = undefined;
         }
+
         if (search && search.length > MAX_SEARCH_LEN) {
           search = search.slice(0, MAX_SEARCH_LEN);
         }
 
         const from = (page - 1) * pageSize;
         const to = from + pageSize - 1;
-
         const orgId = auth.orgId!;
 
         const baseQuery = auth.userSupabase.from('invoices').select(
@@ -333,23 +446,14 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
             updated_at,
             clients (*),
             invoice_items (*)
-            `,
+          `,
           { count: 'exact' }
         );
 
         let query: typeof baseQuery = baseQuery;
 
         query = query.eq('org_id', orgId);
-        logWarn(
-          'invoices.get.scoped',
-          `Filtering invoices by org_id=${orgId}`,
-          {
-            orgId,
-            userId: auth.user?.id,
-          }
-        );
 
-        // Sorting whitelist
         const allowedSortColumns = new Set([
           'invoice_date',
           'due_date',
@@ -360,29 +464,33 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           'invoice_number',
           'status',
         ]);
+
         const safeSortColumn = allowedSortColumns.has(sortColumn)
           ? sortColumn
           : 'invoice_date';
+
         const ascending = sortDirection === 'asc';
 
         query = query.order(safeSortColumn, { ascending });
-        query = query.range(from, to);
+        query = fetchAll
+          ? query.limit(MAX_ALL_RESULTS + 1)
+          : query.range(from, to);
 
-        // Date filters
         if (rawFromDate) query = query.gte('invoice_date', rawFromDate);
         if (rawToDate) query = query.lte('invoice_date', rawToDate);
 
-        // Client filter
         if (clientId && validateUUID(clientId)) {
           query = query.eq('client_id', clientId);
         } else if (clientId) {
           return {
-            payload: { error: `Invalid client_id: ${clientId}` },
+            payload: {
+              error: `Invalid client_id: ${clientId}`,
+              success: false,
+            },
             status: 400,
           };
         }
 
-        // Status filter (whitelist)
         const validStatuses = new Set<InvoiceStatus>([
           'draft',
           'sent',
@@ -390,17 +498,18 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           'overdue',
           'cancelled',
         ]);
+
         if (status) {
           if (!validStatuses.has(status as InvoiceStatus)) {
             return {
-              payload: { error: `Invalid status: ${status}` },
+              payload: { error: `Invalid status: ${status}`, success: false },
               status: 400,
             };
           }
+
           query = query.eq('status', status);
         }
 
-        // Search filter (safe OR)
         if (search) {
           query = query.or(buildInvoiceSearchFilter(search));
         }
@@ -425,7 +534,9 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           throw errorHandler.handleSupabaseError(error, 'Fetch invoices');
         }
 
-        const rawRows = Array.isArray(data) ? data : [];
+        const allRows = Array.isArray(data) ? data : [];
+        const truncated = fetchAll && allRows.length > MAX_ALL_RESULTS;
+        const rawRows = truncated ? allRows.slice(0, MAX_ALL_RESULTS) : allRows;
 
         let missingClientCreatedAtCount = 0;
 
@@ -442,12 +553,15 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
             if (!clientCreatedAt) missingClientCreatedAtCount += 1;
 
             const res = safeValidate(normalized, validateInvoice);
+
             if (res.success) {
               let invoice = res.data as Invoice;
+
               try {
                 invoice = await attachSignedUrlsToInvoice(
                   auth.userSupabase,
-                  invoice
+                  invoice,
+                  auth.orgId!
                 );
               } catch (imageError) {
                 if (shouldFailClosedOnInvoiceImageHydrationError(imageError)) {
@@ -455,18 +569,22 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
                     'invoices.image_hydration_failed_closed',
                     `invoiceId=${invoice.id} err=${getErrorMessage(imageError)}`
                   );
+
                   return {
                     payload: {
                       error: getErrorMessage(imageError),
+                      success: false,
                     },
                     status: 404,
                   };
                 }
+
                 logWarn(
                   'invoices.image_hydration_skipped',
                   `invoiceId=${invoice.id} err=${getErrorMessage(imageError)}`
                 );
               }
+
               validRows.push(invoice);
             } else {
               const id = normalized.id;
@@ -486,6 +604,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
 
         const invalidCount = rawRows.length - validRows.length;
+
         if (invalidCount > 0) {
           logWarn(
             'invoices.invalid_rows_filtered',
@@ -497,32 +616,43 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         const returnedCount = validRows.length;
         const droppedCount = invalidCount;
         const partial = droppedCount > 0;
-        const scopePayload = orgId
-          ? { enforced: true }
-          : { enforced: false, reason: 'RLS or upstream scoping' };
+        const scopePayload = { enforced: true };
+        const responsePage = fetchAll ? 1 : page;
+        const responsePageSize = fetchAll ? returnedCount : pageSize;
+        const totalPages = fetchAll
+          ? 1
+          : Math.max(1, Math.ceil(totalCount / pageSize));
 
         return {
           payload: {
             data: validRows,
             count: totalCount,
+            pagination: {
+              page: responsePage,
+              pageSize: responsePageSize,
+              totalCount,
+              totalPages,
+            },
             returnedCount,
             droppedCount,
             partial,
             ...(partial
               ? { warning: 'Some invoices could not be displayed.' }
               : {}),
-            scope: scopePayload,
+            scope: fetchAll ? 'all' : scopePayload,
+            truncated,
           },
           status: 200,
           metadata: {
-            page,
-            pageSize,
+            page: responsePage,
+            pageSize: responsePageSize,
             total: totalCount,
             countAvailable: typeof count === 'number',
             sortColumn: safeSortColumn,
             sortDirection: ascending ? 'asc' : 'desc',
             invalidCount,
-            scope: scopePayload,
+            scope: fetchAll ? 'all' : scopePayload,
+            truncated,
           },
         };
       } catch (err) {
@@ -546,7 +676,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       const orgContextError = requireOrgContext(auth);
       if (orgContextError) {
         return {
-          payload: { error: 'Organization context required' },
+          payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
@@ -554,47 +684,54 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       const adminError = requireAdmin(auth);
       if (adminError) {
         return {
-          payload: { error: 'Admin role required' },
+          payload: { error: 'Admin role required', success: false },
           status: 403,
+        };
+      }
+
+      const idempotency = readRequiredIdempotencyKey(request);
+      if (!idempotency.ok) {
+        return idempotency.result;
+      }
+
+      const idempotencyKey = idempotency.idempotencyKey;
+
+      const bodyResult = await readJsonObject(request);
+      if (!bodyResult.ok) {
+        return {
+          payload: { error: bodyResult.error, success: false },
+          status: 400,
         };
       }
 
       await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
 
-      let body: unknown;
-      try {
-        body = await request.json();
-      } catch {
-        return { payload: { error: 'Invalid JSON body' }, status: 400 };
-      }
-
-      const validationResult = safeValidate(body, validateCreateInvoice);
+      const validationResult = safeValidate(
+        bodyResult.body,
+        validateCreateInvoice
+      );
 
       if (!validationResult.success) {
         return {
-          payload: { error: `Invalid invoice data: ${validationResult.error}` },
+          payload: {
+            error: `Invalid invoice data: ${validationResult.error}`,
+            success: false,
+          },
           status: 400,
         };
       }
 
       const validatedInput = validationResult.data as CreateInvoiceInput;
-
       const { items } = validatedInput;
-      const idempotencyKey = request.headers.get('Idempotency-Key')?.trim();
-
-      if (!idempotencyKey) {
-        return {
-          payload: { error: 'Idempotency-Key header is required.' },
-          status: 400,
-        };
-      }
+      const orgId = auth.orgId!;
 
       const financialError = validateInvoiceFinancials(
         toFinancialSnapshot(validatedInput)
       );
+
       if (financialError) {
         return {
-          payload: { error: financialError },
+          payload: { error: financialError, success: false },
           status: 400,
         };
       }
@@ -607,6 +744,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         status: validatedInput.status || 'draft',
         notes: validatedInput.notes ?? null,
       });
+
       const requestHash = buildInvoiceCreateRequestHash(invoiceData, items);
 
       const { data: invoiceId, error: invoiceError } =
@@ -622,6 +760,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         if (isIdempotencyReplayError(invoiceError)) {
           const existingInvoiceId =
             extractExistingInvoiceIdFromError(invoiceError);
+
           return {
             payload: {
               error_code: 'IDEMPOTENCY_REPLAY',
@@ -633,6 +772,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
             status: 409,
           };
         }
+
         if (isIdempotencyInProgress(invoiceError)) {
           return {
             payload: {
@@ -642,6 +782,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
             status: 409,
           };
         }
+
         if (isUniqueViolation(invoiceError)) {
           return {
             payload: {
@@ -651,16 +792,22 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
             status: 409,
           };
         }
+
         throw errorHandler.handleSupabaseError(invoiceError, 'Create invoice');
       }
-      // Mock/object path: RPC returned a non-null object (e.g. { id: '...' })
+
       if (
         invoiceId !== null &&
         invoiceId !== undefined &&
         typeof invoiceId !== 'string'
       ) {
         return {
-          payload: { data: invoiceId },
+          payload: {
+            data: invoiceId,
+            metadata: {
+              idempotencyKeyPresent: true,
+            },
+          },
           status: 201,
         };
       }
@@ -707,7 +854,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           `
           )
           .eq('id', invoiceId)
-          .eq('org_id', auth.orgId!)
+          .eq('org_id', orgId)
           .single();
 
         if (refreshError || !refreshed) {
@@ -720,23 +867,28 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         const { normalized } = normalizeInvoiceRecord(
           refreshed as unknown as AnyRecord
         );
+
         const invoiceValidationResult = validateInvoice(normalized);
+
         if (!invoiceValidationResult.success) {
           throw new Error(
             invoiceValidationResult.error || 'Invalid invoice data'
           );
         }
+
         const createdInvoice = await attachSignedUrlsToInvoice(
           auth.userSupabase,
-          invoiceValidationResult.data
+          invoiceValidationResult.data,
+          orgId
         );
 
         const imageTracking = await claimInvoiceImageUploads(
           auth.userSupabase,
-          auth.orgId!,
+          orgId,
           createdInvoice.id,
           items
         );
+
         const result = getInvoiceMutationResult(imageTracking);
 
         return {
@@ -750,6 +902,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           metadata: {
             invoiceId: createdInvoice.id,
             imageTracking,
+            idempotencyKeyPresent: true,
           },
         };
       } catch (hydrationError) {
@@ -757,6 +910,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           'invoices.post.hydration_failed',
           `invoiceId=${invoiceId} err=${getErrorMessage(hydrationError)}`
         );
+
         return {
           payload: {
             data: { id: invoiceId },
@@ -766,6 +920,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           metadata: {
             invoiceId,
             warning: 'HYDRATION_FAILED',
+            idempotencyKeyPresent: true,
           },
         };
       }

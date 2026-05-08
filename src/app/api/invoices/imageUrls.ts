@@ -7,6 +7,16 @@ export const INVOICE_IMAGE_BUCKET = 'invoices';
 export const INVOICE_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 15;
 export const INVOICE_IMAGE_STORAGE_PATH_SEGMENTS = 2;
 
+const MAX_STORAGE_PATH_LENGTH = 1_024;
+const MAX_STORAGE_SEGMENT_LENGTH = 255;
+
+const ALLOWED_INVOICE_IMAGE_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+]);
+
 type UserScopedSupabase = {
   storage: {
     from: (bucket: string) => {
@@ -50,6 +60,62 @@ function isAbsoluteUrl(value: string): boolean {
   }
 }
 
+function sanitizeStorageSegment(segment: string): string {
+  return segment
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, MAX_STORAGE_SEGMENT_LENGTH);
+}
+
+function sanitizeInvoiceImageFileName(fileName: string): string {
+  const sanitized = sanitizeStorageSegment(fileName);
+  return sanitized || 'invoice-image';
+}
+
+function getPathSegments(path: string): string[] {
+  return path
+    .split('/')
+    .map(segment => segment.trim())
+    .filter(Boolean);
+}
+
+function hasAllowedImageExtension(fileName: string): boolean {
+  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
+  return ALLOWED_INVOICE_IMAGE_EXTENSIONS.has(extension);
+}
+
+function normalizeStoragePathCandidate(value: string): string | null {
+  const trimmed = value.trim();
+
+  if (!trimmed) return null;
+  if (trimmed.length > MAX_STORAGE_PATH_LENGTH) return null;
+  if (trimmed.includes('\0')) return null;
+  if (trimmed.includes('\\')) return null;
+  if (trimmed.startsWith('/')) return null;
+  if (trimmed.includes('..')) return null;
+  if (/[\x00-\x1F]/.test(trimmed)) return null;
+
+  const segments = getPathSegments(trimmed);
+  if (segments.length !== INVOICE_IMAGE_STORAGE_PATH_SEGMENTS) return null;
+
+  const [orgSegment, fileSegment] = segments;
+  if (!orgSegment || !fileSegment) return null;
+  if (orgSegment.length > MAX_STORAGE_SEGMENT_LENGTH) return null;
+  if (fileSegment.length > MAX_STORAGE_SEGMENT_LENGTH) return null;
+  if (!hasAllowedImageExtension(fileSegment)) return null;
+
+  const normalizedOrg = sanitizeStorageSegment(orgSegment);
+  const normalizedFile = sanitizeStorageSegment(fileSegment);
+
+  if (normalizedOrg !== orgSegment || normalizedFile !== fileSegment) {
+    return null;
+  }
+
+  return `${normalizedOrg}/${normalizedFile}`;
+}
+
 function extractInvoiceStoragePathFromUrl(value: string): string | null {
   try {
     const { pathname } = new URL(value);
@@ -64,9 +130,14 @@ function extractInvoiceStoragePathFromUrl(value: string): string | null {
 
     for (const marker of markers) {
       const idx = pathname.indexOf(marker);
+
       if (idx >= 0) {
-        const storagePath = pathname.slice(idx + marker.length).trim();
-        return storagePath ? decodeURIComponent(storagePath) : null;
+        const rawStoragePath = pathname.slice(idx + marker.length).trim();
+        const decoded = rawStoragePath
+          ? decodeURIComponent(rawStoragePath)
+          : '';
+
+        return normalizeStoragePathCandidate(decoded);
       }
     }
   } catch {
@@ -76,33 +147,68 @@ function extractInvoiceStoragePathFromUrl(value: string): string | null {
   return null;
 }
 
+function matchesExpectedOrgPrefix(
+  storagePath: string,
+  expectedOrgId?: string | null
+): boolean {
+  if (!expectedOrgId?.trim()) return true;
+
+  const [orgSegment] = getPathSegments(storagePath);
+  return orgSegment === expectedOrgId.trim();
+}
+
 export function normalizeInvoiceImageReference(
-  value: string | null
+  value: string | null,
+  expectedOrgId?: string | null
 ): string | null {
   if (!value || typeof value !== 'string') return null;
-  if (!isAbsoluteUrl(value)) return value.trim() || null;
-  return extractInvoiceStoragePathFromUrl(value);
+
+  const storagePath = isAbsoluteUrl(value)
+    ? extractInvoiceStoragePathFromUrl(value)
+    : normalizeStoragePathCandidate(value);
+
+  if (!storagePath) return null;
+
+  if (!matchesExpectedOrgPrefix(storagePath, expectedOrgId)) {
+    return null;
+  }
+
+  return storagePath;
 }
 
 export function buildInvoiceImageStoragePath(
   orgId: string,
   fileName: string
 ): string {
-  return `${orgId.trim()}/${fileName.trim()}`;
+  const safeOrgId = sanitizeStorageSegment(orgId);
+  const safeFileName = sanitizeInvoiceImageFileName(fileName);
+
+  if (!safeOrgId || !safeFileName) {
+    throw new Error('Invalid invoice image storage path input');
+  }
+
+  const storagePath = `${safeOrgId}/${safeFileName}`;
+
+  if (!matchesInvoiceImageStoragePolicyShape(storagePath, safeOrgId)) {
+    throw new Error('Generated invoice image storage path is invalid');
+  }
+
+  return storagePath;
 }
 
 export function getInvoiceImageStoragePathSegmentCount(path: string): number {
-  return path
-    .split('/')
-    .map(segment => segment.trim())
-    .filter(Boolean).length;
+  return getPathSegments(path).length;
 }
 
-export function matchesInvoiceImageStoragePolicyShape(path: string): boolean {
-  return (
-    getInvoiceImageStoragePathSegmentCount(path) ===
-    INVOICE_IMAGE_STORAGE_PATH_SEGMENTS
-  );
+export function matchesInvoiceImageStoragePolicyShape(
+  path: string,
+  expectedOrgId?: string | null
+): boolean {
+  const normalizedPath = normalizeStoragePathCandidate(path);
+
+  if (!normalizedPath) return false;
+
+  return matchesExpectedOrgPrefix(normalizedPath, expectedOrgId);
 }
 
 export function extractInvoiceImageStoragePaths(
@@ -111,36 +217,45 @@ export function extractInvoiceImageStoragePaths(
         image_url?: string | null;
       }>
     | undefined
-    | null
+    | null,
+  expectedOrgId?: string | null
 ): string[] {
   if (!items || items.length === 0) return [];
 
   const paths = items
-    .map(item => normalizeInvoiceImageReference(item.image_url ?? null))
-    .filter((path): path is string => Boolean(path))
-    .filter(matchesInvoiceImageStoragePolicyShape);
+    .map(item =>
+      normalizeInvoiceImageReference(item.image_url ?? null, expectedOrgId)
+    )
+    .filter((path): path is string => Boolean(path));
 
   return [...new Set(paths)];
 }
 
 export function isInvoiceImageStoragePath(
-  value: string | null
+  value: string | null,
+  expectedOrgId?: string | null
 ): value is string {
-  return (
-    typeof value === 'string' &&
-    value.trim().length > 0 &&
-    !isAbsoluteUrl(value)
-  );
+  if (typeof value !== 'string') return false;
+
+  return Boolean(normalizeInvoiceImageReference(value, expectedOrgId));
 }
 
 export async function createInvoiceImageSignedUrl(
   userSupabase: UserScopedSupabase,
-  storagePath: string
+  storagePath: string,
+  expectedOrgId?: string | null
 ): Promise<string> {
-  if (!matchesInvoiceImageStoragePolicyShape(storagePath)) {
+  const normalizedPath = normalizeInvoiceImageReference(
+    storagePath,
+    expectedOrgId
+  );
+
+  if (!normalizedPath) {
     logWarn('invoice-image.reference.invalid', 'InvoicesAPI.imageUrls', {
       storagePath,
+      expectedOrgId,
     });
+
     throw createInvoiceImageReadError(
       ErrorCodes.RECORD_NOT_FOUND,
       'Invoice image not found',
@@ -151,40 +266,43 @@ export async function createInvoiceImageSignedUrl(
   }
 
   const storage = userSupabase.storage.from(INVOICE_IMAGE_BUCKET);
+
   const { data: exists, error: existsError } =
-    await storage.exists(storagePath);
+    await storage.exists(normalizedPath);
 
   if (existsError) {
     logError(
       'invoice-image.exists.failed',
       existsError,
       'InvoicesAPI.imageUrls',
-      { storagePath }
+      { storagePath: normalizedPath }
     );
+
     throw createInvoiceImageReadError(
       ErrorCodes.INTERNAL_ERROR,
       'Failed to verify invoice image availability',
       500,
-      storagePath,
+      normalizedPath,
       existsError.message || 'Storage existence check failed.'
     );
   }
 
   if (!exists) {
     logWarn('invoice-image.object.missing', 'InvoicesAPI.imageUrls', {
-      storagePath,
+      storagePath: normalizedPath,
     });
+
     throw createInvoiceImageReadError(
       ErrorCodes.RECORD_NOT_FOUND,
       'Invoice image not found',
       404,
-      storagePath,
+      normalizedPath,
       'Storage object is missing.'
     );
   }
 
   const { data, error } = await storage.createSignedUrl(
-    storagePath,
+    normalizedPath,
     INVOICE_IMAGE_SIGNED_URL_TTL_SECONDS
   );
 
@@ -193,13 +311,14 @@ export async function createInvoiceImageSignedUrl(
       'invoice-image.signed-url.failed',
       error || new Error('Missing signed URL'),
       'InvoicesAPI.imageUrls',
-      { storagePath }
+      { storagePath: normalizedPath }
     );
+
     throw createInvoiceImageReadError(
       ErrorCodes.INTERNAL_ERROR,
       'Failed to generate invoice image access URL',
       500,
-      storagePath,
+      normalizedPath,
       error?.message || 'Missing signed URL.'
     );
   }
@@ -213,7 +332,8 @@ export async function attachSignedUrlsToInvoiceItems<
   },
 >(
   userSupabase: UserScopedSupabase,
-  items: T[] | undefined
+  items: T[] | undefined,
+  expectedOrgId?: string | null
 ): Promise<T[] | undefined> {
   if (!items || items.length === 0) return items;
 
@@ -223,15 +343,21 @@ export async function attachSignedUrlsToInvoiceItems<
         return { ...item, image_signed_url: null };
       }
 
-      const storagePath = normalizeInvoiceImageReference(item.image_url);
+      const storagePath = normalizeInvoiceImageReference(
+        item.image_url,
+        expectedOrgId
+      );
+
       if (!storagePath) {
         logWarn(
           'invoice-image.reference.unresolvable',
           'InvoicesAPI.imageUrls',
           {
             imageUrl: item.image_url,
+            expectedOrgId,
           }
         );
+
         throw createInvoiceImageReadError(
           ErrorCodes.RECORD_NOT_FOUND,
           'Invoice image not found',
@@ -243,7 +369,8 @@ export async function attachSignedUrlsToInvoiceItems<
 
       const signedUrl = await createInvoiceImageSignedUrl(
         userSupabase,
-        storagePath
+        storagePath,
+        expectedOrgId
       );
 
       return {
@@ -256,12 +383,15 @@ export async function attachSignedUrlsToInvoiceItems<
 
 export async function attachSignedUrlsToInvoice(
   userSupabase: UserScopedSupabase,
-  invoice: Invoice
+  invoice: Invoice,
+  expectedOrgId?: string | null
 ): Promise<Invoice> {
   const items = await attachSignedUrlsToInvoiceItems(
     userSupabase,
-    invoice.items
+    invoice.items,
+    expectedOrgId
   );
+
   return {
     ...invoice,
     items,
