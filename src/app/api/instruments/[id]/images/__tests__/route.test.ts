@@ -6,6 +6,13 @@ import { errorHandler } from '@/utils/errorHandler';
 jest.mock('@/utils/inputValidation');
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
+jest.mock('@/app/api/_utils/schemaReadiness', () => ({
+  assertInstrumentImagesSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-05-08T00:00:00.000Z',
+    missingColumns: [],
+  }),
+}));
 
 const mockValidateUUID = validateUUID as jest.MockedFunction<
   typeof validateUUID
@@ -111,6 +118,8 @@ describe('/api/instruments/[id]/images', () => {
       image_url: `https://presigned.example.com/${storageKey}`,
       storage_key: storageKey,
       file_name: `${imageId}.jpg`,
+      file_size: 123,
+      mime_type: 'image/jpeg',
       display_order: displayOrder,
       created_at: '2024-01-01T00:00:00Z',
       ...overrides,
@@ -119,6 +128,14 @@ describe('/api/instruments/[id]/images', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    const {
+      assertInstrumentImagesSchemaReadiness,
+    } = require('@/app/api/_utils/schemaReadiness');
+    assertInstrumentImagesSchemaReadiness.mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-05-08T00:00:00.000Z',
+      missingColumns: [],
+    });
     mockValidateUUID.mockReturnValue(true);
     mockStorage = {
       saveFile: jest.fn().mockResolvedValue(`org/${mockInstrumentId}/file.jpg`),
@@ -292,6 +309,47 @@ describe('/api/instruments/[id]/images', () => {
 
       expect(response.status).toBe(500);
       expect(json.message).toBe('Database error');
+    });
+
+    it('returns safe SCHEMA_OUT_OF_DATE when image metadata columns are missing', async () => {
+      const {
+        assertInstrumentImagesSchemaReadiness,
+      } = require('@/app/api/_utils/schemaReadiness');
+      assertInstrumentImagesSchemaReadiness.mockRejectedValueOnce(
+        Object.assign(new Error('Database migration required'), {
+          code: 'SCHEMA_OUT_OF_DATE',
+          error_code: 'SCHEMA_OUT_OF_DATE',
+          status: 503,
+          retryable: false,
+          details: {
+            missingColumns: ['public.instrument_images.storage_key'],
+          },
+        })
+      );
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn(),
+      };
+      mockUserSupabase = makeSupabaseClient(mockQuery);
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments/${mockInstrumentId}/images`
+      );
+      const context = {
+        params: Promise.resolve({ id: mockInstrumentId }),
+      };
+      const response = await GET(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json).toMatchObject({
+        message: 'Database migration required.',
+        error_code: 'SCHEMA_OUT_OF_DATE',
+        retryable: false,
+      });
+      expect(mockQuery.order).not.toHaveBeenCalled();
     });
 
     it('should fail closed when the instrument is outside the caller org', async () => {
@@ -663,8 +721,14 @@ describe('/api/instruments/[id]/images', () => {
         single: jest.fn().mockResolvedValue({
           data: {
             id: insertedId,
+            instrument_id: mockInstrumentId,
             image_url: 'https://storage.example.com/key',
+            storage_key: `org/${mockInstrumentId}/file.jpg`,
             file_name: 'file.jpg',
+            file_size: 8,
+            mime_type: 'image/jpeg',
+            display_order: 0,
+            created_at: '2024-01-01T00:00:00Z',
           },
           error: null,
         }),
@@ -691,7 +755,46 @@ describe('/api/instruments/[id]/images', () => {
         'create_instrument_image_metadata',
         expect.objectContaining({
           p_storage_key: `org/${mockInstrumentId}/file.jpg`,
+          p_file_name: 'file.jpg',
+          p_file_size: file.size,
+          p_mime_type: 'image/jpeg',
         })
+      );
+    });
+
+    it('uses server org for storage keys and ignores forged tenant inputs', async () => {
+      const file = makeFileLike('photo.png', 'image/png');
+      const insertedId = 'inserted-id-forged-org';
+      const imageQuery = makeImageInsertQuery(insertedId);
+
+      mockUserSupabase = makeSupabaseClient(imageQuery);
+      mockUserSupabase.rpc = jest
+        .fn()
+        .mockResolvedValue({ data: insertedId, error: null });
+
+      const req = new NextRequest(
+        `http://localhost/api/instruments/${mockInstrumentId}/images?org_id=forged-org`,
+        { method: 'POST' }
+      );
+      (req as any).formData = async () => ({
+        getAll: jest.fn((field: string) =>
+          field === 'images' ? [file] : ['forged-org']
+        ),
+      });
+
+      const res = await POST(req, idCtx);
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.data).toHaveLength(1);
+      expect(mockStorage.saveFile).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.stringMatching(new RegExp(`^test-org/${mockInstrumentId}/`)),
+        'image/png'
+      );
+      expect(mockUserSupabase.__instrumentQuery.eq).toHaveBeenCalledWith(
+        'org_id',
+        'test-org'
       );
     });
 
@@ -833,6 +936,7 @@ describe('/api/instruments/[id]/images', () => {
         .mockResolvedValueOnce(`key/x.jpg`)
         .mockResolvedValueOnce(`key/y.jpg`);
 
+      let fetchInsertedCount = 0;
       mockUserSupabase = {
         from: jest.fn().mockImplementation((table: string) => {
           if (table === 'instruments') return makeInstrumentQuery();
@@ -840,16 +944,37 @@ describe('/api/instruments/[id]/images', () => {
             return {
               select: jest.fn().mockReturnThis(),
               eq: jest.fn().mockReturnThis(),
-              single: jest
-                .fn()
-                .mockResolvedValueOnce({
-                  data: { id: id1, image_url: 'u1', file_name: 'x.jpg' },
+              single: jest.fn().mockImplementation(async () => {
+                fetchInsertedCount += 1;
+
+                return {
+                  data:
+                    fetchInsertedCount === 1
+                      ? {
+                          id: id1,
+                          instrument_id: mockInstrumentId,
+                          image_url: 'u1',
+                          storage_key: 'key/x.jpg',
+                          file_name: 'x.jpg',
+                          file_size: 3,
+                          mime_type: 'image/jpeg',
+                          display_order: 0,
+                          created_at: '2024-01-01T00:00:00Z',
+                        }
+                      : {
+                          id: id2,
+                          instrument_id: mockInstrumentId,
+                          image_url: 'u2',
+                          storage_key: 'key/y.jpg',
+                          file_name: 'y.jpg',
+                          file_size: 3,
+                          mime_type: 'image/jpeg',
+                          display_order: 1,
+                          created_at: '2024-01-01T00:00:00Z',
+                        },
                   error: null,
-                })
-                .mockResolvedValueOnce({
-                  data: { id: id2, image_url: 'u2', file_name: 'y.jpg' },
-                  error: null,
-                }),
+                };
+              }),
             };
           }
           throw new Error(`Unexpected: ${table}`);
@@ -865,7 +990,77 @@ describe('/api/instruments/[id]/images', () => {
 
       expect(res.status).toBe(200);
       expect(json.data).toHaveLength(2);
+      expect(json.data).toEqual([
+        expect.objectContaining({
+          id: id1,
+          storage_key: 'key/x.jpg',
+          file_name: 'x.jpg',
+          file_size: 3,
+          mime_type: 'image/jpeg',
+          display_order: 0,
+        }),
+        expect.objectContaining({
+          id: id2,
+          storage_key: 'key/y.jpg',
+          file_name: 'y.jpg',
+          file_size: 3,
+          mime_type: 'image/jpeg',
+          display_order: 1,
+        }),
+      ]);
       expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('returns safe SCHEMA_OUT_OF_DATE before upload when metadata columns are missing', async () => {
+      const {
+        assertInstrumentImagesSchemaReadiness,
+      } = require('@/app/api/_utils/schemaReadiness');
+      assertInstrumentImagesSchemaReadiness.mockRejectedValueOnce(
+        Object.assign(new Error('Database migration required'), {
+          code: 'SCHEMA_OUT_OF_DATE',
+          error_code: 'SCHEMA_OUT_OF_DATE',
+          status: 503,
+          retryable: false,
+          details: {
+            missingColumns: ['public.instrument_images.storage_key'],
+          },
+        })
+      );
+      const imageQuery = makeImageInsertQuery('unused-id');
+      mockUserSupabase = makeSupabaseClient(imageQuery);
+
+      const res = await POST(
+        makePostRequest([makeFileLike('photo.jpg', 'image/jpeg')]),
+        idCtx
+      );
+      const json = await res.json();
+
+      expect(res.status).toBe(503);
+      expect(json).toMatchObject({
+        message: 'Database migration required.',
+        error_code: 'SCHEMA_OUT_OF_DATE',
+      });
+      expect(mockStorage.saveFile).not.toHaveBeenCalled();
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 and skips metadata write when storage returns no file key', async () => {
+      mockStorage.saveFile.mockResolvedValueOnce('');
+      const imageQuery = makeImageInsertQuery('unused-id');
+      mockUserSupabase = makeSupabaseClient(imageQuery);
+      mockUserSupabase.rpc = jest.fn();
+
+      const res = await POST(
+        makePostRequest([makeFileLike('photo.jpg', 'image/jpeg')]),
+        idCtx
+      );
+      const json = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(json.message).toContain(
+        'Failed to upload image: Storage upload did not return a file key'
+      );
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
     });
   });
 

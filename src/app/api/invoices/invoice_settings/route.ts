@@ -8,6 +8,7 @@ import {
   requireOrgContext,
 } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
+import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import type { Tables, TablesInsert, TablesUpdate } from '@/types/database';
 
 type InvoiceSettingsRow = Tables<'invoice_settings'>;
@@ -500,6 +501,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
+
       const row = await getOrCreateSettingsRow(auth.userSupabase, auth.orgId!, {
         allowDefaultFallback: true,
       });
@@ -568,6 +571,8 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
           status: 400,
         };
       }
+
+      await assertInvoiceSchemaReadiness({ supabase: auth.userSupabase });
 
       const parsed = parsedPayload.value;
 

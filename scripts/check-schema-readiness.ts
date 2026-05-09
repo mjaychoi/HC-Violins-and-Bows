@@ -47,6 +47,7 @@ async function main() {
 
   console.error('Schema readiness failed.');
   printList('Missing required columns', result.missingColumns);
+  printList('Missing runtime contracts', result.missingContracts);
   process.exit(1);
 }
 

@@ -3,6 +3,10 @@ import type { PostgrestError } from '@supabase/supabase-js';
 import type { Json, TablesInsert } from '@/types/database';
 import { logInfo, logWarn } from '@/utils/logger';
 import { CLIENT_TABLE_SELECT, type ClientsTableRow } from '@/utils/clientDbMap';
+import {
+  assertClientConnectionsSchemaReadiness,
+  assertClientsSchemaReadiness,
+} from '@/app/api/_utils/schemaReadiness';
 
 const MAX_ALLOCATION_ATTEMPTS = 8;
 const CLIENT_CONNECTIONS_SELECT =
@@ -181,6 +185,8 @@ export async function insertClientWithClientNumber(
 ): Promise<
   { data: unknown; error: null } | { data: null; error: PostgrestError }
 > {
+  await assertClientsSchemaReadiness({ supabase });
+
   for (let i = 0; i < MAX_ALLOCATION_ATTEMPTS; i++) {
     const attempt = i + 1;
     const nextSuffix = await getNextClSuffixFromDb(supabase, orgId);
@@ -259,6 +265,9 @@ export async function rpcCreateClientWithConnectionsAtomic(
   | { data: CreateClientWithConnectionsPayload; error: null }
   | { data: null; error: PostgrestError }
 > {
+  await assertClientsSchemaReadiness({ supabase });
+  await assertClientConnectionsSchemaReadiness({ supabase });
+
   const tagArray = body.tags;
   for (let i = 0; i < MAX_ALLOCATION_ATTEMPTS; i++) {
     const attempt = i + 1;

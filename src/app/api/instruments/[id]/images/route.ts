@@ -13,6 +13,8 @@ import {
   requireOrgContext,
 } from '@/app/api/_utils/withAuthRoute';
 import { logError } from '@/utils/logger';
+import { ErrorCodes } from '@/types/errors';
+import { assertInstrumentImagesSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 
 export const runtime = 'nodejs';
 
@@ -224,6 +226,33 @@ function validateImageUploads(
   return validated;
 }
 
+function isSchemaOutOfDateError(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code?: unknown }).code === ErrorCodes.SCHEMA_OUT_OF_DATE
+  );
+}
+
+function createSchemaOutOfDateResponse(error: unknown): NextResponse {
+  return createApiErrorResponse(
+    {
+      message: 'Database migration required.',
+      error_code: ErrorCodes.SCHEMA_OUT_OF_DATE,
+      retryable: false,
+      details:
+        process.env.NODE_ENV === 'development' &&
+        error &&
+        typeof error === 'object' &&
+        'details' in error
+          ? (error as { details?: unknown }).details
+          : undefined,
+    },
+    503
+  );
+}
+
 async function ensureOwnedInstrument(
   auth: AuthContext,
   id: string
@@ -275,6 +304,10 @@ async function getHandlerInternal(
 
     const ownershipError = await ensureOwnedInstrument(auth, id);
     if (ownershipError) return ownershipError;
+
+    await assertInstrumentImagesSchemaReadiness({
+      supabase: auth.userSupabase,
+    });
 
     const { data, error } = await auth.userSupabase
       .from('instrument_images')
@@ -393,6 +426,10 @@ async function getHandlerInternal(
 
     return NextResponse.json({ data: signedImages });
   } catch (error) {
+    if (isSchemaOutOfDateError(error)) {
+      return createSchemaOutOfDateResponse(error);
+    }
+
     return createApiErrorResponse(
       {
         message:
@@ -426,6 +463,10 @@ async function postHandlerInternal(
 
     const ownershipError = await ensureAdminOwnedInstrument(auth, id);
     if (ownershipError) return ownershipError;
+
+    await assertInstrumentImagesSchemaReadiness({
+      supabase: auth.userSupabase,
+    });
 
     let formData: FormData;
     try {
@@ -498,6 +539,9 @@ async function postHandlerInternal(
         storage.validateFile?.(originalFileName, normalizedType, fileSize);
 
         storedKey = await storage.saveFile(buffer, fileKey, normalizedType);
+        if (typeof storedKey !== 'string' || !storedKey.trim()) {
+          throw new Error('Storage upload did not return a file key');
+        }
         storedFileName = storedKey.split('/').pop() ?? fileName;
       } catch (uploadError) {
         await rollbackAll();
@@ -592,6 +636,10 @@ async function postHandlerInternal(
       },
     });
   } catch (error) {
+    if (isSchemaOutOfDateError(error)) {
+      return createSchemaOutOfDateResponse(error);
+    }
+
     const errorMessage =
       error instanceof Error
         ? error.message
@@ -647,6 +695,10 @@ async function deleteHandlerInternal(
 
     const ownershipError = await ensureAdminOwnedInstrument(auth, id);
     if (ownershipError) return ownershipError;
+
+    await assertInstrumentImagesSchemaReadiness({
+      supabase: auth.userSupabase,
+    });
 
     const url = new URL(request.url);
     const imageId = url.searchParams.get('imageId');
@@ -734,6 +786,10 @@ async function deleteHandlerInternal(
       },
     });
   } catch (error) {
+    if (isSchemaOutOfDateError(error)) {
+      return createSchemaOutOfDateResponse(error);
+    }
+
     return createApiErrorResponse(
       {
         message:

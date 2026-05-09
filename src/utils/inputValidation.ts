@@ -34,7 +34,12 @@ export const ALLOWED_SORT_COLUMNS = {
     'status',
     'price',
   ] as const,
-  connections: ['id', 'created_at', 'relationship_type'] as const,
+  connections: [
+    'id',
+    'created_at',
+    'relationship_type',
+    'display_order',
+  ] as const,
   maintenance_tasks: [
     'id',
     'created_at',

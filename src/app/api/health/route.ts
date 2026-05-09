@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { checkMigrations } from '@/app/api/_utils/healthCheck';
+import { checkSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import { checkInstrumentApiContractAdmin } from '@/app/api/instruments/_shared/instrumentApiContract';
 
 type MigrationCheck = Awaited<ReturnType<typeof checkMigrations>>;
+type SchemaReadinessCheck = Awaited<ReturnType<typeof checkSchemaReadiness>>;
 type InstrumentContractCheck = Awaited<
   ReturnType<typeof checkInstrumentApiContractAdmin>
 >;
@@ -44,13 +46,27 @@ function buildFailedInstrumentContractCheck(
   };
 }
 
+function buildFailedSchemaReadinessCheck(
+  error: unknown
+): SchemaReadinessCheck & { error?: string } {
+  return {
+    ready: false,
+    checkedAt: new Date().toISOString(),
+    missingColumns: [],
+    missingContracts: ['schema_readiness_check_failed'],
+    error: getErrorMessage(error),
+  };
+}
+
 export async function GET() {
   const timestamp = new Date().toISOString();
 
-  const [migrationResult, instrumentContractResult] = await Promise.allSettled([
-    checkMigrations(),
-    checkInstrumentApiContractAdmin(),
-  ]);
+  const [migrationResult, schemaReadinessResult, instrumentContractResult] =
+    await Promise.allSettled([
+      checkMigrations(),
+      checkSchemaReadiness({ bypassCache: true }),
+      checkInstrumentApiContractAdmin(),
+    ]);
 
   const migrations =
     migrationResult.status === 'fulfilled'
@@ -62,7 +78,13 @@ export async function GET() {
       ? instrumentContractResult.value
       : buildFailedInstrumentContractCheck(instrumentContractResult.reason);
 
-  const allHealthy = migrations.allHealthy && instrumentContract.ok;
+  const schemaReadiness =
+    schemaReadinessResult.status === 'fulfilled'
+      ? schemaReadinessResult.value
+      : buildFailedSchemaReadinessCheck(schemaReadinessResult.reason);
+
+  const allHealthy =
+    migrations.allHealthy && schemaReadiness.ready && instrumentContract.ok;
   const fallbackHealthy = migrations.allHealthy;
 
   const checks = {
@@ -84,6 +106,13 @@ export async function GET() {
       migrations.invoiceImageStoragePathShapeValid ?? fallbackHealthy,
     requiredColumnsPresent:
       migrations.requiredColumnsPresent ?? fallbackHealthy,
+    runtime_contracts: {
+      ok: schemaReadiness.missingContracts.length === 0,
+      missing: schemaReadiness.missingContracts,
+      ...('error' in schemaReadiness && schemaReadiness.error
+        ? { error: schemaReadiness.error }
+        : {}),
+    },
 
     instrument_api_contract: {
       ok: instrumentContract.ok,
@@ -100,7 +129,11 @@ export async function GET() {
     forbiddenPoliciesPresent: migrations.forbiddenPoliciesPresent,
     invalidHelpers: migrations.invalidHelpers,
     unsafePolicies: migrations.unsafePolicies,
-    missingColumns: migrations.missingColumns,
+    missingColumns: [
+      ...(migrations.missingColumns ?? []),
+      ...(schemaReadiness.missingColumns ?? []),
+    ],
+    missingRuntimeContracts: schemaReadiness.missingContracts ?? [],
   };
 
   return NextResponse.json(

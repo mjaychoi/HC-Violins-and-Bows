@@ -7,6 +7,18 @@ jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 jest.mock('@/utils/typeGuards');
 jest.mock('@/utils/inputValidation');
+jest.mock('@/app/api/_utils/schemaReadiness', () => ({
+  assertClientsSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-05-08T00:00:00.000Z',
+    missingColumns: [],
+  }),
+  assertClientConnectionsSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-05-08T00:00:00.000Z',
+    missingColumns: [],
+  }),
+}));
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
 let mockUserSupabase: any;
 
@@ -75,6 +87,20 @@ describe('/api/clients', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    const {
+      assertClientsSchemaReadiness,
+      assertClientConnectionsSchemaReadiness,
+    } = require('@/app/api/_utils/schemaReadiness');
+    assertClientsSchemaReadiness.mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-05-08T00:00:00.000Z',
+      missingColumns: [],
+    });
+    assertClientConnectionsSchemaReadiness.mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-05-08T00:00:00.000Z',
+      missingColumns: [],
+    });
     jest.spyOn(performance, 'now').mockReturnValue(0);
     mockUserSupabase = {
       from: jest.fn(),
@@ -140,6 +166,36 @@ describe('/api/clients', () => {
       expect(json.truncated).toBe(true);
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
       expect(mockQuery.limit).toHaveBeenCalledWith(1001);
+    });
+
+    it('fails fast when clients.client_number is missing', async () => {
+      const {
+        assertClientsSchemaReadiness,
+      } = require('@/app/api/_utils/schemaReadiness');
+      assertClientsSchemaReadiness.mockRejectedValueOnce(
+        Object.assign(new Error('Database migration required'), {
+          code: 'SCHEMA_OUT_OF_DATE',
+          error_code: 'SCHEMA_OUT_OF_DATE',
+          status: 503,
+          retryable: false,
+          details: { missingColumns: ['public.clients.client_number'] },
+        })
+      );
+
+      mockUserSupabase = {
+        from: jest.fn(() => {
+          throw new Error('clients query should not run');
+        }),
+      };
+
+      const request = new NextRequest('http://localhost/api/clients?all=true');
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+      expect(json.message).toBe('Database migration required.');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it.skip('should filter clients by search query', async () => {
@@ -382,6 +438,7 @@ describe('/api/clients', () => {
           contact_number: null,
           email: '',
           client_number: 'CL999',
+          org_id: 'attacker-org',
           tags: ['Owner'],
           interest: '',
           note: '',
@@ -394,6 +451,7 @@ describe('/api/clients', () => {
       expect(json.data.tags).toEqual(['Owner']);
       const insertArg = (mockQuery.insert as jest.Mock).mock.calls[0][0];
       expect(insertArg.client_number).toBe('CL001');
+      expect(insertArg.org_id).toBe('test-org');
       expect(insertArg.tags).toEqual(['Owner']);
     });
 

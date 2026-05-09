@@ -7,11 +7,15 @@ import OptimizedImage from '@/components/common/OptimizedImage';
 import {
   formatInstrumentPrice,
   formatInstrumentYear,
+  formatFileSize,
 } from '../utils/dashboardUtils';
 import { apiFetch } from '@/utils/apiFetch';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { usePermissions } from '@/hooks/usePermissions';
-import { handleApiResponse } from '@/utils/handleApiResponse';
+import {
+  handleApiResponse,
+  readApiResponseBody,
+} from '@/utils/handleApiResponse';
 
 interface InstrumentModalProps {
   isOpen: boolean;
@@ -20,6 +24,26 @@ interface InstrumentModalProps {
 }
 
 type MediaLoadState = 'loading' | 'success' | 'empty' | 'error';
+type CertificateFile = {
+  id?: string;
+  name: string;
+  path: string;
+  size: number;
+  createdAt: string | null;
+};
+
+function getCertificateDisplayName(file: CertificateFile): string {
+  return file.name.replace(/^\d+_/, '');
+}
+
+function getCertificateStorageFileName(file: CertificateFile): string {
+  const pathParts = file.path.split('/').filter(Boolean);
+  return pathParts[pathParts.length - 1] || file.name;
+}
+
+function getCertificateKey(file: CertificateFile): string {
+  return file.id || file.path || file.name;
+}
 
 export default function InstrumentModal({
   isOpen,
@@ -29,15 +53,31 @@ export default function InstrumentModal({
   const { canUploadInstrumentMedia } = usePermissions();
   const modalRef = useRef<HTMLDivElement>(null);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
+  const certificateFileInputRef = useRef<HTMLInputElement>(null);
+  const replaceCertificateFileInputRef = useRef<HTMLInputElement>(null);
   const [images, setImages] = useState<InstrumentImage[]>([]);
+  const [certificates, setCertificates] = useState<CertificateFile[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
+  const [loadingCertificates, setLoadingCertificates] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
+  const [uploadingCertificate, setUploadingCertificate] = useState(false);
+  const [deletingCertificateKey, setDeletingCertificateKey] = useState<
+    string | null
+  >(null);
+  const [replacingCertificateKey, setReplacingCertificateKey] = useState<
+    string | null
+  >(null);
+  const [certificateToReplace, setCertificateToReplace] =
+    useState<CertificateFile | null>(null);
   const [imageState, setImageState] = useState<MediaLoadState>('loading');
+  const [certificateState, setCertificateState] =
+    useState<MediaLoadState>('loading');
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const { showSuccess, handleError } = useAppFeedback();
+  const { showSuccess, showWarning, handleError } = useAppFeedback();
 
   // Request ID counters to handle concurrent requests
   const imageReqIdRef = useRef(0);
+  const certificateReqIdRef = useRef(0);
 
   useOutsideClose(modalRef, {
     isOpen,
@@ -86,17 +126,61 @@ export default function InstrumentModal({
     [handleError]
   );
 
-  // Fetch images when modal opens
+  const fetchCertificates = useCallback(
+    async (instrumentId: string) => {
+      const reqId = ++certificateReqIdRef.current;
+      setLoadingCertificates(true);
+      setCertificateState('loading');
+      try {
+        const response = await apiFetch(
+          `/api/instruments/${instrumentId}/certificates`
+        );
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch certificates: ${response.statusText}`
+          );
+        }
+
+        if (certificateReqIdRef.current === reqId) {
+          const files = await handleApiResponse<CertificateFile[]>(
+            response,
+            'Failed to fetch certificates'
+          );
+          setCertificates(files || []);
+          setCertificateState(files.length > 0 ? 'success' : 'empty');
+        }
+      } catch (error) {
+        if (certificateReqIdRef.current === reqId) {
+          setCertificates([]);
+          setCertificateState('error');
+          handleError(error, 'InstrumentCertificatesFetch');
+        }
+      } finally {
+        if (certificateReqIdRef.current === reqId) {
+          setLoadingCertificates(false);
+        }
+      }
+    },
+    [handleError]
+  );
+
+  // Fetch media when modal opens
   useEffect(() => {
     if (isOpen && instrument?.id) {
       setSelectedImageIndex(0);
       fetchImages(instrument.id);
+      fetchCertificates(instrument.id);
     } else {
       setImages([]);
+      setCertificates([]);
+      setCertificateToReplace(null);
+      setDeletingCertificateKey(null);
+      setReplacingCertificateKey(null);
       setImageState('empty');
+      setCertificateState('empty');
       setSelectedImageIndex(0);
     }
-  }, [fetchImages, isOpen, instrument?.id]);
+  }, [fetchCertificates, fetchImages, isOpen, instrument?.id]);
 
   const handleImageFileChange = async (
     e: React.ChangeEvent<HTMLInputElement>
@@ -129,6 +213,119 @@ export default function InstrumentModal({
       handleError(error, 'InstrumentImageUpload');
     } finally {
       setUploadingImages(false);
+    }
+  };
+
+  const handleCertificateFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !instrument?.id || !canUploadInstrumentMedia) {
+      return;
+    }
+
+    setUploadingCertificate(true);
+    try {
+      const fd = new FormData();
+      fd.append('certificate', file);
+      const response = await apiFetch(
+        `/api/instruments/${instrument.id}/certificates`,
+        { method: 'POST', body: fd }
+      );
+      const body = await readApiResponseBody<{ message?: string }>(
+        response,
+        'Failed to upload certificate'
+      );
+      showSuccess(body.message || 'Certificate uploaded successfully.');
+      await fetchCertificates(instrument.id);
+    } catch (error) {
+      handleError(error, 'InstrumentCertificateUpload');
+    } finally {
+      setUploadingCertificate(false);
+    }
+  };
+
+  const handleCertificateDelete = async (file: CertificateFile) => {
+    if (!instrument?.id || !canUploadInstrumentMedia) {
+      return;
+    }
+
+    const fileKey = getCertificateKey(file);
+    const deleteParam = file.id
+      ? `id=${encodeURIComponent(file.id)}`
+      : `file=${encodeURIComponent(getCertificateStorageFileName(file))}`;
+
+    setDeletingCertificateKey(fileKey);
+    try {
+      const response = await apiFetch(
+        `/api/instruments/${instrument.id}/certificates?${deleteParam}`,
+        { method: 'DELETE' }
+      );
+      const body = await readApiResponseBody<{
+        result?: { partial_success?: boolean };
+        message?: string;
+      }>(response, 'Failed to delete certificate');
+
+      if (body.result?.partial_success) {
+        showWarning(
+          body.message ||
+            'Certificate metadata was deleted, but storage cleanup needs attention.'
+        );
+      } else {
+        showSuccess(body.message || 'Certificate deleted successfully.');
+      }
+
+      await fetchCertificates(instrument.id);
+    } catch (error) {
+      handleError(error, 'InstrumentCertificateDelete');
+    } finally {
+      setDeletingCertificateKey(null);
+    }
+  };
+
+  const handleReplaceCertificateClick = (file: CertificateFile) => {
+    setCertificateToReplace(file);
+    replaceCertificateFileInputRef.current?.click();
+  };
+
+  const handleReplaceCertificateFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (
+      !file ||
+      !instrument?.id ||
+      !canUploadInstrumentMedia ||
+      !certificateToReplace
+    ) {
+      setCertificateToReplace(null);
+      return;
+    }
+
+    const fileKey = getCertificateKey(certificateToReplace);
+    setReplacingCertificateKey(fileKey);
+    try {
+      const fd = new FormData();
+      fd.append('certificate', file);
+      const response = await apiFetch(
+        `/api/instruments/${instrument.id}/certificates?file=${encodeURIComponent(
+          getCertificateStorageFileName(certificateToReplace)
+        )}`,
+        { method: 'PUT', body: fd }
+      );
+      const body = await readApiResponseBody<{ message?: string }>(
+        response,
+        'Failed to replace certificate'
+      );
+      showSuccess(body.message || 'Certificate replaced successfully.');
+      await fetchCertificates(instrument.id);
+    } catch (error) {
+      handleError(error, 'InstrumentCertificateReplace');
+    } finally {
+      setReplacingCertificateKey(null);
+      setCertificateToReplace(null);
     }
   };
 
@@ -341,6 +538,140 @@ export default function InstrumentModal({
                   </div>
                 </div>
               ) : null}
+
+              <div className="pt-4 border-t border-gray-200">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">
+                  Certificates
+                </h4>
+                {loadingCertificates ? (
+                  <div className="text-sm text-gray-500">
+                    Loading certificates...
+                  </div>
+                ) : certificateState === 'error' ? (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                    <p className="text-xs text-red-700">Failed to load media</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        instrument?.id && fetchCertificates(instrument.id)
+                      }
+                      className="px-3 py-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-md hover:bg-red-100"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : certificates.length > 0 ? (
+                  <div className="space-y-2">
+                    {certificates.map(file => (
+                      <div
+                        key={getCertificateKey(file)}
+                        className="rounded-lg border border-gray-200 p-2"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-gray-900">
+                              {getCertificateDisplayName(file)}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {file.createdAt
+                                ? new Date(file.createdAt).toLocaleDateString()
+                                : null}
+                              {file.size > 0 ? (
+                                <span>
+                                  {file.createdAt ? ' · ' : ''}
+                                  {formatFileSize(file.size)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          {canUploadInstrumentMedia ? (
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleReplaceCertificateClick(file)
+                                }
+                                disabled={
+                                  replacingCertificateKey ===
+                                    getCertificateKey(file) ||
+                                  deletingCertificateKey ===
+                                    getCertificateKey(file) ||
+                                  loadingCertificates
+                                }
+                                className="px-2 py-1 text-xs font-medium text-blue-700 border border-blue-200 rounded-md hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label={`Replace certificate ${getCertificateDisplayName(
+                                  file
+                                )}`}
+                              >
+                                {replacingCertificateKey ===
+                                getCertificateKey(file)
+                                  ? 'Replacing...'
+                                  : 'Replace'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCertificateDelete(file)}
+                                disabled={
+                                  deletingCertificateKey ===
+                                    getCertificateKey(file) ||
+                                  replacingCertificateKey ===
+                                    getCertificateKey(file) ||
+                                  loadingCertificates
+                                }
+                                className="px-2 py-1 text-xs font-medium text-red-700 border border-red-200 rounded-md hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label={`Delete certificate ${getCertificateDisplayName(
+                                  file
+                                )}`}
+                              >
+                                {deletingCertificateKey ===
+                                getCertificateKey(file)
+                                  ? 'Deleting...'
+                                  : 'Delete'}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    No certificate files uploaded yet.
+                  </p>
+                )}
+
+                {canUploadInstrumentMedia ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <input
+                      ref={certificateFileInputRef}
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      className="sr-only"
+                      aria-label="Upload certificate PDF"
+                      onChange={handleCertificateFileChange}
+                    />
+                    <input
+                      ref={replaceCertificateFileInputRef}
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      className="sr-only"
+                      aria-label="Replace certificate PDF"
+                      onChange={handleReplaceCertificateFileChange}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => certificateFileInputRef.current?.click()}
+                      disabled={uploadingCertificate || loadingCertificates}
+                      className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {uploadingCertificate ? 'Uploading...' : 'Upload PDF'}
+                    </button>
+                    <span className="text-xs text-gray-500">
+                      PDF only, max 100MB
+                    </span>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             {/* Right Column - Details */}

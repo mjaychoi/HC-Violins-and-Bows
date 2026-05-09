@@ -37,6 +37,9 @@ describe('inputValidation', () => {
       expect(validateSortColumn('connections', 'created_at')).toBe(
         'created_at'
       );
+      expect(validateSortColumn('connections', 'display_order')).toBe(
+        'display_order'
+      );
       expect(validateSortColumn('maintenance_tasks', 'due_date')).toBe(
         'due_date'
       );
@@ -439,6 +442,10 @@ describe('inputValidation', () => {
       expect(ALLOWED_SORT_COLUMNS.maintenance_tasks).toContain('due_date');
       expect(ALLOWED_SORT_COLUMNS.maintenance_tasks).toContain('status');
       expect(ALLOWED_SORT_COLUMNS.maintenance_tasks).toContain('priority');
+    });
+
+    it('should contain expected columns for connections', () => {
+      expect(ALLOWED_SORT_COLUMNS.connections).toContain('display_order');
     });
   });
 });

@@ -7,6 +7,18 @@ import { validateClient } from '@/utils/typeGuards';
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
+jest.mock('@/app/api/_utils/schemaReadiness', () => ({
+  assertClientsSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-05-08T00:00:00.000Z',
+    missingColumns: [],
+  }),
+  assertClientConnectionsSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-05-08T00:00:00.000Z',
+    missingColumns: [],
+  }),
+}));
 jest.mock('@/utils/typeGuards', () => {
   const actual = jest.requireActual('@/utils/typeGuards');
   return {
@@ -66,6 +78,20 @@ const connRow = {
 describe('POST /api/clients/with-connections', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    const {
+      assertClientsSchemaReadiness,
+      assertClientConnectionsSchemaReadiness,
+    } = require('@/app/api/_utils/schemaReadiness');
+    assertClientsSchemaReadiness.mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-05-08T00:00:00.000Z',
+      missingColumns: [],
+    });
+    assertClientConnectionsSchemaReadiness.mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-05-08T00:00:00.000Z',
+      missingColumns: [],
+    });
     mockErrorHandler.handleSupabaseError.mockImplementation(() => ({
       code: ErrorCodes.DATABASE_ERROR,
       message: 'Database error',

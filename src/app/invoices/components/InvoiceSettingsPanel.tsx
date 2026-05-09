@@ -57,6 +57,17 @@ function normalizeInvoiceSettings(
   };
 }
 
+function getInvoiceSettingsLoadMessage(
+  error: AppError | null,
+  fallbackMessage: string
+): string {
+  if (error?.message?.trim()) {
+    return error.message;
+  }
+
+  return errorHandler.getDisplayMessage(error, fallbackMessage);
+}
+
 export default function InvoiceSettingsPanel({
   onSaved,
 }: {
@@ -136,8 +147,9 @@ export default function InvoiceSettingsPanel({
         return;
       }
       const appError =
-        handleError(e, 'Load invoice settings') ??
-        errorHandler.normalizeError(e, 'Load invoice settings');
+        handleError(e, 'Load invoice settings', undefined, {
+          notify: false,
+        }) ?? errorHandler.normalizeError(e, 'Load invoice settings');
       logError('Failed to load invoice settings:', appError.message);
       setStatus('error');
       setLoadError(appError);
@@ -203,7 +215,7 @@ export default function InvoiceSettingsPanel({
           Failed to load invoice settings
         </div>
         <div className="mt-1 text-sm text-red-700">
-          {errorHandler.getDisplayMessage(
+          {getInvoiceSettingsLoadMessage(
             loadError,
             'Invoice settings could not be loaded. Try again.'
           )}

@@ -37,6 +37,7 @@ import {
   completeCreateIdempotency,
   createRequestHash,
 } from '@/app/api/_utils/createIdempotency';
+import { assertClientsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
@@ -228,6 +229,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      await assertClientsSchemaReadiness({ supabase: auth.userSupabase });
+
       const query = runClientsQuery(auth.userSupabase, q, auth.orgId);
       const { data, error, count } = await query;
 
@@ -327,6 +330,8 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const raw = validation.data;
+
+      await assertClientsSchemaReadiness({ supabase: auth.userSupabase });
 
       // client_number is always server-assigned for standard create (ignore request body)
       const insertRow = createClientInputToDbRow({
@@ -486,6 +491,8 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           status: 400,
         };
       }
+
+      await assertClientsSchemaReadiness({ supabase: auth.userSupabase });
 
       const { data: currentRow, error: curErr } = await auth.userSupabase
         .from('clients')

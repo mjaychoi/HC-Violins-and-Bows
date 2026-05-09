@@ -134,6 +134,16 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
   });
 
   it('태그 체크 및 토글 버튼', () => {
+    const mockFetchData = jest.fn().mockResolvedValue([]);
+    const mockUseDataFetching = jest.mocked(
+      require('@/hooks/useDataFetching')
+    ).useDataFetching;
+    mockUseDataFetching.mockReturnValue({
+      fetchData: mockFetchData,
+      loading: false,
+      items: [],
+    });
+
     render(<ClientForm {...baseProps} />);
     const ownerCheckbox = screen.getByLabelText('Owner');
     fireEvent.click(ownerCheckbox);
@@ -142,6 +152,7 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
     const searchButton = screen.getByText('Search for Instruments');
     fireEvent.click(searchButton);
     expect(screen.getByText('Hide Instrument Search')).toBeInTheDocument();
+    expect(mockFetchData).toHaveBeenCalledWith('');
   });
 
   it('빈 이름으로 제출하면 onSubmit을 호출하지 않고 에러를 표시한다', () => {

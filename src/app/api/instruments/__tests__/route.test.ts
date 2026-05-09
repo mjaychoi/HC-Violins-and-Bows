@@ -468,7 +468,7 @@ describe('/api/instruments', () => {
       );
     });
 
-    it('returns existing instrument when Idempotency-Key matches stored mapping', async () => {
+    it('returns existing instrument when Idempotency-Key matches completed request hash', async () => {
       const createData = { type: 'Violin' };
       const existing = {
         ...mockInstrument,
@@ -476,39 +476,53 @@ describe('/api/instruments', () => {
         serial_number: 'VI0000001',
       };
 
-      const idemSelectChain = () => {
-        const chain: Record<string, jest.Mock> = {};
-        chain.limit = jest.fn().mockResolvedValue({ data: null, error: null });
-        chain.eq = jest.fn().mockReturnValue(chain);
-        chain.maybeSingle = jest.fn().mockResolvedValue({
-          data: { instrument_id: existing.id },
-          error: null,
-        });
-        return chain;
+      const contractProbe = {
+        limit: jest.fn().mockResolvedValue({ data: null, error: null }),
       };
-
-      const fetchInstrQuery = {
+      const insertChain = {
         select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
-          data: existing,
+          data: null,
+          error: { code: '23505', message: 'duplicate key' },
+        }),
+      };
+      const lookupChain = {
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: {
+            org_id: 'test-org',
+            user_id: 'test-user',
+            route_key: 'POST:/api/instruments',
+            idempotency_key: 'idem-1',
+            request_hash:
+              '096618e6f6a92dbe94775bb221c87d103e3456a31c741feac4410af266ee7a4c',
+            status: 'completed',
+            response_payload: { data: existing },
+          },
           error: null,
         }),
       };
 
       mockUserSupabase = {
         from: jest.fn((table: string) => {
-          if (table === 'instrument_create_idempotency') {
+          if (table === 'api_create_idempotency') {
             return {
-              select: jest.fn().mockReturnValue(idemSelectChain()),
+              select: jest.fn(() => contractProbe),
+              insert: jest.fn(() => insertChain),
             };
-          }
-          if (table === 'instruments') {
-            return fetchInstrQuery;
           }
           throw new Error(`unexpected table ${table}`);
         }),
       } as any;
+      mockUserSupabase.from.mockImplementationOnce(() => ({
+        select: jest.fn(() => contractProbe),
+      }));
+      mockUserSupabase.from.mockImplementationOnce(() => ({
+        insert: jest.fn(() => insertChain),
+      }));
+      mockUserSupabase.from.mockImplementationOnce(() => ({
+        select: jest.fn(() => lookupChain),
+      }));
 
       const request = new NextRequest('http://localhost/api/instruments', {
         method: 'POST',
@@ -522,19 +536,76 @@ describe('/api/instruments', () => {
       const json = await response.json();
       expect(response.status).toBe(201);
       expect(json.data.id).toBe(existing.id);
+      expect(json.idempotentReplay).toBe(true);
+    });
+
+    it('returns conflict when Idempotency-Key is reused with a different payload', async () => {
+      const contractProbe = {
+        limit: jest.fn().mockResolvedValue({ data: null, error: null }),
+      };
+      const insertChain = {
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: null,
+          error: { code: '23505', message: 'duplicate key' },
+        }),
+      };
+      const lookupChain = {
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: {
+            org_id: 'test-org',
+            user_id: 'test-user',
+            route_key: 'POST:/api/instruments',
+            idempotency_key: 'idem-1',
+            request_hash: 'different-request-hash',
+            status: 'completed',
+            response_payload: { data: mockInstrument },
+          },
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockImplementationOnce(() => ({
+            select: jest.fn(() => contractProbe),
+          }))
+          .mockImplementationOnce(() => ({
+            insert: jest.fn(() => insertChain),
+          }))
+          .mockImplementationOnce(() => ({
+            select: jest.fn(() => lookupChain),
+          })),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'idem-1',
+        },
+        body: JSON.stringify({ type: 'Violin' }),
+      });
+
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('IDEMPOTENCY_KEY_REUSED');
     });
 
     it('returns 503 when idempotency table is missing (migration not applied)', async () => {
       const createData = { type: 'Violin' };
       const missingTableError = {
         code: '42P01',
-        message:
-          'relation "public.instrument_create_idempotency" does not exist',
+        message: 'relation "public.api_create_idempotency" does not exist',
       };
 
       mockUserSupabase = {
         from: jest.fn((table: string) => {
-          if (table === 'instrument_create_idempotency') {
+          if (table === 'api_create_idempotency') {
             return {
               select: jest.fn(() => ({
                 limit: jest

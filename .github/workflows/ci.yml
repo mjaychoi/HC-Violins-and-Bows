@@ -117,7 +117,7 @@ jobs:
   #       run: npm ci
   #
   #     - name: Install Playwright browsers
-  #       run: npx playwright install --with-deps
+  #       run: npm run test:e2e:install
   #
   #     - name: Download build artifacts (optional)
   #       id: download-artifact

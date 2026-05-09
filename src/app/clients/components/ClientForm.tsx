@@ -150,13 +150,12 @@ function ClientForm({
   // Use API route instead of direct Supabase client to reduce bundle size
   const { fetchData: searchInstruments } = useDataFetching<Instrument, string>(
     async (term?: string) => {
-      if (!term || term.length < 2) return [];
-
       try {
-        const params = new URLSearchParams({
-          search: term,
-          limit: '10',
-        });
+        const params = new URLSearchParams({ limit: '10' });
+        const trimmedTerm = term?.trim() ?? '';
+        if (trimmedTerm.length >= 2) {
+          params.set('search', trimmedTerm);
+        }
         // ✅ FIXED: Use apiFetch to include authentication headers
         const response = await apiFetch(
           `/api/instruments?${params.toString()}`
@@ -187,11 +186,6 @@ function ClientForm({
   // ✅ Memoize search function to avoid dependency issues
   const searchInstrumentsForNew = useCallback(
     async (searchTerm: string) => {
-      if (searchTerm.length < 2) {
-        clearSearchResults();
-        return;
-      }
-
       setIsSearchingInstrumentsForNew(true);
       const reqId = ++lastReqIdRef.current;
       try {
@@ -372,11 +366,7 @@ function ClientForm({
     if (!showInstrumentSearchForNew) return;
 
     const timeoutId = setTimeout(() => {
-      if (instrumentSearchTermForNew.length >= 2) {
-        searchInstrumentsForNew(instrumentSearchTermForNew);
-      } else {
-        clearSearchResults();
-      }
+      searchInstrumentsForNew(instrumentSearchTermForNew);
     }, 250); // 250ms debounce
 
     return () => clearTimeout(timeoutId);
@@ -620,9 +610,13 @@ function ClientForm({
               <div className="space-y-4">
                 <button
                   type="button"
-                  onClick={() =>
-                    setShowInstrumentSearchForNew(!showInstrumentSearchForNew)
-                  }
+                  onClick={() => {
+                    const nextOpen = !showInstrumentSearchForNew;
+                    setShowInstrumentSearchForNew(nextOpen);
+                    if (nextOpen) {
+                      void searchInstrumentsForNew(instrumentSearchTermForNew);
+                    }
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-left text-sm text-gray-700 hover:bg-gray-50"
                 >
                   {showInstrumentSearchForNew
@@ -636,6 +630,13 @@ function ClientForm({
                       type="text"
                       placeholder="Search instruments..."
                       value={instrumentSearchTermForNew}
+                      onFocus={() =>
+                        searchResultsForNew.length === 0
+                          ? void searchInstrumentsForNew(
+                              instrumentSearchTermForNew
+                            )
+                          : undefined
+                      }
                       onChange={e => {
                         // ✅ Only update state, debounced search in useEffect
                         setInstrumentSearchTermForNew(e.target.value);
@@ -677,6 +678,13 @@ function ClientForm({
                         ))}
                       </div>
                     )}
+
+                    {!isSearchingInstrumentsForNew &&
+                      searchResultsForNew.length === 0 && (
+                        <div className="rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-500">
+                          No tenant-scoped instruments found.
+                        </div>
+                      )}
 
                     {selectedInstrumentsForNew.length > 0 && (
                       <div className="space-y-4">

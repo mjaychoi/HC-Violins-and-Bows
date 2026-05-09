@@ -47,6 +47,8 @@
 - [ ] 마이그레이션 적용: 모든 `*.sql` (예: `migration-add-subtype.sql`, `migration-maintenance-tasks.sql`)을 Prod DB에 적용/검증
   - 방법 1: Supabase 대시보드에서 수동 실행
   - 방법 2: 스크립트 실행 (`scripts/supabase/apply-migrations.sh`)
+  - [ ] 배포 순서 확인: invoice settings API/client 변경 배포 전에 `supabase/migrations/20260508182551_add_invoice_settings_fields.sql` 적용
+  - [ ] 배포 순서 확인: instrument image metadata, client connection ordering, client number API/client 변경 배포 전에 `supabase/migrations/20260508194653_harden_high_risk_schema_columns.sql` 적용
 - [ ] 롤백 전략 준비: 각 마이그레이션에 대한 롤백 스크립트/절차 문서화
 - [ ] 인덱스/성능 점검: 느린 쿼리 점검 및 필요한 인덱스 추가
 - [ ] 스토리지/버킷 권한 검증: 퍼블릭/프라이빗 구분, URL 접근 통제
