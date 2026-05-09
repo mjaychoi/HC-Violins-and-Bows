@@ -210,11 +210,11 @@ describe('InstrumentModal', () => {
     });
   });
 
-  it('does not fetch or render certificate controls in instrument details', async () => {
-    mockApiFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: [] }),
-    } as Response);
+  it('fetches and renders certificate upload controls in instrument details', async () => {
+    mockApiFetchByUrl({
+      '/api/instruments/inst-1/images': { data: [] },
+      '/api/instruments/inst-1/certificates': { data: [] },
+    });
 
     render(
       <InstrumentModal
@@ -228,14 +228,189 @@ describe('InstrumentModal', () => {
       expect(mockApiFetch).toHaveBeenCalledWith(
         '/api/instruments/inst-1/images'
       );
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/instruments/inst-1/certificates'
+      );
     });
-    expect(mockApiFetch).not.toHaveBeenCalledWith(
-      '/api/instruments/inst-1/certificates'
-    );
-    expect(screen.queryByText(/^Certificate/)).not.toBeInTheDocument();
+    expect(screen.getByText(/^Certificates$/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Upload certificate PDF')).toBeInTheDocument();
     expect(
-      screen.queryByLabelText('Upload certificate PDF')
-    ).not.toBeInTheDocument();
+      screen.getByText('No certificate files uploaded yet.')
+    ).toBeInTheDocument();
+  });
+
+  it('renders existing certificate metadata with replace and delete controls', async () => {
+    mockApiFetchByUrl({
+      '/api/instruments/inst-1/images': { data: [] },
+      '/api/instruments/inst-1/certificates': {
+        data: [
+          {
+            id: 'cert-1',
+            name: 'cert.pdf',
+            path: 'instruments/inst-1/certificates/cert.pdf',
+            size: 2048,
+            createdAt: '2026-05-08T00:00:00Z',
+          },
+        ],
+      },
+    });
+
+    render(
+      <InstrumentModal
+        isOpen={true}
+        onClose={mockOnClose}
+        instrument={mockInstrument}
+      />
+    );
+
+    expect(await screen.findByText('cert.pdf')).toBeInTheDocument();
+    expect(screen.getByText(/2\.00 KB/)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('Replace certificate cert.pdf')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('Delete certificate cert.pdf')
+    ).toBeInTheDocument();
+  });
+
+  it('deletes an existing certificate and refetches metadata', async () => {
+    const user = userEvent.setup();
+    let certificateFetchCount = 0;
+    mockApiFetch.mockImplementation(async (url, init) => {
+      const key = String(url);
+      if (key === '/api/instruments/inst-1/images') {
+        return createMockResponse({ data: [] });
+      }
+      if (
+        key === '/api/instruments/inst-1/certificates' &&
+        init?.method !== 'DELETE'
+      ) {
+        certificateFetchCount += 1;
+        return createMockResponse({
+          data:
+            certificateFetchCount === 1
+              ? [
+                  {
+                    id: 'cert-1',
+                    name: 'cert.pdf',
+                    path: 'instruments/inst-1/certificates/cert.pdf',
+                    size: 2048,
+                    createdAt: '2026-05-08T00:00:00Z',
+                  },
+                ]
+              : [],
+        });
+      }
+      if (
+        key === '/api/instruments/inst-1/certificates?id=cert-1' &&
+        init?.method === 'DELETE'
+      ) {
+        return createMockResponse({
+          data: null,
+          json: async () => ({ message: 'Certificate deleted successfully.' }),
+        });
+      }
+
+      return createMockResponse({ data: [] });
+    });
+
+    render(
+      <InstrumentModal
+        isOpen={true}
+        onClose={mockOnClose}
+        instrument={mockInstrument}
+      />
+    );
+
+    await user.click(
+      await screen.findByLabelText('Delete certificate cert.pdf')
+    );
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/instruments/inst-1/certificates?id=cert-1',
+        { method: 'DELETE' }
+      );
+      expect(
+        screen.getByText('No certificate files uploaded yet.')
+      ).toBeInTheDocument();
+    });
+    expect(mockShowSuccess).toHaveBeenCalledWith(
+      'Certificate deleted successfully.'
+    );
+  });
+
+  it('replaces an existing certificate and refetches metadata', async () => {
+    const user = userEvent.setup();
+    let certificateFetchCount = 0;
+    mockApiFetch.mockImplementation(async (url, init) => {
+      const key = String(url);
+      if (key === '/api/instruments/inst-1/images') {
+        return createMockResponse({ data: [] });
+      }
+      if (
+        key === '/api/instruments/inst-1/certificates' &&
+        init?.method !== 'PUT'
+      ) {
+        certificateFetchCount += 1;
+        return createMockResponse({
+          data: [
+            {
+              id: 'cert-1',
+              name:
+                certificateFetchCount === 1 ? 'old-cert.pdf' : 'new-cert.pdf',
+              path:
+                certificateFetchCount === 1
+                  ? 'instruments/inst-1/certificates/old-cert.pdf'
+                  : 'instruments/inst-1/certificates/new-cert.pdf',
+              size: certificateFetchCount === 1 ? 1024 : 4096,
+              createdAt: '2026-05-08T00:00:00Z',
+            },
+          ],
+        });
+      }
+      if (
+        key === '/api/instruments/inst-1/certificates?file=old-cert.pdf' &&
+        init?.method === 'PUT'
+      ) {
+        return createMockResponse({
+          data: null,
+          json: async () => ({ message: 'Certificate replaced successfully.' }),
+        });
+      }
+
+      return createMockResponse({ data: [] });
+    });
+
+    render(
+      <InstrumentModal
+        isOpen={true}
+        onClose={mockOnClose}
+        instrument={mockInstrument}
+      />
+    );
+
+    await user.click(
+      await screen.findByLabelText('Replace certificate old-cert.pdf')
+    );
+    await user.upload(
+      screen.getByLabelText('Replace certificate PDF'),
+      new File(['new'], 'new-cert.pdf', { type: 'application/pdf' })
+    );
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/instruments/inst-1/certificates?file=old-cert.pdf',
+        expect.objectContaining({
+          method: 'PUT',
+          body: expect.any(FormData),
+        })
+      );
+      expect(screen.getByText('new-cert.pdf')).toBeInTheDocument();
+    });
+    expect(mockShowSuccess).toHaveBeenCalledWith(
+      'Certificate replaced successfully.'
+    );
   });
 
   it('uploads multiple instrument images from details', async () => {

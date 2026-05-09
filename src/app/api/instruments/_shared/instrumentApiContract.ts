@@ -67,7 +67,8 @@ export function isInstrumentIdempotencyTableMissingError(
   if (code === '42P01' || code === 'PGRST205') return true;
 
   if (
-    msg.includes('instrument_create_idempotency') &&
+    (msg.includes('api_create_idempotency') ||
+      msg.includes('instrument_create_idempotency')) &&
     msg.includes('does not exist')
   ) {
     return true;
@@ -80,7 +81,10 @@ export function isInstrumentIdempotencyTableMissingError(
     return true;
   }
 
-  if (details.includes('instrument_create_idempotency')) {
+  if (
+    details.includes('api_create_idempotency') ||
+    details.includes('instrument_create_idempotency')
+  ) {
     return true;
   }
 
@@ -210,7 +214,7 @@ async function probeIdempotencyTable(
   client: SupabaseClient
 ): Promise<ContractProbeOutcome> {
   const { error } = await client
-    .from('instrument_create_idempotency')
+    .from('api_create_idempotency')
     .select('org_id')
     .limit(0);
 
@@ -276,9 +280,7 @@ export async function ensureInstrumentIdempotencyTableContract(
   ) {
     return idempotencyTableCache.ok
       ? null
-      : instrumentSchemaContractMissingResult([
-          'instrument_create_idempotency',
-        ]);
+      : instrumentSchemaContractMissingResult(['api_create_idempotency']);
   }
 
   const outcome = await probeIdempotencyTable(client);
@@ -292,12 +294,11 @@ export async function ensureInstrumentIdempotencyTableContract(
     idempotencyTableCache = { ok: false, at: now };
 
     logWarn('instrument_schema_contract_missing', 'instrumentApiContract', {
-      surface: 'instrument_create_idempotency',
+      surface: 'api_create_idempotency',
+      contract: 'api_create_idempotency',
     });
 
-    return instrumentSchemaContractMissingResult([
-      'instrument_create_idempotency',
-    ]);
+    return instrumentSchemaContractMissingResult(['api_create_idempotency']);
   }
 
   // Unknown probe errors are not cached and do not block runtime requests,
@@ -373,9 +374,9 @@ export async function checkInstrumentApiContractAdmin(): Promise<{
 
     const tableOutcome = await probeIdempotencyTable(admin);
     if (tableOutcome === 'missing') {
-      missing.push('instrument_create_idempotency');
+      missing.push('api_create_idempotency');
     } else if (tableOutcome === 'unknown_error') {
-      missing.push('instrument_create_idempotency_probe_inconclusive');
+      missing.push('api_create_idempotency_probe_inconclusive');
     }
 
     const rpcOutcome = await probeSaleRpcContract(admin);

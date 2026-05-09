@@ -16,9 +16,24 @@ export interface SchemaReadinessResult {
   ready: boolean;
   checkedAt: string;
   missingColumns: string[];
+  missingContracts: string[];
 }
 
 const SCHEMA_READINESS_CACHE_TTL_MS = 30_000;
+
+const REQUIRED_RUNTIME_CONTRACTS = {
+  api_create_idempotency_exists: 'public.api_create_idempotency table',
+  api_create_idempotency_columns_ok:
+    'public.api_create_idempotency required columns',
+  api_create_idempotency_unique_ok:
+    'public.api_create_idempotency scoped uniqueness',
+  create_connection_atomic_hardened:
+    'public.create_connection_atomic org-scoped parent checks',
+} as const;
+
+type RuntimeContractColumn = keyof typeof REQUIRED_RUNTIME_CONTRACTS;
+
+type RuntimeContractRow = Partial<Record<RuntimeContractColumn, boolean>>;
 
 const REQUIRED_COLUMNS_BY_TABLE = {
   invoices: ['invoice_number'],
@@ -64,12 +79,16 @@ function getColumnKey(spec: RequiredColumnSpec): string {
 }
 
 function buildDefaultResult(
-  requiredColumns: readonly RequiredColumnSpec[]
+  requiredColumns: readonly RequiredColumnSpec[],
+  includeRuntimeContracts: boolean
 ): SchemaReadinessResult {
   return {
     ready: false,
     checkedAt: new Date().toISOString(),
     missingColumns: requiredColumns.map(getColumnKey),
+    missingContracts: includeRuntimeContracts
+      ? Object.values(REQUIRED_RUNTIME_CONTRACTS)
+      : [],
   };
 }
 
@@ -122,12 +141,16 @@ function groupRequiredColumnsByTable(
   return grouped;
 }
 
-function buildSchemaNotReadyMessage(missingColumns: string[]): string {
-  if (missingColumns.length === 0) {
+function buildSchemaNotReadyMessage(
+  missingColumns: string[],
+  missingContracts: string[]
+): string {
+  if (missingColumns.length === 0 && missingContracts.length === 0) {
     return 'Database migration required';
   }
 
-  return `Database migration required: missing ${missingColumns.join(', ')}`;
+  const missing = [...missingColumns, ...missingContracts];
+  return `Database migration required: missing ${missing.join(', ')}`;
 }
 
 export class SchemaNotReadyError extends Error {
@@ -135,12 +158,20 @@ export class SchemaNotReadyError extends Error {
   error_code = ErrorCodes.SCHEMA_OUT_OF_DATE;
   status = 503;
   retryable = false;
-  details: { missingColumns: string[]; context?: string };
+  details: {
+    missingColumns: string[];
+    missingContracts: string[];
+    context?: string;
+  };
 
-  constructor(missingColumns: string[], context?: string) {
-    super(buildSchemaNotReadyMessage(missingColumns));
+  constructor(
+    missingColumns: string[],
+    context?: string,
+    missingContracts: string[] = []
+  ) {
+    super(buildSchemaNotReadyMessage(missingColumns, missingContracts));
     this.name = 'SchemaNotReadyError';
-    this.details = { missingColumns, context };
+    this.details = { missingColumns, missingContracts, context };
   }
 }
 
@@ -156,8 +187,79 @@ function getSpecsForTables(
   );
 }
 
-function getCacheKey(requiredColumns: readonly RequiredColumnSpec[]): string {
-  return requiredColumns.map(getColumnKey).sort().join('|');
+function getCacheKey(
+  requiredColumns: readonly RequiredColumnSpec[],
+  includeRuntimeContracts: boolean
+): string {
+  return [
+    requiredColumns.map(getColumnKey).sort().join('|'),
+    includeRuntimeContracts ? 'runtime-contracts' : 'columns-only',
+  ].join('::');
+}
+
+function getAllRuntimeContracts(): string[] {
+  return Object.values(REQUIRED_RUNTIME_CONTRACTS);
+}
+
+function isMissingContractViewError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+  };
+  const code = typeof candidate.code === 'string' ? candidate.code : '';
+  const haystacks = [candidate.message, candidate.details, candidate.hint]
+    .filter((value): value is string => typeof value === 'string')
+    .map(value => value.toLowerCase());
+
+  return (
+    code === 'PGRST204' ||
+    code === '42P01' ||
+    haystacks.some(
+      text =>
+        text.includes('runtime_contract_checks') ||
+        text.includes('schema cache') ||
+        text.includes('does not exist') ||
+        text.includes('relation')
+    )
+  );
+}
+
+async function checkRuntimeContracts(
+  supabase: SchemaReadinessClient
+): Promise<string[]> {
+  const contractColumns = Object.keys(
+    REQUIRED_RUNTIME_CONTRACTS
+  ) as RuntimeContractColumn[];
+
+  const { data, error } = await supabase
+    .from('runtime_contract_checks')
+    .select(contractColumns.join(','))
+    .limit(1);
+
+  if (error) {
+    if (isMissingContractViewError(error)) {
+      return getAllRuntimeContracts();
+    }
+    throw error;
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+
+  if (!row || typeof row !== 'object') {
+    return getAllRuntimeContracts();
+  }
+
+  const contractRow = row as RuntimeContractRow;
+
+  return contractColumns
+    .filter(column => contractRow[column] !== true)
+    .map(column => REQUIRED_RUNTIME_CONTRACTS[column]);
 }
 
 export function __resetSchemaReadinessCacheForTests() {
@@ -169,6 +271,7 @@ export async function checkSchemaReadiness(options?: {
   supabase?: SchemaReadinessClient;
   tables?: readonly RequiredTableName[];
   requiredColumns?: readonly RequiredColumnSpec[];
+  includeRuntimeContracts?: boolean;
 }): Promise<SchemaReadinessResult> {
   const bypassCache = options?.bypassCache === true;
   const now = Date.now();
@@ -177,7 +280,10 @@ export async function checkSchemaReadiness(options?: {
     (options?.tables
       ? getSpecsForTables(options.tables)
       : ALL_REQUIRED_COLUMNS);
-  const cacheKey = getCacheKey(requiredColumns);
+  const includeRuntimeContracts =
+    options?.includeRuntimeContracts ??
+    (!options?.tables && !options?.requiredColumns);
+  const cacheKey = getCacheKey(requiredColumns, includeRuntimeContracts);
   const cached = cachedResults.get(cacheKey);
 
   if (!bypassCache && cached && now < cached.expiresAt) {
@@ -189,6 +295,7 @@ export async function checkSchemaReadiness(options?: {
       getAdminSupabase()) as SchemaReadinessClient;
 
     const missingColumns: string[] = [];
+    const missingContracts: string[] = [];
 
     for (const specs of groupRequiredColumnsByTable(requiredColumns).values()) {
       const table = specs[0]?.table;
@@ -209,11 +316,16 @@ export async function checkSchemaReadiness(options?: {
       }
     }
 
-    if (missingColumns.length > 0) {
+    if (includeRuntimeContracts) {
+      missingContracts.push(...(await checkRuntimeContracts(supabase)));
+    }
+
+    if (missingColumns.length > 0 || missingContracts.length > 0) {
       const result: SchemaReadinessResult = {
         ready: false,
         checkedAt: new Date().toISOString(),
         missingColumns,
+        missingContracts,
       };
 
       cachedResults.set(cacheKey, {
@@ -228,6 +340,7 @@ export async function checkSchemaReadiness(options?: {
       ready: true,
       checkedAt: new Date().toISOString(),
       missingColumns: [],
+      missingContracts: [],
     };
 
     cachedResults.set(cacheKey, {
@@ -237,7 +350,10 @@ export async function checkSchemaReadiness(options?: {
 
     return result;
   } catch {
-    const fallback = buildDefaultResult(requiredColumns);
+    const fallback = buildDefaultResult(
+      requiredColumns,
+      includeRuntimeContracts
+    );
     cachedResults.set(cacheKey, {
       result: fallback,
       expiresAt: now + SCHEMA_READINESS_CACHE_TTL_MS,
@@ -251,12 +367,17 @@ export async function assertSchemaReadiness(options?: {
   supabase?: SchemaReadinessClient;
   tables?: readonly RequiredTableName[];
   requiredColumns?: readonly RequiredColumnSpec[];
+  includeRuntimeContracts?: boolean;
   context?: string;
 }): Promise<SchemaReadinessResult> {
   const result = await checkSchemaReadiness(options);
 
   if (!result.ready) {
-    throw new SchemaNotReadyError(result.missingColumns, options?.context);
+    throw new SchemaNotReadyError(
+      result.missingColumns,
+      options?.context,
+      result.missingContracts
+    );
   }
 
   return result;

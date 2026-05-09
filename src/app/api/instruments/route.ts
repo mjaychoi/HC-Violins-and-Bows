@@ -5,11 +5,13 @@ import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { executeInstrumentPatch } from '@/app/api/instruments/_shared/executeInstrumentPatch';
+import { ensureInstrumentIdempotencyTableContract } from '@/app/api/instruments/_shared/instrumentApiContract';
 import {
-  ensureInstrumentIdempotencyTableContract,
-  instrumentSchemaContractMissingResult,
-  isInstrumentIdempotencyTableMissingError,
-} from '@/app/api/instruments/_shared/instrumentApiContract';
+  claimCreateIdempotency,
+  clearCreateIdempotency,
+  completeCreateIdempotency,
+  createRequestHash,
+} from '@/app/api/_utils/createIdempotency';
 import {
   validateInstrument,
   validateCreateInstrument,
@@ -19,7 +21,7 @@ import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
 import { Instrument } from '@/types';
 import type { TablesInsert } from '@/types/database';
-import { logInfo, logWarn } from '@/utils/logger';
+import { logInfo } from '@/utils/logger';
 
 type InstrumentInsertRow = TablesInsert<'instruments'>;
 type CreateInstrumentInput = {
@@ -371,6 +373,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       const idempotencyKey = normalizeIdempotencyKey(
         request.headers.get('idempotency-key')
       );
+      const idempotencyRouteKey = 'POST:/api/instruments';
 
       if (idempotencyKey) {
         const idempotencyContract =
@@ -378,69 +381,32 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         if (idempotencyContract) {
           return idempotencyContract;
         }
-
-        const { data: existingMap, error: mapLookupError } =
-          await auth.userSupabase
-            .from('instrument_create_idempotency')
-            .select('instrument_id')
-            .eq('org_id', auth.orgId)
-            .eq('idempotency_key', idempotencyKey)
-            .maybeSingle();
-
-        if (mapLookupError) {
-          if (isInstrumentIdempotencyTableMissingError(mapLookupError)) {
-            logWarn(
-              'instrument_idempotency_lookup_schema_missing',
-              'InstrumentsAPI',
-              {
-                orgId: auth.orgId,
-              }
-            );
-            return instrumentSchemaContractMissingResult([
-              'instrument_create_idempotency',
-            ]);
-          }
-          logWarn('instrument_idempotency_lookup_failed', 'InstrumentsAPI', {
-            orgId: auth.orgId,
-            code: (mapLookupError as { code?: string }).code,
-          });
-          throw errorHandler.handleSupabaseError(
-            mapLookupError,
-            'Idempotency lookup'
-          );
-        }
-
-        if (existingMap?.instrument_id) {
-          const { data: existingRow, error: existingErr } =
-            await auth.userSupabase
-              .from('instruments')
-              .select('*')
-              .eq('id', existingMap.instrument_id)
-              .eq('org_id', auth.orgId)
-              .single();
-
-          if (existingErr || !existingRow) {
-            throw errorHandler.handleSupabaseError(
-              existingErr,
-              'Fetch idempotent instrument'
-            );
-          }
-
-          logInfo('instrument_create_idempotent_hit', 'InstrumentsAPI', {
-            orgId: auth.orgId,
-            instrumentId: existingRow.id,
-          });
-
-          return {
-            payload: { data: validateInstrument(existingRow) },
-            status: 201,
-            metadata: {
-              instrumentId: existingRow.id,
-              idempotentReplay: true,
-            },
-          };
-        }
       }
+
+      const idempotency = await claimCreateIdempotency(
+        request,
+        auth,
+        idempotencyRouteKey,
+        createRequestHash(createInput)
+      );
+
+      if (idempotency.kind === 'replay') {
+        return {
+          payload: idempotency.payload,
+          status: 201,
+          metadata: { idempotentReplay: true },
+        };
+      }
+
+      if (idempotency.kind === 'conflict') {
+        return {
+          payload: idempotency.payload,
+          status: idempotency.status,
+        };
+      }
+
+      const claimedIdempotencyKey =
+        idempotency.kind === 'claimed' ? idempotency.idempotencyKey : null;
 
       let resolvedSerial = normalizeNullableText(
         createInput.serial_number ?? null
@@ -466,108 +432,41 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         reserved_connection_id: null,
       });
 
-      const data = await createInstrumentWithRetry(auth, instrumentInsert);
-
-      if (idempotencyKey) {
-        const { error: mapInsertError } = await auth.userSupabase
-          .from('instrument_create_idempotency')
-          .insert({
-            org_id: auth.orgId,
-            idempotency_key: idempotencyKey,
-            instrument_id: data.id,
-            created_by_user_id: auth.user.id,
-          });
-
-        if (mapInsertError?.code === '23505') {
-          logInfo('instrument_create_idempotent_race', 'InstrumentsAPI', {
-            orgId: auth.orgId,
-          });
-          const { data: winner, error: winnerErr } = await auth.userSupabase
-            .from('instrument_create_idempotency')
-            .select('instrument_id')
-            .eq('org_id', auth.orgId)
-            .eq('idempotency_key', idempotencyKey)
-            .single();
-
-          if (winnerErr || !winner?.instrument_id) {
-            throw errorHandler.handleSupabaseError(
-              winnerErr,
-              'Resolve idempotent instrument'
-            );
-          }
-
-          if (winner.instrument_id !== data.id) {
-            await auth.userSupabase
-              .from('instruments')
-              .delete()
-              .eq('id', data.id)
-              .eq('org_id', auth.orgId);
-            logInfo(
-              'instrument_create_duplicate_row_removed',
-              'InstrumentsAPI',
-              {
-                droppedId: data.id,
-                canonicalId: winner.instrument_id,
-              }
-            );
-          }
-
-          const { data: canonical, error: canonicalErr } =
-            await auth.userSupabase
-              .from('instruments')
-              .select('*')
-              .eq('id', winner.instrument_id)
-              .eq('org_id', auth.orgId)
-              .single();
-
-          if (canonicalErr || !canonical) {
-            throw errorHandler.handleSupabaseError(
-              canonicalErr,
-              'Fetch canonical instrument'
-            );
-          }
-
-          return {
-            payload: { data: validateInstrument(canonical) },
-            status: 201,
-            metadata: {
-              instrumentId: canonical.id,
-              idempotentReplay: true,
-            },
-          };
-        }
-
-        if (mapInsertError) {
-          if (isInstrumentIdempotencyTableMissingError(mapInsertError)) {
-            logWarn(
-              'instrument_idempotency_insert_schema_missing',
-              'InstrumentsAPI',
-              { orgId: auth.orgId }
-            );
-            return instrumentSchemaContractMissingResult([
-              'instrument_create_idempotency',
-            ]);
-          }
-          throw errorHandler.handleSupabaseError(
-            mapInsertError,
-            'Idempotency insert'
-          );
-        }
-
-        logInfo('instrument_create_idempotent_registered', 'InstrumentsAPI', {
-          orgId: auth.orgId,
-          instrumentId: data.id,
-        });
+      let data;
+      try {
+        data = await createInstrumentWithRetry(auth, instrumentInsert);
+      } catch (error) {
+        await clearCreateIdempotency(
+          auth,
+          idempotencyRouteKey,
+          claimedIdempotencyKey
+        );
+        throw error;
       }
 
       const validatedResponse = validateInstrument(data);
+      const payload = { data: validatedResponse };
+
+      await completeCreateIdempotency(
+        auth,
+        idempotencyRouteKey,
+        claimedIdempotencyKey,
+        payload
+      );
+
+      if (claimedIdempotencyKey) {
+        logInfo('instrument_create_idempotent_registered', 'InstrumentsAPI', {
+          orgId: auth.orgId,
+          instrumentId: validatedResponse.id,
+        });
+      }
 
       logInfo('instrument_create_success', 'InstrumentsAPI', {
         instrumentId: validatedResponse.id,
       });
 
       return {
-        payload: { data: validatedResponse },
+        payload,
         status: 201,
         metadata: { instrumentId: validatedResponse.id },
       };

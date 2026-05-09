@@ -55,8 +55,7 @@ describe('instrumentApiContract', () => {
                 data: null,
                 error: {
                   code: '42P01',
-                  message:
-                    'relation "instrument_create_idempotency" does not exist',
+                  message: 'relation "api_create_idempotency" does not exist',
                 },
               };
             }),
@@ -78,6 +77,7 @@ describe('instrumentApiContract', () => {
       );
       expect(limitCalls).toBe(1);
       expect(client.from).toHaveBeenCalledTimes(1);
+      expect(client.from).toHaveBeenCalledWith('api_create_idempotency');
     });
   });
 });

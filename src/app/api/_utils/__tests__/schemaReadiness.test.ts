@@ -12,7 +12,15 @@ describe('schemaReadiness', () => {
     __resetSchemaReadinessCacheForTests();
   });
 
-  function createSupabaseMock(errorsByTable: Record<string, unknown> = {}) {
+  function createSupabaseMock(
+    errorsByTable: Record<string, unknown> = {},
+    runtimeContracts: Record<string, boolean> = {
+      api_create_idempotency_exists: true,
+      api_create_idempotency_columns_ok: true,
+      api_create_idempotency_unique_ok: true,
+      create_connection_atomic_hardened: true,
+    }
+  ) {
     const selections: Record<string, string> = {};
     const supabase = {
       from: jest.fn((table: string) => ({
@@ -20,6 +28,10 @@ describe('schemaReadiness', () => {
           selections[table] = columns;
           return {
             limit: jest.fn().mockResolvedValue({
+              data:
+                table === 'runtime_contract_checks'
+                  ? [runtimeContracts]
+                  : undefined,
               error: errorsByTable[table] ?? null,
             }),
           };
@@ -60,6 +72,14 @@ describe('schemaReadiness', () => {
     );
     expect(selections.client_instruments).toBe('display_order');
     expect(selections.clients).toBe('client_number');
+    expect(selections.runtime_contract_checks).toBe(
+      [
+        'api_create_idempotency_exists',
+        'api_create_idempotency_columns_ok',
+        'api_create_idempotency_unique_ok',
+        'create_connection_atomic_hardened',
+      ].join(',')
+    );
   });
 
   it('reports invoice_settings columns as missing on PostgREST schema-cache errors', async () => {
@@ -85,6 +105,50 @@ describe('schemaReadiness', () => {
     );
   });
 
+  it('reports missing runtime contracts for deployment-critical DB functions', async () => {
+    const { supabase } = createSupabaseMock(
+      {},
+      {
+        api_create_idempotency_exists: true,
+        api_create_idempotency_columns_ok: true,
+        api_create_idempotency_unique_ok: true,
+        create_connection_atomic_hardened: false,
+      }
+    );
+
+    const result = await checkSchemaReadiness({
+      bypassCache: true,
+      supabase,
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.missingContracts).toEqual([
+      'public.create_connection_atomic org-scoped parent checks',
+    ]);
+  });
+
+  it('fails readiness when the runtime contract check view is missing', async () => {
+    const { supabase } = createSupabaseMock({
+      runtime_contract_checks: {
+        code: '42P01',
+        message: 'relation "runtime_contract_checks" does not exist',
+      },
+    });
+
+    const result = await checkSchemaReadiness({
+      bypassCache: true,
+      supabase,
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.missingContracts).toEqual([
+      'public.api_create_idempotency table',
+      'public.api_create_idempotency required columns',
+      'public.api_create_idempotency scoped uniqueness',
+      'public.create_connection_atomic org-scoped parent checks',
+    ]);
+  });
+
   it('surfaces missing invoice_settings fields in SchemaNotReadyError details', () => {
     const error = new SchemaNotReadyError([
       'public.invoice_settings.business_name',
@@ -95,6 +159,7 @@ describe('schemaReadiness', () => {
     expect(error.details.missingColumns).toEqual([
       'public.invoice_settings.business_name',
     ]);
+    expect(error.details.missingContracts).toEqual([]);
   });
 
   it('checks only instrument image metadata columns for the image wrapper', async () => {

@@ -389,6 +389,68 @@ describe('/api/connections', () => {
       expect(mockFetchQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
+    it('returns controlled conflict when the RPC rejects a cross-org client', async () => {
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Client not found in organization' },
+      });
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Interested',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error).toBe('Client not found in organization');
+      expect(json.message).not.toBe(
+        'Server error occurred. Please try again later.'
+      );
+      expect(mockRpc).toHaveBeenCalledWith('create_connection_atomic', {
+        p_client_id: mockConnection.client_id,
+        p_instrument_id: mockConnection.instrument_id,
+        p_relationship_type: 'Interested',
+        p_notes: null,
+      });
+    });
+
+    it('returns controlled conflict when the RPC rejects a cross-org instrument', async () => {
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Instrument not found in organization' },
+      });
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Interested',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error).toBe('Instrument not found in organization');
+      expect(json.message).not.toBe(
+        'Server error occurred. Please try again later.'
+      );
+    });
+
     it('should normalize joined DB rows before response validation', async () => {
       const dbConnection = {
         ...mockConnection,

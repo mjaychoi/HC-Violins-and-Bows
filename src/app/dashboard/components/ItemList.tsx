@@ -110,6 +110,7 @@ const ItemList = memo(function ItemList({
     serial_number?: string | null;
     maker?: string | null;
     type?: string | null;
+    subtype?: string | null;
     year?: string | number | null;
     price?: string | number | null;
     note?: string | null;
@@ -528,7 +529,7 @@ const ItemList = memo(function ItemList({
   }, [newlyCreatedItemId]);
 
   if (loading) {
-    return <ListSkeleton rows={5} columns={9} />;
+    return <ListSkeleton rows={5} columns={10} />;
   }
 
   // UX: Improved empty state - use consistent EmptyState component
@@ -624,6 +625,23 @@ const ItemList = memo(function ItemList({
                       }`}
                     >
                       {getSortArrow('type') || ''}
+                    </span>
+                  </span>
+                </th>
+                <th
+                  className={cn(classNames.tableHeaderCellSortable, 'group')}
+                  onClick={() => onSort('subtype')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Subtype
+                    <span
+                      className={`opacity-0 group-hover:opacity-100 ${
+                        getSortArrow('subtype') !== ''
+                          ? 'opacity-100 text-gray-900'
+                          : ''
+                      }`}
+                    >
+                      {getSortArrow('subtype') || ''}
                     </span>
                   </span>
                 </th>
@@ -929,6 +947,25 @@ const ItemList = memo(function ItemList({
                         ) : (
                           <div className="text-sm text-gray-900">
                             {item.type || '—'}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className={classNames.tableCell}>
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editData.subtype || ''}
+                            onChange={e =>
+                              handleEditFieldChange('subtype', e.target.value)
+                            }
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onClick={e => e.stopPropagation()}
+                            placeholder="Subtype"
+                          />
+                        ) : (
+                          <div className="text-sm text-gray-900">
+                            {item.subtype || '—'}
                           </div>
                         )}
                       </td>

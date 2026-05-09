@@ -92,7 +92,7 @@
     "@types/react-dom": "^19",
     "@typescript-eslint/eslint-plugin": "^8.46.2",
     "@typescript-eslint/parser": "^8.46.2",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "^15.5.9",
     "husky": "^9.1.7",
