@@ -45,3 +45,4 @@ next-env.d.ts
 
 # supabase schema exports (generated files)
 supabase-schema-export.sql
+supabase/.branches/

@@ -597,6 +597,24 @@ describe('/api/connections', () => {
       expect(response.status).toBe(400);
       expect(json.error).toContain('Invalid connection data');
     });
+
+    it('should return 400 for malformed JSON', async () => {
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: '{"client_id":',
+      });
+
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(response.status).not.toBe(500);
+      expect(json.error).toBeDefined();
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
   });
 
   describe('PATCH', () => {
@@ -648,6 +666,24 @@ describe('/api/connections', () => {
 
       expect(response.status).toBe(400);
       expect(json.error).toBe('Connection ID is required');
+    });
+
+    it('should return 400 for malformed JSON', async () => {
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: '{"id":',
+      });
+
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(response.status).not.toBe(500);
+      expect(json.error).toBeDefined();
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
     });
   });
 
@@ -787,6 +823,24 @@ describe('/api/connections', () => {
 
       expect(response.status).toBe(400);
       expect(json.error).toBe('orders must be an array');
+    });
+
+    it('should return 400 for malformed JSON', async () => {
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: '{"orders":',
+      });
+
+      const response = await PUT(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(response.status).not.toBe(500);
+      expect(json.error).toBeDefined();
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
     });
 
     it('should return empty array when orders is empty', async () => {

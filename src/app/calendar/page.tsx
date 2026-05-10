@@ -148,12 +148,7 @@ export default function CalendarPage() {
         'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
       >
     ) => {
-      let created: MaintenanceTask;
-      try {
-        created = await createTask(taskData);
-      } catch (err) {
-        throw err;
-      }
+      const created = await createTask(taskData);
 
       if (!created?.id) {
         showWarning(
@@ -320,9 +315,10 @@ export default function CalendarPage() {
               [backup.dateField]: backup.originalDate,
             };
             await updateTask(task.id, rollbackData);
-            await navigation.forceRefetch({ suppressErrorToast: true });
           } catch {
             showWarning(CALENDAR_WARNING_MESSAGES.ROLLBACK_FAILED);
+          } finally {
+            await navigation.forceRefetch({ suppressErrorToast: true });
           }
           handleError(error, 'Failed to update task date');
           return;

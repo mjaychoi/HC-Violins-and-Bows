@@ -39,6 +39,11 @@ const CONNECTION_DETAIL_SELECT = `
   instrument:instruments(*)
 `;
 
+type ConnectionDisplayOrderUpdate = {
+  id: string;
+  display_order: number;
+};
+
 type ConnectionDetailRow = Record<string, unknown> & {
   client?: Record<string, unknown> | null;
   instrument?: Record<string, unknown> | null;
@@ -77,6 +82,27 @@ function parsePageSize(input: string | null): number {
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_PAGE_SIZE;
 
   return Math.min(parsed, MAX_PAGE_SIZE);
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function readJsonObject(
+  request: NextRequest
+): Promise<
+  { ok: true; body: Record<string, unknown> } | { ok: false; error: string }
+> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return { ok: false, error: 'Invalid JSON body' };
+  }
+  if (!isObject(body)) {
+    return { ok: false, error: 'Invalid request body' };
+  }
+  return { ok: true, body };
 }
 
 function getConnectionConflictStatus(errorMessage: string): number {
@@ -308,7 +334,14 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const body = await request.json();
+      const bodyResult = await readJsonObject(request);
+      if (!bodyResult.ok) {
+        return {
+          payload: { error: bodyResult.error },
+          status: 400,
+        };
+      }
+      const body = bodyResult.body;
 
       const validationResult = safeValidate(
         body,
@@ -441,8 +474,15 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const body = await request.json();
-      const { id, ...updates } = body || {};
+      const bodyResult = await readJsonObject(request);
+      if (!bodyResult.ok) {
+        return {
+          payload: { error: bodyResult.error },
+          status: 400,
+        };
+      }
+      const { id: rawId, ...updates } = bodyResult.body;
+      const id = typeof rawId === 'string' ? rawId : '';
 
       if (!id) {
         return {
@@ -610,8 +650,14 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const body = await request.json();
-      const { orders } = body || {};
+      const bodyResult = await readJsonObject(request);
+      if (!bodyResult.ok) {
+        return {
+          payload: { error: bodyResult.error },
+          status: 400,
+        };
+      }
+      const { orders } = bodyResult.body;
 
       if (!Array.isArray(orders)) {
         return {
@@ -624,22 +670,28 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
         return { payload: { data: [] } };
       }
 
+      const validatedOrders: ConnectionDisplayOrderUpdate[] = [];
       for (const order of orders) {
-        if (!order?.id || !validateUUID(order.id)) {
+        const rawId = isObject(order) ? order.id : undefined;
+        const id = typeof rawId === 'string' ? rawId : '';
+        if (!id || !validateUUID(id)) {
           return {
-            payload: { error: `Invalid connection ID: ${order?.id}` },
+            payload: { error: `Invalid connection ID: ${rawId}` },
             status: 400,
           };
         }
 
-        if (typeof order.display_order !== 'number') {
+        const displayOrder = isObject(order) ? order.display_order : undefined;
+        if (typeof displayOrder !== 'number') {
           return {
             payload: {
-              error: `Invalid display_order for connection ${order.id}`,
+              error: `Invalid display_order for connection ${id}`,
             },
             status: 400,
           };
         }
+
+        validatedOrders.push({ id, display_order: displayOrder });
       }
 
       await assertClientConnectionsSchemaReadiness({
@@ -648,7 +700,7 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
 
       const { error: reorderError } = await auth.userSupabase.rpc(
         'reorder_connections_atomic',
-        { p_orders: orders }
+        { p_orders: validatedOrders }
       );
 
       if (reorderError) {
@@ -661,7 +713,7 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const ids = orders.map(o => o.id);
+      const ids = validatedOrders.map(order => order.id);
 
       const { data, error: fetchError } = await auth.userSupabase
         .from('client_instruments')

@@ -85,6 +85,22 @@ describe('/api/clients', () => {
     created_at: '2024-01-01T00:00:00Z',
   };
 
+  // DB-format row returned by Supabase (name/phone, not first_name/contact_number).
+  // mapClientsTableRowToClient normalises this into the Client shape above.
+  const mockDbRow = {
+    id: '123e4567-e89b-12d3-a456-426614174000',
+    org_id: 'test-org',
+    client_number: null as string | null,
+    name: 'John Doe',
+    email: 'john@example.com',
+    phone: '123-456-7890',
+    tags: ['Owner'] as string[],
+    interest: 'Active',
+    note: 'Test note',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: null as string | null,
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     const {
@@ -112,17 +128,17 @@ describe('/api/clients', () => {
   });
 
   describe('GET', () => {
-    it.skip('should return clients with default parameters', async () => {
+    it('should return clients with default parameters', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({
+          data: [mockDbRow],
+          error: null,
+          count: 1,
+        }),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [mockClient],
-        error: null,
-        count: 1,
-      });
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -131,12 +147,16 @@ describe('/api/clients', () => {
       const request = new NextRequest('http://localhost/api/clients');
       const response = await GET(request);
       const json = await response.json();
-      // eslint-disable-next-line no-console
-      console.log('CLIENT GET default', response.status, json);
 
       expect(response.status).toBe(200);
-      expect(json.data).toEqual([mockClient]);
+      expect(json.data).toHaveLength(1);
+      expect(json.data[0].first_name).toBe('John');
+      expect(json.data[0].last_name).toBe('Doe');
+      expect(json.data[0].email).toBe('john@example.com');
+      expect(json.data[0].contact_number).toBe('123-456-7890');
+      expect(json.data[0].tags).toEqual(['Owner']);
       expect(json.count).toBe(1);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
     it('should hard-cap and mark truncated all=true lists', async () => {
@@ -198,18 +218,18 @@ describe('/api/clients', () => {
       expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
-    it.skip('should filter clients by search query', async () => {
+    it('should filter clients by search query', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         or: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({
+          data: [mockDbRow],
+          error: null,
+          count: 1,
+        }),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [mockClient],
-        error: null,
-        count: 1,
-      });
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -219,44 +239,52 @@ describe('/api/clients', () => {
         'http://localhost/api/clients?search=John'
       );
       const response = await GET(request);
+      const json = await response.json();
 
-      expect(mockQuery.or).toHaveBeenCalled();
       expect(response.status).toBe(200);
+      expect(json.data).toHaveLength(1);
+      expect(mockQuery.or).toHaveBeenCalledWith(
+        expect.stringContaining('name.ilike.%John%')
+      );
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
-    it.skip('should apply limit when provided', async () => {
+    it('should apply limit when provided', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({
+          data: [mockDbRow],
+          error: null,
+          count: 1,
+        }),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [mockClient],
-        error: null,
-        count: 1,
-      });
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
       const request = new NextRequest('http://localhost/api/clients?limit=10');
-      await GET(request);
+      const response = await GET(request);
 
+      expect(response.status).toBe(200);
       expect(mockQuery.limit).toHaveBeenCalledWith(10);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
-    it.skip('should handle Supabase errors', async () => {
+    it('should handle Supabase errors', async () => {
       const mockError = { message: 'Database error', code: 'PGRST116' };
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({
+          data: null,
+          error: mockError,
+          count: 0,
+        }),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: null,
-        error: mockError,
-        count: 0,
-      });
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -273,18 +301,18 @@ describe('/api/clients', () => {
       expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
     });
 
-    it.skip('should normalize null tags to empty array', async () => {
-      const clientWithNullTags = { ...mockClient, tags: null };
+    it('should normalize null tags to empty array', async () => {
+      const dbRowWithNullTags = { ...mockDbRow, tags: null };
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({
+          data: [dbRowWithNullTags],
+          error: null,
+          count: 1,
+        }),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [clientWithNullTags],
-        error: null,
-        count: 1,
-      });
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -294,6 +322,7 @@ describe('/api/clients', () => {
       const response = await GET(request);
       const json = await response.json();
 
+      expect(response.status).toBe(200);
       expect(json.data[0].tags).toEqual([]);
     });
   });

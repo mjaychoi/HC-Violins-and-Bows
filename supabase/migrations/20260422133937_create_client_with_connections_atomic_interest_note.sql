@@ -1,12 +1,12 @@
--- Atomic client insert + zero or more instrument links in one transaction.
--- Reuses public.create_connection_atomic for each link (Booked/Sold rules, RLS via JWT).
-
 CREATE OR REPLACE FUNCTION public.create_client_with_connections_atomic(
   p_name            TEXT,
   p_email           TEXT DEFAULT NULL,
   p_phone           TEXT DEFAULT NULL,
   p_client_number   TEXT DEFAULT NULL,
-  p_links           JSONB DEFAULT '[]'::JSONB
+  p_links           JSONB DEFAULT '[]'::JSONB,
+  p_tags            TEXT[] DEFAULT NULL,
+  p_interest        TEXT DEFAULT NULL,
+  p_note            TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -19,6 +19,9 @@ DECLARE
   v_conn_id      UUID;
   v_client       JSONB;
   v_connections  JSONB;
+  v_tags         TEXT[] := COALESCE(p_tags, ARRAY[]::text[]);
+  v_interest     TEXT := NULLIF(trim(COALESCE(p_interest, '')), '');
+  v_note         TEXT := NULLIF(trim(COALESCE(p_note, '')), '');
 BEGIN
   IF v_org_id IS NULL THEN
     RAISE EXCEPTION 'Organization context required';
@@ -28,13 +31,25 @@ BEGIN
     RAISE EXCEPTION 'Client name is required';
   END IF;
 
-  INSERT INTO public.clients (org_id, name, email, phone, client_number)
+  INSERT INTO public.clients (
+    org_id,
+    name,
+    email,
+    phone,
+    client_number,
+    tags,
+    interest,
+    note
+  )
   VALUES (
     v_org_id,
     trim(p_name),
     NULLIF(trim(COALESCE(p_email, '')), ''),
     NULLIF(trim(COALESCE(p_phone, '')), ''),
-    NULLIF(trim(COALESCE(p_client_number, '')), '')
+    NULLIF(trim(COALESCE(p_client_number, '')), ''),
+    v_tags,
+    v_interest,
+    v_note
   )
   RETURNING id INTO v_client_id;
 

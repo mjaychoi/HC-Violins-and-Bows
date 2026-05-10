@@ -199,7 +199,7 @@ export function useInvoices() {
         droppedCount: 0,
         returnedCount: 0,
       });
-      const currentPage = options.page || page;
+      const currentPage = options.page ?? 1;
 
       try {
         const params = new URLSearchParams();
@@ -333,7 +333,7 @@ export function useInvoices() {
         }
       }
     },
-    [page, handleError]
+    [handleError]
   );
 
   const createInvoice = useCallback(
@@ -606,10 +606,6 @@ export function useInvoices() {
           );
         }
 
-        await readApiResponseEnvelope<{ id: string }>(
-          response,
-          `Failed to delete invoice (${response.status})`
-        );
         if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
           throw new DOMException(
             'Tenant changed during deleteInvoice',

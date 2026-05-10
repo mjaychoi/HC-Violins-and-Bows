@@ -300,7 +300,7 @@ function SalesPageContent() {
   const handleSendReceipt = useCallback(
     async (sale: EnrichedSale) => {
       try {
-        const response = await fetch(`/api/invoices/${sale.id}/pdf`);
+        const response = await apiFetch(`/api/invoices/${sale.id}/pdf`);
 
         if (!response.ok) {
           throw new Error('Download failed');

@@ -1,4 +1,13 @@
 /**
+ * DEPRECATED: do not run directly.
+ * Use scripts/seed-demo-data.ts via npm run seed:demo:dry-run,
+ * npm run seed:demo -- --confirm, or npm run seed:demo:reset.
+ */
+throw new Error(
+  'scripts/seed-sample-data.ts is deprecated. Use npm run seed:demo commands.'
+);
+
+/**
  * 예시 데이터 생성 스크립트
  *
  * 이 스크립트는 Supabase 데이터베이스에 테스트용 예시 데이터를 생성합니다.
@@ -9,7 +18,7 @@
  * - 판매 이력 (30개)
  * - 연락 기록 (100개)
  *
- * 실행: npm run seed:data
+ * Deprecated content retained for reference only. Do not run this script.
  */
 
 import { Client } from 'pg';

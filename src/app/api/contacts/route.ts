@@ -23,7 +23,46 @@ import {
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 const MAX_CLIENT_IDS = 50;
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getOptionalNullableString(value: unknown): string | null | undefined {
+  return value === null ? null : getOptionalString(value);
+}
+
+async function readJsonObject(
+  request: NextRequest
+): Promise<
+  { ok: true; body: Record<string, unknown> } | { ok: false; error: string }
+> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return { ok: false, error: 'Invalid JSON body' };
+  }
+  if (!isObject(body)) {
+    return { ok: false, error: 'Invalid request body' };
+  }
+  return { ok: true, body };
+}
 const CONTACT_CREATE_ROUTE_KEY = 'POST:/api/contacts';
+
+type ContactLogPatchPayload = {
+  subject?: string | null;
+  content?: string;
+  contact_date?: string;
+  next_follow_up_date?: string | null;
+  follow_up_completed_at?: string | null;
+  purpose?: string | null;
+  contact_type?: ContactLog['contact_type'];
+};
 
 function parsePage(input: string | null): number {
   const parsed = Number.parseInt(input ?? '', 10);
@@ -357,22 +396,30 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      // Any authenticated member in an org may create contact logs. Updates and
+      // deletes remain admin-only below, and every write is still scoped by
+      // auth.orgId.
       const idempotency = requireIdempotencyKey(request);
       if (!idempotency.ok) {
         return idempotency.response;
       }
 
-      const body = await request.json();
-      const {
-        client_id,
-        instrument_id,
-        contact_type,
-        subject,
-        content,
-        contact_date,
-        next_follow_up_date,
-        purpose,
-      } = body;
+      const bodyResult = await readJsonObject(request);
+      if (!bodyResult.ok) {
+        return {
+          payload: { error: bodyResult.error, success: false },
+          status: 400,
+        };
+      }
+      const b = bodyResult.body;
+      const client_id = getOptionalString(b.client_id);
+      const instrument_id = getOptionalString(b.instrument_id);
+      const contact_type = getOptionalString(b.contact_type);
+      const subject = getOptionalString(b.subject);
+      const content = getOptionalString(b.content);
+      const contact_date = getOptionalString(b.contact_date);
+      const next_follow_up_date = getOptionalString(b.next_follow_up_date);
+      const purpose = getOptionalString(b.purpose);
 
       const normalizedContactType =
         typeof contact_type === 'string'
@@ -616,8 +663,15 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const body = await request.json();
-      const { id, ...updates } = body || {};
+      const bodyResult = await readJsonObject(request);
+      if (!bodyResult.ok) {
+        return {
+          payload: { error: bodyResult.error, success: false },
+          status: 400,
+        };
+      }
+      const { id: rawId, ...updates } = bodyResult.body;
+      const id = getOptionalString(rawId);
 
       if (!id || !validateUUID(id)) {
         return {
@@ -626,24 +680,30 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      if (updates.client_id && !validateUUID(updates.client_id)) {
+      const clientId = getOptionalString(updates.client_id);
+      if (updates.client_id && (!clientId || !validateUUID(clientId))) {
         return {
           payload: { error: 'Invalid client_id format', success: false },
           status: 400,
         };
       }
 
-      if (updates.instrument_id && !validateUUID(updates.instrument_id)) {
+      const instrumentId = getOptionalString(updates.instrument_id);
+      if (
+        updates.instrument_id &&
+        (!instrumentId || !validateUUID(instrumentId))
+      ) {
         return {
           payload: { error: 'Invalid instrument_id format', success: false },
           status: 400,
         };
       }
 
+      const contactDate = getOptionalNullableString(updates.contact_date);
       if (
         updates.contact_date !== undefined &&
         updates.contact_date !== null &&
-        !validateDateString(updates.contact_date)
+        (!contactDate || !validateDateString(contactDate))
       ) {
         return {
           payload: { error: 'Invalid contact_date format', success: false },
@@ -651,11 +711,14 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      const nextFollowUpDate = getOptionalNullableString(
+        updates.next_follow_up_date
+      );
       if (
         updates.next_follow_up_date !== undefined &&
         updates.next_follow_up_date !== null &&
         updates.next_follow_up_date !== '' &&
-        !validateDateString(updates.next_follow_up_date)
+        (!nextFollowUpDate || !validateDateString(nextFollowUpDate))
       ) {
         return {
           payload: {
@@ -666,11 +729,13 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      const contactType = getOptionalString(updates.contact_type);
       if (
         updates.contact_type &&
-        !['email', 'phone', 'meeting', 'note', 'follow_up'].includes(
-          updates.contact_type
-        )
+        (!contactType ||
+          !['email', 'phone', 'meeting', 'note', 'follow_up'].includes(
+            contactType
+          ))
       ) {
         return {
           payload: { error: 'Invalid contact_type', success: false },
@@ -678,35 +743,40 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const cleanUpdates: Partial<Omit<ContactLog, 'client' | 'instrument'>> =
-        {};
+      const cleanUpdates: ContactLogPatchPayload = {};
 
+      const subject = getOptionalNullableString(updates.subject);
       if (updates.subject !== undefined) {
-        cleanUpdates.subject = updates.subject;
+        cleanUpdates.subject = subject;
       }
 
+      const content = getOptionalString(updates.content);
       if (updates.content !== undefined) {
-        cleanUpdates.content = updates.content?.trim();
+        cleanUpdates.content = content?.trim();
       }
 
-      if (updates.contact_date !== undefined) {
-        cleanUpdates.contact_date = updates.contact_date;
+      if (updates.contact_date !== undefined && contactDate !== null) {
+        cleanUpdates.contact_date = contactDate;
       }
 
       if (updates.next_follow_up_date !== undefined) {
-        cleanUpdates.next_follow_up_date = updates.next_follow_up_date;
+        cleanUpdates.next_follow_up_date = nextFollowUpDate;
       }
 
+      const followUpCompletedAt = getOptionalNullableString(
+        updates.follow_up_completed_at
+      );
       if (updates.follow_up_completed_at !== undefined) {
-        cleanUpdates.follow_up_completed_at = updates.follow_up_completed_at;
+        cleanUpdates.follow_up_completed_at = followUpCompletedAt;
       }
 
+      const purpose = getOptionalNullableString(updates.purpose);
       if (updates.purpose !== undefined) {
-        cleanUpdates.purpose = updates.purpose;
+        cleanUpdates.purpose = purpose;
       }
 
       if (updates.contact_type !== undefined) {
-        cleanUpdates.contact_type = updates.contact_type;
+        cleanUpdates.contact_type = contactType as ContactLog['contact_type'];
       }
 
       const { data, error } = await auth.userSupabase
