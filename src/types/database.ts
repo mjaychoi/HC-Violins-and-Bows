@@ -371,6 +371,7 @@ export type Database = {
           instrument_id: string | null;
           invoice_id: string;
           item_number: string | null;
+          org_id: string;
           qty: number;
           rate: number;
         };
@@ -384,6 +385,7 @@ export type Database = {
           instrument_id?: string | null;
           invoice_id: string;
           item_number?: string | null;
+          org_id: string;
           qty?: number;
           rate: number;
         };
@@ -397,6 +399,7 @@ export type Database = {
           instrument_id?: string | null;
           invoice_id?: string;
           item_number?: string | null;
+          org_id?: string;
           qty?: number;
           rate?: number;
         };

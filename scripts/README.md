@@ -85,12 +85,13 @@ supabase login
 
 `NEXT_PUBLIC_SUPABASE_URL` 환경 변수가 올바르게 설정되어 있는지 확인하세요.
 
-## 샘플 데이터 생성
-
-개발에서 참고할 수 있는 더미 클라이언트/악기/작업/판매 이력을 JSON으로 만들려면 다음을 실행합니다:
+## 데모 데이터 생성
 
 ```bash
-npm run generate:sample-data
+npm run seed:demo:dry-run
+npm run seed:demo -- --confirm
+npm run seed:demo:reset
 ```
 
-파일은 `data/sample-data.json`으로 저장됩니다.
+자세한 안전 가드와 QA 체크리스트는 `docs/seed-demo-data.md`를 확인하세요.
+이전 샘플 생성 스크립트는 deprecated 처리되어 직접 실행하면 실패합니다.

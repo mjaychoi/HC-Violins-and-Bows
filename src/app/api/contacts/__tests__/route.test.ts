@@ -793,6 +793,26 @@ describe('/api/contacts', () => {
       expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
+    it('should return 400 for malformed JSON', async () => {
+      const request = new NextRequest('http://localhost/api/contacts', {
+        method: 'POST',
+        headers: {
+          'Idempotency-Key': 'test-contacts-post-malformed-json',
+          'Content-Type': 'application/json',
+        },
+        body: '{"client_id":',
+      });
+
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(response.status).not.toBe(500);
+      expect(json.success).toBe(false);
+      expect(json.error).toBeDefined();
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should replay same-key same-payload contact creates without inserting twice', async () => {
       const supabase = createStatefulContactPostSupabase();
       mockUserSupabase = supabase;
@@ -1202,6 +1222,25 @@ describe('/api/contacts', () => {
 
       expect(response.status).toBe(400);
       expect(json.error).toContain('Valid id is required');
+    });
+
+    it('should return 400 for malformed JSON', async () => {
+      const request = new NextRequest('http://localhost/api/contacts', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: '{"id":',
+      });
+
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(response.status).not.toBe(500);
+      expect(json.success).toBe(false);
+      expect(json.error).toBeDefined();
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it('should trim content when updating', async () => {

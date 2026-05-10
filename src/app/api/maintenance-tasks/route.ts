@@ -237,6 +237,8 @@ function isMissingMaintenanceTaskColumnError(
   );
 }
 
+// GET is intentionally open to all org members (read-only calendar view).
+// POST/PATCH/DELETE require admin — see those handlers below.
 async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,

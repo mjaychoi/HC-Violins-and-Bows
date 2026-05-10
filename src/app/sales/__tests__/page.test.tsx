@@ -455,6 +455,22 @@ const mockSale: SalesHistory = {
   created_at: '2024-01-15T10:30:00Z',
 };
 
+function createInvoicePdfResponse(
+  blobFactory: () => Promise<Blob> = async () =>
+    new Blob(['pdf-content'], { type: 'application/pdf' }),
+  contentType = 'application/pdf',
+  ok = true
+) {
+  return {
+    ok,
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === 'content-type' ? contentType : null,
+    },
+    blob: blobFactory,
+  } as Response;
+}
+
 describe('SalesPage', () => {
   const mockFetchSales = jest.fn();
   const mockSetPage = jest.fn();
@@ -468,6 +484,9 @@ describe('SalesPage', () => {
   beforeAll(() => {
     global.URL.createObjectURL = jest.fn(() => 'blob:mock-url');
     global.URL.revokeObjectURL = jest.fn();
+    jest
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
     global.fetch = jest.fn();
   });
 
@@ -595,27 +614,30 @@ describe('SalesPage', () => {
   });
 
   it('downloads invoice pdf and only then shows success', async () => {
+    mockApiFetch.mockResolvedValueOnce(createInvoicePdfResponse());
+
     const user = userEvent.setup();
     render(<SalesPage />);
 
+    expect(mockShowSuccess).not.toHaveBeenCalledWith('Invoice PDF downloaded.');
     await user.click(screen.getByText('Download receipt'));
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith('/api/invoices/sale-1/pdf');
+      expect(mockApiFetch).toHaveBeenCalledWith('/api/invoices/sale-1/pdf');
     });
+    expect(URL.createObjectURL).toHaveBeenCalled();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
     expect(mockShowSuccess).toHaveBeenCalledWith('Invoice PDF downloaded.');
     expect(mockHandleError).not.toHaveBeenCalled();
   });
 
   it('does not show success for invalid invoice content type', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      headers: {
-        get: (name: string) =>
-          name.toLowerCase() === 'content-type' ? 'application/json' : null,
-      },
-      blob: async () => new Blob(['{}'], { type: 'application/json' }),
-    });
+    mockApiFetch.mockResolvedValueOnce(
+      createInvoicePdfResponse(
+        async () => new Blob(['{}'], { type: 'application/json' }),
+        'application/json'
+      )
+    );
 
     const user = userEvent.setup();
     render(<SalesPage />);
@@ -629,14 +651,50 @@ describe('SalesPage', () => {
   });
 
   it('does not show success for empty invoice pdf blob', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      headers: {
-        get: (name: string) =>
-          name.toLowerCase() === 'content-type' ? 'application/pdf' : null,
-      },
-      blob: async () => new Blob([], { type: 'application/pdf' }),
+    mockApiFetch.mockResolvedValueOnce(
+      createInvoicePdfResponse(
+        async () => new Blob([], { type: 'application/pdf' }),
+        'application/pdf'
+      )
+    );
+
+    const user = userEvent.setup();
+    render(<SalesPage />);
+
+    await user.click(screen.getByText('Download receipt'));
+
+    await waitFor(() => {
+      expect(mockHandleError).toHaveBeenCalled();
     });
+    expect(mockShowSuccess).not.toHaveBeenCalledWith('Invoice PDF downloaded.');
+  });
+
+  it('does not show success when invoice pdf response is not ok', async () => {
+    mockApiFetch.mockResolvedValueOnce(
+      createInvoicePdfResponse(
+        async () => new Blob(['error'], { type: 'text/plain' }),
+        'text/plain',
+        false
+      )
+    );
+
+    const user = userEvent.setup();
+    render(<SalesPage />);
+
+    await user.click(screen.getByText('Download receipt'));
+
+    await waitFor(() => {
+      expect(mockHandleError).toHaveBeenCalled();
+    });
+    expect(mockShowSuccess).not.toHaveBeenCalledWith('Invoice PDF downloaded.');
+  });
+
+  it('does not show success when invoice pdf blob creation fails', async () => {
+    mockApiFetch.mockResolvedValueOnce(
+      createInvoicePdfResponse(async () => {
+        throw new Error('Blob failed');
+      })
+    );
 
     const user = userEvent.setup();
     render(<SalesPage />);

@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+echo "scripts/seed-pages-sample-data.sh is deprecated. Use npm run seed:demo commands." >&2
+exit 1
+
 # 페이지별 샘플 데이터 생성 스크립트
 # - clients
 # - instruments
@@ -11,8 +14,7 @@ set -euo pipefail
 # - contact_logs
 # - invoices / invoice_items
 #
-# 사용법:
-#   bash scripts/seed-pages-sample-data.sh
+# Deprecated content retained for reference only. Do not run this script.
 #
 # 선택 환경변수(기본값):
 #   CLIENTS_COUNT=40

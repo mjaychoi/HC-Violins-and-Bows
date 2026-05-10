@@ -170,8 +170,6 @@ type ClientsContextValue = {
   };
 };
 
-const CLIENTS_DEFAULT_PAGE = 1;
-const CLIENTS_DEFAULT_PAGE_SIZE = 150;
 const NO_TENANT_SCOPE_KEY = '__no-tenant__';
 
 const ClientsContext = createContext<ClientsContextValue | null>(null);
@@ -285,7 +283,7 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
         try {
           const res = await apiFetch(
-            `/api/clients?orderBy=created_at&ascending=false&page=${CLIENTS_DEFAULT_PAGE}&pageSize=${CLIENTS_DEFAULT_PAGE_SIZE}`
+            '/api/clients?orderBy=created_at&ascending=false&all=true'
           );
 
           const body = await readApiResponseEnvelope<Client[]>(
@@ -293,6 +291,12 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
             `Failed to fetch clients (${res.status})`
           );
           const clients = Array.isArray(body.data) ? body.data : [];
+
+          if (body.truncated === true) {
+            logWarn(
+              '[ClientsContext] fetchClients: response truncated — org has more than 1 000 clients; only the first 1 000 were loaded.'
+            );
+          }
 
           logInfo(
             `[ClientsContext] fetchClients: Received ${clients.length} clients`

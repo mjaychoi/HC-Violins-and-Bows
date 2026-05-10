@@ -1,8 +1,17 @@
 /**
+ * DEPRECATED: do not run directly.
+ * Use scripts/seed-demo-data.ts via npm run seed:demo:dry-run,
+ * npm run seed:demo -- --confirm, or npm run seed:demo:reset.
+ */
+throw new Error(
+  'scripts/generate-sample-data.ts is deprecated. Use npm run seed:demo commands.'
+);
+
+/**
  * 간단한 샘플 데이터를 생성하여 JSON 파일로 저장합니다.
  * 개발 초기 화면이나 테스트에 사용할 수 있는 더미 데이터입니다.
  *
- * 실행: npm run generate:sample-data
+ * Deprecated content retained for reference only. Do not run this script.
  */
 
 import { logInfo, logError } from '@/utils/logger';

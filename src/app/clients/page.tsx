@@ -175,18 +175,7 @@ export default function ClientsPage() {
               client?: Client;
               connections?: ClientInstrument[];
             };
-            error?: string;
-            message?: string;
           }>(res, 'Failed to create client');
-
-          if (!res.ok) {
-            const errMsg =
-              (typeof body?.error === 'string' && body.error) ||
-              (typeof body?.message === 'string' && body.message) ||
-              'Failed to create client';
-            handleError(new Error(errMsg), errMsg);
-            return { status: 'full_failure' };
-          }
 
           const createdClient = body?.data?.client;
           const clientId = createdClient?.id;
