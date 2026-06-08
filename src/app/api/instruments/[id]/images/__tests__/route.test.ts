@@ -74,14 +74,49 @@ describe('/api/instruments/[id]/images', () => {
     return client;
   }
 
-  /** Build a file-like object that satisfies UploadFileLike in all envs */
-  function makeFileLike(name: string, type: string, content = 'img-data') {
-    const data = Buffer.from(content);
+  // Minimal valid magic bytes for each supported MIME type
+  const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+  const PNG_MAGIC = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  ]);
+  const WEBP_MAGIC = Buffer.from([
+    0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+  ]);
+  // A buffer with no valid image magic bytes (simulates a renamed non-image file)
+  const BAD_BYTES = Buffer.from([0x25, 0x50, 0x44, 0x46]); // %PDF
+
+  const MIME_MAGIC: Record<string, Buffer> = {
+    'image/jpeg': JPEG_MAGIC,
+    'image/jpg': JPEG_MAGIC,
+    'image/png': PNG_MAGIC,
+    'image/webp': WEBP_MAGIC,
+  };
+
+  /**
+   * Build a file-like object that satisfies UploadFileLike in all envs.
+   * When `content` is omitted the buffer defaults to valid magic bytes for
+   * the given MIME type so that the magic-byte check passes by default.
+   */
+  function makeFileLike(name: string, type: string, content?: Buffer | string) {
+    const data =
+      content !== undefined
+        ? Buffer.isBuffer(content)
+          ? content
+          : Buffer.from(content)
+        : (MIME_MAGIC[type] ?? Buffer.from('img-data'));
+
+    // Buffer.from([...]) uses Node's pool, so data.buffer is a larger shared
+    // ArrayBuffer with data starting at data.byteOffset — NOT at offset 0.
+    // We copy into a fresh ArrayBuffer so the route's Buffer.from(arrayBuffer)
+    // reads the magic bytes at index 0, exactly as a real browser File does.
+    const isolated = new ArrayBuffer(data.length);
+    new Uint8Array(isolated).set(data);
+
     return {
       name,
       type,
       size: data.length,
-      arrayBuffer: async () => data.buffer as ArrayBuffer,
+      arrayBuffer: async () => isolated,
     };
   }
 
@@ -800,9 +835,9 @@ describe('/api/instruments/[id]/images', () => {
 
     it('3-file upload: failure on 2nd file rolls back 1st file (storage + DB)', async () => {
       const files = [
-        makeFileLike('a.jpg', 'image/jpeg', 'aaa'),
-        makeFileLike('b.jpg', 'image/jpeg', 'bbb'),
-        makeFileLike('c.jpg', 'image/jpeg', 'ccc'),
+        makeFileLike('a.jpg', 'image/jpeg'),
+        makeFileLike('b.jpg', 'image/jpeg'),
+        makeFileLike('c.jpg', 'image/jpeg'),
       ];
 
       const insertedId1 = 'inserted-id-a';
@@ -857,9 +892,9 @@ describe('/api/instruments/[id]/images', () => {
 
     it('3-file upload: DB insert failure on 2nd rolls back 1st and cleans up 2nd storage', async () => {
       const files = [
-        makeFileLike('a.jpg', 'image/jpeg', 'aaa'),
-        makeFileLike('b.jpg', 'image/jpeg', 'bbb'),
-        makeFileLike('c.jpg', 'image/jpeg', 'ccc'),
+        makeFileLike('a.jpg', 'image/jpeg'),
+        makeFileLike('b.jpg', 'image/jpeg'),
+        makeFileLike('c.jpg', 'image/jpeg'),
       ];
 
       const insertedId1 = 'inserted-id-a';
@@ -926,8 +961,8 @@ describe('/api/instruments/[id]/images', () => {
 
     it('all-success 2-file upload — no rollback, returns 2 results', async () => {
       const files = [
-        makeFileLike('x.jpg', 'image/jpeg', 'xxx'),
-        makeFileLike('y.jpg', 'image/jpeg', 'yyy'),
+        makeFileLike('x.jpg', 'image/jpeg'),
+        makeFileLike('y.jpg', 'image/jpeg'),
       ];
       const id1 = 'iid-x';
       const id2 = 'iid-y';
@@ -1061,6 +1096,161 @@ describe('/api/instruments/[id]/images', () => {
         'Failed to upload image: Storage upload did not return a file key'
       );
       expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
+
+    // ── Magic-byte validation ──────────────────────────────────────────────
+
+    it('rejects a non-image file renamed to .jpg (bad magic bytes)', async () => {
+      const imageQuery = makeImageInsertQuery('unused-id');
+      mockUserSupabase = makeSupabaseClient(imageQuery);
+
+      const res = await POST(
+        makePostRequest([makeFileLike('shell.jpg', 'image/jpeg', BAD_BYTES)]),
+        idCtx
+      );
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.message).toMatch(/invalid image file content/i);
+      expect(mockStorage.saveFile).not.toHaveBeenCalled();
+    });
+
+    it('rejects a PNG file declared as image/jpeg (magic-byte mismatch)', async () => {
+      const imageQuery = makeImageInsertQuery('unused-id');
+      mockUserSupabase = makeSupabaseClient(imageQuery);
+
+      const res = await POST(
+        makePostRequest([makeFileLike('img.jpg', 'image/jpeg', PNG_MAGIC)]),
+        idCtx
+      );
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.message).toMatch(/invalid image file content/i);
+      expect(mockStorage.saveFile).not.toHaveBeenCalled();
+    });
+
+    it('rejects a JPEG file declared as image/png (extension/MIME mismatch)', async () => {
+      const imageQuery = makeImageInsertQuery('unused-id');
+      mockUserSupabase = makeSupabaseClient(imageQuery);
+
+      const res = await POST(
+        makePostRequest([makeFileLike('img.png', 'image/png', JPEG_MAGIC)]),
+        idCtx
+      );
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.message).toMatch(/invalid image file content/i);
+      expect(mockStorage.saveFile).not.toHaveBeenCalled();
+    });
+
+    it('accepts a valid JPEG file (magic bytes match MIME type)', async () => {
+      const insertedId = 'inserted-jpeg-id';
+      const imageQuery = makeImageInsertQuery(insertedId);
+      mockUserSupabase = makeSupabaseClient(imageQuery);
+      mockUserSupabase.rpc = jest
+        .fn()
+        .mockResolvedValue({ data: insertedId, error: null });
+
+      const res = await POST(
+        makePostRequest([makeFileLike('photo.jpg', 'image/jpeg', JPEG_MAGIC)]),
+        idCtx
+      );
+
+      expect(res.status).toBe(200);
+      expect(mockStorage.saveFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts a valid PNG file', async () => {
+      const insertedId = 'inserted-png-id';
+      const imageQuery = makeImageInsertQuery(insertedId);
+      mockUserSupabase = makeSupabaseClient(imageQuery);
+      mockUserSupabase.rpc = jest
+        .fn()
+        .mockResolvedValue({ data: insertedId, error: null });
+
+      const res = await POST(
+        makePostRequest([makeFileLike('image.png', 'image/png', PNG_MAGIC)]),
+        idCtx
+      );
+
+      expect(res.status).toBe(200);
+      expect(mockStorage.saveFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts a valid WebP file', async () => {
+      const insertedId = 'inserted-webp-id';
+      const imageQuery = makeImageInsertQuery(insertedId);
+      mockUserSupabase = makeSupabaseClient(imageQuery);
+      mockUserSupabase.rpc = jest
+        .fn()
+        .mockResolvedValue({ data: insertedId, error: null });
+
+      const res = await POST(
+        makePostRequest([makeFileLike('anim.webp', 'image/webp', WEBP_MAGIC)]),
+        idCtx
+      );
+
+      expect(res.status).toBe(200);
+      expect(mockStorage.saveFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('rolls back file 1 when file 2 fails magic-byte check', async () => {
+      const insertedId1 = 'rollback-file1-id';
+      const storedKey1 = `test-org/${mockInstrumentId}/a.jpg`;
+
+      mockStorage.saveFile.mockResolvedValueOnce(storedKey1);
+
+      const dbDeleteMock = jest.fn().mockReturnThis();
+      const dbDeleteEqMock = jest.fn().mockResolvedValue({ error: null });
+      let imageCallIdx = 0;
+
+      mockUserSupabase = {
+        from: jest.fn().mockImplementation((table: string) => {
+          if (table === 'instruments') return makeInstrumentQuery();
+          if (table === 'instrument_images') {
+            imageCallIdx++;
+            if (imageCallIdx === 1) {
+              return {
+                select: jest.fn().mockReturnThis(),
+                eq: jest.fn().mockReturnThis(),
+                single: jest.fn().mockResolvedValue({
+                  data: {
+                    id: insertedId1,
+                    image_url: 'u',
+                    file_name: 'a.jpg',
+                    storage_key: storedKey1,
+                    file_size: JPEG_MAGIC.length,
+                    mime_type: 'image/jpeg',
+                    display_order: 0,
+                    created_at: '2024-01-01T00:00:00Z',
+                    instrument_id: mockInstrumentId,
+                  },
+                  error: null,
+                }),
+              };
+            }
+            return { delete: dbDeleteMock, eq: dbDeleteEqMock };
+          }
+          throw new Error(`Unexpected: ${table}`);
+        }),
+        rpc: jest.fn().mockResolvedValue({ data: insertedId1, error: null }),
+      };
+
+      const res = await POST(
+        makePostRequest([
+          makeFileLike('a.jpg', 'image/jpeg', JPEG_MAGIC),
+          makeFileLike('bad.jpg', 'image/jpeg', BAD_BYTES), // bad file
+        ]),
+        idCtx
+      );
+
+      expect(res.status).toBe(400);
+      // File 1 must be rolled back from storage
+      expect(mockStorage.deleteFile).toHaveBeenCalledWith(storedKey1);
+      // DB record for file 1 must be deleted
+      expect(dbDeleteMock).toHaveBeenCalled();
     });
   });
 

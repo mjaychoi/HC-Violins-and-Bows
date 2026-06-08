@@ -36,6 +36,7 @@ import {
 import { attachSignedUrlsToInvoice } from './imageUrls';
 import { claimInvoiceImageUploads } from './imageUploadTracking';
 import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
+import { writeAuditLog } from '@/utils/auditLog';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
@@ -891,6 +892,21 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
 
         const result = getInvoiceMutationResult(imageTracking);
 
+        void writeAuditLog({
+          orgId,
+          actorId: auth.user.id,
+          actorRole: auth.role as 'admin' | 'member' | 'service',
+          action: 'invoice.create',
+          resourceType: 'invoice',
+          resourceId: createdInvoice.id,
+          metadata: {
+            subtotal: createdInvoice.subtotal,
+            tax: createdInvoice.tax,
+            total: createdInvoice.total,
+            item_count: createdInvoice.items?.length ?? 0,
+          },
+        });
+
         return {
           payload: {
             data: createdInvoice,
@@ -910,6 +926,24 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           'invoices.post.hydration_failed',
           `invoiceId=${invoiceId} err=${getErrorMessage(hydrationError)}`
         );
+
+        void writeAuditLog({
+          orgId,
+          actorId: auth.user.id,
+          actorRole: auth.role as 'admin' | 'member' | 'service',
+          action: 'invoice.create',
+          resourceType: 'invoice',
+          resourceId: invoiceId,
+          metadata: {
+            subtotal: validatedInput.subtotal,
+            tax: validatedInput.tax ?? null,
+            total: validatedInput.total,
+            item_count: Array.isArray(validatedInput.items)
+              ? validatedInput.items.length
+              : 0,
+            hydration_failed: true,
+          },
+        });
 
         return {
           payload: {

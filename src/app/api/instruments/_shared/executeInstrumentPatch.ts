@@ -12,6 +12,7 @@ import { validateDateString, validateUUID } from '@/utils/inputValidation';
 import * as typeGuards from '@/utils/typeGuards';
 import { errorHandler } from '@/utils/errorHandler';
 import { logInfo, logWarn } from '@/utils/logger';
+import { writeAuditLog } from '@/utils/auditLog';
 import type { Instrument } from '@/types';
 import type { Json, TablesUpdate } from '@/types/database';
 
@@ -756,6 +757,29 @@ export async function executeInstrumentPatch(
   const data = updatedRows[0];
 
   logInfo('instrument_patch_success', input.apiPath, { instrumentId });
+
+  const hasFinancialChange =
+    Object.prototype.hasOwnProperty.call(row, 'cost_price') ||
+    Object.prototype.hasOwnProperty.call(row, 'consignment_price');
+
+  if (hasFinancialChange) {
+    void writeAuditLog({
+      orgId,
+      actorId: auth.user.id,
+      actorRole: auth.role as 'admin' | 'member' | 'service',
+      action: 'instrument.update_financial',
+      resourceType: 'instrument',
+      resourceId: instrumentId,
+      metadata: {
+        ...(Object.prototype.hasOwnProperty.call(row, 'cost_price') && {
+          cost_price: row.cost_price,
+        }),
+        ...(Object.prototype.hasOwnProperty.call(row, 'consignment_price') && {
+          consignment_price: row.consignment_price,
+        }),
+      },
+    });
+  }
 
   return {
     payload: { data: typeGuards.validateInstrument(data) },

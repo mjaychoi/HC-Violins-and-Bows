@@ -33,7 +33,7 @@ const baseConfig: NextConfig = {
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 60 * 60 * 24,
     remotePatterns: [
-      // ✅ Supabase
+      // ✅ Supabase — public buckets
       {
         protocol: 'https',
         hostname: '**.supabase.co',
@@ -43,6 +43,17 @@ const baseConfig: NextConfig = {
         protocol: 'https',
         hostname: '**.supabase.in',
         pathname: '/storage/v1/object/public/**',
+      },
+      // ✅ Supabase — signed (time-limited) URLs (invoice images, private buckets)
+      {
+        protocol: 'https',
+        hostname: '**.supabase.co',
+        pathname: '/storage/v1/object/sign/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.supabase.in',
+        pathname: '/storage/v1/object/sign/**',
       },
 
       // ✅ AWS S3 (이게 빠져 있었음)
@@ -214,10 +225,27 @@ const baseConfig: NextConfig = {
     return config;
   },
   async headers() {
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: *.supabase.co *.supabase.in hc-bows.s3.us-west-1.amazonaws.com",
+      "connect-src 'self' *.supabase.co wss://*.supabase.co *.supabase.in wss://*.supabase.in o4510540405276672.ingest.us.sentry.io",
+      "font-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join('; ');
+
     return [
       {
         source: '/:path*',
         headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: csp,
+          },
           {
             key: 'X-Frame-Options',
             value: 'DENY',

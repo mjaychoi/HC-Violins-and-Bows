@@ -3,6 +3,12 @@ import { ErrorCodes } from '@/types/errors';
 
 let mockUserSupabase: any;
 let mockAuthRole: 'admin' | 'member' = 'admin';
+let mockWriteAuditLog: jest.Mock;
+
+jest.mock('@/utils/auditLog', () => ({
+  writeAuditLog: (...args: unknown[]) =>
+    mockWriteAuditLog(...args).catch(() => {}),
+}));
 
 jest.mock('@/app/api/_utils/withSentryRoute', () => ({
   withSentryRoute: (fn: unknown) => fn,
@@ -517,6 +523,7 @@ describe('/api/invoices POST', () => {
   beforeEach(() => {
     mockAuthRole = 'admin';
     jest.clearAllMocks();
+    mockWriteAuditLog = jest.fn().mockResolvedValue(undefined);
     const { safeValidate } = require('@/utils/typeGuards');
     safeValidate.mockImplementation((value: unknown) => ({
       success: true,
@@ -867,5 +874,152 @@ describe('/api/invoices POST', () => {
     expect(response.status).toBe(201);
     expect(json.data).toEqual({ id: refreshedInvoice.id });
     expect(json.warning).toBe('HYDRATION_FAILED');
+  });
+
+  // ── F10: audit log ──────────────────────────────────────────────────────
+
+  it('writes invoice.create audit log after successful creation', async () => {
+    const invoiceId = '123e4567-e89b-12d3-a456-426614174099';
+    const createdInvoice = {
+      id: invoiceId,
+      invoice_number: 'INV-999',
+      client_id: '123e4567-e89b-12d3-a456-426614174001',
+      invoice_date: '2026-04-03',
+      due_date: '2026-04-10',
+      subtotal: 200,
+      tax: 10,
+      total: 210,
+      currency: 'USD',
+      status: 'draft',
+      notes: null,
+      business_name: null,
+      business_address: null,
+      business_phone: null,
+      business_email: null,
+      bank_account_holder: null,
+      bank_name: null,
+      bank_swift_code: null,
+      bank_account_number: null,
+      default_conditions: null,
+      default_exchange_rate: null,
+      created_at: '2026-04-03T00:00:00.000Z',
+      updated_at: '2026-04-03T00:00:00.000Z',
+      clients: null,
+      invoice_items: [],
+    };
+
+    const mockInvoiceQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest
+        .fn()
+        .mockResolvedValue({ data: createdInvoice, error: null }),
+    };
+
+    mockUserSupabase = {
+      rpc: jest.fn().mockResolvedValue({ data: invoiceId, error: null }),
+      from: jest.fn(() => mockInvoiceQuery),
+    };
+
+    const { POST } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'audit-test-key-1' },
+      body: JSON.stringify({
+        client_id: createdInvoice.client_id,
+        invoice_date: createdInvoice.invoice_date,
+        subtotal: 200,
+        tax: 10,
+        total: 210,
+        items: [],
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'invoice.create',
+        resourceType: 'invoice',
+        resourceId: invoiceId,
+        orgId: 'test-org',
+        actorId: 'test-user',
+        metadata: expect.objectContaining({
+          subtotal: 200,
+          tax: 10,
+          total: 210,
+        }),
+      })
+    );
+  });
+
+  it('writes invoice.create audit log in hydration-failed path', async () => {
+    const invoiceId = '123e4567-e89b-12d3-a456-426614174399';
+    const { attachSignedUrlsToInvoice } = require('../imageUrls');
+    attachSignedUrlsToInvoice.mockRejectedValueOnce(new Error('storage down'));
+
+    const refreshedInvoice = {
+      id: invoiceId,
+      invoice_number: 'INV-400',
+      client_id: '123e4567-e89b-12d3-a456-426614174001',
+      invoice_date: '2026-04-03',
+      due_date: '2026-04-10',
+      subtotal: 50,
+      tax: null,
+      total: 50,
+      currency: 'USD',
+      status: 'draft',
+      notes: null,
+      business_name: null,
+      business_address: null,
+      business_phone: null,
+      business_email: null,
+      bank_account_holder: null,
+      bank_name: null,
+      bank_swift_code: null,
+      bank_account_number: null,
+      default_conditions: null,
+      default_exchange_rate: null,
+      created_at: '2026-04-03T00:00:00.000Z',
+      updated_at: '2026-04-03T00:00:00.000Z',
+      clients: null,
+      invoice_items: [],
+    };
+
+    const mockInvoiceQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest
+        .fn()
+        .mockResolvedValue({ data: refreshedInvoice, error: null }),
+    };
+
+    mockUserSupabase = {
+      rpc: jest.fn().mockResolvedValue({ data: invoiceId, error: null }),
+      from: jest.fn(() => mockInvoiceQuery),
+    };
+
+    const { POST } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'audit-test-key-2' },
+      body: JSON.stringify({
+        client_id: refreshedInvoice.client_id,
+        invoice_date: '2026-04-03',
+        subtotal: 50,
+        total: 50,
+        items: [],
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'invoice.create',
+        resourceId: invoiceId,
+        metadata: expect.objectContaining({ hydration_failed: true }),
+      })
+    );
   });
 });

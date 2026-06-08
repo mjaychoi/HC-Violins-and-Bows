@@ -20,14 +20,11 @@ describe('SuccessToast', () => {
     expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
   });
 
-  it.skip('auto closes after timeout', () => {
+  it('auto closes after timeout', () => {
     render(<SuccessToast message="Auto" onClose={onClose} />);
 
     act(() => {
-      jest.advanceTimersByTime(3000);
-    });
-    act(() => {
-      jest.advanceTimersByTime(300);
+      jest.advanceTimersByTime(5000);
     });
 
     expect(onClose).toHaveBeenCalled();

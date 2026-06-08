@@ -6,6 +6,12 @@ import {
   resetInstrumentApiContractCacheForTests,
 } from '@/app/api/instruments/_shared/instrumentApiContract';
 
+jest.mock('@/app/api/_utils/rateLimit', () => ({
+  searchRateLimit: null,
+  exportRateLimit: null,
+  authRateLimit: null,
+  applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+}));
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger', () => ({
   logInfo: jest.fn(),
@@ -16,6 +22,17 @@ jest.mock('@/utils/logger', () => ({
   logApiRequest: jest.fn(),
 }));
 jest.mock('@/utils/monitoring');
+
+let mockStorage: { deleteFile: jest.Mock };
+jest.mock('@/utils/storage', () => ({
+  getStorage: jest.fn(() => mockStorage),
+}));
+
+let mockWriteAuditLog: jest.Mock;
+jest.mock('@/utils/auditLog', () => ({
+  writeAuditLog: (...args: unknown[]) =>
+    mockWriteAuditLog(...args).catch(() => {}),
+}));
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
 let mockUserSupabase: any;
 let mockAuthContext: any;
@@ -88,6 +105,8 @@ describe('/api/instruments', () => {
     jest.clearAllMocks();
     resetInstrumentApiContractCacheForTests();
     jest.spyOn(performance, 'now').mockReturnValue(0);
+    mockStorage = { deleteFile: jest.fn().mockResolvedValue(true) };
+    mockWriteAuditLog = jest.fn().mockResolvedValue(undefined);
     mockUserSupabase = {
       from: jest.fn(),
     };
@@ -107,6 +126,18 @@ describe('/api/instruments', () => {
   });
 
   describe('GET', () => {
+    it('returns 429 when searchRateLimit is exceeded', async () => {
+      const { applyRateLimit } = require('@/app/api/_utils/rateLimit');
+      (applyRateLimit as jest.Mock).mockResolvedValueOnce({ limited: true });
+
+      const request = new NextRequest('http://localhost/api/instruments');
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(429);
+      expect(json.error).toBe('Too many requests');
+    });
+
     it('should reject requests without org context', async () => {
       mockAuthContext = {
         ...mockAuthContext,
@@ -243,7 +274,7 @@ describe('/api/instruments', () => {
       expect(mockQuery.eq).toHaveBeenNthCalledWith(2, 'ownership', 'owned');
     });
 
-    it.skip('should return instruments with default parameters', async () => {
+    it('should return instruments with default parameters', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -277,7 +308,10 @@ describe('/api/instruments', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
-      expect(json.data).toEqual([mockInstrument]);
+      // instrumentSchema.transform() appends has_certificate derived from certificate
+      expect(json.data).toEqual([
+        { ...mockInstrument, has_certificate: false },
+      ]);
       expect(json.count).toBe(1);
     });
 
@@ -398,6 +432,87 @@ describe('/api/instruments', () => {
 
       expect(response.status).toBe(500);
       expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
+    });
+
+    // ── F7: financial field access control ──────────────────────────────────
+
+    function makeInstrumentQueryMock(instrument: object) {
+      const q = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+      };
+      (q.order as jest.Mock).mockResolvedValue({
+        data: [instrument],
+        error: null,
+        count: 1,
+      });
+      mockUserSupabase = { from: jest.fn().mockReturnValue(q) } as any;
+    }
+
+    const richInstrument = {
+      ...mockInstrument,
+      cost_price: 1500,
+      consignment_price: 800,
+      price: 3000,
+    };
+
+    it('admin receives cost_price and consignment_price', async () => {
+      makeInstrumentQueryMock(richInstrument);
+      mockAuthContext = { ...mockAuthContext, role: 'admin' };
+
+      const response = await GET(
+        new NextRequest('http://localhost/api/instruments')
+      );
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data[0].cost_price).toBe(1500);
+      expect(json.data[0].consignment_price).toBe(800);
+      expect(json.data[0].price).toBe(3000);
+    });
+
+    it('non-admin member does not receive cost_price or consignment_price', async () => {
+      makeInstrumentQueryMock(richInstrument);
+      mockAuthContext = { ...mockAuthContext, role: 'member' };
+
+      const response = await GET(
+        new NextRequest('http://localhost/api/instruments')
+      );
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data[0].cost_price).toBeUndefined();
+      expect(json.data[0].consignment_price).toBeUndefined();
+    });
+
+    it('non-admin member still receives retail price', async () => {
+      makeInstrumentQueryMock(richInstrument);
+      mockAuthContext = { ...mockAuthContext, role: 'member' };
+
+      const response = await GET(
+        new NextRequest('http://localhost/api/instruments')
+      );
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data[0].price).toBe(3000);
+    });
+
+    it('member cannot bypass restriction by calling the instruments API directly', async () => {
+      makeInstrumentQueryMock(richInstrument);
+      mockAuthContext = { ...mockAuthContext, role: 'member' };
+
+      const response = await GET(
+        new NextRequest('http://localhost/api/instruments')
+      );
+      const json = await response.json();
+
+      // Ensure no financial leak via any key name variant
+      const keys = Object.keys(json.data[0]);
+      expect(keys).not.toContain('cost_price');
+      expect(keys).not.toContain('consignment_price');
     });
   });
 
@@ -904,6 +1019,139 @@ describe('/api/instruments', () => {
       expect(response.status).toBe(400);
       expect(json.error).toContain('Invalid instrument data');
     });
+
+    // ── F10: audit log ──────────────────────────────────────────────────────
+
+    it('writes instrument.create audit log after successful creation', async () => {
+      const createdInstrument = {
+        ...mockInstrument,
+        type: 'Cello',
+        serial_number: 'CE0000001',
+      };
+
+      const serialListQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: [], error: null }),
+      };
+      const insertQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest
+          .fn()
+          .mockResolvedValue({ data: createdInstrument, error: null }),
+      };
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(serialListQuery)
+          .mockReturnValue(insertQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'Cello' }),
+      });
+      const response = await POST(request);
+
+      expect(response.status).toBe(201);
+      expect(mockWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'instrument.create',
+          resourceType: 'instrument',
+          resourceId: createdInstrument.id,
+          orgId: 'test-org',
+          actorId: 'test-user',
+        })
+      );
+    });
+
+    it('includes cost_price and consignment_price in audit metadata when provided', async () => {
+      const createdInstrument = {
+        ...mockInstrument,
+        type: 'Viola',
+        serial_number: 'VI0000002',
+        cost_price: 3000,
+        consignment_price: 500,
+      };
+
+      const serialListQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: [], error: null }),
+      };
+      const insertQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest
+          .fn()
+          .mockResolvedValue({ data: createdInstrument, error: null }),
+      };
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(serialListQuery)
+          .mockReturnValue(insertQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'Viola',
+          cost_price: 3000,
+          consignment_price: 500,
+        }),
+      });
+      const response = await POST(request);
+
+      expect(response.status).toBe(201);
+      expect(mockWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'instrument.create',
+          metadata: expect.objectContaining({
+            cost_price: 3000,
+            consignment_price: 500,
+            changed_fields: expect.arrayContaining([
+              'cost_price',
+              'consignment_price',
+            ]),
+          }),
+        })
+      );
+    });
+
+    it('audit log failure does not fail instrument create response', async () => {
+      mockWriteAuditLog = jest.fn().mockRejectedValue(new Error('audit down'));
+
+      const createdInstrument = {
+        ...mockInstrument,
+        type: 'Bass',
+        serial_number: 'BA0000001',
+      };
+      const serialListQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: [], error: null }),
+      };
+      const insertQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest
+          .fn()
+          .mockResolvedValue({ data: createdInstrument, error: null }),
+      };
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(serialListQuery)
+          .mockReturnValue(insertQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'Bass' }),
+      });
+      const response = await POST(request);
+
+      expect(response.status).toBe(201);
+    });
   });
 
   describe('PATCH', () => {
@@ -1125,32 +1373,131 @@ describe('/api/instruments', () => {
   });
 
   describe('DELETE', () => {
-    it('should delete an instrument', async () => {
-      const mockQuery = {
-        delete: jest.fn().mockReturnThis(),
-        error: null,
-        count: 1,
+    const INSTRUMENT_ID = '123e4567-e89b-12d3-a456-426614174000';
+
+    function makeDeleteFromMock({
+      imageKeys = [] as string[],
+      certPaths = [] as string[],
+      deleteCount = 1,
+      deleteError = null as any,
+    } = {}) {
+      const selectChain = (data: any[]) => ({
+        select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
+        then: (resolve: any) =>
+          Promise.resolve({ data, error: null }).then(resolve),
+      });
+
+      const deleteChain = {
+        delete: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        then: (resolve: any) =>
+          Promise.resolve({ error: deleteError, count: deleteCount }).then(
+            resolve
+          ),
       };
 
-      mockUserSupabase = {
-        from: jest.fn().mockReturnValue(mockQuery),
-      } as any;
+      const insertChain = {
+        insert: jest.fn().mockReturnThis(),
+        then: (resolve: any) => Promise.resolve({ error: null }).then(resolve),
+      };
+
+      return jest.fn().mockImplementation((table: string) => {
+        if (table === 'instrument_images') {
+          return selectChain(imageKeys.map(k => ({ storage_key: k })));
+        }
+        if (table === 'instrument_certificates') {
+          return selectChain(certPaths.map(p => ({ storage_path: p })));
+        }
+        if (table === 'orphaned_storage_objects') {
+          return insertChain;
+        }
+        if (table === 'instruments') {
+          return deleteChain;
+        }
+        return {};
+      });
+    }
+
+    it('returns 200 and deletes instrument with no storage files', async () => {
+      mockUserSupabase.from = makeDeleteFromMock();
 
       const request = new NextRequest(
-        `http://localhost/api/instruments?id=${mockInstrument.id}`
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
       );
       const response = await DELETE(request);
       const json = await response.json();
 
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
-      expect(mockQuery.delete).toHaveBeenCalled();
-      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockInstrument.id);
-      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockStorage.deleteFile).not.toHaveBeenCalled();
     });
 
-    it('should return 400 when id is missing', async () => {
+    it('calls storage.deleteFile for each image and certificate key', async () => {
+      mockUserSupabase.from = makeDeleteFromMock({
+        imageKeys: ['org/img1.jpg', 'org/img2.jpg'],
+        certPaths: ['org/cert1.pdf'],
+      });
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(mockStorage.deleteFile).toHaveBeenCalledTimes(3);
+      expect(mockStorage.deleteFile).toHaveBeenCalledWith('org/img1.jpg');
+      expect(mockStorage.deleteFile).toHaveBeenCalledWith('org/img2.jpg');
+      expect(mockStorage.deleteFile).toHaveBeenCalledWith('org/cert1.pdf');
+    });
+
+    it('logs orphan and inserts to orphaned_storage_objects when storage delete fails', async () => {
+      mockStorage.deleteFile = jest
+        .fn()
+        .mockRejectedValue(new Error('S3 timeout'));
+
+      mockUserSupabase.from = makeDeleteFromMock({
+        imageKeys: ['org/img1.jpg'],
+        certPaths: [],
+      });
+
+      const { logError } = require('@/utils/logger');
+      const insertMock = jest.fn().mockResolvedValue({ error: null });
+      const originalFrom = mockUserSupabase.from;
+      mockUserSupabase.from = jest.fn().mockImplementation((table: string) => {
+        if (table === 'orphaned_storage_objects') {
+          return { insert: insertMock };
+        }
+        return originalFrom(table);
+      });
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(logError).toHaveBeenCalledWith(
+        'instrument_storage_cleanup_failed',
+        expect.any(Error),
+        'InstrumentsAPI',
+        expect.objectContaining({ storageKey: 'org/img1.jpg' })
+      );
+      expect(insertMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          org_id: 'test-org',
+          storage_key: 'org/img1.jpg',
+          bucket: 's3',
+          source: 'instrument_delete',
+        })
+      );
+    });
+
+    it('returns 400 when id is missing', async () => {
       const request = new NextRequest('http://localhost/api/instruments');
       const response = await DELETE(request);
       const json = await response.json();
@@ -1159,7 +1506,7 @@ describe('/api/instruments', () => {
       expect(json.error).toBe('Instrument ID is required');
     });
 
-    it('should return 400 for invalid UUID', async () => {
+    it('returns 400 for invalid UUID', async () => {
       const { validateUUID } = require('@/utils/inputValidation');
       (validateUUID as jest.Mock).mockReturnValueOnce(false);
 

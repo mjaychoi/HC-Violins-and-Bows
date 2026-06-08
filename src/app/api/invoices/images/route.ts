@@ -22,24 +22,16 @@ import {
   INVOICE_IMAGE_BUCKET,
 } from '../imageUrls';
 import { recordInvoiceImageUpload } from '../imageUploadTracking';
+import {
+  IMAGE_ALLOWED_MIME_TYPES,
+  resolveImageMimeType,
+} from '@/utils/imageMagicBytes';
 
 export const runtime = 'nodejs';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_MULTIPART_BODY_SIZE = 12 * 1024 * 1024; // file + multipart overhead
-const ALLOWED_MIME_TYPES: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/jpg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-};
-
-const EXTENSION_TO_MIME: Record<string, string> = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
-};
+const ALLOWED_MIME_TYPES = IMAGE_ALLOWED_MIME_TYPES;
 
 function nowMs(): number {
   return typeof globalThis.performance !== 'undefined'
@@ -72,117 +64,6 @@ function rejectOversizedMultipartRequest(
   }
 
   return null;
-}
-
-const isValidImageSignature = (buffer: Buffer, mimeType: string): boolean => {
-  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
-    return (
-      buffer.length >= 3 &&
-      buffer[0] === 0xff &&
-      buffer[1] === 0xd8 &&
-      buffer[2] === 0xff
-    );
-  }
-
-  if (mimeType === 'image/png') {
-    return (
-      buffer.length >= 8 &&
-      buffer[0] === 0x89 &&
-      buffer[1] === 0x50 &&
-      buffer[2] === 0x4e &&
-      buffer[3] === 0x47 &&
-      buffer[4] === 0x0d &&
-      buffer[5] === 0x0a &&
-      buffer[6] === 0x1a &&
-      buffer[7] === 0x0a
-    );
-  }
-
-  if (mimeType === 'image/webp') {
-    return (
-      buffer.length >= 12 &&
-      buffer[0] === 0x52 &&
-      buffer[1] === 0x49 &&
-      buffer[2] === 0x46 &&
-      buffer[3] === 0x46 &&
-      buffer[8] === 0x57 &&
-      buffer[9] === 0x45 &&
-      buffer[10] === 0x42 &&
-      buffer[11] === 0x50
-    );
-  }
-
-  return false;
-};
-
-const detectMimeTypeFromSignature = (buffer: Buffer): string | null => {
-  if (
-    buffer.length >= 3 &&
-    buffer[0] === 0xff &&
-    buffer[1] === 0xd8 &&
-    buffer[2] === 0xff
-  ) {
-    return 'image/jpeg';
-  }
-
-  if (
-    buffer.length >= 8 &&
-    buffer[0] === 0x89 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x4e &&
-    buffer[3] === 0x47 &&
-    buffer[4] === 0x0d &&
-    buffer[5] === 0x0a &&
-    buffer[6] === 0x1a &&
-    buffer[7] === 0x0a
-  ) {
-    return 'image/png';
-  }
-
-  if (
-    buffer.length >= 12 &&
-    buffer[0] === 0x52 &&
-    buffer[1] === 0x49 &&
-    buffer[2] === 0x46 &&
-    buffer[3] === 0x46 &&
-    buffer[8] === 0x57 &&
-    buffer[9] === 0x45 &&
-    buffer[10] === 0x42 &&
-    buffer[11] === 0x50
-  ) {
-    return 'image/webp';
-  }
-
-  return null;
-};
-
-function resolveImageMimeType(file: File, buffer: Buffer): string | null {
-  const rawType = (file.type || '').toLowerCase();
-  const normalizedType = rawType === 'image/jpg' ? 'image/jpeg' : rawType;
-
-  const baseName = file.name || '';
-  const extension = baseName.includes('.')
-    ? baseName.split('.').pop()?.toLowerCase()
-    : '';
-
-  const extensionType = extension ? EXTENSION_TO_MIME[extension] : undefined;
-  const signatureType = detectMimeTypeFromSignature(buffer);
-
-  const resolvedType = ALLOWED_MIME_TYPES[normalizedType]
-    ? normalizedType
-    : extensionType && ALLOWED_MIME_TYPES[extensionType]
-      ? extensionType
-      : signatureType && ALLOWED_MIME_TYPES[signatureType]
-        ? signatureType
-        : null;
-
-  if (!resolvedType) return null;
-
-  if (!isValidImageSignature(buffer, resolvedType)) {
-    return null;
-  }
-
-  return resolvedType;
 }
 
 function isSupabaseLikeError(error: unknown): boolean {
@@ -257,7 +138,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       );
     }
 
-    const resolvedType = resolveImageMimeType(file, buffer);
+    const resolvedType = resolveImageMimeType(file.name, file.type, buffer);
 
     if (!resolvedType) {
       return createApiErrorResponse(

@@ -2,6 +2,12 @@ import { NextRequest } from 'next/server';
 import { GET, POST, PATCH, DELETE } from '../route';
 import { errorHandler } from '@/utils/errorHandler';
 
+jest.mock('@/app/api/_utils/rateLimit', () => ({
+  searchRateLimit: null,
+  exportRateLimit: null,
+  authRateLimit: null,
+  applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+}));
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
@@ -21,6 +27,12 @@ jest.mock('@/app/api/_utils/schemaReadiness', () => ({
 }));
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
 let mockUserSupabase: any;
+let mockWriteAuditLog: jest.Mock;
+
+jest.mock('@/utils/auditLog', () => ({
+  writeAuditLog: (...args: unknown[]) =>
+    mockWriteAuditLog(...args).catch(() => {}),
+}));
 
 jest.mock('@/app/api/_utils/withAuthRoute', () => {
   const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
@@ -118,6 +130,7 @@ describe('/api/clients', () => {
       missingColumns: [],
     });
     jest.spyOn(performance, 'now').mockReturnValue(0);
+    mockWriteAuditLog = jest.fn().mockResolvedValue(undefined);
     mockUserSupabase = {
       from: jest.fn(),
     };
@@ -575,6 +588,87 @@ describe('/api/clients', () => {
 
       expect(response.status).toBe(500);
     });
+
+    it('writes client.create audit log after successful creation', async () => {
+      const dbRow = {
+        id: mockClient.id,
+        org_id: 'test-org',
+        client_number: 'CL001',
+        name: 'Jane Smith',
+        email: null,
+        phone: null,
+        tags: ['Musician'] as string[],
+        interest: null,
+        note: null,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: null,
+      };
+
+      const mockQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: dbRow, error: null }),
+      };
+      const rpc = jest.fn().mockResolvedValue({ data: 0, error: null });
+      mockUserSupabase = {
+        rpc,
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/clients', {
+        method: 'POST',
+        body: JSON.stringify({ first_name: 'Jane', last_name: 'Smith' }),
+      });
+      const response = await POST(request);
+
+      expect(response.status).toBe(201);
+      expect(mockWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'client.create',
+          resourceType: 'client',
+          resourceId: mockClient.id,
+          orgId: 'test-org',
+          actorId: 'test-user',
+        })
+      );
+    });
+
+    it('audit log failure does not fail client create response', async () => {
+      mockWriteAuditLog.mockRejectedValueOnce(new Error('audit db down'));
+
+      const dbRow = {
+        id: mockClient.id,
+        org_id: 'test-org',
+        client_number: 'CL001',
+        name: 'Jane Smith',
+        email: null,
+        phone: null,
+        tags: [] as string[],
+        interest: null,
+        note: null,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: null,
+      };
+
+      const mockQuery = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: dbRow, error: null }),
+      };
+      const rpc = jest.fn().mockResolvedValue({ data: 0, error: null });
+      mockUserSupabase = {
+        rpc,
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/clients', {
+        method: 'POST',
+        body: JSON.stringify({ first_name: 'Jane', last_name: 'Smith' }),
+      });
+      const response = await POST(request);
+
+      expect(response.status).toBe(201);
+    });
   });
 
   describe('PATCH', () => {
@@ -706,6 +800,70 @@ describe('/api/clients', () => {
         message: 'Invalid client ID format',
         retryable: false,
       });
+    });
+
+    it('writes client.update audit log with changed_fields after successful update', async () => {
+      const currentQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { name: 'John Doe' },
+          error: null,
+        }),
+      };
+      const updateQuery = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: mockClient.id,
+            org_id: 'test-org',
+            client_number: 'CL001',
+            name: 'John Updated',
+            email: null,
+            phone: null,
+            tags: ['Owner'],
+            interest: null,
+            note: 'new note',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(currentQuery)
+          .mockReturnValueOnce(updateQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/clients', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockClient.id,
+          first_name: 'John',
+          last_name: 'Updated',
+          note: 'new note',
+        }),
+      });
+      const response = await PATCH(request);
+
+      expect(response.status).toBe(200);
+      expect(mockWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'client.update',
+          resourceType: 'client',
+          resourceId: mockClient.id,
+          orgId: 'test-org',
+          actorId: 'test-user',
+          metadata: expect.objectContaining({
+            changed_fields: expect.arrayContaining(['name', 'note']),
+          }),
+        })
+      );
     });
   });
 

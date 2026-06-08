@@ -21,7 +21,10 @@ import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
 import { Instrument } from '@/types';
 import type { TablesInsert } from '@/types/database';
-import { logInfo } from '@/utils/logger';
+import { logInfo, logError } from '@/utils/logger';
+import { getStorage } from '@/utils/storage';
+import { searchRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
+import { writeAuditLog } from '@/utils/auditLog';
 
 type InstrumentInsertRow = TablesInsert<'instruments'>;
 type CreateInstrumentInput = {
@@ -217,6 +220,14 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           };
         }
 
+        const { limited } = await applyRateLimit(searchRateLimit, auth.user.id);
+        if (limited) {
+          return {
+            payload: { error: 'Too many requests', success: false },
+            status: 429,
+          };
+        }
+
         const searchParams = request.nextUrl.searchParams;
 
         const orderBy = validateSortColumn(
@@ -290,11 +301,23 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           ...item,
           has_certificate: !!item.certificate,
         }));
-        const responsePageSize = listAll ? transformed.length : responseLimit;
+
+        // Product policy: cost_price and consignment_price are internal financial
+        // fields (purchase cost / consignor settlement). Members see the retail
+        // price but not the margin data. Admins receive the full record.
+        const isAdmin = auth.role === 'admin';
+        const responseRows = isAdmin
+          ? transformed
+          : transformed.map(
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              ({ cost_price: _cp, consignment_price: _cc, ...rest }) => rest
+            );
+
+        const responsePageSize = listAll ? responseRows.length : responseLimit;
 
         return {
           payload: {
-            data: transformed,
+            data: responseRows,
             count: count || 0,
             pagination: {
               page: 1,
@@ -465,6 +488,29 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         instrumentId: validatedResponse.id,
       });
 
+      void writeAuditLog({
+        orgId: auth.orgId,
+        actorId: auth.user.id,
+        actorRole: auth.role as 'admin' | 'member' | 'service',
+        action: 'instrument.create',
+        resourceType: 'instrument',
+        resourceId: validatedResponse.id,
+        metadata: {
+          ...(createInput.cost_price != null && {
+            cost_price: createInput.cost_price,
+          }),
+          ...(createInput.consignment_price != null && {
+            consignment_price: createInput.consignment_price,
+          }),
+          changed_fields: [
+            ...(createInput.cost_price != null ? ['cost_price'] : []),
+            ...(createInput.consignment_price != null
+              ? ['consignment_price']
+              : []),
+          ],
+        },
+      });
+
       return {
         payload,
         status: 201,
@@ -553,6 +599,40 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
 
       const orgId = auth.orgId;
 
+      // Fetch storage keys before deletion so we can clean up physical files
+      const [imagesResult, certificatesResult] = await Promise.all([
+        auth.userSupabase
+          .from('instrument_images')
+          .select('storage_key')
+          .eq('instrument_id', id)
+          .eq('org_id', orgId),
+        auth.userSupabase
+          .from('instrument_certificates')
+          .select('storage_path')
+          .eq('instrument_id', id)
+          .eq('org_id', orgId),
+      ]);
+
+      if (imagesResult.error) {
+        throw errorHandler.handleSupabaseError(
+          imagesResult.error,
+          'Fetch instrument images for delete'
+        );
+      }
+      if (certificatesResult.error) {
+        throw errorHandler.handleSupabaseError(
+          certificatesResult.error,
+          'Fetch instrument certificates for delete'
+        );
+      }
+
+      const storageKeys = [
+        ...(imagesResult.data ?? []).map(r => r.storage_key).filter(Boolean),
+        ...(certificatesResult.data ?? [])
+          .map(r => r.storage_path)
+          .filter(Boolean),
+      ] as string[];
+
       const { error, count } = await auth.userSupabase
         .from('instruments')
         .delete({ count: 'exact' })
@@ -574,7 +654,48 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
         instrumentId: id,
         orgId,
         deletedRows: count,
+        storageKeysToClean: storageKeys.length,
       });
+
+      void writeAuditLog({
+        orgId,
+        actorId: auth.user.id,
+        actorRole: auth.role as 'admin' | 'member' | 'service',
+        action: 'instrument.delete',
+        resourceType: 'instrument',
+        resourceId: id,
+      });
+
+      // Clean up physical storage files — DB rows are already gone via cascade.
+      // Failures are non-fatal: log + persist to orphaned_storage_objects for retry.
+      const storage = getStorage();
+      for (const key of storageKeys) {
+        try {
+          await storage.deleteFile(key);
+        } catch (storageErr) {
+          const message =
+            storageErr instanceof Error
+              ? storageErr.message
+              : String(storageErr);
+          logError(
+            'instrument_storage_cleanup_failed',
+            storageErr,
+            'InstrumentsAPI',
+            {
+              instrumentId: id,
+              orgId,
+              storageKey: key,
+            }
+          );
+          await auth.userSupabase.from('orphaned_storage_objects').insert({
+            org_id: orgId,
+            storage_key: key,
+            bucket: 's3',
+            source: 'instrument_delete',
+            error_message: message,
+          });
+        }
+      }
 
       return {
         payload: { success: true, id },

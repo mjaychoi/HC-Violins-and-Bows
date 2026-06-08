@@ -1,5 +1,11 @@
 import { NextRequest } from 'next/server';
 import { GET, POST, PATCH, DELETE, PUT } from '../route';
+jest.mock('@/app/api/_utils/rateLimit', () => ({
+  authRateLimit: null,
+  searchRateLimit: null,
+  exportRateLimit: null,
+  applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+}));
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
