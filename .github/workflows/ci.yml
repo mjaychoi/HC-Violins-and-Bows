@@ -72,8 +72,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Setup Supabase CLI
+        if: ${{ github.event_name == 'push' }}
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Apply Supabase migrations
+        if: ${{ github.event_name == 'push' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is required to apply Supabase migrations."
+            exit 1
+          fi
+          supabase db push --db-url "$DATABASE_URL" --include-all --yes
+
       - name: Schema readiness
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
+        if: ${{ github.event_name == 'push' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
