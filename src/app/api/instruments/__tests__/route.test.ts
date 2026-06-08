@@ -274,7 +274,7 @@ describe('/api/instruments', () => {
       expect(mockQuery.eq).toHaveBeenNthCalledWith(2, 'ownership', 'owned');
     });
 
-    it.skip('should return instruments with default parameters', async () => {
+    it('should return instruments with default parameters', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -308,7 +308,10 @@ describe('/api/instruments', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
-      expect(json.data).toEqual([mockInstrument]);
+      // instrumentSchema.transform() appends has_certificate derived from certificate
+      expect(json.data).toEqual([
+        { ...mockInstrument, has_certificate: false },
+      ]);
       expect(json.count).toBe(1);
     });
 

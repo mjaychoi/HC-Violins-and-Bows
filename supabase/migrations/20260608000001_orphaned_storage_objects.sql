@@ -30,4 +30,5 @@ CREATE POLICY orphaned_storage_objects_insert ON public.orphaned_storage_objects
 -- Service-role (used by cleanup jobs) may delete resolved records.
 CREATE POLICY orphaned_storage_objects_delete ON public.orphaned_storage_objects
   FOR DELETE TO service_role
+  -- migration-guard: allow-true-policy (service_role only; cleanup job must delete any resolved orphan)
   USING (true);

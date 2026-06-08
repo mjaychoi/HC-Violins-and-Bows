@@ -31,6 +31,7 @@ CREATE POLICY "audit_log_insert_service_role"
   ON public.audit_log
   FOR INSERT
   TO service_role
+  -- migration-guard: allow-true-policy (service_role only; app backend must be able to insert any audit row)
   WITH CHECK (true);
 
 -- Index for per-org chronological lookups

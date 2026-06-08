@@ -3,6 +3,18 @@ import { getAdminSupabase } from '@/lib/supabase-server';
 
 jest.mock('@/lib/supabase-server');
 
+// checkSchemaReadiness was added to checkMigrations() after this suite was written.
+// Mock it to always report ready so the rest of the health check assertions stay focused.
+jest.mock('@/app/api/_utils/schemaReadiness', () => ({
+  checkSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: new Date().toISOString(),
+    missingColumns: [],
+    missingContracts: [],
+  }),
+  assertClientsSchemaReadiness: jest.fn().mockResolvedValue(undefined),
+}));
+
 const mockGetAdminSupabase = getAdminSupabase as jest.MockedFunction<
   typeof getAdminSupabase
 >;
@@ -57,6 +69,10 @@ const COMPLETE_REQUIRED_VERSIONS = [
   { version: '00000000000003' },
   { version: '00000000000004' },
   { version: '00000000000005' },
+  { version: '00000000000054' },
+  { version: '00000000000060' },
+  { version: '00000000000061' },
+  { version: '20260422133936' },
 ];
 
 const COMPLETE_FUNCTION_ROWS = [
@@ -103,6 +119,11 @@ const COMPLETE_REQUIRED_POLICY_ROWS = withPolicyMeta([
     with_check: null,
   },
   {
+    policyname: 'clients_insert',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
+    with_check: '(org_id = public.org_id() AND public.is_admin())',
+  },
+  {
     policyname: 'clients_update',
     qual: '(org_id = public.org_id() AND public.is_admin())',
     with_check: '(org_id = public.org_id() AND public.is_admin())',
@@ -111,6 +132,11 @@ const COMPLETE_REQUIRED_POLICY_ROWS = withPolicyMeta([
     policyname: 'clients_delete',
     qual: '(org_id = public.org_id() AND public.is_admin())',
     with_check: null,
+  },
+  {
+    policyname: 'instruments_insert',
+    qual: '(org_id = public.org_id() AND public.is_admin())',
+    with_check: '(org_id = public.org_id() AND public.is_admin())',
   },
   {
     policyname: 'instruments_update',
@@ -218,7 +244,7 @@ function buildHealthySupabaseClient(overrides?: {
   } as any;
 }
 
-describe.skip('healthCheck [TEMP SKIPPED - infra contract drift]', () => {
+describe('healthCheck', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -316,7 +342,7 @@ describe.skip('healthCheck [TEMP SKIPPED - infra contract drift]', () => {
     mockGetAdminSupabase.mockReturnValue(
       buildHealthySupabaseClient({
         migrationRows: COMPLETE_REQUIRED_VERSIONS.filter(
-          row => row.version !== '20260402000006'
+          row => row.version !== '20260422133936'
         ),
       })
     );
@@ -324,7 +350,7 @@ describe.skip('healthCheck [TEMP SKIPPED - infra contract drift]', () => {
     const result = await checkMigrations();
 
     expect(result.allHealthy).toBe(false);
-    expect(result.missingMigrationVersions).toContain('20260402000006');
+    expect(result.missingMigrationVersions).toContain('20260422133936');
   });
 
   it('returns unhealthy when an invoice storage policy is missing or unsafe', async () => {

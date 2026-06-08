@@ -86,3 +86,96 @@ describe('applyRateLimit (F3)', () => {
     expect(mockLimiter.limit).toHaveBeenCalledWith('org-abc:user-xyz');
   });
 });
+
+// ── Production fail-closed enforcement ───────────────────────────────────────
+
+describe('production fail-closed enforcement', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalUpstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const originalUpstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const originalDisabled = process.env.RATE_LIMITING_DISABLED;
+  const setNodeEnv = (value: typeof process.env.NODE_ENV) => {
+    Object.defineProperty(process.env, 'NODE_ENV', {
+      value,
+      configurable: true,
+      writable: true,
+    });
+  };
+
+  let consoleSpy: jest.SpyInstance;
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    delete process.env.RATE_LIMITING_DISABLED;
+    jest.resetModules();
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+    warnSpy.mockRestore();
+    setNodeEnv(originalNodeEnv);
+    if (originalUpstashUrl !== undefined) {
+      process.env.UPSTASH_REDIS_REST_URL = originalUpstashUrl;
+    } else {
+      delete process.env.UPSTASH_REDIS_REST_URL;
+    }
+    if (originalUpstashToken !== undefined) {
+      process.env.UPSTASH_REDIS_REST_TOKEN = originalUpstashToken;
+    } else {
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    }
+    if (originalDisabled !== undefined) {
+      process.env.RATE_LIMITING_DISABLED = originalDisabled;
+    } else {
+      delete process.env.RATE_LIMITING_DISABLED;
+    }
+    jest.resetModules();
+  });
+
+  it('dev/test env without Upstash: RATE_LIMIT_FAIL_CLOSED is false, null limiter allows through', async () => {
+    // NODE_ENV stays 'test'; no Upstash vars
+    jest.resetModules();
+    const mod = require('../rateLimit');
+    expect(mod.RATE_LIMIT_FAIL_CLOSED).toBe(false);
+    expect(await mod.applyRateLimit(null, 'user-123')).toEqual({
+      limited: false,
+    });
+  });
+
+  it('production without Upstash and no opt-out: RATE_LIMIT_FAIL_CLOSED is true, null limiter blocks', async () => {
+    setNodeEnv('production');
+    jest.resetModules();
+    const mod = require('../rateLimit');
+    expect(mod.RATE_LIMIT_FAIL_CLOSED).toBe(true);
+    expect(await mod.applyRateLimit(null, 'user-123')).toEqual({
+      limited: true,
+    });
+  });
+
+  it('production with RATE_LIMITING_DISABLED=true: RATE_LIMIT_FAIL_CLOSED is false, null limiter allows through', async () => {
+    setNodeEnv('production');
+    process.env.RATE_LIMITING_DISABLED = 'true';
+    jest.resetModules();
+    const mod = require('../rateLimit');
+    expect(mod.RATE_LIMIT_FAIL_CLOSED).toBe(false);
+    expect(await mod.applyRateLimit(null, 'user-123')).toEqual({
+      limited: false,
+    });
+  });
+
+  it('production with Upstash configured: RATE_LIMIT_FAIL_CLOSED is false, limiters are non-null', () => {
+    setNodeEnv('production');
+    process.env.UPSTASH_REDIS_REST_URL = 'https://redis.example.com';
+    process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token';
+    jest.resetModules();
+    const mod = require('../rateLimit');
+    expect(mod.RATE_LIMIT_FAIL_CLOSED).toBe(false);
+    expect(mod.authRateLimit).not.toBeNull();
+    expect(mod.exportRateLimit).not.toBeNull();
+    expect(mod.searchRateLimit).not.toBeNull();
+  });
+});

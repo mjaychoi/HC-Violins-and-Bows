@@ -211,6 +211,9 @@ let mockAuthCtx: {
   isTestBypass: boolean;
 };
 
+jest.mock('@/utils/auditLog', () => ({
+  writeAuditLog: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('@/app/api/_utils/withAuthRoute', () => {
   const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
   return {
@@ -329,6 +332,9 @@ const mockInstrument = {
 };
 
 // ─── Test Suites ─────────────────────────────────────────────────────────────
+// SKIPPED: routes added assertClientsSchemaReadiness and other utilities
+// after this suite was written; mocking schemaReadiness + updating all
+// affected flows is needed before this can be unskipped.
 describe.skip('Vertical Slice QA Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
