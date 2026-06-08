@@ -16,7 +16,17 @@
       "Bash(supabase migration *)",
       "Bash(supabase db *)",
       "Bash(npm install *)",
-      "Bash(npm audit *)"
+      "Bash(npm audit *)",
+      "Bash(git log *)",
+      "Bash(supabase --version)",
+      "Bash(supabase gen *)",
+      "Bash(sed -n '55,75p' /Users/soyeonhong/HC-Violins-and-Bows/src/app/api/instruments/_shared/executeInstrumentPatch.ts)",
+      "Bash(sed -n '346,420p' /Users/soyeonhong/HC-Violins-and-Bows/src/app/api/instruments/_shared/executeInstrumentPatch.ts)",
+      "Bash(grep -n \"describe.*POST\\\\|describe.*PATCH\\\\|}\\);$\" /Users/soyeonhong/HC-Violins-and-Bows/src/app/api/sales/__tests__/route.test.ts)",
+      "Bash(ORPHAN_CLEANUP_SECRET=test-secret npx jest --no-coverage)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2\\)\\)\")",
+      "Bash(npx supabase *)",
+      "Bash(openssl rand *)"
     ]
   }
 }

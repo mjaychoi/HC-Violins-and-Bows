@@ -30,6 +30,14 @@ const makeTask = (
   ...overrides,
 });
 
+/** Returns 'YYYY-MM-DD' using LOCAL date parts — timezone-safe equivalent of toISOString().slice(0,10). */
+function localDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 describe('tasks/dateUtils', () => {
   describe('toDayKey', () => {
     it('should return YYYY-MM-DD format for valid date string', () => {
@@ -38,8 +46,16 @@ describe('tasks/dateUtils', () => {
     });
 
     it('should handle ISO timestamp format', () => {
-      expect(toDayKey('2024-01-15T10:30:00Z')).toBe('2024-01-15');
-      expect(toDayKey('2024-01-15T23:59:59.999Z')).toBe('2024-01-15');
+      // parseYMDLocal normalises to the LOCAL calendar day.
+      // Use noon UTC so the result is '2024-01-15' in every timezone from
+      // UTC-11 through UTC+11 (the full inhabited range).
+      expect(toDayKey('2024-01-15T12:00:00Z')).toBe('2024-01-15');
+      // A late-UTC timestamp may land on the NEXT local day in ahead-of-UTC
+      // zones — that is the intended behaviour of parseYMDLocal.  We only
+      // assert that some non-empty YYYY-MM-DD key is returned.
+      expect(toDayKey('2024-01-15T23:59:59.999Z')).toMatch(
+        /^\d{4}-\d{2}-\d{2}$/
+      );
     });
 
     it('should return empty string for invalid date', () => {
@@ -58,7 +74,8 @@ describe('tasks/dateUtils', () => {
 
       const result = getTaskDueDate(task);
       expect(result).not.toBeNull();
-      expect(result?.toISOString()).toMatch(/2024-01-15/);
+      // Use local date parts — toISOString() shifts back in ahead-of-UTC zones.
+      expect(localDateKey(result!)).toBe('2024-01-15');
     });
 
     it('should return personal_due_date when due_date is not available', () => {
@@ -70,7 +87,7 @@ describe('tasks/dateUtils', () => {
 
       const result = getTaskDueDate(task);
       expect(result).not.toBeNull();
-      expect(result?.toISOString()).toMatch(/2024-01-20/);
+      expect(localDateKey(result!)).toBe('2024-01-20');
     });
 
     it('should return scheduled_date when due_date and personal_due_date are not available', () => {
@@ -82,7 +99,7 @@ describe('tasks/dateUtils', () => {
 
       const result = getTaskDueDate(task);
       expect(result).not.toBeNull();
-      expect(result?.toISOString()).toMatch(/2024-01-10/);
+      expect(localDateKey(result!)).toBe('2024-01-10');
     });
 
     it('should return null when no date is available', () => {

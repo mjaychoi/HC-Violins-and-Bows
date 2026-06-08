@@ -12,7 +12,7 @@ const customJestConfig = {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   transformIgnorePatterns: [
-    '/node_modules/(?!(isows|@supabase/realtime-js|@supabase/supabase-js|@supabase|react-dnd|react-dnd-html5-backend|@dnd-kit)/)',
+    '/node_modules/(?!(isows|@supabase/realtime-js|@supabase/supabase-js|@supabase|react-dnd|react-dnd-html5-backend|@dnd-kit|@upstash/redis|@upstash/ratelimit|uncrypto)/)',
   ],
   modulePathIgnorePatterns: ['<rootDir>/.next/standalone'],
   extensionsToTreatAsEsm: ['.ts', '.tsx'],

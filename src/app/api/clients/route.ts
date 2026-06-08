@@ -38,6 +38,8 @@ import {
   createRequestHash,
 } from '@/app/api/_utils/createIdempotency';
 import { assertClientsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
+import { searchRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
+import { writeAuditLog } from '@/utils/auditLog';
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
@@ -226,6 +228,14 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         return {
           payload: { error: 'Organization context required', success: false },
           status: 403,
+        };
+      }
+
+      const { limited } = await applyRateLimit(searchRateLimit, auth.user.id);
+      if (limited) {
+        return {
+          payload: { error: 'Too many requests', success: false },
+          status: 429,
         };
       }
 
@@ -436,6 +446,15 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         payload
       );
 
+      void writeAuditLog({
+        orgId: auth.orgId!,
+        actorId: auth.user.id,
+        actorRole: auth.role as 'admin' | 'member' | 'service',
+        action: 'client.create',
+        resourceType: 'client',
+        resourceId: validated.id,
+      });
+
       return {
         payload,
         status: 201,
@@ -542,6 +561,16 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
       const validated = validateClient(mapClientsTableRowToClient(data));
 
+      void writeAuditLog({
+        orgId: auth.orgId!,
+        actorId: auth.user.id,
+        actorRole: auth.role as 'admin' | 'member' | 'service',
+        action: 'client.update',
+        resourceType: 'client',
+        resourceId: id,
+        metadata: { changed_fields: Object.keys(dbPatch) },
+      });
+
       return {
         payload: { data: validated },
         metadata: { clientId: id },
@@ -600,6 +629,15 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
       if (!count || count === 0) {
         return { payload: { error: 'Client not found' }, status: 404 };
       }
+
+      void writeAuditLog({
+        orgId: auth.orgId!,
+        actorId: auth.user.id,
+        actorRole: auth.role as 'admin' | 'member' | 'service',
+        action: 'client.delete',
+        resourceType: 'client',
+        resourceId: id,
+      });
 
       return {
         payload: { success: true },

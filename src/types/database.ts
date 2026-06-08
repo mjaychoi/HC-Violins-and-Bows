@@ -704,6 +704,50 @@ export type Database = {
         };
         Relationships: [];
       };
+      audit_log: {
+        Row: {
+          id: string;
+          org_id: string;
+          actor_id: string;
+          actor_role: 'admin' | 'member' | 'service';
+          action: string;
+          resource_type: string;
+          resource_id: string;
+          metadata: Record<string, unknown> | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          actor_id: string;
+          actor_role: 'admin' | 'member' | 'service';
+          action: string;
+          resource_type: string;
+          resource_id: string;
+          metadata?: Record<string, unknown> | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          org_id?: string;
+          actor_id?: string;
+          actor_role?: 'admin' | 'member' | 'service';
+          action?: string;
+          resource_type?: string;
+          resource_id?: string;
+          metadata?: Record<string, unknown> | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'audit_log_org_id_fkey';
+            columns: ['org_id'];
+            isOneToOne: false;
+            referencedRelation: 'organizations';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       organizations: {
         Row: {
           created_at: string;
@@ -724,6 +768,44 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [];
+      };
+      orphaned_storage_objects: {
+        Row: {
+          id: string;
+          org_id: string;
+          storage_key: string;
+          bucket: string;
+          source: string;
+          error_message: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          storage_key: string;
+          bucket?: string;
+          source: string;
+          error_message?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          org_id?: string;
+          storage_key?: string;
+          bucket?: string;
+          source?: string;
+          error_message?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'orphaned_storage_objects_org_id_fkey';
+            columns: ['org_id'];
+            isOneToOne: false;
+            referencedRelation: 'organizations';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       sales_history: {
         Row: {

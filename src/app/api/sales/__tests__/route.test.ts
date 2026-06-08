@@ -885,6 +885,96 @@ describe('/api/sales', () => {
       expect(response.status).toBe(200);
       expect(mockQuery.lte).not.toHaveBeenCalled();
     });
+
+    // ── F7: financial field access control ──────────────────────────────────
+
+    function makeSaleQueryMock(rows: object[]) {
+      const q = {
+        select: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest
+          .fn()
+          .mockResolvedValue({ data: rows, error: null, count: 0 }),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        is: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+      };
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(q),
+        rpc: jest.fn().mockResolvedValue({ data: null, error: null }),
+      } as any;
+      return q;
+    }
+
+    const saleSample = {
+      id: '123e4567-e89b-12d3-a456-426614174000',
+      instrument_id: null,
+      client_id: null,
+      sale_price: 2500,
+      sale_date: '2024-01-15',
+      notes: 'Violin sale',
+      created_at: '2024-01-15T00:00:00Z',
+      entry_kind: 'sale',
+      adjustment_of_sale_id: null,
+    };
+
+    it('admin receives sale_price in paginated response', async () => {
+      mockAuthContext = { ...mockAuthContext, role: 'admin' };
+      makeSaleQueryMock([saleSample]);
+
+      const response = await GET(
+        new NextRequest('http://localhost:3000/api/sales?page=1')
+      );
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data[0].sale_price).toBe(2500);
+    });
+
+    it('non-admin member does not receive sale_price in paginated response', async () => {
+      mockAuthContext = { ...mockAuthContext, role: 'member' };
+      makeSaleQueryMock([saleSample]);
+
+      const response = await GET(
+        new NextRequest('http://localhost:3000/api/sales?page=1')
+      );
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data[0].sale_price).toBeUndefined();
+    });
+
+    it('non-admin member does not receive totals in paginated response', async () => {
+      mockAuthContext = { ...mockAuthContext, role: 'member' };
+      makeSaleQueryMock([saleSample]);
+
+      const response = await GET(
+        new NextRequest('http://localhost:3000/api/sales?page=1')
+      );
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.totals).toBeUndefined();
+    });
+
+    it('non-admin member still receives non-financial sale fields', async () => {
+      mockAuthContext = { ...mockAuthContext, role: 'member' };
+      makeSaleQueryMock([saleSample]);
+
+      const response = await GET(
+        new NextRequest('http://localhost:3000/api/sales?page=1')
+      );
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data[0].id).toBe(saleSample.id);
+      expect(json.data[0].sale_date).toBe(saleSample.sale_date);
+      expect(json.data[0].entry_kind).toBe('sale');
+    });
   });
 
   describe('POST', () => {

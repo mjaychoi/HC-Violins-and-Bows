@@ -7,6 +7,12 @@ import { logApiRequest } from '@/utils/logger';
 import { captureException } from '@/utils/monitoring';
 import fs from 'fs/promises';
 let mockUserSupabase: any;
+let mockWriteAuditLog: jest.Mock;
+
+jest.mock('@/utils/auditLog', () => ({
+  writeAuditLog: (...args: unknown[]) =>
+    mockWriteAuditLog(...args).catch(() => {}),
+}));
 
 // Mock React PDF before importing route
 const mockRenderToBufferFn = jest
@@ -33,6 +39,12 @@ jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
 jest.mock('@/utils/monitoring');
 jest.mock('fs/promises');
+jest.mock('@/app/api/_utils/rateLimit', () => ({
+  searchRateLimit: null,
+  exportRateLimit: null,
+  authRateLimit: null,
+  applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+}));
 jest.mock('@/app/api/_utils/schemaReadiness', () => ({
   assertInvoiceSchemaReadiness: jest.fn().mockResolvedValue({
     ready: true,
@@ -61,6 +73,7 @@ jest.mock('@/app/api/invoices/imageUrls', () => ({
   attachSignedUrlsToInvoice: jest.fn(
     async (_supabase: unknown, invoice: unknown) => invoice
   ),
+  extractInvoiceImageStoragePaths: jest.fn(() => []),
 }));
 jest.mock('@/app/api/invoices/imageUploadTracking', () => ({
   claimInvoiceImageUploads: jest.fn(async () => ({
@@ -119,6 +132,11 @@ async function loadUpdateHandler() {
 async function loadPdfHandler() {
   const pdfModule = await import('../pdf/route');
   return pdfModule.GET;
+}
+
+async function loadDeleteHandler() {
+  const invoiceModule = await import('../route');
+  return invoiceModule.DELETE;
 }
 
 describe('/api/invoices/[id]', () => {
@@ -206,6 +224,7 @@ describe('/api/invoices/[id]', () => {
     if (typeof global !== 'undefined') {
       (global as Record<string, unknown>).React = React;
     }
+    mockWriteAuditLog = jest.fn().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1084,6 +1103,249 @@ describe('/api/invoices/[id]', () => {
       expect(response.status).toBe(409);
       expect(json.message).toContain('Invalid invoice status transition');
       expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
+
+    // ── F10: audit log ──────────────────────────────────────────────────────
+
+    it('writes invoice.update_status audit log when status changes', async () => {
+      const supabase = buildUpdateSupabase();
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'audit-status-1',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: 'sent' }),
+        }
+      );
+      const context = { params: Promise.resolve({ id: mockInvoiceId }) };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      expect(response.status).toBe(200);
+      expect(mockWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'invoice.update_status',
+          resourceType: 'invoice',
+          resourceId: mockInvoiceId,
+          orgId: 'test-org',
+          actorId: 'test-user',
+          metadata: expect.objectContaining({ status: 'sent' }),
+        })
+      );
+    });
+
+    it('writes invoice.update_financials audit log when subtotal/total change', async () => {
+      const supabase = buildUpdateSupabase();
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'audit-fin-1',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ subtotal: 200, total: 200 }),
+        }
+      );
+      const context = { params: Promise.resolve({ id: mockInvoiceId }) };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      expect(response.status).toBe(200);
+      expect(mockWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'invoice.update_financials',
+          resourceType: 'invoice',
+          resourceId: mockInvoiceId,
+          metadata: expect.objectContaining({
+            changed_fields: expect.arrayContaining(['subtotal', 'total']),
+            before: expect.objectContaining({ subtotal: 100, total: 100 }),
+          }),
+        })
+      );
+    });
+
+    it('writes both status and financial audit logs when both change in one PUT', async () => {
+      const supabase = buildUpdateSupabase();
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'audit-both-1',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: 'sent', subtotal: 150, total: 150 }),
+        }
+      );
+      const context = { params: Promise.resolve({ id: mockInvoiceId }) };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      expect(response.status).toBe(200);
+
+      const calls = mockWriteAuditLog.mock.calls.map(
+        (c: [{ action: string }]) => c[0].action
+      );
+      expect(calls).toContain('invoice.update_status');
+      expect(calls).toContain('invoice.update_financials');
+    });
+  });
+
+  describe('DELETE', () => {
+    const INVOICE_ID = '123e4567-e89b-12d3-a456-426614174000';
+
+    function makeDeleteSupabase({
+      items = [] as Array<{ image_url: string | null }>,
+      deleteCount = 1,
+      storagePaths = [] as string[],
+      storageError = null as { message: string } | null,
+    } = {}) {
+      const {
+        extractInvoiceImageStoragePaths,
+      } = require('@/app/api/invoices/imageUrls');
+      (extractInvoiceImageStoragePaths as jest.Mock).mockReturnValue(
+        storagePaths
+      );
+
+      const selectChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        then: (resolve: any) =>
+          Promise.resolve({ data: items, error: null }).then(resolve),
+      };
+
+      const deleteChain = {
+        delete: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        then: (resolve: any) =>
+          Promise.resolve({ error: null, count: deleteCount }).then(resolve),
+      };
+
+      const insertChain = {
+        insert: jest.fn().mockResolvedValue({ error: null }),
+      };
+
+      const removeMock = jest.fn().mockResolvedValue({ error: storageError });
+      const storageBucket = { remove: removeMock };
+
+      return {
+        from: jest.fn().mockImplementation((table: string) => {
+          if (table === 'invoice_items') return selectChain;
+          if (table === 'invoices') return deleteChain;
+          if (table === 'orphaned_storage_objects') return insertChain;
+          return {};
+        }),
+        storage: { from: jest.fn().mockReturnValue(storageBucket) },
+        _removeMock: removeMock,
+        _insertChain: insertChain,
+      };
+    }
+
+    it('returns 200 and deletes invoice with no item images', async () => {
+      mockUserSupabase = makeDeleteSupabase();
+
+      const handler = await loadDeleteHandler();
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${INVOICE_ID}`,
+        { method: 'DELETE' }
+      );
+      const response = await handler(request, {
+        params: Promise.resolve({ id: INVOICE_ID }),
+      });
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data.id).toBe(INVOICE_ID);
+      expect(mockUserSupabase.storage.from).not.toHaveBeenCalled();
+    });
+
+    it('calls storage.remove with extracted paths after successful delete', async () => {
+      const paths = [
+        'test-org/invoice-items/img1.jpg',
+        'test-org/invoice-items/img2.jpg',
+      ];
+      mockUserSupabase = makeDeleteSupabase({
+        items: [{ image_url: paths[0] }, { image_url: paths[1] }],
+        storagePaths: paths,
+      });
+
+      const handler = await loadDeleteHandler();
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${INVOICE_ID}`,
+        { method: 'DELETE' }
+      );
+      const response = await handler(request, {
+        params: Promise.resolve({ id: INVOICE_ID }),
+      });
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data.id).toBe(INVOICE_ID);
+      expect(mockUserSupabase.storage.from).toHaveBeenCalledWith('invoices');
+      expect(mockUserSupabase._removeMock).toHaveBeenCalledWith(paths);
+    });
+
+    it('logs orphan and inserts to orphaned_storage_objects when storage.remove fails', async () => {
+      const paths = ['test-org/invoice-items/img1.jpg'];
+      mockUserSupabase = makeDeleteSupabase({
+        storagePaths: paths,
+        storageError: { message: 'bucket unavailable' },
+      });
+
+      const { logError } = require('@/utils/logger');
+      const handler = await loadDeleteHandler();
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${INVOICE_ID}`,
+        { method: 'DELETE' }
+      );
+      const response = await handler(request, {
+        params: Promise.resolve({ id: INVOICE_ID }),
+      });
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data.id).toBe(INVOICE_ID);
+      expect(logError).toHaveBeenCalledWith(
+        'invoice_storage_cleanup_failed',
+        expect.objectContaining({ message: 'bucket unavailable' }),
+        'InvoicesAPI',
+        expect.objectContaining({ invoiceId: INVOICE_ID })
+      );
+      expect(mockUserSupabase._insertChain.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          org_id: 'test-org',
+          storage_key: paths[0],
+          bucket: 'invoices',
+          source: 'invoice_delete',
+        })
+      );
+    });
+
+    it('returns 404 when invoice not found', async () => {
+      mockUserSupabase = makeDeleteSupabase({ deleteCount: 0 });
+
+      const handler = await loadDeleteHandler();
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${INVOICE_ID}`,
+        { method: 'DELETE' }
+      );
+      const response = await handler(request, {
+        params: Promise.resolve({ id: INVOICE_ID }),
+      });
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.error).toBe('Invoice not found');
     });
   });
 });

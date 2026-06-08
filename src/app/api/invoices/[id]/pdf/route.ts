@@ -33,6 +33,7 @@ import {
   withRequestIdHeader,
 } from '@/app/api/_utils/requestContext';
 import { todayLocalYMD } from '@/utils/dateParsing';
+import { exportRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
 
 export const runtime = 'nodejs';
 
@@ -292,6 +293,28 @@ async function generateInvoicePdfResponse(
   const routePath = `/api/invoices/${id}/pdf`;
 
   try {
+    const { limited } = await applyRateLimit(exportRateLimit, auth.user.id);
+    if (limited) {
+      const duration = Math.round(nowMs() - startTime);
+      logApiRequest('GET', routePath, 429, duration, 'InvoicesAPI', {
+        invoiceId: id,
+        requestId,
+        error: true,
+        errorCode: 'RATE_LIMIT_EXCEEDED',
+      });
+      return withRequestIdHeader(
+        createApiErrorResponse(
+          {
+            message: 'Too many requests',
+            error_code: 'RATE_LIMIT_EXCEEDED',
+            retryable: true,
+          },
+          429
+        ),
+        requestId
+      );
+    }
+
     const inline = new URL(req.url).searchParams.get('inline') === 'true';
 
     const orgContextError = requireOrgContext(auth);

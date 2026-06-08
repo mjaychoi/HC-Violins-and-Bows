@@ -26,6 +26,7 @@ import {
   createRequestHash,
 } from '@/app/api/_utils/createIdempotency';
 import { assertClientConnectionsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
+import { authRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
 
 const CONNECTION_SELECT_COLUMNS =
   'id, client_id, instrument_id, relationship_type, notes, display_order, created_at';
@@ -331,6 +332,14 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         return {
           payload: { error: 'Admin role required' },
           status: 403,
+        };
+      }
+
+      const { limited } = await applyRateLimit(authRateLimit, auth.user.id);
+      if (limited) {
+        return {
+          payload: { error: 'Too many requests' },
+          status: 429,
         };
       }
 

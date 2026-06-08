@@ -24,6 +24,8 @@ import {
   escapePostgrestFilterValue,
 } from '@/utils/inputValidation';
 
+import { writeAuditLog } from '@/utils/auditLog';
+
 const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 const MAX_SEARCH_LEN = 160;
 const MAX_NOTES_LENGTH = 5_000;
@@ -748,9 +750,20 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      // Product policy: sale_price is a completed-transaction financial figure.
+      // Non-admin members can see that a sale occurred but not the amount.
+      // allScope (export/all) is already admin-gated above.
+      const isAdmin = auth.role === 'admin';
+      const safeRows = isAdmin
+        ? rows
+        : rows.map(
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            ({ sale_price: _sp, ...rest }: Record<string, unknown>) => rest
+          );
+
       return {
         payload: {
-          data: rows,
+          data: safeRows,
           pagination: {
             page,
             pageSize,
@@ -758,7 +771,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
             totalPages: Math.max(1, Math.ceil((count || 0) / pageSize)),
           },
           scope: 'paged',
-          totals: totals || undefined,
+          // Totals are aggregate financial data — only return to admins.
+          totals: isAdmin ? totals || undefined : undefined,
           success: true,
         },
         metadata: {
@@ -897,6 +911,15 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
 
       if (typeof saleId === 'string') {
         const validatedData = await fetchSaleById(auth, saleId);
+
+        void writeAuditLog({
+          orgId: auth.orgId!,
+          actorId: auth.user.id,
+          actorRole: auth.role as 'admin' | 'member' | 'service',
+          action: 'sale.create',
+          resourceType: 'sale',
+          resourceId: validatedData.id,
+        });
 
         return {
           payload: { data: validatedData, success: true },
@@ -1099,6 +1122,19 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
         const adjustmentSale = await fetchSaleById(auth, adjustmentId);
 
+        void writeAuditLog({
+          orgId: auth.orgId!,
+          actorId: auth.user.id,
+          actorRole: auth.role as 'admin' | 'member' | 'service',
+          action: 'sale.update',
+          resourceType: 'sale',
+          resourceId: id,
+          metadata: {
+            adjustment_kind: adjustmentKind,
+            adjustment_id: adjustmentId,
+          },
+        });
+
         return {
           payload: { data: adjustmentSale, success: true },
           metadata: {
@@ -1144,6 +1180,16 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const validatedData = await fetchSaleById(auth, updatedSaleId);
+
+      void writeAuditLog({
+        orgId: auth.orgId!,
+        actorId: auth.user.id,
+        actorRole: auth.role as 'admin' | 'member' | 'service',
+        action: 'sale.update',
+        resourceType: 'sale',
+        resourceId: id,
+        metadata: { notes_updated: true },
+      });
 
       return {
         payload: { data: validatedData, success: true },

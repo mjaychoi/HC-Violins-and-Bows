@@ -15,6 +15,7 @@ import {
 import { logError } from '@/utils/logger';
 import { ErrorCodes } from '@/types/errors';
 import { assertInstrumentImagesSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
+import { isValidImageSignature } from '@/utils/imageMagicBytes';
 
 export const runtime = 'nodejs';
 
@@ -525,6 +526,14 @@ async function postHandlerInternal(
       if (buffer.length <= 0) {
         await rollbackAll();
         return createApiErrorResponse({ message: 'Image file is empty' }, 400);
+      }
+
+      if (!isValidImageSignature(buffer, normalizedType)) {
+        await rollbackAll();
+        return createApiErrorResponse(
+          { message: 'Invalid image file content' },
+          400
+        );
       }
 
       const safeName = sanitizeImageBaseName(originalFileName);

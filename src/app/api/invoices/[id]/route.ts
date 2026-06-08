@@ -20,10 +20,15 @@ import { normalizeInvoiceRecord } from '@/utils/invoiceNormalize';
 import { validateInvoiceStatusTransition } from '@/app/api/_utils/stateTransitions';
 import type { CreateInvoiceInput, InvoiceFinancialSnapshot } from '../types';
 import { validateInvoiceFinancials } from '../financialValidation';
-import { attachSignedUrlsToInvoice } from '../imageUrls';
+import {
+  attachSignedUrlsToInvoice,
+  extractInvoiceImageStoragePaths,
+} from '../imageUrls';
 import { claimInvoiceImageUploads } from '../imageUploadTracking';
+import { logInfo, logError } from '@/utils/logger';
 import type { Json } from '@/types/database';
 import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
+import { writeAuditLog } from '@/utils/auditLog';
 
 type InvoiceMutationResult = 'full_success' | 'partial_success';
 type JsonObject = { [key: string]: Json | undefined };
@@ -442,6 +447,13 @@ async function updateInvoiceHandler(
       'items'
     );
 
+    // Captured inside the pre-fetch block below; used for before/after metadata.
+    let financialBefore: {
+      subtotal: number | null;
+      tax: number | null;
+      total: number | null;
+    } | null = null;
+
     const clientScope = await assertClientBelongsToOrg(
       auth,
       orgId,
@@ -495,6 +507,16 @@ async function updateInvoiceHandler(
       const currentItems = Array.isArray(currentInvoice.invoice_items)
         ? currentInvoice.invoice_items
         : [];
+
+      financialBefore = {
+        subtotal:
+          currentInvoice.subtotal != null
+            ? Number(currentInvoice.subtotal)
+            : null,
+        tax: currentInvoice.tax != null ? Number(currentInvoice.tax) : null,
+        total:
+          currentInvoice.total != null ? Number(currentInvoice.total) : null,
+      };
 
       if (validatedInput.status !== undefined) {
         if (typeof currentInvoice.status !== 'string') {
@@ -661,6 +683,44 @@ async function updateInvoiceHandler(
 
     const result = getInvoiceMutationResult(imageTracking);
 
+    if (validatedInput.status !== undefined) {
+      void writeAuditLog({
+        orgId,
+        actorId: auth.user.id,
+        actorRole: auth.role as 'admin' | 'member' | 'service',
+        action: 'invoice.update_status',
+        resourceType: 'invoice',
+        resourceId: id,
+        metadata: { status: validatedInput.status },
+      });
+    }
+
+    const hasFinancialChange =
+      itemsProvided ||
+      validatedInput.subtotal !== undefined ||
+      validatedInput.tax !== undefined ||
+      validatedInput.total !== undefined;
+
+    if (hasFinancialChange) {
+      void writeAuditLog({
+        orgId,
+        actorId: auth.user.id,
+        actorRole: auth.role as 'admin' | 'member' | 'service',
+        action: 'invoice.update_financials',
+        resourceType: 'invoice',
+        resourceId: id,
+        metadata: {
+          changed_fields: [
+            ...(validatedInput.subtotal !== undefined ? ['subtotal'] : []),
+            ...(validatedInput.tax !== undefined ? ['tax'] : []),
+            ...(validatedInput.total !== undefined ? ['total'] : []),
+            ...(itemsProvided ? ['items'] : []),
+          ],
+          ...(financialBefore !== null && { before: financialBefore }),
+        },
+      });
+    }
+
     return {
       payload: {
         data: hydratedInvoice,
@@ -715,6 +775,22 @@ async function deleteInvoiceHandler(
 
     const orgId = auth.orgId!;
 
+    // Fetch invoice_items image URLs before deletion for storage cleanup
+    const { data: items, error: itemsError } = await auth.userSupabase
+      .from('invoice_items')
+      .select('image_url')
+      .eq('invoice_id', id)
+      .eq('org_id', orgId);
+
+    if (itemsError) {
+      throw errorHandler.handleSupabaseError(
+        itemsError,
+        'Fetch invoice items for delete'
+      );
+    }
+
+    const storagePaths = extractInvoiceImageStoragePaths(items ?? [], orgId);
+
     const { error, count } = await auth.userSupabase
       .from('invoices')
       .delete({ count: 'exact' })
@@ -731,6 +807,51 @@ async function deleteInvoiceHandler(
         status: 404,
         metadata: { scope: { enforced: true, orgId } },
       };
+    }
+
+    logInfo('invoice_delete_success', 'InvoicesAPI', {
+      invoiceId: id,
+      orgId,
+      storagePathsToClean: storagePaths.length,
+    });
+
+    void writeAuditLog({
+      orgId,
+      actorId: auth.user.id,
+      actorRole: auth.role as 'admin' | 'member' | 'service',
+      action: 'invoice.delete',
+      resourceType: 'invoice',
+      resourceId: id,
+    });
+
+    // Clean up Supabase Storage invoice item images — DB rows already gone via cascade.
+    // Non-fatal: log + persist to orphaned_storage_objects for retry.
+    if (storagePaths.length > 0) {
+      const { error: storageError } = await auth.userSupabase.storage
+        .from('invoices')
+        .remove(storagePaths);
+
+      if (storageError) {
+        logError(
+          'invoice_storage_cleanup_failed',
+          storageError,
+          'InvoicesAPI',
+          {
+            invoiceId: id,
+            orgId,
+            paths: storagePaths,
+          }
+        );
+        for (const path of storagePaths) {
+          await auth.userSupabase.from('orphaned_storage_objects').insert({
+            org_id: orgId,
+            storage_key: path,
+            bucket: 'invoices',
+            source: 'invoice_delete',
+            error_message: storageError.message,
+          });
+        }
+      }
     }
 
     return {

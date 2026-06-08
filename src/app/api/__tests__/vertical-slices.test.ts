@@ -16,6 +16,12 @@
 import { NextRequest } from 'next/server';
 
 // ─── Global mocks (Define FIRST to ensure hoisting/resolution order) ──────────
+jest.mock('@/app/api/_utils/rateLimit', () => ({
+  searchRateLimit: null,
+  exportRateLimit: null,
+  authRateLimit: null,
+  applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+}));
 jest.mock('@/utils/errorHandler', () => ({
   errorHandler: {
     handleSupabaseError: jest.fn((err: unknown) => ({
