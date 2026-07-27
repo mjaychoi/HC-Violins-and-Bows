@@ -1,7 +1,13 @@
 import { render, screen } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
+import { format } from 'date-fns';
 import GroupedTaskList from '../GroupedTaskList';
 import { MaintenanceTask } from '@/types';
+
+// date.toISOString().split('T')[0] converts through UTC, which shifts the
+// calendar day in timezones ahead of UTC (e.g. KST) during local early-morning
+// hours. Format in local time instead so fixtures are stable across timezones.
+const toYMD = (date: Date) => format(date, 'yyyy-MM-dd');
 // formatDate, isToday, isTomorrow, isYesterday, parseISO, differenceInDays are not used in tests
 
 // Mock formatDateOnly
@@ -66,8 +72,8 @@ describe('GroupedTaskList', () => {
       title: 'Violin Repair',
       description: 'Fix bridge',
       status: 'pending',
-      received_date: today.toISOString().split('T')[0],
-      due_date: tomorrow.toISOString().split('T')[0],
+      received_date: toYMD(today),
+      due_date: toYMD(tomorrow),
       personal_due_date: null,
       scheduled_date: null,
       completed_date: null,
@@ -87,10 +93,10 @@ describe('GroupedTaskList', () => {
       title: 'Bow Rehair',
       description: 'Rehair bow',
       status: 'in_progress',
-      received_date: yesterday.toISOString().split('T')[0],
+      received_date: toYMD(yesterday),
       due_date: null,
-      personal_due_date: today.toISOString().split('T')[0],
-      scheduled_date: tomorrow.toISOString().split('T')[0],
+      personal_due_date: toYMD(today),
+      scheduled_date: toYMD(tomorrow),
       completed_date: null,
       priority: 'urgent',
       estimated_hours: 1,
@@ -549,7 +555,7 @@ describe('GroupedTaskList', () => {
     const overdueTask: MaintenanceTask[] = [
       {
         ...mockTasks[0],
-        due_date: yesterday.toISOString().split('T')[0],
+        due_date: toYMD(yesterday),
         status: 'pending',
       },
     ];

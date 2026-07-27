@@ -49,6 +49,7 @@
   - 방법 2: 스크립트 실행 (`scripts/supabase/apply-migrations.sh`)
   - [ ] 배포 순서 확인: invoice settings API/client 변경 배포 전에 `supabase/migrations/20260508182551_add_invoice_settings_fields.sql` 적용
   - [ ] 배포 순서 확인: instrument image metadata, client connection ordering, client number API/client 변경 배포 전에 `supabase/migrations/20260508194653_harden_high_risk_schema_columns.sql` 적용
+  - [ ] 배포 순서 확인: `supabase/migrations/20260728120000_maintenance_tasks_instrument_id_not_null.sql`(`maintenance_tasks.instrument_id NOT NULL`)을 이 슬라이스의 앱 코드(타입/스키마 tightening) 배포보다 **먼저** Prod DB에 적용. API는 트리거가 이미 NULL을 막고 있어 순서가 바뀌어도 즉시 장애로 이어지진 않지만, 마이그레이션이 늦게 적용되면 앱이 기대하는 non-null 계약과 DB 실제 상태가 어긋난 채로 배포되는 구간이 생김
 - [ ] 롤백 전략 준비: 각 마이그레이션에 대한 롤백 스크립트/절차 문서화
 - [ ] 인덱스/성능 점검: 느린 쿼리 점검 및 필요한 인덱스 추가
 - [ ] 스토리지/버킷 권한 검증: 퍼블릭/프라이빗 구분, URL 접근 통제
