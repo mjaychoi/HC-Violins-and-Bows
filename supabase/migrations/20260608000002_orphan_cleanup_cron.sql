@@ -1,16 +1,17 @@
 -- Schedules a periodic HTTP job (via pg_net + pg_cron) to retry deletion
 -- of orphaned storage objects logged in public.orphaned_storage_objects.
 --
--- Prerequisites (run once by a superuser):
---   CREATE EXTENSION IF NOT EXISTS pg_cron;
---   CREATE EXTENSION IF NOT EXISTS pg_net;
---   GRANT USAGE ON SCHEMA cron TO postgres;
+-- Required extensions are enabled idempotently below so this migration
+-- can be replayed on a clean Supabase database.
 --
 -- Required Supabase Vault secrets (set via the Supabase dashboard or CLI):
 --   orphan_cleanup_secret  →  same value as ORPHAN_CLEANUP_SECRET in your app env
 --   app_base_url           →  e.g. https://your-app.vercel.app
 --
 -- The job runs every 15 minutes.  Adjust the schedule as needed.
+
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+CREATE EXTENSION IF NOT EXISTS pg_net;
 
 SELECT cron.schedule(
   'orphan-storage-cleanup',       -- job name (unique)
