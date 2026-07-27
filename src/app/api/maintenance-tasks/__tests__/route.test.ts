@@ -629,6 +629,87 @@ describe('/api/maintenance-tasks', () => {
       expect(json.message).toContain('Invalid maintenance task data');
     });
 
+    it('should return 400 when instrument_id is missing (real schema)', async () => {
+      const actualTg = jest.requireActual('@/utils/typeGuards');
+      const { safeValidate } = require('@/utils/typeGuards');
+      (safeValidate as jest.Mock).mockImplementationOnce((data: unknown) =>
+        actualTg.safeValidate(data, actualTg.validateCreateMaintenanceTask)
+      );
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { instrument_id: _omit, ...createDataWithoutInstrument } = {
+        instrument_id: mockTask.instrument_id,
+        client_id: null,
+        title: 'New task',
+        description: null,
+        status: 'pending' as const,
+        task_type: 'repair' as const,
+        priority: 'medium' as const,
+        scheduled_date: null,
+        due_date: null,
+        personal_due_date: null,
+        received_date: '2024-01-20',
+        completed_date: null,
+        estimated_hours: null,
+        actual_hours: null,
+        cost: null,
+        notes: null,
+      };
+
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks',
+        {
+          method: 'POST',
+          body: JSON.stringify(createDataWithoutInstrument),
+        }
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.message).toContain('Invalid maintenance task data');
+    });
+
+    it('should return 400 when instrument_id is null (real schema)', async () => {
+      const actualTg = jest.requireActual('@/utils/typeGuards');
+      const { safeValidate } = require('@/utils/typeGuards');
+      (safeValidate as jest.Mock).mockImplementationOnce((data: unknown) =>
+        actualTg.safeValidate(data, actualTg.validateCreateMaintenanceTask)
+      );
+
+      const createData = {
+        instrument_id: null,
+        client_id: null,
+        title: 'New task',
+        description: null,
+        status: 'pending' as const,
+        task_type: 'repair' as const,
+        priority: 'medium' as const,
+        scheduled_date: null,
+        due_date: null,
+        personal_due_date: null,
+        received_date: '2024-01-20',
+        completed_date: null,
+        estimated_hours: null,
+        actual_hours: null,
+        cost: null,
+        notes: null,
+      };
+
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks',
+        {
+          method: 'POST',
+          body: JSON.stringify(createData),
+        }
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.message).toContain('Invalid maintenance task data');
+    });
+
     it('returns 422 when persisted row fails validateMaintenanceTask', async () => {
       const actualTg = jest.requireActual('@/utils/typeGuards');
       const tg = require('@/utils/typeGuards');
@@ -747,6 +828,27 @@ describe('/api/maintenance-tasks', () => {
 
       expect(response.status).toBe(400);
       expect(json.message).toBe('Task ID is required');
+    });
+
+    it('should return 400 when instrument_id is set to null (real schema)', async () => {
+      const actualTg = jest.requireActual('@/utils/typeGuards');
+      const { safeValidate } = require('@/utils/typeGuards');
+      (safeValidate as jest.Mock).mockImplementationOnce((data: unknown) =>
+        actualTg.safeValidate(data, actualTg.validatePartialMaintenanceTask)
+      );
+
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ id: mockTask.id, instrument_id: null }),
+        }
+      );
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.message).toContain('Invalid update data');
     });
 
     it('should return 400 for invalid UUID', async () => {

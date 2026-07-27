@@ -237,7 +237,7 @@ export const clientInstrumentSchema: z.ZodType<ClientInstrument> = z.object({
  */
 export const maintenanceTaskSchema: z.ZodType<MaintenanceTask> = z.object({
   id: uuidSchema,
-  instrument_id: uuidSchema.nullable(),
+  instrument_id: uuidSchema,
   client_id: uuidSchema.nullable(),
   task_type: taskTypeSchema,
   title: z.string().min(1),

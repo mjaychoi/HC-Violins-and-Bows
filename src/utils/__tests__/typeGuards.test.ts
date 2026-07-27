@@ -24,6 +24,8 @@ import {
   validateCreateClient,
   validateCreateInstrument,
   validatePartialInstrument,
+  validateCreateMaintenanceTask,
+  validatePartialMaintenanceTask,
 } from '../typeGuards';
 import { Instrument, Client, MaintenanceTask, SalesHistory } from '@/types';
 
@@ -515,6 +517,71 @@ describe('Validation Functions', () => {
       expect(() => validateMaintenanceTaskArray(null)).toThrow(
         'Expected an array'
       );
+    });
+  });
+
+  describe('validateCreateMaintenanceTask', () => {
+    const baseCreatePayload = {
+      instrument_id: '123e4567-e89b-12d3-a456-426614174001',
+      client_id: null,
+      task_type: 'repair',
+      title: 'Fix bridge',
+      description: null,
+      status: 'pending',
+      received_date: '2024-01-01',
+      due_date: null,
+      personal_due_date: null,
+      scheduled_date: null,
+      completed_date: null,
+      priority: 'high',
+      estimated_hours: null,
+      actual_hours: null,
+      cost: null,
+      notes: null,
+    };
+
+    it('accepts a payload with a valid instrument_id', () => {
+      const result = validateCreateMaintenanceTask(baseCreatePayload);
+      expect(result.instrument_id).toBe(baseCreatePayload.instrument_id);
+    });
+
+    it('rejects a payload missing instrument_id', () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { instrument_id: _omit, ...withoutInstrumentId } =
+        baseCreatePayload;
+      expect(() => validateCreateMaintenanceTask(withoutInstrumentId)).toThrow(
+        'Invalid MaintenanceTask creation data'
+      );
+    });
+
+    it('rejects a payload with instrument_id set to null', () => {
+      expect(() =>
+        validateCreateMaintenanceTask({
+          ...baseCreatePayload,
+          instrument_id: null,
+        })
+      ).toThrow('Invalid MaintenanceTask creation data');
+    });
+  });
+
+  describe('validatePartialMaintenanceTask', () => {
+    it('allows omitting instrument_id on update', () => {
+      const result = validatePartialMaintenanceTask({ title: 'Renamed' });
+      expect(result).toEqual({ title: 'Renamed' });
+    });
+
+    it('accepts a valid instrument_id on update', () => {
+      const instrumentId = '123e4567-e89b-12d3-a456-426614174001';
+      const result = validatePartialMaintenanceTask({
+        instrument_id: instrumentId,
+      });
+      expect(result.instrument_id).toBe(instrumentId);
+    });
+
+    it('does not allow setting instrument_id to null on update', () => {
+      expect(() =>
+        validatePartialMaintenanceTask({ instrument_id: null })
+      ).toThrow('Invalid MaintenanceTask update');
     });
   });
 
