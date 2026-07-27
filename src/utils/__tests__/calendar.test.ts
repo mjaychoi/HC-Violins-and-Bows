@@ -2,6 +2,7 @@ import {
   getTaskDateKey,
   getCalendarPlacementDate,
   getCalendarPlacementField,
+  isCalendarPlacementInRange,
   getStatusLabel,
   getPriorityLabel,
   STATUS_LABELS,
@@ -138,6 +139,59 @@ describe('calendar utilities', () => {
       });
 
       expect(getTaskDateKey(task)).toBe('2024-01-15');
+    });
+
+    it('uses due_date over scheduled_date for February/March precedence case', () => {
+      const task = makeTask({
+        scheduled_date: '2026-02-10',
+        due_date: '2026-03-20',
+        personal_due_date: null,
+        received_date: '2026-01-01',
+      });
+
+      expect(getCalendarPlacementDate(task)).toBe('2026-03-20');
+      expect(isCalendarPlacementInRange(task, '2026-02-01', '2026-02-28')).toBe(
+        false
+      );
+      expect(isCalendarPlacementInRange(task, '2026-03-01', '2026-03-31')).toBe(
+        true
+      );
+    });
+
+    it('uses personal_due_date when due_date is null', () => {
+      const task = makeTask({
+        personal_due_date: '2026-04-05',
+        scheduled_date: '2026-04-10',
+        due_date: null,
+        received_date: '2026-01-01',
+      });
+
+      expect(getCalendarPlacementDate(task)).toBe('2026-04-05');
+    });
+
+    it('uses received_date when it is the only populated placement field', () => {
+      const task = makeTask({
+        due_date: null,
+        personal_due_date: null,
+        scheduled_date: null,
+        received_date: '2026-05-12',
+      });
+
+      expect(getCalendarPlacementDate(task)).toBe('2026-05-12');
+    });
+
+    it('is excluded from bounded calendar ranges when all placement fields are empty', () => {
+      const task = makeTask({
+        due_date: null,
+        personal_due_date: null,
+        scheduled_date: null,
+        received_date: '',
+      });
+
+      expect(getCalendarPlacementDate(task)).toBeNull();
+      expect(isCalendarPlacementInRange(task, '2026-01-01', '2026-12-31')).toBe(
+        false
+      );
     });
   });
 

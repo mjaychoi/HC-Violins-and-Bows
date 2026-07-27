@@ -248,6 +248,7 @@ export const maintenanceTaskSchema: z.ZodType<MaintenanceTask> = z.object({
   personal_due_date: dateStringSchema.nullable(),
   scheduled_date: dateStringSchema.nullable(),
   completed_date: dateStringSchema.nullable(),
+  calendar_date: dateStringSchema.nullable().optional(),
   priority: taskPrioritySchema,
   estimated_hours: z.number().nullable(),
   actual_hours: z.number().nullable(),

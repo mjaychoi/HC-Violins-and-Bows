@@ -11,6 +11,8 @@ export interface MaintenanceTaskQuery {
   end_date?: QueryDateValue | null;
   scheduled_date?: QueryDateValue | null;
   overdue?: boolean;
+  page?: number;
+  pageSize?: number;
 }
 
 function setIfPresent(
@@ -57,6 +59,12 @@ export function buildMaintenanceTaskQuery(
   setIfPresent(query, 'scheduled_date', normalizeDate(params.scheduled_date));
   if (typeof params.overdue === 'boolean') {
     setIfPresent(query, 'overdue', String(params.overdue));
+  }
+  if (typeof params.page === 'number' && params.page > 0) {
+    setIfPresent(query, 'page', String(params.page));
+  }
+  if (typeof params.pageSize === 'number' && params.pageSize > 0) {
+    setIfPresent(query, 'pageSize', String(params.pageSize));
   }
 
   const serialized = query.toString();

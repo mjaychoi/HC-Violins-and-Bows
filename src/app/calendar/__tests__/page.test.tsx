@@ -157,12 +157,14 @@ jest.mock('@/hooks/useMaintenanceTasks', () => ({
   __esModule: true,
   useMaintenanceTasks: jest.fn(() => ({
     tasks: mockTasks,
+    notificationTasks: mockTasks,
     loading: false,
     createTask: mockCreateTask,
     updateTask: mockUpdateTask,
     deleteTask: mockDeleteTask,
     fetchTasksByDateRange: mockFetchTasksByDateRange,
     fetchTasksByScheduledDate: mockFetchTasksByScheduledDate,
+    refreshNotificationTasks: jest.fn().mockResolvedValue(mockTasks),
   })),
 }));
 

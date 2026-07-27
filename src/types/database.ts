@@ -587,6 +587,7 @@ export type Database = {
       maintenance_tasks: {
         Row: {
           actual_hours: number | null;
+          calendar_date: string | null;
           client_id: string | null;
           completed_date: string | null;
           cost: number | null;
