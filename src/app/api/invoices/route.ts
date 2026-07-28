@@ -37,6 +37,11 @@ import { attachSignedUrlsToInvoice } from './imageUrls';
 import { claimInvoiceImageUploads } from './imageUploadTracking';
 import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import { writeAuditLog } from '@/utils/auditLog';
+import {
+  applyScopedRateLimit,
+  mutationRateLimit,
+  tooManyRequestsApiResult,
+} from '@/app/api/_utils/rateLimit';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
@@ -688,6 +693,17 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           payload: { error: 'Admin role required', success: false },
           status: 403,
         };
+      }
+
+      const rateLimit = await applyScopedRateLimit(mutationRateLimit, {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'POST',
+        routeKey: 'invoices',
+        ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+      });
+      if (rateLimit.limited) {
+        return tooManyRequestsApiResult();
       }
 
       const idempotency = readRequiredIdempotencyKey(request);

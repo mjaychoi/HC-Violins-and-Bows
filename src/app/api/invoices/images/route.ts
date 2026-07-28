@@ -26,6 +26,10 @@ import {
   IMAGE_ALLOWED_MIME_TYPES,
   resolveImageMimeType,
 } from '@/utils/imageMagicBytes';
+import {
+  applyScopedRateLimit,
+  uploadRateLimit,
+} from '@/app/api/_utils/rateLimit';
 
 export const runtime = 'nodejs';
 
@@ -89,6 +93,24 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
 
     const adminError = requireAdmin(auth);
     if (adminError) return adminError;
+
+    const rateLimit = await applyScopedRateLimit(uploadRateLimit, {
+      orgId: auth.orgId,
+      userId: auth.user.id,
+      method: 'POST',
+      routeKey: 'invoices/images',
+      ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+    });
+    if (rateLimit.limited) {
+      return createApiErrorResponse(
+        {
+          message: 'Too many requests',
+          error_code: 'RATE_LIMIT_EXCEEDED',
+          retryable: true,
+        },
+        429
+      );
+    }
 
     const oversizedRequest = rejectOversizedMultipartRequest(request);
     if (oversizedRequest) return oversizedRequest;

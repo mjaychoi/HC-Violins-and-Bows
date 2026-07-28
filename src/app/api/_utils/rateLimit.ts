@@ -65,6 +65,40 @@ function createSlidingWindowRateLimit(
 export const authRateLimit = createSlidingWindowRateLimit(5, '1m');
 export const exportRateLimit = createSlidingWindowRateLimit(3, '1m');
 export const searchRateLimit = createSlidingWindowRateLimit(30, '1m');
+// General write mutations (invoice/sales/maintenance RPC + composite creates)
+export const mutationRateLimit = createSlidingWindowRateLimit(15, '1m');
+// Multipart/file uploads (storage + bytes)
+export const uploadRateLimit = createSlidingWindowRateLimit(8, '1m');
+// Destructive deletes with storage/DB cleanup
+export const destructiveMutationRateLimit = createSlidingWindowRateLimit(
+  4,
+  '1m'
+);
+
+export type RateLimitScope = {
+  orgId?: string | null;
+  userId: string;
+  method: string;
+  routeKey: string;
+  ip?: string | null;
+};
+
+export function buildRateLimitKey(scope: RateLimitScope): string {
+  if (scope.orgId) {
+    return `${scope.orgId}:${scope.userId}:${scope.method}:${scope.routeKey}`;
+  }
+
+  if (scope.ip) {
+    return `ip:${scope.ip}:${scope.method}:${scope.routeKey}`;
+  }
+
+  return `${scope.userId}:${scope.method}:${scope.routeKey}`;
+}
+
+export type RateLimitDecision = {
+  limited: boolean;
+  retryAfterSeconds?: number;
+};
 
 /**
  * Apply a rate limiter to a request identified by `key`.
@@ -75,11 +109,20 @@ export const searchRateLimit = createSlidingWindowRateLimit(30, '1m');
 export async function applyRateLimit(
   limiter: Ratelimit | null,
   key: string
-): Promise<{ limited: boolean }> {
+): Promise<RateLimitDecision> {
   if (!limiter) return { limited: RATE_LIMIT_FAIL_CLOSED };
   try {
-    const { success } = await limiter.limit(key);
-    return { limited: !success };
+    const result = await limiter.limit(key);
+    if (result.success) {
+      return { limited: false };
+    }
+
+    const retryAfterSeconds =
+      typeof result.reset === 'number'
+        ? Math.max(1, Math.ceil((result.reset - Date.now()) / 1000))
+        : undefined;
+
+    return { limited: true, retryAfterSeconds };
   } catch (err) {
     console.error(
       '[rateLimit] limiter.limit() threw unexpectedly — allowing request through',
@@ -87,4 +130,21 @@ export async function applyRateLimit(
     );
     return { limited: false };
   }
+}
+
+export async function applyScopedRateLimit(
+  limiter: Ratelimit | null,
+  scope: RateLimitScope
+): Promise<RateLimitDecision> {
+  return applyRateLimit(limiter, buildRateLimitKey(scope));
+}
+
+export function tooManyRequestsApiResult(): {
+  payload: { error: string; success: false };
+  status: 429;
+} {
+  return {
+    payload: { error: 'Too many requests', success: false },
+    status: 429,
+  };
 }

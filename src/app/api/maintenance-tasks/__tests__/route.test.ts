@@ -8,6 +8,20 @@ jest.mock('@/utils/monitoring');
 jest.mock('@/utils/typeGuards');
 jest.mock('@/utils/inputValidation');
 jest.mock('@/utils/dateParsing');
+jest.mock('@/app/api/_utils/rateLimit', () => ({
+  searchRateLimit: null,
+  exportRateLimit: null,
+  authRateLimit: null,
+  mutationRateLimit: null,
+  uploadRateLimit: null,
+  destructiveMutationRateLimit: null,
+  applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  applyScopedRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  tooManyRequestsApiResult: () => ({
+    payload: { error: 'Too many requests', success: false },
+    status: 429,
+  }),
+}));
 
 let mockUserSupabase: any;
 let mockAuthContext: any;

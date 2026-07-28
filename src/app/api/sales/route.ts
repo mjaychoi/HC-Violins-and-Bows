@@ -25,6 +25,11 @@ import {
 } from '@/utils/inputValidation';
 
 import { writeAuditLog } from '@/utils/auditLog';
+import {
+  applyScopedRateLimit,
+  mutationRateLimit,
+  tooManyRequestsApiResult,
+} from '@/app/api/_utils/rateLimit';
 
 const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 const MAX_SEARCH_LEN = 160;
@@ -823,6 +828,17 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      const rateLimit = await applyScopedRateLimit(mutationRateLimit, {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'POST',
+        routeKey: 'sales',
+        ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+      });
+      if (rateLimit.limited) {
+        return tooManyRequestsApiResult();
+      }
+
       const idempotency = readRequiredIdempotencyKey(request);
       if (!idempotency.ok) {
         return idempotency.result;
@@ -975,6 +991,17 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           },
           status: 403,
         };
+      }
+
+      const rateLimit = await applyScopedRateLimit(mutationRateLimit, {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'PATCH',
+        routeKey: 'sales',
+        ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+      });
+      if (rateLimit.limited) {
+        return tooManyRequestsApiResult();
       }
 
       const bodyResult = await readJsonObject(request);

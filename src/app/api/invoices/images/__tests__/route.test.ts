@@ -2,6 +2,21 @@ import { NextRequest } from 'next/server';
 import { POST } from '../route';
 let mockUserSupabase: any;
 
+jest.mock('@/app/api/_utils/rateLimit', () => ({
+  searchRateLimit: null,
+  exportRateLimit: null,
+  authRateLimit: null,
+  mutationRateLimit: null,
+  uploadRateLimit: null,
+  destructiveMutationRateLimit: null,
+  applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  applyScopedRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  tooManyRequestsApiResult: () => ({
+    payload: { error: 'Too many requests', success: false },
+    status: 429,
+  }),
+}));
+
 jest.mock('@/app/api/_utils/withAuthRoute', () => {
   const actual = jest.requireActual('@/app/api/_utils/withAuthRoute');
   return {
