@@ -5,6 +5,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 // @ts-expect-error - Deno URL import
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { hasValidInvocationSecret } from './auth.ts';
 import {
   buildNoEnabledNotificationsResponse,
   buildNotificationsUnavailableResponse,
@@ -37,15 +38,6 @@ function jsonResponse(payload: unknown, status: number): Response {
   });
 }
 
-function hasValidInvocationSecret(req: Request): boolean {
-  const providedSecret = req.headers.get('x-send-notifications-secret')?.trim();
-  return Boolean(
-    SEND_NOTIFICATIONS_SECRET &&
-    providedSecret &&
-    providedSecret === SEND_NOTIFICATIONS_SECRET
-  );
-}
-
 serve(async req => {
   const invocationId = getOrCreateInvocationId(req);
   try {
@@ -64,7 +56,7 @@ serve(async req => {
       );
     }
 
-    if (!hasValidInvocationSecret(req)) {
+    if (!hasValidInvocationSecret(req, SEND_NOTIFICATIONS_SECRET)) {
       return jsonResponse(
         { error: 'Unauthorized', invocation_id: invocationId },
         401

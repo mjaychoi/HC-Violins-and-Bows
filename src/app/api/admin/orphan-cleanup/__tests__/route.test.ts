@@ -18,10 +18,17 @@ let mockAdmin: any;
 
 const VALID_SECRET = 'test-secret-xyz';
 
-function makeRequest(secret?: string): NextRequest {
+function mutateSecret(secret: string, index: number, replacement = 'X'): string {
+  return secret.slice(0, index) + replacement + secret.slice(index + 1);
+}
+
+function makeRequest(
+  secret?: string,
+  authScheme: 'Bearer' | 'Basic' = 'Bearer'
+): NextRequest {
   return new NextRequest('http://localhost/api/admin/orphan-cleanup', {
     method: 'POST',
-    headers: secret ? { Authorization: `Bearer ${secret}` } : {},
+    headers: secret ? { Authorization: `${authScheme} ${secret}` } : {},
   });
 }
 
@@ -99,18 +106,70 @@ describe('POST /api/admin/orphan-cleanup', () => {
     delete process.env.ORPHAN_CLEANUP_SECRET;
   });
 
-  async function invoke(secret?: string) {
+  async function invoke(
+    secret?: string,
+    authScheme: 'Bearer' | 'Basic' = 'Bearer'
+  ) {
     const { POST } = await import('../route');
-    return POST(makeRequest(secret));
+    return POST(makeRequest(secret, authScheme));
   }
 
   it('returns 401 when no Authorization header', async () => {
     const response = await invoke();
     expect(response.status).toBe(401);
+    const json = await response.json();
+    expect(json).toEqual({ error: 'Unauthorized' });
+    expect(JSON.stringify(json)).not.toContain(VALID_SECRET);
   });
 
   it('returns 401 when wrong secret', async () => {
     const response = await invoke('wrong-secret');
+    expect(response.status).toBe(401);
+    const json = await response.json();
+    expect(json).toEqual({ error: 'Unauthorized' });
+    expect(JSON.stringify(json)).not.toContain(VALID_SECRET);
+  });
+
+  it('returns 401 for a same-length wrong secret', async () => {
+    const wrongSecret = mutateSecret(VALID_SECRET, 0);
+    expect(wrongSecret.length).toBe(VALID_SECRET.length);
+
+    const response = await invoke(wrongSecret);
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 401 when only the first byte differs', async () => {
+    const response = await invoke(mutateSecret(VALID_SECRET, 0));
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 401 when only a middle byte differs', async () => {
+    const middle = Math.floor(VALID_SECRET.length / 2);
+    const response = await invoke(mutateSecret(VALID_SECRET, middle));
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 401 when only the last byte differs', async () => {
+    const response = await invoke(
+      mutateSecret(VALID_SECRET, VALID_SECRET.length - 1)
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 401 for a shorter secret without throwing', async () => {
+    expect(() => invoke(VALID_SECRET.slice(0, -1))).not.toThrow();
+    const response = await invoke(VALID_SECRET.slice(0, -1));
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 401 for a longer secret without throwing', async () => {
+    expect(() => invoke(`${VALID_SECRET}x`)).not.toThrow();
+    const response = await invoke(`${VALID_SECRET}x`);
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 401 for a non-Bearer Authorization header', async () => {
+    const response = await invoke(VALID_SECRET, 'Basic');
     expect(response.status).toBe(401);
   });
 
@@ -120,7 +179,20 @@ describe('POST /api/admin/orphan-cleanup', () => {
     expect(response.status).toBe(401);
   });
 
-  it('returns 200 with zero counts when no orphans exist', async () => {
+  it('does not call cleanup logic when unauthorized', async () => {
+    mockAdmin = {
+      from: jest.fn(),
+      storage: { from: jest.fn() },
+    };
+
+    const response = await invoke('wrong-secret');
+
+    expect(response.status).toBe(401);
+    expect(mockAdmin.from).not.toHaveBeenCalled();
+    expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+  });
+
+  it('authorizes a valid bearer secret', async () => {
     const { admin } = makeAdminMock([]);
     mockAdmin = admin;
 
