@@ -1,0 +1,58 @@
+name: Auth Matrix Integration
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tests/integration/auth-matrix/**'
+      - 'scripts/auth-matrix/**'
+      - '.github/workflows/auth-matrix-integration.yml'
+
+jobs:
+  auth-matrix:
+    if: >-
+      ${{ secrets.AUTH_MATRIX_SUPABASE_URL != '' &&
+          secrets.AUTH_MATRIX_SERVICE_ROLE_KEY != '' &&
+          secrets.AUTH_MATRIX_JWT_ORG_A_ADMIN != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Block production Supabase project
+        env:
+          AUTH_MATRIX_SUPABASE_URL: ${{ secrets.AUTH_MATRIX_SUPABASE_URL }}
+        run: |
+          if echo "$AUTH_MATRIX_SUPABASE_URL" | grep -q 'dmilmlhquttcozxlpfxw'; then
+            echo 'Production Supabase ref detected. Aborting.'
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Run auth matrix integration tests
+        env:
+          AUTH_MATRIX_ENABLED: '1'
+          AUTH_MATRIX_SUPABASE_URL: ${{ secrets.AUTH_MATRIX_SUPABASE_URL }}
+          AUTH_MATRIX_SUPABASE_ANON_KEY: ${{ secrets.AUTH_MATRIX_SUPABASE_ANON_KEY }}
+          AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.AUTH_MATRIX_SERVICE_ROLE_KEY }}
+          AUTH_MATRIX_BASE_URL: ${{ secrets.AUTH_MATRIX_BASE_URL }}
+          AUTH_MATRIX_JWT_ORG_A_ADMIN: ${{ secrets.AUTH_MATRIX_JWT_ORG_A_ADMIN }}
+          AUTH_MATRIX_JWT_ORG_A_MEMBER: ${{ secrets.AUTH_MATRIX_JWT_ORG_A_MEMBER }}
+          AUTH_MATRIX_JWT_ORG_B_ADMIN: ${{ secrets.AUTH_MATRIX_JWT_ORG_B_ADMIN }}
+          AUTH_MATRIX_JWT_ORG_B_MEMBER: ${{ secrets.AUTH_MATRIX_JWT_ORG_B_MEMBER }}
+          AUTH_MATRIX_ORG_A_INSTRUMENT_ID: ${{ secrets.AUTH_MATRIX_ORG_A_INSTRUMENT_ID }}
+          AUTH_MATRIX_ORG_B_INSTRUMENT_ID: ${{ secrets.AUTH_MATRIX_ORG_B_INSTRUMENT_ID }}
+        run: npm test -- --runInBand --testPathPatterns=auth-matrix
+
+      - name: Cleanup fixtures
+        if: always()
+        env:
+          AUTH_MATRIX_SUPABASE_URL: ${{ secrets.AUTH_MATRIX_SUPABASE_URL }}
+          AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.AUTH_MATRIX_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/auth-matrix/cleanup-fixtures.ts
