@@ -181,6 +181,10 @@ function CalendarContentInner({
       return 'all';
     }
 
+    if (filterOperator !== 'OR') {
+      return null;
+    }
+
     if (
       dateRange.from === todayStr &&
       dateRange.to === todayStr &&
@@ -206,7 +210,7 @@ function CalendarContentInner({
     }
 
     return null;
-  }, [dateRange, filterStatus]);
+  }, [dateRange, filterStatus, filterOperator]);
 
   const resetFiltersAndUpdate = useCallback(() => {
     resetFilters();

@@ -95,6 +95,7 @@ function CalendarFilters({
           dateFields={[
             { field: 'received_date', label: 'Received' },
             { field: 'due_date', label: 'Due' },
+            { field: 'personal_due_date', label: 'Personal due' },
             { field: 'scheduled_date', label: 'Scheduled' },
             { field: 'completed_date', label: 'Completed' },
           ]}
@@ -102,7 +103,7 @@ function CalendarFilters({
             // FIXED: Reset only date range and operator (as documented in AdvancedSearch)
             // Full reset should be handled by parent's onResetFilters
             onDateRangeChange(null);
-            onFilterOperatorChange('AND');
+            onFilterOperatorChange('OR');
           }}
         />
       </div>
