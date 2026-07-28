@@ -65,6 +65,7 @@ const RPC_PATCH_KEYS = [
   'subtype',
   'year',
   'certificate',
+  'certificate_name',
   'cost_price',
   'consignment_price',
   'size',
@@ -266,9 +267,7 @@ function toInstrumentUpdateRow(
     row.maker = normalizeNullableText(input.maker);
   }
 
-  if (
-    Object.prototype.hasOwnProperty.call(input, 'type')
-  ) {
+  if (Object.prototype.hasOwnProperty.call(input, 'type')) {
     row.type =
       typeof input.type === 'string'
         ? input.type.trim() || null

@@ -38,9 +38,9 @@ describe('identityValidation', () => {
     });
 
     it('accepts last name only', () => {
-      expect(hasClientIdentity({ first_name: null, last_name: 'Lovelace' })).toBe(
-        true
-      );
+      expect(
+        hasClientIdentity({ first_name: null, last_name: 'Lovelace' })
+      ).toBe(true);
     });
 
     it('rejects both blank', () => {

@@ -286,9 +286,7 @@ describe('ItemForm', () => {
       />
     );
 
-    expect(
-      screen.queryByLabelText('Certificate Name')
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Certificate Name')).not.toBeInTheDocument();
   });
 
   it('shows Certificate Name when Certificate is Yes', () => {
@@ -378,7 +376,9 @@ describe('ItemForm', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Item' }));
-    expect(await screen.findByText('Enter a maker or type.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Enter a maker or type.')
+    ).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 

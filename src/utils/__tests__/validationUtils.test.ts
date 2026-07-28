@@ -347,7 +347,11 @@ describe('validationUtils', () => {
 
   describe('instrumentValidation', () => {
     it('should validate maker when populated', () => {
-      const noErrorEmpty = validateField('', instrumentValidation.maker, 'maker');
+      const noErrorEmpty = validateField(
+        '',
+        instrumentValidation.maker,
+        'maker'
+      );
       expect(noErrorEmpty).toBeNull();
 
       const noError = validateField(

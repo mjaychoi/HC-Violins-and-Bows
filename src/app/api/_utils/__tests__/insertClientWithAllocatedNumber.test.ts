@@ -132,6 +132,8 @@ describe('insertClientWithClientNumber', () => {
       'org-1',
       {
         name: 'N',
+        first_name: 'N',
+        last_name: null,
         email: null,
         phone: null,
         client_number: 'CL999',
@@ -181,6 +183,8 @@ describe('insertClientWithClientNumber', () => {
       'org-1',
       {
         name: 'N',
+        first_name: 'N',
+        last_name: null,
         email: null,
         phone: null,
         client_number: null,
@@ -212,6 +216,8 @@ describe('insertClientWithClientNumber', () => {
       'org-1',
       {
         name: 'N',
+        first_name: 'N',
+        last_name: null,
         email: null,
         phone: null,
         client_number: null,
@@ -267,6 +273,8 @@ describe('rpcCreateClientWithConnectionsAtomic', () => {
       'org-1',
       {
         name: 'N',
+        first_name: 'N',
+        last_name: null,
         email: null,
         phone: null,
         tags: [],
@@ -325,6 +333,8 @@ describe('rpcCreateClientWithConnectionsAtomic', () => {
       'org-1',
       {
         name: 'N',
+        first_name: 'N',
+        last_name: null,
         email: null,
         phone: null,
         tags: [],
@@ -369,6 +379,8 @@ describe('rpcCreateClientWithConnectionsAtomic', () => {
       'org-1',
       {
         name: 'N',
+        first_name: 'N',
+        last_name: null,
         email: null,
         phone: null,
         tags: [],
