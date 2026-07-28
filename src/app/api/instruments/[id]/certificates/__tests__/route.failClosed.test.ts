@@ -106,6 +106,7 @@ type AwaitableChain = {
   order: jest.Mock;
   limit: jest.Mock;
   single: jest.Mock;
+  maybeSingle: jest.Mock;
   then: jest.Mock;
   catch: jest.Mock;
   finally: jest.Mock;
@@ -122,6 +123,7 @@ function createAwaitableChain(result: Record<string, unknown>): AwaitableChain {
     order: jest.fn(() => chain),
     limit: jest.fn(() => chain),
     single: jest.fn(() => promise),
+    maybeSingle: jest.fn(() => promise),
     then: jest.fn((onFulfilled, onRejected) =>
       promise.then(onFulfilled, onRejected)
     ),
@@ -565,23 +567,22 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       },
       error: null,
     });
-    const certLookupChain = createAwaitableChain({
-      data: {
-        id: certificateId,
-        storage_path: 'saved-key',
-        instruments: { org_id: 'org-1' },
-      },
+    const deleteMetaChain = createAwaitableChain({
+      data: { id: certificateId, storage_path: 'saved-key' },
       error: null,
     });
-    const deleteMetaChain = createAwaitableChain({ error: null });
+    const remainingChain = createAwaitableChain({
+      data: [],
+      error: null,
+    });
 
     mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
       if (table === 'instruments') return instrumentChain;
       if (table === 'instrument_certificates') {
-        if (certLookupChain.select.mock.calls.length === 0) {
-          return certLookupChain;
+        if (deleteMetaChain.delete.mock.calls.length === 0) {
+          return deleteMetaChain;
         }
-        return deleteMetaChain;
+        return remainingChain;
       }
       throw new Error(`Unexpected table ${table}`);
     });
@@ -648,7 +649,13 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       error: null,
     });
     const listChain = createAwaitableChain({
-      data: [{ storage_path: oldFileKey, instruments: { org_id: 'org-1' } }],
+      data: [
+        {
+          id: certificateId,
+          storage_path: oldFileKey,
+          instruments: { org_id: 'org-1' },
+        },
+      ],
       error: null,
     });
 
@@ -684,7 +691,13 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       error: null,
     });
     const listChain = createAwaitableChain({
-      data: [{ storage_path: oldFileKey, instruments: { org_id: 'org-1' } }],
+      data: [
+        {
+          id: certificateId,
+          storage_path: oldFileKey,
+          instruments: { org_id: 'org-1' },
+        },
+      ],
       error: null,
     });
     const updateChain = createAwaitableChain({
@@ -724,10 +737,17 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       error: null,
     });
     const listChain = createAwaitableChain({
-      data: [{ storage_path: oldFileKey, instruments: { org_id: 'org-1' } }],
+      data: [
+        {
+          id: certificateId,
+          storage_path: oldFileKey,
+          instruments: { org_id: 'org-1' },
+        },
+      ],
       error: null,
     });
     const updateChain = createAwaitableChain({
+      data: { id: certificateId, storage_path: 'saved-key' },
       error: null,
     });
 
@@ -756,7 +776,7 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       'Failed to delete previous certificate file from storage. Please retry.'
     );
     expect(mockStorage.saveFile).toHaveBeenCalledTimes(1);
-    expect(updateChain.then).toHaveBeenCalledTimes(1);
+    expect(updateChain.maybeSingle).toHaveBeenCalledTimes(1);
     expect(mockStorage.deleteFile).toHaveBeenCalledWith(oldFileKey);
   });
 
@@ -766,10 +786,17 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       error: null,
     });
     const listChain = createAwaitableChain({
-      data: [{ storage_path: oldFileKey, instruments: { org_id: 'org-1' } }],
+      data: [
+        {
+          id: certificateId,
+          storage_path: oldFileKey,
+          instruments: { org_id: 'org-1' },
+        },
+      ],
       error: null,
     });
     const updateChain = createAwaitableChain({
+      data: { id: certificateId, storage_path: 'saved-key' },
       error: null,
     });
 
@@ -802,9 +829,62 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     );
     expect(instrumentChain.eq).toHaveBeenCalledWith('org_id', 'org-1');
     expect(listChain.eq).toHaveBeenCalledWith('instruments.org_id', 'org-1');
+    expect(updateChain.eq).toHaveBeenCalledWith('id', certificateId);
     expect(updateChain.eq).toHaveBeenCalledWith('instrument_id', instrumentId);
+    expect(updateChain.eq).toHaveBeenCalledWith('storage_path', oldFileKey);
+    expect(updateChain.select).toHaveBeenCalledWith('id, storage_path');
+    expect(updateChain.maybeSingle).toHaveBeenCalledTimes(1);
     expect(mockStorage.deleteFile).toHaveBeenCalledWith(oldFileKey);
     expect(instrumentChain.update).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 and rolls back new upload when replacement CAS update affects zero rows', async () => {
+    const instrumentChain = createAwaitableChain({
+      data: { id: instrumentId, serial_number: 'SN-1' },
+      error: null,
+    });
+    const listChain = createAwaitableChain({
+      data: [
+        {
+          id: certificateId,
+          storage_path: oldFileKey,
+          instruments: { org_id: 'org-1' },
+        },
+      ],
+      error: null,
+    });
+    const updateChain = createAwaitableChain({
+      data: null,
+      error: null,
+    });
+
+    mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
+      if (table === 'instruments') {
+        return instrumentChain;
+      }
+      if (table === 'instrument_certificates') {
+        if (listChain.select.mock.calls.length === 0) {
+          return listChain;
+        }
+        return updateChain;
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const response = await PUT(createPutRequest(), {
+      params: Promise.resolve({ id: instrumentId }),
+    });
+    const json = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(json.error).toBe(
+      'Certificate changed by another request. Refresh and retry.'
+    );
+    expect(json.success).not.toBe(true);
+    expect(mockStorage.saveFile).toHaveBeenCalledTimes(1);
+    expect(mockStorage.deleteFile).toHaveBeenCalledTimes(1);
+    expect(mockStorage.deleteFile).toHaveBeenCalledWith('saved-key');
+    expect(mockStorage.deleteFile).not.toHaveBeenCalledWith(oldFileKey);
   });
 
   it('returns 200 and logs error when storage deletion fails', async () => {
@@ -812,15 +892,8 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       data: { id: instrumentId },
       error: null,
     });
-    const certLookupChain = createAwaitableChain({
-      data: {
-        id: certificateId,
-        storage_path: oldFileKey,
-        instruments: { org_id: 'org-1' },
-      },
-      error: null,
-    });
     const deleteMetaChain = createAwaitableChain({
+      data: { id: certificateId, storage_path: oldFileKey },
       error: null,
     });
     const remainingChain = createAwaitableChain({
@@ -833,9 +906,6 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
         return instrumentChain;
       }
       if (table === 'instrument_certificates') {
-        if (certLookupChain.select.mock.calls.length === 0) {
-          return certLookupChain;
-        }
         if (deleteMetaChain.delete.mock.calls.length === 0) {
           return deleteMetaChain;
         }
@@ -862,11 +932,9 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     );
     expect(json.cleanup).toEqual({ storageDeleted: false });
     expect(deleteMetaChain.delete).toHaveBeenCalledTimes(1);
+    expect(deleteMetaChain.select).toHaveBeenCalledWith('id, storage_path');
+    expect(deleteMetaChain.maybeSingle).toHaveBeenCalledTimes(1);
     expect(instrumentChain.eq).toHaveBeenCalledWith('org_id', 'org-1');
-    expect(certLookupChain.eq).toHaveBeenCalledWith(
-      'instruments.org_id',
-      'org-1'
-    );
   });
 
   it('deletes metadata before storage deletion', async () => {
@@ -874,15 +942,8 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       data: { id: instrumentId },
       error: null,
     });
-    const certLookupChain = createAwaitableChain({
-      data: {
-        id: certificateId,
-        storage_path: oldFileKey,
-        instruments: { org_id: 'org-1' },
-      },
-      error: null,
-    });
     const deleteMetaChain = createAwaitableChain({
+      data: { id: certificateId, storage_path: oldFileKey },
       error: null,
     });
     const remainingChain = createAwaitableChain({
@@ -895,9 +956,6 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
         return instrumentChain;
       }
       if (table === 'instrument_certificates') {
-        if (certLookupChain.select.mock.calls.length === 0) {
-          return certLookupChain;
-        }
         if (deleteMetaChain.delete.mock.calls.length === 0) {
           return deleteMetaChain;
         }
@@ -921,15 +979,11 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(json.cleanup).toEqual({ storageDeleted: true });
     expect(mockStorage.deleteFile).toHaveBeenCalledWith(oldFileKey);
     expect(deleteMetaChain.delete).toHaveBeenCalledTimes(1);
-    expect(deleteMetaChain.then).toHaveBeenCalledTimes(1);
+    expect(deleteMetaChain.maybeSingle).toHaveBeenCalledTimes(1);
     expect(deleteMetaChain.delete.mock.invocationCallOrder[0]).toBeLessThan(
       mockStorage.deleteFile.mock.invocationCallOrder[0]
     );
     expect(instrumentChain.eq).toHaveBeenCalledWith('org_id', 'org-1');
-    expect(certLookupChain.eq).toHaveBeenCalledWith(
-      'instruments.org_id',
-      'org-1'
-    );
   });
 
   it('returns 500 and preserves storage when metadata deletion fails', async () => {
@@ -983,24 +1037,21 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       },
       error: null,
     });
-    const certLookupChain = createAwaitableChain({
-      data: {
-        id: certificateId,
-        storage_path: oldFileKey,
-        instruments: { org_id: 'org-1' },
-      },
+    const deleteMetaChain = createAwaitableChain({
+      data: { id: certificateId, storage_path: oldFileKey },
       error: null,
     });
-    const deleteMetaChain = createAwaitableChain({
+    const remainingChain = createAwaitableChain({
+      data: [],
       error: null,
     });
     mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
       if (table === 'instruments') return instrumentChain;
       if (table === 'instrument_certificates') {
-        if (certLookupChain.select.mock.calls.length === 0) {
-          return certLookupChain;
+        if (deleteMetaChain.delete.mock.calls.length === 0) {
+          return deleteMetaChain;
         }
-        return deleteMetaChain;
+        return remainingChain;
       }
       throw new Error(`Unexpected table ${table}`);
     });
@@ -1019,15 +1070,14 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(mockStorage.deleteFile).toHaveBeenCalledWith(oldFileKey);
     expect(deleteMetaChain.delete).toHaveBeenCalledTimes(1);
     expect(instrumentChain.update).not.toHaveBeenCalled();
-    expect(mockAuthContext.userSupabase.from).toHaveBeenCalledTimes(3);
   });
 
-  it('fails closed for wrong-org instrument before certificate delete lookup', async () => {
+  it('returns 409 when delete CAS affects zero rows and does not delete storage', async () => {
     const instrumentChain = createAwaitableChain({
-      data: null,
-      error: { message: 'Instrument not found' },
+      data: { id: instrumentId },
+      error: null,
     });
-    const certLookupChain = createAwaitableChain({
+    const deleteMetaChain = createAwaitableChain({
       data: null,
       error: null,
     });
@@ -1037,7 +1087,44 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
         return instrumentChain;
       }
       if (table === 'instrument_certificates') {
-        return certLookupChain;
+        return deleteMetaChain;
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const request = {
+      url: `http://localhost/api/instruments/${instrumentId}/certificates?id=${certificateId}`,
+    } as unknown as NextRequest;
+
+    const response = await DELETE(request, {
+      params: Promise.resolve({ id: instrumentId }),
+    });
+    const json = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(json.error).toBe(
+      'Certificate changed by another request. Refresh and retry.'
+    );
+    expect(json.result).toBeUndefined();
+    expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for wrong-org instrument before certificate delete lookup', async () => {
+    const instrumentChain = createAwaitableChain({
+      data: null,
+      error: { message: 'Instrument not found' },
+    });
+    const deleteMetaChain = createAwaitableChain({
+      data: null,
+      error: null,
+    });
+
+    mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
+      if (table === 'instruments') {
+        return instrumentChain;
+      }
+      if (table === 'instrument_certificates') {
+        return deleteMetaChain;
       }
       throw new Error(`Unexpected table ${table}`);
     });
@@ -1054,7 +1141,7 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(response.status).toBe(404);
     expect(json.message).toBe('Instrument not found');
     expect(instrumentChain.eq).toHaveBeenCalledWith('org_id', 'org-1');
-    expect(certLookupChain.select).not.toHaveBeenCalled();
+    expect(deleteMetaChain.delete).not.toHaveBeenCalled();
     expect(mockStorage.deleteFile).not.toHaveBeenCalled();
   });
 
@@ -1067,15 +1154,8 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       },
       error: null,
     });
-    const certLookupChain = createAwaitableChain({
-      data: {
-        id: certificateId,
-        storage_path: oldFileKey,
-        instruments: { org_id: 'org-1' },
-      },
-      error: null,
-    });
     const deleteMetaChain = createAwaitableChain({
+      data: { id: certificateId, storage_path: oldFileKey },
       error: null,
     });
     const remainingChain = createAwaitableChain({
@@ -1088,9 +1168,6 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
         return instrumentChain;
       }
       if (table === 'instrument_certificates') {
-        if (certLookupChain.select.mock.calls.length === 0) {
-          return certLookupChain;
-        }
         if (deleteMetaChain.delete.mock.calls.length === 0) {
           return deleteMetaChain;
         }
@@ -1123,15 +1200,8 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       data: { id: instrumentId },
       error: null,
     });
-    const certLookupChain = createAwaitableChain({
-      data: {
-        id: certificateId,
-        storage_path: oldFileKey,
-        instruments: { org_id: 'org-1' },
-      },
-      error: null,
-    });
     const deleteMetaChain = createAwaitableChain({
+      data: { id: certificateId, storage_path: oldFileKey },
       error: null,
     });
     const remainingChain = createAwaitableChain({
@@ -1146,9 +1216,6 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
         return instrumentChain;
       }
       if (table === 'instrument_certificates') {
-        if (certLookupChain.select.mock.calls.length === 0) {
-          return certLookupChain;
-        }
         if (deleteMetaChain.delete.mock.calls.length === 0) {
           return deleteMetaChain;
         }
@@ -1174,5 +1241,112 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(json.cleanup).toEqual({ storageDeleted: false });
     expect(deleteMetaChain.delete).toHaveBeenCalledTimes(1);
     expect(mockStorage.deleteFile).toHaveBeenCalledWith(oldFileKey);
+  });
+
+  describe('certificate mutation concurrency interleavings', () => {
+    it('PUT vs PUT: losing replace returns 409 and preserves old storage', async () => {
+      const instrumentChain = createAwaitableChain({
+        data: { id: instrumentId, serial_number: 'SN-1' },
+        error: null,
+      });
+      const listChain = createAwaitableChain({
+        data: [
+          {
+            id: certificateId,
+            storage_path: oldFileKey,
+            instruments: { org_id: 'org-1' },
+          },
+        ],
+        error: null,
+      });
+      const losingUpdateChain = createAwaitableChain({
+        data: null,
+        error: null,
+      });
+
+      mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
+        if (table === 'instruments') return instrumentChain;
+        if (table === 'instrument_certificates') {
+          if (listChain.select.mock.calls.length === 0) return listChain;
+          return losingUpdateChain;
+        }
+        throw new Error(`Unexpected table ${table}`);
+      });
+
+      const response = await PUT(createPutRequest('loser.pdf'), {
+        params: Promise.resolve({ id: instrumentId }),
+      });
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.success).not.toBe(true);
+      expect(mockStorage.deleteFile).toHaveBeenCalledWith('saved-key');
+      expect(mockStorage.deleteFile).not.toHaveBeenCalledWith(oldFileKey);
+    });
+
+    it('PUT vs DELETE: replace loses when row is already deleted', async () => {
+      const instrumentChain = createAwaitableChain({
+        data: { id: instrumentId, serial_number: 'SN-1' },
+        error: null,
+      });
+      const listChain = createAwaitableChain({
+        data: [
+          {
+            id: certificateId,
+            storage_path: oldFileKey,
+            instruments: { org_id: 'org-1' },
+          },
+        ],
+        error: null,
+      });
+      const updateChain = createAwaitableChain({
+        data: null,
+        error: null,
+      });
+
+      mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
+        if (table === 'instruments') return instrumentChain;
+        if (table === 'instrument_certificates') {
+          if (listChain.select.mock.calls.length === 0) return listChain;
+          return updateChain;
+        }
+        throw new Error(`Unexpected table ${table}`);
+      });
+
+      const response = await PUT(createPutRequest(), {
+        params: Promise.resolve({ id: instrumentId }),
+      });
+
+      expect(response.status).toBe(409);
+      expect(mockStorage.deleteFile).not.toHaveBeenCalledWith(oldFileKey);
+    });
+
+    it('DELETE vs DELETE: second delete returns 409 without storage cleanup', async () => {
+      const instrumentChain = createAwaitableChain({
+        data: { id: instrumentId },
+        error: null,
+      });
+      const deleteMetaChain = createAwaitableChain({
+        data: null,
+        error: null,
+      });
+
+      mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
+        if (table === 'instruments') return instrumentChain;
+        if (table === 'instrument_certificates') return deleteMetaChain;
+        throw new Error(`Unexpected table ${table}`);
+      });
+
+      const request = {
+        url: `http://localhost/api/instruments/${instrumentId}/certificates?id=${certificateId}`,
+      } as unknown as NextRequest;
+
+      const response = await DELETE(request, {
+        params: Promise.resolve({ id: instrumentId }),
+      });
+
+      expect(response.status).toBe(409);
+      expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+    });
   });
 });
