@@ -279,10 +279,7 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(response.status).toBe(200);
     expect(json.data).toEqual([]);
     expect(listChain.eq).toHaveBeenCalledWith('instrument_id', instrumentId);
-    expect(listChain.eq).toHaveBeenCalledWith(
-      'instruments.org_id',
-      'org-1'
-    );
+    expect(listChain.eq).toHaveBeenCalledWith('instruments.org_id', 'org-1');
   });
 
   it('returns certificate metadata only when the object exists and a signed URL is generated', async () => {
@@ -323,10 +320,7 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(mockStorage.presignGet).toHaveBeenCalledWith(oldFileKey, 600);
     expect(instrumentChain.eq).toHaveBeenCalledWith('org_id', 'org-1');
     expect(listChain.eq).toHaveBeenCalledWith('instrument_id', instrumentId);
-    expect(listChain.eq).toHaveBeenCalledWith(
-      'instruments.org_id',
-      'org-1'
-    );
+    expect(listChain.eq).toHaveBeenCalledWith('instruments.org_id', 'org-1');
     expect(listChain.order).toHaveBeenCalledWith('created_at', {
       ascending: false,
     });
@@ -518,7 +512,9 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       error: null,
     });
     mockAuthContext.userSupabase.from.mockReturnValue(instrumentChain);
-    mockStorage.saveFile.mockRejectedValueOnce(new Error('storage unavailable'));
+    mockStorage.saveFile.mockRejectedValueOnce(
+      new Error('storage unavailable')
+    );
 
     const response = await POST(createPostRequest(), {
       params: Promise.resolve({ id: instrumentId }),
