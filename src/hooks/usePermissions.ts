@@ -47,6 +47,7 @@ export function usePermissions() {
       canUploadInstrumentMedia: canUseAdminOrgFeatures,
       canManageClients: canUseAdminOrgFeatures,
       canCreateClient: canUseAdminOrgFeatures,
+      canViewInstrumentFinancialData: canUseAdminOrgFeatures,
 
       createClientDisabledReason: canUseAdminOrgFeatures
         ? undefined

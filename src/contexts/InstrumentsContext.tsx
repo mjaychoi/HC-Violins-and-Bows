@@ -21,8 +21,6 @@ import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { logInfo } from '@/utils/logger';
 
-const NO_TENANT_SCOPE_KEY = '__no-tenant__';
-
 function generateIdempotencyKey(prefix: string): string {
   if (
     typeof globalThis.crypto !== 'undefined' &&
@@ -76,28 +74,9 @@ function toError(error: unknown, fallbackMessage: string): Error {
   );
 }
 
-function sameInstrumentList(a: Instrument[], b: Instrument[]): boolean {
-  if (a === b) return true;
-
-  if (a.length !== b.length) return false;
-
-  for (let i = 0; i < a.length; i += 1) {
-    if (a[i]?.id !== b[i]?.id) return false;
-
-    const au =
-      (a[i] as Instrument & { updated_at?: string })?.updated_at ?? null;
-
-    const bu =
-      (b[i] as Instrument & { updated_at?: string })?.updated_at ?? null;
-
-    if (au !== bu) return false;
-  }
-
-  return true;
-}
-
 interface InstrumentsState {
   instruments: Instrument[];
+  loadedAccessScopeKey: string | null;
   loading: boolean;
   loadingCount: number;
   submitting: boolean;
@@ -111,19 +90,33 @@ type InstrumentsAction =
   | { type: 'END_LOADING' }
   | { type: 'SET_SUBMITTING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: unknown | null }
-  | { type: 'SET_INSTRUMENTS'; payload: Instrument[] }
+  | {
+      type: 'SET_INSTRUMENTS';
+      payload: { instruments: Instrument[]; loadedAccessScopeKey: string };
+    }
   | { type: 'SET_ALL_RESULTS_TRUNCATED'; payload: boolean }
-  | { type: 'ADD_INSTRUMENT'; payload: Instrument }
+  | {
+      type: 'ADD_INSTRUMENT';
+      payload: { instrument: Instrument; accessScopeKey: string };
+    }
   | {
       type: 'UPDATE_INSTRUMENT';
-      payload: { id: string; instrument: Instrument };
+      payload: {
+        id: string;
+        instrument: Instrument;
+        accessScopeKey: string;
+      };
     }
-  | { type: 'REMOVE_INSTRUMENT'; payload: string }
+  | {
+      type: 'REMOVE_INSTRUMENT';
+      payload: { id: string; accessScopeKey: string };
+    }
   | { type: 'INVALIDATE_CACHE' }
   | { type: 'RESET_STATE' };
 
 const initialState: InstrumentsState = {
   instruments: [],
+  loadedAccessScopeKey: null,
   loading: false,
   loadingCount: 0,
   submitting: false,
@@ -174,13 +167,15 @@ function instrumentsReducer(
       return {
         ...state,
         instruments: [],
+        loadedAccessScopeKey: null,
         error: action.payload,
       };
 
     case 'SET_INSTRUMENTS':
       return {
         ...state,
-        instruments: action.payload,
+        instruments: action.payload.instruments,
+        loadedAccessScopeKey: action.payload.loadedAccessScopeKey,
         error: null,
         lastUpdated: new Date(),
       };
@@ -195,11 +190,12 @@ function instrumentsReducer(
       return {
         ...state,
         instruments: [
-          parseInstrumentType(action.payload),
+          parseInstrumentType(action.payload.instrument),
           ...state.instruments.filter(
-            instrument => instrument.id !== action.payload.id
+            instrument => instrument.id !== action.payload.instrument.id
           ),
         ],
+        loadedAccessScopeKey: action.payload.accessScopeKey,
         lastUpdated: new Date(),
       };
 
@@ -211,6 +207,7 @@ function instrumentsReducer(
             ? parseInstrumentType(action.payload.instrument)
             : instrument
         ),
+        loadedAccessScopeKey: action.payload.accessScopeKey,
         lastUpdated: new Date(),
       };
 
@@ -218,8 +215,9 @@ function instrumentsReducer(
       return {
         ...state,
         instruments: state.instruments.filter(
-          instrument => instrument.id !== action.payload
+          instrument => instrument.id !== action.payload.id
         ),
+        loadedAccessScopeKey: action.payload.accessScopeKey,
         lastUpdated: new Date(),
       };
 
@@ -264,12 +262,6 @@ const InstrumentsContext = createContext<{
 export function InstrumentsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(instrumentsReducer, initialState);
 
-  const stateRef = useRef(state);
-
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
-
   const { handleError } = useErrorHandler();
 
   const handleErrorRef = useRef(handleError);
@@ -278,42 +270,39 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
     handleErrorRef.current = handleError;
   }, [handleError]);
 
-  const { tenantIdentityKey } = useTenantIdentity();
+  const { accessScopeKey } = useTenantIdentity();
 
   const inflight = useRef(new Map<string, Promise<void>>());
 
-  const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+  const accessScopeKeyRef = useRef<string | null>(accessScopeKey);
 
-  const previousTenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
+  const previousAccessScopeKeyRef = useRef<string | null>(accessScopeKey);
 
   useEffect(() => {
-    if (previousTenantIdentityKeyRef.current !== tenantIdentityKey) {
+    if (previousAccessScopeKeyRef.current !== accessScopeKey) {
       inflight.current.clear();
 
       dispatch({ type: 'RESET_STATE' });
     }
 
-    tenantIdentityKeyRef.current = tenantIdentityKey;
+    accessScopeKeyRef.current = accessScopeKey;
 
-    previousTenantIdentityKeyRef.current = tenantIdentityKey;
-  }, [tenantIdentityKey]);
+    previousAccessScopeKeyRef.current = accessScopeKey;
+  }, [accessScopeKey]);
 
   const deduped = useCallback(
-    <T extends () => Promise<void>>(
-      tenantKey: string,
-      fn: T
-    ): Promise<void> => {
-      const existing = inflight.current.get(tenantKey);
+    <T extends () => Promise<void>>(scopeKey: string, fn: T): Promise<void> => {
+      const existing = inflight.current.get(scopeKey);
 
       if (existing) return existing;
 
       const promise = fn().finally(() => {
-        if (inflight.current.get(tenantKey) === promise) {
-          inflight.current.delete(tenantKey);
+        if (inflight.current.get(scopeKey) === promise) {
+          inflight.current.delete(scopeKey);
         }
       });
 
-      inflight.current.set(tenantKey, promise);
+      inflight.current.set(scopeKey, promise);
 
       return promise;
     },
@@ -334,11 +323,15 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
     async (opts?: { all?: boolean }) => {
       const listAll = opts?.all === true;
 
-      const fetchTenantIdentityKey = tenantIdentityKeyRef.current;
+      const fetchAccessScopeKey = accessScopeKeyRef.current;
+
+      if (!fetchAccessScopeKey) {
+        return;
+      }
 
       const modeKey = listAll ? 'all' : 'bounded';
 
-      const inflightKey = `${tenantIdentityKeyRef.current ?? NO_TENANT_SCOPE_KEY}:${modeKey}`;
+      const inflightKey = `${fetchAccessScopeKey}:${modeKey}`;
 
       return deduped(inflightKey, async () => {
         dispatch({ type: 'START_LOADING' });
@@ -366,27 +359,26 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
           );
           const allResultsTruncated = result.truncated === true;
 
-          if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+          if (accessScopeKeyRef.current !== fetchAccessScopeKey) {
             return;
           }
 
-          if (!sameInstrumentList(stateRef.current.instruments, instruments)) {
-            dispatch({
-              type: 'SET_INSTRUMENTS',
-              payload: instruments,
-            });
-          }
-          if (
-            listAll &&
-            stateRef.current.allResultsTruncated !== allResultsTruncated
-          ) {
+          dispatch({
+            type: 'SET_INSTRUMENTS',
+            payload: {
+              instruments,
+              loadedAccessScopeKey: fetchAccessScopeKey,
+            },
+          });
+
+          if (listAll) {
             dispatch({
               type: 'SET_ALL_RESULTS_TRUNCATED',
               payload: allResultsTruncated,
             });
           }
         } catch (error) {
-          if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+          if (accessScopeKeyRef.current !== fetchAccessScopeKey) {
             return;
           }
 
@@ -402,7 +394,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
 
           handleErrorRef.current(error, 'Fetch instruments');
         } finally {
-          if (tenantIdentityKeyRef.current === fetchTenantIdentityKey) {
+          if (accessScopeKeyRef.current === fetchAccessScopeKey) {
             dispatch({ type: 'END_LOADING' });
           }
         }
@@ -416,7 +408,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
       instrument: Omit<Instrument, 'id' | 'created_at'>,
       options?: { idempotencyKey?: string }
     ): Promise<Instrument> => {
-      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
+      const mutationAccessScopeKey = accessScopeKeyRef.current;
 
       dispatch({ type: 'SET_SUBMITTING', payload: true });
 
@@ -447,9 +439,9 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
           `Failed to create instrument (${response.status})`
         );
 
-        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+        if (accessScopeKeyRef.current !== mutationAccessScopeKey) {
           throw new Error(
-            'Instrument creation aborted: organization context changed during request'
+            'Instrument creation aborted: access scope changed during request'
           );
         }
 
@@ -463,11 +455,17 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
           throw new Error('Instrument creation failed: invalid payload');
         }
 
-        dispatch({ type: 'ADD_INSTRUMENT', payload: parsedData });
+        dispatch({
+          type: 'ADD_INSTRUMENT',
+          payload: {
+            instrument: parsedData,
+            accessScopeKey: mutationAccessScopeKey ?? '',
+          },
+        });
 
         return parsedData;
       } catch (error) {
-        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+        if (accessScopeKeyRef.current !== mutationAccessScopeKey) {
           throw toError(error, 'Instrument creation aborted');
         }
 
@@ -477,7 +475,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
 
         throw toError(error, 'Failed to create instrument');
       } finally {
-        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+        if (accessScopeKeyRef.current === mutationAccessScopeKey) {
           dispatch({ type: 'SET_SUBMITTING', payload: false });
         }
       }
@@ -490,7 +488,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
       id: string,
       instrument: Partial<Instrument>
     ): Promise<Instrument> => {
-      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
+      const mutationAccessScopeKey = accessScopeKeyRef.current;
 
       dispatch({ type: 'SET_SUBMITTING', payload: true });
 
@@ -527,9 +525,9 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
           `Failed to update instrument (${response.status})`
         );
 
-        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+        if (accessScopeKeyRef.current !== mutationAccessScopeKey) {
           throw new Error(
-            'Instrument update aborted: organization context changed during request'
+            'Instrument update aborted: access scope changed during request'
           );
         }
 
@@ -552,12 +550,16 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
 
         dispatch({
           type: 'UPDATE_INSTRUMENT',
-          payload: { id, instrument: parsedData },
+          payload: {
+            id,
+            instrument: parsedData,
+            accessScopeKey: mutationAccessScopeKey ?? '',
+          },
         });
 
         return parsedData;
       } catch (error) {
-        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+        if (accessScopeKeyRef.current !== mutationAccessScopeKey) {
           throw toError(error, 'Instrument update aborted');
         }
 
@@ -567,7 +569,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
 
         throw toError(error, 'Failed to update instrument');
       } finally {
-        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+        if (accessScopeKeyRef.current === mutationAccessScopeKey) {
           dispatch({ type: 'SET_SUBMITTING', payload: false });
         }
       }
@@ -576,7 +578,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
   );
 
   const deleteInstrument = useCallback(async (id: string): Promise<void> => {
-    const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
+    const mutationAccessScopeKey = accessScopeKeyRef.current;
 
     dispatch({ type: 'SET_SUBMITTING', payload: true });
 
@@ -595,15 +597,21 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
         );
       }
 
-      if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+      if (accessScopeKeyRef.current !== mutationAccessScopeKey) {
         throw new Error(
-          'Instrument delete aborted: organization context changed during request'
+          'Instrument delete aborted: access scope changed during request'
         );
       }
 
-      dispatch({ type: 'REMOVE_INSTRUMENT', payload: id });
+      dispatch({
+        type: 'REMOVE_INSTRUMENT',
+        payload: {
+          id,
+          accessScopeKey: mutationAccessScopeKey ?? '',
+        },
+      });
     } catch (error) {
-      if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+      if (accessScopeKeyRef.current !== mutationAccessScopeKey) {
         throw toError(error, 'Instrument delete aborted');
       }
 
@@ -613,7 +621,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
 
       throw toError(error, 'Failed to delete instrument');
     } finally {
-      if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+      if (accessScopeKeyRef.current === mutationAccessScopeKey) {
         dispatch({ type: 'SET_SUBMITTING', payload: false });
       }
     }
@@ -668,14 +676,27 @@ export function useInstrumentsContext() {
 
 export function useInstruments() {
   const { state, actions } = useInstrumentsContext();
+  const { accessScopeKey } = useTenantIdentity();
+
+  const instruments =
+    state.loadedAccessScopeKey !== null &&
+    state.loadedAccessScopeKey === accessScopeKey
+      ? state.instruments
+      : [];
+
+  const allResultsTruncated =
+    state.loadedAccessScopeKey !== null &&
+    state.loadedAccessScopeKey === accessScopeKey
+      ? state.allResultsTruncated
+      : false;
 
   return {
-    instruments: state.instruments,
+    instruments,
     loading: state.loading,
     submitting: state.submitting,
     error: state.error,
     lastUpdated: state.lastUpdated,
-    allResultsTruncated: state.allResultsTruncated,
+    allResultsTruncated,
     ...actions,
   };
 }

@@ -57,7 +57,8 @@ export function InstrumentExpandedRow({
   ownerClient,
   onInstrumentCertificatesChanged,
 }: InstrumentExpandedRowProps) {
-  const { canUploadInstrumentMedia } = usePermissions();
+  const { canUploadInstrumentMedia, canViewInstrumentFinancialData } =
+    usePermissions();
   const { tenantIdentityKey } = useTenantIdentity();
   const [images, setImages] = useState<InstrumentImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
@@ -802,7 +803,8 @@ export function InstrumentExpandedRow({
                 </div>
               </div>
 
-              {instrument.cost_price !== null &&
+              {canViewInstrumentFinancialData &&
+                instrument.cost_price !== null &&
                 instrument.cost_price !== undefined && (
                   <div>
                     <div className="text-xs text-gray-500 mb-1">Cost Price</div>
@@ -812,7 +814,8 @@ export function InstrumentExpandedRow({
                   </div>
                 )}
 
-              {instrument.consignment_price !== null &&
+              {canViewInstrumentFinancialData &&
+                instrument.consignment_price !== null &&
                 instrument.consignment_price !== undefined && (
                   <div>
                     <div className="text-xs text-gray-500 mb-1">

@@ -15,6 +15,7 @@ jest.mock('@/utils/apiFetch', () => {
 jest.mock('@/hooks/useTenantIdentity', () => ({
   useTenantIdentity: jest.fn(() => ({
     tenantIdentityKey: 'tenant-test',
+    accessScopeKey: 'tenant-test',
     isTenantTransitioning: false,
   })),
 }));

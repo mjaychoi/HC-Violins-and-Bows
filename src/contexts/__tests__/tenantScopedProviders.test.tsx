@@ -22,6 +22,7 @@ jest.mock('@/contexts/ToastContext', () => {
 jest.mock('@/hooks/useTenantIdentity', () => ({
   useTenantIdentity: jest.fn(() => ({
     tenantIdentityKey: mockTenantIdentityKey,
+    accessScopeKey: mockTenantIdentityKey,
     isTenantTransitioning: false,
   })),
 }));
