@@ -5,6 +5,7 @@ import { logInfo, logWarn } from '@/utils/logger';
 import { CLIENT_TABLE_SELECT, type ClientsTableRow } from '@/utils/clientDbMap';
 import {
   assertClientConnectionsSchemaReadiness,
+  assertClientRpcSchemaReadiness,
   assertClientsSchemaReadiness,
 } from '@/app/api/_utils/schemaReadiness';
 
@@ -281,6 +282,7 @@ export async function rpcCreateClientWithConnectionsAtomic(
 > {
   await assertClientsSchemaReadiness({ supabase });
   await assertClientConnectionsSchemaReadiness({ supabase });
+  await assertClientRpcSchemaReadiness({ supabase });
 
   const tagArray = body.tags;
   for (let i = 0; i < MAX_ALLOCATION_ATTEMPTS; i++) {

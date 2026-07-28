@@ -12,6 +12,7 @@ import { errorHandler } from '@/utils/errorHandler';
 import { logError } from '@/utils/logger';
 import { createApiResponse } from '@/app/api/_utils/apiErrors';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
+import { assertInstrumentsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import {
   applyScopedRateLimit,
   destructiveMutationRateLimit,
@@ -381,6 +382,8 @@ async function postHandlerInternal(
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
 
+    await assertInstrumentsSchemaReadiness({ supabase: auth.userSupabase });
+
     const uploadRateLimitResult = await applyScopedRateLimit(uploadRateLimit, {
       orgId: auth.orgId,
       userId: auth.user.id,
@@ -507,6 +510,8 @@ async function putHandlerInternal(
 
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
+
+    await assertInstrumentsSchemaReadiness({ supabase: auth.userSupabase });
 
     const uploadRateLimitResult = await applyScopedRateLimit(uploadRateLimit, {
       orgId: auth.orgId,
@@ -693,6 +698,8 @@ async function deleteHandlerInternal(
 
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
+
+    await assertInstrumentsSchemaReadiness({ supabase: auth.userSupabase });
 
     const deleteRateLimitResult = await applyScopedRateLimit(
       destructiveMutationRateLimit,

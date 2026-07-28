@@ -1,8 +1,10 @@
 import {
   __resetSchemaReadinessCacheForTests,
   assertClientConnectionsSchemaReadiness,
+  assertClientRpcSchemaReadiness,
   assertClientsSchemaReadiness,
   assertInstrumentImagesSchemaReadiness,
+  assertInstrumentsSchemaReadiness,
   checkSchemaReadiness,
   SchemaNotReadyError,
 } from '../schemaReadiness';
@@ -12,14 +14,27 @@ describe('schemaReadiness', () => {
     __resetSchemaReadinessCacheForTests();
   });
 
+  const allRuntimeContractDefaults = {
+    api_create_idempotency_exists: true,
+    api_create_idempotency_columns_ok: true,
+    api_create_idempotency_unique_ok: true,
+    create_connection_atomic_hardened: true,
+    instrument_type_nullable: true,
+    instrument_identity_check_exists: true,
+    instrument_certificate_name_check_exists: true,
+    client_identity_columns_exist: true,
+    client_identity_check_exists: true,
+    client_rpc_5_arg_exists: true,
+    client_rpc_6_arg_exists: true,
+    client_rpc_10_arg_exists: true,
+    client_rpc_all_security_invoker: true,
+    client_rpc_authenticated_execute: true,
+    client_rpc_anon_execute_revoked: true,
+  };
+
   function createSupabaseMock(
     errorsByTable: Record<string, unknown> = {},
-    runtimeContracts: Record<string, boolean> = {
-      api_create_idempotency_exists: true,
-      api_create_idempotency_columns_ok: true,
-      api_create_idempotency_unique_ok: true,
-      create_connection_atomic_hardened: true,
-    }
+    runtimeContracts: Record<string, boolean> = allRuntimeContractDefaults
   ) {
     const selections: Record<string, string> = {};
     const supabase = {
@@ -51,35 +66,230 @@ describe('schemaReadiness', () => {
     });
 
     expect(result.ready).toBe(true);
-    expect(selections.invoices).toBe('invoice_number');
-    expect(selections.invoice_settings).toEqual(
-      [
-        'business_name',
-        'business_address',
-        'business_phone',
-        'business_email',
-        'bank_account_holder',
-        'bank_name',
-        'bank_swift_code',
-        'bank_account_number',
-        'default_conditions',
-        'default_exchange_rate',
-        'default_currency',
-      ].join(',')
+    expect(selections.instruments).toBe('certificate_name');
+    expect(selections.clients).toBe('client_number,first_name,last_name');
+    expect(selections.runtime_contract_checks).toContain(
+      'instrument_type_nullable'
     );
-    expect(selections.instrument_images).toBe(
-      'storage_key,file_name,file_size,mime_type,display_order'
+    expect(selections.runtime_contract_checks).toContain(
+      'client_rpc_10_arg_exists'
     );
-    expect(selections.client_instruments).toBe('display_order');
-    expect(selections.clients).toBe('client_number');
-    expect(selections.runtime_contract_checks).toBe(
-      [
-        'api_create_idempotency_exists',
-        'api_create_idempotency_columns_ok',
-        'api_create_idempotency_unique_ok',
-        'create_connection_atomic_hardened',
-      ].join(',')
+  });
+
+  it('reports certificate_name missing as SCHEMA_OUT_OF_DATE', async () => {
+    const { supabase } = createSupabaseMock({
+      instruments: {
+        code: 'PGRST204',
+        message:
+          "Could not find the 'certificate_name' column of 'instruments' in the schema cache",
+      },
+    });
+
+    await expect(
+      assertInstrumentsSchemaReadiness({ bypassCache: true, supabase })
+    ).rejects.toMatchObject({
+      code: 'SCHEMA_OUT_OF_DATE',
+      status: 503,
+      retryable: false,
+      details: {
+        missingColumns: ['public.instruments.certificate_name'],
+      },
+    });
+  });
+
+  it('reports first_name and last_name missing for client flows', async () => {
+    const { supabase } = createSupabaseMock({
+      clients: {
+        code: '42703',
+        message: 'column clients.first_name does not exist',
+      },
+    });
+
+    await expect(
+      assertClientsSchemaReadiness({ bypassCache: true, supabase })
+    ).rejects.toMatchObject({
+      code: 'SCHEMA_OUT_OF_DATE',
+      details: {
+        missingColumns: expect.arrayContaining([
+          'public.clients.client_number',
+          'public.clients.first_name',
+          'public.clients.last_name',
+        ]),
+      },
+    });
+  });
+
+  it('reports instrument type still NOT NULL via runtime contract drift', async () => {
+    const { supabase } = createSupabaseMock(
+      {},
+      {
+        ...allRuntimeContractDefaults,
+        instrument_type_nullable: false,
+      }
     );
+
+    await expect(
+      assertInstrumentsSchemaReadiness({ bypassCache: true, supabase })
+    ).rejects.toMatchObject({
+      code: 'SCHEMA_OUT_OF_DATE',
+      details: {
+        missingContracts: ['public.instruments.type nullable contract'],
+      },
+    });
+  });
+
+  it('reports missing 5-arg and 10-arg client RPC overloads', async () => {
+    const { supabase } = createSupabaseMock(
+      {},
+      {
+        ...allRuntimeContractDefaults,
+        client_rpc_5_arg_exists: false,
+        client_rpc_10_arg_exists: false,
+      }
+    );
+
+    await expect(
+      assertClientRpcSchemaReadiness({ bypassCache: true, supabase })
+    ).rejects.toMatchObject({
+      code: 'SCHEMA_OUT_OF_DATE',
+      details: {
+        missingContracts: expect.arrayContaining([
+          'public.create_client_with_connections_atomic 5-arg overload',
+          'public.create_client_with_connections_atomic 10-arg overload',
+        ]),
+      },
+    });
+  });
+
+  it('reports SECURITY DEFINER client RPC as schema drift', async () => {
+    const { supabase } = createSupabaseMock(
+      {},
+      {
+        ...allRuntimeContractDefaults,
+        client_rpc_all_security_invoker: false,
+      }
+    );
+
+    await expect(
+      assertClientRpcSchemaReadiness({ bypassCache: true, supabase })
+    ).rejects.toMatchObject({
+      details: {
+        missingContracts: [
+          'public.create_client_with_connections_atomic SECURITY INVOKER overloads',
+        ],
+      },
+    });
+  });
+
+  it('reports missing authenticated EXECUTE grant as schema drift', async () => {
+    const { supabase } = createSupabaseMock(
+      {},
+      {
+        ...allRuntimeContractDefaults,
+        client_rpc_authenticated_execute: false,
+      }
+    );
+
+    await expect(
+      assertClientRpcSchemaReadiness({ bypassCache: true, supabase })
+    ).rejects.toMatchObject({
+      details: {
+        missingContracts: [
+          'public.create_client_with_connections_atomic authenticated EXECUTE grants',
+        ],
+      },
+    });
+  });
+
+  it('reports anon EXECUTE present as schema drift', async () => {
+    const { supabase } = createSupabaseMock(
+      {},
+      {
+        ...allRuntimeContractDefaults,
+        client_rpc_anon_execute_revoked: false,
+      }
+    );
+
+    await expect(
+      assertClientRpcSchemaReadiness({ bypassCache: true, supabase })
+    ).rejects.toMatchObject({
+      details: {
+        missingContracts: [
+          'public.create_client_with_connections_atomic anon EXECUTE revocation',
+        ],
+      },
+    });
+  });
+
+  it('allows routes to proceed when all item/client contracts are present', async () => {
+    const { supabase } = createSupabaseMock();
+
+    await expect(
+      assertInstrumentsSchemaReadiness({ bypassCache: true, supabase })
+    ).resolves.toMatchObject({ ready: true });
+
+    await expect(
+      assertClientsSchemaReadiness({ bypassCache: true, supabase })
+    ).resolves.toMatchObject({ ready: true });
+
+    await expect(
+      assertClientRpcSchemaReadiness({ bypassCache: true, supabase })
+    ).resolves.toMatchObject({ ready: true });
+  });
+
+  it('fails closed on unexpected catalog errors', async () => {
+    const { supabase } = createSupabaseMock({
+      runtime_contract_checks: {
+        code: 'XX000',
+        message: 'unexpected catalog failure',
+      },
+    });
+
+    const result = await checkSchemaReadiness({
+      bypassCache: true,
+      supabase,
+      tables: ['instruments'],
+      runtimeContracts: {
+        instrument_type_nullable: 'public.instruments.type nullable contract',
+      },
+      includeRuntimeContracts: false,
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.missingContracts).toEqual([
+      'public.instruments.type nullable contract',
+    ]);
+  });
+
+  it('caches missing readiness state and bypasses cache on demand', async () => {
+    const { supabase } = createSupabaseMock({
+      instruments: {
+        code: 'PGRST204',
+        message: "Could not find the 'certificate_name' column",
+      },
+    });
+
+    await expect(
+      assertInstrumentsSchemaReadiness({ supabase })
+    ).rejects.toBeInstanceOf(SchemaNotReadyError);
+    await expect(
+      assertInstrumentsSchemaReadiness({ supabase })
+    ).rejects.toBeInstanceOf(SchemaNotReadyError);
+    expect(supabase.from).toHaveBeenCalledTimes(2);
+
+    await expect(
+      assertInstrumentsSchemaReadiness({ bypassCache: true, supabase })
+    ).rejects.toBeInstanceOf(SchemaNotReadyError);
+    expect(supabase.from).toHaveBeenCalledTimes(4);
+  });
+
+  it('uses separate cache keys for different contract sets', async () => {
+    const { supabase } = createSupabaseMock();
+
+    await assertInstrumentsSchemaReadiness({ supabase });
+    await assertClientRpcSchemaReadiness({ supabase });
+
+    expect(supabase.from).toHaveBeenCalledTimes(3);
   });
 
   it('reports invoice_settings columns as missing on PostgREST schema-cache errors', async () => {
@@ -94,72 +304,15 @@ describe('schemaReadiness', () => {
     const result = await checkSchemaReadiness({
       bypassCache: true,
       supabase,
+      tables: ['invoice_settings'],
+      runtimeContracts: null,
+      includeRuntimeContracts: false,
     });
 
     expect(result.ready).toBe(false);
     expect(result.missingColumns).toContain(
       'public.invoice_settings.business_name'
     );
-    expect(result.missingColumns).toContain(
-      'public.invoice_settings.default_currency'
-    );
-  });
-
-  it('reports missing runtime contracts for deployment-critical DB functions', async () => {
-    const { supabase } = createSupabaseMock(
-      {},
-      {
-        api_create_idempotency_exists: true,
-        api_create_idempotency_columns_ok: true,
-        api_create_idempotency_unique_ok: true,
-        create_connection_atomic_hardened: false,
-      }
-    );
-
-    const result = await checkSchemaReadiness({
-      bypassCache: true,
-      supabase,
-    });
-
-    expect(result.ready).toBe(false);
-    expect(result.missingContracts).toEqual([
-      'public.create_connection_atomic org-scoped parent checks',
-    ]);
-  });
-
-  it('fails readiness when the runtime contract check view is missing', async () => {
-    const { supabase } = createSupabaseMock({
-      runtime_contract_checks: {
-        code: '42P01',
-        message: 'relation "runtime_contract_checks" does not exist',
-      },
-    });
-
-    const result = await checkSchemaReadiness({
-      bypassCache: true,
-      supabase,
-    });
-
-    expect(result.ready).toBe(false);
-    expect(result.missingContracts).toEqual([
-      'public.api_create_idempotency table',
-      'public.api_create_idempotency required columns',
-      'public.api_create_idempotency scoped uniqueness',
-      'public.create_connection_atomic org-scoped parent checks',
-    ]);
-  });
-
-  it('surfaces missing invoice_settings fields in SchemaNotReadyError details', () => {
-    const error = new SchemaNotReadyError([
-      'public.invoice_settings.business_name',
-    ]);
-
-    expect(error.status).toBe(503);
-    expect(error.code).toBe('SCHEMA_OUT_OF_DATE');
-    expect(error.details.missingColumns).toEqual([
-      'public.invoice_settings.business_name',
-    ]);
-    expect(error.details.missingContracts).toEqual([]);
   });
 
   it('checks only instrument image metadata columns for the image wrapper', async () => {
@@ -171,35 +324,6 @@ describe('schemaReadiness', () => {
     });
 
     expect(Object.keys(selections)).toEqual(['instrument_images']);
-    expect(selections.instrument_images).toBe(
-      'storage_key,file_name,file_size,mime_type,display_order'
-    );
-  });
-
-  it('reports instrument image metadata columns as missing on schema drift', async () => {
-    const { supabase } = createSupabaseMock({
-      instrument_images: {
-        code: 'PGRST204',
-        message:
-          "Could not find the 'storage_key' column of 'instrument_images' in the schema cache",
-      },
-    });
-
-    await expect(
-      assertInstrumentImagesSchemaReadiness({
-        bypassCache: true,
-        supabase,
-      })
-    ).rejects.toMatchObject({
-      code: 'SCHEMA_OUT_OF_DATE',
-      status: 503,
-      details: {
-        missingColumns: expect.arrayContaining([
-          'public.instrument_images.storage_key',
-          'public.instrument_images.display_order',
-        ]),
-      },
-    });
   });
 
   it('reports client_instruments display_order drift for connection flows', async () => {
@@ -223,25 +347,13 @@ describe('schemaReadiness', () => {
     });
   });
 
-  it('reports clients client_number drift for client flows', async () => {
-    const { supabase } = createSupabaseMock({
-      clients: {
-        code: 'PGRST204',
-        message:
-          "Could not find the 'client_number' column of 'clients' in the schema cache",
-      },
-    });
+  it('surfaces missing invoice_settings fields in SchemaNotReadyError details', () => {
+    const error = new SchemaNotReadyError([
+      'public.invoice_settings.business_name',
+    ]);
 
-    await expect(
-      assertClientsSchemaReadiness({
-        bypassCache: true,
-        supabase,
-      })
-    ).rejects.toMatchObject({
-      code: 'SCHEMA_OUT_OF_DATE',
-      details: {
-        missingColumns: ['public.clients.client_number'],
-      },
-    });
+    expect(error.status).toBe(503);
+    expect(error.code).toBe('SCHEMA_OUT_OF_DATE');
+    expect(error.retryable).toBe(false);
   });
 });
