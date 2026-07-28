@@ -29,6 +29,7 @@ import { logInfo, logError } from '@/utils/logger';
 import type { Json } from '@/types/database';
 import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import { writeAuditLog } from '@/utils/auditLog';
+import { assertClientBelongsToOrg } from '../clientScope';
 
 type InvoiceMutationResult = 'full_success' | 'partial_success';
 type JsonObject = { [key: string]: Json | undefined };
@@ -171,45 +172,6 @@ function assignIfProvided<T extends keyof CreateInvoiceInput>(
   if (source[key] !== undefined) {
     target[key] = source[key] as Json;
   }
-}
-
-async function assertClientBelongsToOrg(
-  auth: AuthContext,
-  orgId: string,
-  clientId: string | null | undefined
-): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  if (clientId === undefined || clientId === null) {
-    return { ok: true };
-  }
-
-  if (!validateUUID(clientId)) {
-    return {
-      ok: false,
-      error: 'Invalid client_id format',
-      status: 400,
-    };
-  }
-
-  const { data, error } = await auth.userSupabase
-    .from('clients')
-    .select('id')
-    .eq('id', clientId)
-    .eq('org_id', orgId)
-    .maybeSingle();
-
-  if (error) {
-    throw errorHandler.handleSupabaseError(error, 'Validate invoice client');
-  }
-
-  if (!data) {
-    return {
-      ok: false,
-      error: 'Client not found in organization',
-      status: 400,
-    };
-  }
-
-  return { ok: true };
 }
 
 async function assertInvoiceItemInstrumentsBelongToOrg(
