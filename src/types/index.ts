@@ -110,7 +110,7 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export interface MaintenanceTask {
   id: string;
-  instrument_id: string | null;
+  instrument_id: string;
   client_id: string | null; // 클라이언트 ID (선택사항)
   task_type: TaskType;
   title: string;

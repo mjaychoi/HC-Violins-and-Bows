@@ -167,7 +167,7 @@ export default function TaskModal({
       MaintenanceTask,
       'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
     > = {
-      instrument_id: formData.instrument_id,
+      instrument_id: formData.instrument_id!,
       client_id: formData.client_id || null,
       task_type: formData.task_type,
       title: formData.title.trim(),

@@ -596,7 +596,7 @@ export type Database = {
           due_date: string | null;
           estimated_hours: number | null;
           id: string;
-          instrument_id: string | null;
+          instrument_id: string;
           notes: string | null;
           org_id: string | null;
           personal_due_date: string | null;
@@ -618,7 +618,7 @@ export type Database = {
           due_date?: string | null;
           estimated_hours?: number | null;
           id?: string;
-          instrument_id?: string | null;
+          instrument_id: string;
           notes?: string | null;
           org_id?: string | null;
           personal_due_date?: string | null;
@@ -640,7 +640,7 @@ export type Database = {
           due_date?: string | null;
           estimated_hours?: number | null;
           id?: string;
-          instrument_id?: string | null;
+          instrument_id?: string;
           notes?: string | null;
           org_id?: string | null;
           personal_due_date?: string | null;

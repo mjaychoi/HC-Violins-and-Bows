@@ -647,7 +647,7 @@ function createMaintenanceTasks(
     return {
       id: uuidFor(`maintenance:${index}`),
       org_id: orgId,
-      instrument_id: instruments[(index * 4) % instruments.length].id,
+      instrument_id: instruments[(index * 4) % instruments.length].id!,
       client_id:
         index % 9 === 0 ? null : clients[(index * 6) % clients.length].id,
       task_type: taskTypes[index % taskTypes.length],
