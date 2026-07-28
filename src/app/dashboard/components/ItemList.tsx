@@ -18,6 +18,7 @@ import {
   shortenUuidForDisplay,
 } from '../utils/dashboardUtils';
 import { validateUUID } from '@/utils/inputValidation';
+import { getInstrumentIdentityError } from '@/utils/identityValidation';
 import Link from 'next/link';
 import { ListSkeleton, Pagination, EmptyState } from '@/components/common';
 
@@ -110,7 +111,6 @@ const ItemList = memo(function ItemList({
     serial_number?: string | null;
     maker?: string | null;
     type?: string | null;
-    subtype?: string | null;
     year?: string | number | null;
     price?: string | number | null;
     note?: string | null;
@@ -121,6 +121,14 @@ const ItemList = memo(function ItemList({
   const inlineEdit = useInlineEdit<EditData>({
     onSave: async (id, data) => {
       if (!onUpdateItem) return;
+
+      const identityError = getInstrumentIdentityError({
+        maker: data.maker,
+        type: data.type,
+      });
+      if (identityError) {
+        throw new Error(identityError);
+      }
 
       const updates: Partial<Instrument> = {
         maker: data.maker?.trim() || null,
@@ -422,7 +430,6 @@ const ItemList = memo(function ItemList({
       inlineEdit.startEditing(item.id, {
         maker: item.maker || '',
         type: item.type || '',
-        subtype: item.subtype || '',
         year: item.year ? String(item.year) : '',
         price: item.price ? String(item.price) : '',
         status: item.status || 'Available',
@@ -529,7 +536,7 @@ const ItemList = memo(function ItemList({
   }, [newlyCreatedItemId]);
 
   if (loading) {
-    return <ListSkeleton rows={5} columns={10} />;
+    return <ListSkeleton rows={5} columns={9} />;
   }
 
   // UX: Improved empty state - use consistent EmptyState component
@@ -625,23 +632,6 @@ const ItemList = memo(function ItemList({
                       }`}
                     >
                       {getSortArrow('type') || ''}
-                    </span>
-                  </span>
-                </th>
-                <th
-                  className={cn(classNames.tableHeaderCellSortable, 'group')}
-                  onClick={() => onSort('subtype')}
-                >
-                  <span className="inline-flex items-center gap-1">
-                    Subtype
-                    <span
-                      className={`opacity-0 group-hover:opacity-100 ${
-                        getSortArrow('subtype') !== ''
-                          ? 'opacity-100 text-gray-900'
-                          : ''
-                      }`}
-                    >
-                      {getSortArrow('subtype') || ''}
                     </span>
                   </span>
                 </th>
@@ -866,7 +856,9 @@ const ItemList = memo(function ItemList({
                                 onDelete={() => onDeleteClick(item)}
                                 currentStatus={item.status}
                                 itemId={item.id}
-                                hasCertificate={Boolean(item.has_certificate)}
+                                hasCertificate={Boolean(
+                                  item.has_certificate ?? item.certificate
+                                )}
                                 onDownloadCertificate={async () => {
                                   const rawFilename =
                                     item.serial_number || item.id;
@@ -954,25 +946,6 @@ const ItemList = memo(function ItemList({
                       <td className={classNames.tableCell}>
                         {isEditing ? (
                           <input
-                            type="text"
-                            value={editData.subtype || ''}
-                            onChange={e =>
-                              handleEditFieldChange('subtype', e.target.value)
-                            }
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            onClick={e => e.stopPropagation()}
-                            placeholder="Subtype"
-                          />
-                        ) : (
-                          <div className="text-sm text-gray-900">
-                            {item.subtype || '—'}
-                          </div>
-                        )}
-                      </td>
-
-                      <td className={classNames.tableCell}>
-                        {isEditing ? (
-                          <input
                             type="number"
                             value={editData.year || ''}
                             onChange={e =>
@@ -1018,7 +991,9 @@ const ItemList = memo(function ItemList({
 
                       <td className={classNames.tableCell}>
                         <CertificateBadge
-                          hasCertificate={Boolean(item.has_certificate)}
+                          hasCertificate={Boolean(
+                            item.has_certificate ?? item.certificate
+                          )}
                           certificateName={item.certificate_name}
                         />
                       </td>

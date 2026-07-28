@@ -937,7 +937,7 @@ describe('/api/instruments', () => {
       expect(mockQuery.insert).toHaveBeenCalled();
     });
 
-    it('should strip unknown fields before inserting into the database', async () => {
+    it('should persist certificate_name and strip unknown fields before inserting', async () => {
       const createData = {
         maker: 'Guarneri',
         type: 'Violin',
@@ -945,7 +945,7 @@ describe('/api/instruments', () => {
         serial_number: 'VI0000007',
         certificate: true,
         has_certificate: true,
-        certificate_name: 'Unsupported field',
+        certificate_name: '  Original Label  ',
         image_url: 'https://example.com/test.jpg',
         status: 'Available',
       };
@@ -956,7 +956,11 @@ describe('/api/instruments', () => {
         single: jest.fn(),
       };
       (mockQuery.single as jest.Mock).mockResolvedValue({
-        data: { ...mockInstrument, ...createData },
+        data: {
+          ...mockInstrument,
+          ...createData,
+          certificate_name: 'Original Label',
+        },
         error: null,
       });
 
@@ -972,17 +976,16 @@ describe('/api/instruments', () => {
 
       expect(response.status).toBe(201);
       expect(mockQuery.insert).toHaveBeenCalledWith(
-        expect.not.objectContaining({
-          has_certificate: expect.anything(),
-          certificate_name: expect.anything(),
-          image_url: expect.anything(),
+        expect.objectContaining({
+          certificate: true,
+          certificate_name: 'Original Label',
+          type: 'Violin',
         })
       );
       expect(mockQuery.insert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          certificate: true,
-          type: 'Violin',
-          serial_number: 'VI0000007',
+        expect.not.objectContaining({
+          has_certificate: expect.anything(),
+          image_url: expect.anything(),
         })
       );
     });

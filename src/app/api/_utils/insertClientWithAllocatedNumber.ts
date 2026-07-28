@@ -74,7 +74,15 @@ export async function getNextClSuffixFromDb(
 
 type ClientInsertBody = Pick<
   TablesInsert<'clients'>,
-  'name' | 'email' | 'phone' | 'client_number' | 'tags' | 'interest' | 'note'
+  | 'name'
+  | 'first_name'
+  | 'last_name'
+  | 'email'
+  | 'phone'
+  | 'client_number'
+  | 'tags'
+  | 'interest'
+  | 'note'
 >;
 
 type RpcClientWithLinksArgs = {
@@ -86,6 +94,8 @@ type RpcClientWithLinksArgs = {
   p_tags: string[] | null;
   p_interest: string | null;
   p_note: string | null;
+  p_first_name: string | null;
+  p_last_name: string | null;
 };
 
 export type CreateClientWithConnectionsPayload = {
@@ -195,6 +205,8 @@ export async function insertClientWithClientNumber(
       .from('clients')
       .insert({
         name: body.name,
+        first_name: body.first_name ?? null,
+        last_name: body.last_name ?? null,
         email: body.email,
         phone: body.phone,
         org_id: orgId,
@@ -254,6 +266,8 @@ export async function rpcCreateClientWithConnectionsAtomic(
   orgId: string,
   body: {
     name: string;
+    first_name: string | null;
+    last_name: string | null;
     email: string | null;
     phone: string | null;
     tags: string[];
@@ -282,6 +296,8 @@ export async function rpcCreateClientWithConnectionsAtomic(
       p_tags: tagArray.length > 0 ? tagArray : null,
       p_interest: body.interest,
       p_note: body.note,
+      p_first_name: body.first_name,
+      p_last_name: body.last_name,
     } satisfies RpcClientWithLinksArgs);
     if (!result.error) {
       const parsed = parseCreateClientWithConnectionsPayload(result.data);

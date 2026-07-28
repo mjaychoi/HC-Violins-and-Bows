@@ -67,6 +67,8 @@ export type Database = {
           id: string;
           org_id: string;
           name: string;
+          first_name: string | null;
+          last_name: string | null;
           email: string | null;
           phone: string | null;
           client_number: string | null;
@@ -80,6 +82,8 @@ export type Database = {
           id?: string;
           org_id: string;
           name: string;
+          first_name?: string | null;
+          last_name?: string | null;
           email?: string | null;
           phone?: string | null;
           client_number?: string | null;
@@ -93,6 +97,8 @@ export type Database = {
           id?: string;
           org_id?: string;
           name?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
           email?: string | null;
           phone?: string | null;
           client_number?: string | null;
@@ -291,6 +297,7 @@ export type Database = {
       instruments: {
         Row: {
           certificate: boolean;
+          certificate_name: string | null;
           consignment_price: number | null;
           cost_price: number | null;
           created_at: string;
@@ -307,13 +314,14 @@ export type Database = {
           size: string | null;
           status: string;
           subtype: string | null;
-          type: string;
+          type: string | null;
           updated_at: string;
           weight: string | null;
           year: number | null;
         };
         Insert: {
           certificate?: boolean;
+          certificate_name?: string | null;
           consignment_price?: number | null;
           cost_price?: number | null;
           created_at?: string;
@@ -330,13 +338,14 @@ export type Database = {
           size?: string | null;
           status?: string;
           subtype?: string | null;
-          type: string;
+          type?: string | null;
           updated_at?: string;
           weight?: string | null;
           year?: number | null;
         };
         Update: {
           certificate?: boolean;
+          certificate_name?: string | null;
           consignment_price?: number | null;
           cost_price?: number | null;
           created_at?: string;
@@ -353,7 +362,7 @@ export type Database = {
           size?: string | null;
           status?: string;
           subtype?: string | null;
-          type?: string;
+          type?: string | null;
           updated_at?: string;
           weight?: string | null;
           year?: number | null;
@@ -892,6 +901,10 @@ export type Database = {
           p_client_number?: string | null;
           p_links?: Json | null;
           p_tags?: string[] | null;
+          p_interest?: string | null;
+          p_note?: string | null;
+          p_first_name?: string | null;
+          p_last_name?: string | null;
         };
         Returns: Json;
       };

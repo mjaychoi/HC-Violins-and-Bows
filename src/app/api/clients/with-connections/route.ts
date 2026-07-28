@@ -151,6 +151,8 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           auth.orgId!,
           {
             name: clientName,
+            first_name: dbRow.first_name ?? null,
+            last_name: dbRow.last_name ?? null,
             email: dbRow.email ?? null,
             phone: dbRow.phone ?? null,
             tags: dbRow.tags ?? [],

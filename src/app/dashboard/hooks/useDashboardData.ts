@@ -21,6 +21,7 @@ export const useDashboardData = () => {
 
   const {
     instruments,
+    allInstrumentResultsTruncated,
     clients,
     loading,
     errors,
@@ -223,6 +224,7 @@ export const useDashboardData = () => {
   return {
     // Data
     instruments,
+    allInstrumentResultsTruncated,
     clients,
     clientRelationships,
 

@@ -38,11 +38,12 @@ type CreateInstrumentInput = {
   status?: Instrument['status'];
   reserved_reason?: string | null;
   maker?: string | null;
-  type: string;
+  type?: string | null;
   subtype?: string | null;
   year?: number | null;
   certificate?: boolean;
   has_certificate?: boolean;
+  certificate_name?: string | null;
   size?: string | null;
   weight?: string | null;
   price?: number | null;
@@ -75,13 +76,18 @@ function normalizeNullableText(
 function toInstrumentInsertRow(
   input: InstrumentInsertInput
 ): InstrumentInsertRow {
+  const hasCertificate = Boolean(input.certificate ?? input.has_certificate);
+
   return {
     org_id: input.org_id,
-    type: input.type.trim(),
+    type: input.type?.trim() || null,
     maker: normalizeNullableText(input.maker),
     subtype: normalizeNullableText(input.subtype),
     year: input.year ?? null,
-    certificate: Boolean(input.certificate ?? input.has_certificate),
+    certificate: hasCertificate,
+    certificate_name: hasCertificate
+      ? normalizeNullableText(input.certificate_name)
+      : null,
     cost_price: input.cost_price ?? null,
     consignment_price: input.consignment_price ?? null,
     size: normalizeNullableText(input.size),
@@ -162,7 +168,7 @@ async function allocateRetrySerialNumber(
 ): Promise<string> {
   const existingSerialNumbers = await getOrgSerialNumbers(auth, auth.orgId!);
   return generateInstrumentSerialNumber(
-    instrumentInsert.type,
+    instrumentInsert.type?.trim() || null,
     existingSerialNumbers
   );
 }

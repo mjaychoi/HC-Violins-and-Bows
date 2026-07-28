@@ -6,10 +6,11 @@ export function useDashboardForm() {
   const initialFormData = {
     status: 'Available',
     maker: '',
-    type: 'Instrument',
-    subtype: 'Violin',
+    type: '',
+    subtype: '',
     year: '',
     certificate: false,
+    certificate_name: '',
     size: '',
     weight: '',
     price: '',

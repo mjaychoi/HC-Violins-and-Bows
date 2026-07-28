@@ -2,6 +2,11 @@ import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@/test-utils/render';
 import DashboardContent from '../DashboardContent';
 import { Instrument, Client, ClientInstrument } from '@/types';
+import * as itemCsvExport from '../../utils/itemCsvExport';
+
+jest.mock('../../utils/itemCsvExport', () => ({
+  downloadItemCSV: jest.fn(),
+}));
 
 // Mock useDashboardFilters
 const mockSetSearchTerm = jest.fn();
@@ -14,6 +19,30 @@ const mockGetSortArrow = jest.fn(() => null);
 const mockGetActiveFiltersCount = jest.fn(() => 0);
 const mockSetDateRange = jest.fn();
 const mockSetPage = jest.fn();
+const mockShowSuccess = jest.fn();
+const mockShowWarning = jest.fn();
+const mockHandleError = jest.fn();
+let mockCanManageInstruments = true;
+let mockTenantIdentity = {
+  tenantIdentityKey: 'user-a:org-a:session-a' as string | null,
+  isTenantTransitioning: false,
+};
+
+jest.mock('@/hooks/usePermissions', () => ({
+  usePermissions: () => ({ canManageInstruments: mockCanManageInstruments }),
+}));
+
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: () => mockTenantIdentity,
+}));
+
+jest.mock('@/hooks/useAppFeedback', () => ({
+  useAppFeedback: () => ({
+    showSuccess: mockShowSuccess,
+    showWarning: mockShowWarning,
+    handleError: mockHandleError,
+  }),
+}));
 
 jest.mock('../../hooks', () => ({
   useDashboardFilters: jest.fn(() => ({
@@ -123,6 +152,12 @@ describe('DashboardContent', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCanManageInstruments = true;
+    mockTenantIdentity = {
+      tenantIdentityKey: 'user-a:org-a:session-a',
+      isTenantTransitioning: false,
+    };
+    (itemCsvExport.downloadItemCSV as jest.Mock).mockReturnValue('items.csv');
     const { useDashboardFilters } = require('../../hooks');
     (useDashboardFilters as jest.Mock).mockReturnValue({
       searchTerm: '',
@@ -139,6 +174,7 @@ describe('DashboardContent', () => {
         priceRange: { min: '', max: '' },
         hasClients: [],
       },
+      filteredItems: mockEnrichedItems,
       paginatedItems: mockEnrichedItems,
       handleFilterChange: mockHandleFilterChange,
       handlePriceRangeChange: mockHandlePriceRangeChange,
@@ -377,5 +413,141 @@ describe('DashboardContent', () => {
     );
 
     expect(screen.getByTestId('item-list')).toBeInTheDocument();
+  });
+
+  it('exports all filtered and sorted rows instead of the current page', () => {
+    const allMatchingItems = Array.from({ length: 25 }, (_, index) => ({
+      ...mockEnrichedItems[0],
+      id: `inst-${index}`,
+      maker: `Maker ${String(index).padStart(2, '0')}`,
+    }));
+    const { useDashboardFilters } = require('../../hooks');
+    (useDashboardFilters as jest.Mock).mockReturnValue({
+      searchTerm: 'Maker',
+      setSearchTerm: mockSetSearchTerm,
+      showFilters: false,
+      setShowFilters: mockSetShowFilters,
+      filters: {
+        status: [],
+        maker: [],
+        type: [],
+        subtype: [],
+        ownership: [],
+        certificate: [],
+        priceRange: { min: '', max: '' },
+        hasClients: [],
+      },
+      filteredItems: allMatchingItems,
+      paginatedItems: allMatchingItems.slice(20),
+      handleFilterChange: mockHandleFilterChange,
+      handlePriceRangeChange: mockHandlePriceRangeChange,
+      clearAllFilters: mockClearAllFilters,
+      handleSort: mockHandleSort,
+      getSortArrow: mockGetSortArrow,
+      getActiveFiltersCount: mockGetActiveFiltersCount,
+      dateRange: null,
+      setDateRange: mockSetDateRange,
+      currentPage: 2,
+      totalPages: 2,
+      totalCount: 25,
+      pageSize: 20,
+      setPage: mockSetPage,
+    });
+
+    render(<DashboardContent {...defaultProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    expect(itemCsvExport.downloadItemCSV).toHaveBeenCalledWith(
+      allMatchingItems
+    );
+    expect(mockShowSuccess).toHaveBeenCalledWith('Exported 25 Items to CSV.');
+    expect(mockSetPage).not.toHaveBeenCalled();
+    expect(mockSetSearchTerm).not.toHaveBeenCalled();
+    expect(mockClearAllFilters).not.toHaveBeenCalled();
+  });
+
+  it('does not expose Item export to unauthorized users', () => {
+    mockCanManageInstruments = false;
+    render(<DashboardContent {...defaultProps} />);
+
+    expect(
+      screen.queryByRole('button', { name: 'Export CSV' })
+    ).not.toBeInTheDocument();
+    expect(itemCsvExport.downloadItemCSV).not.toHaveBeenCalled();
+  });
+
+  it('disables export for empty results, loading, or tenant transition', () => {
+    const { useDashboardFilters } = require('../../hooks');
+    (useDashboardFilters as jest.Mock).mockReturnValue({
+      searchTerm: '',
+      setSearchTerm: mockSetSearchTerm,
+      showFilters: false,
+      setShowFilters: mockSetShowFilters,
+      filters: {},
+      filteredItems: [],
+      paginatedItems: [],
+      handleFilterChange: mockHandleFilterChange,
+      handlePriceRangeChange: mockHandlePriceRangeChange,
+      clearAllFilters: mockClearAllFilters,
+      handleSort: mockHandleSort,
+      getSortArrow: mockGetSortArrow,
+      getActiveFiltersCount: mockGetActiveFiltersCount,
+      dateRange: null,
+      setDateRange: mockSetDateRange,
+      currentPage: 1,
+      totalPages: 1,
+      totalCount: 0,
+      pageSize: 20,
+      setPage: mockSetPage,
+    });
+    const { rerender } = render(<DashboardContent {...defaultProps} />);
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+
+    (useDashboardFilters as jest.Mock).mockReturnValue({
+      ...(useDashboardFilters as jest.Mock).mock.results.at(-1)?.value,
+      filteredItems: mockEnrichedItems,
+      paginatedItems: mockEnrichedItems,
+    });
+    rerender(
+      <DashboardContent
+        {...defaultProps}
+        loading={{ any: true, hasAnyLoading: true }}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+
+    mockTenantIdentity = {
+      tenantIdentityKey: null,
+      isTenantTransitioning: true,
+    };
+    rerender(<DashboardContent {...defaultProps} />);
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+    expect(itemCsvExport.downloadItemCSV).not.toHaveBeenCalled();
+  });
+
+  it('reports a user-visible error when CSV download fails', () => {
+    (itemCsvExport.downloadItemCSV as jest.Mock).mockImplementationOnce(() => {
+      throw new Error('download failed');
+    });
+    render(<DashboardContent {...defaultProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    expect(mockHandleError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'download failed' }),
+      'Export Item CSV'
+    );
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the organization-wide Item response was truncated', () => {
+    render(<DashboardContent {...defaultProps} itemsTruncated />);
+
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+    expect(
+      screen.getByText(
+        'Export unavailable: the complete Item set exceeds the dashboard limit.'
+      )
+    ).toHaveAttribute('role', 'status');
+    expect(itemCsvExport.downloadItemCSV).not.toHaveBeenCalled();
   });
 });

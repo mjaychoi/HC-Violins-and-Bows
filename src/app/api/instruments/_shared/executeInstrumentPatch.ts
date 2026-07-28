@@ -15,6 +15,7 @@ import { logInfo, logWarn } from '@/utils/logger';
 import { writeAuditLog } from '@/utils/auditLog';
 import type { Instrument } from '@/types';
 import type { Json, TablesUpdate } from '@/types/database';
+import { getInstrumentIdentityError } from '@/utils/identityValidation';
 
 type InstrumentUpdateRow = TablesUpdate<'instruments'>;
 
@@ -22,11 +23,12 @@ type PartialInstrumentInput = Partial<{
   status: Instrument['status'];
   reserved_reason: string | null;
   maker: string | null;
-  type: string;
+  type: string | null;
   subtype: string | null;
   year: number | null;
   certificate: boolean;
   has_certificate: boolean;
+  certificate_name: string | null;
   size: string | null;
   weight: string | null;
   price: number | null;
@@ -63,6 +65,7 @@ const RPC_PATCH_KEYS = [
   'subtype',
   'year',
   'certificate',
+  'certificate_name',
   'cost_price',
   'consignment_price',
   'size',
@@ -264,11 +267,11 @@ function toInstrumentUpdateRow(
     row.maker = normalizeNullableText(input.maker);
   }
 
-  if (
-    Object.prototype.hasOwnProperty.call(input, 'type') &&
-    typeof input.type === 'string'
-  ) {
-    row.type = input.type.trim();
+  if (Object.prototype.hasOwnProperty.call(input, 'type')) {
+    row.type =
+      typeof input.type === 'string'
+        ? input.type.trim() || null
+        : (input.type ?? null);
   }
 
   if (Object.prototype.hasOwnProperty.call(input, 'subtype')) {
@@ -279,11 +282,19 @@ function toInstrumentUpdateRow(
     row.year = input.year ?? null;
   }
 
-  if (
+  const touchesCertificate =
     Object.prototype.hasOwnProperty.call(input, 'certificate') ||
-    Object.prototype.hasOwnProperty.call(input, 'has_certificate')
-  ) {
+    Object.prototype.hasOwnProperty.call(input, 'has_certificate');
+
+  if (touchesCertificate) {
     row.certificate = Boolean(input.certificate ?? input.has_certificate);
+    if (!row.certificate) {
+      row.certificate_name = null;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, 'certificate_name')) {
+    row.certificate_name = normalizeNullableText(input.certificate_name);
   }
 
   if (Object.prototype.hasOwnProperty.call(input, 'size')) {
@@ -342,6 +353,53 @@ function toRpcPatchJson(data: Partial<Instrument>): Record<string, unknown> {
   }
 
   return out;
+}
+
+async function assertResultingInstrumentIdentity(
+  auth: AuthContext,
+  orgId: string,
+  instrumentId: string,
+  updates: Partial<Instrument>
+): Promise<ApiHandlerResult | null> {
+  const touchesIdentity =
+    Object.prototype.hasOwnProperty.call(updates, 'maker') ||
+    Object.prototype.hasOwnProperty.call(updates, 'type');
+
+  if (!touchesIdentity) {
+    return null;
+  }
+
+  const { data: current, error } = await auth.userSupabase
+    .from('instruments')
+    .select('maker, type')
+    .eq('id', instrumentId)
+    .eq('org_id', orgId)
+    .single();
+
+  if (error || !current) {
+    throw errorHandler.handleSupabaseError(error, 'Fetch instrument identity');
+  }
+
+  const resultingMaker = Object.prototype.hasOwnProperty.call(updates, 'maker')
+    ? (updates.maker ?? null)
+    : (current.maker ?? null);
+  const resultingType = Object.prototype.hasOwnProperty.call(updates, 'type')
+    ? (updates.type ?? null)
+    : (current.type ?? null);
+
+  const identityError = getInstrumentIdentityError({
+    maker: resultingMaker,
+    type: resultingType,
+  });
+
+  if (identityError) {
+    return {
+      payload: { error: identityError, success: false },
+      status: 400,
+    };
+  }
+
+  return null;
 }
 
 export async function executeInstrumentPatch(
@@ -498,6 +556,16 @@ export async function executeInstrumentPatch(
         },
         status: 400,
       };
+    }
+
+    const identityFailure = await assertResultingInstrumentIdentity(
+      auth,
+      orgId,
+      instrumentId,
+      validationResult.data as Partial<Instrument>
+    );
+    if (identityFailure) {
+      return identityFailure;
     }
 
     const p_patch = toRpcPatchJson(
@@ -696,6 +764,16 @@ export async function executeInstrumentPatch(
     }
 
     validatedUpdates = reservedStateResult.update as typeof validatedUpdates;
+  }
+
+  const identityFailure = await assertResultingInstrumentIdentity(
+    auth,
+    orgId,
+    instrumentId,
+    validatedUpdates as Partial<Instrument>
+  );
+  if (identityFailure) {
+    return identityFailure;
   }
 
   const row = toInstrumentUpdateRow(validatedUpdates as PartialInstrumentInput);

@@ -336,13 +336,17 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(json.error).toBe('Failed to generate access URL');
   });
 
-  it('persists the canonical stored key returned by storage during certificate upload', async () => {
+  it('uploads a certificate without mutating false logical certificate metadata', async () => {
     const canonicalStoredKey = `tenant-b/${instrumentId}/canonical.pdf`;
     const instrumentChain = createAwaitableChain({
-      data: { id: instrumentId, serial_number: 'SN-1' },
+      data: {
+        id: instrumentId,
+        serial_number: 'SN-1',
+        certificate: false,
+        certificate_name: null,
+      },
       error: null,
     });
-    const updateInstrumentChain = createAwaitableChain({ error: null });
 
     mockStorage.saveFile.mockResolvedValueOnce(canonicalStoredKey);
     mockStorage.getFileUrl.mockImplementation(
@@ -350,12 +354,7 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     );
 
     mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
-      if (table === 'instruments') {
-        if (instrumentChain.select.mock.calls.length === 0) {
-          return instrumentChain;
-        }
-        return updateInstrumentChain;
-      }
+      if (table === 'instruments') return instrumentChain;
       if (table === 'instrument_certificates') {
         return createAwaitableChain({ error: null });
       }
@@ -383,6 +382,98 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       canonicalStoredKey,
       600
     );
+    expect(instrumentChain.update).not.toHaveBeenCalled();
+    expect(mockAuthContext.userSupabase.from).toHaveBeenCalledTimes(1);
+  });
+
+  it('reproduces named certificate upload and last-PDF deletion without changing logical metadata', async () => {
+    const logicalMetadata = {
+      certificate: true,
+      certificate_name: 'Hill Certificate',
+    };
+    const instrumentChain = createAwaitableChain({
+      data: {
+        id: instrumentId,
+        serial_number: 'SN-1',
+        ...logicalMetadata,
+      },
+      error: null,
+    });
+    const certLookupChain = createAwaitableChain({
+      data: {
+        id: certificateId,
+        storage_path: 'saved-key',
+        instruments: { org_id: 'org-1' },
+      },
+      error: null,
+    });
+    const deleteMetaChain = createAwaitableChain({ error: null });
+
+    mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
+      if (table === 'instruments') return instrumentChain;
+      if (table === 'instrument_certificates') {
+        if (certLookupChain.select.mock.calls.length === 0) {
+          return certLookupChain;
+        }
+        return deleteMetaChain;
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+    mockAuthContext.userSupabase.rpc.mockResolvedValueOnce({
+      data: certificateId,
+      error: null,
+    });
+
+    const uploadResponse = await POST(createPostRequest(), {
+      params: Promise.resolve({ id: instrumentId }),
+    });
+    const deleteResponse = await DELETE(
+      {
+        url: `http://localhost/api/instruments/${instrumentId}/certificates?id=${certificateId}`,
+      } as unknown as NextRequest,
+      { params: Promise.resolve({ id: instrumentId }) }
+    );
+    const deleteJson = await deleteResponse.json();
+
+    expect(uploadResponse.status).toBe(200);
+    expect(deleteResponse.status).toBe(200);
+    expect(deleteJson.result).toBe('full_success');
+    expect(deleteMetaChain.delete).toHaveBeenCalledTimes(1);
+    expect(mockStorage.deleteFile).toHaveBeenCalledWith('saved-key');
+    expect(instrumentChain.update).not.toHaveBeenCalled();
+    expect(logicalMetadata).toEqual({
+      certificate: true,
+      certificate_name: 'Hill Certificate',
+    });
+  });
+
+  it('uploads a certificate without mutating named logical certificate metadata', async () => {
+    const instrumentChain = createAwaitableChain({
+      data: {
+        id: instrumentId,
+        serial_number: 'SN-1',
+        certificate: true,
+        certificate_name: 'Hill Certificate',
+      },
+      error: null,
+    });
+
+    mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
+      if (table === 'instruments') return instrumentChain;
+      throw new Error(`Unexpected table ${table}`);
+    });
+    mockAuthContext.userSupabase.rpc.mockResolvedValueOnce({
+      data: certificateId,
+      error: null,
+    });
+
+    const response = await POST(createPostRequest(), {
+      params: Promise.resolve({ id: instrumentId }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(instrumentChain.update).not.toHaveBeenCalled();
+    expect(mockAuthContext.userSupabase.from).toHaveBeenCalledTimes(1);
   });
 
   it('returns 500 when replacement upload fails and leaves the old certificate intact', async () => {
@@ -547,6 +638,7 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(listChain.eq).toHaveBeenCalledWith('instruments.org_id', 'org-1');
     expect(updateChain.eq).toHaveBeenCalledWith('instrument_id', instrumentId);
     expect(mockStorage.deleteFile).toHaveBeenCalledWith(oldFileKey);
+    expect(instrumentChain.update).not.toHaveBeenCalled();
   });
 
   it('returns 200 and logs error when storage deletion fails', async () => {
@@ -674,9 +766,13 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     );
   });
 
-  it('returns 500 when the final instrument certificate flag update fails and does not pretend success', async () => {
+  it('deletes the last PDF without mutating named logical certificate metadata', async () => {
     const instrumentChain = createAwaitableChain({
-      data: { id: instrumentId },
+      data: {
+        id: instrumentId,
+        certificate: true,
+        certificate_name: 'Hill Certificate',
+      },
       error: null,
     });
     const certLookupChain = createAwaitableChain({
@@ -690,29 +786,13 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     const deleteMetaChain = createAwaitableChain({
       error: null,
     });
-    const remainingChain = createAwaitableChain({
-      data: [],
-      error: null,
-    });
-    const updateInstrumentChain = createAwaitableChain({
-      error: { message: 'instrument flag update failed' },
-    });
-
     mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
-      if (table === 'instruments') {
-        if (instrumentChain.select.mock.calls.length === 0) {
-          return instrumentChain;
-        }
-        return updateInstrumentChain;
-      }
+      if (table === 'instruments') return instrumentChain;
       if (table === 'instrument_certificates') {
         if (certLookupChain.select.mock.calls.length === 0) {
           return certLookupChain;
         }
-        if (deleteMetaChain.delete.mock.calls.length === 0) {
-          return deleteMetaChain;
-        }
-        return remainingChain;
+        return deleteMetaChain;
       }
       throw new Error(`Unexpected table ${table}`);
     });
@@ -726,17 +806,12 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     });
     const json = await response.json();
 
-    expect(response.status).toBe(500);
-    expect(json.message).toBe(
-      'Certificate file and metadata were deleted, but the instrument certificate flag update failed. Please retry or reconcile the instrument state.'
-    );
+    expect(response.status).toBe(200);
+    expect(json.result).toBe('full_success');
     expect(mockStorage.deleteFile).toHaveBeenCalledWith(oldFileKey);
     expect(deleteMetaChain.delete).toHaveBeenCalledTimes(1);
-    expect(updateInstrumentChain.update).toHaveBeenCalledWith({
-      certificate: false,
-    });
-    expect(updateInstrumentChain.eq).toHaveBeenCalledWith('id', instrumentId);
-    expect(updateInstrumentChain.eq).toHaveBeenCalledWith('org_id', 'org-1');
+    expect(instrumentChain.update).not.toHaveBeenCalled();
+    expect(mockAuthContext.userSupabase.from).toHaveBeenCalledTimes(3);
   });
 
   it('fails closed for wrong-org instrument before certificate delete lookup', async () => {
@@ -777,7 +852,11 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
 
   it('returns full_success when certificate metadata and storage delete both succeed', async () => {
     const instrumentChain = createAwaitableChain({
-      data: { id: instrumentId },
+      data: {
+        id: instrumentId,
+        certificate: false,
+        certificate_name: null,
+      },
       error: null,
     });
     const certLookupChain = createAwaitableChain({
@@ -826,6 +905,7 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(json.message).toBe('Certificate deleted successfully');
     expect(json.cleanup).toEqual({ storageDeleted: true });
     expect(mockStorage.deleteFile).toHaveBeenCalledWith(oldFileKey);
+    expect(instrumentChain.update).not.toHaveBeenCalled();
   });
 
   it('returns partial_success when certificate metadata is removed but storage cleanup fails', async () => {

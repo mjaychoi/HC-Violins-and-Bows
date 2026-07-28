@@ -247,6 +247,8 @@ export function useUnifiedData() {
     () => ({
       clients: clientsContext.state.clients,
       instruments: instrumentsContext.state.instruments,
+      allInstrumentResultsTruncated:
+        instrumentsContext.state.allResultsTruncated,
       connections: connectionsContext.state.connections,
       loading: {
         clients: clientsContext.state.loading,
@@ -600,6 +602,8 @@ export function useUnifiedDashboard() {
     () => ({
       clients: clientsContext.state.clients,
       instruments: instrumentsContext.state.instruments,
+      allInstrumentResultsTruncated:
+        instrumentsContext.state.allResultsTruncated,
       connections: connectionsContext.state.connections,
       loading: {
         clients: clientsContext.state.loading,
@@ -715,6 +719,9 @@ export function useUnifiedDashboard() {
 
   return {
     instruments: safeInstruments,
+    allInstrumentResultsTruncated: isTenantTransitioning
+      ? false
+      : state.allInstrumentResultsTruncated,
     connections: safeConnections,
     clients: safeClients,
 

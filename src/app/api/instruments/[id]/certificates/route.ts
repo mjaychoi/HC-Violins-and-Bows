@@ -456,29 +456,6 @@ async function postHandlerInternal(
     insertedId =
       typeof createdCertificateId === 'string' ? createdCertificateId : null;
 
-    const { error: updateError } = await auth.userSupabase
-      .from('instruments')
-      .update({ certificate: true })
-      .eq('id', id)
-      .eq('org_id', auth.orgId!);
-
-    if (updateError) {
-      if (insertedId) {
-        await auth.userSupabase
-          .from('instrument_certificates')
-          .delete()
-          .eq('id', insertedId)
-          .eq('instrument_id', id);
-      }
-
-      await rollbackUploadedCertificate(
-        canonicalStoredKey,
-        'Failed to rollback certificate upload after instrument update error:'
-      );
-
-      throw errorHandler.handleSupabaseError(updateError, 'Update instrument');
-    }
-
     let signedUrl = '';
     try {
       signedUrl = storage.presignGet
@@ -809,47 +786,6 @@ async function deleteHandlerInternal(
               : String(deleteError),
         }
       );
-    }
-
-    const { data: remainingCerts, error: remainingCertsError } =
-      await scopedCertificateQuery(auth, id).limit(1);
-
-    if (remainingCertsError) {
-      logError('Failed to check remaining certificates:', remainingCertsError);
-
-      return routeJson(
-        {
-          error:
-            'Certificate metadata was deleted, but remaining certificate check failed. Please retry or reconcile the instrument state.',
-          cleanup: {
-            storageDeleted,
-          },
-        },
-        500
-      );
-    }
-
-    if (!remainingCerts || remainingCerts.length === 0) {
-      const { error: updateError } = await auth.userSupabase
-        .from('instruments')
-        .update({ certificate: false })
-        .eq('id', id)
-        .eq('org_id', auth.orgId!);
-
-      if (updateError) {
-        logError('Failed to update instrument certificate flag:', updateError);
-
-        return routeJson(
-          {
-            error:
-              'Certificate file and metadata were deleted, but the instrument certificate flag update failed. Please retry or reconcile the instrument state.',
-            cleanup: {
-              storageDeleted,
-            },
-          },
-          500
-        );
-      }
     }
 
     if (!storageDeleted) {

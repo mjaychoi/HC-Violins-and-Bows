@@ -267,14 +267,20 @@ export function highlightSearchTerm(
 function csvCell(v: unknown): string {
   if (v == null) return '';
 
-  const s =
+  let s =
     typeof v === 'string'
       ? v
       : typeof v === 'number' || typeof v === 'boolean'
         ? String(v)
         : JSON.stringify(v);
 
-  if (/[,"\n]/.test(s)) {
+  // Prevent spreadsheet applications from evaluating user-controlled cells as
+  // formulas. Preserve the value itself; the apostrophe is export-only.
+  if (typeof v === 'string' && /^\s*[=+\-@]/.test(s)) {
+    s = `'${s}`;
+  }
+
+  if (/[,"\r\n]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;
@@ -287,7 +293,7 @@ export function formatCSV(
   if (data.length === 0) return '';
   const keys = headers || Object.keys(data[0]);
   const rows = data.map(row => keys.map(k => csvCell(row[k])).join(','));
-  return [keys.join(','), ...rows].join('\n');
+  return [keys.map(csvCell).join(','), ...rows].join('\n');
 }
 
 export function formatJSON(data: unknown, indent: number = 2): string {

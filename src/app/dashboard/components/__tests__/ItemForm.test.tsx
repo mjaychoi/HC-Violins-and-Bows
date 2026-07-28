@@ -264,4 +264,194 @@ describe('ItemForm', () => {
       )
     ).toBeInTheDocument();
   });
+
+  it('hides Certificate Name when Certificate is No', () => {
+    (useDashboardForm as jest.Mock).mockReturnValue({
+      ...baseFormState,
+      formData: {
+        ...baseFormState.formData,
+        certificate: false,
+      },
+    });
+
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    expect(screen.queryByLabelText('Certificate Name')).not.toBeInTheDocument();
+  });
+
+  it('shows Certificate Name when Certificate is Yes', () => {
+    (useDashboardForm as jest.Mock).mockReturnValue({
+      ...baseFormState,
+      formData: {
+        ...baseFormState.formData,
+        certificate: true,
+        certificate_name: 'Guarneri Certificate',
+      },
+    });
+
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    expect(screen.getByLabelText('Certificate Name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Certificate Name')).toHaveValue(
+      'Guarneri Certificate'
+    );
+  });
+
+  it('submits maker-only items', async () => {
+    (useDashboardForm as jest.Mock).mockReturnValue({
+      ...baseFormState,
+      formData: {
+        ...baseFormState.formData,
+        maker: 'Strad',
+        type: '',
+        serial_number: 'VI0000002',
+      },
+    });
+
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Item' }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          maker: 'Strad',
+          type: null,
+        })
+      )
+    );
+  });
+
+  it('rejects blank maker and type identity', async () => {
+    (useDashboardForm as jest.Mock).mockReturnValue({
+      ...baseFormState,
+      formData: {
+        ...baseFormState.formData,
+        maker: '',
+        type: '',
+        serial_number: 'VI0000002',
+      },
+    });
+
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Item' }));
+    expect(
+      await screen.findByText('Enter a maker or type.')
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('submits trimmed certificate_name when provided', async () => {
+    (useDashboardForm as jest.Mock).mockReturnValue({
+      ...baseFormState,
+      formData: {
+        ...baseFormState.formData,
+        maker: 'Strad',
+        type: 'Violin',
+        certificate: true,
+        certificate_name: '  My Certificate  ',
+        serial_number: 'VI0000002',
+      },
+    });
+
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Item' }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          certificate_name: 'My Certificate',
+          has_certificate: true,
+        })
+      )
+    );
+  });
+
+  it('submits null certificate_name when blank', async () => {
+    (useDashboardForm as jest.Mock).mockReturnValue({
+      ...baseFormState,
+      formData: {
+        ...baseFormState.formData,
+        maker: 'Strad',
+        type: 'Violin',
+        certificate: true,
+        certificate_name: '   ',
+        serial_number: 'VI0000002',
+      },
+    });
+
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Item' }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          certificate_name: null,
+        })
+      )
+    );
+  });
 });

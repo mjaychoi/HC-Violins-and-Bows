@@ -2,6 +2,18 @@ import React from 'react';
 import { render, screen, act, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import NotesPage from '../page';
+import { getNotesStorageKeys, type Note } from '../notesStorage';
+
+let mockTenantIdentity = {
+  tenantIdentityKey: 'user-a:org-1:session-a' as string | null,
+  userId: 'user-a' as string | null,
+  orgId: 'org-1' as string | null,
+  isTenantTransitioning: false,
+};
+
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: () => mockTenantIdentity,
+}));
 
 jest.mock('@/hooks/usePermissions', () => ({
   usePermissions: jest.fn(() => ({
@@ -53,10 +65,18 @@ jest.mock('@/components/common/inputs', () => ({
   Button: ({
     onClick,
     children,
+    disabled,
+    title,
   }: {
     onClick?: () => void;
     children: React.ReactNode;
-  }) => <button onClick={onClick}>{children}</button>,
+    disabled?: boolean;
+    title?: string;
+  }) => (
+    <button onClick={onClick} disabled={disabled} title={title}>
+      {children}
+    </button>
+  ),
 }));
 
 jest.mock('@/components/common', () => ({
@@ -103,6 +123,29 @@ jest.mock('@/components/common/modals', () => ({
 }));
 
 describe('NotesPage', () => {
+  const getKeys = () => {
+    const keys = getNotesStorageKeys(mockTenantIdentity);
+    if (!keys) throw new Error('Expected stable tenant Notes keys');
+    return keys;
+  };
+
+  const makeNote = (id: string, title: string): Note => ({
+    id,
+    title,
+    content: `${title} content`,
+    createdAt: '2026-07-29T00:00:00.000Z',
+    updatedAt: '2026-07-29T00:00:00.000Z',
+  });
+
+  const dispatchStorage = (key: string, newValue: string | null) => {
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key,
+        newValue,
+      })
+    );
+  };
+
   const getPrimaryNewNoteButton = () => {
     const button = screen
       .getAllByRole('button')
@@ -115,6 +158,12 @@ describe('NotesPage', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    mockTenantIdentity = {
+      tenantIdentityKey: 'user-a:org-1:session-a',
+      userId: 'user-a',
+      orgId: 'org-1',
+      isTenantTransitioning: false,
+    };
     Object.defineProperty(window, 'innerWidth', {
       writable: true,
       configurable: true,
@@ -205,7 +254,7 @@ describe('NotesPage', () => {
     });
 
     expect(setItemSpy).toHaveBeenCalledWith(
-      'notes_list',
+      getKeys().list,
       expect.stringContaining('Saved content')
     );
 
@@ -241,5 +290,178 @@ describe('NotesPage', () => {
     expect(
       await screen.findByPlaceholderText('Search notes...')
     ).toBeInTheDocument();
+  });
+
+  it('isolates Notes for the same user across organizations', async () => {
+    const org1Keys = getKeys();
+    localStorage.setItem(
+      org1Keys.list,
+      JSON.stringify([makeNote('org-1-note', 'Org 1 private note')])
+    );
+
+    const { rerender } = render(<NotesPage />);
+    expect(await screen.findByText('Org 1 private note')).toBeInTheDocument();
+
+    mockTenantIdentity = {
+      ...mockTenantIdentity,
+      tenantIdentityKey: 'user-a:org-2:session-a',
+      orgId: 'org-2',
+    };
+    const org2Keys = getKeys();
+    localStorage.setItem(
+      org2Keys.list,
+      JSON.stringify([makeNote('org-2-note', 'Org 2 private note')])
+    );
+    rerender(<NotesPage />);
+
+    expect(await screen.findByText('Org 2 private note')).toBeInTheDocument();
+    expect(screen.queryByText('Org 1 private note')).not.toBeInTheDocument();
+    expect(org2Keys.list).not.toBe(org1Keys.list);
+
+    mockTenantIdentity = {
+      ...mockTenantIdentity,
+      tenantIdentityKey: 'user-a:org-1:session-b',
+      orgId: 'org-1',
+    };
+    rerender(<NotesPage />);
+
+    expect(await screen.findByText('Org 1 private note')).toBeInTheDocument();
+    expect(screen.queryByText('Org 2 private note')).not.toBeInTheDocument();
+  });
+
+  it('isolates Notes between accounts and restores the original account', async () => {
+    const userAKeys = getKeys();
+    localStorage.setItem(
+      userAKeys.list,
+      JSON.stringify([makeNote('user-a-note', 'User A private note')])
+    );
+
+    const { rerender } = render(<NotesPage />);
+    expect(await screen.findByText('User A private note')).toBeInTheDocument();
+
+    mockTenantIdentity = {
+      tenantIdentityKey: 'user-b:org-1:session-b',
+      userId: 'user-b',
+      orgId: 'org-1',
+      isTenantTransitioning: false,
+    };
+    const userBKeys = getKeys();
+    rerender(<NotesPage />);
+
+    expect(await screen.findByText('No notes yet')).toBeInTheDocument();
+    expect(screen.queryByText('User A private note')).not.toBeInTheDocument();
+    expect(userBKeys.list).not.toBe(userAKeys.list);
+
+    mockTenantIdentity = {
+      tenantIdentityKey: 'user-a:org-1:session-c',
+      userId: 'user-a',
+      orgId: 'org-1',
+      isTenantTransitioning: false,
+    };
+    rerender(<NotesPage />);
+    expect(await screen.findByText('User A private note')).toBeInTheDocument();
+  });
+
+  it('does not write a pending Tenant A save into Tenant B storage', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({
+      advanceTimers: jest.advanceTimersByTime,
+    });
+    const tenantAKeys = getKeys();
+    const { rerender } = render(<NotesPage />);
+
+    await user.click(getPrimaryNewNoteButton());
+    const contentArea = await screen.findByPlaceholderText(/start writing/i);
+    await user.type(contentArea, 'Tenant A pending edit');
+
+    mockTenantIdentity = {
+      tenantIdentityKey: 'user-a:org-2:session-a',
+      userId: 'user-a',
+      orgId: 'org-2',
+      isTenantTransitioning: false,
+    };
+    const tenantBKeys = getKeys();
+    rerender(<NotesPage />);
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    expect(localStorage.getItem(tenantBKeys.list)).toBeNull();
+    expect(localStorage.getItem(tenantAKeys.list)).toBeNull();
+    jest.useRealTimers();
+  });
+
+  it('synchronizes current-tenant storage updates and deletion', async () => {
+    const keys = getKeys();
+    render(<NotesPage />);
+
+    act(() => {
+      dispatchStorage(
+        keys.list,
+        JSON.stringify([makeNote('remote-note', 'Remote current note')])
+      );
+    });
+    expect(await screen.findByText('Remote current note')).toBeInTheDocument();
+
+    act(() => {
+      dispatchStorage(keys.search, 'remote');
+    });
+    expect(screen.getByPlaceholderText('Search notes...')).toHaveValue(
+      'remote'
+    );
+
+    act(() => {
+      dispatchStorage(keys.list, null);
+    });
+    expect(await screen.findByText('No notes found')).toBeInTheDocument();
+    expect(screen.queryByText('Remote current note')).not.toBeInTheDocument();
+  });
+
+  it('ignores other-tenant and legacy storage events and values', async () => {
+    const otherKeys = getNotesStorageKeys({
+      tenantIdentityKey: 'user-b:org-2:session-b',
+      userId: 'user-b',
+      orgId: 'org-2',
+    });
+    if (!otherKeys) throw new Error('Expected other-tenant keys');
+    localStorage.setItem(
+      'notes_list',
+      JSON.stringify([makeNote('legacy', 'Legacy leaked note')])
+    );
+    localStorage.setItem('notes_search', 'legacy');
+    render(<NotesPage />);
+    expect(await screen.findByText('No notes yet')).toBeInTheDocument();
+
+    act(() => {
+      dispatchStorage(
+        otherKeys.list,
+        JSON.stringify([makeNote('other', 'Other tenant note')])
+      );
+      dispatchStorage(
+        'notes_list',
+        JSON.stringify([makeNote('legacy-2', 'Legacy event note')])
+      );
+    });
+
+    expect(screen.queryByText('Other tenant note')).not.toBeInTheDocument();
+    expect(screen.queryByText('Legacy leaked note')).not.toBeInTheDocument();
+    expect(screen.queryByText('Legacy event note')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search notes...')).toHaveValue('');
+  });
+
+  it('renders empty after scoped storage is removed and the page reloads', async () => {
+    const keys = getKeys();
+    localStorage.setItem(
+      keys.list,
+      JSON.stringify([makeNote('temporary', 'Temporary note')])
+    );
+    const firstRender = render(<NotesPage />);
+    expect(await screen.findByText('Temporary note')).toBeInTheDocument();
+    firstRender.unmount();
+
+    localStorage.removeItem(keys.list);
+    render(<NotesPage />);
+    expect(await screen.findByText('No notes yet')).toBeInTheDocument();
+    expect(screen.queryByText('Temporary note')).not.toBeInTheDocument();
   });
 });

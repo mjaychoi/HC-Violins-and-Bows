@@ -51,6 +51,8 @@ const instrument: EnrichedInstrument = {
   subtype: null,
   year: 2020,
   certificate: true,
+  has_certificate: true,
+  certificate_name: 'Hill Certificate',
   size: null,
   weight: null,
   price: 1234,
@@ -104,6 +106,23 @@ describe('ItemList', () => {
       />
     );
     expect(screen.getByText(/No items/i)).toBeInTheDocument();
+  });
+
+  it('renders the certificate badge from logical item metadata', () => {
+    render(
+      <ItemList
+        items={[instrument]}
+        loading={false}
+        onDeleteClick={jest.fn()}
+        clientRelationships={[]}
+        getSortArrow={() => ''}
+        onSort={jest.fn()}
+      />
+    );
+
+    expect(
+      screen.getAllByLabelText('Certificate: Hill Certificate').length
+    ).toBeGreaterThan(0);
   });
 
   it('renders items and triggers edit/save/delete', async () => {
@@ -216,5 +235,36 @@ describe('ItemList', () => {
     await waitFor(() => {
       expect(screen.getByText('Saved')).toBeInTheDocument();
     });
+  });
+
+  it('renders data columns in the required order without Subtype', () => {
+    render(
+      <ItemList
+        items={[instrument]}
+        loading={false}
+        onDeleteClick={jest.fn()}
+        clientRelationships={relationships}
+        getSortArrow={() => '↑'}
+        onSort={jest.fn()}
+      />
+    );
+
+    const headers = screen.getAllByRole('columnheader');
+    const headerTexts = headers.map(header =>
+      (header.textContent?.trim() || '').replace(/↑|↓/g, '')
+    );
+
+    expect(headerTexts).toEqual([
+      '',
+      'Item Number',
+      'Maker',
+      'Type',
+      'Year',
+      'Price',
+      'Certificate',
+      'Note',
+      'Status',
+    ]);
+    expect(headerTexts.some(text => text.includes('Subtype'))).toBe(false);
   });
 });

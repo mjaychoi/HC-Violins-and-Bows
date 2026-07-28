@@ -368,6 +368,35 @@ describe('useDashboardFilters', () => {
     expect(result.current.filteredItems.length).toBeGreaterThan(0);
   });
 
+  it('keeps the full sorted result set before UI pagination', () => {
+    const manyItems = Array.from({ length: 25 }, (_, index) => ({
+      ...mockItems[0],
+      id: `item-${index}`,
+      maker: `Maker ${String(24 - index).padStart(2, '0')}`,
+      created_at: `2024-01-${String((index % 25) + 1).padStart(2, '0')}T00:00:00Z`,
+    }));
+    const { result } = renderHook(() => useDashboardFilters(manyItems));
+
+    act(() => {
+      result.current.handleSort('maker');
+    });
+
+    expect(result.current.filteredItems).toHaveLength(25);
+    expect(result.current.paginatedItems).toHaveLength(20);
+    expect(result.current.filteredItems.map(item => item.maker)).toEqual(
+      [...result.current.filteredItems]
+        .map(item => item.maker)
+        .sort((a, b) => (a ?? '').localeCompare(b ?? ''))
+    );
+
+    act(() => {
+      result.current.setPage(2);
+    });
+
+    expect(result.current.filteredItems).toHaveLength(25);
+    expect(result.current.paginatedItems).toHaveLength(5);
+  });
+
   it('should return active filters count', () => {
     const { result } = renderHook(() => useDashboardFilters(mockItems));
 

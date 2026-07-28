@@ -50,6 +50,7 @@ export default function DashboardPage() {
   // --- Dashboard data and CRUD operations ---
   const {
     instruments,
+    allInstrumentResultsTruncated,
     clientRelationships,
     clients,
     loading,
@@ -358,6 +359,7 @@ export default function DashboardPage() {
 
             <DashboardContent
               enrichedItems={enrichedItems}
+              itemsTruncated={allInstrumentResultsTruncated}
               clients={clients}
               clientRelationships={clientRelationships}
               clientsLoading={clientsLoading}

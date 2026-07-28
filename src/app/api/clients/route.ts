@@ -388,6 +388,8 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         auth.orgId!,
         {
           name: clientName,
+          first_name: insertRow.first_name ?? null,
+          last_name: insertRow.last_name ?? null,
           email: insertRow.email,
           phone: insertRow.phone,
           client_number: insertRow.client_number,
@@ -515,7 +517,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
       const { data: currentRow, error: curErr } = await auth.userSupabase
         .from('clients')
-        .select('name')
+        .select('name, first_name, last_name')
         .eq('id', id)
         .eq('org_id', auth.orgId!)
         .single();
@@ -525,12 +527,24 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const dbPatch = mergePartialClientIntoDbPatch(
-        typeof currentRow.name === 'string' ? currentRow.name : null,
+        {
+          name: typeof currentRow.name === 'string' ? currentRow.name : null,
+          first_name:
+            typeof currentRow.first_name === 'string'
+              ? currentRow.first_name
+              : null,
+          last_name:
+            typeof currentRow.last_name === 'string'
+              ? currentRow.last_name
+              : null,
+        },
         validation.data
       );
 
       if (
-        Object.prototype.hasOwnProperty.call(dbPatch, 'name') &&
+        (Object.prototype.hasOwnProperty.call(dbPatch, 'first_name') ||
+          Object.prototype.hasOwnProperty.call(dbPatch, 'last_name') ||
+          Object.prototype.hasOwnProperty.call(dbPatch, 'name')) &&
         typeof dbPatch.name === 'string' &&
         dbPatch.name.trim() === ''
       ) {

@@ -7,8 +7,9 @@ describe('useDashboardForm', () => {
 
     expect(result.current.formData.status).toBe('Available');
     expect(result.current.formData.maker).toBe('');
-    expect(result.current.formData.type).toBe('Instrument');
-    expect(result.current.formData.subtype).toBe('Violin');
+    expect(result.current.formData.type).toBe('');
+    expect(result.current.formData.subtype).toBe('');
+    expect(result.current.formData.certificate_name).toBe('');
     expect(result.current.priceInput).toBe('');
     expect(result.current.selectedFiles).toHaveLength(0);
   });

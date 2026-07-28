@@ -103,6 +103,7 @@ interface InstrumentsState {
   submitting: boolean;
   error: unknown | null;
   lastUpdated: Date | null;
+  allResultsTruncated: boolean;
 }
 
 type InstrumentsAction =
@@ -111,6 +112,7 @@ type InstrumentsAction =
   | { type: 'SET_SUBMITTING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: unknown | null }
   | { type: 'SET_INSTRUMENTS'; payload: Instrument[] }
+  | { type: 'SET_ALL_RESULTS_TRUNCATED'; payload: boolean }
   | { type: 'ADD_INSTRUMENT'; payload: Instrument }
   | {
       type: 'UPDATE_INSTRUMENT';
@@ -127,6 +129,7 @@ const initialState: InstrumentsState = {
   submitting: false,
   error: null,
   lastUpdated: null,
+  allResultsTruncated: false,
 };
 
 function instrumentsReducer(
@@ -180,6 +183,12 @@ function instrumentsReducer(
         instruments: action.payload,
         error: null,
         lastUpdated: new Date(),
+      };
+
+    case 'SET_ALL_RESULTS_TRUNCATED':
+      return {
+        ...state,
+        allResultsTruncated: action.payload,
       };
 
     case 'ADD_INSTRUMENT':
@@ -355,6 +364,7 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
           const instruments = ((result?.data || []) as Instrument[]).map(
             parseInstrumentType
           );
+          const allResultsTruncated = result.truncated === true;
 
           if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
             return;
@@ -364,6 +374,15 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
             dispatch({
               type: 'SET_INSTRUMENTS',
               payload: instruments,
+            });
+          }
+          if (
+            listAll &&
+            stateRef.current.allResultsTruncated !== allResultsTruncated
+          ) {
+            dispatch({
+              type: 'SET_ALL_RESULTS_TRUNCATED',
+              payload: allResultsTruncated,
             });
           }
         } catch (error) {
@@ -656,6 +675,7 @@ export function useInstruments() {
     submitting: state.submitting,
     error: state.error,
     lastUpdated: state.lastUpdated,
+    allResultsTruncated: state.allResultsTruncated,
     ...actions,
   };
 }

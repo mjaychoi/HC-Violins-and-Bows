@@ -271,22 +271,28 @@ describe('Validation Functions', () => {
       );
     });
 
-    it('rejects nullable type values and strips unsupported fields', () => {
+    it('rejects missing identity and preserves certificate_name', () => {
       expect(() =>
         validateCreateInstrument({
           type: null,
         })
-      ).toThrow('Invalid Instrument creation data');
+      ).toThrow('Enter a maker or type.');
 
       const result = validateCreateInstrument({
+        maker: 'Stradivari',
         type: 'Violin',
-        certificate_name: 'Unsupported',
+        certificate: true,
+        certificate_name: 'Original Label',
         image_url: 'https://example.com/test.jpg',
       });
 
       expect(result).toEqual(
+        expect.objectContaining({
+          certificate_name: 'Original Label',
+        })
+      );
+      expect(result).toEqual(
         expect.not.objectContaining({
-          certificate_name: expect.anything(),
           image_url: expect.anything(),
         })
       );
@@ -294,12 +300,16 @@ describe('Validation Functions', () => {
   });
 
   describe('validatePartialInstrument', () => {
-    it('does not allow setting type to null on update', () => {
-      expect(() =>
+    it('allows clearing type when maker remains on update payload', () => {
+      expect(
         validatePartialInstrument({
           type: null,
         })
-      ).toThrow('Invalid Instrument update');
+      ).toEqual(
+        expect.objectContaining({
+          type: null,
+        })
+      );
     });
   });
 

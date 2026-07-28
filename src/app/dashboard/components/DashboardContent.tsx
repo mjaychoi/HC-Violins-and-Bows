@@ -1,9 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDashboardFilters } from '../hooks';
 import { ItemList, ItemFilters } from './';
 import { SearchInput } from '@/components/common';
+import { useAppFeedback } from '@/hooks/useAppFeedback';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
+import { downloadItemCSV } from '../utils/itemCsvExport';
 import type { Instrument, Client, ClientInstrument } from '@/types';
 
 type EnrichedInstrument = Instrument & {
@@ -12,6 +16,7 @@ type EnrichedInstrument = Instrument & {
 
 interface DashboardContentProps {
   enrichedItems: EnrichedInstrument[];
+  itemsTruncated?: boolean;
   clients: Client[];
   clientRelationships: ClientInstrument[];
   clientsLoading: boolean;
@@ -35,6 +40,7 @@ interface DashboardContentProps {
 
 function DashboardContentInner({
   enrichedItems,
+  itemsTruncated = false,
   clients,
   clientRelationships,
   clientsLoading,
@@ -48,12 +54,17 @@ function DashboardContentInner({
   onNewlyCreatedItemShown,
   onInstrumentCertificatesChanged,
 }: DashboardContentProps) {
+  const { canManageInstruments } = usePermissions();
+  const { tenantIdentityKey, isTenantTransitioning } = useTenantIdentity();
+  const { showSuccess, showWarning, handleError } = useAppFeedback();
+  const [isExporting, setIsExporting] = useState(false);
   const {
     searchTerm,
     setSearchTerm,
     showFilters,
     setShowFilters,
     filters,
+    filteredItems,
     paginatedItems,
     handleFilterChange,
     handlePriceRangeChange,
@@ -69,6 +80,54 @@ function DashboardContentInner({
     pageSize,
     setPage,
   } = useDashboardFilters(enrichedItems);
+  const exportItems = useMemo(() => filteredItems ?? [], [filteredItems]);
+
+  useEffect(() => {
+    setIsExporting(false);
+  }, [tenantIdentityKey]);
+
+  const handleExportCSV = useCallback(() => {
+    if (
+      !canManageInstruments ||
+      isExporting ||
+      loading.hasAnyLoading ||
+      isTenantTransitioning ||
+      !tenantIdentityKey ||
+      itemsTruncated
+    ) {
+      return;
+    }
+
+    if (exportItems.length === 0) {
+      showWarning('No matching Items to export.');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      downloadItemCSV(exportItems);
+      showSuccess(
+        `Exported ${exportItems.length} Item${
+          exportItems.length === 1 ? '' : 's'
+        } to CSV.`
+      );
+    } catch (error) {
+      handleError(error, 'Export Item CSV');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [
+    canManageInstruments,
+    exportItems,
+    handleError,
+    isExporting,
+    isTenantTransitioning,
+    itemsTruncated,
+    loading.hasAnyLoading,
+    showSuccess,
+    showWarning,
+    tenantIdentityKey,
+  ]);
 
   const hasActiveFilters =
     getActiveFiltersCount() > 0 ||
@@ -91,6 +150,38 @@ function DashboardContentInner({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {canManageInstruments && (
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                disabled={
+                  loading.hasAnyLoading ||
+                  isExporting ||
+                  isTenantTransitioning ||
+                  !tenantIdentityKey ||
+                  itemsTruncated ||
+                  exportItems.length === 0
+                }
+                title={
+                  isTenantTransitioning || !tenantIdentityKey
+                    ? 'Organization context required'
+                    : itemsTruncated
+                      ? 'Complete Item set exceeds the dashboard export limit'
+                      : exportItems.length === 0
+                        ? 'No matching Items to export'
+                        : undefined
+                }
+                className="px-3 py-1.5 text-sm font-medium rounded-lg border text-gray-700 border-gray-300 bg-white hover:bg-gray-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
+              >
+                {isExporting ? 'Exporting…' : 'Export CSV'}
+              </button>
+            )}
+            {canManageInstruments && itemsTruncated && (
+              <span className="text-xs text-amber-700" role="status">
+                Export unavailable: the complete Item set exceeds the dashboard
+                limit.
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setShowFilters(!showFilters)}
