@@ -125,6 +125,46 @@ describe('InstrumentsContext createInstrument', () => {
   });
 });
 
+describe('InstrumentsContext complete-list metadata', () => {
+  const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('retains the all-results truncation guard across bounded refreshes', async () => {
+    const item: Instrument = {
+      id: 'item-1',
+      ...minimalCreateBody,
+      created_at: '2024-01-01T00:00:00Z',
+    };
+    mockApiFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [item], truncated: true }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [item], truncated: false }),
+      } as unknown as Response);
+    const { result } = renderHook(() => useInstruments(), {
+      wrapper: InstrumentsProvider,
+    });
+
+    await act(async () => {
+      await result.current.fetchInstruments({ all: true });
+    });
+    expect(result.current.allResultsTruncated).toBe(true);
+
+    await act(async () => {
+      await result.current.fetchInstruments();
+    });
+    expect(result.current.allResultsTruncated).toBe(true);
+  });
+});
+
 describe('InstrumentsContext updateInstrument', () => {
   const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;
 

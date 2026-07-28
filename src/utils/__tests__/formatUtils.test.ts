@@ -350,6 +350,27 @@ describe('formatUtils', () => {
       const result = formatCSV(data);
       expect(result).toContain('"John, Jr."');
     });
+
+    it('should escape line breaks and preserve deterministic header order', () => {
+      const result = formatCSV(
+        [{ second: 'line 1\rline 2', first: '한글' }],
+        ['first', 'second']
+      );
+      expect(result).toBe('first,second\n한글,"line 1\rline 2"');
+    });
+
+    it.each(['=1+1', ' +SUM(A1:A2)', '-2+3', '\t@command'])(
+      'should neutralize spreadsheet formula input %p',
+      value => {
+        expect(formatCSV([{ value }])).toBe(`value\n'${value}`);
+      }
+    );
+
+    it('should render null and undefined values as empty cells', () => {
+      expect(
+        formatCSV([{ first: null, second: undefined }], ['first', 'second'])
+      ).toBe('first,second\n,');
+    });
   });
 
   describe('formatJSON', () => {
