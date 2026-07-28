@@ -16,6 +16,11 @@ import {
   handleApiResponse,
   readApiResponseBody,
 } from '@/utils/handleApiResponse';
+import {
+  CERTIFICATE_PDF_SIZE_HELP_TEXT,
+  CERTIFICATE_PDF_TOO_LARGE_ERROR,
+  MAX_CERTIFICATE_PDF_SIZE_BYTES,
+} from '@/constants/certificateUpload';
 
 interface InstrumentModalProps {
   isOpen: boolean;
@@ -224,6 +229,13 @@ export default function InstrumentModal({
     if (!file || !instrument?.id || !canUploadInstrumentMedia) {
       return;
     }
+    if (file.size > MAX_CERTIFICATE_PDF_SIZE_BYTES) {
+      handleError(
+        new Error(CERTIFICATE_PDF_TOO_LARGE_ERROR),
+        'InstrumentCertificateUpload'
+      );
+      return;
+    }
 
     setUploadingCertificate(true);
     try {
@@ -300,6 +312,14 @@ export default function InstrumentModal({
       !canUploadInstrumentMedia ||
       !certificateToReplace
     ) {
+      setCertificateToReplace(null);
+      return;
+    }
+    if (file.size > MAX_CERTIFICATE_PDF_SIZE_BYTES) {
+      handleError(
+        new Error(CERTIFICATE_PDF_TOO_LARGE_ERROR),
+        'InstrumentCertificateReplace'
+      );
       setCertificateToReplace(null);
       return;
     }
@@ -667,7 +687,7 @@ export default function InstrumentModal({
                       {uploadingCertificate ? 'Uploading...' : 'Upload PDF'}
                     </button>
                     <span className="text-xs text-gray-500">
-                      PDF only, max 100MB
+                      {CERTIFICATE_PDF_SIZE_HELP_TEXT}
                     </span>
                   </div>
                 ) : null}

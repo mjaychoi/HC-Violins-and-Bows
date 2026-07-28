@@ -17,9 +17,12 @@ import {
   destructiveMutationRateLimit,
   uploadRateLimit,
 } from '@/app/api/_utils/rateLimit';
+import {
+  CERTIFICATE_PDF_TOO_LARGE_ERROR,
+  MAX_CERTIFICATE_PDF_SIZE_BYTES,
+} from '@/constants/certificateUpload';
 
 const SIGNED_URL_TTL_SECONDS = 600;
-const MAX_CERTIFICATE_SIZE = 20 * 1024 * 1024;
 const PDF_MAGIC_BYTES = Buffer.from('%PDF-', 'ascii');
 const MIN_PDF_HEADER_LENGTH = PDF_MAGIC_BYTES.length;
 
@@ -213,17 +216,10 @@ async function validateCertificateUploadFromRequest(
     };
   }
 
-  if (file.size > MAX_CERTIFICATE_SIZE) {
+  if (file.size > MAX_CERTIFICATE_PDF_SIZE_BYTES) {
     return {
       ok: false,
-      response: routeJson(
-        {
-          error: `Certificate file size must be less than ${Math.round(
-            MAX_CERTIFICATE_SIZE / 1024 / 1024
-          )}MB`,
-        },
-        400
-      ),
+      response: routeJson({ error: CERTIFICATE_PDF_TOO_LARGE_ERROR }, 400),
     };
   }
 

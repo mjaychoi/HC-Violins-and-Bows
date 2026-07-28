@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import React from 'react';
-import { render, screen, waitFor } from '@/test-utils/render';
+import { fireEvent, render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import {
   InstrumentExpandedRow,
@@ -10,6 +10,10 @@ import type { Instrument } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { usePermissions } from '@/hooks/usePermissions';
+import {
+  CERTIFICATE_PDF_TOO_LARGE_ERROR,
+  MAX_CERTIFICATE_PDF_SIZE_BYTES,
+} from '@/constants/certificateUpload';
 
 // Mock dependencies
 jest.mock('@/utils/apiFetch');
@@ -179,6 +183,63 @@ describe('InstrumentExpandedRow', () => {
         screen.getByText('No certificate files uploaded yet.')
       ).toBeInTheDocument();
     });
+  });
+
+  it('shows the canonical certificate PDF upload limit', () => {
+    render(<InstrumentExpandedRow instrument={mockInstrument} />);
+
+    expect(screen.getByText('PDF only, max 20MB')).toBeInTheDocument();
+  });
+
+  it('allows an exactly 20 MiB certificate into the upload flow', async () => {
+    const file = new File(['%PDF-'], 'boundary.pdf', {
+      type: 'application/pdf',
+    });
+    Object.defineProperty(file, 'size', {
+      configurable: true,
+      value: MAX_CERTIFICATE_PDF_SIZE_BYTES,
+    });
+
+    render(<InstrumentExpandedRow instrument={mockInstrument} />);
+    fireEvent.change(screen.getByLabelText('Upload certificate PDF'), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(
+        mockApiFetch.mock.calls.some(([, init]) => init?.method === 'POST')
+      ).toBe(true);
+    });
+    expect(mockHandleError).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: CERTIFICATE_PDF_TOO_LARGE_ERROR }),
+      'CertificateUpload'
+    );
+  });
+
+  it('rejects a certificate over 20 MiB, resets input, and skips the API', async () => {
+    const user = userEvent.setup();
+    const file = new File(['%PDF-'], 'oversize.pdf', {
+      type: 'application/pdf',
+    });
+    Object.defineProperty(file, 'size', {
+      configurable: true,
+      value: MAX_CERTIFICATE_PDF_SIZE_BYTES + 1,
+    });
+
+    render(<InstrumentExpandedRow instrument={mockInstrument} />);
+    const input = screen.getByLabelText(
+      'Upload certificate PDF'
+    ) as HTMLInputElement;
+    await user.upload(input, file);
+
+    expect(input.value).toBe('');
+    expect(mockHandleError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: CERTIFICATE_PDF_TOO_LARGE_ERROR }),
+      'CertificateUpload'
+    );
+    expect(
+      mockApiFetch.mock.calls.some(([, init]) => init?.method === 'POST')
+    ).toBe(false);
   });
 
   it('shows a named logical certificate when there are no PDF attachments', async () => {
