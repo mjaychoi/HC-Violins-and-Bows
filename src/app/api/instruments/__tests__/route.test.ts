@@ -404,7 +404,9 @@ describe('/api/instruments', () => {
       } as any;
 
       await GET(
-        new NextRequest('http://localhost/api/instruments?search=%20Guarneri%20')
+        new NextRequest(
+          'http://localhost/api/instruments?search=%20Guarneri%20'
+        )
       );
 
       expect(mockQuery.ilike).toHaveBeenCalledWith('maker', '%Guarneri%');
@@ -428,7 +430,9 @@ describe('/api/instruments', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       } as any;
 
-      await GET(new NextRequest('http://localhost/api/instruments?search=%20%20'));
+      await GET(
+        new NextRequest('http://localhost/api/instruments?search=%20%20')
+      );
       await GET(new NextRequest('http://localhost/api/instruments?search='));
 
       expect(mockQuery.ilike).not.toHaveBeenCalled();
@@ -516,7 +520,8 @@ describe('/api/instruments', () => {
         )
       );
 
-      const ilikeArg = (mockQuery.ilike as jest.Mock).mock.calls[0][1] as string;
+      const ilikeArg = (mockQuery.ilike as jest.Mock).mock
+        .calls[0][1] as string;
       expect(ilikeArg.length).toBeLessThanOrEqual(102);
       expect(ilikeArg.startsWith('%')).toBe(true);
       expect(ilikeArg.endsWith('%')).toBe(true);
