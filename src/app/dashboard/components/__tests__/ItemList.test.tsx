@@ -51,6 +51,8 @@ const instrument: EnrichedInstrument = {
   subtype: null,
   year: 2020,
   certificate: true,
+  has_certificate: true,
+  certificate_name: 'Hill Certificate',
   size: null,
   weight: null,
   price: 1234,
@@ -104,6 +106,23 @@ describe('ItemList', () => {
       />
     );
     expect(screen.getByText(/No items/i)).toBeInTheDocument();
+  });
+
+  it('renders the certificate badge from logical item metadata', () => {
+    render(
+      <ItemList
+        items={[instrument]}
+        loading={false}
+        onDeleteClick={jest.fn()}
+        clientRelationships={[]}
+        getSortArrow={() => ''}
+        onSort={jest.fn()}
+      />
+    );
+
+    expect(
+      screen.getAllByLabelText('Certificate: Hill Certificate').length
+    ).toBeGreaterThan(0);
   });
 
   it('renders items and triggers edit/save/delete', async () => {

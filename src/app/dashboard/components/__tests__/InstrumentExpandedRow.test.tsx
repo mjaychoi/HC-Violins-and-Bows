@@ -178,6 +178,78 @@ describe('InstrumentExpandedRow', () => {
     });
   });
 
+  it('shows a named logical certificate when there are no PDF attachments', async () => {
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': [],
+      '/api/instruments/inst-123/certificates': [],
+    });
+
+    render(
+      <InstrumentExpandedRow
+        instrument={{
+          ...mockInstrument,
+          certificate: true,
+          has_certificate: true,
+          certificate_name: 'Hill Certificate',
+        }}
+      />
+    );
+
+    expect(
+      screen.getByLabelText('Certificate: Hill Certificate')
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText('No certificate files uploaded yet.')
+    ).toBeInTheDocument();
+  });
+
+  it('shows the canonical unnamed logical certificate label with no PDFs', async () => {
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': [],
+      '/api/instruments/inst-123/certificates': [],
+    });
+
+    render(<InstrumentExpandedRow instrument={mockInstrument} />);
+
+    expect(
+      screen.getByLabelText('Certificate: Certificate')
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText('No certificate files uploaded yet.')
+    ).toBeInTheDocument();
+  });
+
+  it('shows no logical certificate while still rendering an attached PDF', async () => {
+    mockApiFetchByUrl({
+      '/api/instruments/inst-123/images': [],
+      '/api/instruments/inst-123/certificates': [
+        {
+          id: 'cert-1',
+          name: 'scan.pdf',
+          path: '/certificates/scan.pdf',
+          size: 1024,
+          createdAt: '2024-01-01T00:00:00Z',
+        },
+      ],
+    });
+
+    render(
+      <InstrumentExpandedRow
+        instrument={{
+          ...mockInstrument,
+          certificate: false,
+          has_certificate: false,
+          certificate_name: null,
+        }}
+      />
+    );
+
+    expect(
+      screen.getByLabelText('Certificate: No certificate')
+    ).toBeInTheDocument();
+    expect(await screen.findByText('scan.pdf')).toBeInTheDocument();
+  });
+
   it('should fetch images when component mounts', async () => {
     const mockImages = [
       {
@@ -1239,10 +1311,21 @@ describe('InstrumentExpandedRow', () => {
       } as Response)
       .mockResolvedValueOnce({
         ok: true,
+        json: async () => ({
+          result: 'full_success',
+          message: 'Certificate deleted successfully',
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
         json: async () => ({ data: [] }), // After delete, certificates list is empty
       } as Response);
 
     render(<InstrumentExpandedRow instrument={mockInstrument} />);
+
+    expect(
+      screen.getByLabelText('Certificate: Certificate')
+    ).toBeInTheDocument();
 
     await waitFor(
       () => {
@@ -1293,6 +1376,12 @@ describe('InstrumentExpandedRow', () => {
         expect(mockShowSuccess).toHaveBeenCalledWith(
           'Certificate deleted successfully'
         );
+        expect(
+          screen.getByLabelText('Certificate: Certificate')
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText('No certificate files uploaded yet.')
+        ).toBeInTheDocument();
       },
       { timeout: 3000 }
     );

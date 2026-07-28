@@ -20,6 +20,7 @@ import {
   handleApiResponse,
   readApiResponseBody,
 } from '@/utils/handleApiResponse';
+import CertificateBadge from './CertificateBadge';
 
 interface InstrumentExpandedRowProps {
   instrument: Instrument;
@@ -75,7 +76,6 @@ export function InstrumentExpandedRow({
     fileName: string;
   } | null>(null);
   const { showSuccess, showWarning, handleError } = useAppFeedback();
-  const hasCertificateFile = certificateFiles.length > 0;
   const certFileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingCertificate, setUploadingCertificate] = useState(false);
 
@@ -842,9 +842,12 @@ export function InstrumentExpandedRow({
 
               <div className="col-span-2">
                 <div className="text-xs text-gray-500 mb-1">Certificate</div>
-                <div className="text-sm text-gray-900">
-                  {hasCertificateFile ? 'Yes' : 'No'}
-                </div>
+                <CertificateBadge
+                  hasCertificate={Boolean(
+                    instrument.has_certificate ?? instrument.certificate
+                  )}
+                  certificateName={instrument.certificate_name}
+                />
               </div>
 
               {ownerLabel && ownerLabel !== '—' && (

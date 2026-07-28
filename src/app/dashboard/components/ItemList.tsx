@@ -856,7 +856,9 @@ const ItemList = memo(function ItemList({
                                 onDelete={() => onDeleteClick(item)}
                                 currentStatus={item.status}
                                 itemId={item.id}
-                                hasCertificate={Boolean(item.has_certificate)}
+                                hasCertificate={Boolean(
+                                  item.has_certificate ?? item.certificate
+                                )}
                                 onDownloadCertificate={async () => {
                                   const rawFilename =
                                     item.serial_number || item.id;
@@ -989,7 +991,9 @@ const ItemList = memo(function ItemList({
 
                       <td className={classNames.tableCell}>
                         <CertificateBadge
-                          hasCertificate={Boolean(item.has_certificate)}
+                          hasCertificate={Boolean(
+                            item.has_certificate ?? item.certificate
+                          )}
                           certificateName={item.certificate_name}
                         />
                       </td>
