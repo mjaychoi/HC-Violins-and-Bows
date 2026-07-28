@@ -19,15 +19,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS
 ALTER TABLE public.orphaned_storage_objects ENABLE ROW LEVEL SECURITY;
 
 -- Only admins of the owning org may read or insert orphan records.
+DROP POLICY IF EXISTS orphaned_storage_objects_select
+  ON public.orphaned_storage_objects;
 CREATE POLICY orphaned_storage_objects_select ON public.orphaned_storage_objects
   FOR SELECT TO authenticated
   USING (org_id = public.org_id() AND public.is_admin());
 
+DROP POLICY IF EXISTS orphaned_storage_objects_insert
+  ON public.orphaned_storage_objects;
 CREATE POLICY orphaned_storage_objects_insert ON public.orphaned_storage_objects
   FOR INSERT TO authenticated
   WITH CHECK (org_id = public.org_id() AND public.is_admin());
 
 -- Service-role (used by cleanup jobs) may delete resolved records.
+DROP POLICY IF EXISTS orphaned_storage_objects_delete
+  ON public.orphaned_storage_objects;
 CREATE POLICY orphaned_storage_objects_delete ON public.orphaned_storage_objects
   FOR DELETE TO service_role
   -- migration-guard: allow-true-policy (service_role only; cleanup job must delete any resolved orphan)

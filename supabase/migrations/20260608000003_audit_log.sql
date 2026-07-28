@@ -16,17 +16,19 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
 -- RLS: admins in the same org can read; nobody can UPDATE or DELETE (append-only)
 ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "audit_log_select_admin"
+  ON public.audit_log;
 CREATE POLICY "audit_log_select_admin"
   ON public.audit_log
   FOR SELECT
   TO authenticated
   USING (
-    org_id IN (
-      SELECT org_id FROM public.org_members WHERE user_id = auth.uid() AND role = 'admin'
-    )
+    org_id = public.org_id() AND public.is_admin()
   );
 
 -- Only the application backend (service_role) may insert audit rows
+DROP POLICY IF EXISTS "audit_log_insert_service_role"
+  ON public.audit_log;
 CREATE POLICY "audit_log_insert_service_role"
   ON public.audit_log
   FOR INSERT
@@ -35,6 +37,6 @@ CREATE POLICY "audit_log_insert_service_role"
   WITH CHECK (true);
 
 -- Index for per-org chronological lookups
-CREATE INDEX audit_log_org_created_idx ON public.audit_log (org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_log_org_created_idx ON public.audit_log (org_id, created_at DESC);
 -- Index for per-resource history
-CREATE INDEX audit_log_resource_idx ON public.audit_log (org_id, resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS audit_log_resource_idx ON public.audit_log (org_id, resource_type, resource_id);
