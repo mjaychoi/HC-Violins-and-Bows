@@ -358,7 +358,22 @@ export type Database = {
           weight?: string | null;
           year?: number | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'instruments_reserved_by_user_id_fkey';
+            columns: ['reserved_by_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'instruments_reserved_connection_id_fkey';
+            columns: ['reserved_connection_id'];
+            isOneToOne: false;
+            referencedRelation: 'client_instruments';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       invoice_items: {
         Row: {
@@ -596,7 +611,7 @@ export type Database = {
           due_date: string | null;
           estimated_hours: number | null;
           id: string;
-          instrument_id: string | null;
+          instrument_id: string;
           notes: string | null;
           org_id: string | null;
           personal_due_date: string | null;
@@ -618,7 +633,7 @@ export type Database = {
           due_date?: string | null;
           estimated_hours?: number | null;
           id?: string;
-          instrument_id?: string | null;
+          instrument_id: string;
           notes?: string | null;
           org_id?: string | null;
           personal_due_date?: string | null;
@@ -640,7 +655,7 @@ export type Database = {
           due_date?: string | null;
           estimated_hours?: number | null;
           id?: string;
-          instrument_id?: string | null;
+          instrument_id?: string;
           notes?: string | null;
           org_id?: string | null;
           personal_due_date?: string | null;

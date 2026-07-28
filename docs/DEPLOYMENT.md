@@ -485,6 +485,21 @@ npx playwright test
 
 ---
 
+## 🛡️ Batch B — maintenance history & reserved references (20260728140000)
+
+`supabase/migrations/20260728140000_preserve_maintenance_history_and_enforce_reserved_references.sql`
+
+**Rollout gate (hosted apply):**
+
+- Merging to `main` may auto-apply migrations through CI — confirm the target database/environment explicitly before merge.
+- Run aggregate-only hosted audit first (`scripts/supabase/reference_integrity_preflight_audit.sql`). Every `mismatch_count` must be **0**.
+- Operator approval is required in the PR (target environment, Supabase project ref, merge auto-applies yes/no, audit counts, `Migration apply approval: approved`).
+- No automatic remediation of bad rows — operator-led investigation only if any count is non-zero.
+- After apply: verify FK delete actions (`RESTRICT` / `SET NULL`) and trigger existence; run focused reservation/maintenance smoke tests.
+- Rollback does **not** mean deleting historical maintenance rows.
+
+---
+
 ## 📚 관련 문서
 
 - [데이터베이스 마이그레이션 가이드](./DATABASE_MIGRATION.md)

@@ -150,6 +150,8 @@ export default function TaskModal({
       return;
     }
 
+    const instrumentId = formData.instrument_id as string;
+
     // Prepare task data
     // Set completed_date if status is completed and it wasn't already completed
     const wasCompleted = selectedTask?.status === 'completed';
@@ -167,7 +169,7 @@ export default function TaskModal({
       MaintenanceTask,
       'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
     > = {
-      instrument_id: formData.instrument_id,
+      instrument_id: instrumentId,
       client_id: formData.client_id || null,
       task_type: formData.task_type,
       title: formData.title.trim(),
