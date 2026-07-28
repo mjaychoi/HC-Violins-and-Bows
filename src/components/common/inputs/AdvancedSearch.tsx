@@ -6,8 +6,8 @@ import { DateRange, FilterOperator } from '@/types/search';
 interface AdvancedSearchProps {
   dateRange: DateRange | null;
   onDateRangeChange: (range: DateRange | null) => void;
-  operator?: FilterOperator; // Optional - not used, kept for backward compatibility
-  onOperatorChange?: (operator: FilterOperator) => void; // Optional - not used
+  operator?: FilterOperator;
+  onOperatorChange?: (operator: FilterOperator) => void;
   dateFields?: Array<{ field: string; label: string }>;
   onApply?: () => void;
   onReset?: () => void;
@@ -16,18 +16,15 @@ interface AdvancedSearchProps {
 export default function AdvancedSearch({
   dateRange,
   onDateRangeChange,
-  operator: _operator, // Unused - kept for backward compatibility
-  onOperatorChange: _onOperatorChange, // Unused - kept for backward compatibility
-  dateFields: _dateFields = [], // Unused - kept for backward compatibility
+  operator,
+  onOperatorChange,
+  dateFields = [],
   onApply,
   onReset,
 }: AdvancedSearchProps) {
-  // Keep backward-compatible props accounted for without using them.
-  void _operator;
-  void _onOperatorChange;
-  void _dateFields;
-
   const [isOpen, setIsOpen] = useState(false);
+  const showOperatorControl =
+    operator !== undefined && onOperatorChange !== undefined;
 
   const handleDateChange = useCallback(
     (field: 'from' | 'to', value: string) => {
@@ -143,6 +140,41 @@ export default function AdvancedSearch({
                   )}
                 </div>
               </div>
+
+              {showOperatorControl && (
+                <div>
+                  <label
+                    htmlFor="advanced-search-date-operator"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Date matching
+                  </label>
+                  <select
+                    id="advanced-search-date-operator"
+                    data-testid="advanced-search-date-operator"
+                    value={operator}
+                    onChange={event =>
+                      onOperatorChange(event.target.value as FilterOperator)
+                    }
+                    aria-label="Date matching rule"
+                    className="w-full h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="OR">Any date matches</option>
+                    <option value="AND">All populated dates match</option>
+                  </select>
+                  <p className="mt-2 text-xs text-gray-500">
+                    {operator === 'AND'
+                      ? 'Include a task only when every populated date field falls within this range. Empty date fields are ignored.'
+                      : 'Include a task when at least one populated date field falls within this range.'}
+                  </p>
+                  {dateFields.length > 0 && (
+                    <p className="mt-1 text-xs text-gray-400">
+                      Applies to:{' '}
+                      {dateFields.map(field => field.label).join(', ')}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Apply/Reset buttons */}
               <div className="flex gap-2 pt-2 border-t border-gray-200">

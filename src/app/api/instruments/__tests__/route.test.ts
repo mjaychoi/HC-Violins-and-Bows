@@ -71,16 +71,20 @@ jest.mock('@/utils/typeGuards', () => {
   };
 });
 
-// Mock inputValidation
-jest.mock('@/utils/inputValidation', () => ({
-  validateSortColumn: jest.fn((table, value) => value || 'created_at'),
-  validateDateString: jest.fn(value => /^\d{4}-\d{2}-\d{2}$/.test(value)),
-  validateUUID: jest.fn(value =>
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      value
-    )
-  ),
-}));
+// Mock inputValidation — use real search helpers for route safety tests
+jest.mock('@/utils/inputValidation', () => {
+  const actual = jest.requireActual('@/utils/inputValidation');
+  return {
+    ...actual,
+    validateSortColumn: jest.fn((table, value) => value || 'created_at'),
+    validateDateString: jest.fn(value => /^\d{4}-\d{2}-\d{2}$/.test(value)),
+    validateUUID: jest.fn(value =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        value
+      )
+    ),
+  };
+});
 
 describe('/api/instruments', () => {
   const mockInstrument = {
@@ -347,11 +351,11 @@ describe('/api/instruments', () => {
       expect(mockQuery.eq).toHaveBeenCalledWith('ownership', 'owned');
     });
 
-    it('should filter instruments by search query', async () => {
+    it('should filter instruments by search query using safe ilike on maker', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        or: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
       };
@@ -377,7 +381,145 @@ describe('/api/instruments', () => {
       );
       await GET(request);
 
-      expect(mockQuery.or).toHaveBeenCalled();
+      expect(mockQuery.ilike).toHaveBeenCalledWith('maker', '%Stradivarius%');
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    });
+
+    it('trims whitespace from search before applying maker ilike filter', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+      };
+      (mockQuery.order as jest.Mock).mockResolvedValue({
+        data: [],
+        error: null,
+        count: 0,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      await GET(
+        new NextRequest('http://localhost/api/instruments?search=%20Guarneri%20')
+      );
+
+      expect(mockQuery.ilike).toHaveBeenCalledWith('maker', '%Guarneri%');
+    });
+
+    it('does not apply search filter when search is empty or whitespace-only', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+      };
+      (mockQuery.order as jest.Mock).mockResolvedValue({
+        data: [],
+        error: null,
+        count: 0,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      await GET(new NextRequest('http://localhost/api/instruments?search=%20%20'));
+      await GET(new NextRequest('http://localhost/api/instruments?search='));
+
+      expect(mockQuery.ilike).not.toHaveBeenCalled();
+    });
+
+    it('strips control characters from search before querying', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+      };
+      (mockQuery.order as jest.Mock).mockResolvedValue({
+        data: [],
+        error: null,
+        count: 0,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      await GET(
+        new NextRequest(
+          `http://localhost/api/instruments?search=${encodeURIComponent('Strad\x00ivarius')}`
+        )
+      );
+
+      expect(mockQuery.ilike).toHaveBeenCalledWith('maker', '%Stradivarius%');
+    });
+
+    it('escapes PostgREST filter wildcards and grammar characters in maker search', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+      };
+      (mockQuery.order as jest.Mock).mockResolvedValue({
+        data: [],
+        error: null,
+        count: 0,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      await GET(
+        new NextRequest(
+          'http://localhost/api/instruments?search=50%25_off,(test)\\a'
+        )
+      );
+
+      expect(mockQuery.ilike).toHaveBeenCalledWith(
+        'maker',
+        '%50\\%\\_off\\,\\(test\\)\\\\a%'
+      );
+    });
+
+    it('bounds excessively long search input before querying', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+      };
+      (mockQuery.order as jest.Mock).mockResolvedValue({
+        data: [],
+        error: null,
+        count: 0,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      const longSearch = 'a'.repeat(150);
+      await GET(
+        new NextRequest(
+          `http://localhost/api/instruments?search=${encodeURIComponent(longSearch)}`
+        )
+      );
+
+      const ilikeArg = (mockQuery.ilike as jest.Mock).mock.calls[0][1] as string;
+      expect(ilikeArg.length).toBeLessThanOrEqual(102);
+      expect(ilikeArg.startsWith('%')).toBe(true);
+      expect(ilikeArg.endsWith('%')).toBe(true);
     });
 
     it('should apply limit when provided', async () => {

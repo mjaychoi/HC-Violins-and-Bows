@@ -7,8 +7,6 @@ describe('AdvancedSearch', () => {
   const baseProps = {
     dateRange: null,
     onDateRangeChange: jest.fn(),
-    operator: 'AND' as const,
-    onOperatorChange: jest.fn(),
     onApply: jest.fn(),
     onReset: jest.fn(),
   };
@@ -17,21 +15,20 @@ describe('AdvancedSearch', () => {
     jest.clearAllMocks();
   });
 
+  const openPopover = () => {
+    fireEvent.click(screen.getByTestId('advanced-search-toggle'));
+    expect(screen.getByText('Advanced Search')).toBeInTheDocument();
+  };
+
   it('toggles popover and shows badge when filters active', () => {
     const { rerender } = render(<AdvancedSearch {...baseProps} />);
 
-    // Opens popover
-    fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByText('Advanced Search')).toBeInTheDocument();
-
-    // No badge when empty
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    openPopover();
 
     rerender(
       <AdvancedSearch {...baseProps} dateRange={{ from: '2024-01-01' }} />
     );
 
-    // Badge rendered via the absolute span (not role), so check via query selector
     expect(document.querySelector('span.bg-blue-600')).toBeInTheDocument();
   });
 
@@ -39,16 +36,7 @@ describe('AdvancedSearch', () => {
     render(
       <AdvancedSearch {...baseProps} dateRange={{ from: '2024-01-01' }} />
     );
-    const toggle = document.querySelector('button');
-    if (toggle) {
-      act(() => {
-        fireEvent.click(toggle);
-        if (!screen.queryByText('Advanced Search')) {
-          fireEvent.click(toggle);
-        }
-      });
-    }
-    expect(screen.getByText('Advanced Search')).toBeInTheDocument();
+    openPopover();
 
     const inputs = document.querySelectorAll('input[type="date"]');
     fireEvent.change(inputs[0], { target: { value: '2024-02-01' } });
@@ -62,9 +50,96 @@ describe('AdvancedSearch', () => {
       to: '2024-02-10',
     });
 
-    // Clear button appears when active
     fireEvent.click(screen.getByText(/Clear Date Range/i));
     expect(baseProps.onDateRangeChange).toHaveBeenCalledWith(null);
+  });
+
+  it('does not render operator selector when callback is absent', () => {
+    render(
+      <AdvancedSearch
+        {...baseProps}
+        operator="OR"
+        dateFields={[{ field: 'due_date', label: 'Due' }]}
+      />
+    );
+    openPopover();
+
+    expect(
+      screen.queryByTestId('advanced-search-date-operator')
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders operator selector when operator and callback are supplied', () => {
+    const onOperatorChange = jest.fn();
+    render(
+      <AdvancedSearch
+        {...baseProps}
+        operator="OR"
+        onOperatorChange={onOperatorChange}
+        dateFields={[
+          { field: 'due_date', label: 'Due' },
+          { field: 'scheduled_date', label: 'Scheduled' },
+        ]}
+      />
+    );
+    openPopover();
+
+    const selector = screen.getByTestId('advanced-search-date-operator');
+    expect(selector).toBeInTheDocument();
+    expect(selector).toHaveAttribute('aria-label', 'Date matching rule');
+    expect(screen.getByText(/Applies to:/)).toHaveTextContent('Due, Scheduled');
+  });
+
+  it('selecting "Any date matches" emits OR', () => {
+    const onOperatorChange = jest.fn();
+    render(
+      <AdvancedSearch
+        {...baseProps}
+        operator="AND"
+        onOperatorChange={onOperatorChange}
+      />
+    );
+    openPopover();
+
+    fireEvent.change(screen.getByTestId('advanced-search-date-operator'), {
+      target: { value: 'OR' },
+    });
+
+    expect(onOperatorChange).toHaveBeenCalledWith('OR');
+  });
+
+  it('selecting "All populated dates match" emits AND', () => {
+    const onOperatorChange = jest.fn();
+    render(
+      <AdvancedSearch
+        {...baseProps}
+        operator="OR"
+        onOperatorChange={onOperatorChange}
+      />
+    );
+    openPopover();
+
+    fireEvent.change(screen.getByTestId('advanced-search-date-operator'), {
+      target: { value: 'AND' },
+    });
+
+    expect(onOperatorChange).toHaveBeenCalledWith('AND');
+  });
+
+  it('operator controls are keyboard-accessible and correctly labelled', () => {
+    render(
+      <AdvancedSearch
+        {...baseProps}
+        operator="OR"
+        onOperatorChange={jest.fn()}
+      />
+    );
+    openPopover();
+
+    const selector = screen.getByLabelText('Date matching rule');
+    expect(selector.tagName).toBe('SELECT');
+    expect(screen.getByText('Any date matches')).toBeInTheDocument();
+    expect(screen.getByText('All populated dates match')).toBeInTheDocument();
   });
 
   it('calls onApply/onReset', async () => {
@@ -75,16 +150,15 @@ describe('AdvancedSearch', () => {
       />
     );
 
-    fireEvent.click(screen.getByTestId('advanced-search-toggle'));
+    act(() => {
+      fireEvent.click(screen.getByTestId('advanced-search-toggle'));
+    });
     await screen.findByText('Advanced Search');
 
-    // Operator selection UI has been removed - only date range filter is used
-    // Test onReset and onApply instead
     fireEvent.click(screen.getByText('Reset'));
     expect(baseProps.onReset).toHaveBeenCalled();
 
-    const applyBtn = screen.getByTestId('advanced-search-apply');
-    fireEvent.click(applyBtn);
+    fireEvent.click(screen.getByTestId('advanced-search-apply'));
     expect(baseProps.onApply).toHaveBeenCalled();
   });
 });

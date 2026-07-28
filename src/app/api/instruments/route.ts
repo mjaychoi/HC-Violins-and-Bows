@@ -17,7 +17,12 @@ import {
   validateCreateInstrument,
   safeValidate,
 } from '@/utils/typeGuards';
-import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
+import {
+  validateSortColumn,
+  validateUUID,
+  sanitizeSearchTerm,
+  escapePostgrestFilterValue,
+} from '@/utils/inputValidation';
 import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
 import { Instrument } from '@/types';
 import type { TablesInsert } from '@/types/database';
@@ -25,6 +30,8 @@ import { logInfo, logError } from '@/utils/logger';
 import { getStorage } from '@/utils/storage';
 import { searchRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
 import { writeAuditLog } from '@/utils/auditLog';
+
+const MAX_SEARCH_LEN = 100;
 
 type InstrumentInsertRow = TablesInsert<'instruments'>;
 type CreateInstrumentInput = {
@@ -237,7 +244,19 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
         const ascending = searchParams.get('ascending') !== 'false';
         const ownership = searchParams.get('ownership') || 'all';
-        const search = searchParams.get('search');
+        const rawSearch = searchParams.get('search');
+        let search: string | undefined = rawSearch
+          ? sanitizeSearchTerm(rawSearch)
+          : undefined;
+
+        if (search) {
+          search = search.trim();
+          if (!search) search = undefined;
+        }
+
+        if (search && search.length > MAX_SEARCH_LEN) {
+          search = search.slice(0, MAX_SEARCH_LEN);
+        }
         const limitParam = searchParams.get('limit');
         const listAll = searchParams.get('all') === 'true';
         const DEFAULT_LIST_LIMIT = 200;
@@ -264,7 +283,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
 
         if (search) {
-          query = query.or(`maker.ilike.%${search}%`);
+          const escaped = escapePostgrestFilterValue(search);
+          query = query.ilike('maker', `%${escaped}%`);
         }
 
         // ✅ limit은 non-reassigning 형태로 호출 (mock chain 대응)

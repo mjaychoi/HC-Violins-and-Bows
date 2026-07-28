@@ -158,7 +158,7 @@ describe('useCalendarFilters', () => {
     );
 
     expect(result.current.currentPage).toBe(1);
-    expect(result.current.filterOperator).toBe('AND');
+    expect(result.current.filterOperator).toBe('OR');
     expect(result.current.dateRange).toBeNull();
   });
 
@@ -264,7 +264,7 @@ describe('useCalendarFilters', () => {
     });
   });
 
-  it('should change filter operator', () => {
+  it('should reset filter operator to OR when filters are cleared', () => {
     const { result } = renderHook(() =>
       useCalendarFilters({
         tasks: mockTasks,
@@ -274,10 +274,87 @@ describe('useCalendarFilters', () => {
     );
 
     act(() => {
-      result.current.setFilterOperator('OR');
+      result.current.setFilterOperator('AND');
+    });
+
+    act(() => {
+      result.current.resetFilters();
     });
 
     expect(result.current.filterOperator).toBe('OR');
+  });
+
+  it('manual OR includes a task when any populated date is in range', () => {
+    const taskWithMixedDates: MaintenanceTask = {
+      ...mockTasks[0],
+      id: 'mixed-dates',
+      received_date: '2024-01-01',
+      due_date: '2024-01-10',
+      scheduled_date: '2024-01-05',
+    };
+
+    const { result } = renderHook(() =>
+      useCalendarFilters({
+        tasks: [taskWithMixedDates],
+        instrumentsMap: mockInstrumentsMap,
+        filterOptions: mockFilterOptions,
+      })
+    );
+
+    act(() => {
+      result.current.setFilterOperator('OR');
+      result.current.setDateRange({ from: '2024-01-04', to: '2024-01-06' });
+    });
+
+    expect(result.current.filteredTasks.map(task => task.id)).toEqual([
+      'mixed-dates',
+    ]);
+  });
+
+  it('manual AND requires all populated dates to be in range', () => {
+    const taskWithMixedDates: MaintenanceTask = {
+      ...mockTasks[0],
+      id: 'mixed-dates',
+      received_date: '2024-01-01',
+      due_date: '2024-01-10',
+      scheduled_date: '2024-01-05',
+    };
+
+    const { result } = renderHook(() =>
+      useCalendarFilters({
+        tasks: [taskWithMixedDates],
+        instrumentsMap: mockInstrumentsMap,
+        filterOptions: mockFilterOptions,
+      })
+    );
+
+    act(() => {
+      result.current.setFilterOperator('AND');
+      result.current.setDateRange({ from: '2024-01-04', to: '2024-01-06' });
+    });
+
+    expect(result.current.filteredTasks).toEqual([]);
+  });
+
+  it('resets pagination to page 1 when filter operator changes', () => {
+    const { result } = renderHook(() =>
+      useCalendarFilters({
+        tasks: mockTasks,
+        instrumentsMap: mockInstrumentsMap,
+        filterOptions: mockFilterOptions,
+        pageSize: 1,
+      })
+    );
+
+    act(() => {
+      result.current.setPage(2);
+    });
+
+    act(() => {
+      result.current.setFilterOperator('AND');
+    });
+
+    expect(result.current.currentPage).toBe(1);
   });
 
   it('should paginate tasks', () => {

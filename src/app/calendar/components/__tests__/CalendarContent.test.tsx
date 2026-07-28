@@ -233,4 +233,39 @@ describe('CalendarContent', () => {
     expect(screen.getByText('Due Today')).toBeInTheDocument();
     expect(screen.queryByText('No tasks found')).not.toBeInTheDocument();
   });
+
+  it('does not highlight Today preset when operator is AND even if the range matches', () => {
+    const navigation = createNavigationOverrides();
+
+    render(
+      <CalendarContent
+        tasks={[baseTask]}
+        instruments={[baseInstrument]}
+        clients={[baseClient]}
+        loading={{ fetch: false, mutate: false }}
+        navigation={navigation}
+        view="list"
+        setView={jest.fn()}
+        onTaskClick={jest.fn()}
+        onTaskDelete={jest.fn()}
+        onSelectEvent={jest.fn()}
+        onSelectSlot={jest.fn()}
+        draggingEventId={null}
+        onOpenNewTask={jest.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^today$/i })[0]);
+
+    const todayButtons = screen.getAllByRole('button', { name: /^today$/i });
+    expect(todayButtons[0].className).toMatch(/bg-green-100/);
+
+    fireEvent.click(screen.getByTestId('advanced-search-toggle'));
+    fireEvent.change(screen.getByTestId('advanced-search-date-operator'), {
+      target: { value: 'AND' },
+    });
+
+    expect(todayButtons[0].className).not.toMatch(/bg-green-100/);
+    expect(todayButtons[0].className).toMatch(/bg-white/);
+  });
 });

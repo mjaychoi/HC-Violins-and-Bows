@@ -42,7 +42,7 @@ export const useCalendarFilters = ({
   pageSize = DEFAULT_PAGE_SIZE,
 }: UseCalendarFiltersOptions) => {
   const [dateRange, setDateRange] = useState<DateRange | null>(null);
-  const [filterOperator, setFilterOperator] = useState<FilterOperator>('AND');
+  const [filterOperator, setFilterOperator] = useState<FilterOperator>('OR');
   const [currentPage, setCurrentPage] = useState(1);
 
   // Use shared usePageFilters hook for search, sort, and base filter state
@@ -241,7 +241,7 @@ export const useCalendarFilters = ({
   const resetFilters = useCallback(() => {
     baseFilters.clearAllFilters();
     setDateRange(null);
-    setFilterOperator('AND');
+    setFilterOperator('OR');
     setCurrentPage(1);
   }, [baseFilters]);
 

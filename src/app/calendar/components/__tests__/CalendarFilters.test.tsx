@@ -103,7 +103,7 @@ describe('CalendarFilters', () => {
     onSortOrderChange: mockOnSortOrderChange,
     dateRange: null as DateRange | null,
     onDateRangeChange: mockOnDateRangeChange,
-    filterOperator: 'AND' as FilterOperator,
+    filterOperator: 'OR' as FilterOperator,
     onFilterOperatorChange: mockOnFilterOperatorChange,
     taskCount: 10,
     hasActiveFilters: false,
@@ -272,7 +272,7 @@ describe('CalendarFilters', () => {
     await user.click(resetAdvancedButton);
 
     expect(mockOnDateRangeChange).toHaveBeenCalledWith(null);
-    expect(mockOnFilterOperatorChange).toHaveBeenCalledWith('AND');
+    expect(mockOnFilterOperatorChange).toHaveBeenCalledWith('OR');
   });
 
   it('should handle date range change from AdvancedSearch', async () => {
@@ -290,12 +290,12 @@ describe('CalendarFilters', () => {
 
   it('should handle filter operator change from AdvancedSearch', async () => {
     const user = userEvent.setup();
-    render(<CalendarFilters {...defaultProps} filterOperator="AND" />);
+    render(<CalendarFilters {...defaultProps} filterOperator="OR" />);
 
     const toggleOperatorButton = screen.getByText('Toggle Operator');
     await user.click(toggleOperatorButton);
 
-    expect(mockOnFilterOperatorChange).toHaveBeenCalledWith('OR');
+    expect(mockOnFilterOperatorChange).toHaveBeenCalledWith('AND');
   });
 
   it('should pass searchInputRef to CalendarSearch', () => {
