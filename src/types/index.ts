@@ -121,6 +121,8 @@ export interface MaintenanceTask {
   personal_due_date: string | null; // YYYY-MM-DD
   scheduled_date: string | null; // YYYY-MM-DD
   completed_date: string | null; // YYYY-MM-DD
+  /** DB-generated: COALESCE(due_date, personal_due_date, scheduled_date, received_date) */
+  calendar_date?: string | null;
   priority: TaskPriority;
   estimated_hours: number | null;
   actual_hours: number | null;

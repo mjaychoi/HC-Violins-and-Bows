@@ -21,9 +21,7 @@ CREATE POLICY "audit_log_select_admin"
   FOR SELECT
   TO authenticated
   USING (
-    org_id IN (
-      SELECT org_id FROM public.org_members WHERE user_id = auth.uid() AND role = 'admin'
-    )
+    org_id = public.org_id() AND public.is_admin()
   );
 
 -- Only the application backend (service_role) may insert audit rows

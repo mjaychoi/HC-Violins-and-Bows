@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useMaintenanceTasks } from '@/hooks/useMaintenanceTasks';
 import {
@@ -62,6 +62,7 @@ export default function CalendarPage() {
   // Calendar data hooks
   const {
     tasks,
+    notificationTasks,
     loading,
     error: fetchError,
     displayError: fetchDisplayError,
@@ -69,6 +70,7 @@ export default function CalendarPage() {
     updateTask,
     deleteTask,
     fetchTasksByDateRange,
+    refreshNotificationTasks,
   } = useMaintenanceTasks({ autoFetch: false });
 
   const {
@@ -108,21 +110,26 @@ export default function CalendarPage() {
     async (warningMessage: string) => {
       try {
         await navigation.forceRefetch({ suppressErrorToast: true });
+        void refreshNotificationTasks();
         return true;
       } catch {
         showWarning(warningMessage);
         return false;
       }
     },
-    [navigation, showWarning]
+    [navigation, showWarning, refreshNotificationTasks]
   );
+
+  useEffect(() => {
+    void refreshNotificationTasks();
+  }, [refreshNotificationTasks]);
 
   // Page notifications (badge with click handler)
   // For calendar page, clicking badge should navigate to today
   // FIXED: Now passes tasks to prevent duplicate fetch
   // FIXED: Use customClickHandler to avoid double navigation
   const { notificationBadge } = usePageNotifications({
-    tasks, // Use tasks from useMaintenanceTasks to avoid duplicate fetch
+    tasks: notificationTasks,
     navigateTo: '', // Don't navigate, use custom handler instead
     showToastOnClick: true,
     showSuccess,

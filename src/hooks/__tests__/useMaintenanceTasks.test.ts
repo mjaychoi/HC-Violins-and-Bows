@@ -2,6 +2,7 @@
 import { renderHook, act, waitFor } from '@/test-utils/render';
 import {
   __resetMaintenanceTasksReadCacheForTests,
+  MaintenanceTasksRangeIncompleteError,
   useMaintenanceTasks,
 } from '../useMaintenanceTasks';
 import { MaintenanceTask, TaskType, TaskStatus, TaskPriority } from '@/types';
@@ -55,6 +56,23 @@ describe('useMaintenanceTasks', () => {
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
   };
+
+  const rangeEnvelope = (
+    tasks: MaintenanceTask[],
+    overrides: Record<string, unknown> = {}
+  ) => ({
+    ok: true,
+    status: 200,
+    json: jest.fn().mockResolvedValue({
+      data: tasks,
+      count: tasks.length,
+      page: 1,
+      pageSize: 500,
+      capped: false,
+      complete: true,
+      ...overrides,
+    }),
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -929,11 +947,7 @@ describe('useMaintenanceTasks', () => {
   describe('fetchTasksByDateRange', () => {
     it('should fetch tasks by date range successfully', async () => {
       const mockTasks = [mockTask];
-      (apiFetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: jest.fn().mockResolvedValue({ data: mockTasks }),
-      });
+      (apiFetch as jest.Mock).mockResolvedValueOnce(rangeEnvelope(mockTasks));
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -947,7 +961,6 @@ describe('useMaintenanceTasks', () => {
         );
       });
 
-      // Wait for loading to complete
       await waitFor(
         () => {
           expect(result.current.loading.fetch).toBe(false);
@@ -956,18 +969,14 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      // Check that tasks were fetched
       expect(fetchedTasks).toEqual(mockTasks);
       expect(apiFetch).toHaveBeenCalledWith(
-        '/api/maintenance-tasks?start_date=2024-01-01&end_date=2024-01-31'
+        '/api/maintenance-tasks?start_date=2024-01-01&end_date=2024-01-31&page=1&pageSize=500'
       );
 
-      // Note: fetchTasksByDateRange merges tasks into the existing tasks array
-      // Since we start with an empty array, the tasks should be added
       await waitFor(
         () => {
-          // Tasks should be merged into the state
-          expect(result.current.tasks.length).toBeGreaterThan(0);
+          expect(result.current.tasks).toEqual(mockTasks);
         },
         { timeout: 3000 }
       );
@@ -1018,7 +1027,7 @@ describe('useMaintenanceTasks', () => {
       });
 
       expect(apiFetch).toHaveBeenCalledWith(
-        '/api/maintenance-tasks?start_date=2024-01-01&end_date=2024-01-31',
+        '/api/maintenance-tasks?start_date=2024-01-01&end_date=2024-01-31&page=1&pageSize=500',
         { signal: controller.signal }
       );
     });
@@ -1247,86 +1256,88 @@ describe('useMaintenanceTasks', () => {
     });
   });
 
-  describe('fetchTasksByDateRange - duplicate handling', () => {
-    it('should merge tasks without duplicates', async () => {
-      const existingTask: MaintenanceTask = {
-        ...mockTask,
-        id: 'existing-1',
-      };
-      const newTask: MaintenanceTask = {
-        ...mockTask,
-        id: 'new-1',
-        title: 'New Task',
-      };
-      const duplicateTask: MaintenanceTask = {
-        ...mockTask,
-        id: 'existing-1', // Same ID as existing
-        title: 'Updated Title',
-      };
+  describe('fetchTasksByDateRange - range state replacement', () => {
+    it('replaces the active range instead of merging with a previous range', async () => {
+      const rangeATasks: MaintenanceTask[] = [
+        { ...mockTask, id: 'range-a-1', title: 'Range A Task' },
+      ];
+      const rangeBTasks: MaintenanceTask[] = [
+        { ...mockTask, id: 'range-b-1', title: 'Range B Task' },
+      ];
 
       (apiFetch as jest.Mock)
-        // First call: fetchTasks
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: jest.fn().mockResolvedValue({ data: [existingTask] }),
-        })
-        // Second call: fetchTasksByDateRange
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: jest.fn().mockResolvedValue({ data: [newTask, duplicateTask] }),
-        });
+        .mockResolvedValueOnce(rangeEnvelope(rangeATasks))
+        .mockResolvedValueOnce(rangeEnvelope(rangeBTasks));
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
       );
 
       await act(async () => {
-        await result.current.fetchTasks();
-      });
-
-      await waitFor(
-        () => {
-          expect(result.current.tasks.length).toBe(1);
-          expect(result.current.tasks[0].id).toBe('existing-1');
-        },
-        { timeout: 3000 }
-      );
-
-      await act(async () => {
         await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
       });
 
-      await waitFor(
-        () => {
-          expect(result.current.loading.fetch).toBe(false);
-          expect(result.current.loading.mutate).toBe(false);
-        },
-        { timeout: 3000 }
+      await waitFor(() => {
+        expect(result.current.tasks).toEqual(rangeATasks);
+      });
+
+      await act(async () => {
+        await result.current.fetchTasksByDateRange('2024-03-01', '2024-03-31');
+      });
+
+      await waitFor(() => {
+        expect(result.current.tasks).toEqual(rangeBTasks);
+        expect(result.current.tasks.map(task => task.id)).toEqual([
+          'range-b-1',
+        ]);
+      });
+    });
+
+    it('ignores a stale delayed range response after navigating to a newer range', async () => {
+      let resolveRangeA: ((value: unknown) => void) | undefined;
+      const rangeAPromise = new Promise(resolve => {
+        resolveRangeA = resolve;
+      });
+      const rangeBTasks: MaintenanceTask[] = [
+        { ...mockTask, id: 'range-b-1', title: 'Range B Task' },
+      ];
+
+      (apiFetch as jest.Mock)
+        .mockImplementationOnce(() => rangeAPromise)
+        .mockResolvedValueOnce(rangeEnvelope(rangeBTasks));
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
       );
 
-      // Should have 2 tasks: existing (not replaced by duplicate) and new
-      // Note: The implementation merges new tasks, so duplicateTask should be added
-      // But if the logic prevents duplicates, existing should remain
-      await waitFor(
-        () => {
-          const taskIds = result.current.tasks.map(t => t.id);
-          expect(taskIds).toContain('existing-1');
-          expect(taskIds).toContain('new-1');
-          // Should not have duplicate
-          expect(taskIds.filter(id => id === 'existing-1').length).toBe(1);
-        },
-        { timeout: 3000 }
-      );
+      let rangeAPromiseResult: Promise<MaintenanceTask[]>;
+      await act(async () => {
+        rangeAPromiseResult = result.current.fetchTasksByDateRange(
+          '2024-01-01',
+          '2024-01-31'
+        );
+      });
+
+      await act(async () => {
+        await result.current.fetchTasksByDateRange('2024-03-01', '2024-03-31');
+      });
+
+      await waitFor(() => {
+        expect(result.current.tasks).toEqual(rangeBTasks);
+      });
+
+      await act(async () => {
+        resolveRangeA?.(
+          rangeEnvelope([{ ...mockTask, id: 'stale-a-1', title: 'Stale A' }])
+        );
+        await rangeAPromiseResult!;
+      });
+
+      expect(result.current.tasks).toEqual(rangeBTasks);
     });
 
     it('should handle empty date range results', async () => {
-      (apiFetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: jest.fn().mockResolvedValue({ data: [] }),
-      });
+      (apiFetch as jest.Mock).mockResolvedValueOnce(rangeEnvelope([]));
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -1357,11 +1368,7 @@ describe('useMaintenanceTasks', () => {
         { ...mockTask, id: 'cached-1', title: 'Cached Task' },
       ];
 
-      (apiFetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: jest.fn().mockResolvedValue({ data: rangeTasks }),
-      });
+      (apiFetch as jest.Mock).mockResolvedValueOnce(rangeEnvelope(rangeTasks));
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
@@ -1378,32 +1385,192 @@ describe('useMaintenanceTasks', () => {
       expect(apiFetch).toHaveBeenCalledTimes(1);
       expect(result.current.tasks).toEqual(rangeTasks);
     });
+
+    it('paginates until the complete calendar range is loaded', async () => {
+      const pageOneTasks: MaintenanceTask[] = [
+        { ...mockTask, id: 'page-1', title: 'Page 1 Task' },
+      ];
+      const pageTwoTasks: MaintenanceTask[] = [
+        { ...mockTask, id: 'page-2', title: 'Page 2 Task' },
+      ];
+
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce(
+          rangeEnvelope(pageOneTasks, {
+            count: 2,
+            capped: true,
+            complete: false,
+          })
+        )
+        .mockResolvedValueOnce(
+          rangeEnvelope(pageTwoTasks, {
+            count: 2,
+            page: 2,
+          })
+        );
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      });
+
+      expect(apiFetch).toHaveBeenCalledTimes(2);
+      expect(result.current.tasks.map(task => task.id)).toEqual([
+        'page-1',
+        'page-2',
+      ]);
+    });
+
+    it('throws a client-side range incomplete error when pagination stops early', async () => {
+      (apiFetch as jest.Mock).mockResolvedValueOnce(
+        rangeEnvelope([{ ...mockTask, id: 'page-1' }], {
+          count: 2,
+          capped: true,
+          complete: false,
+        })
+      );
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await expect(
+        act(async () => {
+          await result.current.fetchTasksByDateRange(
+            '2024-01-01',
+            '2024-01-31',
+            { throwOnError: true }
+          );
+        })
+      ).rejects.toBeInstanceOf(MaintenanceTasksRangeIncompleteError);
+    });
   });
 
-  describe('fetchTasksByScheduledDate - duplicate handling', () => {
-    it('should merge tasks without duplicates', async () => {
+  describe('fetchTasksByDateRange - mutation consistency', () => {
+    it('removes a task moved outside the active range after update', async () => {
+      const inRangeTask: MaintenanceTask = {
+        ...mockTask,
+        id: 'in-range',
+        due_date: '2024-01-15',
+      };
+
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce(rangeEnvelope([inRangeTask]))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({
+            data: { ...inRangeTask, due_date: '2024-03-01' },
+          }),
+        });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      });
+
+      await act(async () => {
+        await result.current.updateTask('in-range', { due_date: '2024-03-01' });
+      });
+
+      expect(result.current.tasks).toEqual([]);
+    });
+
+    it('adds a task moved into the active range after update', async () => {
+      const outOfRangeTask: MaintenanceTask = {
+        ...mockTask,
+        id: 'moving-in',
+        due_date: '2024-03-01',
+      };
+      const movedIntoRangeTask: MaintenanceTask = {
+        ...outOfRangeTask,
+        due_date: '2024-01-20',
+      };
+
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce(rangeEnvelope([]))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: movedIntoRangeTask }),
+        });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      });
+
+      await act(async () => {
+        await result.current.updateTask('moving-in', {
+          due_date: '2024-01-20',
+        });
+      });
+
+      expect(result.current.tasks).toEqual([movedIntoRangeTask]);
+    });
+
+    it('removes a deleted task from the active range dataset', async () => {
+      const inRangeTask: MaintenanceTask = {
+        ...mockTask,
+        id: 'delete-me',
+        due_date: '2024-01-15',
+      };
+
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce(rangeEnvelope([inRangeTask]))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ success: true }),
+        });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
+      });
+
+      await act(async () => {
+        await result.current.deleteTask('delete-me');
+      });
+
+      expect(result.current.tasks).toEqual([]);
+    });
+  });
+
+  describe('fetchTasksByScheduledDate - state management', () => {
+    it('returns scheduled-date results without mutating active calendar tasks state', async () => {
       const existingTask: MaintenanceTask = {
         ...mockTask,
         id: 'existing-1',
       };
-      const newTask: MaintenanceTask = {
+      const scheduledTask: MaintenanceTask = {
         ...mockTask,
-        id: 'new-1',
-        title: 'New Scheduled Task',
+        id: 'scheduled-1',
+        title: 'Scheduled Task',
       };
 
       (apiFetch as jest.Mock)
-        // First call: fetchTasks
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
           json: jest.fn().mockResolvedValue({ data: [existingTask] }),
         })
-        // Second call: fetchTasksByScheduledDate
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          json: jest.fn().mockResolvedValue({ data: [newTask] }),
+          json: jest.fn().mockResolvedValue({ data: [scheduledTask] }),
         });
 
       const { result } = renderHook(() =>
@@ -1414,41 +1581,68 @@ describe('useMaintenanceTasks', () => {
         await result.current.fetchTasks();
       });
 
-      await waitFor(
-        () => {
-          expect(result.current.tasks.length).toBe(1);
-          expect(result.current.tasks[0].id).toBe('existing-1');
-        },
-        { timeout: 3000 }
+      await waitFor(() => {
+        expect(result.current.tasks).toEqual([existingTask]);
+      });
+
+      let fetchedScheduled: MaintenanceTask[] = [];
+      await act(async () => {
+        fetchedScheduled =
+          await result.current.fetchTasksByScheduledDate('2024-01-05');
+      });
+
+      expect(fetchedScheduled).toEqual([scheduledTask]);
+      expect(result.current.tasks).toEqual([existingTask]);
+    });
+  });
+
+  describe('refreshNotificationTasks', () => {
+    it('loads global notification candidates without replacing calendar tasks', async () => {
+      const calendarTask: MaintenanceTask = {
+        ...mockTask,
+        id: 'calendar-task',
+      };
+      const overdueTask: MaintenanceTask = {
+        ...mockTask,
+        id: 'overdue-task',
+        title: 'Overdue Task',
+      };
+      const upcomingTask: MaintenanceTask = {
+        ...mockTask,
+        id: 'upcoming-task',
+        title: 'Upcoming Task',
+      };
+
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce(rangeEnvelope([calendarTask]))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [overdueTask] }),
+        })
+        .mockResolvedValueOnce(rangeEnvelope([upcomingTask]));
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
       );
 
       await act(async () => {
-        await result.current.fetchTasksByScheduledDate('2024-01-05');
+        await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
       });
 
-      await waitFor(
-        () => {
-          expect(result.current.loading.fetch).toBe(false);
-          expect(result.current.loading.mutate).toBe(false);
-        },
-        { timeout: 3000 }
-      );
+      await act(async () => {
+        await result.current.refreshNotificationTasks();
+      });
 
-      // Should have both tasks
-      await waitFor(
-        () => {
-          const taskIds = result.current.tasks.map(t => t.id);
-          expect(taskIds).toContain('existing-1');
-          expect(taskIds).toContain('new-1');
-          expect(result.current.tasks.length).toBe(2);
-        },
-        { timeout: 3000 }
-      );
+      expect(result.current.tasks).toEqual([calendarTask]);
+      expect(
+        result.current.notificationTasks.map(task => task.id).sort()
+      ).toEqual(['overdue-task', 'upcoming-task']);
     });
   });
 
   describe('Multiple operations', () => {
-    it('should handle concurrent fetch operations', async () => {
+    it('should handle concurrent fetch operations with range replacement winning last', async () => {
       const task1: MaintenanceTask = { ...mockTask, id: '1' };
       const task2: MaintenanceTask = { ...mockTask, id: '2', title: 'Task 2' };
 
@@ -1458,37 +1652,24 @@ describe('useMaintenanceTasks', () => {
           status: 200,
           json: jest.fn().mockResolvedValue({ data: [task1] }),
         })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: jest.fn().mockResolvedValue({ data: [task2] }),
-        });
+        .mockResolvedValueOnce(rangeEnvelope([task2]));
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
       );
 
-      // Start both operations
       await act(async () => {
-        await Promise.all([
-          result.current.fetchTasks(),
-          result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31'),
-        ]);
+        await result.current.fetchTasks();
+      });
+
+      await act(async () => {
+        await result.current.fetchTasksByDateRange('2024-01-01', '2024-01-31');
       });
 
       await waitFor(
         () => {
           expect(result.current.loading.fetch).toBe(false);
-          expect(result.current.loading.mutate).toBe(false);
-        },
-        { timeout: 3000 }
-      );
-
-      // Should have tasks from both operations
-      await waitFor(
-        () => {
-          const taskIds = result.current.tasks.map(t => t.id);
-          expect(taskIds.length).toBeGreaterThan(0);
+          expect(result.current.tasks).toEqual([task2]);
         },
         { timeout: 3000 }
       );
@@ -1508,16 +1689,16 @@ describe('useMaintenanceTasks', () => {
       };
 
       (apiFetch as jest.Mock)
-        .mockResolvedValueOnce({
+        .mockImplementationOnce(async () => ({
           ok: true,
           status: 201,
-          json: jest.fn().mockResolvedValue({ data: initialTask }),
-        })
-        .mockResolvedValueOnce({
+          json: async () => ({ data: initialTask }),
+        }))
+        .mockImplementationOnce(async () => ({
           ok: true,
           status: 200,
-          json: jest.fn().mockResolvedValue({ data: updatedTask }),
-        });
+          json: async () => ({ data: updatedTask }),
+        }));
 
       const { result } = renderHook(() =>
         useMaintenanceTasks({ autoFetch: false })
