@@ -1,6 +1,6 @@
 -- Instrument POST idempotency mapping + optimistic concurrency for sale-transition RPC
 
-CREATE TABLE public.instrument_create_idempotency (
+CREATE TABLE IF NOT EXISTS public.instrument_create_idempotency (
   org_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   idempotency_key TEXT NOT NULL,
   instrument_id UUID NOT NULL REFERENCES public.instruments(id) ON DELETE CASCADE,
@@ -11,16 +11,22 @@ CREATE TABLE public.instrument_create_idempotency (
 
 ALTER TABLE public.instrument_create_idempotency ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS instrument_create_idempotency_select
+  ON public.instrument_create_idempotency;
 CREATE POLICY instrument_create_idempotency_select
   ON public.instrument_create_idempotency
   FOR SELECT TO authenticated
   USING (org_id = public.org_id() AND public.is_admin());
 
+DROP POLICY IF EXISTS instrument_create_idempotency_insert
+  ON public.instrument_create_idempotency;
 CREATE POLICY instrument_create_idempotency_insert
   ON public.instrument_create_idempotency
   FOR INSERT TO authenticated
   WITH CHECK (org_id = public.org_id() AND public.is_admin());
 
+DROP POLICY IF EXISTS instrument_create_idempotency_delete
+  ON public.instrument_create_idempotency;
 CREATE POLICY instrument_create_idempotency_delete
   ON public.instrument_create_idempotency
   FOR DELETE TO authenticated

@@ -7,8 +7,17 @@ import { normalizeTaskStatusKey } from '@/utils/colorTokens';
  */
 
 /**
+ * SQL expression backing the `maintenance_tasks.calendar_date` generated column.
+ * Keep in sync with supabase/migrations/*_maintenance_tasks_calendar_date.sql.
+ */
+export const CALENDAR_PLACEMENT_DATE_SQL =
+  'COALESCE(due_date, personal_due_date, scheduled_date, received_date)';
+
+/**
  * Single source of truth for which calendar date a task sits on (grid, year, timeline, list).
  * Priority: due_date → personal_due_date → scheduled_date → received_date
+ *
+ * Mirrors the stored generated column `maintenance_tasks.calendar_date`.
  */
 export function getCalendarPlacementDate(task: MaintenanceTask): string | null {
   return (
@@ -41,6 +50,17 @@ export function getCalendarPlacementField(
 /** Alias of {@link getCalendarPlacementDate} for list grouping and legacy imports. */
 export function getTaskDateKey(task: MaintenanceTask): string | null {
   return getCalendarPlacementDate(task);
+}
+
+/** Whether a task's canonical placement date falls within an inclusive YYYY-MM-DD range. */
+export function isCalendarPlacementInRange(
+  task: MaintenanceTask,
+  startDate: string,
+  endDate: string
+): boolean {
+  const placement = getCalendarPlacementDate(task);
+  if (!placement) return false;
+  return placement >= startDate && placement <= endDate;
 }
 
 /**

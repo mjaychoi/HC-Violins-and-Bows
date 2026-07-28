@@ -42,6 +42,7 @@ import {
   mutationRateLimit,
   tooManyRequestsApiResult,
 } from '@/app/api/_utils/rateLimit';
+import { assertClientBelongsToOrg } from './clientScope';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
@@ -741,6 +742,19 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       const validatedInput = validationResult.data as CreateInvoiceInput;
       const { items } = validatedInput;
       const orgId = auth.orgId!;
+
+      const clientScope = await assertClientBelongsToOrg(
+        auth,
+        orgId,
+        validatedInput.client_id
+      );
+
+      if (!clientScope.ok) {
+        return {
+          payload: { error: clientScope.error, success: false },
+          status: clientScope.status,
+        };
+      }
 
       const financialError = validateInvoiceFinancials(
         toFinancialSnapshot(validatedInput)

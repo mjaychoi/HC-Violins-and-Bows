@@ -14,18 +14,24 @@ CREATE TABLE IF NOT EXISTS public.api_create_idempotency (
 
 ALTER TABLE public.api_create_idempotency ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS api_create_idempotency_select
+  ON public.api_create_idempotency;
 CREATE POLICY api_create_idempotency_select
   ON public.api_create_idempotency
   FOR SELECT
   TO authenticated
   USING (org_id = public.org_id() AND user_id = auth.uid());
 
+DROP POLICY IF EXISTS api_create_idempotency_insert
+  ON public.api_create_idempotency;
 CREATE POLICY api_create_idempotency_insert
   ON public.api_create_idempotency
   FOR INSERT
   TO authenticated
   WITH CHECK (org_id = public.org_id() AND user_id = auth.uid());
 
+DROP POLICY IF EXISTS api_create_idempotency_update
+  ON public.api_create_idempotency;
 CREATE POLICY api_create_idempotency_update
   ON public.api_create_idempotency
   FOR UPDATE
@@ -33,6 +39,8 @@ CREATE POLICY api_create_idempotency_update
   USING (org_id = public.org_id() AND user_id = auth.uid())
   WITH CHECK (org_id = public.org_id() AND user_id = auth.uid());
 
+DROP POLICY IF EXISTS api_create_idempotency_delete
+  ON public.api_create_idempotency;
 CREATE POLICY api_create_idempotency_delete
   ON public.api_create_idempotency
   FOR DELETE

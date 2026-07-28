@@ -133,6 +133,29 @@ function createInvoicesGetQueryMock(result: {
   return query;
 }
 
+function createClientLookupQuery(clientFound = true) {
+  return {
+    select: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    maybeSingle: jest.fn().mockResolvedValue({
+      data: clientFound ? { id: '123e4567-e89b-12d3-a456-426614174001' } : null,
+      error: null,
+    }),
+  };
+}
+
+function createFromMock(
+  tableHandlers: Record<string, unknown>,
+  clientFound = true
+) {
+  const clientQuery = createClientLookupQuery(clientFound);
+  return jest.fn((table: string) => {
+    if (table === 'clients') return clientQuery;
+    if (table in tableHandlers) return tableHandlers[table];
+    throw new Error(`Unexpected table: ${table}`);
+  });
+}
+
 describe('/api/invoices GET', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -576,6 +599,33 @@ describe('/api/invoices POST', () => {
     expect(json.error).toBe('Admin role required');
   });
 
+  it('returns 400 when client_id is not in the caller organization', async () => {
+    mockUserSupabase = {
+      rpc: jest.fn(),
+      from: createFromMock({ invoices: {} }, false),
+    };
+
+    const { POST } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'cross-org-client-key' },
+      body: JSON.stringify({
+        client_id: '123e4567-e89b-12d3-a456-426614174099',
+        invoice_date: '2026-04-03',
+        subtotal: 100,
+        total: 100,
+        items: [],
+      }),
+    });
+
+    const response = await POST(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json.error).toBe('Client not found in organization');
+    expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+  });
+
   it('scopes the created-invoice readback by org_id', async () => {
     const refreshedInvoice = {
       id: '123e4567-e89b-12d3-a456-426614174099',
@@ -619,10 +669,7 @@ describe('/api/invoices POST', () => {
         data: refreshedInvoice.id,
         error: null,
       }),
-      from: jest.fn((table: string) => {
-        if (table === 'invoices') return mockInvoiceQuery;
-        throw new Error(`Unexpected table: ${table}`);
-      }),
+      from: createFromMock({ invoices: mockInvoiceQuery }),
     };
 
     const { POST } = await import('../route');
@@ -711,7 +758,7 @@ describe('/api/invoices POST', () => {
         data: refreshedInvoice.id,
         error: null,
       }),
-      from: jest.fn(() => mockInvoiceQuery),
+      from: createFromMock({ invoices: mockInvoiceQuery }),
     };
 
     const { POST } = await import('../route');
@@ -754,7 +801,7 @@ describe('/api/invoices POST', () => {
           },
         },
       }),
-      from: jest.fn(),
+      from: createFromMock({}),
     };
 
     const { POST } = await import('../route');
@@ -789,7 +836,7 @@ describe('/api/invoices POST', () => {
           code: '23505',
         },
       }),
-      from: jest.fn(),
+      from: createFromMock({}),
     };
 
     const { POST } = await import('../route');
@@ -864,7 +911,7 @@ describe('/api/invoices POST', () => {
         data: refreshedInvoice.id,
         error: null,
       }),
-      from: jest.fn(() => mockInvoiceQuery),
+      from: createFromMock({ invoices: mockInvoiceQuery }),
     };
 
     const { POST } = await import('../route');
@@ -933,7 +980,7 @@ describe('/api/invoices POST', () => {
 
     mockUserSupabase = {
       rpc: jest.fn().mockResolvedValue({ data: invoiceId, error: null }),
-      from: jest.fn(() => mockInvoiceQuery),
+      from: createFromMock({ invoices: mockInvoiceQuery }),
     };
 
     const { POST } = await import('../route');
@@ -1011,7 +1058,7 @@ describe('/api/invoices POST', () => {
 
     mockUserSupabase = {
       rpc: jest.fn().mockResolvedValue({ data: invoiceId, error: null }),
-      from: jest.fn(() => mockInvoiceQuery),
+      from: createFromMock({ invoices: mockInvoiceQuery }),
     };
 
     const { POST } = await import('../route');

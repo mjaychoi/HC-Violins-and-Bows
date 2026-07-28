@@ -137,7 +137,7 @@ function createPutRequest(fileName = 'replacement.pdf') {
     name: fileName,
     type: 'application/pdf',
     size: 3,
-    arrayBuffer: jest.fn().mockResolvedValue(Buffer.from('pdf')),
+    arrayBuffer: jest.fn().mockResolvedValue(Buffer.from('%PDF-test')),
   };
 
   return {
@@ -153,7 +153,7 @@ function createPostRequest(fileName = 'certificate.pdf') {
     name: fileName,
     type: 'application/pdf',
     size: 3,
-    arrayBuffer: jest.fn().mockResolvedValue(Buffer.from('pdf')),
+    arrayBuffer: jest.fn().mockResolvedValue(Buffer.from('%PDF-test')),
   };
 
   return {

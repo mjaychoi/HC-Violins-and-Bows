@@ -31,6 +31,7 @@ import {
 } from '@/app/api/_utils/rateLimit';
 import type { TablesInsert, TablesUpdate } from '@/types/database';
 import type { MaintenanceTask } from '@/types';
+import { getCalendarPlacementDate } from '@/utils/calendar';
 import {
   claimCreateIdempotency,
   clearCreateIdempotency,
@@ -40,21 +41,16 @@ import {
 
 type MaintenanceTaskInsertRow = TablesInsert<'maintenance_tasks'>;
 type MaintenanceTaskUpdateRow = TablesUpdate<'maintenance_tasks'>;
-type MaintenanceTaskSortMode = 'scheduled' | 'overdue' | 'default';
+type MaintenanceTaskSortMode =
+  | 'scheduled'
+  | 'overdue'
+  | 'calendar_range'
+  | 'default';
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
-const MAX_RANGE_ROWS_PER_COLUMN = 500;
 const MAX_SEARCH_LEN = 120;
-
-const DATE_RANGE_COLUMNS = [
-  'received_date',
-  'scheduled_date',
-  'due_date',
-  'personal_due_date',
-] as const;
-
-const OPTIONAL_MAINTENANCE_COLUMNS = new Set<string>(['personal_due_date']);
+const CALENDAR_DATE_COLUMN = 'calendar_date';
 
 const TASK_PRIORITY_RANK: Record<string, number> = {
   urgent: 4,
@@ -188,7 +184,13 @@ function sortMaintenanceTaskRows(
       const dueDateDelta = compareNullableDateAsc(a.due_date, b.due_date);
       if (dueDateDelta !== 0) return dueDateDelta;
 
-      return compareNullableDateDesc(a.received_date, b.received_date);
+      const receivedDateDelta = compareNullableDateDesc(
+        a.received_date,
+        b.received_date
+      );
+      if (receivedDateDelta !== 0) return receivedDateDelta;
+
+      return a.id.localeCompare(b.id);
     }
 
     if (sortMode === 'overdue') {
@@ -199,10 +201,39 @@ function sortMaintenanceTaskRows(
 
       if (overdueDateDelta !== 0) return overdueDateDelta;
 
-      return compareNullableDateDesc(a.received_date, b.received_date);
+      const receivedDateDelta = compareNullableDateDesc(
+        a.received_date,
+        b.received_date
+      );
+      if (receivedDateDelta !== 0) return receivedDateDelta;
+
+      return a.id.localeCompare(b.id);
     }
 
-    return compareNullableDateDesc(a.received_date, b.received_date);
+    if (sortMode === 'calendar_range') {
+      const calendarDateDelta = compareNullableDateAsc(
+        a.calendar_date ?? getCalendarPlacementDate(a),
+        b.calendar_date ?? getCalendarPlacementDate(b)
+      );
+
+      if (calendarDateDelta !== 0) return calendarDateDelta;
+
+      const receivedDateDelta = compareNullableDateDesc(
+        a.received_date,
+        b.received_date
+      );
+      if (receivedDateDelta !== 0) return receivedDateDelta;
+
+      return a.id.localeCompare(b.id);
+    }
+
+    const receivedDateDelta = compareNullableDateDesc(
+      a.received_date,
+      b.received_date
+    );
+    if (receivedDateDelta !== 0) return receivedDateDelta;
+
+    return a.id.localeCompare(b.id);
   });
 }
 
@@ -303,7 +334,9 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         ? 'scheduled'
         : overdue
           ? 'overdue'
-          : 'default';
+          : startDate && endDate
+            ? 'calendar_range'
+            : 'default';
 
       if (id) {
         if (!validateUUID(id)) {
@@ -468,11 +501,21 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         if (sortMode === 'scheduled') {
           query = query
             .order('priority', { ascending: false })
-            .order('due_date', { ascending: true });
+            .order('due_date', { ascending: true })
+            .order('id', { ascending: true });
         } else if (sortMode === 'overdue') {
-          query = query.order('due_date', { ascending: true });
+          query = query
+            .order('due_date', { ascending: true })
+            .order('id', { ascending: true });
+        } else if (sortMode === 'calendar_range') {
+          query = query
+            .order('calendar_date', { ascending: true })
+            .order('received_date', { ascending: false })
+            .order('id', { ascending: true });
         } else {
-          query = query.order('received_date', { ascending: false });
+          query = query
+            .order('received_date', { ascending: false })
+            .order('id', { ascending: true });
         }
 
         return query;
@@ -481,66 +524,62 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       let data: MaintenanceTask[] = [];
       let count = 0;
       let capped = false;
+      let complete = true;
 
       if (startDate && endDate) {
-        const rangeResults = await Promise.all(
-          DATE_RANGE_COLUMNS.map(async column => {
-            const selectedRangeQuery = auth.userSupabase
-              .from('maintenance_tasks')
-              .select('*');
+        const buildCalendarRangeQuery = () => {
+          const baseQuery = applyOrdering(
+            applyCommonFilters(
+              auth.userSupabase
+                .from('maintenance_tasks')
+                .select('*', { count: 'exact' })
+            )
+          )
+            .gte(CALENDAR_DATE_COLUMN, startDate)
+            .lte(CALENDAR_DATE_COLUMN, endDate)
+            .not(CALENDAR_DATE_COLUMN, 'is', null);
 
-            const limitedRangeQuery =
-              typeof selectedRangeQuery.limit === 'function'
-                ? selectedRangeQuery.limit(MAX_RANGE_ROWS_PER_COLUMN)
-                : selectedRangeQuery;
+          return typeof baseQuery.range === 'function'
+            ? baseQuery.range(offset, to)
+            : baseQuery;
+        };
 
-            const rangeQuery = applyCommonFilters(limitedRangeQuery)
-              .gte(column, startDate)
-              .lte(column, endDate);
+        const result = await buildCalendarRangeQuery();
+        const rangeError = result?.error;
 
-            const { data: rangeData, error: rangeError } = await rangeQuery;
-
-            if (rangeError) {
-              if (
-                OPTIONAL_MAINTENANCE_COLUMNS.has(column) &&
-                isMissingMaintenanceTaskColumnError(rangeError, column)
-              ) {
-                return [];
-              }
-
-              throw errorHandler.handleSupabaseError(
-                rangeError,
-                `Fetch maintenance tasks (${column} range)`
-              );
-            }
-
-            if (
-              Array.isArray(rangeData) &&
-              rangeData.length >= MAX_RANGE_ROWS_PER_COLUMN
-            ) {
-              capped = true;
-            }
-
-            return Array.isArray(rangeData)
-              ? (rangeData as MaintenanceTask[])
-              : [];
-          })
-        );
-
-        const mergedTasks = new Map<string, MaintenanceTask>();
-
-        for (const rows of rangeResults) {
-          for (const task of rows) {
-            mergedTasks.set(task.id, task);
-          }
+        if (
+          rangeError &&
+          isMissingMaintenanceTaskColumnError(rangeError, CALENDAR_DATE_COLUMN)
+        ) {
+          return {
+            payload: {
+              error:
+                'Calendar date column is unavailable. Apply the maintenance_tasks calendar_date migration.',
+              error_code: 'maintenance_tasks_calendar_date_missing',
+              success: false,
+            },
+            status: 503,
+          };
         }
 
-        data = sortMaintenanceTaskRows(
-          Array.from(mergedTasks.values()),
-          sortMode
-        );
+        if (rangeError) {
+          throw errorHandler.handleSupabaseError(
+            rangeError,
+            'Fetch maintenance tasks (calendar_date range)'
+          );
+        }
 
-        count = data.length;
+        data = Array.isArray(result?.data)
+          ? (result.data as MaintenanceTask[])
+          : [];
+
+        count = result?.count ?? data.length;
+        // capped: this page is full and more rows exist (client should fetch next page).
+        // complete: all rows matching the query are included in this response.
+        capped = count > data.length && data.length >= pageSize;
+        complete = !capped;
+
+        data = sortMaintenanceTaskRows(data, sortMode);
       } else {
         const buildBaseQuery = (includePersonalDueDate = true) => {
           const orderedQuery = applyOrdering(
@@ -582,6 +621,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
         count = result?.count || 0;
         capped = count > data.length && data.length >= pageSize;
+        complete = !capped;
       }
 
       const validationResult = safeValidate(
@@ -598,6 +638,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           page,
           pageSize,
           capped,
+          complete,
           success: true,
         },
         metadata: {
@@ -606,6 +647,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           page,
           pageSize,
           capped,
+          complete,
           instrumentId,
           status,
           taskType,

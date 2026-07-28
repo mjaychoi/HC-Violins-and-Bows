@@ -147,12 +147,12 @@ describe('/api/maintenance-tasks', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [mockTask],
+          error: null,
+          count: 1,
+        }),
       };
-      (mockQuery.order as jest.Mock).mockResolvedValue({
-        data: [mockTask],
-        error: null,
-        count: 1,
-      });
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -346,17 +346,20 @@ describe('/api/maintenance-tasks', () => {
       expect(json.message).toContain('Invalid scheduled_date format');
     });
 
-    it('should filter by date range', async () => {
+    it('should filter by calendar_date range using canonical placement date', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         gte: jest.fn().mockReturnThis(),
         lte: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [mockTask],
+          error: null,
+          count: 1,
+        }),
       };
-      (mockQuery.lte as jest.Mock).mockResolvedValue({
-        data: [mockTask],
-        error: null,
-      });
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
@@ -367,59 +370,76 @@ describe('/api/maintenance-tasks', () => {
       );
       const response = await GET(request);
 
-      // Verify the response is successful (200)
-      // The date range filter should be applied when both startDate and endDate are provided
-      // validateDateString is mocked to return true for valid YYYY-MM-DD format by default
       expect(response.status).toBe(200);
       const json = await response.json();
       expect(json.data).toBeDefined();
       expect(json.count).toBe(1);
-      expect(mockUserSupabase.from).toHaveBeenCalledTimes(4);
-      expect(mockQuery.gte).toHaveBeenCalledWith(
-        expect.stringMatching(
-          /received_date|scheduled_date|due_date|personal_due_date/
-        ),
-        '2024-01-01'
-      );
-      expect(mockQuery.lte).toHaveBeenCalledWith(
-        expect.stringMatching(
-          /received_date|scheduled_date|due_date|personal_due_date/
-        ),
-        '2024-01-31'
-      );
+      expect(json.complete).toBe(true);
+      expect(mockUserSupabase.from).toHaveBeenCalledTimes(1);
+      expect(mockQuery.gte).toHaveBeenCalledWith('calendar_date', '2024-01-01');
+      expect(mockQuery.lte).toHaveBeenCalledWith('calendar_date', '2024-01-31');
+      expect(mockQuery.not).toHaveBeenCalledWith('calendar_date', 'is', null);
+      expect(mockQuery.order).toHaveBeenCalledWith('calendar_date', {
+        ascending: true,
+      });
+      expect(mockQuery.order).toHaveBeenCalledWith('received_date', {
+        ascending: false,
+      });
+      expect(mockQuery.order).toHaveBeenCalledWith('id', { ascending: true });
     });
 
-    it('should tolerate missing optional personal_due_date column in date range queries', async () => {
-      const successQuery = {
+    it('should return incomplete range metadata when pagination is required', async () => {
+      const mockQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockResolvedValue({
+        lte: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
           data: [mockTask],
           error: null,
-        }),
-      };
-      const missingColumnQuery = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockResolvedValue({
-          data: null,
-          error: {
-            code: 'PGRST204',
-            message:
-              "Could not find the 'personal_due_date' column of 'maintenance_tasks' in the schema cache",
-          },
+          count: 2,
         }),
       };
 
       mockUserSupabase = {
-        from: jest
-          .fn()
-          .mockReturnValueOnce(successQuery)
-          .mockReturnValueOnce(successQuery)
-          .mockReturnValueOnce(successQuery)
-          .mockReturnValueOnce(missingColumnQuery),
+        from: jest.fn().mockReturnValue(mockQuery),
+      };
+
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks?start_date=2024-01-01&end_date=2024-01-31&pageSize=1'
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.capped).toBe(true);
+      expect(json.complete).toBe(false);
+      expect(json.count).toBe(2);
+      expect(json.data).toHaveLength(1);
+    });
+
+    it('should return 503 when calendar_date column is unavailable', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: null,
+          error: {
+            code: '42703',
+            message: 'column maintenance_tasks.calendar_date does not exist',
+          },
+          count: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
       };
 
       const request = new NextRequest(
@@ -428,9 +448,8 @@ describe('/api/maintenance-tasks', () => {
       const response = await GET(request);
       const json = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(json.data).toEqual([mockTask]);
-      expect(json.count).toBe(1);
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('maintenance_tasks_calendar_date_missing');
     });
 
     it('should filter by overdue', async () => {
