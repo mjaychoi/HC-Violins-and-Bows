@@ -12,6 +12,11 @@ import { errorHandler } from '@/utils/errorHandler';
 import { logError } from '@/utils/logger';
 import { createApiResponse } from '@/app/api/_utils/apiErrors';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
+import {
+  applyScopedRateLimit,
+  destructiveMutationRateLimit,
+  uploadRateLimit,
+} from '@/app/api/_utils/rateLimit';
 
 const SIGNED_URL_TTL_SECONDS = 600;
 const MAX_CERTIFICATE_SIZE = 20 * 1024 * 1024;
@@ -380,6 +385,17 @@ async function postHandlerInternal(
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
 
+    const uploadRateLimitResult = await applyScopedRateLimit(uploadRateLimit, {
+      orgId: auth.orgId,
+      userId: auth.user.id,
+      method: 'POST',
+      routeKey: 'instruments/:id/certificates',
+      ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+    });
+    if (uploadRateLimitResult.limited) {
+      return routeJson({ error: 'Too many requests' }, 429);
+    }
+
     const validation = await validateCertificateUploadFromRequest(request);
     if (!validation.ok) {
       return validation.response;
@@ -518,6 +534,17 @@ async function putHandlerInternal(
 
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
+
+    const uploadRateLimitResult = await applyScopedRateLimit(uploadRateLimit, {
+      orgId: auth.orgId,
+      userId: auth.user.id,
+      method: 'PUT',
+      routeKey: 'instruments/:id/certificates',
+      ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+    });
+    if (uploadRateLimitResult.limited) {
+      return routeJson({ error: 'Too many requests' }, 429);
+    }
 
     const validation = await validateCertificateUploadFromRequest(request);
     if (!validation.ok) {
@@ -675,6 +702,20 @@ async function deleteHandlerInternal(
 
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
+
+    const deleteRateLimitResult = await applyScopedRateLimit(
+      destructiveMutationRateLimit,
+      {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'DELETE',
+        routeKey: 'instruments/:id/certificates',
+        ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+      }
+    );
+    if (deleteRateLimitResult.limited) {
+      return routeJson({ error: 'Too many requests' }, 429);
+    }
 
     let filePath: string | null = null;
     let deleteByCertificateId: string | null = null;

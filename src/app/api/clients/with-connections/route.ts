@@ -25,6 +25,11 @@ import {
   rpcCreateClientWithConnectionsAtomic,
 } from '@/app/api/_utils/insertClientWithAllocatedNumber';
 import { logWarn } from '@/utils/logger';
+import {
+  applyScopedRateLimit,
+  mutationRateLimit,
+  tooManyRequestsApiResult,
+} from '@/app/api/_utils/rateLimit';
 
 /** HTTP 503: RPC/write likely succeeded but we cannot return a verified API payload. */
 function createClientResponseMalformed503(orgId: string | null | undefined) {
@@ -82,6 +87,17 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           payload: { error: 'Admin role required' },
           status: 403,
         };
+      }
+
+      const rateLimit = await applyScopedRateLimit(mutationRateLimit, {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'POST',
+        routeKey: 'clients/with-connections',
+        ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+      });
+      if (rateLimit.limited) {
+        return tooManyRequestsApiResult();
       }
 
       const body = await request.json();

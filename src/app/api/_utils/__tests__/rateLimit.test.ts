@@ -32,7 +32,12 @@ describe('rateLimit module (F8)', () => {
     expect('authRateLimit' in mod).toBe(true);
     expect('exportRateLimit' in mod).toBe(true);
     expect('searchRateLimit' in mod).toBe(true);
+    expect('mutationRateLimit' in mod).toBe(true);
+    expect('uploadRateLimit' in mod).toBe(true);
+    expect('destructiveMutationRateLimit' in mod).toBe(true);
     expect('applyRateLimit' in mod).toBe(true);
+    expect('applyScopedRateLimit' in mod).toBe(true);
+    expect('buildRateLimitKey' in mod).toBe(true);
   });
 });
 
@@ -60,7 +65,23 @@ describe('applyRateLimit (F3)', () => {
 
     expect(await applyRateLimit(mockLimiter, 'user-123')).toEqual({
       limited: true,
+      retryAfterSeconds: undefined,
     });
+  });
+
+  it('includes retryAfterSeconds when limiter returns reset timestamp', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const mockLimiter = {
+      limit: jest
+        .fn()
+        .mockResolvedValue({ success: false, remaining: 0, reset: 1_030_000 }),
+    } as unknown as Ratelimit;
+
+    expect(await applyRateLimit(mockLimiter, 'user-123')).toEqual({
+      limited: true,
+      retryAfterSeconds: 30,
+    });
+    jest.spyOn(Date, 'now').mockRestore();
   });
 
   it('fails open — returns { limited: false } when limiter.limit() throws', async () => {
@@ -84,6 +105,82 @@ describe('applyRateLimit (F3)', () => {
 
     await applyRateLimit(mockLimiter, 'org-abc:user-xyz');
     expect(mockLimiter.limit).toHaveBeenCalledWith('org-abc:user-xyz');
+  });
+});
+
+describe('buildRateLimitKey and applyScopedRateLimit', () => {
+  const { buildRateLimitKey, applyScopedRateLimit } =
+    require('../rateLimit') as typeof import('../rateLimit');
+
+  it('builds org-scoped keys with method and route', () => {
+    expect(
+      buildRateLimitKey({
+        orgId: 'org-a',
+        userId: 'user-1',
+        method: 'POST',
+        routeKey: 'invoices',
+      })
+    ).toBe('org-a:user-1:POST:invoices');
+  });
+
+  it('uses IP fallback only when orgId is absent', () => {
+    expect(
+      buildRateLimitKey({
+        orgId: null,
+        userId: 'user-1',
+        method: 'POST',
+        routeKey: 'invoices',
+        ip: '203.0.113.10',
+      })
+    ).toBe('ip:203.0.113.10:POST:invoices');
+  });
+
+  it('keeps different orgs, users, and routes on separate keys', async () => {
+    const mockLimiter = {
+      limit: jest.fn().mockResolvedValue({ success: true }),
+    } as unknown as Ratelimit;
+
+    await applyScopedRateLimit(mockLimiter, {
+      orgId: 'org-a',
+      userId: 'user-1',
+      method: 'POST',
+      routeKey: 'sales',
+    });
+    await applyScopedRateLimit(mockLimiter, {
+      orgId: 'org-b',
+      userId: 'user-1',
+      method: 'POST',
+      routeKey: 'sales',
+    });
+    await applyScopedRateLimit(mockLimiter, {
+      orgId: 'org-a',
+      userId: 'user-2',
+      method: 'POST',
+      routeKey: 'sales',
+    });
+    await applyScopedRateLimit(mockLimiter, {
+      orgId: 'org-a',
+      userId: 'user-1',
+      method: 'PATCH',
+      routeKey: 'sales',
+    });
+
+    expect(mockLimiter.limit).toHaveBeenNthCalledWith(
+      1,
+      'org-a:user-1:POST:sales'
+    );
+    expect(mockLimiter.limit).toHaveBeenNthCalledWith(
+      2,
+      'org-b:user-1:POST:sales'
+    );
+    expect(mockLimiter.limit).toHaveBeenNthCalledWith(
+      3,
+      'org-a:user-2:POST:sales'
+    );
+    expect(mockLimiter.limit).toHaveBeenNthCalledWith(
+      4,
+      'org-a:user-1:PATCH:sales'
+    );
   });
 });
 

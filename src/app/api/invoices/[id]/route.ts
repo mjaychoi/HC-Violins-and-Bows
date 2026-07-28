@@ -29,6 +29,12 @@ import { logInfo, logError } from '@/utils/logger';
 import type { Json } from '@/types/database';
 import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import { writeAuditLog } from '@/utils/auditLog';
+import {
+  applyScopedRateLimit,
+  destructiveMutationRateLimit,
+  mutationRateLimit,
+  tooManyRequestsApiResult,
+} from '@/app/api/_utils/rateLimit';
 import { assertClientBelongsToOrg } from '../clientScope';
 
 type InvoiceMutationResult = 'full_success' | 'partial_success';
@@ -352,6 +358,17 @@ async function updateInvoiceHandler(
         payload: { error: 'Admin role required', success: false },
         status: 403,
       };
+    }
+
+    const rateLimit = await applyScopedRateLimit(mutationRateLimit, {
+      orgId: auth.orgId,
+      userId: auth.user.id,
+      method: 'PUT',
+      routeKey: 'invoices/:id',
+      ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+    });
+    if (rateLimit.limited) {
+      return tooManyRequestsApiResult();
     }
 
     if (!validateUUID(id)) {
@@ -724,6 +741,17 @@ async function deleteInvoiceHandler(
         payload: { error: 'Admin role required', success: false },
         status: 403,
       };
+    }
+
+    const rateLimit = await applyScopedRateLimit(destructiveMutationRateLimit, {
+      orgId: auth.orgId,
+      userId: auth.user.id,
+      method: 'DELETE',
+      routeKey: 'invoices/:id',
+      ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+    });
+    if (rateLimit.limited) {
+      return tooManyRequestsApiResult();
     }
 
     if (!validateUUID(id)) {

@@ -8,6 +8,20 @@ import { getStorage } from '@/utils/storage';
 jest.mock('@/lib/supabase-server');
 jest.mock('@/utils/inputValidation');
 jest.mock('@/utils/storage');
+jest.mock('@/app/api/_utils/rateLimit', () => ({
+  searchRateLimit: null,
+  exportRateLimit: null,
+  authRateLimit: null,
+  mutationRateLimit: null,
+  uploadRateLimit: null,
+  destructiveMutationRateLimit: null,
+  applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  applyScopedRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  tooManyRequestsApiResult: () => ({
+    payload: { error: 'Too many requests', success: false },
+    status: 429,
+  }),
+}));
 jest.mock('@/app/api/_utils/withSentryRoute', () => ({
   withSentryRoute: (fn: unknown) => fn,
 }));

@@ -16,6 +16,11 @@ import { logError } from '@/utils/logger';
 import { ErrorCodes } from '@/types/errors';
 import { assertInstrumentImagesSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import { isValidImageSignature } from '@/utils/imageMagicBytes';
+import {
+  applyScopedRateLimit,
+  destructiveMutationRateLimit,
+  uploadRateLimit,
+} from '@/app/api/_utils/rateLimit';
 
 export const runtime = 'nodejs';
 
@@ -465,6 +470,24 @@ async function postHandlerInternal(
     const ownershipError = await ensureAdminOwnedInstrument(auth, id);
     if (ownershipError) return ownershipError;
 
+    const uploadRateLimitResult = await applyScopedRateLimit(uploadRateLimit, {
+      orgId: auth.orgId,
+      userId: auth.user.id,
+      method: 'POST',
+      routeKey: 'instruments/:id/images',
+      ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+    });
+    if (uploadRateLimitResult.limited) {
+      return createApiErrorResponse(
+        {
+          message: 'Too many requests',
+          error_code: 'RATE_LIMIT_EXCEEDED',
+          retryable: true,
+        },
+        429
+      );
+    }
+
     await assertInstrumentImagesSchemaReadiness({
       supabase: auth.userSupabase,
     });
@@ -704,6 +727,27 @@ async function deleteHandlerInternal(
 
     const ownershipError = await ensureAdminOwnedInstrument(auth, id);
     if (ownershipError) return ownershipError;
+
+    const deleteRateLimitResult = await applyScopedRateLimit(
+      destructiveMutationRateLimit,
+      {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'DELETE',
+        routeKey: 'instruments/:id/images',
+        ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+      }
+    );
+    if (deleteRateLimitResult.limited) {
+      return createApiErrorResponse(
+        {
+          message: 'Too many requests',
+          error_code: 'RATE_LIMIT_EXCEEDED',
+          retryable: true,
+        },
+        429
+      );
+    }
 
     await assertInstrumentImagesSchemaReadiness({
       supabase: auth.userSupabase,

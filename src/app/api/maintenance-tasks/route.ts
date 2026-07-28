@@ -23,6 +23,12 @@ import {
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { validateMaintenanceTaskStatusTransition } from '@/app/api/_utils/stateTransitions';
+import {
+  applyScopedRateLimit,
+  destructiveMutationRateLimit,
+  mutationRateLimit,
+  tooManyRequestsApiResult,
+} from '@/app/api/_utils/rateLimit';
 import type { TablesInsert, TablesUpdate } from '@/types/database';
 import type { MaintenanceTask } from '@/types';
 import { getCalendarPlacementDate } from '@/utils/calendar';
@@ -688,6 +694,17 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      const rateLimit = await applyScopedRateLimit(mutationRateLimit, {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'POST',
+        routeKey: 'maintenance-tasks',
+        ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+      });
+      if (rateLimit.limited) {
+        return tooManyRequestsApiResult();
+      }
+
       const bodyResult = await readJsonObject(request);
       if (!bodyResult.ok) {
         return {
@@ -823,6 +840,17 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           payload: { error: 'Admin role required', success: false },
           status: 403,
         };
+      }
+
+      const rateLimit = await applyScopedRateLimit(mutationRateLimit, {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'PATCH',
+        routeKey: 'maintenance-tasks',
+        ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+      });
+      if (rateLimit.limited) {
+        return tooManyRequestsApiResult();
       }
 
       const bodyResult = await readJsonObject(request);
@@ -988,6 +1016,20 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
           payload: { error: 'Admin role required', success: false },
           status: 403,
         };
+      }
+
+      const rateLimit = await applyScopedRateLimit(
+        destructiveMutationRateLimit,
+        {
+          orgId: auth.orgId,
+          userId: auth.user.id,
+          method: 'DELETE',
+          routeKey: 'maintenance-tasks',
+          ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+        }
+      );
+      if (rateLimit.limited) {
+        return tooManyRequestsApiResult();
       }
 
       const { error, count } = await auth.userSupabase
