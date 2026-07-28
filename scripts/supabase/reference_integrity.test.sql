@@ -27,7 +27,7 @@ DECLARE
   v_reserved_conn UUID;
   v_reserved_reason TEXT;
   v_fk_count INTEGER;
-  v_delete_action CHAR;
+  v_mismatch_count BIGINT;
 BEGIN
   INSERT INTO auth.users (
     instance_id,
@@ -327,34 +327,73 @@ BEGIN
     RAISE EXCEPTION 'expected exactly one maintenance_tasks.instrument_id FK (count=%)', v_fk_count;
   END IF;
 
-  SELECT c.confdeltype
-    INTO v_delete_action
-  FROM pg_constraint c
-  WHERE c.conrelid = 'public.maintenance_tasks'::regclass
-    AND c.conname = 'maintenance_tasks_instrument_id_fkey';
-
-  IF v_delete_action <> 'r' THEN
-    RAISE EXCEPTION 'maintenance_tasks.instrument_id FK should be RESTRICT (got %)', v_delete_action;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_attribute src
+      ON src.attrelid = c.conrelid
+     AND src.attnum = c.conkey[1]
+     AND NOT src.attisdropped
+    JOIN pg_attribute ref
+      ON ref.attrelid = c.confrelid
+     AND ref.attnum = c.confkey[1]
+     AND NOT ref.attisdropped
+    WHERE c.contype = 'f'
+      AND c.conrelid = 'public.maintenance_tasks'::regclass
+      AND c.conname = 'maintenance_tasks_instrument_id_fkey'
+      AND c.confrelid = 'public.instruments'::regclass
+      AND src.attname = 'instrument_id'
+      AND ref.attname = 'id'
+      AND c.confdeltype = 'r'
+  ) THEN
+    RAISE EXCEPTION
+      'maintenance_tasks.instrument_id FK catalog mismatch (expected maintenance_tasks(instrument_id) -> instruments(id) ON DELETE RESTRICT)';
   END IF;
 
-  SELECT c.confdeltype
-    INTO v_delete_action
-  FROM pg_constraint c
-  WHERE c.conrelid = 'public.instruments'::regclass
-    AND c.conname = 'instruments_reserved_by_user_id_fkey';
-
-  IF v_delete_action <> 'n' THEN
-    RAISE EXCEPTION 'instruments.reserved_by_user_id FK should be SET NULL (got %)', v_delete_action;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_attribute src
+      ON src.attrelid = c.conrelid
+     AND src.attnum = c.conkey[1]
+     AND NOT src.attisdropped
+    JOIN pg_attribute ref
+      ON ref.attrelid = c.confrelid
+     AND ref.attnum = c.confkey[1]
+     AND NOT ref.attisdropped
+    WHERE c.contype = 'f'
+      AND c.conrelid = 'public.instruments'::regclass
+      AND c.conname = 'instruments_reserved_by_user_id_fkey'
+      AND c.confrelid = 'auth.users'::regclass
+      AND src.attname = 'reserved_by_user_id'
+      AND ref.attname = 'id'
+      AND c.confdeltype = 'n'
+  ) THEN
+    RAISE EXCEPTION
+      'instruments.reserved_by_user_id FK catalog mismatch (expected instruments(reserved_by_user_id) -> auth.users(id) ON DELETE SET NULL)';
   END IF;
 
-  SELECT c.confdeltype
-    INTO v_delete_action
-  FROM pg_constraint c
-  WHERE c.conrelid = 'public.instruments'::regclass
-    AND c.conname = 'instruments_reserved_connection_id_fkey';
-
-  IF v_delete_action <> 'n' THEN
-    RAISE EXCEPTION 'instruments.reserved_connection_id FK should be SET NULL (got %)', v_delete_action;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_attribute src
+      ON src.attrelid = c.conrelid
+     AND src.attnum = c.conkey[1]
+     AND NOT src.attisdropped
+    JOIN pg_attribute ref
+      ON ref.attrelid = c.confrelid
+     AND ref.attnum = c.confkey[1]
+     AND NOT ref.attisdropped
+    WHERE c.contype = 'f'
+      AND c.conrelid = 'public.instruments'::regclass
+      AND c.conname = 'instruments_reserved_connection_id_fkey'
+      AND c.confrelid = 'public.client_instruments'::regclass
+      AND src.attname = 'reserved_connection_id'
+      AND ref.attname = 'id'
+      AND c.confdeltype = 'n'
+  ) THEN
+    RAISE EXCEPTION
+      'instruments.reserved_connection_id FK catalog mismatch (expected instruments(reserved_connection_id) -> client_instruments(id) ON DELETE SET NULL)';
   END IF;
 
   IF (
@@ -375,6 +414,20 @@ BEGIN
       AND NOT tgisinternal
   ) <> 1 THEN
     RAISE EXCEPTION 'client_instruments_reserved_reference_guard_trigger missing or duplicated';
+  END IF;
+
+  SELECT COUNT(*) INTO v_mismatch_count
+  FROM public.instruments i
+  JOIN public.client_instruments ci
+    ON ci.id = i.reserved_connection_id
+  WHERE i.reserved_connection_id IS NOT NULL
+    AND (
+      i.org_id IS DISTINCT FROM ci.org_id
+      OR i.id IS DISTINCT FROM ci.instrument_id
+    );
+
+  IF v_mismatch_count <> 0 THEN
+    RAISE EXCEPTION 'aggregate reserved_connection invariant mismatch_count=%', v_mismatch_count;
   END IF;
 
   RAISE NOTICE 'reference integrity SQL tests passed';
