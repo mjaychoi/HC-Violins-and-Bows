@@ -20,6 +20,8 @@ export function useTenantIdentity() {
 
   return {
     tenantIdentityKey,
+    userId: auth.user?.id ?? null,
+    orgId: auth.orgId,
     isTenantTransitioning:
       auth.loading || (Boolean(auth.user) && tenantIdentityKey === null),
   };

@@ -7,22 +7,28 @@ import { EmptyState } from '@/components/common';
 import { ConfirmDialog } from '@/components/common/modals';
 import { useDebounce } from '@/hooks/useDebounce';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { cn } from '@/utils/classNames';
 import { logError } from '@/utils/logger';
-const NOTES_STORAGE_KEY = 'notes_list';
-const NOTES_SEARCH_KEY = 'notes_search';
-
-interface Note {
-  id: string;
-  title: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import {
+  getNotesStorageKeys,
+  parseStoredNotes,
+  type Note,
+} from './notesStorage';
 
 export default function NotesPage() {
   const { canCreateNote } = usePermissions();
+  const { tenantIdentityKey, userId, orgId, isTenantTransitioning } =
+    useTenantIdentity();
+  const storageKeys = useMemo(
+    () =>
+      isTenantTransitioning
+        ? null
+        : getNotesStorageKeys({ userId, orgId, tenantIdentityKey }),
+    [isTenantTransitioning, orgId, tenantIdentityKey, userId]
+  );
   const [notes, setNotes] = useState<Note[]>([]);
+  const [loadedListKey, setLoadedListKey] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | null>(null);
@@ -32,6 +38,15 @@ export default function NotesPage() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
   const saveStatusClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeListKeyRef = useRef<string | null>(null);
+  const tenantGenerationRef = useRef(0);
+  const notesChangedLocallyRef = useRef(false);
+  const searchChangedLocallyRef = useRef(false);
+  const canMutateNotes =
+    canCreateNote &&
+    !isTenantTransitioning &&
+    storageKeys !== null &&
+    loadedListKey === storageKeys.list;
 
   useEffect(() => {
     const updateViewport = () => setIsDesktop(window.innerWidth >= 768);
@@ -40,44 +55,113 @@ export default function NotesPage() {
     return () => window.removeEventListener('resize', updateViewport);
   }, []);
 
-  // Load notes from localStorage on mount
+  // Clear prior-tenant state and load only the newly resolved tenant scope.
   useEffect(() => {
+    tenantGenerationRef.current += 1;
+    activeListKeyRef.current = storageKeys?.list ?? null;
+    notesChangedLocallyRef.current = false;
+    searchChangedLocallyRef.current = false;
+    setNotes([]);
+    setLoadedListKey(null);
+    setSelectedNoteId(null);
+    setSearchQuery('');
+    setSaveStatus(null);
+    setDeleteConfirmNote(null);
+    setViewMode('list');
+
+    if (!storageKeys) return;
+
     try {
-      const savedNotes = localStorage.getItem(NOTES_STORAGE_KEY);
-      const savedSearch = localStorage.getItem(NOTES_SEARCH_KEY);
-      if (savedNotes) {
-        const parsedNotes = JSON.parse(savedNotes) as Note[];
-        setNotes(parsedNotes);
-        // Select first note if available (desktop only)
-        if (parsedNotes.length > 0 && window.innerWidth >= 768) {
-          setSelectedNoteId(parsedNotes[0].id);
-        }
-      }
-      if (savedSearch) {
-        setSearchQuery(savedSearch);
+      const parsedNotes = parseStoredNotes(
+        localStorage.getItem(storageKeys.list)
+      );
+      const savedSearch = localStorage.getItem(storageKeys.search) ?? '';
+      setNotes(parsedNotes);
+      setSearchQuery(savedSearch);
+      setLoadedListKey(storageKeys.list);
+      if (parsedNotes.length > 0 && window.innerWidth >= 768) {
+        setSelectedNoteId(parsedNotes[0].id);
       }
     } catch (error) {
+      setLoadedListKey(storageKeys.list);
       logError(
         'Failed to load notes from localStorage:',
         error instanceof Error ? error.message : String(error)
       );
     }
-  }, []);
+  }, [storageKeys]);
+
+  // Last-writer-wins synchronization applies only to the current tenant keys.
+  useEffect(() => {
+    if (!storageKeys || loadedListKey !== storageKeys.list) return;
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.storageArea && event.storageArea !== localStorage) return;
+
+      if (event.key === storageKeys.list) {
+        const nextNotes = parseStoredNotes(event.newValue);
+        notesChangedLocallyRef.current = false;
+        setNotes(nextNotes);
+        setSelectedNoteId(current =>
+          current && nextNotes.some(note => note.id === current)
+            ? current
+            : window.innerWidth >= 768
+              ? (nextNotes[0]?.id ?? null)
+              : null
+        );
+        setDeleteConfirmNote(null);
+        setSaveStatus(null);
+      } else if (event.key === storageKeys.search) {
+        searchChangedLocallyRef.current = false;
+        setSearchQuery(event.newValue ?? '');
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [loadedListKey, storageKeys]);
 
   // Get current note
   const currentNote = useMemo(() => {
+    if (!storageKeys || loadedListKey !== storageKeys.list) return null;
     return notes.find(note => note.id === selectedNoteId) || null;
-  }, [notes, selectedNoteId]);
+  }, [loadedListKey, notes, selectedNoteId, storageKeys]);
+  const visibleNotes = useMemo(
+    () =>
+      storageKeys &&
+      loadedListKey === storageKeys.list &&
+      !isTenantTransitioning
+        ? notes
+        : [],
+    [isTenantTransitioning, loadedListKey, notes, storageKeys]
+  );
+  const visibleSearchQuery =
+    storageKeys && loadedListKey === storageKeys.list && !isTenantTransitioning
+      ? searchQuery
+      : '';
 
   // Debounced auto-save to localStorage
   useEffect(() => {
+    if (
+      !storageKeys ||
+      loadedListKey !== storageKeys.list ||
+      activeListKeyRef.current !== storageKeys.list ||
+      !notesChangedLocallyRef.current
+    ) {
+      return;
+    }
+
+    const scheduledListKey = storageKeys.list;
+    const scheduledGeneration = tenantGenerationRef.current;
+
     if (notes.length === 0) {
       try {
         if (saveStatusClearRef.current) {
           clearTimeout(saveStatusClearRef.current);
           saveStatusClearRef.current = null;
         }
-        localStorage.removeItem(NOTES_STORAGE_KEY);
+        localStorage.removeItem(scheduledListKey);
+        notesChangedLocallyRef.current = false;
         setSaveStatus(null);
       } catch (error) {
         logError(
@@ -91,8 +175,17 @@ export default function NotesPage() {
     setSaveStatus('saving');
 
     const timeout = setTimeout(() => {
+      if (
+        activeListKeyRef.current !== scheduledListKey ||
+        tenantGenerationRef.current !== scheduledGeneration ||
+        !notesChangedLocallyRef.current
+      ) {
+        return;
+      }
+
       try {
-        localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(notes));
+        localStorage.setItem(scheduledListKey, JSON.stringify(notes));
+        notesChangedLocallyRef.current = false;
         setSaveStatus('saved');
         if (saveStatusClearRef.current) {
           clearTimeout(saveStatusClearRef.current);
@@ -117,27 +210,37 @@ export default function NotesPage() {
         saveStatusClearRef.current = null;
       }
     };
-  }, [notes]);
+  }, [loadedListKey, notes, storageKeys]);
 
   // Save search query to localStorage
   useEffect(() => {
+    if (
+      !storageKeys ||
+      loadedListKey !== storageKeys.list ||
+      activeListKeyRef.current !== storageKeys.list ||
+      !searchChangedLocallyRef.current
+    ) {
+      return;
+    }
+
     try {
       if (searchQuery !== '') {
-        localStorage.setItem(NOTES_SEARCH_KEY, searchQuery);
+        localStorage.setItem(storageKeys.search, searchQuery);
       } else {
-        localStorage.removeItem(NOTES_SEARCH_KEY);
+        localStorage.removeItem(storageKeys.search);
       }
+      searchChangedLocallyRef.current = false;
     } catch (error) {
       logError(
         'Failed to save search query:',
         error instanceof Error ? error.message : String(error)
       );
     }
-  }, [searchQuery]);
+  }, [loadedListKey, searchQuery, storageKeys]);
 
   // Create new note
   const handleCreateNote = useCallback(() => {
-    if (!canCreateNote) return;
+    if (!canMutateNotes) return;
 
     const newNote: Note = {
       id:
@@ -149,6 +252,7 @@ export default function NotesPage() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    notesChangedLocallyRef.current = true;
     setNotes(prev => [newNote, ...prev]);
     setSelectedNoteId(newNote.id);
     // Mobile: switch to edit view
@@ -159,20 +263,21 @@ export default function NotesPage() {
       titleInputRef.current?.focus();
       titleInputRef.current?.select();
     }, 0);
-  }, [isDesktop, canCreateNote]);
+  }, [canMutateNotes, isDesktop]);
 
   // Delete note
   const handleDeleteNote = useCallback(
     (note: Note) => {
-      if (!canCreateNote) return;
+      if (!canMutateNotes) return;
       setDeleteConfirmNote(note);
     },
-    [canCreateNote]
+    [canMutateNotes]
   );
 
   const handleConfirmDelete = useCallback(() => {
-    if (!deleteConfirmNote) return;
+    if (!deleteConfirmNote || !canMutateNotes) return;
     const id = deleteConfirmNote.id;
+    notesChangedLocallyRef.current = true;
     setNotes(prev => {
       const remainingNotes = prev.filter(note => note.id !== id);
       if (selectedNoteId === id) {
@@ -189,33 +294,43 @@ export default function NotesPage() {
       return remainingNotes;
     });
     setDeleteConfirmNote(null);
-  }, [deleteConfirmNote, selectedNoteId, isDesktop]);
+  }, [canMutateNotes, deleteConfirmNote, selectedNoteId, isDesktop]);
 
   // Update note title
-  const handleTitleChange = useCallback((id: string, title: string) => {
-    setNotes(prev =>
-      prev.map(note =>
-        note.id === id
-          ? {
-              ...note,
-              title: title || 'Untitled',
-              updatedAt: new Date().toISOString(),
-            }
-          : note
-      )
-    );
-  }, []);
+  const handleTitleChange = useCallback(
+    (id: string, title: string) => {
+      if (!canMutateNotes) return;
+      notesChangedLocallyRef.current = true;
+      setNotes(prev =>
+        prev.map(note =>
+          note.id === id
+            ? {
+                ...note,
+                title: title || 'Untitled',
+                updatedAt: new Date().toISOString(),
+              }
+            : note
+        )
+      );
+    },
+    [canMutateNotes]
+  );
 
   // Update note content
-  const handleContentChange = useCallback((id: string, content: string) => {
-    setNotes(prev =>
-      prev.map(note =>
-        note.id === id
-          ? { ...note, content, updatedAt: new Date().toISOString() }
-          : note
-      )
-    );
-  }, []);
+  const handleContentChange = useCallback(
+    (id: string, content: string) => {
+      if (!canMutateNotes) return;
+      notesChangedLocallyRef.current = true;
+      setNotes(prev =>
+        prev.map(note =>
+          note.id === id
+            ? { ...note, content, updatedAt: new Date().toISOString() }
+            : note
+        )
+      );
+    },
+    [canMutateNotes]
+  );
 
   // Select note
   const handleSelectNote = useCallback(
@@ -230,18 +345,18 @@ export default function NotesPage() {
   );
 
   // Debounced search
-  const debouncedSearch = useDebounce(searchQuery, 300);
+  const debouncedSearch = useDebounce(visibleSearchQuery, 300);
 
   // Filter notes by search query
   const filteredNotes = useMemo(() => {
-    if (!debouncedSearch) return notes;
+    if (!debouncedSearch) return visibleNotes;
     const query = debouncedSearch.toLowerCase();
-    return notes.filter(
+    return visibleNotes.filter(
       note =>
         note.title.toLowerCase().includes(query) ||
         note.content.toLowerCase().includes(query)
     );
-  }, [notes, debouncedSearch]);
+  }, [debouncedSearch, visibleNotes]);
 
   // Search match count
   const matchCount = useMemo(() => {
@@ -260,8 +375,10 @@ export default function NotesPage() {
   }, [currentNote?.content]);
 
   const handleClearSearch = useCallback(() => {
+    if (!canMutateNotes) return;
+    searchChangedLocallyRef.current = true;
     setSearchQuery('');
-  }, []);
+  }, [canMutateNotes]);
 
   // Handle Tab key for indentation
   const handleKeyDown = useCallback(
@@ -422,8 +539,10 @@ export default function NotesPage() {
               )}
               <Button
                 onClick={handleCreateNote}
-                disabled={!canCreateNote}
-                title={!canCreateNote ? 'Sign in required' : undefined}
+                disabled={!canMutateNotes}
+                title={
+                  !canMutateNotes ? 'Organization context required' : undefined
+                }
                 className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm px-3 md:px-4 py-1.5 md:py-2"
               >
                 <svg
@@ -453,12 +572,16 @@ export default function NotesPage() {
                 label="Search"
                 name="search"
                 type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                value={visibleSearchQuery}
+                onChange={e => {
+                  if (!canMutateNotes) return;
+                  searchChangedLocallyRef.current = true;
+                  setSearchQuery(e.target.value);
+                }}
                 placeholder="Search notes..."
                 className="pr-24 md:pr-32"
               />
-              {searchQuery && (
+              {visibleSearchQuery && (
                 <div className="absolute right-3 top-9 flex items-center gap-2 md:gap-3">
                   {debouncedSearch && (
                     <span className="text-xs text-gray-600">
@@ -511,19 +634,21 @@ export default function NotesPage() {
               {filteredNotes.length === 0 ? (
                 <div className="flex items-center justify-center h-full p-4">
                   <EmptyState
-                    title={searchQuery ? 'No notes found' : 'No notes yet'}
+                    title={
+                      visibleSearchQuery ? 'No notes found' : 'No notes yet'
+                    }
                     description={
-                      searchQuery
+                      visibleSearchQuery
                         ? 'Try adjusting your search terms'
                         : 'Create your first note to get started'
                     }
                     actionButton={
-                      searchQuery
+                      visibleSearchQuery
                         ? {
                             label: 'Clear search',
                             onClick: handleClearSearch,
                           }
-                        : canCreateNote
+                        : canMutateNotes
                           ? {
                               label: 'Create your first note',
                               onClick: handleCreateNote,
@@ -561,9 +686,11 @@ export default function NotesPage() {
                             e.stopPropagation();
                             handleDeleteNote(note);
                           }}
-                          disabled={!canCreateNote}
+                          disabled={!canMutateNotes}
                           title={
-                            !canCreateNote ? 'Sign in required' : 'Delete note'
+                            !canMutateNotes
+                              ? 'Organization context required'
+                              : 'Delete note'
                           }
                           className="text-gray-400 hover:text-red-600 transition-colors shrink-0 p-1 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400"
                           aria-label="Delete note"
@@ -661,7 +788,7 @@ export default function NotesPage() {
                   title="No note selected"
                   description="Create a new note or select one from the list"
                   actionButton={
-                    canCreateNote
+                    canMutateNotes
                       ? {
                           label: 'Create New Note',
                           onClick: handleCreateNote,
@@ -677,7 +804,7 @@ export default function NotesPage() {
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
-        isOpen={!!deleteConfirmNote}
+        isOpen={!!deleteConfirmNote && canMutateNotes}
         onCancel={() => setDeleteConfirmNote(null)}
         onConfirm={handleConfirmDelete}
         title="Delete Note"
