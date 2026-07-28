@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Client, Instrument, ClientInstrument } from '@/types';
 import {
@@ -18,6 +18,7 @@ import { useContactLogs } from '../hooks/useContactLogs';
 import { useClientsContactInfo } from '../hooks/useClientsContactInfo';
 import dynamic from 'next/dynamic';
 import { usePermissions } from '@/hooks/usePermissions';
+import { getClientIdentityError } from '@/utils/identityValidation';
 
 const MessageComposer = dynamic(
   () => import('@/components/messages/MessageComposer'),
@@ -120,9 +121,17 @@ export default function ClientModal({
   });
 
   const contactInfo = client?.id ? getContactInfo(client.id) : null;
+  const [nameError, setNameError] = useState<string | null>(null);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const identityError = getClientIdentityError(viewFormData);
+    if (identityError) {
+      setNameError(identityError);
+      return;
+    }
+
+    setNameError(null);
     await onSave(viewFormData);
   };
 
@@ -176,6 +185,11 @@ export default function ClientModal({
           {isEditing ? (
             <form onSubmit={handleSave} className="p-6 space-y-5 text-gray-900">
               <div className="space-y-5">
+                {nameError ? (
+                  <p className="text-sm text-red-600" role="alert">
+                    {nameError}
+                  </p>
+                ) : null}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Last Name
@@ -185,7 +199,6 @@ export default function ClientModal({
                     name="last_name"
                     value={viewFormData.last_name}
                     onChange={onViewInputChange}
-                    required
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                     placeholder="Enter last name"
                   />
@@ -200,7 +213,6 @@ export default function ClientModal({
                     name="first_name"
                     value={viewFormData.first_name}
                     onChange={onViewInputChange}
-                    required
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                     placeholder="Enter first name"
                   />

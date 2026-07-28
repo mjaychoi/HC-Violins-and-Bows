@@ -19,6 +19,13 @@ import {
   Invoice,
 } from '@/types';
 import type { CreateInvoiceInput } from '@/app/api/invoices/types';
+import {
+  hasClientIdentity,
+  hasInstrumentIdentity,
+  INSTRUMENT_IDENTITY_ERROR,
+  MAX_CERTIFICATE_NAME_LENGTH,
+  CLIENT_NAME_REQUIRED_ERROR,
+} from '@/utils/identityValidation';
 
 export type ValidationResult<T> =
   | { success: true; data: T }
@@ -120,9 +127,17 @@ const optionalNullableNonEmptyStringSchema = z.preprocess(
   emptyStringToNull,
   z.string().trim().min(1).nullable().optional()
 );
-const requiredTrimmedStringSchema = z.preprocess(
-  value => (typeof value === 'string' ? value.trim() : value),
-  z.string().min(1)
+const certificateNameSchema = z.preprocess(
+  emptyStringToNull,
+  z
+    .string()
+    .trim()
+    .max(
+      MAX_CERTIFICATE_NAME_LENGTH,
+      `Certificate name cannot exceed ${MAX_CERTIFICATE_NAME_LENGTH} characters`
+    )
+    .nullable()
+    .optional()
 );
 
 function formatZodError(error: z.ZodError): string {
@@ -147,7 +162,7 @@ export const instrumentSchema: z.ZodType<Instrument> = z
     reserved_by_user_id: uuidSchema.nullable().optional(),
     reserved_connection_id: uuidSchema.nullable().optional(),
     maker: nullableInputStringSchema,
-    type: requiredTrimmedStringSchema,
+    type: nullableInputStringSchema,
     subtype: nullableInputStringSchema,
     year: z.number().nullable(),
     // legacy field (some payloads still use this)
@@ -710,12 +725,13 @@ export const partialInstrumentSchema = z
     status: instrumentStatusSchema.optional(),
     reserved_reason: optionalNullableNonEmptyStringSchema,
     maker: optionalNullableInputStringSchema,
-    type: requiredTrimmedStringSchema.optional(),
+    type: optionalNullableInputStringSchema,
     subtype: optionalNullableInputStringSchema,
     year: z.number().nullable().optional(),
 
     certificate: z.boolean().optional(),
     has_certificate: z.boolean().optional(),
+    certificate_name: certificateNameSchema,
 
     size: optionalNullableInputStringSchema,
     weight: optionalNullableInputStringSchema,
@@ -730,13 +746,15 @@ export const partialInstrumentSchema = z
   })
   .transform(raw => {
     // For PATCH: only compute if one of the fields is present.
-    if (raw.has_certificate === undefined && raw.certificate === undefined)
+    if (raw.has_certificate === undefined && raw.certificate === undefined) {
       return raw;
+    }
     const computedHasCert = raw.has_certificate ?? raw.certificate ?? false;
     return {
       ...raw,
       has_certificate: computedHasCert,
       certificate: raw.certificate ?? computedHasCert,
+      ...(computedHasCert ? {} : { certificate_name: null }),
     };
   });
 /**
@@ -778,12 +796,13 @@ export const createInstrumentSchema = z
     status: instrumentStatusSchema.optional().default('Available'),
     reserved_reason: optionalNullableNonEmptyStringSchema,
     maker: optionalNullableInputStringSchema,
-    type: requiredTrimmedStringSchema,
+    type: optionalNullableInputStringSchema,
     subtype: optionalNullableInputStringSchema,
     year: z.number().nullable().optional(),
 
     certificate: z.boolean().optional().default(false),
     has_certificate: z.boolean().optional(),
+    certificate_name: certificateNameSchema,
 
     size: optionalNullableInputStringSchema,
     weight: optionalNullableInputStringSchema,
@@ -800,7 +819,17 @@ export const createInstrumentSchema = z
       ...raw,
       has_certificate: computedHasCert,
       certificate: raw.certificate ?? computedHasCert,
+      certificate_name: computedHasCert ? (raw.certificate_name ?? null) : null,
     };
+  })
+  .superRefine((data, ctx) => {
+    if (!hasInstrumentIdentity(data)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['maker'],
+        message: INSTRUMENT_IDENTITY_ERROR,
+      });
+    }
   });
 
 /**
@@ -822,17 +851,11 @@ export const createClientSchema = z
       .optional(),
   })
   .superRefine((data, ctx) => {
-    const fullName = [data.first_name, data.last_name]
-      .map(part => part?.trim() ?? '')
-      .filter(Boolean)
-      .join(' ')
-      .trim();
-
-    if (!fullName) {
+    if (!hasClientIdentity(data)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['first_name'],
-        message: 'Client name is required',
+        message: CLIENT_NAME_REQUIRED_ERROR,
       });
     }
   });

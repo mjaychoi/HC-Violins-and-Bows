@@ -291,6 +291,7 @@ export type Database = {
       instruments: {
         Row: {
           certificate: boolean;
+          certificate_name: string | null;
           consignment_price: number | null;
           cost_price: number | null;
           created_at: string;
@@ -307,13 +308,14 @@ export type Database = {
           size: string | null;
           status: string;
           subtype: string | null;
-          type: string;
+          type: string | null;
           updated_at: string;
           weight: string | null;
           year: number | null;
         };
         Insert: {
           certificate?: boolean;
+          certificate_name?: string | null;
           consignment_price?: number | null;
           cost_price?: number | null;
           created_at?: string;
@@ -330,13 +332,14 @@ export type Database = {
           size?: string | null;
           status?: string;
           subtype?: string | null;
-          type: string;
+          type?: string | null;
           updated_at?: string;
           weight?: string | null;
           year?: number | null;
         };
         Update: {
           certificate?: boolean;
+          certificate_name?: string | null;
           consignment_price?: number | null;
           cost_price?: number | null;
           created_at?: string;
@@ -353,7 +356,7 @@ export type Database = {
           size?: string | null;
           status?: string;
           subtype?: string | null;
-          type?: string;
+          type?: string | null;
           updated_at?: string;
           weight?: string | null;
           year?: number | null;

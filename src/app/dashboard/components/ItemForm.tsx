@@ -120,6 +120,7 @@ function ItemForm({
         'certificate',
         Boolean(selectedItem.has_certificate || selectedItem.certificate)
       );
+      updateField('certificate_name', selectedItem.certificate_name || '');
       updateField('size', selectedItem.size || '');
       updateField('weight', selectedItem.weight || '');
       updateField('ownership', selectedItem.ownership || '');
@@ -193,8 +194,8 @@ function ItemForm({
       if (Object.keys(mappedFieldErrors).length > 0) {
         setFieldErrors(mappedFieldErrors);
         focusFirstErrorField(mappedFieldErrors);
-        return;
       }
+      return;
     }
 
     try {
@@ -271,6 +272,11 @@ function ItemForm({
         })(),
         certificate: Boolean(formData.certificate),
         has_certificate: Boolean(formData.certificate),
+        certificate_name: (() => {
+          if (!formData.certificate) return null;
+          const trimmed = formData.certificate_name?.trim();
+          return trimmed ? trimmed : null;
+        })(),
         cost_price: (() => {
           const normalizedPrice = costPriceInput.trim().replace(/,/g, '');
           if (normalizedPrice === '') return null;
@@ -421,6 +427,8 @@ function ItemForm({
                         setErrors([]);
                         setSuccess(false);
                         resetForm();
+                        updateField('certificate', false);
+                        updateField('certificate_name', '');
                         // Auto-generate new serial for next item
                         const autoSerialNumber = generateInstrumentSerialNumber(
                           null,
@@ -594,20 +602,36 @@ function ItemForm({
                   id="certificate"
                   name="certificate"
                   value={formData.certificate ? 'yes' : 'no'}
-                  onChange={e =>
-                    updateField('certificate', e.target.value === 'yes')
-                  }
+                  onChange={e => {
+                    const isYes = e.target.value === 'yes';
+                    updateField('certificate', isYes);
+                    if (!isYes) {
+                      updateField('certificate_name', '');
+                    }
+                  }}
                   className={classNames.input}
                 >
                   <option value="no">No</option>
                   <option value="yes">Yes</option>
                 </select>
               </div>
-              <div className="flex items-end">
-                <p className="text-xs text-gray-500">
-                  Upload certificate files after the instrument is created.
-                </p>
-              </div>
+              {formData.certificate ? (
+                <Input
+                  id="certificate_name"
+                  label="Certificate Name"
+                  name="certificate_name"
+                  value={formData.certificate_name}
+                  onChange={handleInputChange}
+                  placeholder="Enter certificate name"
+                  helperText="Shown in the Item list. Certificate PDFs are uploaded after creation."
+                />
+              ) : (
+                <div className="flex items-end">
+                  <p className="text-xs text-gray-500">
+                    Upload certificate files after the instrument is created.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

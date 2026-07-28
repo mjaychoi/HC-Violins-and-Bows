@@ -371,7 +371,7 @@ export function InstrumentExpandedRow({
 
   // Count columns in ItemList table: empty header + 9 data columns = 10
   // Adjust if ItemList structure changes
-  const colSpan = 10;
+  const colSpan = 9;
 
   return (
     <tr className="bg-gray-50">

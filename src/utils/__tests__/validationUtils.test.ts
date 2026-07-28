@@ -266,9 +266,13 @@ describe('validationUtils', () => {
   });
 
   describe('clientValidation', () => {
-    it('should validate firstName', () => {
-      const error1 = validateField('', clientValidation.firstName, 'firstName');
-      expect(error1).toBe('First name is required');
+    it('should validate firstName when populated', () => {
+      const noErrorEmpty = validateField(
+        '',
+        clientValidation.firstName,
+        'firstName'
+      );
+      expect(noErrorEmpty).toBeNull();
 
       const error2 = validateField(
         'A',
@@ -285,9 +289,13 @@ describe('validationUtils', () => {
       expect(noError).toBeNull();
     });
 
-    it('should validate lastName', () => {
-      const error1 = validateField('', clientValidation.lastName, 'lastName');
-      expect(error1).toBe('Last name is required');
+    it('should validate lastName when populated', () => {
+      const noErrorEmpty = validateField(
+        '',
+        clientValidation.lastName,
+        'lastName'
+      );
+      expect(noErrorEmpty).toBeNull();
 
       const noError = validateField(
         'Doe',
@@ -297,9 +305,9 @@ describe('validationUtils', () => {
       expect(noError).toBeNull();
     });
 
-    it('should validate email', () => {
-      const error1 = validateField('', clientValidation.email, 'email');
-      expect(error1).toBe('Email is required');
+    it('should validate email when populated', () => {
+      const noErrorEmpty = validateField('', clientValidation.email, 'email');
+      expect(noErrorEmpty).toBeNull();
 
       const error2 = validateField('invalid', clientValidation.email, 'email');
       expect(error2).toBe('Please enter a valid email address');
@@ -338,9 +346,9 @@ describe('validationUtils', () => {
   });
 
   describe('instrumentValidation', () => {
-    it('should validate maker', () => {
-      const error1 = validateField('', instrumentValidation.maker, 'maker');
-      expect(error1).toBe('Maker is required');
+    it('should validate maker when populated', () => {
+      const noErrorEmpty = validateField('', instrumentValidation.maker, 'maker');
+      expect(noErrorEmpty).toBeNull();
 
       const noError = validateField(
         'Stradivarius',

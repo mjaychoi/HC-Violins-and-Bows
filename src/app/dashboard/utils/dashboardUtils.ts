@@ -1,5 +1,11 @@
 import { Instrument, Client, ClientInstrument } from '@/types';
 import { getUniqueStringValues } from '@/utils/uniqueValues';
+import {
+  getInstrumentIdentityError,
+  INSTRUMENT_IDENTITY_ERROR,
+} from '@/utils/identityValidation';
+
+export { INSTRUMENT_IDENTITY_ERROR };
 
 // Instrument formatting utilities
 export const formatInstrumentName = (instrument: Instrument): string => {
@@ -149,13 +155,12 @@ export const validateInstrumentData = (
 ): string[] => {
   const errors: string[] = [];
 
-  // ✅ REQUIRED FIELDS 추가
-  if (!data.maker || data.maker.toString().trim() === '') {
-    errors.push('Maker is required');
-  }
-
-  if (!data.type || data.type.toString().trim() === '') {
-    errors.push('Type is required');
+  const identityError = getInstrumentIdentityError({
+    maker: data.maker,
+    type: data.type,
+  });
+  if (identityError) {
+    errors.push(identityError);
   }
 
   // ✅ YEAR VALIDATION (기존 유지)

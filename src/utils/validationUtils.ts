@@ -144,21 +144,15 @@ export function validateForm<T extends Record<string, unknown>>(
 
 // Specific validation functions for common use cases
 export const clientValidation = {
-  firstName: [
-    commonRules.required('First name is required'),
-    commonRules.minLength(2),
-  ],
-  lastName: [
-    commonRules.required('Last name is required'),
-    commonRules.minLength(2),
-  ],
-  email: [commonRules.required('Email is required'), commonRules.email()],
+  firstName: [commonRules.minLength(2)],
+  lastName: [commonRules.minLength(2)],
+  email: [commonRules.email()],
   phone: [commonRules.phone()],
   address: [commonRules.minLength(5, 'Please enter a complete address')],
 };
 
 export const instrumentValidation = {
-  maker: [commonRules.required('Maker is required'), commonRules.minLength(2)],
+  maker: [commonRules.minLength(2)],
   name: [
     commonRules.required('Instrument name is required'),
     commonRules.minLength(2),

@@ -472,10 +472,27 @@ describe('dashboardUtils', () => {
   });
 
   describe('validateInstrumentData', () => {
-    it('should validate required fields', () => {
+    it('should validate identity fields', () => {
       const errors = validateInstrumentData({});
-      expect(errors).toContain('Maker is required');
-      expect(errors).toContain('Type is required');
+      expect(errors).toContain('Enter a maker or type.');
+      expect(errors).not.toContain('Maker is required');
+      expect(errors).not.toContain('Type is required');
+    });
+
+    it('should pass with maker only', () => {
+      const errors = validateInstrumentData({
+        maker: 'Stradivari',
+        type: '',
+      });
+      expect(errors).toHaveLength(0);
+    });
+
+    it('should pass with type only', () => {
+      const errors = validateInstrumentData({
+        maker: '',
+        type: 'Violin',
+      });
+      expect(errors).toHaveLength(0);
     });
 
     it('should pass with valid data', () => {

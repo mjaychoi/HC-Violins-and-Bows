@@ -123,6 +123,59 @@ function ModalWithState(props: Partial<typeof mockProps> = {}) {
   );
 }
 
+describe('ClientModal focused validation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('allows saving with first name only', async () => {
+    render(<ModalWithState isEditing={true} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Enter first name'), {
+      target: { value: 'Ada' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Enter last name'), {
+      target: { value: '' },
+    });
+
+    fireEvent.click(screen.getByText('Save Changes'));
+
+    await waitFor(() => {
+      expect(mockProps.onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          first_name: 'Ada',
+          last_name: '',
+        })
+      );
+    });
+  });
+
+  it('rejects saving when both names are blank', async () => {
+    render(<ModalWithState isEditing={true} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Enter first name'), {
+      target: { value: '' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Enter last name'), {
+      target: { value: '' },
+    });
+
+    fireEvent.click(screen.getByText('Save Changes'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Client name is required'
+    );
+    expect(mockProps.onSave).not.toHaveBeenCalled();
+  });
+
+  it('does not use native required attributes on name inputs', () => {
+    render(<ModalWithState isEditing={true} />);
+
+    expect(screen.getByPlaceholderText('Enter first name')).not.toBeRequired();
+    expect(screen.getByPlaceholderText('Enter last name')).not.toBeRequired();
+  });
+});
+
 describe.skip('ClientModal', () => {
   beforeEach(() => {
     jest.clearAllMocks();

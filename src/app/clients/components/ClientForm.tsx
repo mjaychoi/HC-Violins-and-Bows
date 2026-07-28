@@ -8,6 +8,7 @@ import { useFormState } from '@/hooks/useFormState';
 import { logError } from '@/utils/logger';
 import { classNames } from '@/utils/classNames';
 import { clientValidation, validateForm } from '@/utils/validationUtils';
+import { getClientIdentityError } from '@/utils/identityValidation';
 import { Button, Input } from '@/components/common/inputs';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { shouldShowInterestDropdown } from '@/policies/interest';
@@ -220,23 +221,15 @@ function ClientForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const clientName = [formData.first_name, formData.last_name]
-      .map(value => value.trim())
-      .filter(Boolean)
-      .join(' ')
-      .trim();
-
-    if (!clientName) {
-      handleError(
-        new Error('Client name is required'),
-        'Form validation failed'
-      );
+    const clientNameError = getClientIdentityError(formData);
+    if (clientNameError) {
+      handleError(new Error(clientNameError), 'Form validation failed');
       return;
     }
 
     // Validate form data
     const validationSchema = {
-      email: [clientValidation.email[1]],
+      email: clientValidation.email,
       contact_number: clientValidation.phone,
     };
 
