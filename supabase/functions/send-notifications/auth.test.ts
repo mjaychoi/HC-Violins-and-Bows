@@ -14,9 +14,9 @@ describe('send-notifications auth', () => {
 
   describe('constantTimeSecretEqual contract (via shared auth logic)', () => {
     it('returns true for an exact match', () => {
-      expect(
-        constantTimeSecretEqual(configuredSecret, configuredSecret)
-      ).toBe(true);
+      expect(constantTimeSecretEqual(configuredSecret, configuredSecret)).toBe(
+        true
+      );
     });
 
     it('returns false for same-length mismatches', () => {
@@ -89,9 +89,9 @@ describe('send-notifications auth', () => {
     });
 
     it('rejects when the configured secret is missing', () => {
-      expect(
-        isSendNotificationsAuthorized(configuredSecret, undefined)
-      ).toBe(false);
+      expect(isSendNotificationsAuthorized(configuredSecret, undefined)).toBe(
+        false
+      );
       expect(isSendNotificationsAuthorized(configuredSecret, '')).toBe(false);
     });
 
@@ -100,9 +100,9 @@ describe('send-notifications auth', () => {
         isSendNotificationsAuthorized('wrong-secret-value', configuredSecret)
       ).toBe(false);
       expect(isSendNotificationsAuthorized('', configuredSecret)).toBe(false);
-      expect(
-        isSendNotificationsAuthorized(undefined, configuredSecret)
-      ).toBe(false);
+      expect(isSendNotificationsAuthorized(undefined, configuredSecret)).toBe(
+        false
+      );
     });
   });
 

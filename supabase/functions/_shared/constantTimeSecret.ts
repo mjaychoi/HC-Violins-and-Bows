@@ -11,7 +11,12 @@ export function constantTimeSecretEqual(
   provided: string | null | undefined,
   expected: string | null | undefined
 ): boolean {
-  if (provided == null || provided === '' || expected == null || expected === '') {
+  if (
+    provided == null ||
+    provided === '' ||
+    expected == null ||
+    expected === ''
+  ) {
     return false;
   }
 

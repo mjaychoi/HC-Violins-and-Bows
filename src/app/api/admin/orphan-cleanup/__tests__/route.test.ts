@@ -18,7 +18,11 @@ let mockAdmin: any;
 
 const VALID_SECRET = 'test-secret-xyz';
 
-function mutateSecret(secret: string, index: number, replacement = 'X'): string {
+function mutateSecret(
+  secret: string,
+  index: number,
+  replacement = 'X'
+): string {
   return secret.slice(0, index) + replacement + secret.slice(index + 1);
 }
 

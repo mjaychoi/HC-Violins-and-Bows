@@ -14,9 +14,9 @@ describe('cleanup-invoice-image-uploads auth', () => {
 
   describe('constantTimeSecretEqual contract (via shared auth logic)', () => {
     it('returns true for an exact match', () => {
-      expect(
-        constantTimeSecretEqual(configuredSecret, configuredSecret)
-      ).toBe(true);
+      expect(constantTimeSecretEqual(configuredSecret, configuredSecret)).toBe(
+        true
+      );
     });
 
     it('returns false for same-length mismatches', () => {
@@ -94,14 +94,11 @@ describe('cleanup-invoice-image-uploads auth', () => {
 
     it('rejects when the configured secret is missing', () => {
       expect(
-        isCleanupInvoiceImageUploadsAuthorized(
-          configuredSecret,
-          undefined
-        )
+        isCleanupInvoiceImageUploadsAuthorized(configuredSecret, undefined)
       ).toBe(false);
-      expect(
-        isCleanupInvoiceImageUploadsAuthorized(configuredSecret, '')
-      ).toBe(false);
+      expect(isCleanupInvoiceImageUploadsAuthorized(configuredSecret, '')).toBe(
+        false
+      );
     });
 
     it('rejects invalid provided secrets', () => {
@@ -111,9 +108,9 @@ describe('cleanup-invoice-image-uploads auth', () => {
           configuredSecret
         )
       ).toBe(false);
-      expect(
-        isCleanupInvoiceImageUploadsAuthorized('', configuredSecret)
-      ).toBe(false);
+      expect(isCleanupInvoiceImageUploadsAuthorized('', configuredSecret)).toBe(
+        false
+      );
       expect(
         isCleanupInvoiceImageUploadsAuthorized(undefined, configuredSecret)
       ).toBe(false);
