@@ -403,6 +403,8 @@ describe('/api/clients', () => {
       const insertArg = (mockQuery.insert as jest.Mock).mock.calls[0][0];
       expect(insertArg).toEqual({
         name: 'Jane Smith',
+        first_name: 'Jane',
+        last_name: 'Smith',
         email: null,
         phone: null,
         org_id: 'test-org',
@@ -414,7 +416,9 @@ describe('/api/clients', () => {
       expect(Object.keys(insertArg).sort()).toEqual([
         'client_number',
         'email',
+        'first_name',
         'interest',
+        'last_name',
         'name',
         'note',
         'org_id',
@@ -731,6 +735,8 @@ describe('/api/clients', () => {
       expect(json.data.note).toBe('Updated note');
       expect(updateQuery.update).toHaveBeenCalledWith({
         name: 'Jane Doe',
+        first_name: 'Jane',
+        last_name: 'Doe',
         email: null,
         phone: null,
         interest: 'Collector',
