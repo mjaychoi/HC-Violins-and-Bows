@@ -6,13 +6,31 @@ FROM pg_policies
 WHERE (qual ILIKE '%true%' OR with_check ILIKE '%true%')
 ORDER BY schemaname, tablename, policyname;
 
--- 2) Public tables without RLS enabled
-SELECT schemaname, tablename, rowsecurity, forcerowsecurity
-FROM pg_tables
-WHERE schemaname = 'public'
-  AND tablename NOT LIKE 'pg_%'
-  AND rowsecurity = false
-ORDER BY tablename;
+-- 2) Public tables without RLS enabled (PostgreSQL 17: pg_class.relrowsecurity / relforcerowsecurity)
+SELECT t.schemaname,
+       t.tablename,
+       c.relrowsecurity AS rowsecurity,
+       c.relforcerowsecurity AS forcerowsecurity
+FROM pg_tables AS t
+JOIN pg_class AS c ON c.relname = t.tablename
+JOIN pg_namespace AS n ON n.oid = c.relnamespace AND n.nspname = t.schemaname
+WHERE t.schemaname = 'public'
+  AND t.tablename NOT LIKE 'pg_%'
+  AND c.relrowsecurity = false
+ORDER BY t.tablename;
+
+-- 2b) Public tables with RLS enabled but not forced (distinct from relrowsecurity-only checks)
+SELECT t.tablename,
+       c.relrowsecurity AS rls_enabled,
+       c.relforcerowsecurity AS rls_forced
+FROM pg_tables AS t
+JOIN pg_class AS c ON c.relname = t.tablename
+JOIN pg_namespace AS n ON n.oid = c.relnamespace AND n.nspname = t.schemaname
+WHERE t.schemaname = 'public'
+  AND t.tablename NOT LIKE 'pg_%'
+  AND c.relrowsecurity = true
+  AND c.relforcerowsecurity = false
+ORDER BY t.tablename;
 
 -- 3) Public tables that do not reference auth.org_id() in any policy
 SELECT t.tablename
