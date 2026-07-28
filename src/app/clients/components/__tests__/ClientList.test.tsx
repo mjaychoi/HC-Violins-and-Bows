@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@/test-utils/render';
+import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import '@testing-library/jest-dom';
 import ClientList from '../ClientList';
 import { Client } from '@/types';
@@ -84,6 +84,15 @@ describe('ClientList', () => {
     jest.clearAllMocks();
     confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
   });
+
+  const openQuickEdit = () => {
+    fireEvent.click(screen.getByLabelText('More actions'));
+    fireEvent.click(screen.getByText('Quick edit'));
+  };
+
+  const saveQuickEdit = () => {
+    fireEvent.click(screen.getByTitle('Save changes'));
+  };
 
   it('renders client list', () => {
     render(<ClientList {...mockProps} />);
@@ -307,6 +316,157 @@ describe('ClientList', () => {
     fireEvent.click(screen.getByText('Edit'));
 
     expect(onClientClick).toHaveBeenCalledWith(mockClients[0]);
+  });
+
+  it.each([
+    {
+      label: 'last-name-only',
+      first_name: null,
+      last_name: 'Kim',
+    },
+    {
+      label: 'first-name-only',
+      first_name: 'Ada',
+      last_name: null,
+    },
+    {
+      label: 'both names',
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+    },
+    {
+      label: 'multi-word names',
+      first_name: 'Mary Jane',
+      last_name: 'Van Buren',
+    },
+  ])(
+    'preserves $label semantic fields in inline edit',
+    async ({ first_name, last_name }) => {
+      const client = { ...mockClients[0], first_name, last_name };
+      const onUpdateClient = jest.fn().mockResolvedValue(undefined);
+      render(
+        <ClientList
+          {...mockProps}
+          clients={[client]}
+          onUpdateClient={onUpdateClient}
+        />
+      );
+
+      openQuickEdit();
+      expect(screen.getByLabelText('First Name')).toHaveValue(first_name ?? '');
+      expect(screen.getByLabelText('Last Name')).toHaveValue(last_name ?? '');
+      saveQuickEdit();
+
+      await waitFor(() => {
+        expect(onUpdateClient).toHaveBeenCalledWith(
+          client.id,
+          expect.objectContaining({
+            first_name,
+            last_name,
+          })
+        );
+      });
+    }
+  );
+
+  it('keeps multi-word values inside their explicit name field', async () => {
+    const onUpdateClient = jest.fn().mockResolvedValue(undefined);
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[mockClients[0]]}
+        onUpdateClient={onUpdateClient}
+      />
+    );
+    openQuickEdit();
+
+    fireEvent.change(screen.getByLabelText('First Name'), {
+      target: { value: 'Mary Jane' },
+    });
+    fireEvent.change(screen.getByLabelText('Last Name'), {
+      target: { value: 'Van Buren' },
+    });
+    saveQuickEdit();
+
+    await waitFor(() => {
+      expect(onUpdateClient).toHaveBeenCalledWith(
+        mockClients[0].id,
+        expect.objectContaining({
+          first_name: 'Mary Jane',
+          last_name: 'Van Buren',
+        })
+      );
+    });
+  });
+
+  it('rejects an inline save when both name fields are blank', async () => {
+    const onUpdateClient = jest.fn().mockResolvedValue(undefined);
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[mockClients[0]]}
+        onUpdateClient={onUpdateClient}
+      />
+    );
+    openQuickEdit();
+
+    fireEvent.change(screen.getByLabelText('First Name'), {
+      target: { value: '   ' },
+    });
+    fireEvent.change(screen.getByLabelText('Last Name'), {
+      target: { value: '' },
+    });
+    saveQuickEdit();
+
+    expect(
+      await screen.findByRole('alert', {
+        name: '',
+      })
+    ).toHaveTextContent('Enter a first name or last name.');
+    expect(onUpdateClient).not.toHaveBeenCalled();
+  });
+
+  it('cancel restores original first and last name values', () => {
+    render(<ClientList {...mockProps} clients={[mockClients[0]]} />);
+    openQuickEdit();
+    fireEvent.change(screen.getByLabelText('First Name'), {
+      target: { value: 'Changed' },
+    });
+    fireEvent.click(screen.getByTitle('Cancel editing'));
+
+    openQuickEdit();
+    expect(screen.getByLabelText('First Name')).toHaveValue('John');
+    expect(screen.getByLabelText('Last Name')).toHaveValue('Doe');
+  });
+
+  it('keeps semantic edit state and shows an error after a failed save', async () => {
+    const onUpdateClient = jest
+      .fn()
+      .mockRejectedValue(new Error('update failed'));
+    render(
+      <ClientList
+        {...mockProps}
+        clients={[mockClients[0]]}
+        onUpdateClient={onUpdateClient}
+      />
+    );
+    openQuickEdit();
+    fireEvent.change(screen.getByLabelText('First Name'), {
+      target: { value: 'Mary Jane' },
+    });
+    fireEvent.change(screen.getByLabelText('Last Name'), {
+      target: { value: 'Van Buren' },
+    });
+    saveQuickEdit();
+
+    expect(
+      await screen.findByText(
+        'Unable to save client changes. Please try again.'
+      )
+    ).toHaveAttribute('role', 'alert');
+    expect(screen.getByLabelText('First Name')).toHaveValue('Mary Jane');
+    expect(screen.getByLabelText('Last Name')).toHaveValue('Van Buren');
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
   });
 
   it('should expand and collapse client row', () => {

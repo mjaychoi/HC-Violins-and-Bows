@@ -103,7 +103,15 @@ const RELATIONSHIP_TAG_STYLES: Record<
 // ✅ FIXED: RowActions moved to file top to prevent recreation on every render
 // Row Actions Component (Dropdown menu like Dashboard)
 const RowActions = memo(
-  ({ onEdit, onDelete }: { onEdit: () => void; onDelete?: () => void }) => {
+  ({
+    onEdit,
+    onInlineEdit,
+    onDelete,
+  }: {
+    onEdit: () => void;
+    onInlineEdit: () => void;
+    onDelete?: () => void;
+  }) => {
     const { canManageClients } = usePermissions();
     // ✅ RowActions state - safe now that virtualization is removed
     const [isOpen, setIsOpen] = useState(false);
@@ -179,6 +187,30 @@ const RowActions = memo(
                   />
                 </svg>
                 Edit
+              </button>
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  onInlineEdit();
+                  setIsOpen(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16M4 18h7"
+                  />
+                </svg>
+                Quick edit
               </button>
               {onDelete && (
                 <button
@@ -418,6 +450,7 @@ const ClientList = memo(function ClientList({
   const [editingClient, setEditingClient] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Client>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
 
   // 인라인 편집 훅 (interest와 tags만 별도 편집)
@@ -453,25 +486,54 @@ const ClientList = memo(function ClientList({
 
   // ✅ Removed unused: clientInstrumentCounts, clientLastActivity, formatRelativeTime
 
+  const startEditing = useCallback((client: Client) => {
+    setEditingClient(client.id);
+    setEditData({
+      first_name: client.first_name,
+      last_name: client.last_name,
+      email: client.email,
+      contact_number: client.contact_number,
+      interest: client.interest,
+      note: client.note,
+    });
+    setEditError(null);
+  }, []);
+
   const cancelEditing = useCallback(() => {
     setEditingClient(null);
     setEditData({});
+    setEditError(null);
   }, []);
 
   const saveEditing = useCallback(async () => {
     if (!editingClient) return;
 
+    const firstName =
+      typeof editData.first_name === 'string' ? editData.first_name.trim() : '';
+    const lastName =
+      typeof editData.last_name === 'string' ? editData.last_name.trim() : '';
+
+    if (!firstName && !lastName) {
+      setEditError('Enter a first name or last name.');
+      return;
+    }
+
+    const updates: Partial<Client> = {
+      ...editData,
+      first_name: firstName || null,
+      last_name: lastName || null,
+    };
+
     setIsSaving(true);
+    setEditError(null);
     try {
-      await onUpdateClient(editingClient, editData);
+      await onUpdateClient(editingClient, updates);
       // Only close editing mode if update was successful
       // If updateClient returns null or throws an error, editing mode will remain open
       setEditingClient(null);
       setEditData({});
     } catch {
-      // Error is handled by parent component's error handler
-      // Don't close editing mode on error - let user see the error and retry
-      // Editing mode remains open so user can fix the issue and try again
+      setEditError('Unable to save client changes. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -565,34 +627,13 @@ const ClientList = memo(function ClientList({
 
   const handleEditFieldChange = useCallback(
     (field: keyof Client, value: Client[keyof Client] | string | string[]) => {
+      if (field === 'first_name' || field === 'last_name') {
+        setEditError(null);
+      }
       setEditData(prev => ({ ...prev, [field]: value as never }));
     },
     []
   );
-
-  // Handle full name change - split into first_name and last_name
-  const handleFullNameChange = useCallback((fullName: string) => {
-    const trimmedName = fullName.trim();
-    if (!trimmedName) {
-      setEditData(prev => ({ ...prev, first_name: '', last_name: '' }));
-      return;
-    }
-
-    const parts = trimmedName.split(/\s+/);
-    if (parts.length === 1) {
-      // Only one word - treat as first name
-      setEditData(prev => ({ ...prev, first_name: parts[0], last_name: '' }));
-    } else {
-      // Multiple words - last word is last name, rest is first name
-      const lastName = parts[parts.length - 1];
-      const firstName = parts.slice(0, -1).join(' ');
-      setEditData(prev => ({
-        ...prev,
-        first_name: firstName,
-        last_name: lastName,
-      }));
-    }
-  }, []);
 
   if (clients.length === 0) {
     return (
@@ -822,6 +863,7 @@ const ClientList = memo(function ClientList({
                           ) : (
                             <RowActions
                               onEdit={() => _onClientClick(client)}
+                              onInlineEdit={() => startEditing(client)}
                               onDelete={
                                 onDeleteClient
                                   ? () => onDeleteClient(client)
@@ -833,16 +875,56 @@ const ClientList = memo(function ClientList({
                         <td className={classNames.tableCell}>
                           {editingClient === client.id ? (
                             <div className="min-w-[200px] space-y-2">
-                              <input
-                                type="text"
-                                value={`${editData.first_name || ''} ${editData.last_name || ''}`.trim()}
-                                onChange={e =>
-                                  handleFullNameChange(e.target.value)
-                                }
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                onClick={e => e.stopPropagation()}
-                                placeholder="Full name"
-                              />
+                              <div className="grid grid-cols-2 gap-2">
+                                <label
+                                  className="sr-only"
+                                  htmlFor={`client-${client.id}-first-name`}
+                                >
+                                  First Name
+                                </label>
+                                <input
+                                  id={`client-${client.id}-first-name`}
+                                  type="text"
+                                  value={editData.first_name ?? ''}
+                                  onChange={e =>
+                                    handleEditFieldChange(
+                                      'first_name',
+                                      e.target.value
+                                    )
+                                  }
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  onClick={e => e.stopPropagation()}
+                                  placeholder="First Name"
+                                />
+                                <label
+                                  className="sr-only"
+                                  htmlFor={`client-${client.id}-last-name`}
+                                >
+                                  Last Name
+                                </label>
+                                <input
+                                  id={`client-${client.id}-last-name`}
+                                  type="text"
+                                  value={editData.last_name ?? ''}
+                                  onChange={e =>
+                                    handleEditFieldChange(
+                                      'last_name',
+                                      e.target.value
+                                    )
+                                  }
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  onClick={e => e.stopPropagation()}
+                                  placeholder="Last Name"
+                                />
+                              </div>
+                              {editError && (
+                                <p
+                                  className="text-xs text-red-600"
+                                  role="alert"
+                                >
+                                  {editError}
+                                </p>
+                              )}
                               <input
                                 type="email"
                                 value={editData.email || ''}
