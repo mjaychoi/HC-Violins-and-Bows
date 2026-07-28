@@ -160,6 +160,7 @@ describe('InstrumentModal', () => {
     );
 
     expect(screen.getByText('Instrument Details')).toBeInTheDocument();
+    expect(screen.getByText('Retail Price')).toBeInTheDocument();
   });
 
   it('should call onClose when close button is clicked', async () => {

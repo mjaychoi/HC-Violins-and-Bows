@@ -454,4 +454,31 @@ describe('ItemForm', () => {
       )
     );
   });
+
+  it('labels the selling field as Retail Price and preserves distinct price labels', () => {
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    expect(screen.getByLabelText('Retail Price')).toHaveAttribute(
+      'name',
+      'price'
+    );
+    expect(screen.getByLabelText('Cost Price')).toHaveAttribute(
+      'name',
+      'cost_price'
+    );
+    expect(screen.getByLabelText('Consignment Price')).toHaveAttribute(
+      'name',
+      'consignment_price'
+    );
+  });
 });

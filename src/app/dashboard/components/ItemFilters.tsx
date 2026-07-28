@@ -204,7 +204,7 @@ function ItemFilters({
               value={filters.priceRange.min}
               onChange={e => onPriceRangeChange('min', e.target.value)}
               className="flex-1 h-10 px-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
-              aria-label="Minimum price"
+              aria-label="Minimum retail price"
             />
             <span
               className="text-sm font-medium text-gray-500"
@@ -218,12 +218,12 @@ function ItemFilters({
               value={filters.priceRange.max}
               onChange={e => onPriceRangeChange('max', e.target.value)}
               className="flex-1 h-10 px-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
-              aria-label="Maximum price"
+              aria-label="Maximum retail price"
             />
           </div>
           <div className="flex items-center justify-between">
             <div className="text-xs text-gray-500">
-              Range: ${priceRange.min.toLocaleString()} - $
+              Retail price range: ${priceRange.min.toLocaleString()} - $
               {priceRange.max.toLocaleString()}
             </div>
             {(filters.priceRange.min || filters.priceRange.max) && (
@@ -234,7 +234,7 @@ function ItemFilters({
                 }}
                 className="text-xs text-gray-600 hover:text-red-600 hover:underline transition-colors"
                 type="button"
-                aria-label="Clear price range"
+                aria-label="Clear retail price range"
               >
                 Clear
               </button>

@@ -657,7 +657,7 @@ const ItemList = memo(function ItemList({
                   onClick={() => onSort('price')}
                 >
                   <span className="inline-flex items-center gap-1">
-                    Price
+                    Retail Price
                     <span
                       className={`opacity-0 group-hover:opacity-100 ${
                         getSortArrow('price') !== ''
@@ -973,7 +973,7 @@ const ItemList = memo(function ItemList({
                             }
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                             onClick={e => e.stopPropagation()}
-                            placeholder="Price"
+                            placeholder="Retail Price"
                           />
                         ) : (
                           <div

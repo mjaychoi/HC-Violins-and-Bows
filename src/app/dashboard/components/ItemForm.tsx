@@ -556,13 +556,13 @@ function ItemForm({
 
               <Input
                 id="price"
-                label="Price"
+                label="Retail Price"
                 name="price"
                 type="text"
                 inputMode="decimal"
                 value={priceInput}
                 onChange={e => handlePriceChange(e.target.value)}
-                placeholder="Enter price"
+                placeholder="Enter retail price"
                 error={fieldErrors.price}
               />
             </div>

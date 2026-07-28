@@ -260,7 +260,7 @@ describe('ItemList', () => {
       'Maker',
       'Type',
       'Year',
-      'Price',
+      'Retail Price',
       'Certificate',
       'Note',
       'Status',

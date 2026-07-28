@@ -582,6 +582,7 @@ describe('InstrumentExpandedRow', () => {
 
     render(<InstrumentExpandedRow instrument={mockInstrument} />);
 
+    expect(screen.getByText('Retail Price')).toBeInTheDocument();
     // Price should be formatted (formatInstrumentPrice formats it)
     expect(screen.getByText(/\$50,000|50,000|50000/)).toBeInTheDocument();
   });

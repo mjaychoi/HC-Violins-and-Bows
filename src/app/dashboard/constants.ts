@@ -39,7 +39,7 @@ export type DashboardFilterKeyValue =
 
 // Filter label strings (UI)
 export const DASHBOARD_FILTER_LABEL_STRINGS = {
-  PRICE_RANGE: 'Price range',
+  PRICE_RANGE: 'Retail Price Range',
   SEARCH: 'Search',
   DATE_RANGE: 'Date',
   FILTER_OPTIONS: 'Filter options',

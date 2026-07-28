@@ -718,7 +718,9 @@ export default function InstrumentModal({
                 </div>
 
                 <div>
-                  <div className="text-xs text-gray-500 mb-1">Price</div>
+                  <div className="text-xs text-gray-500 mb-1">
+                    Retail Price
+                  </div>
                   <div className="text-sm font-medium text-gray-900">
                     {formatInstrumentPrice(instrument.price)}
                   </div>
