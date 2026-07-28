@@ -15,6 +15,17 @@ import { apiHandler } from '@/app/api/_utils/apiHandler';
 
 const SIGNED_URL_TTL_SECONDS = 600;
 const MAX_CERTIFICATE_SIZE = 20 * 1024 * 1024;
+const PDF_MAGIC_BYTES = Buffer.from('%PDF-', 'ascii');
+const MIN_PDF_HEADER_LENGTH = PDF_MAGIC_BYTES.length;
+
+type ValidatedCertificateUpload = {
+  file: File;
+  buffer: Buffer;
+};
+
+type CertificateUploadValidationResult =
+  | { ok: true; upload: ValidatedCertificateUpload }
+  | { ok: false; response: NextResponse };
 
 function routeJson(payload: unknown, status = 200): NextResponse {
   return createApiResponse(payload, status);
@@ -61,6 +72,14 @@ function isPdfUpload(file: File): boolean {
   const hasPdfExtension = file.name.toLowerCase().endsWith('.pdf');
 
   return isPdfType || hasPdfExtension;
+}
+
+function hasPdfMagicBytes(buffer: Buffer): boolean {
+  if (buffer.length < MIN_PDF_HEADER_LENGTH) {
+    return false;
+  }
+
+  return buffer.subarray(0, MIN_PDF_HEADER_LENGTH).equals(PDF_MAGIC_BYTES);
 }
 
 function getCertificateStorageKey(
@@ -162,36 +181,58 @@ async function rollbackUploadedCertificate(
   }
 }
 
-async function validateCertificateFileFromRequest(
+async function validateCertificateUploadFromRequest(
   request: NextRequest
-): Promise<File | NextResponse> {
+): Promise<CertificateUploadValidationResult> {
   const formData = await request.formData();
   const file = formData.get('certificate') as File | null;
 
   if (!file) {
-    return routeJson({ error: 'No certificate file provided' }, 400);
+    return {
+      ok: false,
+      response: routeJson({ error: 'No certificate file provided' }, 400),
+    };
   }
 
   if (!isPdfUpload(file)) {
-    return routeJson({ error: 'Certificate must be a PDF file' }, 400);
+    return {
+      ok: false,
+      response: routeJson({ error: 'Certificate must be a PDF file' }, 400),
+    };
   }
 
   if (file.size <= 0) {
-    return routeJson({ error: 'Certificate file is empty' }, 400);
+    return {
+      ok: false,
+      response: routeJson({ error: 'Certificate file is empty' }, 400),
+    };
   }
 
   if (file.size > MAX_CERTIFICATE_SIZE) {
-    return routeJson(
-      {
-        error: `Certificate file size must be less than ${Math.round(
-          MAX_CERTIFICATE_SIZE / 1024 / 1024
-        )}MB`,
-      },
-      400
-    );
+    return {
+      ok: false,
+      response: routeJson(
+        {
+          error: `Certificate file size must be less than ${Math.round(
+            MAX_CERTIFICATE_SIZE / 1024 / 1024
+          )}MB`,
+        },
+        400
+      ),
+    };
   }
 
-  return file;
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  if (!hasPdfMagicBytes(buffer)) {
+    return {
+      ok: false,
+      response: routeJson({ error: 'Invalid certificate file' }, 400),
+    };
+  }
+
+  return { ok: true, upload: { file, buffer } };
 }
 
 /**
@@ -339,17 +380,14 @@ async function postHandlerInternal(
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
 
-    const fileOrResponse = await validateCertificateFileFromRequest(request);
-    if (fileOrResponse instanceof Response) {
-      return fileOrResponse;
+    const validation = await validateCertificateUploadFromRequest(request);
+    if (!validation.ok) {
+      return validation.response;
     }
 
-    const file = fileOrResponse;
+    const { file, buffer } = validation.upload;
 
     storage.validateFile(file.name, 'application/pdf', file.size);
-
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
 
     const fileKey = getCertificateStorageKey(auth.orgId!, id, file.name);
 
@@ -481,12 +519,12 @@ async function putHandlerInternal(
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
 
-    const fileOrResponse = await validateCertificateFileFromRequest(request);
-    if (fileOrResponse instanceof Response) {
-      return fileOrResponse;
+    const validation = await validateCertificateUploadFromRequest(request);
+    if (!validation.ok) {
+      return validation.response;
     }
 
-    const file = fileOrResponse;
+    const { file, buffer } = validation.upload;
 
     const { data: certRows, error: certError } = await scopedCertificateQuery(
       auth,
@@ -509,9 +547,6 @@ async function putHandlerInternal(
     const fileKey = getCertificateStorageKey(auth.orgId!, id, file.name);
 
     storage.validateFile(file.name, 'application/pdf', file.size);
-
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
 
     let canonicalStoredKey: string;
     try {
