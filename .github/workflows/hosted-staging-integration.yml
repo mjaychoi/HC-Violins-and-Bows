@@ -11,13 +11,56 @@ on:
       - '.github/workflows/hosted-staging-integration.yml'
 
 concurrency:
-  group: hosted-staging-integration
+  group: hosted-staging-integration-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
-  hosted-staging:
+  static-validation:
+    if: github.repository == 'mjaychoi/HC-Violins-and-Bows'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Staging guard unit tests
+        run: npm run test:staging-guard
+
+      - name: Auth matrix env guard unit tests
+        run: npm test -- --runInBand tests/integration/auth-matrix/env-guard.test.ts
+
+      - name: Verify migration inventory (local filenames only)
+        run: npm run check:migrations
+
+      - name: Lint staging shell scripts
+        run: |
+          bash -n scripts/staging/run-pr58-audits.sh
+          bash -n scripts/auth-matrix/reset-environment.sh
+
+      - name: Assert workflow does not require JWT or fixture-id secrets
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path('.github/workflows/hosted-staging-integration.yml').read_text()
+          if re.search(r'secrets\.AUTH_MATRIX_', text):
+              raise SystemExit(
+                  'Workflow must not read AUTH_MATRIX_* values from GitHub secrets.'
+              )
+          print('Workflow secret contract OK: no AUTH_MATRIX_* GitHub secrets referenced.')
+          PY
+
+  hosted-db-validation:
+    needs: static-validation
     if: >-
-      ${{ github.event_name == 'workflow_dispatch' &&
+      ${{ needs.static-validation.result == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
           github.repository == 'mjaychoi/HC-Violins-and-Bows' &&
           secrets.STAGING_SUPABASE_PROJECT_REF != '' &&
           secrets.STAGING_SUPABASE_URL != '' &&
@@ -75,7 +118,7 @@ jobs:
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: npx tsx scripts/staging/verify-migration-set.ts
 
-      - name: Run PR #58 SQL audits
+      - name: Run hosted SQL audits
         env:
           STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
           STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
@@ -97,21 +140,54 @@ jobs:
           echo "$body" | jq -e '(.diagnostics.missingMigrationVersions | length) == 0' >/dev/null
           echo "$body" | jq -e '(.diagnostics.missingColumns | length) == 0' >/dev/null
 
-      - name: Run authenticated HTTP smoke matrix
+  auth-matrix:
+    needs: hosted-db-validation
+    if: >-
+      ${{ needs.hosted-db-validation.result == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          vars.AUTH_MATRIX_READY == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: hosted-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Require cookie-backed harness entrypoint
+        run: |
+          if [ ! -f scripts/auth-matrix/run-hosted-matrix.ts ]; then
+            echo "vars.AUTH_MATRIX_READY=true but scripts/auth-matrix/run-hosted-matrix.ts is missing."
+            echo "Merge the cookie-backed harness follow-up before enabling this job."
+            exit 1
+          fi
+
+      - name: Staging environment guard
         env:
-          AUTH_MATRIX_ENABLED: '1'
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+        run: npx tsx scripts/staging/env-guard-cli.ts
+
+      - name: Bootstrap synthetic fixtures and run matrix
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
           AUTH_MATRIX_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           AUTH_MATRIX_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           AUTH_MATRIX_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
-          AUTH_MATRIX_JWT_ORG_A_ADMIN: ${{ secrets.AUTH_MATRIX_JWT_ORG_A_ADMIN }}
-          AUTH_MATRIX_JWT_ORG_A_MEMBER: ${{ secrets.AUTH_MATRIX_JWT_ORG_A_MEMBER }}
-          AUTH_MATRIX_JWT_ORG_B_ADMIN: ${{ secrets.AUTH_MATRIX_JWT_ORG_B_ADMIN }}
-          AUTH_MATRIX_JWT_ORG_B_MEMBER: ${{ secrets.AUTH_MATRIX_JWT_ORG_B_MEMBER }}
-          AUTH_MATRIX_JWT_NO_ORG: ${{ secrets.AUTH_MATRIX_JWT_NO_ORG }}
-          AUTH_MATRIX_ORG_A_INSTRUMENT_ID: ${{ secrets.AUTH_MATRIX_ORG_A_INSTRUMENT_ID }}
-          AUTH_MATRIX_ORG_B_INSTRUMENT_ID: ${{ secrets.AUTH_MATRIX_ORG_B_INSTRUMENT_ID }}
-        run: npm test -- --runInBand --testPathPatterns=auth-matrix
+        run: npx tsx scripts/auth-matrix/run-hosted-matrix.ts
 
       - name: Cleanup synthetic fixtures
         if: always()
