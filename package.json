@@ -64,7 +64,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@react-pdf/renderer": "^4.3.1",
-    "@sentry/nextjs": "^10.32.1",
+    "@sentry/nextjs": "10.69.0",
     "@supabase/supabase-js": "^2.51.0",
     "@types/react-dnd": "^2.0.36",
     "@types/react-window": "^1.8.8",
@@ -72,7 +72,7 @@
     "@upstash/redis": "^1.37.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
-    "next": "^15.5.9",
+    "next": "15.5.22",
     "react": "19.1.0",
     "react-big-calendar": "^1.19.4",
     "react-dnd": "^16.0.1",
@@ -87,7 +87,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@next/bundle-analyzer": "^15.5.9",
+    "@next/bundle-analyzer": "15.5.22",
     "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",
@@ -104,20 +104,25 @@
     "@typescript-eslint/parser": "^8.46.2",
     "dotenv": "^17.4.2",
     "eslint": "^9",
-    "eslint-config-next": "^15.5.9",
+    "eslint-config-next": "15.5.22",
     "husky": "^9.1.7",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
     "lint-staged": "^16.2.6",
     "prettier": "^3.6.2",
     "tailwindcss": "^4",
-    "tsx": "^4.20.6",
+    "tsx": "4.22.5",
     "typescript": "^5",
     "whatwg-fetch": "^3.6.20"
   },
   "overrides": {
-    "fast-xml-parser": ">=5.7.0",
-    "postcss": ">=8.5.10"
+    "next": {
+      "postcss": "8.5.25",
+      "sharp": "0.35.3"
+    },
+    "webpack-bundle-analyzer": {
+      "ws": "7.5.13"
+    }
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
