@@ -1,36 +1,25 @@
 import { checkMigrations } from '../healthCheck';
-import { getAdminSupabase } from '@/lib/supabase-server';
+import {
+  HealthCatalogAccessError,
+  readHealthCatalogSnapshot,
+} from '../healthCatalogReader';
 
-jest.mock('@/lib/supabase-server');
+jest.mock('../healthCatalogReader', () => ({
+  HealthCatalogAccessError: class HealthCatalogAccessError extends Error {
+    readonly code = 'HEALTH_CATALOG_ACCESS_FAILED';
 
-// checkSchemaReadiness was added to checkMigrations() after this suite was written.
-// Mock it to always report ready so the rest of the health check assertions stay focused.
-jest.mock('@/app/api/_utils/schemaReadiness', () => ({
-  checkSchemaReadiness: jest.fn().mockResolvedValue({
-    ready: true,
-    checkedAt: new Date().toISOString(),
-    missingColumns: [],
-    missingContracts: [],
-  }),
-  assertClientsSchemaReadiness: jest.fn().mockResolvedValue(undefined),
+    constructor(message = 'Health catalog access failed') {
+      super(message);
+      this.name = 'HealthCatalogAccessError';
+    }
+  },
+  readHealthCatalogSnapshot: jest.fn(),
 }));
 
-const mockGetAdminSupabase = getAdminSupabase as jest.MockedFunction<
-  typeof getAdminSupabase
->;
-
-type QueryResult = {
-  data: unknown;
-  error: unknown;
-};
-
-function createQuery(result: QueryResult) {
-  return {
-    select: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
-    in: jest.fn().mockResolvedValue(result),
-  };
-}
+const mockReadHealthCatalogSnapshot =
+  readHealthCatalogSnapshot as jest.MockedFunction<
+    typeof readHealthCatalogSnapshot
+  >;
 
 function withPolicyMeta(
   rows: Array<{
@@ -40,7 +29,7 @@ function withPolicyMeta(
   }>
 ) {
   return rows.map(row => ({
-    ...row,
+    policyname: row.policyname,
     schemaname: row.policyname.startsWith('hc_v_invoice_images_')
       ? 'storage'
       : 'public',
@@ -59,20 +48,22 @@ function withPolicyMeta(
                 : row.policyname.startsWith('instruments_')
                   ? 'instruments'
                   : 'invoices',
+    qual: row.qual,
+    with_check: row.with_check,
   }));
 }
 
 const COMPLETE_REQUIRED_VERSIONS = [
-  { version: '00000000000000' },
-  { version: '00000000000001' },
-  { version: '00000000000002' },
-  { version: '00000000000003' },
-  { version: '00000000000004' },
-  { version: '00000000000005' },
-  { version: '00000000000054' },
-  { version: '00000000000060' },
-  { version: '00000000000061' },
-  { version: '20260422133936' },
+  '00000000000000',
+  '00000000000001',
+  '00000000000002',
+  '00000000000003',
+  '00000000000004',
+  '00000000000005',
+  '00000000000054',
+  '00000000000060',
+  '00000000000061',
+  '20260422133936',
 ];
 
 const COMPLETE_FUNCTION_ROWS = [
@@ -212,36 +203,53 @@ const COMPLETE_REQUIRED_POLICY_ROWS = withPolicyMeta([
   },
 ]);
 
-function buildHealthySupabaseClient(overrides?: {
-  migrationRows?: unknown;
-  functionRows?: unknown;
-  policyRows?: unknown;
-}) {
-  const migrationQuery = {
-    select: jest.fn().mockResolvedValue({
-      data: overrides?.migrationRows ?? COMPLETE_REQUIRED_VERSIONS,
-      error: null,
-    }),
-  };
-  const functionQuery = createQuery({
-    data: overrides?.functionRows ?? COMPLETE_FUNCTION_ROWS,
-    error: null,
-  });
-  const policyQuery = createQuery({
-    data: overrides?.policyRows ?? COMPLETE_REQUIRED_POLICY_ROWS,
-    error: null,
-  });
+const COMPLETE_PRESENT_COLUMNS = [
+  'public.invoices.invoice_number',
+  'public.invoice_settings.business_name',
+  'public.invoice_settings.business_address',
+  'public.invoice_settings.business_phone',
+  'public.invoice_settings.business_email',
+  'public.invoice_settings.bank_account_holder',
+  'public.invoice_settings.bank_name',
+  'public.invoice_settings.bank_swift_code',
+  'public.invoice_settings.bank_account_number',
+  'public.invoice_settings.default_conditions',
+  'public.invoice_settings.default_exchange_rate',
+  'public.invoice_settings.default_currency',
+  'public.instrument_images.storage_key',
+  'public.instrument_images.file_name',
+  'public.instrument_images.file_size',
+  'public.instrument_images.mime_type',
+  'public.instrument_images.display_order',
+  'public.client_instruments.display_order',
+  'public.clients.client_number',
+];
 
+const COMPLETE_RUNTIME_CONTRACTS = {
+  api_create_idempotency_exists: true,
+  api_create_idempotency_columns_ok: true,
+  api_create_idempotency_unique_ok: true,
+  create_connection_atomic_hardened: true,
+};
+
+function buildHealthyCatalogSnapshot(overrides?: {
+  migrationVersions?: string[];
+  functions?: typeof COMPLETE_FUNCTION_ROWS;
+  policies?: ReturnType<typeof withPolicyMeta>;
+  presentColumns?: string[];
+  runtimeContracts?: typeof COMPLETE_RUNTIME_CONTRACTS | null;
+}) {
   return {
-    schema: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue(migrationQuery),
-    }),
-    from: jest.fn((table: string) => {
-      if (table === 'pg_proc') return functionQuery;
-      if (table === 'pg_policies') return policyQuery;
-      throw new Error(`Unexpected table ${table}`);
-    }),
-  } as any;
+    migrationVersions:
+      overrides?.migrationVersions ?? COMPLETE_REQUIRED_VERSIONS,
+    functions: overrides?.functions ?? COMPLETE_FUNCTION_ROWS,
+    policies: overrides?.policies ?? COMPLETE_REQUIRED_POLICY_ROWS,
+    presentColumns: overrides?.presentColumns ?? COMPLETE_PRESENT_COLUMNS,
+    runtimeContracts:
+      overrides?.runtimeContracts === undefined
+        ? COMPLETE_RUNTIME_CONTRACTS
+        : overrides.runtimeContracts,
+  };
 }
 
 describe('healthCheck', () => {
@@ -250,24 +258,43 @@ describe('healthCheck', () => {
   });
 
   it('returns healthy when migrations, helpers, and policy predicates all match', async () => {
-    mockGetAdminSupabase.mockReturnValue(buildHealthySupabaseClient());
+    mockReadHealthCatalogSnapshot.mockResolvedValue(
+      buildHealthyCatalogSnapshot()
+    );
 
     const result = await checkMigrations();
 
     expect(result.allHealthy).toBe(true);
+    expect(result.catalogAccessFailed).toBe(false);
     expect(result.authOrgIdHelperValid).toBe(true);
     expect(result.authIsAdminHelperValid).toBe(true);
     expect(result.criticalPolicyPredicatesValid).toBe(true);
     expect(result.forbiddenPoliciesAbsent).toBe(true);
     expect(result.invoiceImageStoragePathShapeValid).toBe(true);
+    expect(result.requiredColumnsPresent).toBe(true);
+    expect(result.runtimeContractsPresent).toBe(true);
     expect(result.invalidHelpers).toEqual([]);
     expect(result.unsafePolicies).toEqual([]);
   });
 
+  it('fails closed when catalog access fails', async () => {
+    mockReadHealthCatalogSnapshot.mockRejectedValue(
+      new HealthCatalogAccessError()
+    );
+
+    const result = await checkMigrations();
+
+    expect(result.allHealthy).toBe(false);
+    expect(result.catalogAccessFailed).toBe(true);
+    expect(result.missingMigrationVersions).toEqual([
+      'health_catalog_access_failed',
+    ]);
+  });
+
   it('returns unhealthy when auth helpers still trust unsafe definitions', async () => {
-    mockGetAdminSupabase.mockReturnValue(
-      buildHealthySupabaseClient({
-        functionRows: [
+    mockReadHealthCatalogSnapshot.mockResolvedValue(
+      buildHealthyCatalogSnapshot({
+        functions: [
           {
             proname: 'org_id',
             prosrc:
@@ -279,7 +306,7 @@ describe('healthCheck', () => {
               "SELECT lower(auth.jwt() -> 'user_metadata' ->> 'role') = 'admin'",
           },
         ],
-        policyRows: [],
+        policies: [],
       })
     );
 
@@ -293,9 +320,9 @@ describe('healthCheck', () => {
   });
 
   it('returns unhealthy when a critical policy predicate is unsafe', async () => {
-    mockGetAdminSupabase.mockReturnValue(
-      buildHealthySupabaseClient({
-        policyRows: withPolicyMeta([
+    mockReadHealthCatalogSnapshot.mockResolvedValue(
+      buildHealthyCatalogSnapshot({
+        policies: withPolicyMeta([
           {
             policyname: 'client_instruments_select',
             qual: 'true',
@@ -324,10 +351,15 @@ describe('healthCheck', () => {
 
     const { checkMigrations: reloadedCheckMigrations } =
       await import('../healthCheck');
-    const reloadedGetAdminSupabase = (await import('@/lib/supabase-server'))
-      .getAdminSupabase as jest.MockedFunction<typeof getAdminSupabase>;
+    const reloadedReadHealthCatalogSnapshot = (
+      await import('../healthCatalogReader')
+    ).readHealthCatalogSnapshot as jest.MockedFunction<
+      typeof readHealthCatalogSnapshot
+    >;
 
-    reloadedGetAdminSupabase.mockReturnValue(buildHealthySupabaseClient());
+    reloadedReadHealthCatalogSnapshot.mockResolvedValue(
+      buildHealthyCatalogSnapshot()
+    );
 
     const result = await reloadedCheckMigrations();
 
@@ -339,10 +371,10 @@ describe('healthCheck', () => {
   });
 
   it('returns unhealthy when a required migration version is missing', async () => {
-    mockGetAdminSupabase.mockReturnValue(
-      buildHealthySupabaseClient({
-        migrationRows: COMPLETE_REQUIRED_VERSIONS.filter(
-          row => row.version !== '20260422133936'
+    mockReadHealthCatalogSnapshot.mockResolvedValue(
+      buildHealthyCatalogSnapshot({
+        migrationVersions: COMPLETE_REQUIRED_VERSIONS.filter(
+          version => version !== '20260422133936'
         ),
       })
     );
@@ -353,10 +385,47 @@ describe('healthCheck', () => {
     expect(result.missingMigrationVersions).toContain('20260422133936');
   });
 
+  it('returns unhealthy when required columns are missing', async () => {
+    mockReadHealthCatalogSnapshot.mockResolvedValue(
+      buildHealthyCatalogSnapshot({
+        presentColumns: COMPLETE_PRESENT_COLUMNS.filter(
+          column => column !== 'public.clients.client_number'
+        ),
+      })
+    );
+
+    const result = await checkMigrations();
+
+    expect(result.allHealthy).toBe(false);
+    expect(result.requiredColumnsPresent).toBe(false);
+    expect(result.missingColumns).toContain('public.clients.client_number');
+  });
+
+  it('returns unhealthy when runtime contracts are missing', async () => {
+    mockReadHealthCatalogSnapshot.mockResolvedValue(
+      buildHealthyCatalogSnapshot({
+        runtimeContracts: {
+          api_create_idempotency_exists: false,
+          api_create_idempotency_columns_ok: true,
+          api_create_idempotency_unique_ok: true,
+          create_connection_atomic_hardened: true,
+        },
+      })
+    );
+
+    const result = await checkMigrations();
+
+    expect(result.allHealthy).toBe(false);
+    expect(result.runtimeContractsPresent).toBe(false);
+    expect(result.missingRuntimeContracts).toContain(
+      'public.api_create_idempotency table'
+    );
+  });
+
   it('returns unhealthy when an invoice storage policy is missing or unsafe', async () => {
-    mockGetAdminSupabase.mockReturnValue(
-      buildHealthySupabaseClient({
-        policyRows: withPolicyMeta([
+    mockReadHealthCatalogSnapshot.mockResolvedValue(
+      buildHealthyCatalogSnapshot({
+        policies: withPolicyMeta([
           ...COMPLETE_REQUIRED_POLICY_ROWS.filter(
             row => row.policyname !== 'hc_v_invoice_images_select'
           ),

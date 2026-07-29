@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 import { checkMigrations } from '@/app/api/_utils/healthCheck';
-import { checkSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import { checkInstrumentApiContractAdmin } from '@/app/api/instruments/_shared/instrumentApiContract';
 
 type MigrationCheck = Awaited<ReturnType<typeof checkMigrations>>;
-type SchemaReadinessCheck = Awaited<ReturnType<typeof checkSchemaReadiness>>;
 type InstrumentContractCheck = Awaited<
   ReturnType<typeof checkInstrumentApiContractAdmin>
 >;
@@ -26,6 +24,8 @@ function buildFailedMigrationCheck(): MigrationCheck {
     criticalPolicyPredicatesValid: false,
     invoiceImageStoragePathShapeValid: false,
     requiredColumnsPresent: false,
+    runtimeContractsPresent: false,
+    catalogAccessFailed: true,
     allHealthy: false,
     missingMigrationVersions: ['health_check_failed'],
     missingPolicies: [],
@@ -33,6 +33,7 @@ function buildFailedMigrationCheck(): MigrationCheck {
     invalidHelpers: [],
     unsafePolicies: [],
     missingColumns: [],
+    missingRuntimeContracts: [],
   };
 }
 
@@ -46,27 +47,13 @@ function buildFailedInstrumentContractCheck(
   };
 }
 
-function buildFailedSchemaReadinessCheck(
-  error: unknown
-): SchemaReadinessCheck & { error?: string } {
-  return {
-    ready: false,
-    checkedAt: new Date().toISOString(),
-    missingColumns: [],
-    missingContracts: ['schema_readiness_check_failed'],
-    error: getErrorMessage(error),
-  };
-}
-
 export async function GET() {
   const timestamp = new Date().toISOString();
 
-  const [migrationResult, schemaReadinessResult, instrumentContractResult] =
-    await Promise.allSettled([
-      checkMigrations(),
-      checkSchemaReadiness({ bypassCache: true }),
-      checkInstrumentApiContractAdmin(),
-    ]);
+  const [migrationResult, instrumentContractResult] = await Promise.allSettled([
+    checkMigrations(),
+    checkInstrumentApiContractAdmin(),
+  ]);
 
   const migrations =
     migrationResult.status === 'fulfilled'
@@ -78,13 +65,10 @@ export async function GET() {
       ? instrumentContractResult.value
       : buildFailedInstrumentContractCheck(instrumentContractResult.reason);
 
-  const schemaReadiness =
-    schemaReadinessResult.status === 'fulfilled'
-      ? schemaReadinessResult.value
-      : buildFailedSchemaReadinessCheck(schemaReadinessResult.reason);
-
   const allHealthy =
-    migrations.allHealthy && schemaReadiness.ready && instrumentContract.ok;
+    !migrations.catalogAccessFailed &&
+    migrations.allHealthy &&
+    instrumentContract.ok;
   const fallbackHealthy = migrations.allHealthy;
 
   const checks = {
@@ -107,13 +91,9 @@ export async function GET() {
     requiredColumnsPresent:
       migrations.requiredColumnsPresent ?? fallbackHealthy,
     runtime_contracts: {
-      ok: schemaReadiness.missingContracts.length === 0,
-      missing: schemaReadiness.missingContracts,
-      ...('error' in schemaReadiness && schemaReadiness.error
-        ? { error: schemaReadiness.error }
-        : {}),
+      ok: migrations.runtimeContractsPresent ?? fallbackHealthy,
+      missing: migrations.missingRuntimeContracts ?? [],
     },
-
     instrument_api_contract: {
       ok: instrumentContract.ok,
       missing: instrumentContract.missing,
@@ -123,18 +103,19 @@ export async function GET() {
     },
   };
 
-  const diagnostics = {
-    missingMigrationVersions: migrations.missingMigrationVersions,
-    missingPolicies: migrations.missingPolicies,
-    forbiddenPoliciesPresent: migrations.forbiddenPoliciesPresent,
-    invalidHelpers: migrations.invalidHelpers,
-    unsafePolicies: migrations.unsafePolicies,
-    missingColumns: [
-      ...(migrations.missingColumns ?? []),
-      ...(schemaReadiness.missingColumns ?? []),
-    ],
-    missingRuntimeContracts: schemaReadiness.missingContracts ?? [],
-  };
+  const diagnostics = migrations.catalogAccessFailed
+    ? {
+        catalogAccessFailed: true,
+      }
+    : {
+        missingMigrationVersions: migrations.missingMigrationVersions,
+        missingPolicies: migrations.missingPolicies,
+        forbiddenPoliciesPresent: migrations.forbiddenPoliciesPresent,
+        invalidHelpers: migrations.invalidHelpers,
+        unsafePolicies: migrations.unsafePolicies,
+        missingColumns: migrations.missingColumns ?? [],
+        missingRuntimeContracts: migrations.missingRuntimeContracts ?? [],
+      };
 
   return NextResponse.json(
     {
