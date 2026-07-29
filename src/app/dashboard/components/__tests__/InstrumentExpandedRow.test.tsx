@@ -9,6 +9,7 @@ import {
 import type { Instrument } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // Mock dependencies
 jest.mock('@/utils/apiFetch');
@@ -16,9 +17,7 @@ jest.mock('@/hooks/useAppFeedback', () => ({
   useAppFeedback: jest.fn(),
 }));
 jest.mock('@/hooks/usePermissions', () => ({
-  usePermissions: jest.fn(() => ({
-    canUploadInstrumentMedia: true,
-  })),
+  usePermissions: jest.fn(),
 }));
 jest.mock('@/components/common/OptimizedImage', () => {
   return function MockOptimizedImage({ src, alt }: any) {
@@ -131,6 +130,10 @@ describe('InstrumentExpandedRow', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (usePermissions as jest.Mock).mockReturnValue({
+      canUploadInstrumentMedia: true,
+      canViewInstrumentFinancialData: true,
+    });
     (useAppFeedback as jest.Mock).mockReturnValue({
       showSuccess: mockShowSuccess,
       showWarning: mockShowWarning,
@@ -1736,5 +1739,53 @@ describe('InstrumentExpandedRow', () => {
       },
       { timeout: 3000 }
     );
+  });
+
+  describe('financial field rendering', () => {
+    it('renders cost and consignment prices for admins', () => {
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: [] }),
+      } as Response);
+
+      render(
+        <InstrumentExpandedRow
+          instrument={{
+            ...mockInstrument,
+            cost_price: 12000,
+            consignment_price: 15000,
+          }}
+        />
+      );
+
+      expect(screen.getByText('Cost Price')).toBeInTheDocument();
+      expect(screen.getByText('Consignment Price')).toBeInTheDocument();
+    });
+
+    it('hides cost and consignment prices for members even when stale props include them', () => {
+      (usePermissions as jest.Mock).mockReturnValue({
+        canUploadInstrumentMedia: false,
+        canViewInstrumentFinancialData: false,
+      });
+
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: [] }),
+      } as Response);
+
+      render(
+        <InstrumentExpandedRow
+          instrument={{
+            ...mockInstrument,
+            cost_price: 12000,
+            consignment_price: 15000,
+          }}
+        />
+      );
+
+      expect(screen.queryByText('Cost Price')).not.toBeInTheDocument();
+      expect(screen.queryByText('Consignment Price')).not.toBeInTheDocument();
+      expect(screen.getByText('Retail Price')).toBeInTheDocument();
+    });
   });
 });

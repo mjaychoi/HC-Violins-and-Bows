@@ -1,11 +1,17 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { ApiFetchAuthError, ApiFetchError } from '@/utils/apiFetch';
 
+export type AccessRole = 'admin' | 'member';
+
 type TenantIdentityInput = {
   user: User | null;
   orgId: string | null;
   session: Session | null;
   loading: boolean;
+};
+
+export type AccessScopeInput = TenantIdentityInput & {
+  role: AccessRole;
 };
 
 function getSessionIdentity(session: Session | null): string | null {
@@ -38,6 +44,28 @@ export function getTenantIdentityKey({
   }
 
   return `${user.id}:${orgId}:${sessionIdentity}`;
+}
+
+function getFinancialDataPermissionFingerprint(role: AccessRole): '1' | '0' {
+  return role === 'admin' ? '1' : '0';
+}
+
+export function getAccessScopeKey({
+  user,
+  orgId,
+  session,
+  loading,
+  role,
+}: AccessScopeInput): string | null {
+  const sessionIdentity = getSessionIdentity(session);
+
+  if (loading || !user?.id || !orgId || !sessionIdentity) {
+    return null;
+  }
+
+  const financialPermission = getFinancialDataPermissionFingerprint(role);
+
+  return `${user.id}:${orgId}:${sessionIdentity}:${role}:${financialPermission}`;
 }
 
 export function isAuthLikeTenantError(error: unknown): boolean {

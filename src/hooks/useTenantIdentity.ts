@@ -2,7 +2,10 @@
 
 import { useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getTenantIdentityKey } from '@/utils/tenantIdentity';
+import {
+  getAccessScopeKey,
+  getTenantIdentityKey,
+} from '@/utils/tenantIdentity';
 
 export function useTenantIdentity() {
   const auth = useAuth();
@@ -18,11 +21,24 @@ export function useTenantIdentity() {
     [auth.loading, auth.orgId, auth.session, auth.user]
   );
 
+  const accessScopeKey = useMemo(
+    () =>
+      getAccessScopeKey({
+        user: auth.user,
+        orgId: auth.orgId,
+        session: auth.session,
+        loading: auth.loading,
+        role: auth.role,
+      }),
+    [auth.loading, auth.orgId, auth.role, auth.session, auth.user]
+  );
+
   return {
     tenantIdentityKey,
+    accessScopeKey,
     userId: auth.user?.id ?? null,
     orgId: auth.orgId,
     isTenantTransitioning:
-      auth.loading || (Boolean(auth.user) && tenantIdentityKey === null),
+      auth.loading || (Boolean(auth.user) && accessScopeKey === null),
   };
 }
