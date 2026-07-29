@@ -1,0 +1,190 @@
+name: Hosted Staging Integration
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/staging/**'
+      - 'scripts/auth-matrix/**'
+      - 'tests/integration/auth-matrix/**'
+      - 'tests/integration/staging/**'
+      - '.github/workflows/hosted-staging-integration.yml'
+
+concurrency:
+  group: hosted-staging-integration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  static-validation:
+    if: github.repository == 'mjaychoi/HC-Violins-and-Bows'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Staging guard unit tests
+        run: npm run test:staging-guard
+
+      - name: Auth matrix env guard unit tests
+        run: npm test -- --runInBand tests/integration/auth-matrix/env-guard.test.ts
+
+      - name: Verify migration inventory (local filenames only)
+        run: npm run check:migrations
+
+      - name: Lint staging shell scripts
+        run: |
+          bash -n scripts/staging/run-pr58-audits.sh
+          bash -n scripts/auth-matrix/reset-environment.sh
+
+      - name: Assert workflow does not require JWT or fixture-id secrets
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path('.github/workflows/hosted-staging-integration.yml').read_text()
+          if re.search(r'secrets\.AUTH_MATRIX_', text):
+              raise SystemExit(
+                  'Workflow must not read AUTH_MATRIX_* values from GitHub secrets.'
+              )
+          print('Workflow secret contract OK: no AUTH_MATRIX_* GitHub secrets referenced.')
+          PY
+
+  hosted-db-validation:
+    needs: static-validation
+    if: >-
+      ${{ needs.static-validation.result == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          github.repository == 'mjaychoi/HC-Violins-and-Bows' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: hosted-staging
+    env:
+      STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Require hosted-staging secrets
+        run: |
+          missing=0
+          for name in \
+            STAGING_SUPABASE_PROJECT_REF \
+            STAGING_SUPABASE_URL \
+            STAGING_SUPABASE_ANON_KEY \
+            STAGING_SUPABASE_SERVICE_ROLE_KEY \
+            STAGING_DATABASE_URL \
+            STAGING_APP_BASE_URL
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required hosted-staging secret mapped to ${name}."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Configure all six STAGING_* secrets on the hosted-staging environment."
+            exit 1
+          fi
+
+      - name: Deny production project unconditionally
+        run: |
+          if [ "$STAGING_SUPABASE_PROJECT_REF" = "dmilmlhquttcozxlpfxw" ]; then
+            echo "Production project ref is not allowed for hosted staging integration."
+            exit 1
+          fi
+          if echo "$STAGING_SUPABASE_URL" | grep -q 'dmilmlhquttcozxlpfxw'; then
+            echo "Production Supabase URL detected."
+            exit 1
+          fi
+          if echo "$STAGING_DATABASE_URL" | grep -q 'dmilmlhquttcozxlpfxw'; then
+            echo "Production DATABASE_URL detected."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Staging environment guard
+        run: npx tsx scripts/staging/env-guard-cli.ts
+
+      - name: Verify migration inventory
+        run: npm run check:migrations
+
+      - name: Verify applied migration set
+        run: npx tsx scripts/staging/verify-migration-set.ts
+
+      - name: Run hosted SQL audits
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: bash scripts/staging/run-pr58-audits.sh
+
+      - name: Health check
+        run: |
+          body="$(curl -fsS "${STAGING_APP_BASE_URL%/}/api/health")"
+          echo "$body" | jq -e '.status == "ok"' >/dev/null
+          echo "$body" | jq -e '.version != "dev"' >/dev/null
+          echo "$body" | jq -e '.checks.requiredColumnsPresent == true' >/dev/null
+          echo "$body" | jq -e '(.diagnostics.missingMigrationVersions | length) == 0' >/dev/null
+          echo "$body" | jq -e '(.diagnostics.missingColumns | length) == 0' >/dev/null
+
+  auth-matrix:
+    needs: hosted-db-validation
+    if: >-
+      ${{ needs.hosted-db-validation.result == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          vars.AUTH_MATRIX_READY == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: hosted-staging
+    env:
+      STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+      AUTH_MATRIX_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      AUTH_MATRIX_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      AUTH_MATRIX_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Require cookie-backed harness entrypoint
+        run: |
+          if [ ! -f scripts/auth-matrix/run-hosted-matrix.ts ]; then
+            echo "vars.AUTH_MATRIX_READY=true but scripts/auth-matrix/run-hosted-matrix.ts is missing."
+            echo "Merge the cookie-backed harness follow-up before enabling this job."
+            exit 1
+          fi
+
+      - name: Staging environment guard
+        run: npx tsx scripts/staging/env-guard-cli.ts
+
+      - name: Bootstrap synthetic fixtures and run matrix
+        run: npx tsx scripts/auth-matrix/run-hosted-matrix.ts
+
+      - name: Cleanup synthetic fixtures
+        if: always()
+        run: npx tsx scripts/auth-matrix/cleanup-fixtures.ts
