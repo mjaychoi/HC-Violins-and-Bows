@@ -80,9 +80,19 @@ BEGIN
     (v_org_a, 'Role Context Org A'),
     (v_org_b, 'Role Context Org B');
 
-  INSERT INTO public.clients (id, org_id, name) VALUES
-    (v_client_a, v_org_a, 'Client A'),
-    (v_client_b, v_org_b, 'Client B');
+  INSERT INTO public.clients (id, org_id, name, first_name, last_name) VALUES
+    (v_client_a, v_org_a, 'Client A', 'Client', 'A'),
+    (v_client_b, v_org_b, 'Client B', 'Client', 'B');
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.clients c
+    WHERE c.id IN (v_client_a, v_client_b)
+      AND NULLIF(BTRIM(c.first_name), '') IS NULL
+      AND NULLIF(BTRIM(c.last_name), '') IS NULL
+  ) THEN
+    RAISE EXCEPTION 'fixture clients must satisfy clients_name_identity_check';
+  END IF;
 
   INSERT INTO public.instruments (id, org_id, type, serial_number, status) VALUES
     (v_instrument_a, v_org_a, 'Violin', 'RC-A-001', 'Available'),
