@@ -1,0 +1,121 @@
+name: Hosted Staging Integration
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/staging/**'
+      - 'scripts/auth-matrix/**'
+      - 'tests/integration/auth-matrix/**'
+      - 'tests/integration/staging/**'
+      - '.github/workflows/hosted-staging-integration.yml'
+
+concurrency:
+  group: hosted-staging-integration
+  cancel-in-progress: false
+
+jobs:
+  hosted-staging:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' &&
+          github.repository == 'mjaychoi/HC-Violins-and-Bows' &&
+          secrets.STAGING_SUPABASE_PROJECT_REF != '' &&
+          secrets.STAGING_SUPABASE_URL != '' &&
+          secrets.STAGING_SUPABASE_ANON_KEY != '' &&
+          secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY != '' &&
+          secrets.STAGING_DATABASE_URL != '' &&
+          secrets.STAGING_APP_BASE_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: hosted-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Deny production project unconditionally
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          if [ "$STAGING_SUPABASE_PROJECT_REF" = "dmilmlhquttcozxlpfxw" ]; then
+            echo "Production project ref is not allowed for hosted staging integration."
+            exit 1
+          fi
+          if echo "$STAGING_SUPABASE_URL" | grep -q 'dmilmlhquttcozxlpfxw'; then
+            echo "Production Supabase URL detected."
+            exit 1
+          fi
+          if echo "$STAGING_DATABASE_URL" | grep -q 'dmilmlhquttcozxlpfxw'; then
+            echo "Production DATABASE_URL detected."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Staging environment guard
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+        run: npx tsx scripts/staging/env-guard-cli.ts
+
+      - name: Verify migration inventory
+        run: npm run check:migrations
+
+      - name: Verify applied migration set
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: npx tsx scripts/staging/verify-migration-set.ts
+
+      - name: Run PR #58 SQL audits
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: bash scripts/staging/run-pr58-audits.sh
+
+      - name: Health check
+        env:
+          STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+        run: |
+          body="$(curl -fsS "${STAGING_APP_BASE_URL%/}/api/health")"
+          echo "$body" | jq -e '.status == "ok"' >/dev/null
+          echo "$body" | jq -e '.version != "dev"' >/dev/null
+          echo "$body" | jq -e '.checks.requiredColumnsPresent == true' >/dev/null
+          echo "$body" | jq -e '(.diagnostics.missingMigrationVersions | length) == 0' >/dev/null
+          echo "$body" | jq -e '(.diagnostics.missingColumns | length) == 0' >/dev/null
+
+      - name: Run authenticated HTTP smoke matrix
+        env:
+          AUTH_MATRIX_ENABLED: '1'
+          AUTH_MATRIX_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          AUTH_MATRIX_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          AUTH_MATRIX_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+          AUTH_MATRIX_JWT_ORG_A_ADMIN: ${{ secrets.AUTH_MATRIX_JWT_ORG_A_ADMIN }}
+          AUTH_MATRIX_JWT_ORG_A_MEMBER: ${{ secrets.AUTH_MATRIX_JWT_ORG_A_MEMBER }}
+          AUTH_MATRIX_JWT_ORG_B_ADMIN: ${{ secrets.AUTH_MATRIX_JWT_ORG_B_ADMIN }}
+          AUTH_MATRIX_JWT_ORG_B_MEMBER: ${{ secrets.AUTH_MATRIX_JWT_ORG_B_MEMBER }}
+          AUTH_MATRIX_JWT_NO_ORG: ${{ secrets.AUTH_MATRIX_JWT_NO_ORG }}
+          AUTH_MATRIX_ORG_A_INSTRUMENT_ID: ${{ secrets.AUTH_MATRIX_ORG_A_INSTRUMENT_ID }}
+          AUTH_MATRIX_ORG_B_INSTRUMENT_ID: ${{ secrets.AUTH_MATRIX_ORG_B_INSTRUMENT_ID }}
+        run: npm test -- --runInBand --testPathPatterns=auth-matrix
+
+      - name: Cleanup synthetic fixtures
+        if: always()
+        env:
+          AUTH_MATRIX_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/auth-matrix/cleanup-fixtures.ts
