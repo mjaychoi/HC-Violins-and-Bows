@@ -1,10 +1,16 @@
-import { getAdminSupabase } from '@/lib/supabase-server';
 import {
   buildInvoiceImageStoragePath,
   INVOICE_IMAGE_STORAGE_PATH_SEGMENTS,
   matchesInvoiceImageStoragePolicyShape,
 } from '@/app/api/invoices/imageUrls';
-import { checkSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
+import {
+  getMissingRequiredColumns,
+  getMissingRuntimeContracts,
+} from '@/app/api/_utils/healthCatalogSpecs';
+import {
+  HealthCatalogAccessError,
+  readHealthCatalogSnapshot,
+} from '@/app/api/_utils/healthCatalogReader';
 
 export interface MigrationCheckResult {
   display_order: boolean;
@@ -17,6 +23,8 @@ export interface MigrationCheckResult {
   criticalPolicyPredicatesValid: boolean;
   invoiceImageStoragePathShapeValid: boolean;
   requiredColumnsPresent: boolean;
+  runtimeContractsPresent: boolean;
+  catalogAccessFailed: boolean;
   allHealthy: boolean;
   missingMigrationVersions: string[];
   missingPolicies: string[];
@@ -24,6 +32,7 @@ export interface MigrationCheckResult {
   invalidHelpers: string[];
   unsafePolicies: string[];
   missingColumns: string[];
+  missingRuntimeContracts: string[];
 }
 
 type SchemaName = 'public' | 'storage';
@@ -81,8 +90,6 @@ const REQUIRED_MIGRATION_VERSIONS = [
 // policies" functionality ship in the initial 00000000000000 migration.
 const TENANT_ISOLATION_MIGRATION_VERSION = '00000000000000';
 const ROLE_ENFORCED_WRITE_POLICIES_MIGRATION_VERSION = '00000000000002';
-
-const REQUIRED_FUNCTIONS = ['org_id', 'user_role', 'is_admin'] as const;
 
 const REQUIRED_HELPER_SNIPPETS = {
   org_id: ['app_metadata', 'org_id'],
@@ -289,6 +296,8 @@ function unhealthyResult(
     criticalPolicyPredicatesValid: false,
     invoiceImageStoragePathShapeValid: false,
     requiredColumnsPresent: false,
+    runtimeContractsPresent: false,
+    catalogAccessFailed: false,
     allHealthy: false,
     missingMigrationVersions: [...REQUIRED_MIGRATION_VERSIONS],
     missingPolicies: [...REQUIRED_POLICY_NAMES],
@@ -296,8 +305,22 @@ function unhealthyResult(
     invalidHelpers: ['public.org_id', 'public.is_admin'],
     unsafePolicies: [...REQUIRED_POLICY_NAMES],
     missingColumns: ['public.invoices.invoice_number'],
+    missingRuntimeContracts: [],
     ...overrides,
   };
+}
+
+function catalogAccessFailureResult(): MigrationCheckResult {
+  return unhealthyResult({
+    catalogAccessFailed: true,
+    missingMigrationVersions: ['health_catalog_access_failed'],
+    missingPolicies: [],
+    forbiddenPoliciesPresent: [],
+    invalidHelpers: [],
+    unsafePolicies: [],
+    missingColumns: [],
+    missingRuntimeContracts: [],
+  });
 }
 
 function isInvoiceImageStoragePathInvariantValid(): boolean {
@@ -309,19 +332,6 @@ function isInvoiceImageStoragePathInvariantValid(): boolean {
   return (
     INVOICE_IMAGE_STORAGE_PATH_SEGMENTS === 2 &&
     matchesInvoiceImageStoragePolicyShape(samplePath)
-  );
-}
-
-function extractAppliedMigrationVersions(
-  rows: unknown[] | null | undefined
-): Set<string> {
-  return new Set(
-    (rows ?? [])
-      .map(row => {
-        const value = (row as { version?: unknown }).version;
-        return typeof value === 'string' ? value : null;
-      })
-      .filter((value): value is string => value !== null)
   );
 }
 
@@ -464,119 +474,34 @@ function getUnsafePolicies(policyRows: ParsedPolicyRow[]): string[] {
   return uniq(unsafe);
 }
 
-function buildPartialFailureResult(params: {
-  missingMigrationVersions: string[];
-  invalidHelpers?: string[];
-  includeHelperFlags?: boolean;
-  requiredColumnsPresent?: boolean;
-  missingColumns?: string[];
-}): MigrationCheckResult {
-  const {
-    missingMigrationVersions,
-    invalidHelpers = [],
-    includeHelperFlags = false,
-    requiredColumnsPresent = false,
-    missingColumns = ['public.invoices.invoice_number'],
-  } = params;
-
-  const tenantIsolationMigration = getMigrationFlag(
-    missingMigrationVersions,
-    TENANT_ISOLATION_MIGRATION_VERSION
-  );
-
-  const roleEnforcedWritePoliciesMigration = getMigrationFlag(
-    missingMigrationVersions,
-    ROLE_ENFORCED_WRITE_POLICIES_MIGRATION_VERSION
-  );
-
-  return unhealthyResult({
-    tenantIsolationMigration,
-    roleEnforcedWritePoliciesMigration,
-    missingMigrationVersions,
-    missingPolicies: [...REQUIRED_POLICY_NAMES],
-    invalidHelpers,
-    requiredColumnsPresent,
-    missingColumns,
-    ...(includeHelperFlags
-      ? {
-          authOrgIdHelperValid: !invalidHelpers.includes('public.org_id'),
-          authIsAdminHelperValid: !invalidHelpers.includes('public.is_admin'),
-        }
-      : {}),
-  });
-}
-
 export async function checkMigrations(): Promise<MigrationCheckResult> {
   try {
-    const supabase = getAdminSupabase();
+    const catalog = await readHealthCatalogSnapshot({
+      policyNames: POLICY_NAMES_TO_CHECK,
+    });
 
-    // Cast to allow querying system/internal schemas not in the public schema type manifest.
-    // These are admin-only health check queries: supabase_migrations, pg_proc, pg_policies.
-    const sysSupa = supabase as typeof supabase & {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      schema: (name: string) => any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      from: (table: string) => any;
-    };
-
-    const migrationClient =
-      typeof supabase.schema === 'function'
-        ? sysSupa.schema('supabase_migrations')
-        : sysSupa;
-
-    const { data: migrationRows, error: migrationError } = await migrationClient
-      .from('schema_migrations')
-      .select('version');
-
-    if (migrationError) {
-      return unhealthyResult();
-    }
-
-    const appliedVersions = extractAppliedMigrationVersions(
-      migrationRows as unknown[] | null | undefined
-    );
+    const appliedVersions = new Set(catalog.migrationVersions);
 
     const missingMigrationVersions = REQUIRED_MIGRATION_VERSIONS.filter(
       version => !appliedVersions.has(version)
     );
 
-    const schemaReadiness = await checkSchemaReadiness({ bypassCache: true });
-
-    const { data: functionRows, error: functionError } = await sysSupa
-      .from('pg_proc')
-      .select('proname, prosrc')
-      .in('proname', [...REQUIRED_FUNCTIONS]);
-
-    if (functionError) {
-      return buildPartialFailureResult({
-        missingMigrationVersions,
-        requiredColumnsPresent: schemaReadiness.ready,
-        missingColumns: schemaReadiness.missingColumns,
-      });
-    }
-
     const functionMap = buildFunctionSourceMap(
-      (functionRows ?? []) as PgProcRow[]
+      catalog.functions.map(row => ({
+        proname: row.proname,
+        prosrc: row.prosrc,
+      }))
     );
     const invalidHelpers = getInvalidHelpers(functionMap);
 
-    const { data: policyRows, error: policyError } = await sysSupa
-      .from('pg_policies')
-      .select('policyname, schemaname, tablename, qual, with_check')
-      .in('policyname', POLICY_NAMES_TO_CHECK);
-
-    if (policyError) {
-      return buildPartialFailureResult({
-        missingMigrationVersions,
-        invalidHelpers,
-        includeHelperFlags: true,
-        requiredColumnsPresent: schemaReadiness.ready,
-        missingColumns: schemaReadiness.missingColumns,
-      });
-    }
-
     const parsedPolicyRows = parsePolicyRows(
-      (policyRows ?? []) as PgPolicyRow[]
+      catalog.policies.map(row => ({
+        policyname: row.policyname,
+        schemaname: row.schemaname,
+        tablename: row.tablename,
+        qual: row.qual,
+        with_check: row.with_check,
+      }))
     );
 
     const presentPolicyKeys = getPresentPolicyKeys(parsedPolicyRows);
@@ -585,6 +510,11 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
     const forbiddenPoliciesPresent =
       getForbiddenPoliciesPresent(presentPolicyKeys);
     const unsafePolicies = getUnsafePolicies(parsedPolicyRows);
+
+    const missingColumns = getMissingRequiredColumns(catalog.presentColumns);
+    const missingRuntimeContracts = getMissingRuntimeContracts(
+      catalog.runtimeContracts
+    );
 
     const requiredMigrationsPresent = missingMigrationVersions.length === 0;
 
@@ -609,7 +539,8 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
     const invoiceImageStoragePathShapeValid =
       isInvoiceImageStoragePathInvariantValid();
 
-    const requiredColumnsPresent = schemaReadiness.ready;
+    const requiredColumnsPresent = missingColumns.length === 0;
+    const runtimeContractsPresent = missingRuntimeContracts.length === 0;
 
     const allHealthy =
       requiredMigrationsPresent &&
@@ -621,7 +552,8 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
       authIsAdminHelperValid &&
       criticalPolicyPredicatesValid &&
       invoiceImageStoragePathShapeValid &&
-      requiredColumnsPresent;
+      requiredColumnsPresent &&
+      runtimeContractsPresent;
 
     const display_order =
       tenantIsolationMigration &&
@@ -631,7 +563,8 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
       authIsAdminHelperValid &&
       criticalPolicyPredicatesValid &&
       invoiceImageStoragePathShapeValid &&
-      requiredColumnsPresent;
+      requiredColumnsPresent &&
+      runtimeContractsPresent;
 
     return {
       display_order,
@@ -644,15 +577,22 @@ export async function checkMigrations(): Promise<MigrationCheckResult> {
       criticalPolicyPredicatesValid,
       invoiceImageStoragePathShapeValid,
       requiredColumnsPresent,
+      runtimeContractsPresent,
+      catalogAccessFailed: false,
       allHealthy,
       missingMigrationVersions,
       missingPolicies,
       forbiddenPoliciesPresent,
       invalidHelpers,
       unsafePolicies,
-      missingColumns: schemaReadiness.missingColumns,
+      missingColumns,
+      missingRuntimeContracts,
     };
-  } catch {
-    return unhealthyResult();
+  } catch (error) {
+    if (error instanceof HealthCatalogAccessError) {
+      return catalogAccessFailureResult();
+    }
+
+    return catalogAccessFailureResult();
   }
 }
