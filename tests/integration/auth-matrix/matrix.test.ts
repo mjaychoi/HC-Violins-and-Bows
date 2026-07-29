@@ -15,13 +15,14 @@ import {
 const describeIfEnabled = isAuthMatrixEnabled() ? describe : describe.skip;
 
 describeIfEnabled('auth matrix HTTP authorization', () => {
-  const env = loadAuthMatrixEnvironment();
+  const loadedEnv = loadAuthMatrixEnvironment();
   const tokens = loadAuthMatrixJwtFixtures();
 
-  if (!env || !tokens) {
+  if (!loadedEnv || !tokens) {
     throw new Error('Auth matrix environment failed to load.');
   }
 
+  const baseUrl = loadedEnv.baseUrl;
   const orgAInstrumentId = process.env.AUTH_MATRIX_ORG_A_INSTRUMENT_ID;
   const orgBInstrumentId = process.env.AUTH_MATRIX_ORG_B_INSTRUMENT_ID;
 
@@ -34,7 +35,7 @@ describeIfEnabled('auth matrix HTTP authorization', () => {
       headers.set('Authorization', `Bearer ${init.token}`);
     }
 
-    return fetch(new URL(path, env.baseUrl), {
+    return fetch(new URL(path, baseUrl), {
       ...init,
       headers,
     });

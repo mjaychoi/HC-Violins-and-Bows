@@ -3,9 +3,7 @@
  * Never commit secret values — only env var names are referenced elsewhere.
  */
 
-const PRODUCTION_PROJECT_REFS = new Set([
-  'dmilmlhquttcozxlpfxw',
-]);
+const PRODUCTION_PROJECT_REFS = new Set(['dmilmlhquttcozxlpfxw']);
 
 const PRODUCTION_HOST_PATTERNS = [
   /hc-violins-and-bows\.vercel\.app/i,

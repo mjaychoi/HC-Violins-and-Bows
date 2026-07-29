@@ -26,7 +26,11 @@ function migrationVersionFromFilename(filename: string): string {
   return stem;
 }
 
-function listExpectedMigrations(): Array<{ version: string; sha256: string; filename: string }> {
+function listExpectedMigrations(): Array<{
+  version: string;
+  sha256: string;
+  filename: string;
+}> {
   return fs
     .readdirSync(migrationsDir)
     .filter(name => name.endsWith('.sql'))
@@ -38,9 +42,7 @@ function listExpectedMigrations(): Array<{ version: string; sha256: string; file
     }));
 }
 
-async function listAppliedMigrations(
-  databaseUrl: string
-): Promise<string[]> {
+async function listAppliedMigrations(databaseUrl: string): Promise<string[]> {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
@@ -68,7 +70,8 @@ async function main() {
     )
   );
 
-  const databaseUrl = process.env.STAGING_DATABASE_URL ?? process.env.DATABASE_URL;
+  const databaseUrl =
+    process.env.STAGING_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!databaseUrl) {
     console.log('No DATABASE_URL provided; filename/hash inventory only.');
     return;

@@ -59,7 +59,8 @@ describe('staging env guard', () => {
       assertStagingEnvironment({
         ...baseStaging,
         supabaseUrl: 'https://not-supabase.example.com',
-        databaseUrl: 'postgresql://postgres:password@unknown.example.com:5432/postgres',
+        databaseUrl:
+          'postgresql://postgres:password@unknown.example.com:5432/postgres',
         serviceRoleKey: 'not-a-jwt-token',
       })
     ).toThrow(/missing or ambiguous/i);

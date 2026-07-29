@@ -61,16 +61,17 @@ jobs:
     if: >-
       ${{ needs.static-validation.result == 'success' &&
           github.event_name == 'workflow_dispatch' &&
-          github.repository == 'mjaychoi/HC-Violins-and-Bows' &&
-          secrets.STAGING_SUPABASE_PROJECT_REF != '' &&
-          secrets.STAGING_SUPABASE_URL != '' &&
-          secrets.STAGING_SUPABASE_ANON_KEY != '' &&
-          secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY != '' &&
-          secrets.STAGING_DATABASE_URL != '' &&
-          secrets.STAGING_APP_BASE_URL != '' }}
+          github.repository == 'mjaychoi/HC-Violins-and-Bows' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: hosted-staging
+    env:
+      STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -79,11 +80,28 @@ jobs:
           node-version: '20'
           cache: npm
 
+      - name: Require hosted-staging secrets
+        run: |
+          missing=0
+          for name in \
+            STAGING_SUPABASE_PROJECT_REF \
+            STAGING_SUPABASE_URL \
+            STAGING_SUPABASE_ANON_KEY \
+            STAGING_SUPABASE_SERVICE_ROLE_KEY \
+            STAGING_DATABASE_URL \
+            STAGING_APP_BASE_URL
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required hosted-staging secret mapped to ${name}."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Configure all six STAGING_* secrets on the hosted-staging environment."
+            exit 1
+          fi
+
       - name: Deny production project unconditionally
-        env:
-          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
-          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: |
           if [ "$STAGING_SUPABASE_PROJECT_REF" = "dmilmlhquttcozxlpfxw" ]; then
             echo "Production project ref is not allowed for hosted staging integration."
@@ -101,37 +119,20 @@ jobs:
       - run: npm ci
 
       - name: Staging environment guard
-        env:
-          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
-          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
         run: npx tsx scripts/staging/env-guard-cli.ts
 
       - name: Verify migration inventory
         run: npm run check:migrations
 
       - name: Verify applied migration set
-        env:
-          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: npx tsx scripts/staging/verify-migration-set.ts
 
       - name: Run hosted SQL audits
         env:
-          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
-          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: bash scripts/staging/run-pr58-audits.sh
 
       - name: Health check
-        env:
-          STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
         run: |
           body="$(curl -fsS "${STAGING_APP_BASE_URL%/}/api/health")"
           echo "$body" | jq -e '.status == "ok"' >/dev/null
@@ -149,6 +150,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: hosted-staging
+    env:
+      STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+      AUTH_MATRIX_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      AUTH_MATRIX_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      AUTH_MATRIX_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -168,30 +180,11 @@ jobs:
           fi
 
       - name: Staging environment guard
-        env:
-          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
-          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
         run: npx tsx scripts/staging/env-guard-cli.ts
 
       - name: Bootstrap synthetic fixtures and run matrix
-        env:
-          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-          STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
-          AUTH_MATRIX_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          AUTH_MATRIX_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-          AUTH_MATRIX_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
         run: npx tsx scripts/auth-matrix/run-hosted-matrix.ts
 
       - name: Cleanup synthetic fixtures
         if: always()
-        env:
-          AUTH_MATRIX_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
         run: npx tsx scripts/auth-matrix/cleanup-fixtures.ts

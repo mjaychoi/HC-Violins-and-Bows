@@ -37,28 +37,28 @@ Do **not** widen API auth to accept Bearer tokens solely to pass tests without a
 
 ## Local environment variables
 
-| Variable | Purpose |
-|----------|---------|
-| `AUTH_MATRIX_ENABLED` | Set to `1` to run integration tests locally |
-| `AUTH_MATRIX_SUPABASE_URL` | Staging/local Supabase URL |
-| `AUTH_MATRIX_SUPABASE_ANON_KEY` | Anon key for the staging project |
-| `AUTH_MATRIX_SERVICE_ROLE_KEY` | Service role for fixture bootstrap only |
-| `AUTH_MATRIX_BASE_URL` | Running app base URL (e.g. `http://127.0.0.1:3000`) |
+| Variable                        | Purpose                                             |
+| ------------------------------- | --------------------------------------------------- |
+| `AUTH_MATRIX_ENABLED`           | Set to `1` to run integration tests locally         |
+| `AUTH_MATRIX_SUPABASE_URL`      | Staging/local Supabase URL                          |
+| `AUTH_MATRIX_SUPABASE_ANON_KEY` | Anon key for the staging project                    |
+| `AUTH_MATRIX_SERVICE_ROLE_KEY`  | Service role for fixture bootstrap only             |
+| `AUTH_MATRIX_BASE_URL`          | Running app base URL (e.g. `http://127.0.0.1:3000`) |
 
 Interim local-only Bearer tokens (not used by hosted CI):
 
-| Variable | Purpose |
-|----------|---------|
-| `AUTH_MATRIX_JWT_ORG_A_ADMIN` | Local smoke Bearer token |
+| Variable                       | Purpose                  |
+| ------------------------------ | ------------------------ |
+| `AUTH_MATRIX_JWT_ORG_A_ADMIN`  | Local smoke Bearer token |
 | `AUTH_MATRIX_JWT_ORG_A_MEMBER` | Local smoke Bearer token |
-| `AUTH_MATRIX_JWT_ORG_B_ADMIN` | Local smoke Bearer token |
+| `AUTH_MATRIX_JWT_ORG_B_ADMIN`  | Local smoke Bearer token |
 | `AUTH_MATRIX_JWT_ORG_B_MEMBER` | Local smoke Bearer token |
 
 Optional IDs after seeding (local or runtime bootstrap):
 
-| Variable | Purpose |
-|----------|---------|
-| `AUTH_MATRIX_ORG_A_INSTRUMENT_ID` | Same-org instrument for matrix |
+| Variable                          | Purpose                         |
+| --------------------------------- | ------------------------------- |
+| `AUTH_MATRIX_ORG_A_INSTRUMENT_ID` | Same-org instrument for matrix  |
 | `AUTH_MATRIX_ORG_B_INSTRUMENT_ID` | Cross-org instrument for matrix |
 
 ## Bootstrap (local Supabase)

@@ -64,9 +64,7 @@ export function extractProjectRefFromDatabaseUrl(
       return direct[1].toLowerCase();
     }
 
-    const pooler = host.match(
-      /^aws-0-[a-z0-9-]+\.pooler\.supabase\.com$/i
-    );
+    const pooler = host.match(/^aws-0-[a-z0-9-]+\.pooler\.supabase\.com$/i);
     if (pooler) {
       const user = decodeURIComponent(parsed.username);
       const userMatch = user.match(/^postgres\.([a-z0-9]+)$/i);
@@ -113,7 +111,10 @@ function decodeJwtRef(token: string): string | null {
   }
 }
 
-function assertNonProductionRef(projectRef: string | null, label: string): void {
+function assertNonProductionRef(
+  projectRef: string | null,
+  label: string
+): void {
   if (!projectRef) {
     return;
   }
@@ -147,7 +148,10 @@ function assertNoProductionHostPatterns(value: string, label: string): void {
   }
 }
 
-function assertAppBaseUrlAllowed(appBaseUrl: string, approvedRef: string): void {
+function assertAppBaseUrlAllowed(
+  appBaseUrl: string,
+  approvedRef: string
+): void {
   assertNoProductionHostPatterns(appBaseUrl, 'Application base URL');
 
   let parsed: URL;

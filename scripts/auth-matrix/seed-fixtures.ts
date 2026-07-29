@@ -6,14 +6,6 @@ dotenv.config({ path: '.env.local' });
 const ORG_A_ID = '11111111-1111-4111-8111-111111111111';
 const ORG_B_ID = '22222222-2222-4222-8222-222222222222';
 
-function requiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`Missing ${name}`);
-  }
-  return value;
-}
-
 async function main() {
   const url =
     process.env.AUTH_MATRIX_SUPABASE_URL?.trim() ||

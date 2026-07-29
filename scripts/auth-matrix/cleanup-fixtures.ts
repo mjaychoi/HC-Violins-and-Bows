@@ -27,7 +27,10 @@ async function main() {
   });
 
   await supabase.from('clients').delete().in('org_id', [ORG_A_ID, ORG_B_ID]);
-  await supabase.from('instruments').delete().in('org_id', [ORG_A_ID, ORG_B_ID]);
+  await supabase
+    .from('instruments')
+    .delete()
+    .in('org_id', [ORG_A_ID, ORG_B_ID]);
   await supabase.from('organizations').delete().in('id', [ORG_A_ID, ORG_B_ID]);
 
   console.log('Auth matrix fixtures removed.');
