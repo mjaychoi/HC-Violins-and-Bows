@@ -14,6 +14,8 @@ const CONNECTION_TIMEOUT_MS = 5_000;
 const STATEMENT_TIMEOUT_MS = 10_000;
 const POOL_MAX = 1;
 const POOL_IDLE_TIMEOUT_MS = 30_000;
+const SUCCESS_SNAPSHOT_TTL_MS = 30_000;
+const FAILURE_SNAPSHOT_TTL_MS = 3_000;
 
 export class HealthCatalogAccessError extends Error {
   readonly code = 'HEALTH_CATALOG_ACCESS_FAILED';
@@ -27,11 +29,65 @@ export class HealthCatalogAccessError extends Error {
 const REQUIRED_FUNCTION_NAMES = ['org_id', 'user_role', 'is_admin'] as const;
 
 let catalogPool: Pool | null = null;
+let poolDatabaseUrl: string | null = null;
 let pgModulePromise: Promise<typeof import('pg')> | null = null;
+
+type CachedSuccessSnapshot = {
+  policyNamesKey: string;
+  snapshot: HealthCatalogSnapshot;
+  expiresAt: number;
+};
+
+type CachedFailureSnapshot = {
+  policyNamesKey: string;
+  expiresAt: number;
+};
+
+let successSnapshotCache: CachedSuccessSnapshot | null = null;
+let failureSnapshotCache: CachedFailureSnapshot | null = null;
+let inFlightSnapshotPromise: Promise<HealthCatalogSnapshot> | null = null;
+let inFlightPolicyNamesKey: string | null = null;
 
 function getDatabaseUrl(): string | null {
   const url = process.env.DATABASE_URL?.trim();
   return url ? url : null;
+}
+
+function getPolicyNamesKey(policyNames: readonly string[]): string {
+  if (policyNames.length === 0) {
+    return '';
+  }
+
+  return [...policyNames].sort().join('\0');
+}
+
+function resetHealthCatalogSnapshotCache(): void {
+  successSnapshotCache = null;
+  failureSnapshotCache = null;
+  inFlightSnapshotPromise = null;
+  inFlightPolicyNamesKey = null;
+}
+
+async function resetCatalogPoolIfDatabaseUrlChanged(): Promise<void> {
+  const connectionString = getDatabaseUrl();
+
+  if (poolDatabaseUrl === connectionString) {
+    return;
+  }
+
+  const previousPool = catalogPool;
+  catalogPool = null;
+  pgModulePromise = null;
+  poolDatabaseUrl = connectionString;
+  resetHealthCatalogSnapshotCache();
+
+  if (previousPool) {
+    try {
+      await previousPool.end();
+    } catch {
+      // Ignore pool teardown failures during URL rotation.
+    }
+  }
 }
 
 async function loadPgModule() {
@@ -43,6 +99,8 @@ async function loadPgModule() {
 }
 
 async function getCatalogPool(): Promise<Pool> {
+  await resetCatalogPoolIfDatabaseUrlChanged();
+
   const connectionString = getDatabaseUrl();
   if (!connectionString) {
     throw new HealthCatalogAccessError();
@@ -78,7 +136,7 @@ async function runReadOnlyCatalogQuery<T extends QueryResultRow>(
   return client.query<T>(text, values);
 }
 
-export async function readHealthCatalogSnapshot(options?: {
+async function readHealthCatalogSnapshotUncached(options?: {
   policyNames?: readonly string[];
 }): Promise<HealthCatalogSnapshot> {
   const policyNames = options?.policyNames ?? [];
@@ -208,18 +266,80 @@ export async function readHealthCatalogSnapshot(options?: {
   }
 }
 
+export async function readHealthCatalogSnapshot(options?: {
+  policyNames?: readonly string[];
+}): Promise<HealthCatalogSnapshot> {
+  const policyNames = options?.policyNames ?? [];
+  const policyNamesKey = getPolicyNamesKey(policyNames);
+  const now = Date.now();
+
+  await resetCatalogPoolIfDatabaseUrlChanged();
+
+  if (
+    successSnapshotCache &&
+    successSnapshotCache.policyNamesKey === policyNamesKey &&
+    successSnapshotCache.expiresAt > now
+  ) {
+    return successSnapshotCache.snapshot;
+  }
+
+  if (
+    failureSnapshotCache &&
+    failureSnapshotCache.policyNamesKey === policyNamesKey &&
+    failureSnapshotCache.expiresAt > now
+  ) {
+    throw new HealthCatalogAccessError();
+  }
+
+  if (inFlightSnapshotPromise && inFlightPolicyNamesKey === policyNamesKey) {
+    return inFlightSnapshotPromise;
+  }
+
+  inFlightPolicyNamesKey = policyNamesKey;
+  inFlightSnapshotPromise = readHealthCatalogSnapshotUncached(options)
+    .then(snapshot => {
+      successSnapshotCache = {
+        policyNamesKey,
+        snapshot,
+        expiresAt: Date.now() + SUCCESS_SNAPSHOT_TTL_MS,
+      };
+      failureSnapshotCache = null;
+      return snapshot;
+    })
+    .catch(error => {
+      failureSnapshotCache = {
+        policyNamesKey,
+        expiresAt: Date.now() + FAILURE_SNAPSHOT_TTL_MS,
+      };
+      successSnapshotCache = null;
+      throw sanitizeConnectionFailure(error);
+    })
+    .finally(() => {
+      inFlightSnapshotPromise = null;
+      inFlightPolicyNamesKey = null;
+    });
+
+  return inFlightSnapshotPromise;
+}
+
 export function resetHealthCatalogPoolForTests(): void {
   catalogPool = null;
+  poolDatabaseUrl = null;
   pgModulePromise = null;
+  resetHealthCatalogSnapshotCache();
 }
 
 export async function closeHealthCatalogPoolForTests(): Promise<void> {
   if (!catalogPool) {
+    resetHealthCatalogSnapshotCache();
+    poolDatabaseUrl = null;
     return;
   }
 
   const pool = catalogPool;
   catalogPool = null;
+  poolDatabaseUrl = null;
   pgModulePromise = null;
+  resetHealthCatalogSnapshotCache();
   await pool.end();
 }
