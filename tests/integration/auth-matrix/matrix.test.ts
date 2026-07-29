@@ -10,19 +10,30 @@ import {
   isAuthMatrixEnabled,
   loadAuthMatrixEnvironment,
   loadAuthMatrixJwtFixtures,
+  type AuthMatrixEnvironment,
+  type AuthMatrixJwtFixtures,
 } from './env-guard';
 
 const describeIfEnabled = isAuthMatrixEnabled() ? describe : describe.skip;
 
 describeIfEnabled('auth matrix HTTP authorization', () => {
-  const loadedEnv = loadAuthMatrixEnvironment();
-  const tokens = loadAuthMatrixJwtFixtures();
+  let loadedEnv: AuthMatrixEnvironment;
+  let tokens: AuthMatrixJwtFixtures;
+  let baseUrl: string;
 
-  if (!loadedEnv || !tokens) {
-    throw new Error('Auth matrix environment failed to load.');
-  }
+  beforeAll(() => {
+    const env = loadAuthMatrixEnvironment();
+    const jwtFixtures = loadAuthMatrixJwtFixtures();
 
-  const baseUrl = loadedEnv.baseUrl;
+    if (!env || !jwtFixtures) {
+      throw new Error('Auth matrix environment failed to load.');
+    }
+
+    loadedEnv = env;
+    tokens = jwtFixtures;
+    baseUrl = loadedEnv.baseUrl;
+  });
+
   const orgAInstrumentId = process.env.AUTH_MATRIX_ORG_A_INSTRUMENT_ID;
   const orgBInstrumentId = process.env.AUTH_MATRIX_ORG_B_INSTRUMENT_ID;
 
