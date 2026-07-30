@@ -538,7 +538,7 @@ describe('dashboardUtils', () => {
         year: 1700,
         price: -100,
       });
-      expect(errors1).toContain('Price must be a valid positive number');
+      expect(errors1).toContain('Retail Price must be a valid positive number');
 
       const errors2 = validateInstrumentData({
         maker: 'Stradivari',
@@ -546,7 +546,9 @@ describe('dashboardUtils', () => {
         year: 1700,
         price: 100,
       });
-      expect(errors2).not.toContain('Price must be a valid positive number');
+      expect(errors2).not.toContain(
+        'Retail Price must be a valid positive number'
+      );
     });
   });
 

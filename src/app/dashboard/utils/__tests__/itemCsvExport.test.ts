@@ -35,6 +35,16 @@ describe('Item CSV export', () => {
     const [header] = csv.split('\n');
 
     expect(header).toBe(ITEM_CSV_HEADERS.join(','));
+    expect(ITEM_CSV_HEADERS).toEqual([
+      'Item Number',
+      'Maker',
+      'Type',
+      'Year',
+      'Retail Price',
+      'Certificate',
+      'Note',
+      'Status',
+    ]);
     expect(csv).not.toContain('cost_price');
     expect(csv).not.toContain('consignment_price');
     expect(csv).not.toContain('reserved_by_user_id');

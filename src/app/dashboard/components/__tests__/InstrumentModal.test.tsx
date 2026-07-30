@@ -1,11 +1,15 @@
 /* eslint-disable @next/next/no-img-element */
 import React from 'react';
-import { render, screen, waitFor } from '@/test-utils/render';
+import { fireEvent, render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import InstrumentModal from '../InstrumentModal';
 import { Instrument } from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 import { useAppFeedback } from '@/hooks/useAppFeedback';
+import {
+  CERTIFICATE_PDF_TOO_LARGE_ERROR,
+  MAX_CERTIFICATE_PDF_SIZE_BYTES,
+} from '@/constants/certificateUpload';
 
 // Mock dependencies
 jest.mock('@/hooks/useOutsideClose');
@@ -160,6 +164,7 @@ describe('InstrumentModal', () => {
     );
 
     expect(screen.getByText('Instrument Details')).toBeInTheDocument();
+    expect(screen.getByText('Retail Price')).toBeInTheDocument();
   });
 
   it('should call onClose when close button is clicked', async () => {
@@ -234,9 +239,69 @@ describe('InstrumentModal', () => {
     });
     expect(screen.getByText(/^Certificates$/)).toBeInTheDocument();
     expect(screen.getByLabelText('Upload certificate PDF')).toBeInTheDocument();
+    expect(screen.getByText('PDF only, max 20MB')).toBeInTheDocument();
     expect(
       screen.getByText('No certificate files uploaded yet.')
     ).toBeInTheDocument();
+  });
+
+  it('allows an exactly 20 MiB certificate into the upload flow', async () => {
+    const file = new File(['%PDF-'], 'boundary.pdf', {
+      type: 'application/pdf',
+    });
+    Object.defineProperty(file, 'size', {
+      configurable: true,
+      value: MAX_CERTIFICATE_PDF_SIZE_BYTES,
+    });
+
+    render(
+      <InstrumentModal
+        isOpen={true}
+        onClose={mockOnClose}
+        instrument={mockInstrument}
+      />
+    );
+    fireEvent.change(screen.getByLabelText('Upload certificate PDF'), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(
+        mockApiFetch.mock.calls.some(([, init]) => init?.method === 'POST')
+      ).toBe(true);
+    });
+  });
+
+  it('rejects an upload over 20 MiB, resets input, and skips the API', async () => {
+    const user = userEvent.setup();
+    const file = new File(['%PDF-'], 'oversize.pdf', {
+      type: 'application/pdf',
+    });
+    Object.defineProperty(file, 'size', {
+      configurable: true,
+      value: MAX_CERTIFICATE_PDF_SIZE_BYTES + 1,
+    });
+
+    render(
+      <InstrumentModal
+        isOpen={true}
+        onClose={mockOnClose}
+        instrument={mockInstrument}
+      />
+    );
+    const input = screen.getByLabelText(
+      'Upload certificate PDF'
+    ) as HTMLInputElement;
+    await user.upload(input, file);
+
+    expect(input.value).toBe('');
+    expect(mockHandleError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: CERTIFICATE_PDF_TOO_LARGE_ERROR }),
+      'InstrumentCertificateUpload'
+    );
+    expect(
+      mockApiFetch.mock.calls.some(([, init]) => init?.method === 'POST')
+    ).toBe(false);
   });
 
   it('renders existing certificate metadata with replace and delete controls', async () => {
@@ -393,9 +458,16 @@ describe('InstrumentModal', () => {
     await user.click(
       await screen.findByLabelText('Replace certificate old-cert.pdf')
     );
+    const replacement = new File(['new'], 'new-cert.pdf', {
+      type: 'application/pdf',
+    });
+    Object.defineProperty(replacement, 'size', {
+      configurable: true,
+      value: MAX_CERTIFICATE_PDF_SIZE_BYTES,
+    });
     await user.upload(
       screen.getByLabelText('Replace certificate PDF'),
-      new File(['new'], 'new-cert.pdf', { type: 'application/pdf' })
+      replacement
     );
 
     await waitFor(() => {
@@ -411,6 +483,55 @@ describe('InstrumentModal', () => {
     expect(mockShowSuccess).toHaveBeenCalledWith(
       'Certificate replaced successfully.'
     );
+  });
+
+  it('rejects an oversized replacement before calling the API', async () => {
+    const user = userEvent.setup();
+    mockApiFetchByUrl({
+      '/api/instruments/inst-1/images': { data: [] },
+      '/api/instruments/inst-1/certificates': {
+        data: [
+          {
+            id: 'cert-1',
+            name: 'old-cert.pdf',
+            path: 'instruments/inst-1/certificates/old-cert.pdf',
+            size: 1024,
+            createdAt: '2026-05-08T00:00:00Z',
+          },
+        ],
+      },
+    });
+    const replacement = new File(['new'], 'new-cert.pdf', {
+      type: 'application/pdf',
+    });
+    Object.defineProperty(replacement, 'size', {
+      configurable: true,
+      value: MAX_CERTIFICATE_PDF_SIZE_BYTES + 1,
+    });
+
+    render(
+      <InstrumentModal
+        isOpen={true}
+        onClose={mockOnClose}
+        instrument={mockInstrument}
+      />
+    );
+    await user.click(
+      await screen.findByLabelText('Replace certificate old-cert.pdf')
+    );
+    const input = screen.getByLabelText(
+      'Replace certificate PDF'
+    ) as HTMLInputElement;
+    await user.upload(input, replacement);
+
+    expect(input.value).toBe('');
+    expect(mockHandleError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: CERTIFICATE_PDF_TOO_LARGE_ERROR }),
+      'InstrumentCertificateReplace'
+    );
+    expect(
+      mockApiFetch.mock.calls.some(([, init]) => init?.method === 'PUT')
+    ).toBe(false);
   });
 
   it('uploads multiple instrument images from details', async () => {

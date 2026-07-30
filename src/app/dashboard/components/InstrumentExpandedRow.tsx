@@ -21,6 +21,11 @@ import {
   readApiResponseBody,
 } from '@/utils/handleApiResponse';
 import CertificateBadge from './CertificateBadge';
+import {
+  CERTIFICATE_PDF_SIZE_HELP_TEXT,
+  CERTIFICATE_PDF_TOO_LARGE_ERROR,
+  MAX_CERTIFICATE_PDF_SIZE_BYTES,
+} from '@/constants/certificateUpload';
 
 interface InstrumentExpandedRowProps {
   instrument: Instrument;
@@ -294,6 +299,13 @@ export function InstrumentExpandedRow({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file || !instrument?.id || !canUploadInstrumentMedia) return;
+    if (file.size > MAX_CERTIFICATE_PDF_SIZE_BYTES) {
+      handleError(
+        new Error(CERTIFICATE_PDF_TOO_LARGE_ERROR),
+        'CertificateUpload'
+      );
+      return;
+    }
 
     setUploadingCertificate(true);
     try {
@@ -700,7 +712,7 @@ export function InstrumentExpandedRow({
                     {uploadingCertificate ? 'Uploading…' : 'Upload PDF'}
                   </button>
                   <span className="text-xs text-gray-500">
-                    PDF only, max 100MB
+                    {CERTIFICATE_PDF_SIZE_HELP_TEXT}
                   </span>
                 </div>
               ) : null}

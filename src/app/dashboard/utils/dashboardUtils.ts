@@ -188,7 +188,7 @@ export const validateInstrumentData = (
   if (normalizedPrice) {
     const priceNum = parseFloat(normalizedPrice);
     if (isNaN(priceNum) || priceNum <= 0) {
-      errors.push('Price must be a valid positive number');
+      errors.push('Retail Price must be a valid positive number');
     }
   }
 

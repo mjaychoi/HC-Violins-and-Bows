@@ -2,6 +2,10 @@ import type { NextRequest } from 'next/server';
 import { validateUUID } from '@/utils/inputValidation';
 import { getStorage } from '@/utils/storage';
 import { POST, PUT } from '../route';
+import {
+  CERTIFICATE_PDF_TOO_LARGE_ERROR,
+  MAX_CERTIFICATE_PDF_SIZE_BYTES,
+} from '@/constants/certificateUpload';
 
 const mockStorage = {
   validateFile: jest.fn(),
@@ -267,6 +271,48 @@ describe('/api/instruments/[id]/certificates PDF signature validation', () => {
     expect(response.status).toBe(200);
     expect(mockStorage.saveFile).toHaveBeenCalledTimes(1);
     expect(mockAuthContext.userSupabase.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows exactly 20 MiB to proceed past size validation', async () => {
+    setupSuccessfulPostMocks();
+
+    const response = await POST(
+      createUploadRequest({
+        method: 'POST',
+        fileName: 'certificate.pdf',
+        mimeType: 'application/pdf',
+        bytes: Buffer.from('%PDF-1.4 boundary content'),
+        size: MAX_CERTIFICATE_PDF_SIZE_BYTES,
+      }),
+      { params: Promise.resolve({ id: instrumentId }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockStorage.saveFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects 20 MiB plus one byte before reading or storing the file', async () => {
+    setupMinimalAdminInstrumentLookup();
+    const request = createUploadRequest({
+      method: 'POST',
+      fileName: 'certificate.pdf',
+      mimeType: 'application/pdf',
+      bytes: Buffer.from('%PDF-1.4 boundary content'),
+      size: MAX_CERTIFICATE_PDF_SIZE_BYTES + 1,
+    });
+
+    const response = await POST(request, {
+      params: Promise.resolve({ id: instrumentId }),
+    });
+    const json = await response.json();
+    const uploadedFile = (await request.formData()).get(
+      'certificate'
+    ) as unknown as { arrayBuffer: jest.Mock };
+
+    expect(response.status).toBe(400);
+    expect(json.message).toBe(CERTIFICATE_PDF_TOO_LARGE_ERROR);
+    expect(uploadedFile.arrayBuffer).not.toHaveBeenCalled();
+    expect(mockStorage.saveFile).not.toHaveBeenCalled();
   });
 
   it('accepts valid PDF on PUT', async () => {

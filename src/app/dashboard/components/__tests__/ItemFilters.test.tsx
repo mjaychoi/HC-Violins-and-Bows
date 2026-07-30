@@ -49,6 +49,9 @@ describe('ItemFilters', () => {
     // UX: Search bar is now in the page-level quick filters, not in ItemFilters
     // expect(screen.getByPlaceholderText('Search items...')).toBeInTheDocument();
     expect(screen.getByText('Status')).toBeInTheDocument();
+    expect(screen.getByText('Retail Price Range')).toBeInTheDocument();
+    expect(screen.getByLabelText('Minimum retail price')).toBeInTheDocument();
+    expect(screen.getByLabelText('Maximum retail price')).toBeInTheDocument();
   });
 
   it('handles filter toggles', () => {
