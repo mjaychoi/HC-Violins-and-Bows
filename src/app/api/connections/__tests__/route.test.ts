@@ -120,15 +120,96 @@ describe('/api/connections', () => {
       const response = await GET(request);
       const json = await response.json();
 
-      expect(mockQuery.select).toHaveBeenCalledWith(
-        'id, client_id, instrument_id, relationship_type, notes, display_order, created_at',
-        { count: 'exact' }
-      );
+      // F1: the collection GET must embed client/instrument via the same
+      // select shape used everywhere else (by-ID / create / update /
+      // reorder), so every surface renders identical data.
+      const selectArg = mockQuery.select.mock.calls[0][0] as string;
+      expect(selectArg).toContain('client:clients(*)');
+      expect(selectArg).toContain('instrument:instruments(*)');
+      expect(mockQuery.select).toHaveBeenCalledWith(selectArg, {
+        count: 'exact',
+      });
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
       expect(mockQuery.range).toHaveBeenCalledWith(0, 49);
       expect(response.status).toBe(200);
       expect(json.data).toEqual([mockConnection]);
       expect(json.count).toBe(1);
+    });
+
+    it('F1: enriches each row with client and instrument via the shared normalization layer', async () => {
+      const dbRow = {
+        ...mockConnection,
+        client: {
+          id: mockConnection.client_id,
+          name: 'Ada Lovelace',
+          email: 'ada@example.com',
+          phone: '555-111-2222',
+          client_number: 'CL001',
+          tags: ['VIP'],
+          interest: 'Violin',
+          note: 'Test client',
+          created_at: '2024-01-01T00:00:00Z',
+        },
+        instrument: {
+          id: mockConnection.instrument_id,
+          maker: 'Stradivari',
+          type: 'Violin',
+          year: 1721,
+          serial_number: 'SN-001',
+          status: 'Available',
+        },
+      };
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [dbRow],
+          error: null,
+          count: 1,
+        }),
+      };
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
+
+      const request = new NextRequest('http://localhost/api/connections');
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data[0].client).toEqual(
+        expect.objectContaining({
+          first_name: 'Ada',
+          last_name: 'Lovelace',
+          contact_number: '555-111-2222',
+          client_number: 'CL001',
+        })
+      );
+      expect(json.data[0].instrument).toEqual(
+        expect.objectContaining({ maker: 'Stradivari', type: 'Violin' })
+      );
+    });
+
+    it('F1: renders null client/instrument through untouched so the UI can fall back safely', async () => {
+      const dbRow = { ...mockConnection, client: null, instrument: null };
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [dbRow],
+          error: null,
+          count: 1,
+        }),
+      };
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
+
+      const request = new NextRequest('http://localhost/api/connections');
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data[0].client).toBeNull();
+      expect(json.data[0].instrument).toBeNull();
     });
 
     it('should hard-cap and mark truncated all=true lists', async () => {
@@ -604,6 +685,69 @@ describe('/api/connections', () => {
       expect(json.error).toContain('Invalid connection data');
     });
 
+    it('F12: maps duplicate Owned unique violation (23505) to 409 INSTRUMENT_ALREADY_OWNED', async () => {
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: '23505',
+          message:
+            'duplicate key value violates unique constraint "client_instruments_single_owner_per_instrument"',
+          details: 'Key (instrument_id)=(instrument-id) already exists.',
+        },
+      });
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Owned',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('INSTRUMENT_ALREADY_OWNED');
+      expect(json.error).not.toContain(
+        'client_instruments_single_owner_per_instrument'
+      );
+      expect(json.error).not.toContain('constraint');
+    });
+
+    it('F12: unrelated unique violations are not reclassified as INSTRUMENT_ALREADY_OWNED', async () => {
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: '23505',
+          message:
+            'duplicate key value violates unique constraint "some_other_unrelated_constraint"',
+        },
+      });
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Interested',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(json.error_code).not.toBe('INSTRUMENT_ALREADY_OWNED');
+    });
+
     it('should return 400 for malformed JSON', async () => {
       const request = new NextRequest('http://localhost/api/connections', {
         method: 'POST',
@@ -691,6 +835,109 @@ describe('/api/connections', () => {
       expect(json.error).toBeDefined();
       expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
     });
+
+    it('F12: maps duplicate Owned unique violation (23505) to 409 on update', async () => {
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: '23505',
+          message:
+            'duplicate key value violates unique constraint "client_instruments_single_owner_per_instrument"',
+        },
+      });
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockConnection.id,
+          relationship_type: 'Owned',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('INSTRUMENT_ALREADY_OWNED');
+    });
+
+    it('F13: rejects client_id reassignment with 400 and does not call the RPC', async () => {
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: jest.fn(),
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockConnection.id,
+          client_id: '11111111-1111-1111-1111-111111111111',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error).toMatch(/client_id/);
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('F13: rejects instrument_id reassignment with 400 and does not call the RPC', async () => {
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: jest.fn(),
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockConnection.id,
+          instrument_id: '22222222-2222-2222-2222-222222222222',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error).toMatch(/instrument_id/);
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('F13: still allows relationship_type/notes updates without client_id/instrument_id', async () => {
+      const updates = { relationship_type: 'Booked', notes: 'updated' };
+      const mockFetchQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+      (mockFetchQuery.single as jest.Mock).mockResolvedValue({
+        data: { ...mockConnection, ...updates },
+        error: null,
+      });
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: mockConnection.id,
+        error: null,
+      });
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockFetchQuery),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: mockConnection.id, ...updates }),
+      });
+      const response = await PATCH(request);
+
+      expect(response.status).toBe(200);
+      expect(mockRpc).toHaveBeenCalledWith('update_connection_atomic', {
+        p_connection_id: mockConnection.id,
+        p_updates: updates,
+      });
+    });
   });
 
   describe('DELETE', () => {
@@ -724,6 +971,32 @@ describe('/api/connections', () => {
 
       expect(response.status).toBe(400);
       expect(json.error).toBe('Connection ID is required');
+    });
+
+    it('F3: maps SOLD_CONNECTION_IMMUTABLE RPC rejection to 409', async () => {
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: {
+          message:
+            'SOLD_CONNECTION_IMMUTABLE: Sold relationships cannot be deleted. Use the sales refund/adjustment workflow instead.',
+        },
+      });
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest(
+        `http://localhost/api/connections?id=${mockConnection.id}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('SOLD_CONNECTION_IMMUTABLE');
+      expect(mockRpc).toHaveBeenCalledWith('delete_connection_atomic', {
+        p_connection_id: mockConnection.id,
+      });
     });
   });
 
