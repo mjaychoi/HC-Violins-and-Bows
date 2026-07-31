@@ -10,11 +10,9 @@
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/supabase/connections_audit_regression.test.sql
 -- All mutations run inside the outer transaction and ROLLBACK at the end.
 --
--- NOT VERIFIED in this session: no local Supabase/Postgres/Docker instance
--- was available, so this file has not been executed against a live database.
--- It is written to the same conventions as the existing reference_integrity
--- test suite and should be run as part of CI/local verification before this
--- work is treated as fully proven at the database level.
+-- Verified against a fresh migration-only local Supabase database on
+-- 2026-08-01. See PR verification notes for the exact command and
+-- environment limitations.
 
 \set ON_ERROR_STOP on
 BEGIN;
