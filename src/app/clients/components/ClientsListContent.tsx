@@ -1,22 +1,26 @@
 'use client';
 
-import React, { Suspense, useEffect, useRef } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useFilters } from '../hooks/useFilters';
 import ClientList from './ClientList';
 import ClientFilters from './ClientFilters';
 import { SearchInput, CardSkeleton } from '@/components/common';
 import type { Client, ClientInstrument } from '@/types';
+import { apiFetch } from '@/utils/apiFetch';
+import { readApiResponseEnvelope } from '@/utils/handleApiResponse';
 
 interface ClientsListContentProps {
   clients: Client[];
   clientsWithInstruments: Set<string>;
   instrumentRelationships: ClientInstrument[];
   loading: {
-    // @deprecated Use hasAnyLoading instead
     any: boolean;
     hasAnyLoading: boolean;
   };
+  error?: unknown | null;
+  truncated?: boolean;
+  onRetry?: () => void;
   onClientClick: (client: Client) => void;
   onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
   onDeleteClient: (client: Client) => void;
@@ -29,6 +33,9 @@ function ClientsListContentInner({
   clientsWithInstruments,
   instrumentRelationships,
   loading,
+  error,
+  truncated = false,
+  onRetry,
   onClientClick,
   onUpdateClient,
   onDeleteClient,
@@ -38,7 +45,9 @@ function ClientsListContentInner({
   const searchParams = useSearchParams();
   const clientIdFromURL = searchParams.get('clientId');
 
-  // Auto-open ClientModal when navigating to /clients?clientId=...
+  const [deepLinkIncomplete, setDeepLinkIncomplete] = useState(false);
+  const deepLinkFetchRef = useRef<string | null>(null);
+
   const autoOpenedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!clientIdFromURL || loading.hasAnyLoading) return;
@@ -46,8 +55,39 @@ function ClientsListContentInner({
     const match = clients.find(c => c.id === clientIdFromURL);
     if (match) {
       autoOpenedRef.current = clientIdFromURL;
+      setDeepLinkIncomplete(false);
       onClientClick(match);
+      return;
     }
+
+    if (deepLinkFetchRef.current === clientIdFromURL) return;
+    deepLinkFetchRef.current = clientIdFromURL;
+
+    void (async () => {
+      try {
+        const res = await apiFetch(
+          `/api/clients?id=${encodeURIComponent(clientIdFromURL)}`
+        );
+        if (!res.ok) {
+          setDeepLinkIncomplete(true);
+          return;
+        }
+        const body = await readApiResponseEnvelope<Client>(
+          res,
+          'Failed to fetch client'
+        );
+        const client = body.data;
+        if (client?.id === clientIdFromURL) {
+          autoOpenedRef.current = clientIdFromURL;
+          setDeepLinkIncomplete(false);
+          onClientClick(client);
+        } else {
+          setDeepLinkIncomplete(true);
+        }
+      } catch {
+        setDeepLinkIncomplete(true);
+      }
+    })();
   }, [clientIdFromURL, clients, loading.hasAnyLoading, onClientClick]);
 
   const {
@@ -64,7 +104,6 @@ function ClientsListContentInner({
     handleColumnSort,
     getSortArrow,
     getActiveFiltersCount,
-    // Pagination
     currentPage,
     totalPages,
     totalCount,
@@ -72,12 +111,79 @@ function ClientsListContentInner({
     setPage,
   } = useFilters(clients, clientsWithInstruments);
 
+  const hasFetchError =
+    Boolean(error) && clients.length === 0 && !loading.hasAnyLoading;
+
+  if (hasFetchError) {
+    return (
+      <div className="p-6">
+        <div
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-6 py-8 text-center"
+        >
+          <p className="text-sm font-medium text-red-800">
+            Could not load clients. Check your connection and try again.
+          </p>
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-4 inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6">
-      {/* Search and Filters */}
+      {Boolean(error) && clients.length > 0 ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-center justify-between gap-3"
+        >
+          <span>
+            Could not refresh the client list. Showing previously loaded data.
+          </span>
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="shrink-0 text-sm font-medium text-amber-900 underline"
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {truncated ? (
+        <div
+          role="status"
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          Showing the first 1,000 clients only. Server-side pagination is
+          planned — counts and filters may be incomplete for larger
+          organizations.
+        </div>
+      ) : null}
+
+      {deepLinkIncomplete ? (
+        <div
+          role="status"
+          className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700"
+        >
+          The requested client is not in the loaded list and could not be
+          fetched. It may be outside the current result set or no longer
+          available.
+        </div>
+      ) : null}
+
       <div className="mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          {/* Search Input */}
           <SearchInput
             placeholder="Search clients..."
             className="flex-1 min-w-[260px] h-10 px-4 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
@@ -86,7 +192,6 @@ function ClientsListContentInner({
             aria-label="Search clients"
           />
 
-          {/* Filters Button */}
           <button
             data-filter-button
             onClick={() => setShowFilters(!showFilters)}
@@ -120,8 +225,6 @@ function ClientsListContentInner({
             )}
           </button>
 
-          {/* Reset Filters Button */}
-          {/* Note: clearAllFilters also resets searchTerm (usePageFilters implementation) */}
           {getActiveFiltersCount() > 0 || searchTerm ? (
             <button
               onClick={clearAllFilters}
@@ -134,7 +237,6 @@ function ClientsListContentInner({
           ) : null}
         </div>
 
-        {/* Filter Panel */}
         {showFilters && (
           <ClientFilters
             isOpen={showFilters}
@@ -149,7 +251,6 @@ function ClientsListContentInner({
         )}
       </div>
 
-      {/* Clients Table */}
       <ClientList
         clients={paginatedClients}
         clientInstruments={instrumentRelationships}
@@ -162,7 +263,6 @@ function ClientsListContentInner({
         newlyCreatedClientId={newlyCreatedClientId}
         onNewlyCreatedClientShown={onNewlyCreatedClientShown}
         selectedClientIdFromURL={clientIdFromURL}
-        // Pagination props
         currentPage={currentPage}
         totalPages={totalPages}
         totalCount={totalCount}
