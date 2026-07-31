@@ -68,6 +68,16 @@ const VALID_TASK_STATUSES = new Set([
   'cancelled',
 ]);
 
+const VALID_TASK_TYPES = new Set([
+  'repair',
+  'rehair',
+  'maintenance',
+  'inspection',
+  'setup',
+  'adjustment',
+  'restoration',
+]);
+
 function toMaintenanceTaskInsertRow(
   input: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at'> & {
     org_id: string;
@@ -79,9 +89,23 @@ function toMaintenanceTaskInsertRow(
 function toMaintenanceTaskUpdateRow(
   input: Partial<MaintenanceTask>
 ): MaintenanceTaskUpdateRow {
-  const { instrument, client, ...rest } = input;
+  const {
+    instrument,
+    client,
+    id: _id,
+    created_at: _createdAt,
+    updated_at: _updatedAt,
+    org_id: _orgId,
+    ...rest
+  } = input as Partial<MaintenanceTask> & {
+    org_id?: string;
+  };
   void instrument;
   void client;
+  void _id;
+  void _createdAt;
+  void _updatedAt;
+  void _orgId;
 
   return rest;
 }
@@ -438,6 +462,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       if (priority && !VALID_TASK_PRIORITIES.has(priority)) {
         return {
           payload: { error: `Invalid priority: ${priority}`, success: false },
+          status: 400,
+        };
+      }
+
+      if (taskType && !VALID_TASK_TYPES.has(taskType)) {
+        return {
+          payload: { error: `Invalid task_type: ${taskType}`, success: false },
           status: 400,
         };
       }

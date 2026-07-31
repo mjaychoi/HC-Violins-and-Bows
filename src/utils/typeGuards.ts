@@ -889,10 +889,10 @@ export const partialClientInstrumentSchema = z.object({
 });
 
 /**
- * Partial MaintenanceTask Schema for updates
+ * Partial MaintenanceTask Schema for updates (mutable fields only).
+ * Immutable / server-managed: id, org_id, created_at, updated_at.
  */
 export const partialMaintenanceTaskSchema = z.object({
-  id: uuidSchema.optional(),
   instrument_id: uuidSchema.optional(),
   client_id: uuidSchema.nullable().optional(),
   task_type: taskTypeSchema.optional(),
@@ -909,8 +909,6 @@ export const partialMaintenanceTaskSchema = z.object({
   actual_hours: z.number().nullable().optional(),
   cost: z.number().nullable().optional(),
   notes: z.string().nullable().optional(),
-  created_at: z.string().optional(),
-  updated_at: z.string().optional(),
   instrument: instrumentSchema.optional(),
   client: clientSchema.optional(),
 });
