@@ -63,6 +63,42 @@ export interface URLStateConfig {
  * clearURLState();
  * ```
  */
+/**
+ * Parses the tracked keys out of a URLSearchParams-like object into the
+ * hook's internal state shape. Pulled out of the effect so the very first
+ * render can compute the correct value synchronously instead of starting
+ * from `{}` and waiting for an effect to "hydrate" it a render later - that
+ * lag is what let a page's own `useState(() => urlState.search ...)`
+ * initializer run before the real value ever arrived (F6).
+ */
+function parseParams(
+  searchParams: ReturnType<typeof useSearchParams>,
+  keys: string[],
+  paramMapping: Record<string, string>,
+  arraySeparator: string
+): Record<string, string | string[] | null> {
+  const state: Record<string, string | string[] | null> = {};
+
+  keys.forEach(key => {
+    const paramName = paramMapping[key] || key;
+    const value = searchParams.get(paramName);
+
+    if (value === null) {
+      state[key] = null;
+    } else if (typeof value === 'string' && value.includes(arraySeparator)) {
+      // 배열 타입 (구분자로 분리)
+      state[key] = value.split(arraySeparator).filter(Boolean);
+    } else if (typeof value === 'string') {
+      // 단일 값
+      state[key] = value;
+    } else {
+      state[key] = null;
+    }
+  });
+
+  return state;
+}
+
 export function useURLState(config: URLStateConfig) {
   const {
     enabled = true,
@@ -75,38 +111,26 @@ export function useURLState(config: URLStateConfig) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // 클라이언트에서만 URL 파라미터 읽기 (SSR 안전)
+  // F6: lazily initialize from the *current* searchParams so the first
+  // render already reflects the URL - no post-mount effect required before
+  // consumers can safely read (and seed their own state from) `urlState`.
   const [urlState, setUrlState] = useState<
     Record<string, string | string[] | null>
-  >({});
+  >(() =>
+    enabled ? parseParams(searchParams, keys, paramMapping, arraySeparator) : {}
+  );
 
   // 업데이트 중인지 추적하여 무한 루프 방지
   const isUpdatingRef = useRef(false);
 
-  // URL에서 상태 읽기 (searchParams 변경 시에만)
+  // URL에서 상태 읽기 (searchParams 변경 시에만) - covers back/forward
+  // navigation and any external change to the URL after the initial render.
   useEffect(() => {
     if (!enabled || isUpdatingRef.current) {
       return;
     }
 
-    const state: Record<string, string | string[] | null> = {};
-
-    keys.forEach(key => {
-      const paramName = paramMapping[key] || key;
-      const value = searchParams.get(paramName);
-
-      if (value === null) {
-        state[key] = null;
-      } else if (typeof value === 'string' && value.includes(arraySeparator)) {
-        // 배열 타입 (구분자로 분리)
-        state[key] = value.split(arraySeparator).filter(Boolean);
-      } else if (typeof value === 'string') {
-        // 단일 값
-        state[key] = value;
-      } else {
-        state[key] = null;
-      }
-    });
+    const state = parseParams(searchParams, keys, paramMapping, arraySeparator);
 
     // ✅ FIXED: 이전 상태와 비교하여 변경된 경우에만 업데이트
     // Direct comparison for strings/arrays (more efficient than JSON.stringify)
