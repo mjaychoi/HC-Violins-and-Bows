@@ -6,7 +6,9 @@ import type { RelationshipType, ClientInstrument } from '@/types';
 import { useConnectedClientsData } from '@/hooks/useUnifiedData';
 import { useConnectionFilters, useConnectionEdit } from './hooks';
 import { useURLState } from '@/hooks/useURLState';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { ConnectionModal, ConnectionSearch } from './components';
+import { RELATIONSHIP_TYPES } from './utils/connectionGrouping';
 import EmptyState from '@/components/common/empty-state/EmptyState';
 import { GuideModal } from '@/components/common/empty-state/GuideModal';
 import { useErrorHandler } from '@/contexts/ToastContext';
@@ -94,16 +96,32 @@ function ConnectedClientsPageContent() {
     clients,
     instruments,
     connections,
+    // Defaults keep this resilient to callers/mocks built against the
+    // pre-F2/F5 shape of useConnectedClientsData that don't set these keys.
+    loading: dataLoading = {
+      clients: false,
+      instruments: false,
+      connections: false,
+    },
+    error: dataError = { connections: null },
+    truncated = false,
     createConnection,
     updateConnection,
     deleteConnection,
     fetchConnections,
   } = useConnectedClientsData();
 
-  // Loading states
-  const { loading, submitting, withSubmitting } = useLoadingState();
-  // FIXED: useLoadingState returns boolean, so use it directly
-  const isLoading = loading;
+  // F5: the collection's own loading/error state, not a local
+  // mutation-oriented flag - see `submitting` below for mutation state.
+  const connectionsLoading = dataLoading.connections ?? false;
+  const connectionsError = dataError?.connections ?? null;
+
+  // Mutation (create/update/delete) submission state - intentionally
+  // separate from collection loading so submitting a form never swaps the
+  // whole page for a loading screen.
+  const { submitting, withSubmitting } = useLoadingState();
+
+  const { tenantIdentityKey } = useTenantIdentity();
 
   const { urlState, updateURLState } = useURLState({
     enabled: true,
@@ -115,10 +133,24 @@ function ConnectedClientsPageContent() {
     },
   });
 
-  // Initialize state from URL
+  const isValidRelationshipFilter = useCallback(
+    (value: string | null): value is RelationshipType =>
+      value !== null && (RELATIONSHIP_TYPES as string[]).includes(value),
+    []
+  );
+
+  // Initialize state from URL (urlState is hydrated synchronously on first
+  // render - see useURLState - so this reflects the real URL immediately).
   const initialSearch = urlState.search ? String(urlState.search) : '';
-  const initialFilter = urlState.filter ? String(urlState.filter) : null;
-  const initialPage = urlState.page ? parseInt(String(urlState.page), 10) : 1;
+  const rawInitialFilter = urlState.filter ? String(urlState.filter) : null;
+  const initialFilter = isValidRelationshipFilter(rawInitialFilter)
+    ? rawInitialFilter
+    : null;
+  const rawInitialPage = urlState.page
+    ? parseInt(String(urlState.page), 10)
+    : 1;
+  const initialPage =
+    isNaN(rawInitialPage) || rawInitialPage < 1 ? 1 : rawInitialPage;
 
   // Connection form state
   const [showConnectionModal, setShowConnectionModal] = useState(false);
@@ -134,9 +166,7 @@ function ConnectedClientsPageContent() {
   const [instrumentSearchTerm, setInstrumentSearchTerm] = useState('');
   const [connectionSearchTerm, setConnectionSearchTerm] =
     useState(initialSearch);
-  const [currentPage, setCurrentPage] = useState(
-    isNaN(initialPage) || initialPage < 1 ? 1 : initialPage
-  );
+  const [currentPage, setCurrentPage] = useState(initialPage);
   const pageSize = 20;
 
   // FIXED: Create searchable connections with nested field support
@@ -200,6 +230,53 @@ function ConnectedClientsPageContent() {
       setInternalSelectedFilter(selectedFilter);
     }
   }, [selectedFilter, internalSelectedFilter, setInternalSelectedFilter]);
+
+  // F6: react to *external* URL changes (browser back/forward, a bookmark
+  // opened while already mounted, editing the address bar) after mount.
+  // Self-triggered updateURLState calls do not flow back into `urlState`
+  // (see useURLState's isUpdatingRef guard), so these effects only fire for
+  // external navigation and never fight the user's own typing/clicking -
+  // and since the value already matches on first render (urlState hydrates
+  // synchronously), they are a no-op on mount.
+  useEffect(() => {
+    const urlSearch = urlState.search ? String(urlState.search) : '';
+    setConnectionSearchTerm(prev => (prev === urlSearch ? prev : urlSearch));
+  }, [urlState.search]);
+
+  useEffect(() => {
+    const rawFilter = urlState.filter ? String(urlState.filter) : null;
+    const urlFilter = isValidRelationshipFilter(rawFilter) ? rawFilter : null;
+    setSelectedFilter(prev => (prev === urlFilter ? prev : urlFilter));
+  }, [urlState.filter, isValidRelationshipFilter]);
+
+  useEffect(() => {
+    const rawPage = urlState.page ? parseInt(String(urlState.page), 10) : 1;
+    const urlPage = isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
+    setCurrentPage(prev => (prev === urlPage ? prev : urlPage));
+  }, [urlState.page]);
+
+  // F6: an invalid filter value (stale bookmark, manual URL edit) resets to
+  // "no filter" above; also strip it from the URL instead of leaving
+  // garbage in the address bar that would keep re-triggering this reset.
+  useEffect(() => {
+    const rawFilter = urlState.filter ? String(urlState.filter) : null;
+    if (rawFilter !== null && !isValidRelationshipFilter(rawFilter)) {
+      updateURLState({ filter: null });
+    }
+  }, [urlState.filter, isValidRelationshipFilter, updateURLState]);
+
+  // F11: switching organizations must not leave a create-connection draft
+  // referencing the previous org's clients/instruments alive. Close the
+  // modal and clear every field/search/error tied to the create flow.
+  useEffect(() => {
+    setShowConnectionModal(false);
+    setSelectedClientId('');
+    setSelectedInstrumentId('');
+    setRelationshipType('Interested');
+    setConnectionNotes('');
+    setClientSearchTerm('');
+    setInstrumentSearchTerm('');
+  }, [tenantIdentityKey]);
 
   // 페이지 변경 시 URL 업데이트
   const handlePageChange = useCallback(
@@ -368,6 +445,14 @@ function ConnectedClientsPageContent() {
   // Handle connection type change: update relationship_type when dragged to different section or tab
   const handleConnectionTypeChange = useCallback(
     async (connectionId: string, newType: RelationshipType | 'all') => {
+      // F10: defense in depth - the drag handle is not even rendered for
+      // non-admins (see `canDrag` passed to ConnectionsList below), but a
+      // permission change mid-session or a stray drop event must not be
+      // able to trigger a reorder/type-change mutation either.
+      if (!canManageConnections) {
+        return;
+      }
+
       try {
         await withSubmitting(async () => {
           // Find the connection to preserve existing notes
@@ -398,6 +483,7 @@ function ConnectedClientsPageContent() {
       updateConnection,
       fetchConnections,
       connections,
+      canManageConnections,
     ]
   );
 
@@ -566,15 +652,60 @@ function ConnectedClientsPageContent() {
               items={filteredItems}
             />
 
+            {/* F2: incomplete-results warning - shown whenever the org-wide
+                fetch was truncated, independent of the current filter/search
+                so it can never be hidden by narrowing the visible subset. */}
+            {truncated && (
+              <div
+                role="status"
+                className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+              >
+                Showing a partial list of connections. This organization has
+                more relationships than can be displayed at once, so search and
+                counts may not reflect the complete collection.
+              </div>
+            )}
+
             {/* Main Content */}
             {(() => {
               const hasAnyConnections = connections.length > 0;
               const hasResults = filteredConnections.length > 0;
+              // F5: only the *initial* load (no rows yet, no error) should
+              // block rendering with a full loading screen. A background
+              // refresh with existing rows keeps showing those rows.
+              const isInitialLoading =
+                connectionsLoading && !hasAnyConnections && !connectionsError;
+              const handleRetryFetch = () => {
+                void fetchConnections({ all: true, force: true });
+              };
 
-              if (isLoading) {
+              if (isInitialLoading) {
                 return (
                   <div className="flex justify-center items-center py-12">
                     <div className="text-gray-500">Loading connections...</div>
+                  </div>
+                );
+              }
+
+              if (connectionsError && !hasAnyConnections) {
+                return (
+                  <div className="py-10 text-center" role="alert">
+                    <div className="text-gray-400 text-5xl mb-3">⚠️</div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Couldn&apos;t load connections
+                    </h3>
+                    <p className="text-gray-500 mt-1">
+                      Something went wrong while loading your connections.
+                    </p>
+                    <div className="mt-5 flex justify-center gap-2">
+                      <button
+                        type="button"
+                        className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                        onClick={handleRetryFetch}
+                      >
+                        Retry
+                      </button>
+                    </div>
                   </div>
                 );
               }
@@ -644,29 +775,58 @@ function ConnectedClientsPageContent() {
                       >
                         Clear filters
                       </button>
-                      <button
-                        type="button"
-                        className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-                        onClick={() => setShowConnectionModal(true)}
-                      >
-                        Add connection
-                      </button>
+                      {/* F10: creating a connection is a mutation - gate it
+                          the same way the header/empty-state create actions
+                          already are, instead of leaving it exposed here. */}
+                      {canCreateConnection && (
+                        <button
+                          type="button"
+                          className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                          onClick={() => setShowConnectionModal(true)}
+                        >
+                          Add connection
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
               }
 
               return (
-                <ConnectionsList
-                  groupedConnections={groupedConnections}
-                  selectedFilter={selectedFilter}
-                  onEditConnection={openEditModal}
-                  onDeleteConnection={handleDeleteConnection}
-                  currentPage={currentPage}
-                  pageSize={pageSize}
-                  onPageChange={handlePageChange}
-                  loading={isLoading}
-                />
+                <>
+                  {/* F5: a background refetch failure keeps showing the last
+                      known-good rows alongside a retry affordance, instead
+                      of replacing them with an error screen. */}
+                  {connectionsError && (
+                    <div
+                      role="alert"
+                      className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
+                    >
+                      <span>
+                        Couldn&apos;t refresh connections. Showing the last
+                        loaded data.
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-md border border-red-300 px-3 py-1 font-medium hover:bg-red-100 transition-colors"
+                        onClick={handleRetryFetch}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  <ConnectionsList
+                    groupedConnections={groupedConnections}
+                    selectedFilter={selectedFilter}
+                    onEditConnection={openEditModal}
+                    onDeleteConnection={handleDeleteConnection}
+                    currentPage={currentPage}
+                    pageSize={pageSize}
+                    onPageChange={handlePageChange}
+                    loading={connectionsLoading}
+                    canDrag={canManageConnections}
+                  />
+                </>
               );
             })()}
 
