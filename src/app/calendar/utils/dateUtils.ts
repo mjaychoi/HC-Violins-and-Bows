@@ -11,6 +11,46 @@ import {
 import type { ExtendedView } from '../components/CalendarView';
 
 /**
+ * Must match react-big-calendar month grid (culture en-US → Sunday week start).
+ */
+export const CALENDAR_WEEK_STARTS_ON = 0 as const;
+
+/**
+ * Inclusive YYYY-MM-DD range covering the week-aligned month grid cells
+ * (leading previous-month and trailing next-month padding days).
+ */
+export function getMonthVisibleGridRange(date: Date): {
+  startDate: string;
+  endDate: string;
+} {
+  const monthStart = startOfMonth(date);
+  const monthEnd = endOfMonth(date);
+  return {
+    startDate: format(
+      startOfWeek(monthStart, { weekStartsOn: CALENDAR_WEEK_STARTS_ON }),
+      'yyyy-MM-dd'
+    ),
+    endDate: format(
+      endOfWeek(monthEnd, { weekStartsOn: CALENDAR_WEEK_STARTS_ON }),
+      'yyyy-MM-dd'
+    ),
+  };
+}
+
+/**
+ * Agenda lists the calendar month only — no month-grid padding.
+ */
+export function getAgendaMonthRange(date: Date): {
+  startDate: string;
+  endDate: string;
+} {
+  return {
+    startDate: format(startOfMonth(date), 'yyyy-MM-dd'),
+    endDate: format(endOfMonth(date), 'yyyy-MM-dd'),
+  };
+}
+
+/**
  * Get date range for a calendar view
  */
 export const getDateRangeForView = (
@@ -25,28 +65,32 @@ export const getDateRangeForView = (
       endDate: format(yearEnd, 'yyyy-MM-dd'),
     };
   } else if (view === 'timeline') {
-    // Explicitly set weekStartsOn to 0 (Sunday) for consistency
-    const weekStart = startOfWeek(date, { weekStartsOn: 0 });
+    const weekStart = startOfWeek(date, {
+      weekStartsOn: CALENDAR_WEEK_STARTS_ON,
+    });
     const weekBefore = addWeeks(weekStart, -2);
     const weekAfter = addWeeks(weekStart, 2);
     return {
       startDate: format(weekBefore, 'yyyy-MM-dd'),
-      endDate: format(endOfWeek(weekAfter, { weekStartsOn: 0 }), 'yyyy-MM-dd'),
+      endDate: format(
+        endOfWeek(weekAfter, { weekStartsOn: CALENDAR_WEEK_STARTS_ON }),
+        'yyyy-MM-dd'
+      ),
     };
   } else if (view === 'week') {
-    // Explicitly set weekStartsOn to 0 (Sunday) for consistency
-    const weekStart = startOfWeek(date, { weekStartsOn: 0 });
-    const weekEnd = endOfWeek(date, { weekStartsOn: 0 });
+    const weekStart = startOfWeek(date, {
+      weekStartsOn: CALENDAR_WEEK_STARTS_ON,
+    });
+    const weekEnd = endOfWeek(date, { weekStartsOn: CALENDAR_WEEK_STARTS_ON });
     return {
       startDate: format(weekStart, 'yyyy-MM-dd'),
       endDate: format(weekEnd, 'yyyy-MM-dd'),
     };
+  } else if (view === 'month') {
+    return getMonthVisibleGridRange(date);
   } else {
-    // Default: month or agenda
-    return {
-      startDate: format(startOfMonth(date), 'yyyy-MM-dd'),
-      endDate: format(endOfMonth(date), 'yyyy-MM-dd'),
-    };
+    // agenda (and any unknown default): calendar month only, not grid padding
+    return getAgendaMonthRange(date);
   }
 };
 
