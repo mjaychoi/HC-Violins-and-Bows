@@ -1212,6 +1212,21 @@ describe('/api/contacts', () => {
       expect(mockQuery.update).toHaveBeenCalled();
     });
 
+    it('should reject client_id reassignment with 400', async () => {
+      const request = new NextRequest('http://localhost/api/contacts', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockContactLog.id,
+          client_id: '00000000-0000-0000-0000-000000000099',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error_code).toBe('contact_reassignment_not_supported');
+    });
+
     it('should return 400 when id is missing', async () => {
       const request = new NextRequest('http://localhost/api/contacts', {
         method: 'PATCH',
