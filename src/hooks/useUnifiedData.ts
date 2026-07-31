@@ -787,6 +787,13 @@ export function useConnectedClientsData() {
       submitting: {
         connections: connectionsContext.state.submitting,
       },
+      error: {
+        connections: connectionsContext.state.error,
+      },
+      // F2: surfaces the server's row-cap warning so the page can render an
+      // incomplete-results notice instead of silently presenting a partial
+      // collection as complete.
+      truncated: connectionsContext.state.truncated,
     }),
     [clientsContext.state, instrumentsContext.state, connectionsContext.state]
   );
@@ -847,6 +854,12 @@ export function useConnectedClientsData() {
       any: state.submitting.connections,
       hasAnySubmitting: state.submitting.connections,
     },
+
+    error: {
+      connections: isTenantTransitioning ? null : state.error.connections,
+    },
+
+    truncated: isTenantTransitioning ? false : state.truncated,
 
     createConnection,
     updateConnection,
