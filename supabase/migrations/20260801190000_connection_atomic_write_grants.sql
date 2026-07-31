@@ -1,0 +1,31 @@
+-- Runtime permission gap found while re-verifying create_sale_atomic /
+-- delete_connection_atomic / update_connection_atomic against a fresh,
+-- migration-only local database (no manual GRANTs) for this hardening pass.
+--
+-- 20260728173358_client_rpc_authenticated_runtime_compatibility.sql granted
+-- `authenticated` only SELECT + INSERT on public.client_instruments - enough
+-- for create_client_with_connections_atomic's invoker call graph at the
+-- time, but not enough for the SECURITY INVOKER connection RPCs that
+-- mutate/lock existing rows:
+--   * delete_connection_atomic  - `SELECT ... FOR UPDATE` (requires UPDATE)
+--     then `DELETE`.
+--   * update_connection_atomic  - `SELECT ... FOR UPDATE` (requires UPDATE)
+--     then `UPDATE`.
+--   * reorder_connections_atomic - `UPDATE ... SET display_order = ...`.
+-- All three are `SECURITY INVOKER` (run with the caller's own table
+-- privileges, subject to RLS - not the function owner's), so without this
+-- grant every one of them fails with "permission denied for table
+-- client_instruments" for the `authenticated` role, regardless of RLS
+-- policy content. This was masked in prior verification passes by a
+-- temporary manual GRANT applied directly to a disposable database instead
+-- of being captured as a tracked migration - it does not reflect what a
+-- database provisioned purely from tracked migrations can actually do.
+--
+-- `create_sale_atomic` does not need this: it is `SECURITY DEFINER`, so it
+-- runs with the function owner's privileges rather than the caller's.
+--
+-- This grant does not weaken tenant isolation or the write contract: the
+-- `client_instruments_update` / `client_instruments_delete` RLS policies
+-- (org_id = org_id() AND is_admin()) still gate every row, exactly as they
+-- already do for the INSERT path this table already grants.
+GRANT UPDATE, DELETE ON TABLE public.client_instruments TO authenticated;
