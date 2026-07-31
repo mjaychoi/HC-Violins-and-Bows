@@ -1392,12 +1392,7 @@ describe('/api/instruments', () => {
           typeof assertInstrumentsSchemaReadiness
         >
       ).mockRejectedValueOnce(
-        new SchemaCheckFailedError(
-          [],
-          'InstrumentsAPI',
-          [],
-          'catalog timeout'
-        )
+        new SchemaCheckFailedError([], 'InstrumentsAPI', [], 'catalog timeout')
       );
 
       const request = new NextRequest('http://localhost/api/instruments', {
