@@ -110,6 +110,7 @@ type AwaitableChain = {
   order: jest.Mock;
   limit: jest.Mock;
   single: jest.Mock;
+  maybeSingle: jest.Mock;
   then: jest.Mock;
   catch: jest.Mock;
   finally: jest.Mock;
@@ -126,6 +127,7 @@ function createAwaitableChain(result: Record<string, unknown>): AwaitableChain {
     order: jest.fn(() => chain),
     limit: jest.fn(() => chain),
     single: jest.fn(() => promise),
+    maybeSingle: jest.fn(() => promise),
     then: jest.fn((onFulfilled, onRejected) =>
       promise.then(onFulfilled, onRejected)
     ),
@@ -211,10 +213,19 @@ function setupSuccessfulPutMocks() {
     error: null,
   });
   const listChain = createAwaitableChain({
-    data: [{ storage_path: oldFileKey, instruments: { org_id: 'org-1' } }],
+    data: [
+      {
+        id: certificateId,
+        storage_path: oldFileKey,
+        instruments: { org_id: 'org-1' },
+      },
+    ],
     error: null,
   });
-  const updateChain = createAwaitableChain({ error: null });
+  const updateChain = createAwaitableChain({
+    data: { id: certificateId, storage_path: 'saved-key' },
+    error: null,
+  });
 
   mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
     if (table === 'instruments') {

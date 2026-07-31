@@ -991,25 +991,12 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
       data: { id: instrumentId },
       error: null,
     });
-    const certLookupChain = createAwaitableChain({
-      data: {
-        id: certificateId,
-        storage_path: oldFileKey,
-        instruments: { org_id: 'org-1' },
-      },
-      error: null,
-    });
     const deleteMetaChain = createAwaitableChain({
       error: { message: 'metadata delete failed' },
     });
     mockAuthContext.userSupabase.from.mockImplementation((table: string) => {
       if (table === 'instruments') return instrumentChain;
-      if (table === 'instrument_certificates') {
-        if (certLookupChain.select.mock.calls.length === 0) {
-          return certLookupChain;
-        }
-        return deleteMetaChain;
-      }
+      if (table === 'instrument_certificates') return deleteMetaChain;
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -1191,7 +1178,7 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(json.cleanup).toEqual({ storageDeleted: true });
     expect(mockStorage.deleteFile).toHaveBeenCalledWith(oldFileKey);
     expect(instrumentChain.update).not.toHaveBeenCalled();
-    expect(mockAuthContext.userSupabase.from).toHaveBeenCalledTimes(3);
+    expect(mockAuthContext.userSupabase.from).toHaveBeenCalledTimes(2);
     expect(remainingChain.select).not.toHaveBeenCalled();
   });
 
