@@ -680,6 +680,21 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      if (
+        Object.prototype.hasOwnProperty.call(updates, 'client_id') ||
+        Object.prototype.hasOwnProperty.call(updates, 'instrument_id')
+      ) {
+        return {
+          payload: {
+            error:
+              'Reassigning contact client_id or instrument_id is not supported',
+            error_code: 'contact_reassignment_not_supported',
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
       const clientId = getOptionalString(updates.client_id);
       if (updates.client_id && (!clientId || !validateUUID(clientId))) {
         return {

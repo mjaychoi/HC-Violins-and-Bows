@@ -15,6 +15,7 @@ import {
 } from './hooks';
 import { ClientForm } from './components';
 import ClientsListContent from './components/ClientsListContent';
+import ClientsAnalyticsPanel from './components/ClientsAnalyticsPanel';
 import { TableSkeleton, CardSkeleton } from '@/components/common';
 const ClientModal = dynamic(() => import('./components/ClientModal'), {
   ssr: false,
@@ -30,7 +31,8 @@ import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { useModalState } from '@/hooks/useModalState';
 import { AppLayout } from '@/components/layout';
 import { ErrorBoundary, ConfirmDialog } from '@/components/common';
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { readApiResponseBody } from '@/utils/handleApiResponse';
@@ -40,7 +42,42 @@ type PendingInstrumentLink = {
   relationshipType: ClientInstrument['relationship_type'];
 };
 
+type ClientsPageTab = 'list' | 'analytics';
+
+function resolveClientsPageTab(rawTab: string | null): ClientsPageTab {
+  return rawTab === 'analytics' ? 'analytics' : 'list';
+}
+
 export default function ClientsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6">
+          <TableSkeleton rows={8} columns={7} />
+        </div>
+      }
+    >
+      <ClientsPageInner />
+    </Suspense>
+  );
+}
+
+function ClientsPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const activeTab = resolveClientsPageTab(rawTab);
+
+  // Invalid ?tab= values fall back to the list view and are removed from the URL
+  // so back/forward and shared links stay predictable.
+  useEffect(() => {
+    if (rawTab == null || rawTab === 'analytics') return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete('tab');
+    const query = next.toString();
+    router.replace(query ? `/clients?${query}` : '/clients');
+  }, [rawTab, router, searchParams]);
+
   // Error/Success handling
   const { handleError, showSuccess, showWarning } = useAppFeedback();
   const { canCreateClient, createClientDisabledReason } = usePermissions();
@@ -52,6 +89,17 @@ export default function ClientsPage() {
     string | null
   >(null);
   const [atomicSubmitting, setAtomicSubmitting] = useState(false);
+  const withConnectionsIdempotencyRef = useRef<string | null>(null);
+
+  const generateSubmissionIdempotencyKey = () => {
+    if (
+      typeof globalThis.crypto !== 'undefined' &&
+      typeof globalThis.crypto.randomUUID === 'function'
+    ) {
+      return `client-with-conn-${globalThis.crypto.randomUUID()}`;
+    }
+    return `client-with-conn-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  };
 
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched
@@ -61,6 +109,9 @@ export default function ClientsPage() {
     clients,
     loading,
     submitting,
+    error,
+    truncated,
+    fetchClients,
     createClient,
     updateClient,
     deleteClient,
@@ -109,6 +160,7 @@ export default function ClientsPage() {
     showInterestDropdown,
     updateViewFormData,
     handleViewInputChange,
+    applyServerClient,
   } = useClientView();
 
   const {
@@ -156,19 +208,27 @@ export default function ClientsPage() {
 
       if (instruments && instruments.length > 0) {
         setAtomicSubmitting(true);
+        if (!withConnectionsIdempotencyRef.current) {
+          withConnectionsIdempotencyRef.current =
+            generateSubmissionIdempotencyKey();
+        }
         try {
-          const res = await apiFetch('/api/clients/with-connections', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...createPayload,
-              instrumentLinks: instruments.map(p => ({
-                instrument_id: p.instrument.id,
-                relationship_type: p.relationshipType,
-                notes: null,
-              })),
-            }),
-          });
+          const res = await apiFetch(
+            '/api/clients/with-connections',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...createPayload,
+                instrumentLinks: instruments.map(p => ({
+                  instrument_id: p.instrument.id,
+                  relationship_type: p.relationshipType,
+                  notes: null,
+                })),
+              }),
+            },
+            { idempotencyKey: withConnectionsIdempotencyRef.current }
+          );
 
           const body = await readApiResponseBody<{
             data?: {
@@ -202,6 +262,7 @@ export default function ClientsPage() {
           }
 
           setNewlyCreatedClientId(clientId);
+          withConnectionsIdempotencyRef.current = null;
 
           showSuccess('Client and instrument links created successfully');
           return {
@@ -283,6 +344,16 @@ export default function ClientsPage() {
     setNewlyCreatedClientId(null);
     clearOwnedItems();
   }, [clearOwnedItems, tenantIdentityKey]);
+
+  // Keep modal selection in sync when the clients list refetches fresher rows.
+  useEffect(() => {
+    if (!selectedClient) return;
+    const fresh = clients.find(c => c.id === selectedClient.id);
+    if (!fresh) return;
+    if (fresh.updated_at !== selectedClient.updated_at) {
+      applyServerClient(fresh);
+    }
+  }, [clients, selectedClient, applyServerClient]);
 
   const confirmDeleteClient = async () => {
     if (!confirmDelete) return;
@@ -400,7 +471,7 @@ export default function ClientsPage() {
   return (
     <ErrorBoundary>
       <AppLayout
-        title="Clients"
+        title={activeTab === 'analytics' ? 'Client Analytics' : 'Clients'}
         hideSidebar={showModal || showViewModal}
         actionButton={
           canCreateClient || createClientDisabledReason
@@ -441,7 +512,12 @@ export default function ClientsPage() {
             : undefined
         }
       >
-        {loading.hasAnyLoading ? (
+        {activeTab === 'analytics' ? (
+          <ClientsAnalyticsPanel
+            enabled={activeTab === 'analytics'}
+            clientsTruncated={truncated}
+          />
+        ) : loading.hasAnyLoading && clients.length === 0 && !error ? (
           <div className="p-6">
             <TableSkeleton rows={8} columns={7} />
           </div>
@@ -451,6 +527,9 @@ export default function ClientsPage() {
             clientsWithInstruments={clientsWithInstruments}
             instrumentRelationships={instrumentRelationships}
             loading={loading}
+            error={error}
+            truncated={truncated}
+            onRetry={() => void fetchClients({ force: true })}
             onClientClick={handleRowClick}
             onUpdateClient={async (clientId, updates) => {
               try {
@@ -495,6 +574,7 @@ export default function ClientsPage() {
               if (!updated) {
                 return;
               }
+              applyServerClient(updated);
               stopEditing();
               showSuccess('Client information updated successfully.');
             }
@@ -520,7 +600,7 @@ export default function ClientsPage() {
         <ConfirmDialog
           isOpen={Boolean(confirmDelete)}
           title="Delete client?"
-          message="Deleted clients cannot be recovered."
+          message="This permanently deletes the client profile, instrument relationships, and contact history. Sales and invoices are kept, but their client link may be cleared. This cannot be undone."
           confirmLabel="Delete"
           cancelLabel="Cancel"
           onConfirm={confirmDeleteClient}

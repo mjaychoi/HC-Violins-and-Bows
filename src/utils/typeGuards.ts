@@ -766,16 +766,11 @@ export const partialClientSchema = z.object({
   first_name: optionalNullableInputStringSchema,
   contact_number: optionalNullableInputStringSchema,
   email: optionalNullableEmailInputStringSchema,
-  // SECURITY: Handle null from DB - normalize to empty array
-  tags: z.array(z.string()).catch([]).optional(), // null/undefined -> []
+  tags: z.array(z.string()).catch([]).optional(),
   interest: optionalNullableInputStringSchema,
   note: optionalNullableInputStringSchema,
-  client_number: optionalNullableInputStringSchema,
-  type: z.enum(['Musician', 'Dealer', 'Collector', 'Regular']).optional(),
-  status: z
-    .enum(['Active', 'Browsing', 'In Negotiation', 'Inactive'])
-    .optional(),
   created_at: z.string().optional(),
+  updated_at: z.string().nullable().optional(),
 });
 
 /**
@@ -844,11 +839,6 @@ export const createClientSchema = z
     tags: z.array(z.string()).catch([]),
     interest: nullableInputStringSchema,
     note: nullableInputStringSchema,
-    client_number: optionalNullableInputStringSchema,
-    type: z.enum(['Musician', 'Dealer', 'Collector', 'Regular']).optional(),
-    status: z
-      .enum(['Active', 'Browsing', 'In Negotiation', 'Inactive'])
-      .optional(),
   })
   .superRefine((data, ctx) => {
     if (!hasClientIdentity(data)) {

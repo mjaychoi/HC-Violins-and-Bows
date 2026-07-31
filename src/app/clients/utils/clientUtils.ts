@@ -1,5 +1,26 @@
 // src/app/clients/utils/clientUtils.ts
-import { Client } from '@/types';
+import { Client, Instrument } from '@/types';
+
+export const INSTRUMENT_UNAVAILABLE_LABEL = 'Instrument unavailable';
+
+/** Display label for a relationship's instrument row (modal + list). */
+export function formatRelationshipInstrumentLabel(
+  instrument: Instrument | null | undefined
+): string {
+  if (!instrument) return INSTRUMENT_UNAVAILABLE_LABEL;
+
+  const maker = instrument.maker?.trim();
+  const type = instrument.type?.trim();
+
+  if (maker && type) return `${maker} - ${type}`;
+  if (maker) return maker;
+  if (type) return type;
+
+  const serial = instrument.serial_number?.trim();
+  if (serial) return serial;
+
+  return INSTRUMENT_UNAVAILABLE_LABEL;
+}
 import { FilterState } from '../types';
 import { HAS_INSTRUMENTS_FILTER_OPTIONS } from '../constants';
 

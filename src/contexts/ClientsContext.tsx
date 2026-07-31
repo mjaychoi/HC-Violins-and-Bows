@@ -28,6 +28,7 @@ interface ClientsState {
   submitting: boolean;
   error: unknown | null;
   lastUpdated: Date | null;
+  truncated: boolean;
 }
 
 type ClientsAction =
@@ -35,7 +36,7 @@ type ClientsAction =
   | { type: 'END_LOADING' }
   | { type: 'SET_SUBMITTING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: unknown | null }
-  | { type: 'SET_CLIENTS'; payload: Client[] }
+  | { type: 'SET_CLIENTS'; payload: { clients: Client[]; truncated: boolean } }
   | { type: 'ADD_CLIENT'; payload: Client }
   | { type: 'UPDATE_CLIENT'; payload: { id: string; client: Client } }
   | { type: 'REMOVE_CLIENT'; payload: string }
@@ -50,6 +51,7 @@ const initialState: ClientsState = {
   submitting: false,
   error: null,
   lastUpdated: null,
+  truncated: false,
 };
 
 function clientsReducer(
@@ -82,12 +84,13 @@ function clientsReducer(
       if (action.payload === null) {
         return { ...state, error: null };
       }
-      return { ...state, clients: [], error: action.payload };
+      return { ...state, error: action.payload };
 
     case 'SET_CLIENTS':
       return {
         ...state,
-        clients: action.payload,
+        clients: action.payload.clients,
+        truncated: action.payload.truncated,
         error: null,
         lastUpdated: new Date(),
       };
@@ -192,13 +195,20 @@ function sameClientList(a: Client[], b: Client[]): boolean {
   for (let i = 0; i < a.length; i += 1) {
     if (a[i]?.id !== b[i]?.id) return false;
 
-    const au = (a[i] as Client & { updated_at?: string })?.updated_at ?? null;
-    const bu = (b[i] as Client & { updated_at?: string })?.updated_at ?? null;
+    const au = a[i]?.updated_at ?? null;
+    const bu = b[i]?.updated_at ?? null;
 
     if (au !== bu) return false;
   }
 
   return true;
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === 'AbortError') ||
+    (error instanceof Error && error.name === 'AbortError')
+  );
 }
 
 export function ClientsProvider({ children }: { children: ReactNode }) {
@@ -291,8 +301,9 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
             `Failed to fetch clients (${res.status})`
           );
           const clients = Array.isArray(body.data) ? body.data : [];
+          const truncated = body.truncated === true;
 
-          if (body.truncated === true) {
+          if (truncated) {
             logWarn(
               '[ClientsContext] fetchClients: response truncated — org has more than 1 000 clients; only the first 1 000 were loaded.'
             );
@@ -312,11 +323,21 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
             return;
           }
 
-          if (!sameClientList(stateRef.current.clients, clients)) {
-            dispatch({ type: 'SET_CLIENTS', payload: clients });
+          if (
+            !sameClientList(stateRef.current.clients, clients) ||
+            stateRef.current.truncated !== truncated
+          ) {
+            dispatch({
+              type: 'SET_CLIENTS',
+              payload: { clients, truncated },
+            });
           }
         } catch (err) {
           if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+            return;
+          }
+
+          if (isAbortError(err)) {
             return;
           }
 
@@ -329,7 +350,10 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
           }
 
           dispatch({ type: 'SET_ERROR', payload: err });
-          handleErrorRef.current(err, 'Fetch clients');
+          const hasLoadedClients = stateRef.current.clients.length > 0;
+          if (!hasLoadedClients) {
+            handleErrorRef.current(err, 'Fetch clients');
+          }
         } finally {
           if (tenantIdentityKeyRef.current === fetchTenantIdentityKey) {
             dispatch({ type: 'END_LOADING' });
@@ -554,6 +578,7 @@ export function useClients() {
     loading: state.loading,
     submitting: state.submitting,
     error: state.error,
+    truncated: state.truncated,
     lastUpdated: state.lastUpdated,
     ...actions,
   };

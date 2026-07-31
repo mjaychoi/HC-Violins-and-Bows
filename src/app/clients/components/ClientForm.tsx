@@ -527,8 +527,10 @@ function ClientForm({
             />
 
             {/* Tags Section */}
-            <div>
-              <label className={classNames.formLabel}>Tags</label>
+            <div role="group" aria-labelledby="client-form-tags-label">
+              <div id="client-form-tags-label" className={classNames.formLabel}>
+                Tags
+              </div>
               <ClientTagSelector
                 selectedTags={formData.tags}
                 onChange={next => updateField('tags', next)}
@@ -556,13 +558,17 @@ function ClientForm({
             )}
 
             <div>
-              <label className={classNames.formLabel}>
+              <label
+                htmlFor="client-form-client-number"
+                className={classNames.formLabel}
+              >
                 Client Number
                 <span className="ml-2 text-xs text-gray-500">
                   (server-assigned)
                 </span>
               </label>
               <input
+                id="client-form-client-number"
                 type="text"
                 name="client_number"
                 value={formData.client_number}
@@ -580,8 +586,11 @@ function ClientForm({
             </div>
 
             <div>
-              <label className={classNames.formLabel}>Note</label>
+              <label htmlFor="client-form-note" className={classNames.formLabel}>
+                Note
+              </label>
               <textarea
+                id="client-form-note"
                 name="note"
                 value={formData.note}
                 onChange={handleInputChange}

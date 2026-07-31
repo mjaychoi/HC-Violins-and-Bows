@@ -437,4 +437,77 @@ describe.skip('ClientModal', () => {
     expect(screen.getByLabelText('Collector')).toBeInTheDocument();
     expect(screen.getByLabelText('Other')).toBeInTheDocument();
   });
+
+  it('associates edit-mode field labels with inputs via htmlFor/id', () => {
+    render(<ModalWithState isEditing={true} />);
+
+    expect(screen.getByLabelText('First Name')).toHaveAttribute(
+      'id',
+      'client-modal-first-name'
+    );
+    expect(screen.getByLabelText('Last Name')).toHaveAttribute(
+      'id',
+      'client-modal-last-name'
+    );
+    expect(screen.getByLabelText('Email')).toHaveAttribute(
+      'id',
+      'client-modal-email'
+    );
+    expect(screen.getByLabelText('Note')).toHaveAttribute(
+      'id',
+      'client-modal-note'
+    );
+  });
+
+  it('restores focus to the previously focused element when closed', async () => {
+    const trigger = document.createElement('button');
+    trigger.textContent = 'Open client';
+    document.body.appendChild(trigger);
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    const viewFormData: ClientViewFormData = {
+      first_name: mockClient.first_name || '',
+      last_name: mockClient.last_name || '',
+      email: mockClient.email || '',
+      contact_number: mockClient.contact_number || '',
+      tags: mockClient.tags || [],
+      interest: mockClient.interest || '',
+      note: mockClient.note || '',
+    };
+
+    const { rerender } = render(
+      <ClientModal
+        {...mockProps}
+        isOpen={true}
+        onClose={jest.fn()}
+        viewFormData={viewFormData}
+        showInterestDropdown={false}
+        onViewInputChange={jest.fn()}
+        onUpdateViewFormData={jest.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(document.activeElement).not.toBe(trigger);
+    });
+
+    rerender(
+      <ClientModal
+        {...mockProps}
+        isOpen={false}
+        onClose={jest.fn()}
+        viewFormData={viewFormData}
+        showInterestDropdown={false}
+        onViewInputChange={jest.fn()}
+        onUpdateViewFormData={jest.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    document.body.removeChild(trigger);
+  });
 });

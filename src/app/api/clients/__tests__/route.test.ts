@@ -746,6 +746,65 @@ describe('/api/clients', () => {
       expect(updateQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
+    it('ignores client_number on PATCH and does not write it', async () => {
+      const currentQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { name: 'John Doe', first_name: 'John', last_name: 'Doe' },
+          error: null,
+        }),
+      };
+      const updateQuery = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: mockClient.id,
+            org_id: 'test-org',
+            client_number: 'CL001',
+            name: 'John Doe',
+            first_name: 'John',
+            last_name: 'Doe',
+            email: null,
+            phone: null,
+            tags: [],
+            interest: null,
+            note: 'still works',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(currentQuery)
+          .mockReturnValueOnce(updateQuery),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/clients', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockClient.id,
+          client_number: 'CL999',
+          note: 'still works',
+        }),
+      });
+      const response = await PATCH(request);
+
+      expect(response.status).toBe(200);
+      expect(updateQuery.update).toHaveBeenCalledWith(
+        expect.not.objectContaining({ client_number: expect.anything() })
+      );
+      expect(updateQuery.update).toHaveBeenCalledWith(
+        expect.objectContaining({ note: 'still works' })
+      );
+    });
+
     it('should return 400 when patch would clear the client name', async () => {
       const currentQuery = {
         select: jest.fn().mockReturnThis(),

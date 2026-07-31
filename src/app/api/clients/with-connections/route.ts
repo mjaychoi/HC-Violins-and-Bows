@@ -30,6 +30,12 @@ import {
   mutationRateLimit,
   tooManyRequestsApiResult,
 } from '@/app/api/_utils/rateLimit';
+import {
+  claimCreateIdempotency,
+  clearCreateIdempotency,
+  completeCreateIdempotency,
+  createRequestHash,
+} from '@/app/api/_utils/createIdempotency';
 
 /** HTTP 503: RPC/write likely succeeded but we cannot return a verified API payload. */
 function createClientResponseMalformed503(orgId: string | null | undefined) {
@@ -139,7 +145,41 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const pLinks: Json = links.map(l => ({
+      const sortedLinks = [...links].sort((a, b) =>
+        a.instrument_id.localeCompare(b.instrument_id)
+      );
+
+      const idempotency = await claimCreateIdempotency(
+        request,
+        auth,
+        'POST:/api/clients/with-connections',
+        createRequestHash({
+          name: clientName,
+          email: dbRow.email,
+          phone: dbRow.phone,
+          tags: dbRow.tags ?? [],
+          interest: dbRow.interest,
+          note: dbRow.note,
+          instrumentLinks: sortedLinks.map(l => ({
+            instrument_id: l.instrument_id,
+            relationship_type: l.relationship_type,
+            notes: l.notes ?? null,
+          })),
+        })
+      );
+
+      if (idempotency.kind === 'replay') {
+        return { payload: idempotency.payload, status: 200 };
+      }
+
+      if (idempotency.kind === 'conflict') {
+        return { payload: idempotency.payload, status: idempotency.status };
+      }
+
+      const idempotencyKey =
+        idempotency.kind === 'claimed' ? idempotency.idempotencyKey : null;
+
+      const pLinks: Json = sortedLinks.map(l => ({
         instrument_id: l.instrument_id,
         relationship_type: l.relationship_type,
         notes: l.notes ?? null,
@@ -163,6 +203,12 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         );
 
       if (rpcError || !rpcData) {
+        await clearCreateIdempotency(
+          auth,
+          'POST:/api/clients/with-connections',
+          idempotencyKey
+        );
+
         if (rpcError?.code === '23505') {
           if (isClientNumberAllocationExhausted(rpcError)) {
             return {
@@ -223,11 +269,25 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           validateClientInstrument(row)
         );
       } catch {
+        await clearCreateIdempotency(
+          auth,
+          'POST:/api/clients/with-connections',
+          idempotencyKey
+        );
         return createClientResponseMalformed503(auth.orgId);
       }
 
+      const payload = { data: { client, connections } };
+
+      await completeCreateIdempotency(
+        auth,
+        'POST:/api/clients/with-connections',
+        idempotencyKey,
+        payload
+      );
+
       return {
-        payload: { data: { client, connections } },
+        payload,
         status: 201,
         metadata: {
           clientId: client.id,

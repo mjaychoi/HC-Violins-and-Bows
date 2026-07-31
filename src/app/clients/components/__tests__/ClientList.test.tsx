@@ -527,4 +527,45 @@ describe('ClientList', () => {
     // Press Space to toggle
     fireEvent.keyDown(johnRow!, { key: ' ', code: 'Space' });
   });
+
+  describe('accessibility', () => {
+    it('exposes aria-sort and keyboard sorting on column headers', () => {
+      render(<ClientList {...mockProps} />);
+
+      const nameHeader = screen.getByRole('columnheader', {
+        name: /sort by name/i,
+      });
+      expect(nameHeader).toHaveAttribute('aria-sort', 'ascending');
+      expect(nameHeader).toHaveAttribute('tabIndex', '0');
+
+      fireEvent.keyDown(nameHeader, { key: 'Enter' });
+      expect(mockProps.onColumnSort).toHaveBeenCalledWith('first_name');
+
+      const contactHeader = screen.getByRole('columnheader', {
+        name: /sort by contact/i,
+      });
+      expect(contactHeader).toHaveAttribute('aria-sort', 'none');
+      fireEvent.keyDown(contactHeader, { key: ' ' });
+      expect(mockProps.onColumnSort).toHaveBeenCalledWith('contact_number');
+    });
+
+    it('links expanded details via aria-controls to a real element id', () => {
+      render(<ClientList {...mockProps} clients={[mockClients[0]]} />);
+
+      const nameButton = document.querySelector(
+        'button[aria-controls="client-details-1"]'
+      ) as HTMLButtonElement | null;
+      expect(nameButton).toBeTruthy();
+
+      fireEvent.click(nameButton!);
+      expect(document.getElementById('client-details-1')).toBeInTheDocument();
+    });
+
+    it('gives icon-only row action menus an accessible name', () => {
+      render(<ClientList {...mockProps} clients={[mockClients[0]]} />);
+      expect(
+        screen.getByRole('button', { name: 'More actions' })
+      ).toBeInTheDocument();
+    });
+  });
 });

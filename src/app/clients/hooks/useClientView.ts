@@ -102,15 +102,26 @@ export function useClientView() {
         toggleTag(value, checkbox.checked);
         return;
       }
-      // ✅ FIXED: checkbox는 boolean이므로 setField에 전달하지 않음 (tags는 이미 처리됨)
       if (type === 'checkbox') {
-        // tags가 아닌 다른 checkbox는 여기서 처리하지 않음 (현재는 tags만 checkbox)
         return;
       }
       setField(name as keyof ClientViewFormData, value);
     },
     [setField, toggleTag]
   );
+
+  const applyServerClient = useCallback((client: Client) => {
+    setSelectedClient(client);
+    setViewFormData({
+      last_name: client.last_name || '',
+      first_name: client.first_name || '',
+      contact_number: client.contact_number || '',
+      email: client.email || '',
+      tags: client.tags || [],
+      interest: client.interest || '',
+      note: client.note || '',
+    });
+  }, []);
 
   return {
     showViewModal,
@@ -124,7 +135,7 @@ export function useClientView() {
     stopEditing,
     updateViewFormData,
     handleViewInputChange,
-    // ✅ Expose explicit setters for better type safety
+    applyServerClient,
     setField,
     toggleTag,
   };

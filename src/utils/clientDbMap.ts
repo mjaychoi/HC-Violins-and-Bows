@@ -96,9 +96,8 @@ export function mapClientsTableRowToClient(row: ClientsTableRow): Client {
     interest: normalizeOptionalText(row.interest),
     note: normalizeOptionalText(row.note),
     client_number: normalizeOptionalText(row.client_number),
-    type: undefined,
-    status: undefined,
     created_at: row.created_at ?? '',
+    updated_at: row.updated_at ?? null,
     address: undefined,
   };
 }
@@ -152,7 +151,6 @@ type PartialClientFields = Partial<{
   last_name: string | null;
   contact_number: string | null;
   email: string | null;
-  client_number: string | null;
   tags: string[] | null;
   interest: string | null;
   note: string | null;
@@ -177,8 +175,6 @@ export function mergePartialClientIntoDbPatch(
     patch.email = normalizeOptionalText(updates.email);
   if (updates.contact_number !== undefined)
     patch.phone = normalizeOptionalText(updates.contact_number);
-  if (updates.client_number !== undefined)
-    patch.client_number = normalizeOptionalText(updates.client_number);
   if (updates.tags !== undefined) {
     patch.tags = updates.tags === null ? [] : normalizeClientTags(updates.tags);
   }

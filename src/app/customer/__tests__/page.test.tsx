@@ -20,6 +20,7 @@ describe('CustomerPage (deprecated redirect)', () => {
     expect(
       screen.getByText('Redirecting to Client Analytics...')
     ).toBeInTheDocument();
+    // Canonical contract: legacy /customer lands on /clients?tab=analytics.
     expect(replace).toHaveBeenCalledWith('/clients?tab=analytics');
   });
 
@@ -79,6 +80,7 @@ describe('CustomerPage (deprecated redirect)', () => {
 
     render(<CustomerPage />);
 
+    // Canonical contract: legacy /customer lands on /clients?tab=analytics.
     expect(replace).toHaveBeenCalledWith('/clients?tab=analytics');
     expect(replace).toHaveBeenCalledTimes(1);
   });

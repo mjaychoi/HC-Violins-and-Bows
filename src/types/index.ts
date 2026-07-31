@@ -50,6 +50,7 @@ export interface Client {
   type?: 'Musician' | 'Dealer' | 'Collector' | 'Regular';
   status?: 'Active' | 'Browsing' | 'In Negotiation' | 'Inactive';
   created_at: string;
+  updated_at?: string | null;
   address?: string | null;
 }
 

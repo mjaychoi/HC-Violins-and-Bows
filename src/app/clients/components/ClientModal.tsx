@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Client, Instrument, ClientInstrument } from '@/types';
 import {
@@ -7,6 +7,7 @@ import {
   sortTags,
   formatClientName,
   formatClientContact,
+  formatRelationshipInstrumentLabel,
 } from '../utils';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import ClientTagSelector from './ClientTagSelector';
@@ -84,10 +85,27 @@ export default function ClientModal({
   const { canManageClients, canManageConnections } = usePermissions();
   // Close modal with ESC key and outside click
   const modalRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   useOutsideClose(modalRef, {
     isOpen,
     onClose,
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+
+    const focusable = modalRef.current?.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const first = focusable?.[0];
+    first?.focus();
+
+    return () => {
+      previousFocusRef.current?.focus?.();
+    };
+  }, [isOpen]);
 
   const filteredInstrumentRelationships = useMemo(
     () =>
@@ -191,10 +209,14 @@ export default function ClientModal({
                   </p>
                 ) : null}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="client-modal-last-name"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Last Name
                   </label>
                   <input
+                    id="client-modal-last-name"
                     type="text"
                     name="last_name"
                     value={viewFormData.last_name}
@@ -205,10 +227,14 @@ export default function ClientModal({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="client-modal-first-name"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     First Name
                   </label>
                   <input
+                    id="client-modal-first-name"
                     type="text"
                     name="first_name"
                     value={viewFormData.first_name}
@@ -219,10 +245,14 @@ export default function ClientModal({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="client-modal-contact-number"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Contact Number
                   </label>
                   <input
+                    id="client-modal-contact-number"
                     type="tel"
                     name="contact_number"
                     value={viewFormData.contact_number}
@@ -233,10 +263,14 @@ export default function ClientModal({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="client-modal-email"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Email
                   </label>
                   <input
+                    id="client-modal-email"
                     type="email"
                     name="email"
                     value={viewFormData.email}
@@ -247,10 +281,13 @@ export default function ClientModal({
                 </div>
 
                 {/* Tags Section */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                <div role="group" aria-labelledby="client-modal-tags-label">
+                  <div
+                    id="client-modal-tags-label"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Tags
-                  </label>
+                  </div>
                   <ClientTagSelector
                     selectedTags={viewFormData.tags}
                     onChange={next => onUpdateViewFormData({ tags: next })}
@@ -260,7 +297,10 @@ export default function ClientModal({
                 {/* Interest Section - Conditional */}
                 {showInterestDropdown && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label
+                      htmlFor="client-modal-interest"
+                      className="block text-sm font-medium text-gray-700 mb-1"
+                    >
                       Interest
                     </label>
                     <InterestSelector
@@ -269,15 +309,20 @@ export default function ClientModal({
                         onUpdateViewFormData({ interest: value })
                       }
                       name="interest"
+                      id="client-modal-interest"
                     />
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="client-modal-note"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Note
                   </label>
                   <textarea
+                    id="client-modal-note"
                     name="note"
                     value={viewFormData.note}
                     onChange={onViewInputChange}
@@ -372,8 +417,9 @@ export default function ClientModal({
                       >
                         <div>
                           <div className="text-sm font-medium">
-                            {relationship.instrument?.maker} -{' '}
-                            {relationship.instrument?.type}
+                            {formatRelationshipInstrumentLabel(
+                              relationship.instrument
+                            )}
                           </div>
                           <div className="text-xs text-gray-500">
                             {relationship.instrument?.year} •{' '}
@@ -719,13 +765,15 @@ export default function ClientModal({
                               className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left block"
                               title="View instrument details"
                             >
-                              {relationship.instrument?.maker} -{' '}
-                              {relationship.instrument?.type}
+                              {formatRelationshipInstrumentLabel(
+                                relationship.instrument
+                              )}
                             </Link>
                           ) : (
                             <span className="text-sm font-medium text-gray-900">
-                              {relationship.instrument?.maker} -{' '}
-                              {relationship.instrument?.type}
+                              {formatRelationshipInstrumentLabel(
+                                relationship.instrument
+                              )}
                             </span>
                           )}
                           <div className="text-xs text-gray-500">

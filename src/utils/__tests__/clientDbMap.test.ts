@@ -27,6 +27,16 @@ describe('clientDbMap', () => {
       expect(client.first_name).toBe('John');
       expect(client.last_name).toBe('Doe');
     });
+
+    it('maps updated_at from the database row', () => {
+      const client = mapClientsTableRowToClient({
+        id: 'client-3',
+        name: 'Ada Lovelace',
+        updated_at: '2024-06-01T12:00:00Z',
+      });
+
+      expect(client.updated_at).toBe('2024-06-01T12:00:00Z');
+    });
   });
 
   describe('createClientInputToDbRow', () => {

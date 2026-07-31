@@ -222,6 +222,49 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
     request,
     { method: 'GET', path: 'ClientsAPI', context: 'ClientsAPI' },
     async () => {
+      const singleId = request.nextUrl.searchParams.get('id');
+      if (singleId) {
+        if (!validateUUID(singleId)) {
+          return {
+            payload: { error: 'Invalid client ID format', success: false },
+            status: 400,
+          };
+        }
+
+        if (!auth.orgId) {
+          return {
+            payload: { error: 'Organization context required', success: false },
+            status: 403,
+          };
+        }
+
+        await assertClientsSchemaReadiness({ supabase: auth.userSupabase });
+
+        const { data, error } = await auth.userSupabase
+          .from('clients')
+          .select(CLIENT_TABLE_SELECT)
+          .eq('id', singleId)
+          .eq('org_id', auth.orgId)
+          .maybeSingle();
+
+        if (error) {
+          throw errorHandler.handleSupabaseError(error, 'Fetch client');
+        }
+
+        if (!data) {
+          return {
+            payload: { error: 'Client not found', success: false },
+            status: 404,
+          };
+        }
+
+        const client = validateClient(mapClientsTableRowToClient(data));
+        return {
+          payload: { data: client },
+          metadata: { clientId: singleId },
+        };
+      }
+
       const { q } = parseListQuery(request);
 
       if (!auth.orgId) {
@@ -513,6 +556,11 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      const patchFields = { ...validation.data } as Partial<Client> & {
+        client_number?: unknown;
+      };
+      delete patchFields.client_number;
+
       await assertClientsSchemaReadiness({ supabase: auth.userSupabase });
 
       const { data: currentRow, error: curErr } = await auth.userSupabase
@@ -538,7 +586,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
               ? currentRow.last_name
               : null,
         },
-        validation.data
+        patchFields
       );
 
       if (

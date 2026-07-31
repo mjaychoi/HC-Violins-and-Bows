@@ -32,9 +32,11 @@ describe('ClientAnalyticsPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('should call router.replace with correct path', () => {
+  it('should call router.replace with the canonical analytics tab URL', () => {
     render(<ClientAnalyticsPage />);
 
+    // Canonical contract: legacy /clients/analytics lands on /clients?tab=analytics,
+    // which renders ClientsAnalyticsPanel (covered by ClientsPage / panel tests).
     expect(mockReplace).toHaveBeenCalledWith('/clients?tab=analytics');
   });
 

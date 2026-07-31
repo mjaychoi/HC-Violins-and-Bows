@@ -2,7 +2,11 @@
 // src/app/clients/components/ClientList.tsx
 import { Client, ClientInstrument, Instrument } from '@/types';
 import Link from 'next/link';
-import { getTagTextColor, sortTags } from '../utils';
+import {
+  getTagTextColor,
+  sortTags,
+  formatRelationshipInstrumentLabel,
+} from '../utils';
 import React, {
   useState,
   memo,
@@ -262,7 +266,7 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
         colSpan={6}
         className={cn(classNames.tableCell, 'text-sm text-gray-700 px-6 py-4')}
       >
-        <div className="space-y-4">
+        <div className="space-y-4" id={`client-details-${client.id}`}>
           <div>
             <div className="text-xs font-medium text-gray-500 mb-2">
               Connected Instruments
@@ -271,10 +275,7 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {relatedInstruments.map(ci => {
                   const instr = ci.instrument;
-                  const title =
-                    instr && (instr.maker || instr.type)
-                      ? `${instr.maker || ''} ${instr.type || ''}`.trim()
-                      : 'Instrument';
+                  const title = formatRelationshipInstrumentLabel(instr);
                   const serial = instr?.serial_number || '—';
                   const statusText = instr?.status || '—';
                   const statusTheme = instr?.status
@@ -670,71 +671,55 @@ const ClientList = memo(function ClientList({
                   <th className={`${classNames.tableHeaderCell} text-right`}>
                     <span>Actions</span>
                   </th>
-                  <th
-                    className={cn(classNames.tableHeaderCellSortable, 'group')}
-                    onClick={() => onColumnSort('first_name')}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      Name
-                      <span
-                        className={`opacity-0 group-hover:opacity-100 ${getSortArrow('first_name') !== '' ? 'opacity-100 text-gray-900' : ''}`}
+                  {(
+                    [
+                      ['first_name', 'Name'],
+                      ['contact_number', 'Contact'],
+                      ['tags', 'Tags'],
+                      ['interest', 'Interest'],
+                      ['client_number', 'Client #'],
+                    ] as const
+                  ).map(([field, label]) => {
+                    const arrow = getSortArrow(field);
+                    const ariaSort =
+                      arrow === '↑'
+                        ? 'ascending'
+                        : arrow === '↓'
+                          ? 'descending'
+                          : 'none';
+                    return (
+                      <th
+                        key={field}
+                        scope="col"
+                        className={cn(
+                          classNames.tableHeaderCellSortable,
+                          'group'
+                        )}
+                        onClick={() => onColumnSort(field)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onColumnSort(field);
+                          }
+                        }}
+                        tabIndex={0}
+                        role="columnheader"
+                        aria-sort={ariaSort}
+                        aria-label={`Sort by ${label.toLowerCase()}`}
                       >
-                        <SortIcon arrow={getSortArrow('first_name')} />
-                      </span>
-                    </span>
-                  </th>
-                  <th
-                    className={cn(classNames.tableHeaderCellSortable, 'group')}
-                    onClick={() => onColumnSort('contact_number')}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      Contact
-                      <span
-                        className={`opacity-0 group-hover:opacity-100 ${getSortArrow('contact_number') !== '' ? 'opacity-100 text-gray-900' : ''}`}
-                      >
-                        <SortIcon arrow={getSortArrow('contact_number')} />
-                      </span>
-                    </span>
-                  </th>
-                  <th
-                    className={cn(classNames.tableHeaderCellSortable, 'group')}
-                    onClick={() => onColumnSort('tags')}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      Tags
-                      <span
-                        className={`opacity-0 group-hover:opacity-100 ${getSortArrow('tags') !== '' ? 'opacity-100 text-gray-900' : ''}`}
-                      >
-                        <SortIcon arrow={getSortArrow('tags')} />
-                      </span>
-                    </span>
-                  </th>
-                  <th
-                    className={cn(classNames.tableHeaderCellSortable, 'group')}
-                    onClick={() => onColumnSort('interest')}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      Interest
-                      <span
-                        className={`opacity-0 group-hover:opacity-100 ${getSortArrow('interest') !== '' ? 'opacity-100 text-gray-900' : ''}`}
-                      >
-                        <SortIcon arrow={getSortArrow('interest')} />
-                      </span>
-                    </span>
-                  </th>
-                  <th
-                    className={cn(classNames.tableHeaderCellSortable, 'group')}
-                    onClick={() => onColumnSort('client_number')}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      Client #
-                      <span
-                        className={`opacity-0 group-hover:opacity-100 ${getSortArrow('client_number') !== '' ? 'opacity-100 text-gray-900' : ''}`}
-                      >
-                        <SortIcon arrow={getSortArrow('client_number')} />
-                      </span>
-                    </span>
-                  </th>
+                        <span className="inline-flex items-center gap-1">
+                          {label}
+                          <span
+                            className={`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 ${
+                              arrow !== '' ? 'opacity-100 text-gray-900' : ''
+                            }`}
+                          >
+                            <SortIcon arrow={arrow} />
+                          </span>
+                        </span>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               {/* ✅ FIXED: Removed virtualization - pagination handles large lists */}
@@ -805,6 +790,7 @@ const ClientList = memo(function ClientList({
                                 disabled={isSaving}
                                 className="text-green-600 hover:text-green-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-green-50"
                                 title="Save changes"
+                                aria-label="Save changes"
                               >
                                 {isSaving ? (
                                   <svg
@@ -844,6 +830,7 @@ const ClientList = memo(function ClientList({
                                 disabled={isSaving}
                                 className="text-red-600 hover:text-red-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-red-50"
                                 title="Cancel editing"
+                                aria-label="Cancel editing"
                               >
                                 <svg
                                   className="w-4 h-4"
@@ -926,6 +913,7 @@ const ClientList = memo(function ClientList({
                                 </p>
                               )}
                               <input
+                                id={`client-${client.id}-email`}
                                 type="email"
                                 value={editData.email || ''}
                                 onChange={e =>
@@ -934,6 +922,7 @@ const ClientList = memo(function ClientList({
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 onClick={e => e.stopPropagation()}
                                 placeholder="Email"
+                                aria-label="Email"
                               />
                             </div>
                           ) : (
@@ -971,6 +960,7 @@ const ClientList = memo(function ClientList({
                           {editingClient === client.id ? (
                             <div className="min-w-[150px]">
                               <input
+                                id={`client-${client.id}-contact-number`}
                                 type="tel"
                                 value={editData.contact_number || ''}
                                 onChange={e =>
@@ -982,6 +972,7 @@ const ClientList = memo(function ClientList({
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 onClick={e => e.stopPropagation()}
                                 placeholder="Phone number"
+                                aria-label="Contact number"
                               />
                             </div>
                           ) : (
