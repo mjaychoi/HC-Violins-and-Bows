@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@/test-utils/render';
+import { render, screen, waitFor } from '@/test-utils/render';
 import ClientsAnalyticsPanel from '../ClientsAnalyticsPanel';
 
 const mockSetSearchTerm = jest.fn();
@@ -59,36 +59,60 @@ jest.mock('../../analytics/components/PurchaseHistory', () => ({
   PurchaseHistory: () => <div data-testid="purchase-history">Purchases</div>,
 }));
 
+jest.mock('@/utils/apiFetch', () => ({
+  apiFetch: jest.fn(),
+}));
+
+jest.mock('@/utils/handleApiResponse', () => ({
+  readApiResponseEnvelope: jest.fn(),
+}));
+
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: () => ({ tenantIdentityKey: 'org:test' }),
+}));
+
 describe('ClientsAnalyticsPanel', () => {
+  const { apiFetch } = require('@/utils/apiFetch');
+  const { readApiResponseEnvelope } = require('@/utils/handleApiResponse');
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    apiFetch.mockResolvedValue({ ok: true });
+    readApiResponseEnvelope.mockResolvedValue({
+      data: {
+        customerCount: 1001,
+        clientsWithPurchases: 10,
+        totalSpend: 5000,
+        purchaseCount: 20,
+        avgSpendPerCustomer: 500,
+        mostRecentPurchaseDate: '2026-07-01',
+        scope: 'organization',
+        fromDate: null,
+        toDate: null,
+      },
+      complete: true,
+    });
+  });
+
   it('renders nothing when disabled', () => {
-    const { container } = render(
-      <ClientsAnalyticsPanel enabled={false} clientsTruncated={false} />
-    );
+    const { container } = render(<ClientsAnalyticsPanel enabled={false} />);
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('renders analytics content when enabled', () => {
-    render(<ClientsAnalyticsPanel enabled clientsTruncated={false} />);
+  it('renders organization-wide analytics without truncation warning', async () => {
+    render(<ClientsAnalyticsPanel enabled />);
 
+    await waitFor(() => {
+      expect(screen.getByTestId('customer-stats')).toBeInTheDocument();
+    });
     expect(screen.getByTestId('clients-analytics-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('customer-stats')).toBeInTheDocument();
     expect(screen.getByTestId('customer-list')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-scope-note')).toHaveTextContent(
-      /organization/i
+      /organization-wide/i
     );
     expect(
       screen.queryByTestId('analytics-truncated-warning')
     ).not.toBeInTheDocument();
-  });
-
-  it('shows an incomplete-data warning when the client collection is truncated', () => {
-    render(<ClientsAnalyticsPanel enabled clientsTruncated />);
-
-    expect(screen.getByTestId('analytics-truncated-warning')).toHaveTextContent(
-      /incomplete/i
-    );
-    expect(screen.getByTestId('analytics-scope-note')).toHaveTextContent(
-      /currently loaded client set/i
-    );
+    expect(apiFetch).toHaveBeenCalledWith('/api/clients/analytics');
   });
 });
