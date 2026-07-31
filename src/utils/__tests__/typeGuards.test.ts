@@ -23,6 +23,7 @@ import {
   safeValidate,
   validateCreateClient,
   validateCreateInstrument,
+  validateCreateMaintenanceTask,
   validatePartialInstrument,
 } from '../typeGuards';
 import { Instrument, Client, MaintenanceTask, SalesHistory } from '@/types';
@@ -404,6 +405,57 @@ describe('Validation Functions', () => {
       expect(() => validateMaintenanceTask({})).toThrow(
         'Invalid MaintenanceTask'
       );
+    });
+  });
+
+  describe('validateCreateMaintenanceTask', () => {
+    const validCreateData = {
+      instrument_id: '123e4567-e89b-12d3-a456-426614174001',
+      client_id: null,
+      task_type: 'repair',
+      title: 'Fix bridge',
+      description: null,
+      status: 'pending',
+      received_date: '2024-01-01',
+      due_date: null,
+      personal_due_date: null,
+      scheduled_date: null,
+      completed_date: null,
+      priority: 'high',
+      estimated_hours: null,
+      actual_hours: null,
+      cost: null,
+      notes: null,
+    };
+
+    it('should validate and return data for a valid create payload', () => {
+      expect(validateCreateMaintenanceTask(validCreateData)).toEqual(
+        validCreateData
+      );
+    });
+
+    // The DB column is NOT NULL (see supabase/migrations/20260728140000_*)
+    // and the API is the only write path — the schema must reject a missing
+    // or null instrument_id rather than let the insert fail with an opaque
+    // Postgres error.
+    it('should throw when instrument_id is missing', () => {
+      const withoutInstrumentId: Record<string, unknown> = {
+        ...validCreateData,
+      };
+      delete withoutInstrumentId.instrument_id;
+
+      expect(() => validateCreateMaintenanceTask(withoutInstrumentId)).toThrow(
+        'Invalid MaintenanceTask creation data'
+      );
+    });
+
+    it('should throw when instrument_id is null', () => {
+      expect(() =>
+        validateCreateMaintenanceTask({
+          ...validCreateData,
+          instrument_id: null,
+        })
+      ).toThrow('Invalid MaintenanceTask creation data');
     });
   });
 
