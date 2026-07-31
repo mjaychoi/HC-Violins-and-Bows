@@ -676,7 +676,7 @@ export function useUnifiedDashboard() {
 
   type EnrichedConnection = ClientInstrument & {
     client: Client;
-    instrument: Instrument;
+    instrument: Instrument | null;
   };
 
   // Enriched client–instrument view: requires org-wide `connections` (see
@@ -691,12 +691,12 @@ export function useUnifiedDashboard() {
       .map(connection => ({
         ...connection,
         client: clientMap.get(connection.client_id),
-        instrument: instrumentMap.get(connection.instrument_id),
+        instrument:
+          connection.instrument ??
+          instrumentMap.get(connection.instrument_id) ??
+          null,
       }))
-      .filter(
-        (rel): rel is EnrichedConnection =>
-          rel.client !== undefined && rel.instrument !== undefined
-      );
+      .filter((rel): rel is EnrichedConnection => rel.client !== undefined);
   }, [state.connections, state.clients, state.instruments]);
 
   const hasAnyLoading =

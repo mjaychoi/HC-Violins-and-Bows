@@ -4,6 +4,7 @@ import { ClientInstrument } from '@/types';
 import {
   useUnifiedConnections,
   useConnectedClientsData,
+  useUnifiedInstruments,
 } from '@/hooks/useUnifiedData';
 
 /**
@@ -11,27 +12,41 @@ import {
  *
  * Uses DataContext as the single source of truth:
  * - Connections are fetched and managed by DataContext
- * - No local state duplication
- * - Mutations update DataContext automatically
+ * - Enriches flat connection rows with InstrumentsContext map (no N+1)
+ * - Keeps already-embedded `instrument` when present on a row
  *
  * @returns Client-instrument relationship data and operations
  */
 export const useClientInstruments = () => {
-  // Use DataContext connections directly (single source of truth)
-  const { connections: instrumentRelationships } = useUnifiedConnections();
+  const { connections: rawConnections } = useUnifiedConnections();
+  const { instruments } = useUnifiedInstruments();
 
-  // Use DataContext actions for mutations
   const { createConnection, updateConnection, deleteConnection } =
     useConnectedClientsData();
 
-  // Derived state: clientsWithInstruments from connections
+  const instrumentMap = useMemo(
+    () => new Map(instruments.map(inst => [inst.id, inst])),
+    [instruments]
+  );
+
+  const instrumentRelationships = useMemo((): ClientInstrument[] => {
+    return rawConnections.map(rel => {
+      if (rel.instrument) return rel;
+
+      const fromMap = instrumentMap.get(rel.instrument_id);
+      return {
+        ...rel,
+        instrument: fromMap ?? null,
+      };
+    });
+  }, [rawConnections, instrumentMap]);
+
   const clientsWithInstruments = useMemo(() => {
     return new Set(
       instrumentRelationships.map(rel => rel.client_id).filter(Boolean)
     );
   }, [instrumentRelationships]);
 
-  // Add instrument relationship (creates connection via DataContext)
   const addInstrumentRelationship = useCallback(
     async (
       clientId: string,
@@ -48,7 +63,6 @@ export const useClientInstruments = () => {
     [createConnection]
   );
 
-  // Remove instrument relationship (deletes connection via DataContext)
   const removeInstrumentRelationship = useCallback(
     async (relationshipId: string) => {
       return await deleteConnection(relationshipId);
@@ -56,7 +70,6 @@ export const useClientInstruments = () => {
     [deleteConnection]
   );
 
-  // Update instrument relationship (updates connection via DataContext)
   const updateInstrumentRelationship = useCallback(
     async (
       relationshipId: string,
@@ -70,7 +83,6 @@ export const useClientInstruments = () => {
     [updateConnection]
   );
 
-  // Get all instruments for a specific client
   const getClientInstruments = useCallback(
     (clientId: string): ClientInstrument[] => {
       return instrumentRelationships.filter(rel => rel.client_id === clientId);
@@ -78,7 +90,6 @@ export const useClientInstruments = () => {
     [instrumentRelationships]
   );
 
-  // Check if a relationship exists between client and instrument
   const hasInstrumentRelationship = useCallback(
     (clientId: string, instrumentId: string): boolean => {
       return instrumentRelationships.some(
@@ -89,16 +100,11 @@ export const useClientInstruments = () => {
   );
 
   return {
-    // Data
     instrumentRelationships,
     clientsWithInstruments,
-
-    // Operations
     addInstrumentRelationship,
     removeInstrumentRelationship,
     updateInstrumentRelationship,
-
-    // Utilities
     getClientInstruments,
     hasInstrumentRelationship,
   };

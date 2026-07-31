@@ -2,7 +2,11 @@
 // src/app/clients/components/ClientList.tsx
 import { Client, ClientInstrument, Instrument } from '@/types';
 import Link from 'next/link';
-import { getTagTextColor, sortTags } from '../utils';
+import {
+  getTagTextColor,
+  sortTags,
+  formatRelationshipInstrumentLabel,
+} from '../utils';
 import React, {
   useState,
   memo,
@@ -271,10 +275,7 @@ const ClientExpandedRow = memo(function ClientExpandedRow({
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {relatedInstruments.map(ci => {
                   const instr = ci.instrument;
-                  const title =
-                    instr && (instr.maker || instr.type)
-                      ? `${instr.maker || ''} ${instr.type || ''}`.trim()
-                      : 'Instrument';
+                  const title = formatRelationshipInstrumentLabel(instr);
                   const serial = instr?.serial_number || '—';
                   const statusText = instr?.status || '—';
                   const statusTheme = instr?.status
@@ -673,6 +674,15 @@ const ClientList = memo(function ClientList({
                   <th
                     className={cn(classNames.tableHeaderCellSortable, 'group')}
                     onClick={() => onColumnSort('first_name')}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onColumnSort('first_name');
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label="Sort by name"
                   >
                     <span className="inline-flex items-center gap-1">
                       Name

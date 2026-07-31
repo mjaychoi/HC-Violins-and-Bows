@@ -49,6 +49,7 @@ const mockInstrumentRelationship: ClientInstrument = {
 // ✅ FIXED: DataContext mock (hook이 DataContext를 사용하도록 변경됨)
 // jest.mock은 호이스팅되므로 함수를 사용하여 동적으로 접근
 const mockConnectionsRef = { current: [] as ClientInstrument[] };
+const mockInstrumentsRef = { current: [] as Instrument[] };
 const mockCreateConnection = jest.fn();
 const mockUpdateConnection = jest.fn();
 const mockDeleteConnection = jest.fn();
@@ -68,6 +69,9 @@ jest.mock('@/hooks/useUnifiedData', () => {
       updateConnection: mockUpdateConnection,
       deleteConnection: mockDeleteConnection,
     })),
+    useUnifiedInstruments: jest.fn(() => ({
+      instruments: mockInstrumentsRef.current,
+    })),
   };
 });
 
@@ -75,6 +79,7 @@ describe('useClientInstruments', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockConnectionsRef.current = [];
+    mockInstrumentsRef.current = [];
     mockCreateConnection.mockResolvedValue(mockInstrumentRelationship);
     mockUpdateConnection.mockResolvedValue(null);
     mockDeleteConnection.mockResolvedValue(true);
@@ -264,6 +269,42 @@ describe('useClientInstruments', () => {
       await flushPromises();
     });
     expect(result2.current.clientsWithInstruments.has('1')).toBe(true);
+  });
+
+  it('enriches connections from instruments map when instrument not embedded', async () => {
+    const relWithoutInstrument: ClientInstrument = {
+      ...mockInstrumentRelationship,
+      instrument: undefined,
+    };
+    mockConnectionsRef.current = [relWithoutInstrument];
+    mockInstrumentsRef.current = [mockInstrument];
+
+    const { result } = renderHook(() => useClientInstruments());
+
+    await act(async () => {
+      await flushPromises();
+    });
+
+    expect(result.current.instrumentRelationships[0].instrument?.maker).toBe(
+      'Stradivari'
+    );
+  });
+
+  it('keeps null instrument when missing from org map', async () => {
+    const relWithoutInstrument: ClientInstrument = {
+      ...mockInstrumentRelationship,
+      instrument: undefined,
+    };
+    mockConnectionsRef.current = [relWithoutInstrument];
+    mockInstrumentsRef.current = [];
+
+    const { result } = renderHook(() => useClientInstruments());
+
+    await act(async () => {
+      await flushPromises();
+    });
+
+    expect(result.current.instrumentRelationships[0].instrument).toBeNull();
   });
 
   it('provides utility functions', async () => {

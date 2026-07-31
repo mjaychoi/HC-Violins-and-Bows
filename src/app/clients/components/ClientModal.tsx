@@ -7,6 +7,7 @@ import {
   sortTags,
   formatClientName,
   formatClientContact,
+  formatRelationshipInstrumentLabel,
 } from '../utils';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import ClientTagSelector from './ClientTagSelector';
@@ -372,8 +373,9 @@ export default function ClientModal({
                       >
                         <div>
                           <div className="text-sm font-medium">
-                            {relationship.instrument?.maker} -{' '}
-                            {relationship.instrument?.type}
+                            {formatRelationshipInstrumentLabel(
+                              relationship.instrument
+                            )}
                           </div>
                           <div className="text-xs text-gray-500">
                             {relationship.instrument?.year} •{' '}
@@ -719,13 +721,15 @@ export default function ClientModal({
                               className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left block"
                               title="View instrument details"
                             >
-                              {relationship.instrument?.maker} -{' '}
-                              {relationship.instrument?.type}
+                              {formatRelationshipInstrumentLabel(
+                                relationship.instrument
+                              )}
                             </Link>
                           ) : (
                             <span className="text-sm font-medium text-gray-900">
-                              {relationship.instrument?.maker} -{' '}
-                              {relationship.instrument?.type}
+                              {formatRelationshipInstrumentLabel(
+                                relationship.instrument
+                              )}
                             </span>
                           )}
                           <div className="text-xs text-gray-500">
