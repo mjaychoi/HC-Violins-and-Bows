@@ -284,7 +284,8 @@ describe('useCalendarFilters', () => {
     expect(result.current.filterOperator).toBe('OR');
   });
 
-  it('manual OR includes a task when any populated date is in range', () => {
+  it('date range filter uses canonical placement (due wins); OR/AND agree', () => {
+    // placement = due_date 2024-01-10 — outside 01-04..01-06
     const taskWithMixedDates: MaintenanceTask = {
       ...mockTasks[0],
       id: 'mixed-dates',
@@ -305,35 +306,140 @@ describe('useCalendarFilters', () => {
       result.current.setFilterOperator('OR');
       result.current.setDateRange({ from: '2024-01-04', to: '2024-01-06' });
     });
+    expect(result.current.filteredTasks).toEqual([]);
 
-    expect(result.current.filteredTasks.map(task => task.id)).toEqual([
-      'mixed-dates',
-    ]);
+    act(() => {
+      result.current.setFilterOperator('AND');
+    });
+    expect(result.current.filteredTasks).toEqual([]);
   });
 
-  it('manual AND requires all populated dates to be in range', () => {
-    const taskWithMixedDates: MaintenanceTask = {
+  it('includes task when placement date falls in range (OR and AND)', () => {
+    const task: MaintenanceTask = {
       ...mockTasks[0],
-      id: 'mixed-dates',
-      received_date: '2024-01-01',
-      due_date: '2024-01-10',
-      scheduled_date: '2024-01-05',
+      id: 'placement-in-range',
+      due_date: '2024-01-05',
+      scheduled_date: '2024-01-01',
+      received_date: '2023-12-01',
     };
 
     const { result } = renderHook(() =>
       useCalendarFilters({
-        tasks: [taskWithMixedDates],
+        tasks: [task],
         instrumentsMap: mockInstrumentsMap,
         filterOptions: mockFilterOptions,
       })
     );
 
     act(() => {
-      result.current.setFilterOperator('AND');
       result.current.setDateRange({ from: '2024-01-04', to: '2024-01-06' });
     });
+    expect(result.current.filteredTasks.map(t => t.id)).toEqual([
+      'placement-in-range',
+    ]);
 
-    expect(result.current.filteredTasks).toEqual([]);
+    act(() => {
+      result.current.setFilterOperator('AND');
+    });
+    expect(result.current.filteredTasks.map(t => t.id)).toEqual([
+      'placement-in-range',
+    ]);
+  });
+
+  describe('selectedPlacementDate', () => {
+    const dayTasks: MaintenanceTask[] = [
+      {
+        ...mockTasks[0],
+        id: 'on-day',
+        due_date: '2024-01-10',
+        scheduled_date: null,
+        received_date: '2024-01-01',
+      },
+      {
+        ...mockTasks[0],
+        id: 'other-day',
+        due_date: '2024-01-11',
+        scheduled_date: null,
+        received_date: '2024-01-01',
+      },
+      {
+        ...mockTasks[0],
+        id: 'received-on-day',
+        due_date: null,
+        personal_due_date: null,
+        scheduled_date: null,
+        received_date: '2024-01-10',
+      },
+    ];
+
+    it('filters to placement date before pagination (header/list consistency)', () => {
+      const { result } = renderHook(() =>
+        useCalendarFilters({
+          tasks: dayTasks,
+          instrumentsMap: mockInstrumentsMap,
+          filterOptions: mockFilterOptions,
+          selectedPlacementDate: '2024-01-10',
+          pageSize: 10,
+        })
+      );
+
+      expect(result.current.filteredTasks.map(t => t.id).sort()).toEqual([
+        'on-day',
+        'received-on-day',
+      ]);
+      expect(result.current.totalCount).toBe(2);
+      expect(result.current.paginatedTasks).toHaveLength(2);
+    });
+
+    it('returns empty list for a day with no placement matches', () => {
+      const { result } = renderHook(() =>
+        useCalendarFilters({
+          tasks: dayTasks,
+          instrumentsMap: mockInstrumentsMap,
+          filterOptions: mockFilterOptions,
+          selectedPlacementDate: '2024-02-01',
+        })
+      );
+
+      expect(result.current.filteredTasks).toEqual([]);
+      expect(result.current.totalCount).toBe(0);
+      expect(result.current.paginatedTasks).toEqual([]);
+    });
+
+    it('resets pagination to page 1 when selectedPlacementDate changes', () => {
+      const manyOnDay = Array.from({ length: 5 }, (_, i) => ({
+        ...dayTasks[0],
+        id: `day-${i}`,
+      }));
+
+      const { result, rerender } = renderHook(
+        ({ selectedPlacementDate }: { selectedPlacementDate: string | null }) =>
+          useCalendarFilters({
+            tasks: [...manyOnDay, dayTasks[1]],
+            instrumentsMap: mockInstrumentsMap,
+            filterOptions: mockFilterOptions,
+            selectedPlacementDate,
+            pageSize: 2,
+          }),
+        {
+          initialProps: {
+            selectedPlacementDate: '2024-01-10' as string | null,
+          },
+        }
+      );
+
+      act(() => {
+        result.current.setPage(2);
+      });
+      expect(result.current.currentPage).toBe(2);
+
+      rerender({ selectedPlacementDate: '2024-01-11' });
+
+      expect(result.current.currentPage).toBe(1);
+      expect(result.current.filteredTasks.map(t => t.id)).toEqual([
+        'other-day',
+      ]);
+    });
   });
 
   it('resets pagination to page 1 when filter operator changes', () => {

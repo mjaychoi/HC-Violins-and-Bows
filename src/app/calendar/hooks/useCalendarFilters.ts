@@ -9,6 +9,7 @@ import {
   countActiveCalendarFilters,
 } from '../utils/calendarFilterUtils';
 import { sortTasks } from '../utils/searchUtils';
+import { getCalendarPlacementDate } from '@/utils/calendar';
 
 const DEFAULT_PAGE_SIZE = 10;
 
@@ -33,6 +34,8 @@ interface UseCalendarFiltersOptions {
   >;
   filterOptions: CalendarFilterOptions;
   pageSize?: number;
+  /** When set (list day selection), keep only tasks whose canonical placement matches. */
+  selectedPlacementDate?: string | null;
 }
 
 export const useCalendarFilters = ({
@@ -40,6 +43,7 @@ export const useCalendarFilters = ({
   instrumentsMap,
   ownershipMap,
   pageSize = DEFAULT_PAGE_SIZE,
+  selectedPlacementDate = null,
 }: UseCalendarFiltersOptions) => {
   const [dateRange, setDateRange] = useState<DateRange | null>(null);
   const [filterOperator, setFilterOperator] = useState<FilterOperator>('OR');
@@ -148,6 +152,12 @@ export const useCalendarFilters = ({
       resolvedOwnershipMap
     );
 
+    if (selectedPlacementDate) {
+      filtered = filtered.filter(
+        task => getCalendarPlacementDate(task) === selectedPlacementDate
+      );
+    }
+
     // Apply sorting (use baseFilters sortBy/sortOrder, but map to calendar sort format)
     const sortBy =
       sortByValue === 'date' ||
@@ -173,6 +183,7 @@ export const useCalendarFilters = ({
     resolvedOwnershipMap,
     sortByValue,
     sortOrderValue,
+    selectedPlacementDate,
   ]);
 
   // Calculate pagination
@@ -192,6 +203,7 @@ export const useCalendarFilters = ({
       dateRange?.from ?? '',
       dateRange?.to ?? '',
       filterOperator,
+      selectedPlacementDate ?? '',
     ].join('|');
   }, [
     filterType,
@@ -202,6 +214,7 @@ export const useCalendarFilters = ({
     dateRange?.from,
     dateRange?.to,
     filterOperator,
+    selectedPlacementDate,
   ]);
 
   useEffect(() => {
