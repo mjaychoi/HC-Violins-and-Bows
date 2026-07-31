@@ -427,9 +427,15 @@ const ItemList = memo(function ItemList({
 
   const startEditing = useCallback(
     (item: Instrument) => {
+      // Seed every inline-editable field so unrelated edits cannot wipe values
+      // (serial_number / note were previously omitted and saved as null).
+      // certificate / certificate_name are display-only here and omitted from
+      // the save payload (partial PATCH semantics).
       inlineEdit.startEditing(item.id, {
         maker: item.maker || '',
         type: item.type || '',
+        serial_number: item.serial_number || '',
+        note: item.note || '',
         year: item.year ? String(item.year) : '',
         price: item.price ? String(item.price) : '',
         status: item.status || 'Available',
