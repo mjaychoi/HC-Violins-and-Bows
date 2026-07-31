@@ -574,8 +574,6 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      await assertInstrumentsSchemaReadiness({ supabase: auth.userSupabase });
-
       return executeInstrumentPatch(auth, {
         mode: 'collection',
         instrumentId: body.id,

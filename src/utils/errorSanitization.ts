@@ -272,6 +272,8 @@ export function getUserFriendlyErrorMessage(
       VALIDATION_ERROR: 'Please check your input and try again.',
       DATABASE_ERROR: 'Database error occurred. Please try again later.',
       SCHEMA_OUT_OF_DATE: 'Database migration required.',
+      SCHEMA_CHECK_FAILED:
+        'Schema readiness check failed temporarily. Please retry.',
       INTERNAL_ERROR: 'Server error occurred. Please try again later.',
       SESSION_EXPIRED: 'Session expired. Please log in again.',
       DUPLICATE_RECORD: 'This record already exists.',

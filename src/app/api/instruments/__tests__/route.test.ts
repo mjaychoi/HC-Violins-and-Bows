@@ -1355,6 +1355,34 @@ describe('/api/instruments', () => {
   });
 
   describe('PATCH', () => {
+    it('returns SCHEMA_OUT_OF_DATE 503 when instrument schema readiness fails', async () => {
+      (
+        assertInstrumentsSchemaReadiness as jest.MockedFunction<
+          typeof assertInstrumentsSchemaReadiness
+        >
+      ).mockRejectedValueOnce(
+        new SchemaNotReadyError(
+          ['public.instruments.certificate_name'],
+          'InstrumentsAPI'
+        )
+      );
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockInstrument.id,
+          updated_at: mockInstrument.updated_at,
+          note: 'x',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should update an existing instrument', async () => {
       const updates = { note: 'Fair condition' };
       const updatedInstrument = { ...mockInstrument, ...updates };

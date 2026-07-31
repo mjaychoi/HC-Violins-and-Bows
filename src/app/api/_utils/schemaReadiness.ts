@@ -1,5 +1,6 @@
 import { getAdminSupabase } from '@/lib/supabase-server';
 import { ErrorCodes } from '@/types/errors';
+import { logWarn } from '@/utils/logger';
 
 type RequiredColumnSpec = {
   schema: 'public';
@@ -17,6 +18,9 @@ export interface SchemaReadinessResult {
   checkedAt: string;
   missingColumns: string[];
   missingContracts: string[];
+  /** True when the probe itself failed (network/timeout/permission), not schema drift. */
+  checkFailed?: boolean;
+  checkFailureCause?: string;
 }
 
 const SCHEMA_READINESS_CACHE_TTL_MS = 30_000;
@@ -166,23 +170,45 @@ function isMissingSchemaError(
     hint?: unknown;
   };
   const code = typeof candidate.code === 'string' ? candidate.code : '';
+
+  // Prefer Postgres / PostgREST codes for missing column or relation.
+  if (code === 'PGRST204' || code === '42703' || code === '42P01') {
+    return true;
+  }
+
   const haystacks = [candidate.message, candidate.details, candidate.hint]
     .filter((value): value is string => typeof value === 'string')
     .map(value => value.toLowerCase());
 
-  return (
-    code === 'PGRST204' ||
-    code === '42703' ||
-    code === '42P01' ||
-    haystacks.some(
-      text =>
-        requiredColumns.some(spec => text.includes(spec.column)) ||
-        text.includes('schema cache') ||
-        text.includes('column') ||
-        text.includes('does not exist') ||
-        text.includes('relation')
-    )
-  );
+  return haystacks.some(text => {
+    // Permission / privilege errors often mention "relation" but are not drift.
+    if (
+      text.includes('permission denied') ||
+      text.includes('insufficient privilege') ||
+      text.includes('not authorized')
+    ) {
+      return false;
+    }
+
+    if (text.includes('schema cache')) {
+      return true;
+    }
+
+    if (
+      /could not find the ['"][^'"]+['"] column/.test(text) ||
+      /column .+ does not exist/.test(text) ||
+      /relation .+ does not exist/.test(text)
+    ) {
+      return true;
+    }
+
+    return requiredColumns.some(
+      spec =>
+        text.includes(`'${spec.column}'`) ||
+        text.includes(`"${spec.column}"`) ||
+        text.includes(`.${spec.column}`)
+    );
+  });
 }
 
 function groupRequiredColumnsByTable(
@@ -234,6 +260,52 @@ export class SchemaNotReadyError extends Error {
   }
 }
 
+export class SchemaCheckFailedError extends Error {
+  code = ErrorCodes.SCHEMA_CHECK_FAILED;
+  error_code = ErrorCodes.SCHEMA_CHECK_FAILED;
+  status = 503;
+  retryable = true;
+  details: {
+    missingColumns: string[];
+    missingContracts: string[];
+    context?: string;
+    cause?: string;
+  };
+
+  constructor(
+    missingColumns: string[],
+    context?: string,
+    missingContracts: string[] = [],
+    cause?: string
+  ) {
+    super(
+      cause
+        ? `Schema readiness check failed: ${cause}`
+        : 'Schema readiness check failed temporarily'
+    );
+    this.name = 'SchemaCheckFailedError';
+    this.details = { missingColumns, missingContracts, context, cause };
+  }
+}
+
+function summarizeCheckFailureCause(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return typeof error === 'string' ? error : 'unknown error';
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    message?: unknown;
+    name?: unknown;
+  };
+  const code = typeof candidate.code === 'string' ? candidate.code : '';
+  const message =
+    typeof candidate.message === 'string' ? candidate.message : '';
+  const name = typeof candidate.name === 'string' ? candidate.name : '';
+
+  return [name, code, message].filter(Boolean).join(': ') || 'unknown error';
+}
+
 function getSpecsForTables(
   tables: readonly RequiredTableName[]
 ): RequiredColumnSpec[] {
@@ -283,13 +355,22 @@ function isMissingContractViewError(error: unknown): boolean {
   return (
     code === 'PGRST204' ||
     code === '42P01' ||
-    haystacks.some(
-      text =>
+    haystacks.some(text => {
+      if (
+        text.includes('permission denied') ||
+        text.includes('insufficient privilege') ||
+        text.includes('not authorized')
+      ) {
+        return false;
+      }
+
+      return (
         text.includes('runtime_contract_checks') ||
         text.includes('schema cache') ||
-        text.includes('does not exist') ||
-        text.includes('relation')
-    )
+        /relation .+ does not exist/.test(text) ||
+        /could not find the ['"][^'"]+['"]/.test(text)
+      );
+    })
   );
 }
 
@@ -424,15 +505,23 @@ export async function checkSchemaReadiness(options?: {
     });
 
     return result;
-  } catch {
-    const fallback = buildDefaultResult(
-      requiredColumns,
-      runtimeContracts ?? REQUIRED_RUNTIME_CONTRACTS
-    );
-    cachedResults.set(cacheKey, {
-      result: fallback,
-      expiresAt: now + SCHEMA_READINESS_CACHE_TTL_MS,
+  } catch (error) {
+    const cause = summarizeCheckFailureCause(error);
+    logWarn('Schema readiness probe failed (not classified as drift)', {
+      cause,
+      includeRuntimeContracts: Boolean(runtimeContracts),
+      requiredColumnCount: requiredColumns.length,
     });
+
+    // Only report contracts that were actually in scope for this check.
+    // Columns-only probes must not claim unrelated runtime contracts are missing.
+    const fallback: SchemaReadinessResult = {
+      ...buildDefaultResult(requiredColumns, runtimeContracts ?? {}),
+      checkFailed: true,
+      checkFailureCause: cause,
+    };
+
+    // Do not cache infrastructure failures — retry should re-probe immediately.
     return fallback;
   }
 }
@@ -447,6 +536,15 @@ export async function assertSchemaReadiness(options?: {
   context?: string;
 }): Promise<SchemaReadinessResult> {
   const result = await checkSchemaReadiness(options);
+
+  if (result.checkFailed) {
+    throw new SchemaCheckFailedError(
+      result.missingColumns,
+      options?.context,
+      result.missingContracts,
+      result.checkFailureCause
+    );
+  }
 
   if (!result.ready) {
     throw new SchemaNotReadyError(

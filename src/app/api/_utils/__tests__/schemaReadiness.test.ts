@@ -5,13 +5,27 @@ import {
   assertClientsSchemaReadiness,
   assertInstrumentImagesSchemaReadiness,
   assertInstrumentsSchemaReadiness,
+  assertSchemaReadiness,
   checkSchemaReadiness,
+  SchemaCheckFailedError,
   SchemaNotReadyError,
 } from '../schemaReadiness';
+
+jest.mock('@/utils/logger', () => ({
+  logInfo: jest.fn(),
+  logError: jest.fn(),
+  logWarn: jest.fn(),
+  logDebug: jest.fn(),
+}));
 
 describe('schemaReadiness', () => {
   beforeEach(() => {
     __resetSchemaReadinessCacheForTests();
+    jest.useRealTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   const allRuntimeContractDefaults = {
@@ -237,7 +251,7 @@ describe('schemaReadiness', () => {
     ).resolves.toMatchObject({ ready: true });
   });
 
-  it('fails closed on unexpected catalog errors', async () => {
+  it('fails closed on unexpected catalog errors as SCHEMA_CHECK_FAILED', async () => {
     const { supabase } = createSupabaseMock({
       runtime_contract_checks: {
         code: 'XX000',
@@ -256,9 +270,148 @@ describe('schemaReadiness', () => {
     });
 
     expect(result.ready).toBe(false);
+    expect(result.checkFailed).toBe(true);
     expect(result.missingContracts).toEqual([
       'public.instruments.type nullable contract',
     ]);
+
+    await expect(
+      assertSchemaReadiness({
+        bypassCache: true,
+        supabase,
+        tables: ['instruments'],
+        runtimeContracts: {
+          instrument_type_nullable: 'public.instruments.type nullable contract',
+        },
+        includeRuntimeContracts: false,
+      })
+    ).rejects.toMatchObject({
+      code: 'SCHEMA_CHECK_FAILED',
+      retryable: true,
+      name: 'SchemaCheckFailedError',
+    });
+  });
+
+  it('columns-only transient errors do not report unrelated runtime contracts', async () => {
+    const { supabase } = createSupabaseMock({
+      instrument_images: {
+        code: '57014',
+        message: 'canceling statement due to statement timeout',
+      },
+    });
+
+    const result = await checkSchemaReadiness({
+      bypassCache: true,
+      supabase,
+      tables: ['instrument_images'],
+      runtimeContracts: null,
+      includeRuntimeContracts: false,
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.checkFailed).toBe(true);
+    expect(result.missingColumns).toEqual([
+      'public.instrument_images.storage_key',
+      'public.instrument_images.file_name',
+      'public.instrument_images.file_size',
+      'public.instrument_images.mime_type',
+      'public.instrument_images.display_order',
+    ]);
+    expect(result.missingContracts).toEqual([]);
+  });
+
+  it('does not treat permission denied for relation as schema drift', async () => {
+    const { supabase } = createSupabaseMock({
+      instruments: {
+        code: '42501',
+        message: 'permission denied for relation instruments',
+      },
+    });
+
+    const result = await checkSchemaReadiness({
+      bypassCache: true,
+      supabase,
+      tables: ['instruments'],
+      runtimeContracts: null,
+      includeRuntimeContracts: false,
+    });
+
+    expect(result.checkFailed).toBe(true);
+    expect(result.ready).toBe(false);
+
+    await expect(
+      assertInstrumentsSchemaReadiness({ bypassCache: true, supabase })
+    ).rejects.toBeInstanceOf(SchemaCheckFailedError);
+  });
+
+  it('recovers after stale negative cache TTL expires', async () => {
+    jest.useFakeTimers();
+
+    const failing = createSupabaseMock({
+      instruments: {
+        code: 'PGRST204',
+        message: "Could not find the 'certificate_name' column",
+      },
+    });
+
+    const first = await checkSchemaReadiness({
+      supabase: failing.supabase,
+      tables: ['instruments'],
+      runtimeContracts: null,
+      includeRuntimeContracts: false,
+    });
+    expect(first.ready).toBe(false);
+    expect(first.checkFailed).toBeFalsy();
+
+    const succeeding = createSupabaseMock();
+
+    // Within TTL: stale failure is served from cache.
+    const cached = await checkSchemaReadiness({
+      supabase: succeeding.supabase,
+      tables: ['instruments'],
+      runtimeContracts: null,
+      includeRuntimeContracts: false,
+    });
+    expect(cached.ready).toBe(false);
+    expect(succeeding.supabase.from).not.toHaveBeenCalled();
+
+    jest.advanceTimersByTime(30_001);
+
+    const recovered = await checkSchemaReadiness({
+      supabase: succeeding.supabase,
+      tables: ['instruments'],
+      runtimeContracts: null,
+      includeRuntimeContracts: false,
+    });
+    expect(recovered.ready).toBe(true);
+    expect(succeeding.supabase.from).toHaveBeenCalled();
+  });
+
+  it('does not cache infrastructure check failures across retries', async () => {
+    const transient = createSupabaseMock({
+      instruments: {
+        code: '57014',
+        message: 'canceling statement due to statement timeout',
+      },
+    });
+
+    const first = await checkSchemaReadiness({
+      supabase: transient.supabase,
+      tables: ['instruments'],
+      runtimeContracts: null,
+      includeRuntimeContracts: false,
+    });
+    expect(first.checkFailed).toBe(true);
+
+    const succeeding = createSupabaseMock();
+    const second = await checkSchemaReadiness({
+      supabase: succeeding.supabase,
+      tables: ['instruments'],
+      runtimeContracts: null,
+      includeRuntimeContracts: false,
+    });
+    expect(second.ready).toBe(true);
+    expect(succeeding.supabase.from).toHaveBeenCalled();
   });
 
   it('caches missing readiness state and bypasses cache on demand', async () => {
