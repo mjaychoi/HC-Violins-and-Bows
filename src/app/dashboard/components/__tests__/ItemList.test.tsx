@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@/test-utils/render';
 import ItemList from '../ItemList';
 import { Instrument, ClientInstrument } from '@/types';
+import { INSTRUMENT_IDENTITY_ERROR } from '@/utils/identityValidation';
 
 const mockHandleError = jest.fn();
 
@@ -266,5 +267,174 @@ describe('ItemList', () => {
       'Status',
     ]);
     expect(headerTexts.some(text => text.includes('Subtype'))).toBe(false);
+  });
+
+  describe('inline edit payload preservation', () => {
+    const preservationItem: EnrichedInstrument = {
+      ...instrument,
+      id: 'preserve-1',
+      maker: 'Maker A',
+      type: 'Violin',
+      serial_number: 'V-100',
+      note: 'Original note',
+      year: 2018,
+      price: 5000,
+      status: 'Available',
+      certificate: true,
+      has_certificate: true,
+      certificate_name: 'Hill Certificate',
+      clients: [],
+    };
+
+    async function openInlineEdit(item: EnrichedInstrument = preservationItem) {
+      const onUpdateItem = jest.fn().mockResolvedValue(undefined);
+      render(
+        <ItemList
+          items={[item]}
+          loading={false}
+          onDeleteClick={jest.fn()}
+          onUpdateItem={onUpdateItem}
+          clientRelationships={[]}
+          getSortArrow={() => ''}
+          onSort={jest.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+      fireEvent.click(screen.getByText('Edit'));
+
+      return onUpdateItem;
+    }
+
+    it('preserves serial_number and note when only maker changes', async () => {
+      const onUpdateItem = await openInlineEdit();
+
+      fireEvent.change(screen.getByPlaceholderText('Maker'), {
+        target: { value: 'Maker B' },
+      });
+      fireEvent.click(screen.getByTitle('Save changes'));
+
+      await waitFor(() => {
+        expect(onUpdateItem).toHaveBeenCalledTimes(1);
+      });
+
+      expect(onUpdateItem).toHaveBeenCalledWith(
+        'preserve-1',
+        expect.objectContaining({
+          maker: 'Maker B',
+          type: 'Violin',
+          serial_number: 'V-100',
+          note: 'Original note',
+        })
+      );
+      expect(onUpdateItem.mock.calls[0][1]).not.toHaveProperty('certificate');
+      expect(onUpdateItem.mock.calls[0][1]).not.toHaveProperty(
+        'certificate_name'
+      );
+    });
+
+    it('preserves serial_number and note when only type changes', async () => {
+      const onUpdateItem = await openInlineEdit();
+
+      fireEvent.change(screen.getByPlaceholderText('Type'), {
+        target: { value: 'Viola' },
+      });
+      fireEvent.click(screen.getByTitle('Save changes'));
+
+      await waitFor(() => {
+        expect(onUpdateItem).toHaveBeenCalledTimes(1);
+      });
+
+      expect(onUpdateItem).toHaveBeenCalledWith(
+        'preserve-1',
+        expect.objectContaining({
+          maker: 'Maker A',
+          type: 'Viola',
+          serial_number: 'V-100',
+          note: 'Original note',
+        })
+      );
+    });
+
+    it('allows explicitly clearing note via the inline note field', async () => {
+      const onUpdateItem = await openInlineEdit();
+
+      fireEvent.change(screen.getByPlaceholderText('Note'), {
+        target: { value: '' },
+      });
+      fireEvent.click(screen.getByTitle('Save changes'));
+
+      await waitFor(() => {
+        expect(onUpdateItem).toHaveBeenCalledTimes(1);
+      });
+
+      expect(onUpdateItem).toHaveBeenCalledWith(
+        'preserve-1',
+        expect.objectContaining({
+          serial_number: 'V-100',
+          note: null,
+          maker: 'Maker A',
+          type: 'Violin',
+        })
+      );
+    });
+
+    it('keeps empty optional serial_number and note as null when untouched', async () => {
+      const emptyOptionalItem: EnrichedInstrument = {
+        ...preservationItem,
+        id: 'preserve-empty',
+        serial_number: null,
+        note: null,
+      };
+      const onUpdateItem = await openInlineEdit(emptyOptionalItem);
+
+      fireEvent.change(screen.getByPlaceholderText('Maker'), {
+        target: { value: 'Maker C' },
+      });
+      fireEvent.click(screen.getByTitle('Save changes'));
+
+      await waitFor(() => {
+        expect(onUpdateItem).toHaveBeenCalledTimes(1);
+      });
+
+      expect(onUpdateItem).toHaveBeenCalledWith(
+        'preserve-empty',
+        expect.objectContaining({
+          maker: 'Maker C',
+          type: 'Violin',
+          serial_number: null,
+          note: null,
+        })
+      );
+    });
+
+    it('does not call save when canceling inline edit', async () => {
+      const onUpdateItem = await openInlineEdit();
+
+      fireEvent.change(screen.getByPlaceholderText('Maker'), {
+        target: { value: 'Should Not Persist' },
+      });
+      fireEvent.click(screen.getByTitle('Cancel editing'));
+
+      expect(onUpdateItem).not.toHaveBeenCalled();
+      expect(screen.queryByPlaceholderText('Maker')).not.toBeInTheDocument();
+    });
+
+    it('rejects whitespace-only maker and type without calling save', async () => {
+      const onUpdateItem = await openInlineEdit();
+
+      fireEvent.change(screen.getByPlaceholderText('Maker'), {
+        target: { value: '   ' },
+      });
+      fireEvent.change(screen.getByPlaceholderText('Type'), {
+        target: { value: '   ' },
+      });
+      fireEvent.click(screen.getByTitle('Save changes'));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        INSTRUMENT_IDENTITY_ERROR
+      );
+      expect(onUpdateItem).not.toHaveBeenCalled();
+    });
   });
 });
