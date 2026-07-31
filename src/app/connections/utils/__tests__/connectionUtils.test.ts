@@ -75,14 +75,36 @@ const makeConnection = (
 describe('connectionUtils formatting helpers', () => {
   it('formats client and instrument names with fallbacks', () => {
     expect(formatClientName(clientA)).toBe('Jane Doe');
+
+    // F1: a client row that exists but has no stored name falls back to
+    // email, not a "missing reference" label.
     expect(
       formatClientName({ ...clientA, first_name: null, last_name: null })
-    ).toBe('Unknown Client');
+    ).toBe('jane@example.com');
+
+    // F1: a client with neither name nor email falls back to a distinct
+    // "unnamed" label, still not the "missing reference" label.
+    expect(
+      formatClientName({
+        ...clientA,
+        first_name: null,
+        last_name: null,
+        email: null,
+      })
+    ).toBe('Unnamed client');
+
+    // F1: a genuinely missing (null/undefined) client reference must render
+    // an intentional "Unavailable" fallback, never "Unknown Client" or an
+    // empty string.
+    expect(formatClientName(null)).toBe('Unavailable client');
+    expect(formatClientName(undefined)).toBe('Unavailable client');
 
     expect(formatInstrumentName(instrumentA)).toBe('Stradivari - Violin');
     expect(
       formatInstrumentName({ ...instrumentA, maker: null, type: null })
-    ).toBe('Unknown - Unknown');
+    ).toBe('Unnamed instrument');
+    expect(formatInstrumentName(null)).toBe('Unavailable instrument');
+    expect(formatInstrumentName(undefined)).toBe('Unavailable instrument');
   });
 
   it('builds a connection display name', () => {

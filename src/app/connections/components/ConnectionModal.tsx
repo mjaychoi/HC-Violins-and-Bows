@@ -6,7 +6,7 @@ import {
   formatInstrumentName,
 } from '../utils/connectionUtils';
 import { classNames } from '@/utils/classNames';
-import { RELATIONSHIP_TYPES } from '../utils/connectionGrouping';
+import { EDITABLE_RELATIONSHIP_TYPES } from '../utils/connectionGrouping';
 
 interface ConnectionModalProps {
   isOpen: boolean;
@@ -153,21 +153,39 @@ export default function ConnectionModal({
         >
           {/* Client Selection */}
           <div>
-            <label className={classNames.formLabel}>Select Client</label>
+            <label
+              htmlFor="connection-client-search"
+              className={classNames.formLabel}
+            >
+              Select Client
+            </label>
             <input
+              id="connection-client-search"
               type="text"
               placeholder="Search clients..."
               value={clientSearchTerm}
               onChange={e => onClientSearchChange(e.target.value)}
               className={`${classNames.input} mb-2`}
+              aria-describedby={
+                clients.length === 0 ? 'connection-client-empty' : undefined
+              }
             />
-            <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md">
+            <div
+              role="listbox"
+              aria-label="Clients"
+              className="max-h-32 overflow-y-auto border border-gray-200 rounded-md"
+            >
               {clients.map(client => {
                 const isSelected = selectedClient === client.id;
+                const label = `${formatClientName(client)}${client.email ? `, ${client.email}` : ''}`;
                 return (
-                  <div
+                  <button
                     key={client.id}
-                    className={`p-3 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors ${
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    aria-label={label}
+                    className={`w-full text-left p-3 border-b border-gray-100 last:border-b-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
                       isSelected
                         ? 'bg-blue-50 border-l-4 border-l-blue-500'
                         : 'border-l-4 border-l-transparent hover:bg-gray-50'
@@ -189,6 +207,7 @@ export default function ConnectionModal({
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
+                          aria-hidden="true"
                         >
                           <path
                             strokeLinecap="round"
@@ -199,29 +218,56 @@ export default function ConnectionModal({
                         </svg>
                       )}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
+            {clients.length === 0 && (
+              <p
+                id="connection-client-empty"
+                role="status"
+                className="text-sm text-gray-500 mt-1"
+              >
+                No clients match your search.
+              </p>
+            )}
           </div>
 
           {/* Instrument Selection */}
           <div>
-            <label className={classNames.formLabel}>Select Instrument</label>
+            <label
+              htmlFor="connection-instrument-search"
+              className={classNames.formLabel}
+            >
+              Select Instrument
+            </label>
             <input
+              id="connection-instrument-search"
               type="text"
               placeholder="Search instruments..."
               value={instrumentSearchTerm}
               onChange={e => onInstrumentSearchChange(e.target.value)}
               className={`${classNames.input} mb-2`}
+              aria-describedby={
+                items.length === 0 ? 'connection-instrument-empty' : undefined
+              }
             />
-            <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md">
+            <div
+              role="listbox"
+              aria-label="Instruments"
+              className="max-h-32 overflow-y-auto border border-gray-200 rounded-md"
+            >
               {items.map(item => {
                 const isSelected = selectedInstrument === item.id;
+                const label = `${formatInstrumentName(item)}, Year: ${item.year ?? 'unknown'}`;
                 return (
-                  <div
+                  <button
                     key={item.id}
-                    className={`p-3 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors ${
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    aria-label={label}
+                    className={`w-full text-left p-3 border-b border-gray-100 last:border-b-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
                       isSelected
                         ? 'bg-blue-50 border-l-4 border-l-blue-500'
                         : 'border-l-4 border-l-transparent hover:bg-gray-50'
@@ -243,6 +289,7 @@ export default function ConnectionModal({
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
+                          aria-hidden="true"
                         >
                           <path
                             strokeLinecap="round"
@@ -253,16 +300,31 @@ export default function ConnectionModal({
                         </svg>
                       )}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
+            {items.length === 0 && (
+              <p
+                id="connection-instrument-empty"
+                role="status"
+                className="text-sm text-gray-500 mt-1"
+              >
+                No instruments match your search.
+              </p>
+            )}
           </div>
 
           {/* Relationship Type */}
           <div>
-            <label className={classNames.formLabel}>Relationship Type</label>
+            <label
+              htmlFor="connection-relationship-type"
+              className={classNames.formLabel}
+            >
+              Relationship Type
+            </label>
             <select
+              id="connection-relationship-type"
               value={relationshipType}
               onChange={e =>
                 onRelationshipTypeChange(
@@ -271,12 +333,15 @@ export default function ConnectionModal({
               }
               className={classNames.input}
             >
-              {RELATIONSHIP_TYPES.map(type => (
+              {EDITABLE_RELATIONSHIP_TYPES.map(type => (
                 <option key={type} value={type}>
                   {type}
                 </option>
               ))}
             </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Sold relationships are created through the sales workflow.
+            </p>
           </div>
 
           {/* Notes */}

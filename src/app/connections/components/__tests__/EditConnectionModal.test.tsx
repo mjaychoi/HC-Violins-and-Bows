@@ -189,23 +189,71 @@ describe('EditConnectionModal', () => {
     );
 
     const relationshipSelect = screen.getByRole('combobox');
-    await user.selectOptions(relationshipSelect, 'Sold');
+    await user.selectOptions(relationshipSelect, 'Owned');
 
     const notesTextarea = screen.getByPlaceholderText(
       /Add any additional notes/i
     );
     await user.clear(notesTextarea);
-    await user.type(notesTextarea, 'Sold to client');
+    await user.type(notesTextarea, 'Now owned by client');
 
     const saveButton = screen.getByRole('button', { name: /Save Changes/i });
     await user.click(saveButton);
 
     await waitFor(() => {
       expect(mockOnSave).toHaveBeenCalledWith('conn1', {
-        relationshipType: 'Sold',
-        notes: 'Sold to client',
+        relationshipType: 'Owned',
+        notes: 'Now owned by client',
       });
     });
+  });
+
+  it('F7: does not offer Sold as a selectable option in the general editor', () => {
+    render(
+      <EditConnectionModal
+        isOpen={true}
+        onClose={mockOnClose}
+        onSave={mockOnSave}
+        connection={mockConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
+      />
+    );
+
+    const relationshipSelect = screen.getByRole('combobox');
+    const options = Array.from(
+      relationshipSelect.querySelectorAll('option')
+    ).map(option => option.getAttribute('value'));
+
+    expect(options).not.toContain('Sold');
+    expect(options).toEqual(
+      expect.arrayContaining(['Interested', 'Booked', 'Owned'])
+    );
+  });
+
+  it('F7: renders a Sold connection as a read-only badge instead of a transition selector', () => {
+    const soldConnection: ClientInstrument = {
+      ...mockConnection,
+      relationship_type: 'Sold',
+    };
+
+    render(
+      <EditConnectionModal
+        isOpen={true}
+        onClose={mockOnClose}
+        onSave={mockOnSave}
+        connection={soldConnection}
+        clients={[mockClient]}
+        items={[mockInstrument]}
+      />
+    );
+
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByText('Sold')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Save Changes/i })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Close/i })).toBeInTheDocument();
   });
 
   it('should not call onClose after successful save (parent owns close after confirmed update)', async () => {

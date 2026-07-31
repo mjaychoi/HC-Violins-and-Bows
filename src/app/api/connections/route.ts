@@ -28,16 +28,35 @@ import {
 import { assertClientConnectionsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import { authRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
 
-const CONNECTION_SELECT_COLUMNS =
-  'id, client_id, instrument_id, relationship_type, notes, display_order, created_at';
-
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 const MAX_ALL_RESULTS = 1000;
+/**
+ * Explicit minimum column allowlists for the embedded client/instrument
+ * resources, replacing the previous `client:clients(*)` /
+ * `instrument:instruments(*)` wildcard projections.
+ *
+ * Scope is the actual shipped `/connections` UI (ConnectionCard,
+ * EditConnectionModal, ConnectionModal, connection search/sort in
+ * page.tsx and connectionGrouping.ts) - not every column on `clients` /
+ * `instruments`. In particular this intentionally excludes: private
+ * `note`/`interest`, `address`, `contact_number`, `client_number`
+ * (client), and `serial_number`, `status`, `cost_price`,
+ * `consignment_price`, `ownership`, `note`, `size`, `weight`,
+ * `certificate*`, `reserved_*` (instrument) - none of which the shipped
+ * connections surfaces render. If a future connections feature needs one
+ * of these, add it here deliberately rather than reverting to `*`.
+ *
+ * Shared by every handler below (GET collection, by-ID GET, POST/PATCH
+ * mutation response, PUT reorder response) so every surface that renders a
+ * connection sees an identical client/instrument shape.
+ */
+const CONNECTION_CLIENT_COLUMNS = 'id, first_name, last_name, email, tags';
+const CONNECTION_INSTRUMENT_COLUMNS = 'id, maker, type, year, price';
 const CONNECTION_DETAIL_SELECT = `
   *,
-  client:clients(*),
-  instrument:instruments(*)
+  client:clients(${CONNECTION_CLIENT_COLUMNS}),
+  instrument:instruments(${CONNECTION_INSTRUMENT_COLUMNS})
 `;
 
 type ConnectionDisplayOrderUpdate = {
@@ -117,6 +136,107 @@ function getConnectionConflictStatus(errorMessage: string): number {
   }
 
   return 500;
+}
+
+/**
+ * Stable RPC-raised application errors (RAISE EXCEPTION 'CODE: message') that
+ * must map to a specific HTTP status + error_code rather than falling through
+ * to getConnectionConflictStatus's brittle free-text matching or the generic
+ * 500 fallback.
+ */
+const CONNECTION_ERROR_CODE_PREFIXES: Array<{
+  prefix: string;
+  status: number;
+  error_code: string;
+  message: string;
+}> = [
+  {
+    prefix: 'SOLD_CONNECTION_IMMUTABLE',
+    status: 409,
+    error_code: 'SOLD_CONNECTION_IMMUTABLE',
+    message:
+      'Sold relationships cannot be deleted. Use the sales refund/adjustment workflow instead.',
+  },
+  {
+    // F13: the API layer already rejects client_id/instrument_id on PATCH
+    // with an explicit 400 before ever calling the RPC (see patchHandler
+    // below), so this path is normally unreachable through this API.
+    // update_connection_atomic itself raises this same stable error for
+    // any caller that invokes it directly, and this mapping keeps this
+    // route's error contract consistent in case that validation is ever
+    // bypassed or changes.
+    prefix: 'CONNECTION_REASSIGNMENT_UNSUPPORTED',
+    status: 400,
+    error_code: 'CONNECTION_REASSIGNMENT_UNSUPPORTED',
+    message:
+      "Reassigning a connection's client_id/instrument_id is not supported. Create a new connection instead.",
+  },
+];
+
+/**
+ * Postgres unique-violation (23505) constraint names that map to a specific
+ * conflict response. Matched by constraint name (embedded in the Postgres
+ * error message by PostgREST), not free-text phrasing, so message wording
+ * changes upstream cannot silently break this mapping. Unique violations on
+ * any other constraint intentionally fall through to generic error handling
+ * so they retain their existing classification.
+ */
+const UNIQUE_VIOLATION_CONFLICTS: Record<
+  string,
+  { status: number; error_code: string; message: string }
+> = {
+  client_instruments_single_owner_per_instrument: {
+    status: 409,
+    error_code: 'INSTRUMENT_ALREADY_OWNED',
+    message: 'This instrument already has an active Owned relationship.',
+  },
+};
+
+type ConnectionErrorPayload = {
+  status: number;
+  payload: { error: string; error_code: string };
+};
+
+/**
+ * Maps a Supabase/Postgres RPC error to a stable API error response when the
+ * error is a known, safe-to-surface conflict. Returns null for anything that
+ * should keep going through the generic errorHandler path (and therefore its
+ * existing status, typically 500 for unclassified database errors).
+ */
+function mapConnectionRpcError(error: unknown): ConnectionErrorPayload | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  const pgError = error as { code?: unknown; message?: unknown };
+  const message = typeof pgError.message === 'string' ? pgError.message : '';
+
+  if (pgError.code === '23505') {
+    for (const [constraint, info] of Object.entries(
+      UNIQUE_VIOLATION_CONFLICTS
+    )) {
+      if (message.includes(constraint)) {
+        return {
+          status: info.status,
+          payload: { error: info.message, error_code: info.error_code },
+        };
+      }
+    }
+    // Unrelated unique violation: do not reclassify it here. Let it fall
+    // through to the generic conflict/error handling below.
+    return null;
+  }
+
+  for (const known of CONNECTION_ERROR_CODE_PREFIXES) {
+    if (message.startsWith(known.prefix)) {
+      return {
+        status: known.status,
+        payload: { error: known.message, error_code: known.error_code },
+      };
+    }
+  }
+
+  return null;
 }
 
 async function fetchConnectionById(auth: AuthContext, connectionId: string) {
@@ -199,7 +319,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       let query = auth.userSupabase
         .from('client_instruments')
-        .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' })
+        .select(CONNECTION_DETAIL_SELECT, { count: 'exact' })
         .eq('org_id', auth.orgId!);
 
       if (clientId) {
@@ -231,7 +351,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       ) {
         let retryQuery = auth.userSupabase
           .from('client_instruments')
-          .select(CONNECTION_SELECT_COLUMNS, { count: 'exact' })
+          .select(CONNECTION_DETAIL_SELECT, { count: 'exact' })
           .eq('org_id', auth.orgId!);
 
         if (clientId) {
@@ -262,9 +382,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       const rawData = data || [];
       const truncated = fetchAll && rawData.length > MAX_ALL_RESULTS;
-      const responseData = truncated
+      const cappedData = truncated
         ? rawData.slice(0, MAX_ALL_RESULTS)
         : rawData;
+      // Same normalization layer used by the by-ID / create / update / reorder
+      // responses, so every surface that renders a connection (this list,
+      // /clients, /dashboard) sees an identical client/instrument shape.
+      const responseData = cappedData.map(mapConnectionDetailRow);
       const totalCount = count || 0;
       const recordCount = responseData.length;
       const responsePage = fetchAll ? 1 : page;
@@ -422,6 +546,11 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           idempotencyKey
         );
 
+        const knownConflict = mapConnectionRpcError(error);
+        if (knownConflict) {
+          return knownConflict;
+        }
+
         const errorMessage =
           error && typeof error.message === 'string'
             ? error.message
@@ -507,6 +636,23 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      // F13: reassigning a connection to a different client or instrument is
+      // not a supported product operation. These fields are create-only;
+      // reject them explicitly rather than silently accepting or dropping
+      // them so callers get clear feedback instead of a false impression of
+      // success.
+      const reassignmentFields = ['client_id', 'instrument_id'].filter(
+        field => field in updates
+      );
+      if (reassignmentFields.length > 0) {
+        return {
+          payload: {
+            error: `Reassigning a connection's ${reassignmentFields.join(' and ')} is not supported. Create a new connection instead.`,
+          },
+          status: 400,
+        };
+      }
+
       const validationResult = safeValidate(
         updates,
         validatePartialClientInstrument
@@ -530,13 +676,18 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         'update_connection_atomic',
         {
           p_connection_id: id,
-          // ClientInstrument relation fields are stripped by validation.
-          // Remaining fields are JSON-serializable.
+          // client_id/instrument_id are rejected above (F13); the RPC also
+          // ignores them defensively for callers that invoke it directly.
           p_updates: validatedUpdates as unknown as Json,
         }
       );
 
       if (error || typeof connectionId !== 'string') {
+        const knownConflict = mapConnectionRpcError(error);
+        if (knownConflict) {
+          return knownConflict;
+        }
+
         const errorMessage =
           error && typeof error.message === 'string'
             ? error.message
@@ -611,6 +762,11 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
       );
 
       if (error || typeof connectionId !== 'string') {
+        const knownConflict = mapConnectionRpcError(error);
+        if (knownConflict) {
+          return knownConflict;
+        }
+
         const errorMessage =
           error && typeof error.message === 'string'
             ? error.message
@@ -726,13 +882,7 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
 
       const { data, error: fetchError } = await auth.userSupabase
         .from('client_instruments')
-        .select(
-          `
-            *,
-            client:clients(*),
-            instrument:instruments(*)
-          `
-        )
+        .select(CONNECTION_DETAIL_SELECT)
         .in('id', ids)
         .eq('org_id', auth.orgId!)
         .order('display_order', { ascending: true });
@@ -744,8 +894,10 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
         );
       }
 
+      const normalized = (data || []).map(mapConnectionDetailRow);
+
       return {
-        payload: { data: (data || []) as ClientInstrument[] },
+        payload: { data: normalized as ClientInstrument[] },
         metadata: { orderCount: orders.length },
       };
     }

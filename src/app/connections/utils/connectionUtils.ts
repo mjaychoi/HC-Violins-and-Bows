@@ -3,19 +3,28 @@ import { Client, Instrument, ClientInstrument } from '@/types';
 import { getRelationshipColor as getRelationshipColorFromTokens } from '@/utils/colorTokens';
 
 // Connection formatting utilities
+//
+// "Unavailable client/instrument" is an intentional fallback for a
+// *missing* reference (the joined row could not be found/loaded), distinct
+// from a client/instrument that exists but simply has no name/maker/type on
+// file. We never want to render "undefined - undefined" or a bare "Unknown"
+// unless it is an actual product label for known-but-unnamed data.
 export const formatClientName = (client?: Client | null): string => {
-  if (!client) return 'Unknown Client';
-  return (
-    `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
-    'Unknown Client'
-  );
+  if (!client) return 'Unavailable client';
+  const name = `${client.first_name || ''} ${client.last_name || ''}`.trim();
+  if (name) return name;
+  if (client.email) return client.email;
+  return 'Unnamed client';
 };
 
 export const formatInstrumentName = (
   instrument?: Instrument | null
 ): string => {
-  if (!instrument) return 'Unknown Instrument';
-  return `${instrument.maker || 'Unknown'} - ${instrument.type || 'Unknown'}`.trim();
+  if (!instrument) return 'Unavailable instrument';
+  const parts = [instrument.maker, instrument.type].filter(
+    (part): part is string => Boolean(part && part.trim())
+  );
+  return parts.length > 0 ? parts.join(' - ') : 'Unnamed instrument';
 };
 
 export const formatConnectionName = (connection: ClientInstrument): string => {

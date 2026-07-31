@@ -27,6 +27,13 @@ interface ConnectionsState {
   submitting: boolean;
   error: unknown | null;
   lastUpdated: Date | null;
+  /**
+   * F2: true when the most recent org-wide ("all") fetch hit the server-side
+   * row cap and more relationships exist than were returned. Reset on every
+   * successful fetch and on tenant switch (via RESET_STATE) so a stale
+   * warning from a previous organization can never leak into a new one.
+   */
+  truncated: boolean;
 }
 
 type ConnectionsAction =
@@ -34,7 +41,10 @@ type ConnectionsAction =
   | { type: 'END_LOADING' }
   | { type: 'SET_SUBMITTING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: unknown | null }
-  | { type: 'SET_CONNECTIONS'; payload: ClientInstrument[] }
+  | {
+      type: 'SET_CONNECTIONS';
+      payload: { connections: ClientInstrument[]; truncated: boolean };
+    }
   | { type: 'ADD_CONNECTION'; payload: ClientInstrument }
   | {
       type: 'UPDATE_CONNECTION';
@@ -52,6 +62,7 @@ const initialState: ConnectionsState = {
   submitting: false,
   error: null,
   lastUpdated: null,
+  truncated: false,
 };
 
 function connectionsReducer(
@@ -87,16 +98,20 @@ function connectionsReducer(
         return { ...state, error: null };
       }
 
+      // F5: a fetch failure (auth-like errors are handled separately via
+      // RESET_STATE above) must not wipe out rows that are already on
+      // screen - a refresh/refetch failure should surface an error/retry
+      // affordance while preserving the last known-good, same-tenant data.
       return {
         ...state,
-        connections: [],
         error: action.payload,
       };
 
     case 'SET_CONNECTIONS':
       return {
         ...state,
-        connections: action.payload,
+        connections: action.payload.connections,
+        truncated: action.payload.truncated,
         error: null,
         lastUpdated: new Date(),
       };
@@ -374,6 +389,9 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
           );
 
           const next = Array.isArray(body.data) ? body.data : [];
+          // Only the org-wide "all" fetch can hit MAX_ALL_RESULTS; a
+          // paginated fetch is truncated by design (by page), not silently.
+          const nextTruncated = all && body.truncated === true;
 
           if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
             return;
@@ -381,11 +399,24 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
 
           orgWideFetchCompleteRef.current = all;
 
-          if (!sameConnections(stateRef.current.connections, next)) {
-            dispatch({ type: 'SET_CONNECTIONS', payload: next });
+          if (
+            !sameConnections(stateRef.current.connections, next) ||
+            stateRef.current.truncated !== nextTruncated
+          ) {
+            dispatch({
+              type: 'SET_CONNECTIONS',
+              payload: { connections: next, truncated: nextTruncated },
+            });
           }
         } catch (err) {
           if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+            return;
+          }
+
+          // F5: an aborted request (e.g. a superseded in-flight fetch) is not
+          // a user-facing failure - surfacing it as an error would flash a
+          // false error state for a request nobody is waiting on anymore.
+          if (err instanceof DOMException && err.name === 'AbortError') {
             return;
           }
 
@@ -645,6 +676,7 @@ export function useConnections() {
     loading: state.loading,
     submitting: state.submitting,
     error: state.error,
+    truncated: state.truncated,
     lastUpdated: state.lastUpdated,
     ...actions,
   };

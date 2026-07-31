@@ -9,6 +9,13 @@ jest.mock('@/hooks/usePermissions', () => ({
   })),
 }));
 
+// F11: page.tsx reads tenantIdentityKey directly to reset create-connection
+// state on organization change - mock it here instead of juggling a real
+// AuthContext wrapper so it fits the rest of this file's mocking style.
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  useTenantIdentity: jest.fn(() => ({ tenantIdentityKey: 'tenant-a' })),
+}));
+
 // Type definitions for mock components
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -131,8 +138,9 @@ jest.mock('next/dynamic', () => {
           onEditConnection,
           onDeleteConnection,
           currentPage,
+          canDrag,
         }) => (
-          <div data-testid="connections-list">
+          <div data-testid="connections-list" data-can-drag={String(canDrag)}>
             <button onClick={() => onPageChange(2)} data-testid="page-next">
               Next Page
             </button>
@@ -246,19 +254,6 @@ jest.mock('../components', () => ({
       </div>
     )
   ),
-  EmptyState: jest.fn(({ onCreateConnection }) => (
-    <div data-testid="empty-state">
-      <button
-        onClick={onCreateConnection}
-        data-testid="create-connection-button"
-      >
-        Create Connection
-      </button>
-    </div>
-  )),
-  LoadingState: jest.fn(() => (
-    <div data-testid="loading-state">Loading...</div>
-  )),
   EditConnectionModal: jest.fn(({ isOpen, onClose, onSave }) =>
     isOpen ? (
       <div data-testid="edit-connection-modal">
@@ -471,6 +466,9 @@ describe('ConnectedClientsPage', () => {
     const { useFilterSort } = require('@/hooks/useFilterSort');
     // Default: useFilterSort returns empty items (can be overridden in tests)
     useFilterSort.mockImplementation(<T,>(items: T[]) => ({ items }));
+
+    const { useTenantIdentity } = require('@/hooks/useTenantIdentity');
+    useTenantIdentity.mockReturnValue({ tenantIdentityKey: 'tenant-a' });
   });
 
   it('should render page with title', () => {
@@ -555,7 +553,7 @@ describe('ConnectedClientsPage', () => {
       clients: [],
       instruments: [],
       connections: [],
-      loading: { any: true },
+      loading: { any: true, connections: true },
       submitting: { any: false },
       createConnection: mockCreateConnection,
       updateConnection: mockUpdateConnection,
@@ -1524,6 +1522,331 @@ describe('ConnectedClientsPage', () => {
       });
 
       expect(mockCloseEditModal).toHaveBeenCalled();
+    });
+  });
+
+  describe('F2: incomplete-collection (truncated) warning', () => {
+    it('renders an incomplete-results warning when the collection is truncated', () => {
+      const { useConnectedClientsData } = require('@/hooks/useUnifiedData');
+      useConnectedClientsData.mockReturnValue({
+        clients: [],
+        instruments: [],
+        connections: [{ id: '1' }],
+        loading: { connections: false, any: false },
+        submitting: { any: false },
+        error: { connections: null },
+        truncated: true,
+        createConnection: mockCreateConnection,
+        updateConnection: mockUpdateConnection,
+        deleteConnection: mockDeleteConnection,
+        fetchConnections: mockFetchConnections,
+      });
+
+      render(<ConnectedClientsPage />);
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /partial list of connections/i
+      );
+    });
+
+    it('does not render the warning when the collection is complete', () => {
+      const { useConnectedClientsData } = require('@/hooks/useUnifiedData');
+      useConnectedClientsData.mockReturnValue({
+        clients: [],
+        instruments: [],
+        connections: [],
+        loading: { connections: false, any: false },
+        submitting: { any: false },
+        error: { connections: null },
+        truncated: false,
+        createConnection: mockCreateConnection,
+        updateConnection: mockUpdateConnection,
+        deleteConnection: mockDeleteConnection,
+        fetchConnections: mockFetchConnections,
+      });
+
+      render(<ConnectedClientsPage />);
+      expect(
+        screen.queryByText(/partial list of connections/i)
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('F5: collection loading/error states derived from real fetch state', () => {
+    it('shows a loading UI (not the empty state) while the initial fetch is in flight', () => {
+      const { useConnectedClientsData } = require('@/hooks/useUnifiedData');
+      useConnectedClientsData.mockReturnValue({
+        clients: [],
+        instruments: [],
+        connections: [],
+        loading: { connections: true, any: true },
+        submitting: { any: false },
+        error: { connections: null },
+        truncated: false,
+        createConnection: mockCreateConnection,
+        updateConnection: mockUpdateConnection,
+        deleteConnection: mockDeleteConnection,
+        fetchConnections: mockFetchConnections,
+      });
+
+      render(<ConnectedClientsPage />);
+      expect(screen.getByText('Loading connections...')).toBeInTheDocument();
+      expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
+    });
+
+    it('shows an error/retry state when the initial fetch fails with no rows', async () => {
+      const { useConnectedClientsData } = require('@/hooks/useUnifiedData');
+      useConnectedClientsData.mockReturnValue({
+        clients: [],
+        instruments: [],
+        connections: [],
+        loading: { connections: false, any: false },
+        submitting: { any: false },
+        error: { connections: new Error('Network error') },
+        truncated: false,
+        createConnection: mockCreateConnection,
+        updateConnection: mockUpdateConnection,
+        deleteConnection: mockDeleteConnection,
+        fetchConnections: mockFetchConnections,
+      });
+
+      render(<ConnectedClientsPage />);
+      expect(screen.getByText("Couldn't load connections")).toBeInTheDocument();
+
+      const retryButton = screen.getByText('Retry');
+      await act(async () => {
+        fireEvent.click(retryButton);
+      });
+
+      expect(mockFetchConnections).toHaveBeenCalledWith({
+        all: true,
+        force: true,
+      });
+    });
+
+    it('preserves existing rows and shows an inline retry banner when a refetch fails', () => {
+      const mockConnection = {
+        id: '1',
+        relationship_type: 'Interested' as const,
+      };
+
+      const { useConnectedClientsData } = require('@/hooks/useUnifiedData');
+      useConnectedClientsData.mockReturnValue({
+        clients: [],
+        instruments: [],
+        connections: [mockConnection],
+        loading: { connections: false, any: false },
+        submitting: { any: false },
+        error: { connections: new Error('Refresh failed') },
+        truncated: false,
+        createConnection: mockCreateConnection,
+        updateConnection: mockUpdateConnection,
+        deleteConnection: mockDeleteConnection,
+        fetchConnections: mockFetchConnections,
+      });
+
+      const { useFilterSort } = require('@/hooks/useFilterSort');
+      useFilterSort.mockImplementation(
+        <T extends { id?: string }>(items: T[]) => {
+          if (items && items.length > 0 && items[0]?.id === '1') {
+            return { items: [mockConnection] };
+          }
+          return { items: [] };
+        }
+      );
+
+      const { useConnectionFilters } = require('../hooks');
+      useConnectionFilters.mockReturnValue({
+        selectedFilter: null,
+        setSelectedFilter: mockSetSelectedFilter,
+        groupedConnections: { Interested: [mockConnection] },
+        relationshipTypeCounts: [],
+      });
+
+      render(<ConnectedClientsPage />);
+
+      // Rows are preserved (real list renders), not replaced by an error screen.
+      expect(screen.getByTestId('connections-list')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Couldn't refresh connections/i)
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe('F10: mutation affordances match permissions', () => {
+    afterEach(() => {
+      // Restore the module-level default so later tests in this file are
+      // unaffected by a permission override made here.
+      const { usePermissions } = require('@/hooks/usePermissions');
+      usePermissions.mockReturnValue({
+        canCreateConnection: true,
+        canManageConnections: true,
+      });
+    });
+
+    it('hides "Add connection" in the no-results state for non-admins', () => {
+      const { usePermissions } = require('@/hooks/usePermissions');
+      usePermissions.mockReturnValue({
+        canCreateConnection: false,
+        canManageConnections: false,
+      });
+
+      const { useConnectedClientsData } = require('@/hooks/useUnifiedData');
+      useConnectedClientsData.mockReturnValue({
+        clients: [],
+        instruments: [],
+        connections: [{ id: '1' }],
+        loading: { any: false },
+        submitting: { any: false },
+        createConnection: mockCreateConnection,
+        updateConnection: mockUpdateConnection,
+        deleteConnection: mockDeleteConnection,
+        fetchConnections: mockFetchConnections,
+      });
+
+      const { useFilterSort } = require('@/hooks/useFilterSort');
+      useFilterSort.mockReturnValue({ items: [] });
+
+      render(<ConnectedClientsPage />);
+      expect(screen.getByText('No results')).toBeInTheDocument();
+      expect(screen.queryByText('Add connection')).not.toBeInTheDocument();
+      // Clearing filters is not a mutation and must stay available.
+      expect(screen.getByText('Clear filters')).toBeInTheDocument();
+    });
+
+    it('passes canDrag=false to ConnectionsList for non-admins', () => {
+      const { usePermissions } = require('@/hooks/usePermissions');
+      usePermissions.mockReturnValue({
+        canCreateConnection: false,
+        canManageConnections: false,
+      });
+
+      const mockConnection = {
+        id: '1',
+        relationship_type: 'Interested' as const,
+      };
+
+      const { useConnectedClientsData } = require('@/hooks/useUnifiedData');
+      useConnectedClientsData.mockReturnValue({
+        clients: [],
+        instruments: [],
+        connections: [mockConnection],
+        loading: { any: false },
+        submitting: { any: false },
+        createConnection: mockCreateConnection,
+        updateConnection: mockUpdateConnection,
+        deleteConnection: mockDeleteConnection,
+        fetchConnections: mockFetchConnections,
+      });
+
+      const { useFilterSort } = require('@/hooks/useFilterSort');
+      useFilterSort.mockImplementation(
+        <T extends { id?: string }>(items: T[]) => {
+          if (items && items.length > 0 && items[0]?.id === '1') {
+            return { items: [mockConnection] };
+          }
+          return { items: [] };
+        }
+      );
+
+      const { useConnectionFilters } = require('../hooks');
+      useConnectionFilters.mockReturnValue({
+        selectedFilter: null,
+        setSelectedFilter: mockSetSelectedFilter,
+        groupedConnections: { Interested: [mockConnection] },
+        relationshipTypeCounts: [],
+      });
+
+      render(<ConnectedClientsPage />);
+
+      expect(screen.getByTestId('connections-list')).toHaveAttribute(
+        'data-can-drag',
+        'false'
+      );
+    });
+
+    it('does not call updateConnection on drag end when the user lacks manage permission', async () => {
+      const { usePermissions } = require('@/hooks/usePermissions');
+      usePermissions.mockReturnValue({
+        canCreateConnection: false,
+        canManageConnections: false,
+      });
+
+      const mockConnection: ClientInstrument = {
+        id: 'conn-1',
+        client_id: 'client-1',
+        instrument_id: 'inst-1',
+        relationship_type: 'Interested',
+        notes: 'test notes',
+        created_at: '2024-01-01',
+      };
+
+      const { useConnectedClientsData } = require('@/hooks/useUnifiedData');
+      useConnectedClientsData.mockReturnValue({
+        clients: [],
+        instruments: [],
+        connections: [mockConnection],
+        loading: { any: false },
+        submitting: { any: false },
+        createConnection: mockCreateConnection,
+        updateConnection: mockUpdateConnection,
+        deleteConnection: mockDeleteConnection,
+        fetchConnections: mockFetchConnections,
+      });
+
+      render(<ConnectedClientsPage />);
+      const dragEndButton = screen.getByTestId('trigger-drag-end-sold');
+
+      await act(async () => {
+        fireEvent.click(dragEndButton);
+      });
+
+      await waitFor(() => {
+        expect(mockUpdateConnection).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('F11: create-connection state resets on organization change', () => {
+    it('closes the create modal when the tenant identity changes', async () => {
+      const { useTenantIdentity } = require('@/hooks/useTenantIdentity');
+      useTenantIdentity.mockReturnValue({ tenantIdentityKey: 'org-a' });
+
+      const { rerender } = render(<ConnectedClientsPage />);
+
+      const addButton = screen.getByText('Add Connection');
+      fireEvent.click(addButton);
+      expect(screen.getByTestId('connection-modal')).toBeInTheDocument();
+
+      useTenantIdentity.mockReturnValue({ tenantIdentityKey: 'org-b' });
+      await act(async () => {
+        rerender(<ConnectedClientsPage />);
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByTestId('connection-modal')
+        ).not.toBeInTheDocument();
+      });
+    });
+
+    it('reopening the modal after an organization change starts with cleared fields', async () => {
+      const { useTenantIdentity } = require('@/hooks/useTenantIdentity');
+      useTenantIdentity.mockReturnValue({ tenantIdentityKey: 'org-a' });
+
+      const { rerender } = render(<ConnectedClientsPage />);
+      fireEvent.click(screen.getByText('Add Connection'));
+      expect(screen.getByTestId('connection-modal')).toBeInTheDocument();
+
+      useTenantIdentity.mockReturnValue({ tenantIdentityKey: 'org-b' });
+      await act(async () => {
+        rerender(<ConnectedClientsPage />);
+      });
+      expect(screen.queryByTestId('connection-modal')).not.toBeInTheDocument();
+
+      // Re-opening after the switch must not resurrect the closed modal's
+      // previous (org-a) selections - the create flow starts clean.
+      fireEvent.click(screen.getByText('Add Connection'));
+      expect(screen.getByTestId('connection-modal')).toBeInTheDocument();
     });
   });
 });

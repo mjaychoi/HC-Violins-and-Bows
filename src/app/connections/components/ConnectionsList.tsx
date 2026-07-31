@@ -23,6 +23,8 @@ interface ConnectionsListProps {
   pageSize?: number;
   onPageChange?: (page: number) => void;
   loading?: boolean;
+  /** F10: non-admins get read-only browsing - no drag-and-drop reordering. */
+  canDrag?: boolean;
 }
 
 export const ConnectionsList = memo(function ConnectionsList({
@@ -34,6 +36,7 @@ export const ConnectionsList = memo(function ConnectionsList({
   pageSize = 20,
   onPageChange,
   loading = false,
+  canDrag = true,
 }: ConnectionsListProps) {
   // Note: Drag over state is now handled at the page level (FilterBar tabs)
   // Section headers in All tab still use droppable but visual feedback is handled by parent
@@ -131,6 +134,7 @@ export const ConnectionsList = memo(function ConnectionsList({
                         onDelete={onDeleteConnection}
                         onEdit={onEditConnection}
                         isOver={false}
+                        canDrag={canDrag}
                       />
                     ))}
                   </div>
@@ -158,6 +162,7 @@ export const ConnectionsList = memo(function ConnectionsList({
                         onDelete={onDeleteConnection}
                         onEdit={onEditConnection}
                         isOver={false}
+                        canDrag={canDrag}
                       />
                     ))}
                   </div>
