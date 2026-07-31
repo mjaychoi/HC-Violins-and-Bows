@@ -73,15 +73,19 @@ jest.mock('@/utils/typeGuards', () => {
   };
 });
 
-// Mock inputValidation
-jest.mock('@/utils/inputValidation', () => ({
-  validateSortColumn: jest.fn((table, value) => value || 'created_at'),
-  validateUUID: jest.fn(value =>
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      value
-    )
-  ),
-}));
+// Mock inputValidation — keep real sanitizers; stub whitelist helpers
+jest.mock('@/utils/inputValidation', () => {
+  const actual = jest.requireActual('@/utils/inputValidation');
+  return {
+    ...actual,
+    validateSortColumn: jest.fn((table, value) => value || 'created_at'),
+    validateUUID: jest.fn(value =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        value
+      )
+    ),
+  };
+});
 
 describe('/api/clients', () => {
   const mockClient = {
@@ -146,7 +150,7 @@ describe('/api/clients', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue({
+        range: jest.fn().mockResolvedValue({
           data: [mockDbRow],
           error: null,
           count: 1,
@@ -169,7 +173,16 @@ describe('/api/clients', () => {
       expect(json.data[0].contact_number).toBe('123-456-7890');
       expect(json.data[0].tags).toEqual(['Owner']);
       expect(json.count).toBe(1);
+      expect(json.pagination).toEqual({
+        page: 1,
+        pageSize: 20,
+        totalCount: 1,
+        totalPages: 1,
+      });
+      expect(json.has_more).toBe(false);
+      expect(json.scope).toBe('paged');
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockQuery.range).toHaveBeenCalledWith(0, 19);
     });
 
     it('should hard-cap and mark truncated all=true lists', async () => {
@@ -237,7 +250,7 @@ describe('/api/clients', () => {
         eq: jest.fn().mockReturnThis(),
         or: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue({
+        range: jest.fn().mockResolvedValue({
           data: [mockDbRow],
           error: null,
           count: 1,
@@ -259,6 +272,9 @@ describe('/api/clients', () => {
       expect(mockQuery.or).toHaveBeenCalledWith(
         expect.stringContaining('name.ilike.%John%')
       );
+      expect(mockQuery.or).toHaveBeenCalledWith(
+        expect.stringContaining('client_number.ilike.%John%')
+      );
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
@@ -267,7 +283,7 @@ describe('/api/clients', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue({
+        range: jest.fn().mockResolvedValue({
           data: [mockDbRow],
           error: null,
           count: 1,
@@ -282,7 +298,8 @@ describe('/api/clients', () => {
       const response = await GET(request);
 
       expect(response.status).toBe(200);
-      expect(mockQuery.limit).toHaveBeenCalledWith(10);
+      // Legacy limit maps to pageSize for the first page
+      expect(mockQuery.range).toHaveBeenCalledWith(0, 9);
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
@@ -292,7 +309,7 @@ describe('/api/clients', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue({
+        range: jest.fn().mockResolvedValue({
           data: null,
           error: mockError,
           count: 0,
@@ -320,7 +337,7 @@ describe('/api/clients', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue({
+        range: jest.fn().mockResolvedValue({
           data: [dbRowWithNullTags],
           error: null,
           count: 1,
@@ -337,6 +354,73 @@ describe('/api/clients', () => {
 
       expect(response.status).toBe(200);
       expect(json.data[0].tags).toEqual([]);
+    });
+
+    it('paginates across pages with complete total metadata', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [mockDbRow],
+          error: null,
+          count: 1001,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      const request = new NextRequest(
+        'http://localhost/api/clients?page=51&pageSize=20&orderBy=created_at&ascending=false'
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.count).toBe(1001);
+      expect(json.pagination).toEqual({
+        page: 51,
+        pageSize: 20,
+        totalCount: 1001,
+        totalPages: 51,
+      });
+      expect(json.has_more).toBe(false);
+      expect(json.truncated).toBe(false);
+      expect(json.scope).toBe('paged');
+      expect(mockQuery.range).toHaveBeenCalledWith(1000, 1019);
+      expect(mockQuery.order).toHaveBeenCalledWith('created_at', {
+        ascending: false,
+      });
+      expect(mockQuery.order).toHaveBeenCalledWith('id', { ascending: true });
+    });
+
+    it('clamps oversized pageSize to the maximum', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [],
+          error: null,
+          count: 0,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      } as any;
+
+      const request = new NextRequest(
+        'http://localhost/api/clients?page=1&pageSize=9999'
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.pagination.pageSize).toBe(100);
+      expect(mockQuery.range).toHaveBeenCalledWith(0, 99);
     });
   });
 

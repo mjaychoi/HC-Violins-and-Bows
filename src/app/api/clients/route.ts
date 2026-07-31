@@ -10,7 +10,6 @@ import {
 } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import type { Client } from '@/types';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { logDebug } from '@/utils/logger';
 import {
   validateClient,
@@ -19,7 +18,7 @@ import {
   validateCreateClient,
   safeValidate,
 } from '@/utils/typeGuards';
-import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
+import { validateUUID } from '@/utils/inputValidation';
 import {
   CLIENT_TABLE_SELECT,
   createClientInputToDbRow,
@@ -40,136 +39,11 @@ import {
 import { assertClientsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import { searchRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
 import { writeAuditLog } from '@/utils/auditLog';
-
-const DEFAULT_PAGE_SIZE = 100;
-const MAX_PAGE_SIZE = 500;
-const MAX_LIMIT = 5000;
-const MAX_ALL_LIMIT = 1000;
-
-type ListQuery = {
-  orderBy: string;
-  ascending: boolean;
-  all: boolean;
-  limit?: number;
-  page?: number;
-  pageSize?: number;
-  shouldApplyRange: boolean;
-  rangeStart?: number;
-  rangeEnd?: number;
-  search?: string;
-};
-
-/**
- * PostgREST filter-string safety:
- * - remove chars that can break `or()` filter syntax
- * - cap length
- */
-function sanitizeSearchForOrIlike(input: string | null): string | undefined {
-  const s = (input ?? '').trim();
-  if (s.length < 2) return undefined;
-
-  const cleaned = s
-    .replace(/[%_]/g, ' ')
-    .replace(/[(),]/g, ' ')
-    .replace(/['"\\]/g, ' ')
-    .replace(/[\x00-\x1F]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 96);
-
-  return cleaned.length >= 2 ? cleaned : undefined;
-}
-
-function parsePositiveInt(
-  input: string | null,
-  opts?: { min?: number; max?: number }
-): number | undefined {
-  if (!input) return undefined;
-  const parsed = Number.parseInt(input, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
-
-  const min = opts?.min ?? 1;
-  const max = opts?.max ?? Number.POSITIVE_INFINITY;
-  return Math.min(Math.max(parsed, min), max);
-}
-
-function parseLimit(
-  limitParam: string | null,
-  all: boolean
-): number | undefined {
-  if (all) return MAX_ALL_LIMIT;
-  if (!limitParam) return DEFAULT_PAGE_SIZE;
-
-  const parsed = parsePositiveInt(limitParam, { min: 1, max: MAX_LIMIT });
-  return parsed ?? DEFAULT_PAGE_SIZE;
-}
-
-function parseListQuery(request: NextRequest): { q: ListQuery } {
-  const sp = request.nextUrl.searchParams;
-
-  const orderBy = validateSortColumn('clients', sp.get('orderBy'));
-  const ascending = sp.get('ascending') !== 'false';
-
-  const all = sp.get('all') === 'true';
-
-  const hasPage = sp.has('page');
-  const hasPageSize = sp.has('pageSize');
-
-  const page = parsePositiveInt(sp.get('page'), { min: 1 });
-  const pageSize = parsePositiveInt(sp.get('pageSize'), {
-    min: 1,
-    max: MAX_PAGE_SIZE,
-  });
-
-  const resolvedPageSize =
-    hasPageSize && pageSize !== undefined
-      ? pageSize
-      : hasPageSize
-        ? DEFAULT_PAGE_SIZE
-        : undefined;
-
-  const limitFromQuery = sp.has('limit')
-    ? parseLimit(sp.get('limit'), all)
-    : undefined;
-
-  const baseLimit = !all
-    ? (limitFromQuery ??
-      (hasPageSize || hasPage
-        ? (resolvedPageSize ?? DEFAULT_PAGE_SIZE)
-        : DEFAULT_PAGE_SIZE))
-    : MAX_ALL_LIMIT;
-
-  const shouldApplyRange =
-    !all && baseLimit !== undefined && (hasPage || hasPageSize);
-  const pageNumber = page ?? 1;
-
-  const rangeStart =
-    shouldApplyRange && typeof baseLimit === 'number'
-      ? (pageNumber - 1) * baseLimit
-      : undefined;
-
-  const rangeEnd =
-    typeof rangeStart === 'number'
-      ? rangeStart + (baseLimit ?? 0) - 1
-      : undefined;
-
-  const search = sanitizeSearchForOrIlike(sp.get('search'));
-
-  return {
-    q: {
-      orderBy,
-      ascending,
-      all,
-      limit: baseLimit,
-      page: shouldApplyRange ? pageNumber : undefined,
-      pageSize: shouldApplyRange ? baseLimit : undefined,
-      shouldApplyRange,
-      rangeStart,
-      rangeEnd,
-      search,
-    },
-  };
-}
+import {
+  buildClientsListPayload,
+  parseClientsListQuery,
+  runClientsListQuery,
+} from '@/app/api/clients/_utils/listQuery';
 
 function normalizeClientRows(rows: unknown[]): Client[] {
   return rows.map(raw =>
@@ -182,36 +56,6 @@ function normalizeClientRows(rows: unknown[]): Client[] {
 function debugQueryResult(meta: Record<string, unknown>) {
   if (process.env.NODE_ENV !== 'development') return;
   logDebug('[ClientsAPI] Raw query result', meta, 'ClientsAPI');
-}
-
-async function runClientsQuery(
-  supabase: SupabaseClient,
-  q: ListQuery,
-  orgId: string
-) {
-  let query = supabase
-    .from('clients')
-    .select(CLIENT_TABLE_SELECT, { count: 'exact' })
-    .eq('org_id', orgId);
-
-  if (q.search) {
-    const s = q.search;
-    query = query.or(`name.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%`);
-  }
-
-  query = query.order(q.orderBy, { ascending: q.ascending });
-
-  if (
-    q.shouldApplyRange &&
-    q.rangeStart !== undefined &&
-    q.rangeEnd !== undefined
-  ) {
-    query = query.range(q.rangeStart, q.rangeEnd);
-  } else if (q.limit !== undefined) {
-    query = query.limit(q.all ? q.limit + 1 : q.limit);
-  }
-
-  return query;
 }
 
 // -----------------------------
@@ -265,7 +109,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const { q } = parseListQuery(request);
+      const q = parseClientsListQuery(request);
 
       if (!auth.orgId) {
         return {
@@ -284,8 +128,11 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       await assertClientsSchemaReadiness({ supabase: auth.userSupabase });
 
-      const query = runClientsQuery(auth.userSupabase, q, auth.orgId);
-      const { data, error, count } = await query;
+      const { data, error, count } = await runClientsListQuery(
+        auth.userSupabase,
+        q,
+        auth.orgId
+      );
 
       debugQueryResult({
         dataLength: data?.length ?? 0,
@@ -293,27 +140,27 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         error: error
           ? { message: error.message, details: error.details, hint: error.hint }
           : null,
-        limit: q.limit,
         page: q.page,
         pageSize: q.pageSize,
         orderBy: q.orderBy,
         ascending: q.ascending,
         search: q.search,
         all: q.all,
+        hasInstruments: q.hasInstruments,
       });
 
       if (error) throw errorHandler.handleSupabaseError(error, 'Fetch clients');
 
-      const rawRows = data ?? [];
-      const truncated =
-        q.all && q.limit !== undefined && rawRows.length > q.limit;
-      const rows = truncated ? rawRows.slice(0, q.limit) : rawRows;
+      const rawRows = (data ?? []) as unknown[];
+      const totalCount = count ?? 0;
+      const { rows, payloadMeta } = buildClientsListPayload(
+        rawRows,
+        totalCount,
+        q
+      );
       const normalized = normalizeClientRows(rows);
 
-      const recordCount = normalized.length;
-      const totalCount = count ?? 0;
-
-      if (!data || data.length === 0) {
+      if (normalized.length === 0) {
         Logger.warn('No clients found in database', 'ClientsAPI', { count });
         if (totalCount > 0) {
           Logger.warn(
@@ -328,14 +175,20 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       const validationWarning = !validationResult.success;
 
       return {
-        payload: { data: normalized, count: totalCount, truncated },
+        payload: {
+          data: normalized,
+          count: payloadMeta.count,
+          pagination: payloadMeta.pagination,
+          has_more: payloadMeta.has_more,
+          truncated: payloadMeta.truncated,
+          scope: payloadMeta.scope,
+        },
         metadata: {
-          recordCount,
-          totalCount,
+          recordCount: normalized.length,
+          totalCount: payloadMeta.count,
           orderBy: q.orderBy,
           ascending: q.ascending,
           search: q.search,
-          limit: q.limit,
           page: q.page,
           pageSize: q.pageSize,
           all: q.all,
