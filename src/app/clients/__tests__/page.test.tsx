@@ -35,18 +35,8 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('../components/ClientsAnalyticsPanel', () => ({
   __esModule: true,
-  default: ({
-    enabled,
-    clientsTruncated,
-  }: {
-    enabled: boolean;
-    clientsTruncated?: boolean;
-  }) => (
-    <div
-      data-testid="clients-analytics-panel"
-      data-enabled={String(enabled)}
-      data-truncated={String(Boolean(clientsTruncated))}
-    >
+  default: ({ enabled }: { enabled: boolean }) => (
+    <div data-testid="clients-analytics-panel" data-enabled={String(enabled)}>
       Analytics panel content
     </div>
   ),
@@ -105,15 +95,28 @@ jest.mock('next/dynamic', () => ({
 }));
 
 jest.mock('../components/ClientsListContent', () => {
+  const mockClientsFallback: Client[] = [
+    {
+      id: '1',
+      first_name: 'John',
+      last_name: 'Doe',
+      email: 'john@example.com',
+      contact_number: '123-456-7890',
+      tags: [],
+      interest: '',
+      note: '',
+      client_number: null,
+      created_at: '2024-01-01T00:00:00Z',
+    },
+  ];
+
   return function MockClientsListContent({
-    clients,
     onClientClick,
     onUpdateClient,
     onDeleteClient,
     newlyCreatedClientId,
     onNewlyCreatedClientShown: _onNewlyCreatedClientShown, // eslint-disable-line @typescript-eslint/no-unused-vars
   }: {
-    clients: Client[];
     onClientClick: (client: Client) => void;
     onUpdateClient: (
       clientId: string,
@@ -123,9 +126,16 @@ jest.mock('../components/ClientsListContent', () => {
     newlyCreatedClientId: string | null;
     onNewlyCreatedClientShown: () => void;
   }) {
+    const { useUnifiedClients } = require('@/hooks/useUnifiedData');
+    const unified = useUnifiedClients();
+    const clients: Client[] =
+      Array.isArray(unified?.clients) && unified.clients.length > 0
+        ? unified.clients
+        : mockClientsFallback;
+
     return (
       <div data-testid="clients-list-content">
-        {clients.map(client => (
+        {clients.map((client: Client) => (
           <div
             key={client.id}
             data-testid={`client-row-${client.id}`}
@@ -622,10 +632,10 @@ describe('ClientsPage', () => {
         </Suspense>
       );
 
+      // List orchestration no longer blocks on the directory (all=true) load;
+      // ClientsListContent owns server-collection loading independently.
       expect(screen.getByText('Add Client')).toBeInTheDocument();
-      expect(
-        screen.queryByTestId('clients-list-content')
-      ).not.toBeInTheDocument();
+      expect(screen.getByTestId('clients-list-content')).toBeInTheDocument();
     });
 
     it('should render clients list when not loading', () => {
@@ -973,9 +983,7 @@ describe('ClientsPage', () => {
       expect(
         screen.getByText(/permanently deletes the client profile/i)
       ).toBeInTheDocument();
-      expect(
-        screen.getByText(/instrument relationships/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/instrument relationships/i)).toBeInTheDocument();
       expect(screen.getByText(/contact history/i)).toBeInTheDocument();
       expect(
         screen.getByText(/Sales and invoices are kept/i)
@@ -1609,12 +1617,12 @@ describe('ClientsPage', () => {
         screen.queryByTestId('clients-list-content')
       ).not.toBeInTheDocument();
       expect(screen.getByTestId('clients-analytics-panel')).toHaveAttribute(
-        'data-truncated',
-        'false'
+        'data-enabled',
+        'true'
       );
     });
 
-    it('passes truncated=true into analytics when the client collection is incomplete', async () => {
+    it('loads analytics without depending on directory truncation state', async () => {
       const { useSearchParams } = require('next/navigation');
       (useSearchParams as jest.Mock).mockReturnValue(
         new URLSearchParams('tab=analytics')
@@ -1654,11 +1662,15 @@ describe('ClientsPage', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByTestId('clients-analytics-panel')).toHaveAttribute(
-          'data-truncated',
-          'true'
-        );
+        expect(
+          screen.getByTestId('clients-analytics-panel')
+        ).toBeInTheDocument();
       });
+      // Complete org analytics endpoint is used; truncated directory flag is not forwarded.
+      expect(screen.getByTestId('clients-analytics-panel')).toHaveAttribute(
+        'data-enabled',
+        'true'
+      );
     });
 
     it('recovers invalid tab values to the list view and cleans the URL', async () => {

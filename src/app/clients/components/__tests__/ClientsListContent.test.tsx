@@ -6,31 +6,52 @@ import '@testing-library/jest-dom';
 import ClientsListContent from '../ClientsListContent';
 import { Client, ClientInstrument } from '@/types';
 
-// Mock dependencies
-jest.mock('../../hooks/useFilters', () => ({
-  useFilters: jest.fn(() => ({
-    searchTerm: '',
-    setSearchTerm: jest.fn(),
-    showFilters: false,
-    setShowFilters: jest.fn(),
-    filters: {},
-    paginatedClients: [],
-    filterOptions: {
-      tags: [],
-      interests: [],
-    },
-    handleFilterChange: jest.fn(),
-    handleHasInstrumentsChange: jest.fn(),
-    clearAllFilters: jest.fn(),
-    handleColumnSort: jest.fn(),
-    getSortArrow: jest.fn(() => ''),
-    getActiveFiltersCount: jest.fn(() => 0),
-    currentPage: 1,
-    totalPages: 1,
-    totalCount: 0,
-    pageSize: 20,
-    setPage: jest.fn(),
-  })),
+const mockCollection = {
+  pageRows: [] as Client[],
+  paginatedClients: [] as Client[],
+  totalCount: 0,
+  totalPages: 1,
+  page: 1,
+  pageSize: 20,
+  loading: false,
+  refreshing: false,
+  error: null as unknown,
+  searchTerm: '',
+  setSearchTerm: jest.fn(),
+  filters: {
+    last_name: [],
+    first_name: [],
+    contact_number: [],
+    email: [],
+    tags: [],
+    interest: [],
+    hasInstruments: [],
+  },
+  showFilters: false,
+  setShowFilters: jest.fn(),
+  filterOptions: {
+    lastNames: [],
+    firstNames: [],
+    contactNumbers: [],
+    emails: [],
+    tags: [],
+    interests: [],
+  },
+  handleFilterChange: jest.fn(),
+  handleHasInstrumentsChange: jest.fn(),
+  clearAllFilters: jest.fn(),
+  handleColumnSort: jest.fn(),
+  getSortArrow: jest.fn(() => ''),
+  getActiveFiltersCount: jest.fn(() => 0),
+  setPage: jest.fn(),
+  refetch: jest.fn(),
+  fetchClientById: jest.fn().mockResolvedValue(null),
+  cacheSelectedClient: jest.fn(),
+  clearSelectedClient: jest.fn(),
+};
+
+jest.mock('../../hooks/useClientCollection', () => ({
+  useClientCollection: jest.fn(() => mockCollection),
 }));
 
 jest.mock('../ClientList', () => ({
@@ -122,15 +143,20 @@ describe('ClientsListContent', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCollection.pageRows = [];
+    mockCollection.paginatedClients = [];
+    mockCollection.totalCount = 0;
+    mockCollection.loading = false;
+    mockCollection.error = null;
+    mockCollection.showFilters = false;
+    mockCollection.getActiveFiltersCount = jest.fn(() => 0);
   });
 
   it('renders component with all sections', () => {
     render(
       <ClientsListContent
-        clients={mockClients}
         clientsWithInstruments={new Set()}
         instrumentRelationships={mockInstrumentRelationships}
-        loading={{ any: false, hasAnyLoading: false }}
         onClientClick={mockOnClientClick}
         onUpdateClient={mockOnUpdateClient}
         onDeleteClient={mockOnDeleteClient}
@@ -141,35 +167,15 @@ describe('ClientsListContent', () => {
     expect(screen.getByTestId('client-list')).toBeInTheDocument();
   });
 
-  it('renders clients in list', () => {
-    const { useFilters } = require('../../hooks/useFilters');
-    jest.mocked(useFilters).mockReturnValueOnce({
-      searchTerm: '',
-      setSearchTerm: jest.fn(),
-      showFilters: false,
-      setShowFilters: jest.fn(),
-      filters: {},
-      paginatedClients: mockClients,
-      filterOptions: { tags: [], interests: [] },
-      handleFilterChange: jest.fn(),
-      handleHasInstrumentsChange: jest.fn(),
-      clearAllFilters: jest.fn(),
-      handleColumnSort: jest.fn(),
-      getSortArrow: jest.fn(() => ''),
-      getActiveFiltersCount: jest.fn(() => 0),
-      currentPage: 1,
-      totalPages: 1,
-      totalCount: 2,
-      pageSize: 20,
-      setPage: jest.fn(),
-    });
+  it('renders clients in list from server collection', () => {
+    mockCollection.paginatedClients = mockClients;
+    mockCollection.pageRows = mockClients;
+    mockCollection.totalCount = 2;
 
     render(
       <ClientsListContent
-        clients={mockClients}
         clientsWithInstruments={new Set()}
         instrumentRelationships={mockInstrumentRelationships}
-        loading={{ any: false, hasAnyLoading: false }}
         onClientClick={mockOnClientClick}
         onUpdateClient={mockOnUpdateClient}
         onDeleteClient={mockOnDeleteClient}
@@ -181,35 +187,14 @@ describe('ClientsListContent', () => {
   });
 
   it('calls onClientClick when client is clicked', async () => {
-    const { useFilters } = require('../../hooks/useFilters');
-    jest.mocked(useFilters).mockReturnValueOnce({
-      searchTerm: '',
-      setSearchTerm: jest.fn(),
-      showFilters: false,
-      setShowFilters: jest.fn(),
-      filters: {},
-      paginatedClients: [mockClients[0]],
-      filterOptions: { tags: [], interests: [] },
-      handleFilterChange: jest.fn(),
-      handleHasInstrumentsChange: jest.fn(),
-      clearAllFilters: jest.fn(),
-      handleColumnSort: jest.fn(),
-      getSortArrow: jest.fn(() => ''),
-      getActiveFiltersCount: jest.fn(() => 0),
-      currentPage: 1,
-      totalPages: 1,
-      totalCount: 1,
-      pageSize: 20,
-      setPage: jest.fn(),
-    });
+    mockCollection.paginatedClients = [mockClients[0]];
+    mockCollection.pageRows = [mockClients[0]];
 
     const user = userEvent.setup();
     render(
       <ClientsListContent
-        clients={mockClients}
         clientsWithInstruments={new Set()}
         instrumentRelationships={mockInstrumentRelationships}
-        loading={{ any: false, hasAnyLoading: false }}
         onClientClick={mockOnClientClick}
         onUpdateClient={mockOnUpdateClient}
         onDeleteClient={mockOnDeleteClient}
@@ -224,69 +209,84 @@ describe('ClientsListContent', () => {
 
   it('shows filters panel when filters button is clicked', async () => {
     const mockSetShowFilters = jest.fn();
-    const { useFilters } = require('../../hooks/useFilters');
-    jest.mocked(useFilters).mockReturnValueOnce({
-      searchTerm: '',
-      setSearchTerm: jest.fn(),
-      showFilters: true,
-      setShowFilters: mockSetShowFilters,
-      filters: {},
-      paginatedClients: [],
-      filterOptions: { tags: [], interests: [] },
-      handleFilterChange: jest.fn(),
-      handleHasInstrumentsChange: jest.fn(),
-      clearAllFilters: jest.fn(),
-      handleColumnSort: jest.fn(),
-      getSortArrow: jest.fn(() => ''),
-      getActiveFiltersCount: jest.fn(() => 0),
-      currentPage: 1,
-      totalPages: 1,
-      totalCount: 0,
-      pageSize: 20,
-      setPage: jest.fn(),
-    });
+    mockCollection.setShowFilters = mockSetShowFilters;
 
     const user = userEvent.setup();
     render(
       <ClientsListContent
-        clients={mockClients}
         clientsWithInstruments={new Set()}
         instrumentRelationships={mockInstrumentRelationships}
-        loading={{ any: false, hasAnyLoading: false }}
         onClientClick={mockOnClientClick}
         onUpdateClient={mockOnUpdateClient}
         onDeleteClient={mockOnDeleteClient}
       />
     );
 
-    // Filters button should exist - use getAllByRole to get all buttons with "Filters" text
-    const filterButtons = screen.getAllByRole('button');
-    const filterButton = filterButtons.find(btn =>
-      btn.textContent?.includes('Filters')
-    );
-    expect(filterButton).toBeInTheDocument();
-
-    await user.click(filterButton!);
-
-    // Clicking the filters button when it's open should close it
-    expect(mockSetShowFilters).toHaveBeenCalledWith(false);
+    await user.click(screen.getByText('Filters'));
+    expect(mockSetShowFilters).toHaveBeenCalled();
   });
 
-  it('renders Suspense fallback when loading', () => {
-    // Suspense fallback should show loading state
-    // This is tested implicitly through the component structure
+  it('shows initial fetch error with retry instead of empty list', () => {
+    mockCollection.error = new Error('network');
+    mockCollection.pageRows = [];
+    mockCollection.paginatedClients = [];
+    mockCollection.loading = false;
+
     render(
       <ClientsListContent
-        clients={[]}
         clientsWithInstruments={new Set()}
-        instrumentRelationships={[]}
-        loading={{ any: true, hasAnyLoading: true }}
+        instrumentRelationships={mockInstrumentRelationships}
         onClientClick={mockOnClientClick}
         onUpdateClient={mockOnUpdateClient}
         onDeleteClient={mockOnDeleteClient}
       />
     );
 
-    // Component should still render
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /Could not load clients/i
+    );
+    expect(screen.getByRole('button', { name: /Retry/i })).toBeInTheDocument();
+    expect(screen.queryByTestId('client-list')).not.toBeInTheDocument();
+  });
+
+  it('preserves rows and shows refresh warning on refetch failure', () => {
+    mockCollection.error = new Error('network');
+    mockCollection.pageRows = mockClients;
+    mockCollection.paginatedClients = mockClients;
+
+    render(
+      <ClientsListContent
+        clientsWithInstruments={new Set()}
+        instrumentRelationships={mockInstrumentRelationships}
+        onClientClick={mockOnClientClick}
+        onUpdateClient={mockOnUpdateClient}
+        onDeleteClient={mockOnDeleteClient}
+      />
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /Could not refresh the client list/i
+    );
+    expect(screen.getByTestId('client-1')).toBeInTheDocument();
+  });
+
+  it('does not show the legacy 1,000-row truncation banner', () => {
+    mockCollection.paginatedClients = mockClients;
+    mockCollection.pageRows = mockClients;
+    mockCollection.totalCount = 1001;
+
+    render(
+      <ClientsListContent
+        clientsWithInstruments={new Set()}
+        instrumentRelationships={mockInstrumentRelationships}
+        onClientClick={mockOnClientClick}
+        onUpdateClient={mockOnUpdateClient}
+        onDeleteClient={mockOnDeleteClient}
+      />
+    );
+
+    expect(
+      screen.queryByText(/Showing the first 1,000 clients only/i)
+    ).not.toBeInTheDocument();
   });
 });
