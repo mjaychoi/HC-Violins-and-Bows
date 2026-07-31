@@ -32,6 +32,12 @@ jest.mock('@/app/api/_utils/schemaReadiness', () => ({
     checkedAt: '2026-05-08T00:00:00.000Z',
     missingColumns: [],
   }),
+  assertClientRpcSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-07-31T00:00:00.000Z',
+    missingColumns: [],
+    missingContracts: [],
+  }),
 }));
 jest.mock('@/utils/typeGuards', () => {
   const actual = jest.requireActual('@/utils/typeGuards');
@@ -95,6 +101,7 @@ describe('POST /api/clients/with-connections', () => {
     const {
       assertClientsSchemaReadiness,
       assertClientConnectionsSchemaReadiness,
+      assertClientRpcSchemaReadiness,
     } = require('@/app/api/_utils/schemaReadiness');
     assertClientsSchemaReadiness.mockResolvedValue({
       ready: true,
@@ -105,6 +112,12 @@ describe('POST /api/clients/with-connections', () => {
       ready: true,
       checkedAt: '2026-05-08T00:00:00.000Z',
       missingColumns: [],
+    });
+    assertClientRpcSchemaReadiness.mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-07-31T00:00:00.000Z',
+      missingColumns: [],
+      missingContracts: [],
     });
     mockErrorHandler.handleSupabaseError.mockImplementation(() => ({
       code: ErrorCodes.DATABASE_ERROR,

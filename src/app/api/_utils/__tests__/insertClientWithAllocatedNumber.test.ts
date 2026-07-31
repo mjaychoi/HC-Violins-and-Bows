@@ -21,6 +21,12 @@ jest.mock('../schemaReadiness', () => ({
     checkedAt: '2026-05-08T00:00:00.000Z',
     missingColumns: [],
   }),
+  assertClientRpcSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-07-31T00:00:00.000Z',
+    missingColumns: [],
+    missingContracts: [],
+  }),
 }));
 
 function buildInsertChain(

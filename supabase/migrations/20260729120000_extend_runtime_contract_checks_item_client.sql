@@ -51,7 +51,7 @@ client_rpc_functions AS (
   LEFT JOIN pg_proc p
     ON p.pronamespace = 'public'::regnamespace
    AND p.proname = 'create_client_with_connections_atomic'
-   AND pg_get_function_identity_arguments(p.oid) = required.identity_args
+   AND oidvectortypes(p.proargtypes) = required.identity_args
 )
 SELECT
   EXISTS (

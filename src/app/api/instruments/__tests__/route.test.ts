@@ -5,6 +5,10 @@ import {
   INSTRUMENT_PATCH_UPDATED_AT_REQUIRED_CODE,
   resetInstrumentApiContractCacheForTests,
 } from '@/app/api/instruments/_shared/instrumentApiContract';
+import {
+  assertInstrumentsSchemaReadiness,
+  SchemaNotReadyError,
+} from '@/app/api/_utils/schemaReadiness';
 
 jest.mock('@/app/api/_utils/rateLimit', () => ({
   searchRateLimit: null,
@@ -13,6 +17,18 @@ jest.mock('@/app/api/_utils/rateLimit', () => ({
   applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
 }));
 jest.mock('@/utils/errorHandler');
+jest.mock('@/app/api/_utils/schemaReadiness', () => {
+  const actual = jest.requireActual('@/app/api/_utils/schemaReadiness');
+  return {
+    ...actual,
+    assertInstrumentsSchemaReadiness: jest.fn().mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-07-31T00:00:00.000Z',
+      missingColumns: [],
+      missingContracts: [],
+    }),
+  };
+});
 jest.mock('@/utils/logger', () => ({
   logInfo: jest.fn(),
   logError: jest.fn(),
@@ -107,6 +123,16 @@ describe('/api/instruments', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (
+      assertInstrumentsSchemaReadiness as jest.MockedFunction<
+        typeof assertInstrumentsSchemaReadiness
+      >
+    ).mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-07-31T00:00:00.000Z',
+      missingColumns: [],
+      missingContracts: [],
+    });
     resetInstrumentApiContractCacheForTests();
     jest.spyOn(performance, 'now').mockReturnValue(0);
     mockStorage = { deleteFile: jest.fn().mockResolvedValue(true) };
@@ -664,6 +690,30 @@ describe('/api/instruments', () => {
   });
 
   describe('POST', () => {
+    it('returns SCHEMA_OUT_OF_DATE 503 when instrument schema readiness fails', async () => {
+      (
+        assertInstrumentsSchemaReadiness as jest.MockedFunction<
+          typeof assertInstrumentsSchemaReadiness
+        >
+      ).mockRejectedValueOnce(
+        new SchemaNotReadyError(
+          ['public.instruments.certificate_name'],
+          'InstrumentsAPI'
+        )
+      );
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'Violin' }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should create a new instrument from a valid minimal payload', async () => {
       const createData = {
         type: 'Violin',
