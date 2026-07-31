@@ -507,11 +507,15 @@ export async function checkSchemaReadiness(options?: {
     return result;
   } catch (error) {
     const cause = summarizeCheckFailureCause(error);
-    logWarn('Schema readiness probe failed (not classified as drift)', {
-      cause,
-      includeRuntimeContracts: Boolean(runtimeContracts),
-      requiredColumnCount: requiredColumns.length,
-    });
+    logWarn(
+      'Schema readiness probe failed (not classified as drift)',
+      'SchemaReadiness',
+      {
+        cause,
+        includeRuntimeContracts: Boolean(runtimeContracts),
+        requiredColumnCount: requiredColumns.length,
+      }
+    );
 
     // Only report contracts that were actually in scope for this check.
     // Columns-only probes must not claim unrelated runtime contracts are missing.

@@ -247,6 +247,28 @@ describe('errorSanitization', () => {
       const result = createSafeErrorResponse(error);
       expect(result.details).toBeUndefined();
     });
+
+    it('preserves explicit retryable=false for SCHEMA_OUT_OF_DATE at 503', () => {
+      const error = {
+        code: 'SCHEMA_OUT_OF_DATE',
+        message: 'Database migration required.',
+        retryable: false,
+      };
+      const result = createSafeErrorResponse(error, 503);
+      expect(result.error_code).toBe('SCHEMA_OUT_OF_DATE');
+      expect(result.retryable).toBe(false);
+    });
+
+    it('preserves explicit retryable=true for SCHEMA_CHECK_FAILED at 503', () => {
+      const error = {
+        code: 'SCHEMA_CHECK_FAILED',
+        message: 'Schema readiness check failed temporarily',
+        retryable: true,
+      };
+      const result = createSafeErrorResponse(error, 503);
+      expect(result.error_code).toBe('SCHEMA_CHECK_FAILED');
+      expect(result.retryable).toBe(true);
+    });
   });
 
   describe('createLogErrorInfo', () => {

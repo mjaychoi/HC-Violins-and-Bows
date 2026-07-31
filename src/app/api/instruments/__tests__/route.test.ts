@@ -7,6 +7,7 @@ import {
 } from '@/app/api/instruments/_shared/instrumentApiContract';
 import {
   assertInstrumentsSchemaReadiness,
+  SchemaCheckFailedError,
   SchemaNotReadyError,
 } from '@/app/api/_utils/schemaReadiness';
 
@@ -711,6 +712,7 @@ describe('/api/instruments', () => {
 
       expect(response.status).toBe(503);
       expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+      expect(json.retryable).toBe(false);
       expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
@@ -1380,6 +1382,38 @@ describe('/api/instruments', () => {
 
       expect(response.status).toBe(503);
       expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+      expect(json.retryable).toBe(false);
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('returns SCHEMA_CHECK_FAILED 503 with retryable=true when readiness probe fails', async () => {
+      (
+        assertInstrumentsSchemaReadiness as jest.MockedFunction<
+          typeof assertInstrumentsSchemaReadiness
+        >
+      ).mockRejectedValueOnce(
+        new SchemaCheckFailedError(
+          [],
+          'InstrumentsAPI',
+          [],
+          'catalog timeout'
+        )
+      );
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockInstrument.id,
+          updated_at: mockInstrument.updated_at,
+          note: 'x',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('SCHEMA_CHECK_FAILED');
+      expect(json.retryable).toBe(true);
       expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
