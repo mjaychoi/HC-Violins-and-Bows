@@ -3,6 +3,10 @@ import { ClientInstrument } from '@/types';
 import { getRelationshipTypeStyle } from '../utils/relationshipStyles';
 import { getRelationshipAccentColor } from '@/utils/colorTokens';
 import { usePermissions } from '@/hooks/usePermissions';
+import {
+  formatClientName,
+  formatInstrumentName,
+} from '../utils/connectionUtils';
 
 interface ConnectionCardProps {
   connection: ClientInstrument;
@@ -33,6 +37,9 @@ export const ConnectionCard = memo(function ConnectionCard({
   showCreatedAt = false,
 }: ConnectionCardProps) {
   const { canManageConnections } = usePermissions();
+  const isSold = connection.relationship_type === 'Sold';
+  const canEdit = canManageConnections;
+  const canDelete = canManageConnections && !isSold;
   const relationshipStyle = useMemo(
     () => getRelationshipTypeStyle(connection.relationship_type),
     [connection.relationship_type]
@@ -43,12 +50,10 @@ export const ConnectionCard = memo(function ConnectionCard({
     [connection.relationship_type]
   );
 
-  const clientName =
-    `${connection.client?.first_name || ''} ${connection.client?.last_name || ''}`.trim();
+  const clientName = formatClientName(connection.client);
   const roleTags = formatTags(connection.client?.tags);
   const email = connection.client?.email || '';
-  const instrumentName =
-    `${connection.instrument?.maker || ''} ${connection.instrument?.type || ''}`.trim();
+  const instrumentName = formatInstrumentName(connection.instrument);
   const year = connection.instrument?.year || 'Unknown Year';
   const price =
     connection.instrument?.price === null ||
@@ -79,7 +84,7 @@ export const ConnectionCard = memo(function ConnectionCard({
           {/* 1. Client Name (Primary) */}
           <div className="mb-1">
             <h3 className="font-semibold text-base text-gray-900 truncate">
-              {clientName || 'Unknown Client'}
+              {clientName}
             </h3>
           </div>
 
@@ -120,7 +125,7 @@ export const ConnectionCard = memo(function ConnectionCard({
                 />
               </svg>
               <span className="text-sm text-gray-800 font-medium">
-                {instrumentName || 'Unknown Instrument'}
+                {instrumentName}
               </span>
             </div>
 
@@ -149,18 +154,29 @@ export const ConnectionCard = memo(function ConnectionCard({
 
         {/* Action Buttons - 모바일에서 상단에 배치하여 배지와 겹치지 않도록 */}
         <div className="flex items-start gap-1 lg:gap-2 shrink-0 ml-3 lg:mt-0">
-          {/* Edit Button */}
+          {/* Edit Button - always rendered when the user can manage
+              connections; Sold connections open in a read-only view
+              (see EditConnectionModal) instead of being hidden, so users
+              can still see full details. */}
           <button
             type="button"
             onClick={e => {
               e.stopPropagation();
-              if (!canManageConnections) return;
+              if (!canEdit) return;
               onEdit(connection);
             }}
-            disabled={!canManageConnections}
+            disabled={!canEdit}
             className="text-gray-400 hover:text-blue-500 transition-all duration-200 lg:opacity-0 lg:group-hover:opacity-100 hover:scale-110 p-2 lg:p-0 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:scale-100"
-            title={canManageConnections ? 'Edit connection' : 'Admin only'}
-            aria-label="Edit connection"
+            title={
+              !canManageConnections
+                ? 'Admin only'
+                : isSold
+                  ? 'View Sold connection'
+                  : 'Edit connection'
+            }
+            aria-label={
+              isSold ? 'View Sold connection details' : 'Edit connection'
+            }
           >
             <svg
               className="w-4 h-4"
@@ -177,33 +193,40 @@ export const ConnectionCard = memo(function ConnectionCard({
             </svg>
           </button>
 
-          {/* Delete Button */}
-          <button
-            type="button"
-            onClick={e => {
-              e.stopPropagation();
-              if (!canManageConnections) return;
-              onDelete(connection);
-            }}
-            disabled={!canManageConnections}
-            className="text-gray-400 hover:text-red-500 transition-all duration-200 lg:opacity-0 lg:group-hover:opacity-100 hover:scale-110 p-2 lg:p-0 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:scale-100"
-            title={canManageConnections ? 'Delete connection' : 'Admin only'}
-            aria-label="Delete connection"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          {/* Delete Button - never rendered for Sold relationships. Sold
+              connections are the durable record of a completed sale and can
+              only be changed through the sales refund/adjustment workflow;
+              the API also rejects a direct delete with 409
+              SOLD_CONNECTION_IMMUTABLE, but the control must not even be
+              offered here. */}
+          {!isSold && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                if (!canDelete) return;
+                onDelete(connection);
+              }}
+              disabled={!canDelete}
+              className="text-gray-400 hover:text-red-500 transition-all duration-200 lg:opacity-0 lg:group-hover:opacity-100 hover:scale-110 p-2 lg:p-0 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:scale-100"
+              title={canManageConnections ? 'Delete connection' : 'Admin only'}
+              aria-label="Delete connection"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
-          </button>
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </div>

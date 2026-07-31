@@ -5,7 +5,11 @@ import {
   Instrument,
   RelationshipType,
 } from '@/types';
-import { RELATIONSHIP_TYPES } from '../utils/connectionGrouping';
+import { EDITABLE_RELATIONSHIP_TYPES } from '../utils/connectionGrouping';
+import {
+  formatClientName,
+  formatInstrumentName,
+} from '../utils/connectionUtils';
 
 interface EditConnectionModalProps {
   isOpen: boolean;
@@ -64,6 +68,12 @@ export const EditConnectionModal = ({
 
   if (!isOpen || !connection) return null;
 
+  // F7: Sold is only ever reached via the sales workflow, and
+  // update_connection_atomic rejects any transition to/from Sold. The
+  // general editor must display it read-only rather than offering a
+  // (rejected) transition.
+  const isSold = connection.relationship_type === 'Sold';
+
   return (
     <div
       className="fixed inset-0 bg-gray-900 bg-opacity-20 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
@@ -103,12 +113,11 @@ export const EditConnectionModal = ({
           {/* Connection Info Display */}
           <div className="mb-6 p-4 bg-gray-50 rounded-lg">
             <div className="text-sm text-gray-600 mb-2">
-              <strong>Instrument:</strong> {connection.instrument?.maker}{' '}
-              {connection.instrument?.type}
+              <strong>Instrument:</strong>{' '}
+              {formatInstrumentName(connection.instrument)}
             </div>
             <div className="text-sm text-gray-600">
-              <strong>Client:</strong> {connection.client?.first_name}{' '}
-              {connection.client?.last_name}
+              <strong>Client:</strong> {formatClientName(connection.client)}
             </div>
           </div>
 
@@ -116,30 +125,53 @@ export const EditConnectionModal = ({
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Relationship Type */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="edit-connection-relationship-type"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Relationship Type
               </label>
-              <select
-                value={relationshipType}
-                onChange={e =>
-                  setRelationshipType(e.target.value as RelationshipType)
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                {RELATIONSHIP_TYPES.map(type => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
+              {isSold ? (
+                <div>
+                  <span
+                    id="edit-connection-relationship-type"
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-md border border-gray-200 bg-gray-100 text-gray-700 text-sm font-medium"
+                  >
+                    Sold
+                  </span>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Sold connections cannot be changed here. Use the sales
+                    refund/adjustment workflow to modify a completed sale.
+                  </p>
+                </div>
+              ) : (
+                <select
+                  id="edit-connection-relationship-type"
+                  value={relationshipType}
+                  onChange={e =>
+                    setRelationshipType(e.target.value as RelationshipType)
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {EDITABLE_RELATIONSHIP_TYPES.map(type => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Notes */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="edit-connection-notes"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Notes
               </label>
               <textarea
+                id="edit-connection-notes"
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 rows={3}
@@ -155,15 +187,17 @@ export const EditConnectionModal = ({
                 onClick={onClose}
                 className="px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto"
               >
-                Cancel
+                {isSold ? 'Close' : 'Cancel'}
               </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-4 py-3 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
-              >
-                {submitting ? 'Saving...' : 'Save Changes'}
-              </button>
+              {!isSold && (
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-3 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+                >
+                  {submitting ? 'Saving...' : 'Save Changes'}
+                </button>
+              )}
             </div>
           </form>
         </div>

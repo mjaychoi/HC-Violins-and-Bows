@@ -8,6 +8,19 @@ export const RELATIONSHIP_TYPES: RelationshipType[] = [
   'Owned',
 ];
 
+/**
+ * F7: Sold relationships are only created/transitioned through the sales
+ * workflow (create_connection_atomic and update_connection_atomic both
+ * reject a direct create/transition to or from Sold). The general
+ * create/edit connection selectors must not offer Sold as an actionable
+ * option - use this list instead of RELATIONSHIP_TYPES for those selectors.
+ * Filter/tab UIs that only need to *view* connections by type should keep
+ * using RELATIONSHIP_TYPES, since Sold connections still need to be
+ * filterable/visible.
+ */
+export const EDITABLE_RELATIONSHIP_TYPES: RelationshipType[] =
+  RELATIONSHIP_TYPES.filter(type => type !== 'Sold');
+
 // Fixed order for relationship types: Interested → Booked → Sold → Owned
 export const RELATIONSHIP_TYPE_ORDER: Record<RelationshipType, number> = {
   Interested: 0,

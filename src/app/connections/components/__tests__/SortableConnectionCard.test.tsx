@@ -107,8 +107,7 @@ describe('SortableConnectionCard', () => {
     expect(screen.getByText('Stradivarius Violin')).toBeInTheDocument();
   });
 
-  it('should call onEdit when Enter key is pressed', async () => {
-    const user = userEvent.setup();
+  it('F8: renders the composite card as role="group", not a nested button', () => {
     render(
       <DndContext>
         <SortableConnectionCard
@@ -119,15 +118,16 @@ describe('SortableConnectionCard', () => {
       </DndContext>
     );
 
-    const card = screen.getByRole('button', {
-      name: /Connection: John Doe - Stradivarius Violin/i,
+    const group = screen.getByRole('group', {
+      name: /Connection: John Doe - Stradivarius - Violin \(Interested\)/i,
     });
-    await user.type(card, '{Enter}');
-
-    expect(mockOnEdit).toHaveBeenCalledWith(mockConnection);
+    expect(group).toBeInTheDocument();
+    // Edit/Delete buttons must not be nested inside another interactive
+    // (button/link) ancestor - role="group" is not an interactive widget.
+    expect(group.closest('[role="button"]')).toBeNull();
   });
 
-  it('should call onEdit when Space key is pressed', async () => {
+  it('F8: edit and delete remain reachable as independent actions', async () => {
     const user = userEvent.setup();
     render(
       <DndContext>
@@ -139,12 +139,11 @@ describe('SortableConnectionCard', () => {
       </DndContext>
     );
 
-    const card = screen.getByRole('button', {
-      name: /Connection: John Doe - Stradivarius Violin/i,
-    });
-    await user.type(card, ' ');
-
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     expect(mockOnEdit).toHaveBeenCalledWith(mockConnection);
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(mockOnDelete).toHaveBeenCalledWith(mockConnection);
   });
 
   it('should apply dragging styles when isDragging is true', () => {
@@ -188,13 +187,13 @@ describe('SortableConnectionCard', () => {
       </DndContext>
     );
 
-    const card = screen.getByRole('button', {
-      name: /Connection: John Doe - Stradivarius Violin/i,
+    const card = screen.getByRole('group', {
+      name: /Connection: John Doe - Stradivarius - Violin \(Interested\)/i,
     });
     expect(card).toHaveClass('shadow-lg', 'ring-2', 'ring-blue-400');
   });
 
-  it('should render drag handle', () => {
+  it('should render a real <button> drag handle reachable by keyboard', () => {
     render(
       <DndContext>
         <SortableConnectionCard
@@ -205,7 +204,27 @@ describe('SortableConnectionCard', () => {
       </DndContext>
     );
 
-    expect(screen.getByLabelText('Drag to reorder')).toBeInTheDocument();
+    const handle = screen.getByRole('button', {
+      name: /Drag to reorder Connection: John Doe/i,
+    });
+    expect(handle.tagName).toBe('BUTTON');
+  });
+
+  it('does not render a drag handle when canDrag is false', () => {
+    render(
+      <DndContext>
+        <SortableConnectionCard
+          connection={mockConnection}
+          onDelete={mockOnDelete}
+          onEdit={mockOnEdit}
+          canDrag={false}
+        />
+      </DndContext>
+    );
+
+    expect(
+      screen.queryByRole('button', { name: /Drag to reorder/i })
+    ).not.toBeInTheDocument();
   });
 
   it('should render screen reader description', () => {
@@ -265,70 +284,27 @@ describe('SortableConnectionCard', () => {
     // ConnectionCard receives showCreatedAt prop (tested in ConnectionCard tests)
   });
 
-  it('should handle missing client or instrument names in aria-label', () => {
-    const connectionMinimal = {
+  it('F1/F8: never produces an empty accessible name when client/instrument are missing', () => {
+    const connectionMissingRefs: ClientInstrument = {
       ...mockConnection,
-      client: {
-        id: 'client-1',
-        first_name: null,
-        last_name: null,
-        email: 'john@example.com',
-        created_at: '2024-01-01',
-      },
-      instrument: {
-        id: 'inst-1',
-        maker: null,
-        type: null,
-        status: 'Available',
-        created_at: '2024-01-01',
-      },
+      client: null,
+      instrument: null,
     };
 
     render(
       <DndContext>
         <SortableConnectionCard
-          connection={{
-            ...connectionMinimal,
-            client: {
-              ...connectionMinimal.client!,
-              contact_number: null,
-              address: null,
-              tags: [],
-              interest: null,
-              note: null,
-              client_number: 'CL001',
-            },
-            instrument: {
-              id: connectionMinimal.instrument!.id,
-              maker: connectionMinimal.instrument!.maker,
-              type: connectionMinimal.instrument!.type,
-              status: connectionMinimal.instrument!.status as
-                | 'Available'
-                | 'Sold'
-                | 'Booked'
-                | 'Maintenance',
-              created_at: connectionMinimal.instrument!.created_at,
-              subtype: null,
-              year: null,
-              price: null,
-              certificate: false,
-              certificate_name: null,
-              cost_price: null,
-              consignment_price: null,
-              serial_number: null,
-              size: null,
-              weight: null,
-              ownership: null,
-              note: null,
-            },
-          }}
+          connection={connectionMissingRefs}
           onDelete={mockOnDelete}
           onEdit={mockOnEdit}
         />
       </DndContext>
     );
 
-    // Should still render without errors
-    expect(screen.getByTestId('connection-card')).toBeInTheDocument();
+    const group = screen.getByRole('group', {
+      name: /Connection: Unavailable client - Unavailable instrument \(Interested\)/i,
+    });
+    expect(group).toBeInTheDocument();
+    expect(group.getAttribute('aria-label')).not.toBe('');
   });
 });
