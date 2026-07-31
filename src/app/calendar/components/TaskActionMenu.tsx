@@ -1,6 +1,6 @@
 'use client';
 
-import React, { memo, useState, useRef, useEffect } from 'react';
+import React, { memo, useState, useRef, useEffect, useId } from 'react';
 import type { MaintenanceTask } from '@/types';
 
 interface TaskActionMenuProps {
@@ -24,7 +24,12 @@ function TaskActionMenu({
 }: TaskActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const menuId = `task-menu-${task.id}`;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const reactId = useId();
+  const menuId = `task-menu-${task.id}-${reactId}`;
+
+  const hasMutationActions = Boolean(onEdit || onDelete || onMarkComplete);
+  const hasAnyActions = Boolean(onViewDetails || hasMutationActions);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -35,7 +40,9 @@ function TaskActionMenu({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.stopPropagation();
         setIsOpen(false);
+        triggerRef.current?.focus();
       }
     };
 
@@ -50,21 +57,34 @@ function TaskActionMenu({
     };
   }, [isOpen]);
 
+  if (!hasAnyActions) {
+    return null;
+  }
+
   const handleAction = (action: () => void) => {
     action();
     setIsOpen(false);
+    triggerRef.current?.focus();
   };
 
   return (
     <div className="relative" ref={menuRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={e => {
           e.stopPropagation();
           setIsOpen(!isOpen);
         }}
-        className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100"
-        aria-label="Task actions"
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsOpen(open => !open);
+          }
+        }}
+        className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
+        aria-label={`Actions for ${task.title || 'task'}`}
         aria-expanded={isOpen}
         aria-controls={menuId}
         aria-haspopup="menu"
@@ -74,6 +94,7 @@ function TaskActionMenu({
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
+          aria-hidden="true"
         >
           <path
             strokeLinecap="round"
@@ -88,7 +109,7 @@ function TaskActionMenu({
         <div
           id={menuId}
           role="menu"
-          aria-label="Task actions"
+          aria-label={`Actions for ${task.title || 'task'}`}
           className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-100"
         >
           {onViewDetails && (

@@ -96,6 +96,23 @@ jest.mock('@/hooks/useUnifiedData', () => ({
   }),
 }));
 
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  __esModule: true,
+  useTenantIdentity: jest.fn(() => ({
+    tenantIdentityKey: 'test-user:test-org:token',
+    accessScopeKey: 'test-user:test-org:token',
+  })),
+}));
+
+jest.mock('@/hooks/usePermissions', () => ({
+  __esModule: true,
+  usePermissions: jest.fn(() => ({
+    canCreateTask: true,
+    canManageTasks: true,
+    createTaskDisabledReason: undefined,
+  })),
+}));
+
 // Mock useModalState
 const mockOpenModal = jest.fn();
 const mockCloseModal = jest.fn();
@@ -888,7 +905,7 @@ describe('CalendarPage - Core Logic', () => {
       expect(mockUpdateTask).toBeDefined();
     });
 
-    it('should rollback on drop error', async () => {
+    it('should call updateTask once and forceRefetch on drop error (no rollback PATCH)', async () => {
       const user = userEvent.setup();
       const error = new Error('Update failed');
       mockUpdateTask.mockRejectedValueOnce(error);
@@ -904,9 +921,9 @@ describe('CalendarPage - Core Logic', () => {
 
       await flushPromises();
 
-      // Should attempt rollback
       await waitFor(() => {
-        expect(mockUpdateTask).toHaveBeenCalledTimes(2); // Original update + rollback
+        expect(mockUpdateTask).toHaveBeenCalledTimes(1);
+        expect(mockForceRefetch).toHaveBeenCalled();
       });
 
       expect(mockShowSuccess).not.toHaveBeenCalled();
@@ -914,15 +931,16 @@ describe('CalendarPage - Core Logic', () => {
         error,
         'Failed to update task date'
       );
+      expect(mockShowWarning).not.toHaveBeenCalledWith(
+        CALENDAR_WARNING_MESSAGES.ROLLBACK_FAILED
+      );
     });
 
-    it('should handle rollback error gracefully', async () => {
+    it('should warn with DATE_REFRESH_FAILED when forceRefetch fails after drop error', async () => {
       const user = userEvent.setup();
       const error = new Error('Update failed');
-      const rollbackError = new Error('Rollback failed');
-      mockUpdateTask
-        .mockRejectedValueOnce(error) // First update fails
-        .mockRejectedValueOnce(rollbackError); // Rollback also fails
+      mockUpdateTask.mockRejectedValueOnce(error);
+      mockForceRefetch.mockRejectedValueOnce(new Error('Refresh failed'));
 
       render(<CalendarPage />);
 
@@ -936,8 +954,9 @@ describe('CalendarPage - Core Logic', () => {
       await flushPromises();
 
       await waitFor(() => {
+        expect(mockUpdateTask).toHaveBeenCalledTimes(1);
         expect(mockShowWarning).toHaveBeenCalledWith(
-          CALENDAR_WARNING_MESSAGES.ROLLBACK_FAILED
+          CALENDAR_WARNING_MESSAGES.DATE_REFRESH_FAILED
         );
       });
 

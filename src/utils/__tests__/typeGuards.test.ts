@@ -24,7 +24,9 @@ import {
   validateCreateClient,
   validateCreateInstrument,
   validateCreateMaintenanceTask,
+  validatePartialMaintenanceTask,
   validatePartialInstrument,
+  partialMaintenanceTaskSchema,
 } from '../typeGuards';
 import { Instrument, Client, MaintenanceTask, SalesHistory } from '@/types';
 
@@ -456,6 +458,31 @@ describe('Validation Functions', () => {
           instrument_id: null,
         })
       ).toThrow('Invalid MaintenanceTask creation data');
+    });
+  });
+
+  describe('validatePartialMaintenanceTask', () => {
+    it('strips immutable created_at and updated_at from update payloads', () => {
+      const result = validatePartialMaintenanceTask({
+        status: 'in_progress',
+        created_at: '2020-01-01T00:00:00Z',
+        updated_at: '2020-01-02T00:00:00Z',
+      });
+
+      expect(result).toEqual({ status: 'in_progress' });
+      expect(result).not.toHaveProperty('created_at');
+      expect(result).not.toHaveProperty('updated_at');
+    });
+
+    it('partialMaintenanceTaskSchema shape omits created_at and updated_at', () => {
+      expect(partialMaintenanceTaskSchema.shape).not.toHaveProperty(
+        'created_at'
+      );
+      expect(partialMaintenanceTaskSchema.shape).not.toHaveProperty(
+        'updated_at'
+      );
+      expect(partialMaintenanceTaskSchema.shape).not.toHaveProperty('id');
+      expect(partialMaintenanceTaskSchema.shape).not.toHaveProperty('org_id');
     });
   });
 

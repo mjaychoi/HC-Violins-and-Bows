@@ -240,4 +240,79 @@ describe('useCalendarNavigation', () => {
 
     expect(mockFetchTasksByDateRange).toHaveBeenCalledTimes(2);
   });
+
+  describe('tenant identity requestKey dedup', () => {
+    it('dedups identical tenant + range fetches', async () => {
+      const { result } = renderHook(() =>
+        useCalendarNavigation({
+          tenantIdentityKey: 'org-a',
+          initialDate: new Date('2024-06-15'),
+          fetchTasksByDateRange: mockFetchTasksByDateRange,
+        })
+      );
+
+      await waitFor(() => {
+        expect(mockFetchTasksByDateRange).toHaveBeenCalledTimes(1);
+      });
+
+      mockFetchTasksByDateRange.mockClear();
+
+      await act(async () => {
+        await result.current.refetchCurrentRange();
+      });
+
+      expect(mockFetchTasksByDateRange).not.toHaveBeenCalled();
+    });
+
+    it('refetches the same visible range when tenantIdentityKey changes', async () => {
+      const { rerender } = renderHook(
+        ({ tenantIdentityKey }: { tenantIdentityKey: string }) =>
+          useCalendarNavigation({
+            tenantIdentityKey,
+            initialDate: new Date('2024-06-15'),
+            fetchTasksByDateRange: mockFetchTasksByDateRange,
+          }),
+        { initialProps: { tenantIdentityKey: 'org-a' } }
+      );
+
+      await waitFor(() => {
+        expect(mockFetchTasksByDateRange).toHaveBeenCalledTimes(1);
+      });
+
+      mockFetchTasksByDateRange.mockClear();
+
+      rerender({ tenantIdentityKey: 'org-b' });
+
+      await waitFor(() => {
+        expect(mockFetchTasksByDateRange).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it('does not refetch when rerendered with the same tenantIdentityKey', async () => {
+      const { rerender } = renderHook(
+        ({ tenantIdentityKey }: { tenantIdentityKey: string }) =>
+          useCalendarNavigation({
+            tenantIdentityKey,
+            initialDate: new Date('2024-06-15'),
+            fetchTasksByDateRange: mockFetchTasksByDateRange,
+          }),
+        { initialProps: { tenantIdentityKey: 'org-a' } }
+      );
+
+      await waitFor(() => {
+        expect(mockFetchTasksByDateRange).toHaveBeenCalledTimes(1);
+      });
+
+      mockFetchTasksByDateRange.mockClear();
+
+      rerender({ tenantIdentityKey: 'org-a' });
+
+      // Allow effects to flush; dedup should skip a second fetch
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockFetchTasksByDateRange).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -4,28 +4,18 @@ import type { MaintenanceTask } from '@/types';
 import type { DateRange, FilterOperator } from '@/types/search';
 import type { TaskType, TaskStatus, TaskPriority } from '@/types';
 import { toLocalYMD, parseYMDLocal, todayLocalYMD } from '@/utils/dateParsing';
+import {
+  getCalendarPlacementDate,
+  isCalendarPlacementInRange,
+} from '@/utils/calendar';
 
 /**
- * Check if a date string is within the date range
- * FIXED: Use toLocalYMD for consistent normalization (avoids timezone shifts)
- */
-const checkDateInRange = (dateStr: string, dateRange: DateRange): boolean => {
-  const fromStr = dateRange.from ? toLocalYMD(dateRange.from) : '1900-01-01';
-  const toStr = dateRange.to ? toLocalYMD(dateRange.to) : '9999-12-31';
-  const taskYMD = toLocalYMD(dateStr);
-
-  return taskYMD >= fromStr && taskYMD <= toStr;
-};
-
-/**
- * Filter tasks by date range
+ * Filter tasks by date range using the canonical calendar placement date
+ * (due → personal → scheduled → received), matching grid/summary/presets.
  *
- * Filter operator behavior:
- * - OR: Task is included if ANY date field (received_date, due_date, personal_due_date, scheduled_date, completed_date) falls within the range.
- *       This is the more common UX pattern: "show all tasks that have any activity in this period".
- * - AND: Task is included ONLY if ALL date fields fall within the range.
- *       This is more restrictive and may exclude tasks that have some dates in range but others outside.
- *       Use case: "strictly filter to tasks that are completely contained within this date window".
+ * Filter operator:
+ * - OR / AND both evaluate the single placement date (there is only one).
+ *   AND remains for API compatibility with the shared FilterOperator type.
  */
 export const filterByDateRange = (
   tasks: MaintenanceTask[],
@@ -37,27 +27,12 @@ export const filterByDateRange = (
     return tasks;
   }
 
-  // Get all date fields for a task
-  const dateFields = (t: MaintenanceTask): string[] =>
-    [
-      t.received_date,
-      t.due_date,
-      t.personal_due_date,
-      t.scheduled_date,
-      t.completed_date,
-    ].filter(Boolean) as string[];
+  void operator;
 
-  return tasks.filter(task => {
-    const dates = dateFields(task);
-    if (dates.length === 0) return false;
+  const fromStr = dateRange.from ? toLocalYMD(dateRange.from) : '1900-01-01';
+  const toStr = dateRange.to ? toLocalYMD(dateRange.to) : '9999-12-31';
 
-    if (operator === 'AND') {
-      // All date fields must be within range
-      return dates.every(d => checkDateInRange(d, dateRange));
-    }
-    // OR (default): At least one date field must be within range
-    return dates.some(d => checkDateInRange(d, dateRange));
-  });
+  return tasks.filter(task => isCalendarPlacementInRange(task, fromStr, toStr));
 };
 
 /**
@@ -160,8 +135,7 @@ export const calculateSummaryStats = (
   let upcoming = 0;
 
   tasks.forEach(task => {
-    const dateStr =
-      task.due_date || task.personal_due_date || task.scheduled_date;
+    const dateStr = getCalendarPlacementDate(task);
     if (!dateStr) return;
 
     if (task.status === 'completed' || task.status === 'cancelled') return;

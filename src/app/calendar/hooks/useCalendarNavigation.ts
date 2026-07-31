@@ -9,6 +9,11 @@ import type { ExtendedView } from '../components/CalendarView';
 interface UseCalendarNavigationOptions {
   initialView?: ExtendedView;
   initialDate?: Date;
+  /**
+   * Tenant identity included in request dedup keys so org switches always refetch
+   * even when the visible date range is unchanged.
+   */
+  tenantIdentityKey?: string | null;
   fetchTasksByDateRange: (
     startDate: string,
     endDate: string,
@@ -26,6 +31,7 @@ interface UseCalendarNavigationOptions {
 export const useCalendarNavigation = ({
   initialView = 'month',
   initialDate = new Date(),
+  tenantIdentityKey = null,
   fetchTasksByDateRange,
   onError,
   onRefetchFailure,
@@ -39,8 +45,9 @@ export const useCalendarNavigation = ({
   const onErrorRef = useRef(onError);
   const onRefetchFailureRef = useRef(onRefetchFailure);
 
-  // Request deduplication: prevent duplicate fetches for the same range
+  // Request deduplication: prevent duplicate fetches for the same tenant+range
   const lastRequestKeyRef = useRef<string>('');
+  const lastTenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
 
   // Race condition prevention: track request ID and abort controller
   const requestIdRef = useRef<number>(0);
@@ -69,6 +76,8 @@ export const useCalendarNavigation = ({
     return getDateRangeForView(calendarView, currentDate);
   }, [calendarView, currentDate]);
 
+  const tenantKey = tenantIdentityKey ?? '__no_tenant__';
+
   // Refetch current range with deduplication and race condition prevention
   const refetchCurrentRange = useCallback(
     async (
@@ -77,8 +86,8 @@ export const useCalendarNavigation = ({
         suppressErrorToast?: boolean;
       }
     ) => {
-      // Create request key for deduplication
-      const requestKey = `${calendarView}|${currentRange.startDate}|${currentRange.endDate}`;
+      // Include tenant so identical ranges across orgs never dedup together
+      const requestKey = `${tenantKey}|${calendarView}|${currentRange.startDate}|${currentRange.endDate}`;
 
       // Skip if this is the same request as the last one (StrictMode double-invoke prevention)
       // Unless force=true (for manual refresh after external changes)
@@ -86,7 +95,7 @@ export const useCalendarNavigation = ({
         return;
       }
 
-      // Abort previous request if still pending
+      // Abort previous request if still pending (covers prior-org in-flight)
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -98,6 +107,7 @@ export const useCalendarNavigation = ({
       // Increment request ID
       const currentRequestId = ++requestIdRef.current;
       lastRequestKeyRef.current = requestKey;
+      lastTenantIdentityKeyRef.current = tenantIdentityKey ?? null;
 
       try {
         await fetchRef.current(currentRange.startDate, currentRange.endDate, {
@@ -140,7 +150,13 @@ export const useCalendarNavigation = ({
         }
       }
     },
-    [calendarView, currentRange.startDate, currentRange.endDate]
+    [
+      tenantKey,
+      tenantIdentityKey,
+      calendarView,
+      currentRange.startDate,
+      currentRange.endDate,
+    ]
   );
 
   // Force refetch: bypass deduplication for manual refresh (e.g., after external task changes)
@@ -156,7 +172,15 @@ export const useCalendarNavigation = ({
     lastRequestKeyRef.current = '';
   }, []);
 
-  // Fetch tasks when date or view changes (with deduplication)
+  // When tenant identity changes, drop the dedup key so the visible range refetches for the new org
+  useEffect(() => {
+    if (lastTenantIdentityKeyRef.current !== (tenantIdentityKey ?? null)) {
+      lastRequestKeyRef.current = '';
+      lastTenantIdentityKeyRef.current = tenantIdentityKey ?? null;
+    }
+  }, [tenantIdentityKey]);
+
+  // Fetch tasks when date, view, or tenant changes (with deduplication)
   useEffect(() => {
     void refetchCurrentRange().catch((err: unknown) => {
       onRefetchFailureRef.current?.(err);

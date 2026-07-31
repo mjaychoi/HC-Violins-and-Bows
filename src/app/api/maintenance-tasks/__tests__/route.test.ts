@@ -306,6 +306,17 @@ describe('/api/maintenance-tasks', () => {
       expect(mockQuery.eq).toHaveBeenCalledWith('task_type', 'repair');
     });
 
+    it('should return 400 for invalid task_type query', async () => {
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks?task_type=not_a_real_type'
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error).toContain('Invalid task_type');
+    });
+
     it('should filter by scheduled_date', async () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
@@ -746,6 +757,59 @@ describe('/api/maintenance-tasks', () => {
       expect(mockQuery.eq).toHaveBeenCalledWith('id', mockTask.id);
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', TEST_ORG_ID);
       expect(mockQuery.update).toHaveBeenCalled();
+    });
+
+    it('does not persist created_at from PATCH body (stripped from update payload)', async () => {
+      const actualTg = jest.requireActual('@/utils/typeGuards');
+      const tg = require('@/utils/typeGuards');
+      (tg.safeValidate as jest.Mock).mockImplementation(
+        (data: unknown, validator: unknown) => {
+          if (validator === tg.validatePartialMaintenanceTask) {
+            return actualTg.safeValidate(
+              data,
+              actualTg.validatePartialMaintenanceTask
+            );
+          }
+          return { success: true, data };
+        }
+      );
+
+      const mockQuery = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+      };
+      (mockQuery.single as jest.Mock).mockResolvedValue({
+        data: { ...mockTask, priority: 'low' },
+        error: null,
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      };
+
+      const request = new NextRequest(
+        'http://localhost/api/maintenance-tasks',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            id: mockTask.id,
+            priority: 'low',
+            created_at: '1999-01-01T00:00:00Z',
+            updated_at: '1999-01-02T00:00:00Z',
+          }),
+        }
+      );
+      const response = await PATCH(request);
+
+      expect(response.status).toBe(200);
+      const updatePayload = (mockQuery.update as jest.Mock).mock.calls[0][0];
+      expect(updatePayload).toEqual(
+        expect.objectContaining({ priority: 'low' })
+      );
+      expect(updatePayload).not.toHaveProperty('created_at');
+      expect(updatePayload).not.toHaveProperty('updated_at');
     });
 
     it('should return 400 when id is missing', async () => {

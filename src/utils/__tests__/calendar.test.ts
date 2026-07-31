@@ -199,7 +199,6 @@ describe('calendar utilities', () => {
     it('should return label for known status', () => {
       expect(getStatusLabel('pending')).toBe('Pending');
       expect(getStatusLabel('in_progress')).toBe('In Progress');
-      expect(getStatusLabel('waiting_for_parts')).toBe('Waiting for Parts');
       expect(getStatusLabel('completed')).toBe('Completed');
       expect(getStatusLabel('cancelled')).toBe('Cancelled');
     });
@@ -218,6 +217,8 @@ describe('calendar utilities', () => {
     it('should replace underscores with spaces for unknown status', () => {
       expect(getStatusLabel('custom_status')).toBe('custom status');
       expect(getStatusLabel('unknown_status')).toBe('unknown status');
+      // waiting_for_parts is no longer a mapped STATUS_LABELS entry
+      expect(getStatusLabel('waiting_for_parts')).toBe('waiting for parts');
     });
 
     it('should handle empty string', () => {
@@ -225,7 +226,6 @@ describe('calendar utilities', () => {
     });
 
     it('should handle snake_case status', () => {
-      expect(getStatusLabel('waiting_for_parts')).toBe('Waiting for Parts');
       expect(getStatusLabel('in_progress')).toBe('In Progress');
     });
   });
@@ -265,12 +265,9 @@ describe('calendar utilities', () => {
     it('should contain all expected status labels', () => {
       expect(STATUS_LABELS).toHaveProperty('pending', 'Pending');
       expect(STATUS_LABELS).toHaveProperty('in_progress', 'In Progress');
-      expect(STATUS_LABELS).toHaveProperty(
-        'waiting_for_parts',
-        'Waiting for Parts'
-      );
       expect(STATUS_LABELS).toHaveProperty('completed', 'Completed');
       expect(STATUS_LABELS).toHaveProperty('cancelled', 'Cancelled');
+      expect(STATUS_LABELS).not.toHaveProperty('waiting_for_parts');
     });
   });
 

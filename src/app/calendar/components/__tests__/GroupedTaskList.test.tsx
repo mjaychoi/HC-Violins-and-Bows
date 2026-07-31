@@ -216,9 +216,8 @@ describe('GroupedTaskList', () => {
       />
     );
 
-    // Status is displayed with underscore replaced by space, but case is preserved
-    expect(screen.getByText(/pending/i)).toBeInTheDocument();
-    expect(screen.getByText(/in progress|in_progress/i)).toBeInTheDocument();
+    // StatusPill always renders in_progress; pending only when overdue/upcoming
+    expect(screen.getByText(/in progress/i)).toBeInTheDocument();
   });
 
   it('should display instrument information', () => {
@@ -289,7 +288,7 @@ describe('GroupedTaskList', () => {
     // Delete button is now in TaskActionMenu (⋮ menu)
     // First, find and click the menu button for the first task
     // Tasks are rendered in order, so the first menu button corresponds to the first task
-    const menuButtons = screen.getAllByLabelText('Task actions');
+    const menuButtons = screen.getAllByLabelText(/Actions for/);
     expect(menuButtons.length).toBeGreaterThan(0);
     const firstMenuButton = menuButtons[0];
     await user.click(firstMenuButton);
@@ -582,7 +581,7 @@ describe('GroupedTaskList', () => {
     // Delete button is now in TaskActionMenu, which only shows if onTaskDelete is provided
     // Menu button (⋮) should not be present when onTaskDelete is not provided
     // Note: TaskActionMenu is only rendered when onTaskDelete is provided
-    const menuButtons = screen.queryAllByLabelText('Task actions');
+    const menuButtons = screen.queryAllByLabelText(/Actions for/);
     expect(menuButtons.length).toBe(0);
   });
 
@@ -600,7 +599,7 @@ describe('GroupedTaskList', () => {
 
     // Delete button is now in TaskActionMenu
     // First, open the menu
-    const menuButtons = screen.getAllByLabelText('Task actions');
+    const menuButtons = screen.getAllByLabelText(/Actions for/);
     const menuButton = menuButtons[0];
     await user.click(menuButton);
 

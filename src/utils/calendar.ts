@@ -72,7 +72,6 @@ export function isCalendarPlacementInRange(
 export const STATUS_LABELS: Record<string, string> = {
   pending: 'Pending',
   in_progress: 'In Progress',
-  waiting_for_parts: 'Waiting for Parts',
   completed: 'Completed',
   cancelled: 'Cancelled',
 };

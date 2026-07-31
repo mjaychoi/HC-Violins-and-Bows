@@ -66,6 +66,42 @@ jest.mock('@/hooks/useAppFeedback', () => ({
 // Mock useUnifiedData
 jest.mock('@/hooks/useUnifiedData', () => ({
   __esModule: true,
+  useUnifiedInstruments: () => ({
+    instruments: [
+      {
+        id: 'instrument-1',
+        status: 'Available',
+        maker: 'Stradivarius',
+        type: 'Violin',
+        year: 1700,
+        certificate: true,
+        subtype: null,
+        size: '4/4',
+        weight: '500g',
+        price: 1000000,
+        ownership: 'Private',
+        note: 'Antique violin',
+        serial_number: null,
+        created_at: '2024-01-01T00:00:00Z',
+      },
+    ],
+  }),
+  useUnifiedClients: () => ({
+    clients: [
+      {
+        id: 'client-1',
+        first_name: 'John',
+        last_name: 'Doe',
+        email: 'john@example.com',
+        contact_number: '123-456-7890',
+        tags: ['Owner'],
+        interest: null,
+        note: null,
+        client_number: null,
+        created_at: '2024-01-01T00:00:00Z',
+      },
+    ],
+  }),
   useUnifiedData: () => ({
     instruments: [
       {
@@ -101,6 +137,23 @@ jest.mock('@/hooks/useUnifiedData', () => ({
     ],
     loading: false,
   }),
+}));
+
+jest.mock('@/hooks/useTenantIdentity', () => ({
+  __esModule: true,
+  useTenantIdentity: jest.fn(() => ({
+    tenantIdentityKey: 'test-user:test-org:token',
+    accessScopeKey: 'test-user:test-org:token',
+  })),
+}));
+
+jest.mock('@/hooks/usePermissions', () => ({
+  __esModule: true,
+  usePermissions: jest.fn(() => ({
+    canCreateTask: true,
+    canManageTasks: true,
+    createTaskDisabledReason: undefined,
+  })),
 }));
 
 // Mock layout to avoid auth/navigation side effects
@@ -158,7 +211,7 @@ jest.mock('@/hooks/useMaintenanceTasks', () => ({
   useMaintenanceTasks: jest.fn(() => ({
     tasks: mockTasks,
     notificationTasks: mockTasks,
-    loading: false,
+    loading: { mutate: false, fetch: false },
     createTask: mockCreateTask,
     updateTask: mockUpdateTask,
     deleteTask: mockDeleteTask,
@@ -635,7 +688,7 @@ describe('CalendarPage', () => {
     await user.click(screen.getByTestId('event-drop-button'));
 
     await waitFor(() => {
-      expect(mockUpdateTask).toHaveBeenCalled();
+      expect(mockUpdateTask).toHaveBeenCalledTimes(1);
     });
 
     expect(mockShowSuccess).not.toHaveBeenCalled();

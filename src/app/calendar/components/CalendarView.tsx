@@ -84,6 +84,10 @@ interface CalendarViewProps {
     end: Date;
     isAllDay?: boolean;
   }) => Promise<void> | void;
+  /** When false, slot selection / create affordances are disabled in the grid. */
+  canCreateTask?: boolean;
+  /** When false, drag/resize mutation affordances are disabled in the grid. */
+  canManageTask?: boolean;
   draggingEventId?: string | null; // Track currently dragging event for visual feedback
   currentDate?: Date;
   onNavigate?: (date: Date) => void;
@@ -116,6 +120,8 @@ export default function CalendarView({
   onSelectEvent,
   onSelectSlot,
   onEventDrop,
+  canCreateTask = true,
+  canManageTask = true,
   draggingEventId,
   currentDate = new Date(),
   onNavigate,
@@ -125,6 +131,8 @@ export default function CalendarView({
   // FIXED: Fully controlled component - use currentView prop directly
   // Removed internalView state to avoid controlled/uncontrolled mixing
   const view = currentView ?? 'month';
+  const allowSlotCreate = Boolean(canCreateTask && onSelectSlot);
+  const allowEventDrag = Boolean(canManageTask && onEventDrop);
 
   const handleViewChange = (view: View | ExtendedView) => {
     // Type guard: only accept views that are in our ExtendedView type
@@ -383,14 +391,15 @@ export default function CalendarView({
                   onSelectEvent(r.task);
                 }
               },
-              onSelectSlot,
-              ...(onEventDrop && { onEventDrop }),
+              ...(allowSlotCreate && { onSelectSlot }),
+              ...(allowEventDrag && { onEventDrop }),
               draggableAccessor: (event: Event) => {
+                if (!allowEventDrag) return false;
                 const resource = event.resource as CalendarResource | undefined;
                 return resource?.kind === 'task';
               },
               resizableAccessor: () => false,
-              selectable: true,
+              selectable: allowSlotCreate,
               resizable: false,
               date: currentDate,
               onNavigate,
