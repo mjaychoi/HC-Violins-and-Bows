@@ -20,6 +20,38 @@ jest.mock('@/hooks/usePermissions', () => ({
   })),
 }));
 
+const mockReplace = jest.fn();
+jest.mock('next/navigation', () => ({
+  useSearchParams: jest.fn(() => new URLSearchParams()),
+  useRouter: jest.fn(() => ({
+    push: jest.fn(),
+    replace: mockReplace,
+    refresh: jest.fn(),
+    back: jest.fn(),
+    forward: jest.fn(),
+    prefetch: jest.fn(),
+  })),
+}));
+
+jest.mock('../components/ClientsAnalyticsPanel', () => ({
+  __esModule: true,
+  default: ({
+    enabled,
+    clientsTruncated,
+  }: {
+    enabled: boolean;
+    clientsTruncated?: boolean;
+  }) => (
+    <div
+      data-testid="clients-analytics-panel"
+      data-enabled={String(enabled)}
+      data-truncated={String(Boolean(clientsTruncated))}
+    >
+      Analytics panel content
+    </div>
+  ),
+}));
+
 jest.mock('@/hooks/useUnifiedData');
 jest.mock('@/utils/apiFetch', () => ({
   apiFetch: jest.fn(),
@@ -464,6 +496,8 @@ describe('ClientsPage', () => {
       deleteClient: mockDeleteClient,
       fetchClients: mockFetchClients,
       upsertClient: mockUpsertClient,
+      error: null,
+      truncated: false,
       refreshClients: jest.fn(),
       refreshInstruments: jest.fn(),
       refreshConnections: jest.fn(),
@@ -519,6 +553,7 @@ describe('ClientsPage', () => {
       showInterestDropdown: false,
       updateViewFormData: jest.fn(),
       handleViewInputChange: jest.fn(),
+      applyServerClient: jest.fn(),
     } as any);
 
     mockUseInstrumentSearch.mockReturnValue({
@@ -719,7 +754,10 @@ describe('ClientsPage', () => {
       await waitFor(() => {
         expect(mockApiFetch).toHaveBeenCalledWith(
           '/api/clients/with-connections',
-          expect.objectContaining({ method: 'POST' })
+          expect.objectContaining({ method: 'POST' }),
+          expect.objectContaining({
+            idempotencyKey: expect.stringMatching(/^client-with-conn-/),
+          })
         );
       });
 
@@ -1514,6 +1552,126 @@ describe('ClientsPage', () => {
 
       // The indicator should appear for the newly created client
       // This would be tested by checking for the indicator in the list
+    });
+  });
+
+  describe('analytics tab', () => {
+    beforeEach(() => {
+      mockReplace.mockClear();
+      const { useSearchParams } = require('next/navigation');
+      (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams());
+    });
+
+    it('renders the default clients list when no tab is set', async () => {
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('clients-list-content')).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByTestId('clients-analytics-panel')
+      ).not.toBeInTheDocument();
+    });
+
+    it('renders analytics panel content when tab=analytics', async () => {
+      const { useSearchParams } = require('next/navigation');
+      (useSearchParams as jest.Mock).mockReturnValue(
+        new URLSearchParams('tab=analytics')
+      );
+
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId('clients-analytics-panel')
+        ).toBeInTheDocument();
+      });
+      expect(screen.getByText('Analytics panel content')).toBeInTheDocument();
+      expect(
+        screen.queryByTestId('clients-list-content')
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId('clients-analytics-panel')).toHaveAttribute(
+        'data-truncated',
+        'false'
+      );
+    });
+
+    it('passes truncated=true into analytics when the client collection is incomplete', async () => {
+      const { useSearchParams } = require('next/navigation');
+      (useSearchParams as jest.Mock).mockReturnValue(
+        new URLSearchParams('tab=analytics')
+      );
+      mockUseUnifiedClients.mockReturnValue({
+        clients: mockClients,
+        loading: {
+          clients: false,
+          instruments: false,
+          connections: false,
+          hasAnyLoading: false,
+          any: false,
+        },
+        submitting: {
+          clients: false,
+          instruments: false,
+          connections: false,
+          hasAnySubmitting: false,
+          any: false,
+        },
+        createClient: mockCreateClient,
+        updateClient: mockUpdateClient,
+        deleteClient: mockDeleteClient,
+        fetchClients: mockFetchClients,
+        upsertClient: mockUpsertClient,
+        error: null,
+        truncated: true,
+        refreshClients: jest.fn(),
+        refreshInstruments: jest.fn(),
+        refreshConnections: jest.fn(),
+      } as any);
+
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('clients-analytics-panel')).toHaveAttribute(
+          'data-truncated',
+          'true'
+        );
+      });
+    });
+
+    it('recovers invalid tab values to the list view and cleans the URL', async () => {
+      const { useSearchParams } = require('next/navigation');
+      (useSearchParams as jest.Mock).mockReturnValue(
+        new URLSearchParams('tab=not-a-real-tab')
+      );
+
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('clients-list-content')).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByTestId('clients-analytics-panel')
+      ).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith('/clients');
+      });
     });
   });
 });

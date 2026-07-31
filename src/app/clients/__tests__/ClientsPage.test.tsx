@@ -124,6 +124,7 @@ jest.mock('@/components/common', () => {
 // Mock next/navigation to avoid invalid hook call for usePathname and useRouter
 jest.mock('next/navigation', () => ({
   usePathname: jest.fn(() => '/clients'),
+  useSearchParams: jest.fn(() => new URLSearchParams()),
   useRouter: jest.fn(() => ({
     push: jest.fn(),
     replace: jest.fn(),
