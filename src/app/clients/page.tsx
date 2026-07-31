@@ -107,16 +107,18 @@ function ClientsPageInner() {
   // Custom hooks
   const {
     clients,
-    loading,
+    loading: _directoryLoading,
     submitting,
-    error,
-    truncated,
-    fetchClients,
     createClient,
     updateClient,
     deleteClient,
     upsertClient,
   } = useUnifiedClients();
+  void _directoryLoading;
+
+  const collectionRefetchRef = useRef<(() => Promise<void> | void) | null>(
+    null
+  );
 
   const { fetchConnections, upsertConnections } = useUnifiedConnections();
 
@@ -265,6 +267,7 @@ function ClientsPageInner() {
           withConnectionsIdempotencyRef.current = null;
 
           showSuccess('Client and instrument links created successfully');
+          void collectionRefetchRef.current?.();
           return {
             status: 'full_success',
             clientId,
@@ -286,6 +289,7 @@ function ClientsPageInner() {
       setNewlyCreatedClientId(newClient.id);
 
       showSuccess('Client created successfully');
+      void collectionRefetchRef.current?.();
       return {
         status: 'full_success',
         clientId: newClient.id,
@@ -364,6 +368,7 @@ function ClientsPageInner() {
       if (success) {
         closeClientView();
         showSuccess('Client deleted successfully.');
+        void collectionRefetchRef.current?.();
       } else {
         handleError(
           new Error('Client could not be deleted. Please try again.'),
@@ -513,23 +518,13 @@ function ClientsPageInner() {
         }
       >
         {activeTab === 'analytics' ? (
-          <ClientsAnalyticsPanel
-            enabled={activeTab === 'analytics'}
-            clientsTruncated={truncated}
-          />
-        ) : loading.hasAnyLoading && clients.length === 0 && !error ? (
-          <div className="p-6">
-            <TableSkeleton rows={8} columns={7} />
-          </div>
+          <ClientsAnalyticsPanel enabled={activeTab === 'analytics'} />
         ) : (
           <ClientsListContent
-            clients={clients}
             clientsWithInstruments={clientsWithInstruments}
             instrumentRelationships={instrumentRelationships}
-            loading={loading}
-            error={error}
-            truncated={truncated}
-            onRetry={() => void fetchClients({ force: true })}
+            directoryLoading={false}
+            collectionRefetchRef={collectionRefetchRef}
             onClientClick={handleRowClick}
             onUpdateClient={async (clientId, updates) => {
               try {
@@ -539,6 +534,7 @@ function ClientsPageInner() {
                   throw new Error('Failed to update client');
                 }
                 showSuccess('Client information updated successfully.');
+                await collectionRefetchRef.current?.();
               } catch (error) {
                 handleError(error, 'Failed to update client');
                 throw error; // Re-throw to prevent saveEditing from closing editing mode

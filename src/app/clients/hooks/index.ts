@@ -2,6 +2,7 @@
 // Export all custom hooks from a single entry point
 export * from './useClientInstruments';
 export * from './useFilters';
+export * from './useClientCollection';
 export * from './useClientView';
 export * from './useInstrumentSearch';
 export * from './useOwnedItems';

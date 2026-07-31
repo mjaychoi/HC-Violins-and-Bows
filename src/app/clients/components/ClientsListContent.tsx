@@ -2,101 +2,67 @@
 
 import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useFilters } from '../hooks/useFilters';
+import { useClientCollection } from '../hooks/useClientCollection';
 import ClientList from './ClientList';
 import ClientFilters from './ClientFilters';
 import { SearchInput, CardSkeleton } from '@/components/common';
 import type { Client, ClientInstrument } from '@/types';
-import { apiFetch } from '@/utils/apiFetch';
-import { readApiResponseEnvelope } from '@/utils/handleApiResponse';
 
 interface ClientsListContentProps {
-  clients: Client[];
   clientsWithInstruments: Set<string>;
   instrumentRelationships: ClientInstrument[];
-  loading: {
-    any: boolean;
-    hasAnyLoading: boolean;
-  };
-  error?: unknown | null;
-  truncated?: boolean;
-  onRetry?: () => void;
+  /** Directory loading from unified data — used only as a soft signal. */
+  directoryLoading?: boolean;
   onClientClick: (client: Client) => void;
   onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
   onDeleteClient: (client: Client) => void;
   newlyCreatedClientId?: string | null;
   onNewlyCreatedClientShown?: () => void;
+  /** Called when the server collection finishes a successful load (for page orchestration). */
+  onCollectionReady?: (meta: {
+    totalCount: number;
+    pageRows: Client[];
+    refetch: () => Promise<void> | void;
+  }) => void;
+  collectionRefetchRef?: React.MutableRefObject<
+    (() => Promise<void> | void) | null
+  >;
 }
 
 function ClientsListContentInner({
-  clients,
   clientsWithInstruments,
   instrumentRelationships,
-  loading,
-  error,
-  truncated = false,
-  onRetry,
   onClientClick,
   onUpdateClient,
   onDeleteClient,
   newlyCreatedClientId,
   onNewlyCreatedClientShown,
+  onCollectionReady,
+  collectionRefetchRef,
 }: ClientsListContentProps) {
   const searchParams = useSearchParams();
   const clientIdFromURL = searchParams.get('clientId');
 
   const [deepLinkIncomplete, setDeepLinkIncomplete] = useState(false);
   const deepLinkFetchRef = useRef<string | null>(null);
-
   const autoOpenedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!clientIdFromURL || loading.hasAnyLoading) return;
-    if (autoOpenedRef.current === clientIdFromURL) return;
-    const match = clients.find(c => c.id === clientIdFromURL);
-    if (match) {
-      autoOpenedRef.current = clientIdFromURL;
-      setDeepLinkIncomplete(false);
-      onClientClick(match);
-      return;
-    }
-
-    if (deepLinkFetchRef.current === clientIdFromURL) return;
-    deepLinkFetchRef.current = clientIdFromURL;
-
-    void (async () => {
-      try {
-        const res = await apiFetch(
-          `/api/clients?id=${encodeURIComponent(clientIdFromURL)}`
-        );
-        if (!res.ok) {
-          setDeepLinkIncomplete(true);
-          return;
-        }
-        const body = await readApiResponseEnvelope<Client>(
-          res,
-          'Failed to fetch client'
-        );
-        const client = body.data;
-        if (client?.id === clientIdFromURL) {
-          autoOpenedRef.current = clientIdFromURL;
-          setDeepLinkIncomplete(false);
-          onClientClick(client);
-        } else {
-          setDeepLinkIncomplete(true);
-        }
-      } catch {
-        setDeepLinkIncomplete(true);
-      }
-    })();
-  }, [clientIdFromURL, clients, loading.hasAnyLoading, onClientClick]);
+  const deepLinkRequestRef = useRef(0);
 
   const {
+    pageRows,
+    paginatedClients,
+    totalCount,
+    totalPages,
+    page: currentPage,
+    pageSize,
+    loading,
+    refreshing,
+    error,
     searchTerm,
     setSearchTerm,
+    filters,
     showFilters,
     setShowFilters,
-    filters,
-    paginatedClients,
     filterOptions,
     handleFilterChange,
     handleHasInstrumentsChange,
@@ -104,15 +70,69 @@ function ClientsListContentInner({
     handleColumnSort,
     getSortArrow,
     getActiveFiltersCount,
-    currentPage,
-    totalPages,
-    totalCount,
-    pageSize,
     setPage,
-  } = useFilters(clients, clientsWithInstruments);
+    refetch,
+    fetchClientById,
+    cacheSelectedClient,
+    clearSelectedClient,
+  } = useClientCollection();
+
+  useEffect(() => {
+    if (collectionRefetchRef) {
+      collectionRefetchRef.current = refetch;
+    }
+    onCollectionReady?.({ totalCount, pageRows, refetch });
+  }, [collectionRefetchRef, onCollectionReady, totalCount, pageRows, refetch]);
+
+  // Deep-link: secure by-ID fetch when client is not on the current page
+  useEffect(() => {
+    if (!clientIdFromURL) {
+      autoOpenedRef.current = null;
+      deepLinkFetchRef.current = null;
+      setDeepLinkIncomplete(false);
+      clearSelectedClient();
+      return;
+    }
+
+    if (autoOpenedRef.current === clientIdFromURL) return;
+
+    const match = pageRows.find(c => c.id === clientIdFromURL);
+    if (match) {
+      autoOpenedRef.current = clientIdFromURL;
+      setDeepLinkIncomplete(false);
+      cacheSelectedClient(match);
+      onClientClick(match);
+      return;
+    }
+
+    if (loading) return;
+    if (deepLinkFetchRef.current === clientIdFromURL) return;
+    deepLinkFetchRef.current = clientIdFromURL;
+    const requestId = ++deepLinkRequestRef.current;
+
+    void (async () => {
+      const client = await fetchClientById(clientIdFromURL);
+      if (requestId !== deepLinkRequestRef.current) return;
+      if (client?.id === clientIdFromURL) {
+        autoOpenedRef.current = clientIdFromURL;
+        setDeepLinkIncomplete(false);
+        onClientClick(client);
+      } else {
+        setDeepLinkIncomplete(true);
+      }
+    })();
+  }, [
+    clientIdFromURL,
+    pageRows,
+    loading,
+    onClientClick,
+    fetchClientById,
+    cacheSelectedClient,
+    clearSelectedClient,
+  ]);
 
   const hasFetchError =
-    Boolean(error) && clients.length === 0 && !loading.hasAnyLoading;
+    Boolean(error) && pageRows.length === 0 && !loading && !refreshing;
 
   if (hasFetchError) {
     return (
@@ -124,15 +144,13 @@ function ClientsListContentInner({
           <p className="text-sm font-medium text-red-800">
             Could not load clients. Check your connection and try again.
           </p>
-          {onRetry ? (
-            <button
-              type="button"
-              onClick={onRetry}
-              className="mt-4 inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
-            >
-              Retry
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="mt-4 inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -140,7 +158,7 @@ function ClientsListContentInner({
 
   return (
     <div className="p-6">
-      {Boolean(error) && clients.length > 0 ? (
+      {Boolean(error) && pageRows.length > 0 ? (
         <div
           role="alert"
           className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-center justify-between gap-3"
@@ -148,44 +166,30 @@ function ClientsListContentInner({
           <span>
             Could not refresh the client list. Showing previously loaded data.
           </span>
-          {onRetry ? (
-            <button
-              type="button"
-              onClick={onRetry}
-              className="shrink-0 text-sm font-medium text-amber-900 underline"
-            >
-              Retry
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {truncated ? (
-        <div
-          role="status"
-          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-        >
-          Showing the first 1,000 clients only. Server-side pagination is
-          planned — counts and filters may be incomplete for larger
-          organizations.
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="shrink-0 text-sm font-medium text-amber-900 underline"
+          >
+            Retry
+          </button>
         </div>
       ) : null}
 
       {deepLinkIncomplete ? (
         <div
           role="status"
+          data-testid="client-deep-link-not-found"
           className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700"
         >
-          The requested client is not in the loaded list and could not be
-          fetched. It may be outside the current result set or no longer
-          available.
+          The requested client could not be found in this organization.
         </div>
       ) : null}
 
       <div className="mb-6">
         <div className="flex flex-wrap items-center gap-3">
           <SearchInput
-            placeholder="Search clients..."
+            placeholder="Search by name, email, phone, or client number..."
             className="flex-1 min-w-[260px] h-10 px-4 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             value={searchTerm}
             onChange={setSearchTerm}
@@ -268,7 +272,7 @@ function ClientsListContentInner({
         totalCount={totalCount}
         pageSize={pageSize}
         onPageChange={setPage}
-        loading={loading.hasAnyLoading}
+        loading={loading}
         hasActiveFilters={getActiveFiltersCount() > 0 || !!searchTerm}
         onResetFilters={clearAllFilters}
       />

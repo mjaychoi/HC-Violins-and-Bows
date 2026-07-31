@@ -47,10 +47,22 @@ export function CustomerStats({
   customers,
   hasActiveFilters = false,
   totalCustomers = 0,
+  summaryOverride,
 }: {
   customers: CustomerWithPurchases[];
   hasActiveFilters?: boolean;
   totalCustomers?: number;
+  /**
+   * When provided (organization-wide analytics), used instead of deriving
+   * metrics from the customers array. Avoids truncated-list bias.
+   */
+  summaryOverride?: {
+    customerCount: number;
+    totalSpend: number;
+    avgSpendPerCustomer: number;
+    purchaseCount: number;
+    mostRecentPurchaseDate: string | null;
+  } | null;
 }) {
   // Optimize calculations with useMemo
   const {
@@ -60,6 +72,18 @@ export function CustomerStats({
     purchaseCount,
     recentDateDisplay,
   } = useMemo(() => {
+    if (summaryOverride && !hasActiveFilters) {
+      return {
+        filteredCount: summaryOverride.customerCount,
+        totalSpend: summaryOverride.totalSpend,
+        avgSpend: summaryOverride.avgSpendPerCustomer,
+        purchaseCount: summaryOverride.purchaseCount,
+        recentDateDisplay: formatDateForDisplay(
+          summaryOverride.mostRecentPurchaseDate
+        ),
+      };
+    }
+
     const filteredCount = customers.length;
 
     let totalSpend = 0;
@@ -90,7 +114,7 @@ export function CustomerStats({
       purchaseCount,
       recentDateDisplay: formatDateForDisplay(recentRaw),
     };
-  }, [customers]);
+  }, [customers, summaryOverride, hasActiveFilters]);
 
   const cards = [
     { label: 'Customers', value: filteredCount.toString() },
