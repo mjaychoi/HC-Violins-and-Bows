@@ -970,6 +970,16 @@ describe('ClientsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Delete client?')).toBeInTheDocument();
       });
+      expect(
+        screen.getByText(/permanently deletes the client profile/i)
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/instrument relationships/i)
+      ).toBeInTheDocument();
+      expect(screen.getByText(/contact history/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Sales and invoices are kept/i)
+      ).toBeInTheDocument();
     });
 
     it('should handle client deletion successfully', async () => {

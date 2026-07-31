@@ -600,7 +600,7 @@ function ClientsPageInner() {
         <ConfirmDialog
           isOpen={Boolean(confirmDelete)}
           title="Delete client?"
-          message="Deleted clients cannot be recovered."
+          message="This permanently deletes the client profile, instrument relationships, and contact history. Sales and invoices are kept, but their client link may be cleared. This cannot be undone."
           confirmLabel="Delete"
           cancelLabel="Cancel"
           onConfirm={confirmDeleteClient}
