@@ -544,6 +544,7 @@ async function putHandlerInternal(
     }
 
     const oldFileKey = existing.storage_path;
+    const expectedCertificateId = existing.id;
     const fileKey = getCertificateStorageKey(auth.orgId!, id, file.name);
 
     storage.validateFile(file.name, 'application/pdf', file.size);
@@ -570,7 +571,7 @@ async function putHandlerInternal(
       throw new Error('Certificate replacement did not return a storage key');
     }
 
-    const { error: updateMetaError } = await auth.userSupabase
+    const { data: updatedRow, error: updateMetaError } = await auth.userSupabase
       .from('instrument_certificates')
       .update({
         storage_path: canonicalStoredKey,
@@ -578,8 +579,11 @@ async function putHandlerInternal(
         mime_type: 'application/pdf',
         size: file.size,
       })
+      .eq('id', expectedCertificateId)
       .eq('instrument_id', id)
-      .eq('storage_path', oldFileKey);
+      .eq('storage_path', oldFileKey)
+      .select('id, storage_path')
+      .maybeSingle();
 
     if (updateMetaError) {
       await rollbackUploadedCertificate(
@@ -590,6 +594,20 @@ async function putHandlerInternal(
       throw errorHandler.handleSupabaseError(
         updateMetaError,
         'Update certificate metadata'
+      );
+    }
+
+    if (!updatedRow) {
+      await rollbackUploadedCertificate(
+        canonicalStoredKey,
+        'Failed to rollback replaced certificate upload after concurrent change:'
+      );
+
+      return routeJson(
+        {
+          error: 'Certificate changed by another request. Refresh and retry.',
+        },
+        409
       );
     }
 
@@ -698,24 +716,10 @@ async function deleteHandlerInternal(
         return routeJson({ error: 'Invalid certificate id format' }, 400);
       }
 
-      const { data: certRow, error: certError } = await auth.userSupabase
-        .from('instrument_certificates')
-        .select('id, storage_path, instruments!inner(org_id)')
-        .eq('id', certificateId)
-        .eq('instrument_id', id)
-        .eq('instruments.org_id', auth.orgId!)
-        .single();
-
-      if (certError) {
-        logError('Certificate lookup error:', certError);
-        return routeJson({ error: 'Failed to find certificate file' }, 404);
-      }
-
-      filePath = certRow?.storage_path || null;
       deleteByCertificateId = certificateId;
     }
 
-    if (!filePath && fileName) {
+    if (!deleteByCertificateId && fileName) {
       const { data: certRows, error: certError } = await scopedCertificateQuery(
         auth,
         id
@@ -733,29 +737,24 @@ async function deleteHandlerInternal(
         return routeJson({ error: 'Certificate file not found' }, 404);
       }
 
+      deleteByCertificateId = existing.id;
       filePath = existing.storage_path;
     }
 
-    if (!filePath) {
+    if (!deleteByCertificateId) {
       return routeJson(
-        { error: 'Certificate storage path could not be resolved' },
-        500
+        { error: 'File name or certificate id is required' },
+        400
       );
     }
 
-    const deleteMetaQuery = deleteByCertificateId
-      ? auth.userSupabase
-          .from('instrument_certificates')
-          .delete()
-          .eq('id', deleteByCertificateId)
-          .eq('instrument_id', id)
-      : auth.userSupabase
-          .from('instrument_certificates')
-          .delete()
-          .eq('instrument_id', id)
-          .eq('storage_path', filePath);
-
-    const { error: deleteMetaError } = await deleteMetaQuery;
+    const { data: deletedRow, error: deleteMetaError } = await auth.userSupabase
+      .from('instrument_certificates')
+      .delete()
+      .eq('id', deleteByCertificateId)
+      .eq('instrument_id', id)
+      .select('id, storage_path')
+      .maybeSingle();
 
     if (deleteMetaError) {
       logError('Certificate metadata delete error:', deleteMetaError);
@@ -764,6 +763,17 @@ async function deleteHandlerInternal(
         500
       );
     }
+
+    if (!deletedRow) {
+      return routeJson(
+        {
+          error: 'Certificate changed by another request. Refresh and retry.',
+        },
+        409
+      );
+    }
+
+    filePath = deletedRow.storage_path;
 
     let storageDeleted = false;
     try {
