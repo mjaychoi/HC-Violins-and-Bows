@@ -2,7 +2,7 @@
 
 import React, { useMemo, useCallback } from 'react';
 import { format, subDays, addDays } from 'date-fns';
-import { todayLocalYMD, parseYMDLocal } from '@/utils/dateParsing';
+import { todayLocalYMD, parseYMDLocal, toLocalYMD } from '@/utils/dateParsing';
 import { useCalendarFilters } from '../hooks/useCalendarFilters';
 import { useCalendarTasks } from '../hooks/useCalendarTasks';
 import { calculateSummaryStats } from '../utils/filterUtils';
@@ -69,7 +69,7 @@ interface CalendarContentProps {
     updates: MaintenanceTaskUpdatePayload
   ) => Promise<MaintenanceTask | null>;
   onSelectEvent: (task: MaintenanceTask) => void;
-  onSelectSlot: (slotInfo: { start: Date; end: Date }) => void;
+  onSelectSlot?: (slotInfo: { start: Date; end: Date }) => void;
   onEventDrop?: (data: {
     event: { resource?: unknown };
     start: Date;
@@ -136,6 +136,9 @@ function CalendarContentInner({
     instrumentsMap: taskData.instrumentsMap,
     ownershipMap: taskData.ownershipMap,
     filterOptions: taskData.filterOptions,
+    selectedPlacementDate: navigation.selectedDate
+      ? toLocalYMD(navigation.selectedDate.toISOString())
+      : null,
   });
 
   const {
@@ -646,8 +649,10 @@ function CalendarContentInner({
           tasks={filteredTasks}
           instruments={taskData.instrumentsMap}
           onSelectEvent={onSelectEvent}
-          onSelectSlot={onSelectSlot}
-          onEventDrop={onEventDrop}
+          onSelectSlot={canCreateTask ? onSelectSlot : undefined}
+          onEventDrop={canManageTask ? onEventDrop : undefined}
+          canCreateTask={canCreateTask}
+          canManageTask={canManageTask}
           draggingEventId={draggingEventId}
           currentDate={navigation.currentDate}
           onNavigate={navigation.setCurrentDate}

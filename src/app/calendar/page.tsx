@@ -10,6 +10,7 @@ import {
 import { useModalState } from '@/hooks/useModalState';
 import { usePageNotifications } from '@/hooks/usePageNotifications';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 // Import useAppFeedback after other hooks to avoid webpack module loading issues
 import { useAppFeedback } from '@/hooks/useAppFeedback';
 import { AppLayout } from '@/components/layout';
@@ -48,6 +49,7 @@ export default function CalendarPage() {
   const { handleError, showSuccess, showWarning } = useAppFeedback();
   const { canCreateTask, canManageTasks, createTaskDisabledReason } =
     usePermissions();
+  const { tenantIdentityKey } = useTenantIdentity();
 
   // FIXED: useUnifiedData is now called at root layout level
   // Use specific hooks to read data (they don't trigger fetches)
@@ -99,6 +101,7 @@ export default function CalendarPage() {
 
   // Calendar navigation
   const navigation = useCalendarNavigation({
+    tenantIdentityKey,
     fetchTasksByDateRange,
     onError: handleTableError,
     onRefetchFailure: () => {
@@ -254,12 +257,15 @@ export default function CalendarPage() {
 
   const handleSelectSlot = useCallback(
     (slotInfo: { start: Date; end: Date }) => {
+      if (!canCreateTask) {
+        return;
+      }
       navigation.setSelectedDate(slotInfo.start);
       // FIXED: Use toLocalYMD utility to convert Date to YYYY-MM-DD (single source of truth)
       setModalDefaultDate(toLocalYMD(slotInfo.start.toISOString()));
       openModal();
     },
-    [navigation, openModal]
+    [canCreateTask, navigation, openModal]
   );
 
   // Handle drag & drop: update task date when event is dropped
@@ -270,6 +276,11 @@ export default function CalendarPage() {
       end: Date;
       isAllDay?: boolean;
     }) => {
+      if (!canManageTasks) {
+        setDraggingEventId(null);
+        return;
+      }
+
       const { event, start } = data;
       const resource = event.resource as
         | { kind: 'task'; task: MaintenanceTask }
@@ -297,11 +308,6 @@ export default function CalendarPage() {
         return;
       }
 
-      // Store backup in local variable to avoid stale state issues
-      const backup = {
-        originalDate,
-        dateField,
-      };
       setDraggingEventId(task.id);
 
       try {
@@ -316,16 +322,12 @@ export default function CalendarPage() {
 
           updated = await updateTask(task.id, updateData);
         } catch (error) {
-          // Rollback on error using local backup variable
+          // Never blind-rollback: server may not have applied the write.
+          // Recover by refetching canonical state instead of a second PATCH.
           try {
-            const rollbackData: Partial<MaintenanceTask> = {
-              [backup.dateField]: backup.originalDate,
-            };
-            await updateTask(task.id, rollbackData);
-          } catch {
-            showWarning(CALENDAR_WARNING_MESSAGES.ROLLBACK_FAILED);
-          } finally {
             await navigation.forceRefetch({ suppressErrorToast: true });
+          } catch {
+            showWarning(CALENDAR_WARNING_MESSAGES.DATE_REFRESH_FAILED);
           }
           handleError(error, 'Failed to update task date');
           return;
@@ -335,6 +337,11 @@ export default function CalendarPage() {
           showWarning(
             'The move could not be confirmed. Please refresh the calendar.'
           );
+          try {
+            await navigation.forceRefetch({ suppressErrorToast: true });
+          } catch {
+            showWarning(CALENDAR_WARNING_MESSAGES.DATE_REFRESH_FAILED);
+          }
           return;
         }
 
@@ -349,6 +356,7 @@ export default function CalendarPage() {
       }
     },
     [
+      canManageTasks,
       updateTask,
       navigation,
       refreshCalendarAfterMutation,
@@ -486,8 +494,8 @@ export default function CalendarPage() {
           onTaskDelete={handleDeleteTaskRequest}
           onTaskEdit={handleTaskClick}
           onSelectEvent={handleSelectEvent}
-          onSelectSlot={handleSelectSlot}
-          onEventDrop={handleEventDrop}
+          onSelectSlot={canCreateTask ? handleSelectSlot : undefined}
+          onEventDrop={canManageTasks ? handleEventDrop : undefined}
           draggingEventId={draggingEventId}
           onOpenNewTask={handleOpenNewTask}
           canCreateTask={canCreateTask && !loading.mutate}

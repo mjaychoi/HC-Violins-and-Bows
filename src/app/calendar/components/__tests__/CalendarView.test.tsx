@@ -22,7 +22,13 @@ jest.mock('react-big-calendar/lib/addons/dragAndDrop', () => {
 jest.mock('react-big-calendar', () => {
   const React = require('react');
   return {
-    Calendar: ({ events, onSelectEvent, onSelectSlot }: any) => {
+    Calendar: ({
+      events,
+      onSelectEvent,
+      onSelectSlot,
+      selectable,
+      draggableAccessor,
+    }: any) => {
       const taskFromResource = (r: any) =>
         r?.task && typeof r.task === 'object' ? r.task : r;
 
@@ -42,12 +48,17 @@ jest.mock('react-big-calendar', () => {
                 const task = taskFromResource(event.resource);
                 const eventId =
                   task?.id || event.title?.replace(/\s+/g, '-') || 'unknown';
+                const canDrag =
+                  typeof draggableAccessor === 'function'
+                    ? Boolean(draggableAccessor(event))
+                    : false;
                 return React.createElement(
                   'button',
                   {
                     key: eventId,
                     type: 'button',
                     'data-testid': `calendar-event-${eventId}`,
+                    'data-draggable': canDrag ? 'true' : 'false',
                     onClick: (e: any) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -62,23 +73,28 @@ jest.mock('react-big-calendar', () => {
 
       return React.createElement(
         'div',
-        { 'data-testid': 'react-big-calendar' },
+        {
+          'data-testid': 'react-big-calendar',
+          'data-selectable': selectable ? 'true' : 'false',
+        },
         React.createElement('div', null, 'Calendar Component'),
         eventElements,
-        React.createElement(
-          'button',
-          {
-            type: 'button',
-            'data-testid': 'select-slot-button',
-            onClick: (e: any) => {
-              e.preventDefault();
-              if (onSelectSlot) {
-                onSelectSlot({ start: new Date(), end: new Date() });
-              }
-            },
-          },
-          'Select Slot'
-        )
+        selectable
+          ? React.createElement(
+              'button',
+              {
+                type: 'button',
+                'data-testid': 'select-slot-button',
+                onClick: (e: any) => {
+                  e.preventDefault();
+                  if (onSelectSlot) {
+                    onSelectSlot({ start: new Date(), end: new Date() });
+                  }
+                },
+              },
+              'Select Slot'
+            )
+          : null
       );
     },
     dateFnsLocalizer: jest.fn(() => ({})),
@@ -479,5 +495,77 @@ describe('CalendarView', () => {
 
     // Should render calendar with event (due_date should be used)
     expect(screen.getByTestId('react-big-calendar')).toBeInTheDocument();
+  });
+
+  describe('DnD / create permissions', () => {
+    const mockOnEventDrop = jest.fn();
+
+    it('canCreateTask=false → selectable false and no create slot control', () => {
+      render(
+        <CalendarView
+          tasks={mockTasks}
+          instruments={mockInstruments}
+          onSelectEvent={mockOnSelectEvent}
+          onSelectSlot={mockOnSelectSlot}
+          onEventDrop={mockOnEventDrop}
+          canCreateTask={false}
+          canManageTask={true}
+          currentDate={new Date()}
+          onNavigate={mockOnNavigate}
+        />
+      );
+
+      expect(screen.getByTestId('react-big-calendar')).toHaveAttribute(
+        'data-selectable',
+        'false'
+      );
+      expect(
+        screen.queryByTestId('select-slot-button')
+      ).not.toBeInTheDocument();
+    });
+
+    it('canManageTask=false → events are not draggable', () => {
+      render(
+        <CalendarView
+          tasks={mockTasks}
+          instruments={mockInstruments}
+          onSelectEvent={mockOnSelectEvent}
+          onSelectSlot={mockOnSelectSlot}
+          onEventDrop={mockOnEventDrop}
+          canCreateTask={true}
+          canManageTask={false}
+          currentDate={new Date()}
+          onNavigate={mockOnNavigate}
+        />
+      );
+
+      expect(screen.getByTestId('calendar-event-1')).toHaveAttribute(
+        'data-draggable',
+        'false'
+      );
+    });
+
+    it('defaults allow slot create and task drag when callbacks and perms are enabled', () => {
+      render(
+        <CalendarView
+          tasks={mockTasks}
+          instruments={mockInstruments}
+          onSelectEvent={mockOnSelectEvent}
+          onSelectSlot={mockOnSelectSlot}
+          onEventDrop={mockOnEventDrop}
+          currentDate={new Date()}
+          onNavigate={mockOnNavigate}
+        />
+      );
+
+      expect(screen.getByTestId('react-big-calendar')).toHaveAttribute(
+        'data-selectable',
+        'true'
+      );
+      expect(screen.getByTestId('calendar-event-1')).toHaveAttribute(
+        'data-draggable',
+        'true'
+      );
+    });
   });
 });
