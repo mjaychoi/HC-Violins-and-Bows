@@ -38,30 +38,40 @@ const makeTask = (
 
 describe('TaskActionMenu', () => {
   const mockTask = makeTask();
+  const accessibleName = 'Actions for Test task';
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('should render menu button', () => {
-    render(<TaskActionMenu task={mockTask} />);
+  it('should render menu button with accessible name', () => {
+    render(<TaskActionMenu task={mockTask} onViewDetails={jest.fn()} />);
 
-    const menuButton = screen.getByLabelText('Task actions');
+    const menuButton = screen.getByLabelText(accessibleName);
     expect(menuButton).toBeInTheDocument();
+    expect(menuButton).toHaveAttribute('aria-haspopup', 'menu');
+  });
+
+  it('uses group-focus-within opacity classes for keyboard visibility', () => {
+    render(<TaskActionMenu task={mockTask} onViewDetails={jest.fn()} />);
+
+    const menuButton = screen.getByLabelText(accessibleName);
+    expect(menuButton.className).toMatch(/group-focus-within:opacity-100/);
+    expect(menuButton.className).toMatch(/opacity-0/);
+    expect(menuButton.className).toMatch(/group-hover:opacity-100/);
   });
 
   it('should open menu when button is clicked', async () => {
     const user = userEvent.setup();
     render(
       <div className="group">
-        <TaskActionMenu task={mockTask} />
+        <TaskActionMenu task={mockTask} onViewDetails={jest.fn()} />
       </div>
     );
 
-    const menuButton = screen.getByLabelText('Task actions');
+    const menuButton = screen.getByLabelText(accessibleName);
     await user.click(menuButton);
 
-    // Menu opens (check for menu items or aria-expanded)
     const menu = screen.queryByRole('menu');
     expect(menu || menuButton).toBeTruthy();
   });
@@ -75,7 +85,7 @@ describe('TaskActionMenu', () => {
       </div>
     );
 
-    const menuButton = screen.getByLabelText('Task actions');
+    const menuButton = screen.getByLabelText(accessibleName);
     await user.click(menuButton);
 
     await waitFor(() => {
@@ -97,7 +107,7 @@ describe('TaskActionMenu', () => {
       </div>
     );
 
-    const menuButton = screen.getByLabelText('Task actions');
+    const menuButton = screen.getByLabelText(accessibleName);
     await user.click(menuButton);
 
     await waitFor(() => {
@@ -119,7 +129,7 @@ describe('TaskActionMenu', () => {
       </div>
     );
 
-    const menuButton = screen.getByLabelText('Task actions');
+    const menuButton = screen.getByLabelText(accessibleName);
     await user.click(menuButton);
 
     await waitFor(() => {
@@ -141,7 +151,7 @@ describe('TaskActionMenu', () => {
       </div>
     );
 
-    const menuButton = screen.getByLabelText('Task actions');
+    const menuButton = screen.getByLabelText(accessibleName);
     await user.click(menuButton);
 
     await waitFor(() => {
@@ -154,15 +164,15 @@ describe('TaskActionMenu', () => {
     expect(onDelete).toHaveBeenCalledWith(mockTask);
   });
 
-  it('should close menu when Escape key is pressed', async () => {
+  it('should close menu on Escape and restore focus to the trigger', async () => {
     const user = userEvent.setup();
     render(
       <div className="group">
-        <TaskActionMenu task={mockTask} />
+        <TaskActionMenu task={mockTask} onViewDetails={jest.fn()} />
       </div>
     );
 
-    const menuButton = screen.getByLabelText('Task actions');
+    const menuButton = screen.getByLabelText(accessibleName);
     await user.click(menuButton);
 
     await waitFor(() => {
@@ -174,6 +184,7 @@ describe('TaskActionMenu', () => {
     await waitFor(() => {
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
+    expect(menuButton).toHaveFocus();
   });
 
   it('should close menu when clicking outside', async () => {
@@ -181,11 +192,11 @@ describe('TaskActionMenu', () => {
     render(
       <div className="group">
         <div data-testid="outside">Outside</div>
-        <TaskActionMenu task={mockTask} />
+        <TaskActionMenu task={mockTask} onViewDetails={jest.fn()} />
       </div>
     );
 
-    const menuButton = screen.getByLabelText('Task actions');
+    const menuButton = screen.getByLabelText(accessibleName);
     await user.click(menuButton);
 
     await waitFor(() => {
@@ -207,14 +218,20 @@ describe('TaskActionMenu', () => {
       </div>
     );
 
-    const menuButton = screen.getByLabelText('Task actions');
+    const menuButton = screen.getByLabelText(accessibleName);
     fireEvent.click(menuButton);
 
     await waitFor(() => {
       expect(screen.getByText('View details')).toBeInTheDocument();
       expect(screen.queryByText('Edit')).not.toBeInTheDocument();
       expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+      expect(screen.queryByText('Mark complete')).not.toBeInTheDocument();
     });
+  });
+
+  it('renders nothing when all action callbacks are omitted', () => {
+    const { container } = render(<TaskActionMenu task={mockTask} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('should close menu after action is executed', async () => {
@@ -226,7 +243,7 @@ describe('TaskActionMenu', () => {
       </div>
     );
 
-    const menuButton = screen.getByLabelText('Task actions');
+    const menuButton = screen.getByLabelText(accessibleName);
     await user.click(menuButton);
 
     await waitFor(() => {
