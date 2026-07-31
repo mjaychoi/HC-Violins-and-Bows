@@ -31,10 +31,32 @@ import { authRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 const MAX_ALL_RESULTS = 1000;
+/**
+ * Explicit minimum column allowlists for the embedded client/instrument
+ * resources, replacing the previous `client:clients(*)` /
+ * `instrument:instruments(*)` wildcard projections.
+ *
+ * Scope is the actual shipped `/connections` UI (ConnectionCard,
+ * EditConnectionModal, ConnectionModal, connection search/sort in
+ * page.tsx and connectionGrouping.ts) - not every column on `clients` /
+ * `instruments`. In particular this intentionally excludes: private
+ * `note`/`interest`, `address`, `contact_number`, `client_number`
+ * (client), and `serial_number`, `status`, `cost_price`,
+ * `consignment_price`, `ownership`, `note`, `size`, `weight`,
+ * `certificate*`, `reserved_*` (instrument) - none of which the shipped
+ * connections surfaces render. If a future connections feature needs one
+ * of these, add it here deliberately rather than reverting to `*`.
+ *
+ * Shared by every handler below (GET collection, by-ID GET, POST/PATCH
+ * mutation response, PUT reorder response) so every surface that renders a
+ * connection sees an identical client/instrument shape.
+ */
+const CONNECTION_CLIENT_COLUMNS = 'id, first_name, last_name, email, tags';
+const CONNECTION_INSTRUMENT_COLUMNS = 'id, maker, type, year, price';
 const CONNECTION_DETAIL_SELECT = `
   *,
-  client:clients(*),
-  instrument:instruments(*)
+  client:clients(${CONNECTION_CLIENT_COLUMNS}),
+  instrument:instruments(${CONNECTION_INSTRUMENT_COLUMNS})
 `;
 
 type ConnectionDisplayOrderUpdate = {
@@ -134,6 +156,20 @@ const CONNECTION_ERROR_CODE_PREFIXES: Array<{
     error_code: 'SOLD_CONNECTION_IMMUTABLE',
     message:
       'Sold relationships cannot be deleted. Use the sales refund/adjustment workflow instead.',
+  },
+  {
+    // F13: the API layer already rejects client_id/instrument_id on PATCH
+    // with an explicit 400 before ever calling the RPC (see patchHandler
+    // below), so this path is normally unreachable through this API.
+    // update_connection_atomic itself raises this same stable error for
+    // any caller that invokes it directly, and this mapping keeps this
+    // route's error contract consistent in case that validation is ever
+    // bypassed or changes.
+    prefix: 'CONNECTION_REASSIGNMENT_UNSUPPORTED',
+    status: 400,
+    error_code: 'CONNECTION_REASSIGNMENT_UNSUPPORTED',
+    message:
+      "Reassigning a connection's client_id/instrument_id is not supported. Create a new connection instead.",
   },
 ];
 
