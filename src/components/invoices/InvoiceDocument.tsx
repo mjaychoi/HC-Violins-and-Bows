@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Image,
 } from '@react-pdf/renderer';
+import { formatInvoiceMoneyWithCurrencyCode } from '@/utils/invoiceMoney';
 
 type InvoiceItem = {
   description: string; // "{type}, {maker}, {year}, {certificate}, {note}" 같은 문장
@@ -276,15 +277,13 @@ const styles = StyleSheet.create({
   },
 });
 
-const money = (n: number, currency?: string) => {
-  const v = Number.isFinite(n) ? n : 0;
-  // 심플하게: 1,234.56 형태
-  const s = v.toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
-  return currency ? `${s} ${currency}` : s;
-};
+// F7: shares the canonical invoice money contract with the invoice list and
+// detail pages. The document keeps its established `1,234.50 USD` layout (the
+// currency code follows the amount and no symbol glyph is required from the
+// embedded font), but the numeric part is now identical across all surfaces —
+// in particular, cents are no longer dropped for two-decimal currencies.
+const money = (n: number, currency?: string) =>
+  formatInvoiceMoneyWithCurrencyCode(n, currency);
 
 const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
   logoSrc,

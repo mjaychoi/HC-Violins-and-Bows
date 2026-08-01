@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
@@ -20,6 +20,8 @@ import {
   handleApiResponse,
 } from '@/utils/handleApiResponse';
 import type { AppError } from '@/types/errors';
+import { formatInvoiceMoney } from '@/utils/invoiceMoney';
+import { isInvoiceHardDeletable } from '@/utils/invoiceLifecycle';
 
 const InvoiceModalDynamic = dynamic(
   () => import('../components/InvoiceModal'),
@@ -73,7 +75,6 @@ export default function InvoiceDetailPage() {
     'loading' | 'success' | 'not_found' | 'error'
   >('loading');
   const [fetchError, setFetchError] = useState<AppError | null>(null);
-  const pdfIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -128,14 +129,9 @@ export default function InvoiceDetailPage() {
     void fetchInvoice();
   }, [fetchInvoice]);
 
-  const formatCurrency = useCallback((amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  }, []);
+  // F7: single canonical money formatter shared with the invoice list and the
+  // PDF document renderer.
+  const formatCurrency = formatInvoiceMoney;
 
   const formatDate = useCallback((dateString: string) => {
     const d = new Date(dateString);
@@ -325,27 +321,29 @@ export default function InvoiceDetailPage() {
             >
               Edit
             </Button>
-            <Button
-              variant="danger"
-              disabled={submitting || !canDeleteInvoice}
-              title={!canDeleteInvoice ? 'Admin only' : undefined}
-              onClick={() => setConfirmDeleteOpen(true)}
-            >
-              Delete
-            </Button>
+            {/* F5: only drafts can be hard deleted. For issued invoices the
+                API always answers 409 INVOICE_IMMUTABLE, so the action is not
+                offered. */}
+            {isInvoiceHardDeletable(invoice.status) && (
+              <Button
+                variant="danger"
+                disabled={submitting || !canDeleteInvoice}
+                title={!canDeleteInvoice ? 'Admin only' : undefined}
+                onClick={() => setConfirmDeleteOpen(true)}
+              >
+                Delete
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Invoice Settings (prefilled & editable, same page) */}
-        {canManageInvoiceSettings && (
-          <InvoiceSettingsPanel
-            onSaved={() => {
-              if (pdfIframeRef.current) {
-                pdfIframeRef.current.src = `/api/invoices/${invoice.id}/pdf?inline=true&ts=${Date.now()}`;
-              }
-            }}
-          />
-        )}
+        {/* Invoice Settings (prefilled & editable, same page).
+            F10: this page renders no inline PDF preview, so the former
+            onSaved handler (which reassigned the src of an iframe that was
+            never mounted) was dead code and has been removed. The PDF is
+            downloaded from the invoice list via GET /api/invoices/[id]/pdf,
+            which is unchanged. */}
+        {canManageInvoiceSettings && <InvoiceSettingsPanel />}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
@@ -486,8 +484,8 @@ export default function InvoiceDetailPage() {
 
       <ConfirmDialog
         isOpen={confirmDeleteOpen}
-        title="Delete invoice?"
-        message={`Delete ${invoice.invoice_number}? This cannot be undone.`}
+        title="Delete draft invoice?"
+        message={`Permanently delete draft ${invoice.invoice_number} and all of its line items? This cannot be undone.`}
         confirmLabel="Delete"
         cancelLabel="Cancel"
         onConfirm={handleDelete}
