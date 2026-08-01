@@ -151,4 +151,32 @@ describe('InvoiceDetailPage', () => {
       screen.queryByText('Failed to load invoice')
     ).not.toBeInTheDocument();
   });
+
+  it('renders date-only invoice and due dates without timezone shift', async () => {
+    mockApiFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          id: 'inv-1',
+          invoice_number: 'INV-1',
+          invoice_date: '2026-07-15',
+          due_date: '2026-07-15',
+          status: 'draft',
+          currency: 'USD',
+          total: 100,
+          items: [],
+          client: null,
+        },
+      }),
+    } as any);
+
+    render(<InvoiceDetailPage />);
+
+    expect(
+      await screen.findByText(/Invoice date: Jul 15, 2026/)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Due: Jul 15, 2026/)).toBeInTheDocument();
+    expect(screen.queryByText(/Jul 14/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Jul 16/)).not.toBeInTheDocument();
+  });
 });

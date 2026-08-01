@@ -272,6 +272,26 @@ describe('InvoiceList', () => {
     expect(baseProps.onDelete).toHaveBeenCalledWith(mockInvoice);
   });
 
+  it('renders date-only invoice and due dates without timezone shift', () => {
+    render(
+      <InvoiceList
+        {...baseProps}
+        invoices={[
+          {
+            ...mockInvoice,
+            invoice_date: '2026-07-15',
+            due_date: '2026-07-15',
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('Jul 15, 2026')).toBeInTheDocument();
+    expect(screen.getByText(/Due: Jul 15, 2026/)).toBeInTheDocument();
+    expect(screen.queryByText(/Jul 14/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Jul 16/)).not.toBeInTheDocument();
+  });
+
   it('handles download click', () => {
     render(<InvoiceList {...baseProps} />);
 

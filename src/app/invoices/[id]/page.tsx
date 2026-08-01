@@ -22,6 +22,7 @@ import {
 import type { AppError } from '@/types/errors';
 import { formatInvoiceMoney } from '@/utils/invoiceMoney';
 import { isInvoiceHardDeletable } from '@/utils/invoiceLifecycle';
+import { formatDateOnly } from '@/utils/formatUtils';
 
 const InvoiceModalDynamic = dynamic(
   () => import('../components/InvoiceModal'),
@@ -134,13 +135,8 @@ export default function InvoiceDetailPage() {
   const formatCurrency = formatInvoiceMoney;
 
   const formatDate = useCallback((dateString: string) => {
-    const d = new Date(dateString);
-    if (Number.isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+    const formatted = formatDateOnly(dateString);
+    return formatted === 'Invalid Date' ? '—' : formatted;
   }, []);
 
   const clientName = useMemo(() => {
