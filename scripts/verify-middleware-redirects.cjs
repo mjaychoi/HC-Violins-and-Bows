@@ -162,23 +162,46 @@ function buildChildEnv() {
   return env;
 }
 
+function resolveNextBin() {
+  try {
+    return require.resolve('next/dist/bin/next');
+  } catch {
+    return null;
+  }
+}
+
+async function waitForChildExit(childState, timeoutMs) {
+  const start = Date.now();
+  while (!childState.exited && Date.now() - start < timeoutMs) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return childState.exited;
+}
+
 async function main() {
   const buildId = path.join(process.cwd(), '.next', 'BUILD_ID');
   if (!fs.existsSync(buildId)) {
     throw assertionError('missing .next/BUILD_ID — run next build first');
   }
 
+  const nextBin = resolveNextBin();
+  if (!nextBin) {
+    throw assertionError('unable to resolve next/dist/bin/next');
+  }
+
   const childState = { exited: false, exitCode: null };
   let stdout = '';
   let stderr = '';
 
+  // Spawn Next directly (not via npx) so SIGTERM/SIGKILL reach the server.
   const child = spawn(
-    process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['next', 'start', '-H', HOST, '-p', String(PORT)],
+    process.execPath,
+    [nextBin, 'start', '-H', HOST, '-p', String(PORT)],
     {
       cwd: process.cwd(),
       env: buildChildEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
     }
   );
 
@@ -193,24 +216,48 @@ async function main() {
     childState.exitCode = code ?? signal ?? 'unknown';
   });
 
-  const shutdown = () => {
-    if (!child.killed && !childState.exited) {
+  const shutdown = async () => {
+    if (childState.exited) return;
+
+    const killTree = signal => {
+      if (!child.pid) return;
       try {
-        child.kill('SIGTERM');
+        if (process.platform !== 'win32') {
+          process.kill(-child.pid, signal);
+        } else {
+          child.kill(signal);
+        }
       } catch {
-        // ignore
+        try {
+          child.kill(signal);
+        } catch {
+          // ignore
+        }
       }
+    };
+
+    killTree('SIGTERM');
+    const exited = await waitForChildExit(childState, 2000);
+    if (!exited) {
+      killTree('SIGKILL');
+      await waitForChildExit(childState, 1000);
+    }
+
+    try {
+      child.stdout.destroy();
+      child.stderr.destroy();
+    } catch {
+      // ignore
     }
   };
 
   const onSignal = () => {
-    shutdown();
-    process.exitCode = 130;
+    shutdown().finally(() => process.exit(130));
   };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
 
-  let failed = false;
+  let exitCode = 0;
   try {
     await waitForServer(60_000, childState);
 
@@ -279,7 +326,7 @@ async function main() {
       )
     );
   } catch (error) {
-    failed = true;
+    exitCode = 1;
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
     if (childState.exited) {
@@ -295,19 +342,16 @@ async function main() {
     if (err) {
       console.error('next start stderr (truncated):\n' + err);
     }
-    process.exitCode = 1;
   } finally {
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);
-    shutdown();
-    await new Promise(r => setTimeout(r, 500));
-    if (!failed) {
-      process.exitCode = process.exitCode || 0;
-    }
+    await shutdown();
   }
+
+  process.exit(exitCode);
 }
 
-main().catch(error => {
+main().catch(async error => {
   console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
+  process.exit(1);
 });
