@@ -5,6 +5,10 @@
  *
  * Requires an existing `.next` output from `next build`.
  * Does not print cookie/token values.
+ *
+ * Hermetic child env: supplies non-secret placeholder S3 config so production
+ * instrumentation (`validateStorageRuntimeConfig`) can start. The routing
+ * test never uploads/downloads/lists object storage.
  */
 const { spawn } = require('child_process');
 const http = require('http');
@@ -15,10 +19,31 @@ const PORT = Number(process.env.MIDDLEWARE_VERIFY_PORT || 3025);
 const HOST = '127.0.0.1';
 const BASE = `http://${HOST}:${PORT}`;
 const MAX_REDIRECTS = 5;
+const LOG_LIMIT = 4000;
 
-function fail(message) {
-  console.error(`middleware redirect check failed: ${message}`);
-  process.exit(1);
+/** Test-only placeholders for production startup validation — not real buckets. */
+const HARNESS_STORAGE_DEFAULTS = {
+  STORAGE_TYPE: 's3',
+  S3_BUCKET_NAME: 'middleware-routing-test',
+  S3_REGION: 'us-east-1',
+};
+
+function assertionError(message) {
+  return new Error(`middleware redirect check failed: ${message}`);
+}
+
+function sanitizeLogText(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(
+      /(authorization|cookie|set-cookie|api[_-]?key|token|secret|password|jwt)\s*[:=]\s*[^\s,;]+/gi,
+      '$1=[redacted]'
+    )
+    .replace(
+      /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
+      '[redacted-jwt]'
+    )
+    .slice(0, LOG_LIMIT);
 }
 
 function request(pathname, { cookie, maxRedirects = 0 } = {}) {
@@ -58,7 +83,7 @@ function request(pathname, { cookie, maxRedirects = 0 } = {}) {
       result.location
     ) {
       if (maxRedirects > MAX_REDIRECTS) {
-        fail(`redirect limit exceeded for ${pathname}`);
+        throw assertionError(`redirect limit exceeded for ${pathname}`);
       }
       const nextPath = result.location.startsWith('http')
         ? new URL(result.location).pathname + new URL(result.location).search
@@ -69,30 +94,43 @@ function request(pathname, { cookie, maxRedirects = 0 } = {}) {
   });
 }
 
-async function waitForServer(timeoutMs = 60000) {
+/**
+ * Wait until the HTTP server answers (any status). A persistent 500 is still
+ * "listening" — the public `/` assertion below remains strict about 200.
+ */
+async function waitForServer(timeoutMs = 60000, childState) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
+    if (childState.exited) {
+      throw assertionError(
+        `next start exited early with code ${childState.exitCode}`
+      );
+    }
     try {
       const res = await request('/');
-      if (res.status > 0) return;
+      if (res.status > 0) {
+        return res;
+      }
     } catch {
-      // retry
+      // retry until listening
     }
     await new Promise(r => setTimeout(r, 500));
   }
-  fail('server did not become ready');
+  throw assertionError('server did not become ready');
 }
 
 function assertRedirectToLogin(label, result) {
   if (![301, 302, 303, 307, 308].includes(result.status)) {
-    fail(`${label}: expected redirect, got ${result.status}`);
+    throw assertionError(`${label}: expected redirect, got ${result.status}`);
   }
   if (!result.location) {
-    fail(`${label}: missing Location header`);
+    throw assertionError(`${label}: missing Location header`);
   }
   const loc = new URL(result.location, BASE);
   if (loc.pathname !== '/') {
-    fail(`${label}: expected Location pathname /, got ${loc.pathname}`);
+    throw assertionError(
+      `${label}: expected Location pathname /, got ${loc.pathname}`
+    );
   }
 }
 
@@ -100,54 +138,85 @@ function assertNoAuthRedirect(label, result) {
   if ([301, 302, 303, 307, 308].includes(result.status) && result.location) {
     const loc = new URL(result.location, BASE);
     if (loc.pathname === '/' && loc.searchParams.has('next')) {
-      fail(`${label}: unexpected auth redirect to login (${result.status})`);
+      throw assertionError(
+        `${label}: unexpected auth redirect to login (${result.status})`
+      );
     }
   }
+}
+
+function buildChildEnv() {
+  const env = {
+    ...process.env,
+    PORT: String(PORT),
+    HOSTNAME: HOST,
+    RATE_LIMITING_DISABLED: process.env.RATE_LIMITING_DISABLED || 'true',
+  };
+
+  for (const [key, value] of Object.entries(HARNESS_STORAGE_DEFAULTS)) {
+    if (!env[key] || !String(env[key]).trim()) {
+      env[key] = value;
+    }
+  }
+
+  return env;
 }
 
 async function main() {
   const buildId = path.join(process.cwd(), '.next', 'BUILD_ID');
   if (!fs.existsSync(buildId)) {
-    fail('missing .next/BUILD_ID — run next build first');
+    throw assertionError('missing .next/BUILD_ID — run next build first');
   }
+
+  const childState = { exited: false, exitCode: null };
+  let stdout = '';
+  let stderr = '';
 
   const child = spawn(
     process.platform === 'win32' ? 'npx.cmd' : 'npx',
     ['next', 'start', '-H', HOST, '-p', String(PORT)],
     {
       cwd: process.cwd(),
-      env: {
-        ...process.env,
-        PORT: String(PORT),
-        HOSTNAME: HOST,
-        RATE_LIMITING_DISABLED: process.env.RATE_LIMITING_DISABLED || 'true',
-      },
+      env: buildChildEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     }
   );
 
-  let stderr = '';
+  child.stdout.on('data', chunk => {
+    stdout += chunk.toString('utf8');
+  });
   child.stderr.on('data', chunk => {
     stderr += chunk.toString('utf8');
   });
-
-  const shutdown = () => {
-    if (!child.killed) {
-      child.kill('SIGTERM');
-    }
-  };
-  process.on('exit', shutdown);
-  process.on('SIGINT', () => {
-    shutdown();
-    process.exit(130);
+  child.on('exit', (code, signal) => {
+    childState.exited = true;
+    childState.exitCode = code ?? signal ?? 'unknown';
   });
 
+  const shutdown = () => {
+    if (!child.killed && !childState.exited) {
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const onSignal = () => {
+    shutdown();
+    process.exitCode = 130;
+  };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
+
+  let failed = false;
   try {
-    await waitForServer();
+    await waitForServer(60_000, childState);
 
     const publicHome = await request('/');
     if (publicHome.status !== 200) {
-      fail(`GET / expected 200, got ${publicHome.status}`);
+      throw assertionError(`GET / expected 200, got ${publicHome.status}`);
     }
     assertNoAuthRedirect('GET /', publicHome);
 
@@ -156,37 +225,37 @@ async function main() {
       assertRedirectToLogin(`GET ${protectedPath} (no cookie)`, res);
     }
 
-    // Malformed cookie must redirect safely (no 500).
     const malformed = await request('/dashboard', {
       cookie: 'hcv-sb-auth=%7Bnot-json',
     });
     assertRedirectToLogin('GET /dashboard (malformed cookie)', malformed);
 
-    // Static / Next asset must not auth-redirect.
     const favicon = await request('/favicon.ico');
     assertNoAuthRedirect('GET /favicon.ico', favicon);
     if (favicon.status >= 500) {
-      fail(`GET /favicon.ico unexpected server error ${favicon.status}`);
+      throw assertionError(
+        `GET /favicon.ico unexpected server error ${favicon.status}`
+      );
     }
 
-    // API auth remains JSON 401, not an HTML login redirect.
     const api = await request('/api/invoices');
     if (api.status !== 401) {
-      fail(`GET /api/invoices expected 401, got ${api.status}`);
+      throw assertionError(`GET /api/invoices expected 401, got ${api.status}`);
     }
     if (api.location) {
-      fail('GET /api/invoices must not HTML-redirect');
+      throw assertionError('GET /api/invoices must not HTML-redirect');
     }
     if (!(api.contentType || '').includes('application/json')) {
-      fail('GET /api/invoices expected application/json');
+      throw assertionError('GET /api/invoices expected application/json');
     }
 
-    // Redirect-loop probe: follow login redirect once; must land on public /.
     const loopProbe = await request('/dashboard', {
       maxRedirects: MAX_REDIRECTS,
     });
     if (loopProbe.status >= 500) {
-      fail(`redirect follow for /dashboard failed with ${loopProbe.status}`);
+      throw assertionError(
+        `redirect follow for /dashboard failed with ${loopProbe.status}`
+      );
     }
 
     console.log(
@@ -202,6 +271,7 @@ async function main() {
             'api 401 json',
             'no redirect loop within limit',
           ],
+          harnessStorageDefaults: Object.keys(HARNESS_STORAGE_DEFAULTS),
           authenticatedSmoke: 'blocked_or_not_run',
         },
         null,
@@ -209,16 +279,35 @@ async function main() {
       )
     );
   } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+    failed = true;
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    if (childState.exited) {
+      console.error(
+        `next start child exit: ${JSON.stringify(childState.exitCode)}`
+      );
+    }
+    const out = sanitizeLogText(stdout);
+    const err = sanitizeLogText(stderr);
+    if (out) {
+      console.error('next start stdout (truncated):\n' + out);
+    }
+    if (err) {
+      console.error('next start stderr (truncated):\n' + err);
+    }
+    process.exitCode = 1;
   } finally {
+    process.removeListener('SIGINT', onSignal);
+    process.removeListener('SIGTERM', onSignal);
     shutdown();
-    // Give the child a moment to exit.
     await new Promise(r => setTimeout(r, 500));
-    if (stderr && /error/i.test(stderr)) {
-      // Keep stderr available for debugging without dumping secrets.
-      console.error('next start stderr (truncated):', stderr.slice(0, 1000));
+    if (!failed) {
+      process.exitCode = process.exitCode || 0;
     }
   }
 }
 
-main();
+main().catch(error => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});
