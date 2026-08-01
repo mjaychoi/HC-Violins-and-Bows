@@ -689,6 +689,59 @@ describe('useUnifiedData', () => {
       expect(enriched).toEqual(fullInstrument);
     });
 
+    it('prefers the full instrument value over the embedded value on a conflicting overlapping field (e.g. price disagrees between the two sources)', () => {
+      const client: Client = {
+        id: '1',
+        first_name: 'John',
+        last_name: 'Doe',
+      } as Client;
+      // Same instrument id, but the two independently-fetched sources
+      // disagree on maker/year/price - simulating the instrument being
+      // updated between the connections fetch and the instruments fetch.
+      const fullInstrument: Instrument = {
+        id: '2',
+        type: 'Violin',
+        maker: 'Updated Maker',
+        year: 1921,
+        price: 2500,
+        status: 'Sold',
+        serial_number: 'SN-12345',
+      } as Instrument;
+      const staleEmbeddedInstrument = {
+        id: '2',
+        maker: 'Stale Maker',
+        type: 'Violin',
+        year: 1920,
+        price: 2000,
+      } as Instrument;
+      const connection: ClientInstrument = {
+        id: '3',
+        client_id: '1',
+        instrument_id: '2',
+        relationship_type: 'Owned',
+        notes: null,
+        created_at: '2024-01-01T00:00:00Z',
+        instrument: staleEmbeddedInstrument,
+      } as ClientInstrument;
+
+      mockState.clients = [client];
+      mockState.instruments = [fullInstrument];
+      mockState.connections = [connection];
+
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      const enriched = result.current.clientRelationships[0].instrument;
+      // The full instrument wins on every overlapping field, not just the
+      // fields the embedded projection lacks - no mixing values from the
+      // two independent fetches for the same field.
+      expect(enriched?.maker).toBe('Updated Maker');
+      expect(enriched?.year).toBe(1921);
+      expect(enriched?.price).toBe(2500);
+      expect(enriched).toEqual(fullInstrument);
+    });
+
     it('falls back to the embedded connection.instrument when the instrument is not yet present in the full instrument list', () => {
       const client: Client = {
         id: '1',

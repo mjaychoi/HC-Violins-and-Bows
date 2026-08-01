@@ -320,6 +320,39 @@ describe('useClientInstruments', () => {
     expect(enriched).toEqual(mockInstrument);
   });
 
+  it('prefers the full org-wide instrument value over the embedded value on a conflicting overlapping field (e.g. price disagrees between the two sources)', async () => {
+    // Same instrument id, but the two independently-fetched sources
+    // disagree on maker/year/price - simulating the instrument being
+    // updated between the connections fetch and the instruments fetch.
+    const staleEmbeddedInstrument = {
+      id: '1',
+      maker: 'Stale Maker',
+      type: 'Violin',
+      year: 1699,
+      price: 900000,
+    } as Instrument;
+    const relWithConflictingInstrument: ClientInstrument = {
+      ...mockInstrumentRelationship,
+      instrument: staleEmbeddedInstrument,
+    };
+    mockConnectionsRef.current = [relWithConflictingInstrument];
+    mockInstrumentsRef.current = [mockInstrument]; // maker: 'Stradivari', year: 1700, price: 1000000
+
+    const { result } = renderHook(() => useClientInstruments());
+
+    await act(async () => {
+      await flushPromises();
+    });
+
+    const enriched = result.current.instrumentRelationships[0].instrument;
+    // The full org-wide instrument wins on every overlapping field, not
+    // just the fields the embedded projection lacks.
+    expect(enriched?.maker).toBe('Stradivari');
+    expect(enriched?.year).toBe(1700);
+    expect(enriched?.price).toBe(1000000);
+    expect(enriched).toEqual(mockInstrument);
+  });
+
   it('keeps null instrument when missing from org map', async () => {
     const relWithoutInstrument: ClientInstrument = {
       ...mockInstrumentRelationship,
