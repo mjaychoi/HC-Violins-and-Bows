@@ -106,6 +106,14 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Verify middleware registration
+        run: npm run check:middleware-manifest
+
+      - name: Verify middleware redirects (built server)
+        run: npm run test:middleware-routing
+        env:
+          RATE_LIMITING_DISABLED: 'true'
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         if: success()

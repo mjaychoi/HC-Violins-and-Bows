@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getCookieBackedAuth } from '@/lib/supabase-server';
+import { getMiddlewareCookieAuth } from '@/lib/supabase-middleware-auth';
+import {
+  buildLoginRedirectUrl,
+  isApiPath,
+  isExcludedAssetPath,
+  isPublicPagePath,
+  requiresAuthSession,
+} from '@/lib/protectedRoutePolicy';
 
 // ---------------------------------------------------------------------------
 // RATE LIMITING
@@ -60,12 +67,6 @@ function getClientIp(request: NextRequest): string {
 // ROUTE PROTECTION
 // ---------------------------------------------------------------------------
 
-// Path prefixes accessible without authentication (login page `/` handled separately).
-const PUBLIC_PAGE_PREFIXES = ['/signup', '/customer', '/onboarding'];
-
-// API routes have their own auth via withAuthRoute — no middleware redirect needed.
-const API_PREFIX = '/api';
-
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
@@ -96,66 +97,40 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   // ------------------------------------------------------------------
   // 2. Let API routes through — withAuthRoute handles their auth
   // ------------------------------------------------------------------
-  if (pathname.startsWith(API_PREFIX)) {
+  if (isApiPath(pathname)) {
     return NextResponse.next();
   }
 
   // ------------------------------------------------------------------
   // 3. Static assets and Next.js internals — always allow
   // ------------------------------------------------------------------
-  const STATIC_EXTENSIONS = [
-    '.svg',
-    '.png',
-    '.jpg',
-    '.jpeg',
-    '.gif',
-    '.webp',
-    '.ico',
-    '.js',
-    '.css',
-    '.map',
-    '.woff',
-    '.woff2',
-    '.ttf',
-    '.eot',
-    '.json',
-    '.txt',
-    '.xml',
-  ];
-  if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon') ||
-    STATIC_EXTENSIONS.some(ext => pathname.endsWith(ext))
-  ) {
+  if (isExcludedAssetPath(pathname)) {
     return NextResponse.next();
   }
 
   // ------------------------------------------------------------------
   // 4. Public pages — no auth required
   // ------------------------------------------------------------------
-  const isPublic =
-    pathname === '/' ||
-    PUBLIC_PAGE_PREFIXES.some(prefix => pathname.startsWith(prefix));
-
-  if (isPublic) {
+  if (isPublicPagePath(pathname)) {
     return NextResponse.next();
   }
 
   // ------------------------------------------------------------------
   // 5. Protected pages — require a valid cookie-backed Supabase session
   // ------------------------------------------------------------------
-  const auth = await getCookieBackedAuth(request.cookies);
+  if (!requiresAuthSession(pathname)) {
+    return NextResponse.next();
+  }
+
+  const auth = await getMiddlewareCookieAuth(request.cookies);
 
   if (!auth) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/';
-    // Preserve destination so the login page can redirect back after sign-in.
-    const next = pathname + request.nextUrl.search;
-    // Guard against open-redirect: only set ?next for internal paths.
-    if (next.startsWith('/') && !next.startsWith('//')) {
-      url.searchParams.set('next', encodeURIComponent(next));
-    }
-    return NextResponse.redirect(url);
+    const redirectUrl = buildLoginRedirectUrl(
+      request.nextUrl,
+      pathname,
+      request.nextUrl.search
+    );
+    return NextResponse.redirect(redirectUrl);
   }
 
   return NextResponse.next();
