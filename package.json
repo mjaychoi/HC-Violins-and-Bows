@@ -54,7 +54,9 @@
     "seed:demo:identity": "tsx scripts/seed-demo-data.ts --create-demo-identity",
     "auth:create-user": "tsx scripts/create-auth-user.ts",
     "schema:check": "tsx scripts/check-schema.ts",
-    "schema:export": "tsx scripts/check-schema.ts"
+    "schema:export": "tsx scripts/check-schema.ts",
+    "check:middleware-manifest": "node scripts/check-middleware-manifest.cjs",
+    "test:middleware-routing": "node scripts/verify-middleware-redirects.cjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.965.0",
