@@ -43,6 +43,13 @@ import {
   tooManyRequestsApiResult,
 } from '@/app/api/_utils/rateLimit';
 import { assertClientBelongsToOrg } from './clientScope';
+import { mapInvoiceDbError } from './rpcErrors';
+import {
+  INVALID_INITIAL_INVOICE_STATUS,
+  INVALID_INITIAL_INVOICE_STATUS_MESSAGE,
+  isAllowedInitialInvoiceStatus,
+  normalizeInitialInvoiceStatus,
+} from '@/utils/invoiceLifecycle';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
@@ -756,6 +763,20 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
+      // F3: reject unsupported initial statuses before the RPC. The database
+      // enforces the same contract for callers that bypass this route
+      // (supabase/migrations/20260801200100_enforce_invoice_initial_status.sql).
+      if (!isAllowedInitialInvoiceStatus(validatedInput.status)) {
+        return {
+          payload: {
+            error: INVALID_INITIAL_INVOICE_STATUS_MESSAGE,
+            error_code: INVALID_INITIAL_INVOICE_STATUS,
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
       const financialError = validateInvoiceFinancials(
         toFinancialSnapshot(validatedInput)
       );
@@ -772,7 +793,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         due_date: validatedInput.due_date ?? null,
         tax: validatedInput.tax ?? null,
         currency: validatedInput.currency || 'USD',
-        status: validatedInput.status || 'draft',
+        status: normalizeInitialInvoiceStatus(validatedInput.status),
         notes: validatedInput.notes ?? null,
       });
 
@@ -822,6 +843,13 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
             },
             status: 409,
           };
+        }
+
+        // F2/F3: database-enforced invariants map to stable client contracts.
+        // Raw SQL text is never forwarded.
+        const invariantError = mapInvoiceDbError(invoiceError);
+        if (invariantError) {
+          return invariantError;
         }
 
         throw errorHandler.handleSupabaseError(invoiceError, 'Create invoice');

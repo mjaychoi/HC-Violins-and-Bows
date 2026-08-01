@@ -36,6 +36,12 @@ import {
   tooManyRequestsApiResult,
 } from '@/app/api/_utils/rateLimit';
 import { assertClientBelongsToOrg } from '../clientScope';
+import { mapInvoiceDbError } from '../rpcErrors';
+import {
+  INVOICE_IMMUTABLE,
+  INVOICE_IMMUTABLE_MESSAGE,
+  isInvoiceHardDeletable,
+} from '@/utils/invoiceLifecycle';
 
 type InvoiceMutationResult = 'full_success' | 'partial_success';
 type JsonObject = { [key: string]: Json | undefined };
@@ -604,6 +610,13 @@ async function updateInvoiceHandler(
     );
 
     if (updateError) {
+      // F2: database-enforced financial invariants map to stable client
+      // contracts. Raw SQL text is never forwarded.
+      const invariantError = mapInvoiceDbError(updateError);
+      if (invariantError) {
+        return invariantError;
+      }
+
       throw errorHandler.handleSupabaseError(updateError, 'Update invoice');
     }
 
@@ -765,6 +778,52 @@ async function deleteInvoiceHandler(
 
     const orgId = auth.orgId!;
 
+    // F5: load the invoice inside the authenticated organization first. Only
+    // drafts may be physically deleted; issued (non-draft) invoices are
+    // permanent records and are retired through the cancellation/status
+    // workflow. The database enforces the same rule for callers that bypass
+    // this route
+    // (supabase/migrations/20260801200200_protect_issued_invoice_deletion.sql).
+    const { data: existingInvoice, error: existingInvoiceError } =
+      await auth.userSupabase
+        .from('invoices')
+        .select('id, status')
+        .eq('id', id)
+        .eq('org_id', orgId)
+        .maybeSingle();
+
+    if (existingInvoiceError) {
+      throw errorHandler.handleSupabaseError(
+        existingInvoiceError,
+        'Fetch invoice for delete'
+      );
+    }
+
+    // Repeat deletion of an already-deleted draft stays a stable 404 rather
+    // than an error, so the API contract remains safely idempotent.
+    if (!existingInvoice) {
+      return {
+        payload: { error: 'Invoice not found', success: false },
+        status: 404,
+        metadata: { scope: { enforced: true, orgId } },
+      };
+    }
+
+    if (!isInvoiceHardDeletable(existingInvoice.status)) {
+      return {
+        payload: {
+          error: INVOICE_IMMUTABLE_MESSAGE,
+          error_code: INVOICE_IMMUTABLE,
+          success: false,
+        },
+        status: 409,
+        metadata: {
+          scope: { enforced: true, orgId },
+          invoiceStatus: existingInvoice.status,
+        },
+      };
+    }
+
     // Fetch invoice_items image URLs before deletion for storage cleanup
     const { data: items, error: itemsError } = await auth.userSupabase
       .from('invoice_items')
@@ -788,6 +847,13 @@ async function deleteInvoiceHandler(
       .eq('org_id', orgId);
 
     if (error) {
+      // Defence in depth: the database trigger rejects protected statuses even
+      // if the status changed between the read above and this delete.
+      const invariantError = mapInvoiceDbError(error);
+      if (invariantError) {
+        return invariantError;
+      }
+
       throw errorHandler.handleSupabaseError(error, 'Delete invoice');
     }
 

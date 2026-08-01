@@ -641,11 +641,19 @@ function InvoiceForm({
             }
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
+            {/* F3: a new invoice may only start as draft or sent. paid /
+                overdue / cancelled are reached through the status workflow;
+                offering them here produced a request the API now rejects with
+                400 INVALID_INITIAL_INVOICE_STATUS. */}
             <option value="draft">Draft</option>
             <option value="sent">Sent</option>
-            <option value="paid">Paid</option>
-            <option value="overdue">Overdue</option>
-            <option value="cancelled">Cancelled</option>
+            {isEditing && (
+              <>
+                <option value="paid">Paid</option>
+                <option value="overdue">Overdue</option>
+                <option value="cancelled">Cancelled</option>
+              </>
+            )}
           </select>
         </div>
         <div>

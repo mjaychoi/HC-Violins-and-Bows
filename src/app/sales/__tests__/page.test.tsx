@@ -212,37 +212,35 @@ jest.mock('../components/SalesFilters', () => ({
   ),
 }));
 
+// F6: the mock no longer exposes a "Download receipt" control. The real
+// SalesTable no longer renders one, because the handler behind it fed a
+// sales_history id into /api/invoices/[id]/pdf and could only ever 404.
 jest.mock('../components/SalesTable', () => ({
   __esModule: true,
-  default: ({ sales, onSendReceipt }: any) => (
+  default: ({ sales }: any) => (
     <div data-testid="sales-table">
       {sales.length === 0 ? (
         <div>No sales found</div>
       ) : (
-        <>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Client</th>
-                <th>Instrument</th>
-                <th>Amount</th>
-                <th>Sale ID</th>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Client</th>
+              <th>Instrument</th>
+              <th>Amount</th>
+              <th>Sale ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sales.map((sale: any) => (
+              <tr key={sale.id}>
+                <td>{sale.sale_date}</td>
+                <td>{sale.sale_price}</td>
               </tr>
-            </thead>
-            <tbody>
-              {sales.map((sale: any) => (
-                <tr key={sale.id}>
-                  <td>{sale.sale_date}</td>
-                  <td>{sale.sale_price}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button onClick={() => onSendReceipt?.(sales[0])}>
-            Download receipt
-          </button>
-        </>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   ),
@@ -455,22 +453,6 @@ const mockSale: SalesHistory = {
   created_at: '2024-01-15T10:30:00Z',
 };
 
-function createInvoicePdfResponse(
-  blobFactory: () => Promise<Blob> = async () =>
-    new Blob(['pdf-content'], { type: 'application/pdf' }),
-  contentType = 'application/pdf',
-  ok = true
-) {
-  return {
-    ok,
-    headers: {
-      get: (name: string) =>
-        name.toLowerCase() === 'content-type' ? contentType : null,
-    },
-    blob: blobFactory,
-  } as Response;
-}
-
 describe('SalesPage', () => {
   const mockFetchSales = jest.fn();
   const mockSetPage = jest.fn();
@@ -613,98 +595,20 @@ describe('SalesPage', () => {
     expect(screen.getByText('Amount')).toBeInTheDocument();
   });
 
-  it('downloads invoice pdf and only then shows success', async () => {
-    mockApiFetch.mockResolvedValueOnce(createInvoicePdfResponse());
-
-    const user = userEvent.setup();
+  // F6: five tests here previously drove a "Download receipt" control that
+  // called GET /api/invoices/${sale.id}/pdf — a sales_history id sent to an
+  // invoice-by-id endpoint. They only ever asserted behaviour of a mocked
+  // fetch, so they passed while the shipped feature was permanently broken.
+  // The control and its handler are gone; the replacement contract lives in
+  // src/app/sales/__tests__/sendReceiptContract.test.ts.
+  it('offers no sale receipt / invoice download action', () => {
     render(<SalesPage />);
 
-    expect(mockShowSuccess).not.toHaveBeenCalledWith('Invoice PDF downloaded.');
-    await user.click(screen.getByText('Download receipt'));
-
-    await waitFor(() => {
-      expect(mockApiFetch).toHaveBeenCalledWith('/api/invoices/sale-1/pdf');
-    });
-    expect(URL.createObjectURL).toHaveBeenCalled();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
-    expect(mockShowSuccess).toHaveBeenCalledWith('Invoice PDF downloaded.');
-    expect(mockHandleError).not.toHaveBeenCalled();
-  });
-
-  it('does not show success for invalid invoice content type', async () => {
-    mockApiFetch.mockResolvedValueOnce(
-      createInvoicePdfResponse(
-        async () => new Blob(['{}'], { type: 'application/json' }),
-        'application/json'
-      )
+    expect(screen.queryByText('Download receipt')).not.toBeInTheDocument();
+    expect(screen.queryByText('Receipt')).not.toBeInTheDocument();
+    expect(mockApiFetch).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^\/api\/invoices\/.*\/pdf$/)
     );
-
-    const user = userEvent.setup();
-    render(<SalesPage />);
-
-    await user.click(screen.getByText('Download receipt'));
-
-    await waitFor(() => {
-      expect(mockHandleError).toHaveBeenCalled();
-    });
-    expect(mockShowSuccess).not.toHaveBeenCalledWith('Invoice PDF downloaded.');
-  });
-
-  it('does not show success for empty invoice pdf blob', async () => {
-    mockApiFetch.mockResolvedValueOnce(
-      createInvoicePdfResponse(
-        async () => new Blob([], { type: 'application/pdf' }),
-        'application/pdf'
-      )
-    );
-
-    const user = userEvent.setup();
-    render(<SalesPage />);
-
-    await user.click(screen.getByText('Download receipt'));
-
-    await waitFor(() => {
-      expect(mockHandleError).toHaveBeenCalled();
-    });
-    expect(mockShowSuccess).not.toHaveBeenCalledWith('Invoice PDF downloaded.');
-  });
-
-  it('does not show success when invoice pdf response is not ok', async () => {
-    mockApiFetch.mockResolvedValueOnce(
-      createInvoicePdfResponse(
-        async () => new Blob(['error'], { type: 'text/plain' }),
-        'text/plain',
-        false
-      )
-    );
-
-    const user = userEvent.setup();
-    render(<SalesPage />);
-
-    await user.click(screen.getByText('Download receipt'));
-
-    await waitFor(() => {
-      expect(mockHandleError).toHaveBeenCalled();
-    });
-    expect(mockShowSuccess).not.toHaveBeenCalledWith('Invoice PDF downloaded.');
-  });
-
-  it('does not show success when invoice pdf blob creation fails', async () => {
-    mockApiFetch.mockResolvedValueOnce(
-      createInvoicePdfResponse(async () => {
-        throw new Error('Blob failed');
-      })
-    );
-
-    const user = userEvent.setup();
-    render(<SalesPage />);
-
-    await user.click(screen.getByText('Download receipt'));
-
-    await waitFor(() => {
-      expect(mockHandleError).toHaveBeenCalled();
-    });
-    expect(mockShowSuccess).not.toHaveBeenCalledWith('Invoice PDF downloaded.');
   });
 
   it('should show loading skeleton when loading', () => {

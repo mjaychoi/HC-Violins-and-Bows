@@ -90,7 +90,6 @@ describe('SalesTable', () => {
   const mockGetSortArrow = jest.fn(() => (
     <span data-testid="sort-arrow">↕</span>
   ));
-  const mockOnSendReceipt = jest.fn();
   const mockOnRefund = jest.fn();
   const mockOnUndoRefund = jest.fn();
   const mockStatusForSale = jest.fn((sale: EnrichedSale): SaleStatus => {
@@ -108,7 +107,6 @@ describe('SalesTable', () => {
         loading={true}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -127,7 +125,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -145,7 +142,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -166,7 +162,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -189,7 +184,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -211,7 +205,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -224,50 +217,30 @@ describe('SalesTable', () => {
     expect(mockGetSortArrow).toHaveBeenCalledWith('sale_price');
   });
 
-  it('calls onSendReceipt when receipt button is clicked', async () => {
-    const user = userEvent.setup();
+  // F6: the "Receipt" action fed a sales_history UUID into
+  // /api/invoices/${sale.id}/pdf, an invoice-by-id endpoint. No sale ->
+  // invoice relation exists, so the control was removed. The two previous
+  // tests here only asserted that a mocked callback fired / that the button
+  // was disabled without an email, which proved nothing about the broken
+  // contract; they are replaced by the assertion below and by
+  // src/app/sales/__tests__/sendReceiptContract.test.ts.
+  it('no longer renders a receipt action', () => {
     render(
       <SalesTable
         sales={mockSales}
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
       />
     );
 
-    const receiptButtons = screen.getAllByText('Receipt');
-    await user.click(receiptButtons[0]);
-    expect(mockOnSendReceipt).toHaveBeenCalledWith(mockSales[0]);
-  });
-
-  it('disables receipt button when client has no email', () => {
-    const saleWithoutEmail: EnrichedSale = {
-      ...mockSales[0],
-      client: {
-        ...mockClient,
-        email: '',
-      },
-    };
-
-    render(
-      <SalesTable
-        sales={[saleWithoutEmail]}
-        loading={false}
-        onSort={mockOnSort}
-        getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
-        onRefund={mockOnRefund}
-        onUndoRefund={mockOnUndoRefund}
-        statusForSale={mockStatusForSale}
-      />
-    );
-
-    const receiptButton = screen.getByText('Receipt').closest('button');
-    expect(receiptButton).toBeDisabled();
+    expect(screen.queryByText('Receipt')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTitle('Send receipt via email')
+    ).not.toBeInTheDocument();
   });
 
   it('calls onRefund when refund button is clicked', async () => {
@@ -278,7 +251,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -297,7 +269,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -323,7 +294,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -342,7 +312,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -369,7 +338,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -394,7 +362,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -411,7 +378,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}
@@ -430,7 +396,6 @@ describe('SalesTable', () => {
         loading={false}
         onSort={mockOnSort}
         getSortArrow={mockGetSortArrow}
-        onSendReceipt={mockOnSendReceipt}
         onRefund={mockOnRefund}
         onUndoRefund={mockOnUndoRefund}
         statusForSale={mockStatusForSale}

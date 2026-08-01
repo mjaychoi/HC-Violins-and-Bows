@@ -11,6 +11,8 @@ import { getButtonVariantClasses } from '@/utils/colorTokens';
 import OptimizedImage from '@/components/common/OptimizedImage';
 import { usePermissions } from '@/hooks/usePermissions';
 import { errorHandler } from '@/utils/errorHandler';
+import { formatInvoiceMoney } from '@/utils/invoiceMoney';
+import { isInvoiceHardDeletable } from '@/utils/invoiceLifecycle';
 
 interface InvoiceListProps {
   invoices: Invoice[];
@@ -161,14 +163,9 @@ function InvoiceList({
     });
   };
 
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  };
+  // F7: single canonical money formatter shared with the invoice detail page
+  // and the PDF document renderer.
+  const formatCurrency = formatInvoiceMoney;
 
   return (
     <div className="space-y-4">
@@ -366,7 +363,12 @@ function InvoiceList({
                                 Edit
                               </Button>
                             ))}
+                          {/* F5: issued invoices can never be hard deleted -
+                              the API always rejects it with 409
+                              INVOICE_IMMUTABLE - so the action is not offered
+                              for them at all. */}
                           {onDelete &&
+                            isInvoiceHardDeletable(invoice.status) &&
                             (canDeleteInvoice ? (
                               <Button
                                 variant="secondary"
