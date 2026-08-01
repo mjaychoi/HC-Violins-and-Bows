@@ -3,6 +3,10 @@ import {
   validateMaintenanceTaskStatusTransition as validateMaintenanceTaskStatusTransitionImpl,
   getAllowedMaintenanceTaskNextStatuses as getAllowedMaintenanceTaskNextStatusesImpl,
 } from '@/utils/maintenanceTaskTransitions';
+import {
+  ALLOWED_INVOICE_STATUS_TRANSITIONS,
+  isAllowedInvoiceStatusTransition,
+} from '@/utils/invoiceStatusTransitions';
 
 type InstrumentStatus = Instrument['status'];
 
@@ -34,27 +38,15 @@ export function validateInstrumentStatusTransition(
   return `Invalid instrument status transition: ${currentStatus} -> ${nextStatus}`;
 }
 
-const allowedInvoiceTransitions: Record<
-  InvoiceStatus,
-  readonly InvoiceStatus[]
-> = {
-  draft: ['draft', 'sent', 'cancelled'],
-  sent: ['sent', 'paid', 'overdue', 'cancelled'],
-  overdue: ['overdue', 'paid', 'cancelled'],
-  paid: ['paid'],
-  cancelled: ['cancelled'],
-};
-
 export function validateInvoiceStatusTransition(
   currentStatus: InvoiceStatus,
   nextStatus: InvoiceStatus
 ): string | null {
-  const allowedNextStatuses = allowedInvoiceTransitions[currentStatus];
-  if (!allowedNextStatuses) {
+  if (!(currentStatus in ALLOWED_INVOICE_STATUS_TRANSITIONS)) {
     return `Invalid invoice status transition: ${currentStatus} -> ${nextStatus}`;
   }
 
-  if (allowedNextStatuses.includes(nextStatus)) {
+  if (isAllowedInvoiceStatusTransition(currentStatus, nextStatus)) {
     return null;
   }
 

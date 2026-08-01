@@ -588,4 +588,167 @@ describe('InvoiceForm', () => {
 
     expect(mockOnClose).toHaveBeenCalled();
   });
+
+  describe('status options follow the canonical transition graph', () => {
+    const statusCases: Array<{
+      status: Invoice['status'];
+      expected: string[];
+      absent: string[];
+    }> = [
+      {
+        status: 'draft',
+        expected: ['draft', 'sent', 'cancelled'],
+        absent: ['paid', 'overdue'],
+      },
+      {
+        status: 'sent',
+        expected: ['sent', 'paid', 'overdue', 'cancelled'],
+        absent: ['draft'],
+      },
+      {
+        status: 'overdue',
+        expected: ['overdue', 'paid', 'cancelled'],
+        absent: ['draft', 'sent'],
+      },
+      {
+        status: 'paid',
+        expected: ['paid'],
+        absent: ['draft', 'sent', 'overdue', 'cancelled'],
+      },
+      {
+        status: 'cancelled',
+        expected: ['cancelled'],
+        absent: ['draft', 'sent', 'paid', 'overdue'],
+      },
+    ];
+
+    function mockFormForStatus(status: Invoice['status']) {
+      const { useFormState } = require('@/hooks/useFormState');
+      useFormState.mockReturnValue({
+        formData: {
+          client_id: 'client-1',
+          invoice_date: '2024-01-15',
+          due_date: '2024-01-30',
+          subtotal: 50000,
+          tax: 5000,
+          total: 55000,
+          currency: 'USD',
+          status,
+          notes: null,
+        },
+        updateField: jest.fn(),
+      });
+    }
+
+    function getStatusOptionValues(): string[] {
+      const statusSelect = screen.getByLabelText('Status') as HTMLSelectElement;
+      return Array.from(statusSelect.options).map(option => option.value);
+    }
+
+    it.each(statusCases)(
+      'edit mode for $status offers only canonical next statuses',
+      ({ status, expected, absent }) => {
+        mockFormForStatus(status);
+        render(
+          <InvoiceForm
+            invoice={{ ...mockInvoice, status }}
+            isEditing={true}
+            onSubmit={mockOnSubmit}
+            onClose={mockOnClose}
+          />
+        );
+
+        const values = getStatusOptionValues();
+        expect(values).toEqual(expected);
+        expect(values).toContain(status);
+        absent.forEach(value => expect(values).not.toContain(value));
+      }
+    );
+
+    it('create mode exposes only draft and sent', () => {
+      mockFormForStatus('draft');
+      render(
+        <InvoiceForm
+          invoice={null}
+          isEditing={false}
+          onSubmit={mockOnSubmit}
+          onClose={mockOnClose}
+        />
+      );
+
+      expect(getStatusOptionValues()).toEqual(['draft', 'sent']);
+    });
+
+    it('paid → draft is absent from the edit picker', () => {
+      mockFormForStatus('paid');
+      render(
+        <InvoiceForm
+          invoice={{ ...mockInvoice, status: 'paid' }}
+          isEditing={true}
+          onSubmit={mockOnSubmit}
+          onClose={mockOnClose}
+        />
+      );
+
+      expect(getStatusOptionValues()).not.toContain('draft');
+    });
+
+    it('cancelled → draft is absent from the edit picker', () => {
+      mockFormForStatus('cancelled');
+      render(
+        <InvoiceForm
+          invoice={{ ...mockInvoice, status: 'cancelled' }}
+          isEditing={true}
+          onSubmit={mockOnSubmit}
+          onClose={mockOnClose}
+        />
+      );
+
+      expect(getStatusOptionValues()).not.toContain('draft');
+    });
+
+    it('shows a validation error when the selected status is no longer permitted', async () => {
+      const { useFormState } = require('@/hooks/useFormState');
+      useFormState.mockReturnValue({
+        formData: {
+          client_id: 'client-1',
+          invoice_date: '2024-01-15',
+          due_date: null,
+          subtotal: 50000,
+          tax: null,
+          total: 50000,
+          currency: 'USD',
+          // Form somehow holds an unreachable status while invoice is paid.
+          status: 'draft',
+          notes: null,
+        },
+        updateField: jest.fn(),
+      });
+
+      render(
+        <InvoiceForm
+          invoice={{ ...mockInvoice, status: 'paid' }}
+          isEditing={true}
+          onSubmit={mockOnSubmit}
+          onClose={mockOnClose}
+        />
+      );
+
+      // Value remains visible (no silent coercion) even though it is not allowed.
+      const statusSelect = screen.getByLabelText('Status') as HTMLSelectElement;
+      expect(Array.from(statusSelect.options).map(o => o.value)).toContain(
+        'draft'
+      );
+      expect(statusSelect.value).toBe('draft');
+
+      fireEvent.click(screen.getByRole('button', { name: /update invoice/i }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Selected status is not allowed for this invoice')
+        ).toBeInTheDocument();
+      });
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+    });
+  });
 });
