@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import InvoiceFilters from '../InvoiceFilters';
-import type { InvoiceStatus } from '../InvoiceFilters';
+import type { InvoiceFilterStatus } from '../InvoiceFilters';
 
 describe('InvoiceFilters', () => {
   const mockOnSearchChange = jest.fn();
@@ -17,7 +17,7 @@ describe('InvoiceFilters', () => {
     onFromDateChange: mockOnFromDateChange,
     toDate: '',
     onToDateChange: mockOnToDateChange,
-    status: '' as InvoiceStatus,
+    status: '' as InvoiceFilterStatus,
     onStatusChange: mockOnStatusChange,
     onClearFilters: mockOnClearFilters,
     hasActiveFilters: false,
@@ -149,12 +149,30 @@ describe('InvoiceFilters', () => {
       option => option.value
     );
 
-    expect(options).toContain('');
-    expect(options).toContain('draft');
-    expect(options).toContain('sent');
-    expect(options).toContain('paid');
-    expect(options).toContain('overdue');
-    expect(options).toContain('cancelled');
+    expect(options).toEqual([
+      '',
+      'draft',
+      'sent',
+      'paid',
+      'overdue',
+      'cancelled',
+    ]);
+  });
+
+  it('does not offer a Voided status option (no backend void status exists)', () => {
+    render(<InvoiceFilters {...baseProps} />);
+
+    const statusSelect = screen.getByDisplayValue(
+      'All Status'
+    ) as HTMLSelectElement;
+    const labels = Array.from(statusSelect.options).map(
+      option => option.textContent
+    );
+    const values = Array.from(statusSelect.options).map(option => option.value);
+
+    expect(labels).not.toContain('Voided');
+    expect(values).not.toContain('void');
+    expect(screen.queryByText('Voided')).not.toBeInTheDocument();
   });
 
   it('has proper accessibility attributes', () => {

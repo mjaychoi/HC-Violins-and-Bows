@@ -13,6 +13,16 @@ import OptimizedImage from '@/components/common/OptimizedImage';
 import { logError } from '@/utils/logger';
 import { todayLocalYMD } from '@/utils/dateParsing';
 import { readApiResponseBody } from '@/utils/handleApiResponse';
+import { ALLOWED_INITIAL_INVOICE_STATUSES } from '@/utils/invoiceLifecycle';
+import { getAllowedInvoiceNextStatuses } from '@/utils/invoiceStatusTransitions';
+
+const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  paid: 'Paid',
+  overdue: 'Overdue',
+  cancelled: 'Cancelled',
+};
 
 interface InvoiceFormItem {
   id: string; // 임시 ID (로컬 상태 관리용)
@@ -155,6 +165,20 @@ function InvoiceForm({
   const itemsRef = useRef<InvoiceFormItem[]>([]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Edit options are derived from the persisted invoice status (canonical
+  // transition graph), not from the currently selected form value, so choosing
+  // a next status does not expand/shrink the option set mid-edit. Create mode
+  // keeps the PR #72 initial-status contract (draft | sent only).
+  const allowedStatusOptions: readonly InvoiceStatus[] =
+    isEditing && invoice
+      ? getAllowedInvoiceNextStatuses(invoice.status)
+      : [...ALLOWED_INITIAL_INVOICE_STATUSES];
+
+  const statusSelectOptions: readonly InvoiceStatus[] =
+    allowedStatusOptions.includes(formData.status)
+      ? allowedStatusOptions
+      : [...allowedStatusOptions, formData.status];
 
   // Initialize form when invoice changes
   useEffect(() => {
@@ -467,6 +491,14 @@ function InvoiceForm({
       return;
     }
 
+    if (!allowedStatusOptions.includes(formData.status)) {
+      setErrors(prev => ({
+        ...prev,
+        status: 'Selected status is not allowed for this invoice',
+      }));
+      return;
+    }
+
     if (items.length === 0) {
       setErrors(prev => ({ ...prev, items: 'At least one item is required' }));
       return;
@@ -639,22 +671,21 @@ function InvoiceForm({
             onChange={e =>
               updateField('status', e.target.value as typeof formData.status)
             }
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              errors.status
+                ? 'border-red-300 focus:ring-red-500'
+                : 'border-gray-300'
+            }`}
           >
-            {/* F3: a new invoice may only start as draft or sent. paid /
-                overdue / cancelled are reached through the status workflow;
-                offering them here produced a request the API now rejects with
-                400 INVALID_INITIAL_INVOICE_STATUS. */}
-            <option value="draft">Draft</option>
-            <option value="sent">Sent</option>
-            {isEditing && (
-              <>
-                <option value="paid">Paid</option>
-                <option value="overdue">Overdue</option>
-                <option value="cancelled">Cancelled</option>
-              </>
-            )}
+            {statusSelectOptions.map(status => (
+              <option key={status} value={status}>
+                {INVOICE_STATUS_LABELS[status]}
+              </option>
+            ))}
           </select>
+          {errors.status && (
+            <p className="text-red-500 text-xs mt-1">{errors.status}</p>
+          )}
         </div>
         <div>
           <label

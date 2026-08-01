@@ -13,6 +13,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { errorHandler } from '@/utils/errorHandler';
 import { formatInvoiceMoney } from '@/utils/invoiceMoney';
 import { isInvoiceHardDeletable } from '@/utils/invoiceLifecycle';
+import { formatDateOnly } from '@/utils/formatUtils';
 
 interface InvoiceListProps {
   invoices: Invoice[];
@@ -156,11 +157,8 @@ function InvoiceList({
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+    const formatted = formatDateOnly(dateString);
+    return formatted === 'Invalid Date' ? '—' : formatted;
   };
 
   // F7: single canonical money formatter shared with the invoice detail page
@@ -371,7 +369,7 @@ function InvoiceList({
                             isInvoiceHardDeletable(invoice.status) &&
                             (canDeleteInvoice ? (
                               <Button
-                                variant="secondary"
+                                variant="danger"
                                 size="sm"
                                 onClick={() => onDelete(invoice)}
                               >
@@ -379,7 +377,7 @@ function InvoiceList({
                               </Button>
                             ) : (
                               <Button
-                                variant="secondary"
+                                variant="danger"
                                 size="sm"
                                 disabled
                                 title="Admin only"
