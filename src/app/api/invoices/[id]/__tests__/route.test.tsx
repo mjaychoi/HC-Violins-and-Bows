@@ -1212,11 +1212,17 @@ describe('/api/invoices/[id]', () => {
   describe('DELETE', () => {
     const INVOICE_ID = '123e4567-e89b-12d3-a456-426614174000';
 
+    // F5: DELETE now loads the invoice (id + status) inside the caller's org
+    // before deleting anything, so the `invoices` handle has to serve both the
+    // status pre-read and the delete itself.
     function makeDeleteSupabase({
       items = [] as Array<{ image_url: string | null }>,
       deleteCount = 1,
       storagePaths = [] as string[],
       storageError = null as { message: string } | null,
+      invoiceStatus = 'draft' as string | null,
+      invoiceExists = true,
+      deleteError = null as { message: string; details?: string } | null,
     } = {}) {
       const {
         extractInvoiceImageStoragePaths,
@@ -1232,11 +1238,26 @@ describe('/api/invoices/[id]', () => {
           Promise.resolve({ data: items, error: null }).then(resolve),
       };
 
-      const deleteChain = {
-        delete: jest.fn().mockReturnThis(),
+      const maybeSingleMock = jest.fn().mockResolvedValue({
+        data: invoiceExists ? { id: INVOICE_ID, status: invoiceStatus } : null,
+        error: null,
+      });
+
+      const deleteMock = jest.fn();
+
+      const invoicesChain: Record<string, any> = {
+        select: jest.fn().mockReturnThis(),
+        delete: jest.fn((...args: unknown[]) => {
+          deleteMock(...args);
+          return invoicesChain;
+        }),
         eq: jest.fn().mockReturnThis(),
+        maybeSingle: maybeSingleMock,
         then: (resolve: any) =>
-          Promise.resolve({ error: null, count: deleteCount }).then(resolve),
+          Promise.resolve({
+            error: deleteError,
+            count: deleteError ? null : deleteCount,
+          }).then(resolve),
       };
 
       const insertChain = {
@@ -1249,13 +1270,14 @@ describe('/api/invoices/[id]', () => {
       return {
         from: jest.fn().mockImplementation((table: string) => {
           if (table === 'invoice_items') return selectChain;
-          if (table === 'invoices') return deleteChain;
+          if (table === 'invoices') return invoicesChain;
           if (table === 'orphaned_storage_objects') return insertChain;
           return {};
         }),
         storage: { from: jest.fn().mockReturnValue(storageBucket) },
         _removeMock: removeMock,
         _insertChain: insertChain,
+        _deleteMock: deleteMock,
       };
     }
 
@@ -1340,7 +1362,7 @@ describe('/api/invoices/[id]', () => {
     });
 
     it('returns 404 when invoice not found', async () => {
-      mockUserSupabase = makeDeleteSupabase({ deleteCount: 0 });
+      mockUserSupabase = makeDeleteSupabase({ invoiceExists: false });
 
       const handler = await loadDeleteHandler();
       const request = new NextRequest(
@@ -1354,6 +1376,87 @@ describe('/api/invoices/[id]', () => {
 
       expect(response.status).toBe(404);
       expect(json.error).toBe('Invoice not found');
+    });
+
+    // ── F5: hard-delete protection for issued invoices ────────────────────
+    describe('F5 hard-delete protection', () => {
+      async function deleteInvoice() {
+        const handler = await loadDeleteHandler();
+        const request = new NextRequest(
+          `http://localhost/api/invoices/${INVOICE_ID}`,
+          { method: 'DELETE' }
+        );
+        const response = await handler(request, {
+          params: Promise.resolve({ id: INVOICE_ID }),
+        });
+        return { response, json: await response.json() };
+      }
+
+      it('allows hard deletion of a draft invoice', async () => {
+        mockUserSupabase = makeDeleteSupabase({ invoiceStatus: 'draft' });
+
+        const { response, json } = await deleteInvoice();
+
+        expect(response.status).toBe(200);
+        expect(json.data.id).toBe(INVOICE_ID);
+        expect(mockUserSupabase._deleteMock).toHaveBeenCalled();
+      });
+
+      it.each(['sent', 'paid', 'overdue', 'cancelled'])(
+        'rejects hard deletion of a %s invoice with 409 INVOICE_IMMUTABLE',
+        async status => {
+          mockUserSupabase = makeDeleteSupabase({ invoiceStatus: status });
+
+          const { response, json } = await deleteInvoice();
+
+          expect(response.status).toBe(409);
+          expect(json.error_code).toBe('INVOICE_IMMUTABLE');
+          expect(json.success).toBe(false);
+          expect(json.error).toMatch(/cannot be permanently deleted/i);
+          expect(json.error).toMatch(/cancel/i);
+        }
+      );
+
+      it('leaves the invoice and its line items untouched when rejected', async () => {
+        mockUserSupabase = makeDeleteSupabase({ invoiceStatus: 'paid' });
+
+        await deleteInvoice();
+
+        // No delete is issued at all, so neither the invoice nor its cascaded
+        // invoice_items rows can be affected, and no storage cleanup runs.
+        expect(mockUserSupabase._deleteMock).not.toHaveBeenCalled();
+        expect(mockUserSupabase.storage.from).not.toHaveBeenCalled();
+      });
+
+      it('maps a database-side INVOICE_IMMUTABLE violation to 409 (status raced after the read)', async () => {
+        mockUserSupabase = makeDeleteSupabase({
+          invoiceStatus: 'draft',
+          deleteError: {
+            message:
+              'INVOICE_IMMUTABLE: Invoice ... cannot be permanently deleted.',
+            details: JSON.stringify({ error_code: 'INVOICE_IMMUTABLE' }),
+          },
+        });
+
+        const { response, json } = await deleteInvoice();
+
+        expect(response.status).toBe(409);
+        expect(json.error_code).toBe('INVOICE_IMMUTABLE');
+      });
+
+      it('keeps repeated draft deletion safely idempotent (stable 404, no error)', async () => {
+        mockUserSupabase = makeDeleteSupabase({ invoiceStatus: 'draft' });
+        const first = await deleteInvoice();
+        expect(first.response.status).toBe(200);
+
+        // Second attempt: the row is gone, so the pre-read finds nothing.
+        mockUserSupabase = makeDeleteSupabase({ invoiceExists: false });
+        const second = await deleteInvoice();
+
+        expect(second.response.status).toBe(404);
+        expect(second.json.error).toBe('Invoice not found');
+        expect(mockUserSupabase._deleteMock).not.toHaveBeenCalled();
+      });
     });
   });
 });

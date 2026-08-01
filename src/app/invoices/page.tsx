@@ -928,10 +928,10 @@ function InvoicesPageContent() {
         {/* Delete Confirmation Dialog */}
         <ConfirmDialog
           isOpen={Boolean(confirmDeleteInvoice)}
-          title="Delete Invoice?"
+          title="Delete draft invoice?"
           message={
             confirmDeleteInvoice
-              ? `Are you sure you want to delete invoice ${confirmDeleteInvoice.invoice_number}? This action cannot be undone.`
+              ? `Permanently delete draft invoice ${confirmDeleteInvoice.invoice_number} and all of its line items? This action cannot be undone.`
               : ''
           }
           confirmLabel="Delete"
