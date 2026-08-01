@@ -26,7 +26,6 @@ interface SalesTableProps {
   loading: boolean;
   onSort: (column: SortColumn) => void;
   getSortArrow: (column: SortColumn) => React.ReactNode;
-  onSendReceipt: (sale: EnrichedSale) => void;
   onRefund: (sale: SalesHistory) => void;
   onUndoRefund: (sale: SalesHistory) => void;
   statusForSale: (sale: EnrichedSale) => SaleStatus;
@@ -61,7 +60,6 @@ function SalesTable({
   loading,
   onSort,
   getSortArrow,
-  onSendReceipt,
   onRefund,
   onUndoRefund,
   statusForSale,
@@ -331,34 +329,15 @@ function SalesTable({
                     )}
                   </td>
                   <td className={classNames.tableCell}>
+                    {/* F6: the "Receipt" action used to call
+                        GET /api/invoices/${sale.id}/pdf, i.e. it fed a
+                        sales_history UUID into an invoice-by-id endpoint.
+                        There is no sale -> invoice relation in the schema and
+                        no canonical sale receipt route, so the action could
+                        only ever 404. It has been removed rather than
+                        rewired; issuing a receipt for a sale requires a
+                        sale/invoice link that does not exist yet. */}
                     <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        onClick={() => onSendReceipt(sale)}
-                        disabled={!sale.client?.email}
-                        size="sm"
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:text-gray-400 disabled:bg-gray-50"
-                        title={
-                          sale.client?.email
-                            ? 'Send receipt via email'
-                            : 'No email available'
-                        }
-                      >
-                        <svg
-                          className="w-3.5 h-3.5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                          />
-                        </svg>
-                        Receipt
-                      </Button>
                       {status !== 'Refunded' ? (
                         <Button
                           type="button"

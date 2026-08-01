@@ -297,40 +297,12 @@ function SalesPageContent() {
     [from, to, actualDateRange.from, actualDateRange.to]
   );
 
-  const handleSendReceipt = useCallback(
-    async (sale: EnrichedSale) => {
-      try {
-        const response = await apiFetch(`/api/invoices/${sale.id}/pdf`);
-
-        if (!response.ok) {
-          throw new Error('Download failed');
-        }
-
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/pdf')) {
-          throw new Error('Invalid file type');
-        }
-
-        const blob = await response.blob();
-        if (blob.size === 0) {
-          throw new Error('Empty file');
-        }
-
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `invoice-${sale.id}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(link);
-        showSuccess('Invoice PDF downloaded.');
-      } catch (error) {
-        handleError(error, 'Download Invoice');
-      }
-    },
-    [handleError, showSuccess]
-  );
+  // F6: handleSendReceipt used to GET /api/invoices/${sale.id}/pdf, treating a
+  // sales_history id as an invoice id. No such relation exists in the schema
+  // and there is no canonical sale receipt route, so the call could only 404.
+  // The handler and its "Receipt" control were removed rather than rewired -
+  // issuing a receipt from a sale needs a sale/invoice link that this batch
+  // deliberately does not invent.
 
   // Request refund (shows confirmation dialog)
   const handleRequestRefund = useCallback((sale: SalesHistory) => {
@@ -669,7 +641,6 @@ function SalesPageContent() {
                 loading={loading}
                 onSort={handleSort}
                 getSortArrow={getSortArrow}
-                onSendReceipt={handleSendReceipt}
                 onRefund={handleRequestRefund}
                 onUndoRefund={handleRequestUndoRefund}
                 statusForSale={statusForSale}
