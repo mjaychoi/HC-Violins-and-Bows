@@ -217,8 +217,9 @@ function InvoicesPageContent() {
       'paid',
       'overdue',
       'cancelled',
-      'void',
     ] as const;
+    // Unsupported legacy query values such as status=void / Voided normalize to
+    // All Status rather than locking the UI on an empty unsupported filter.
     const nextStatus: InvoiceFilterStatus =
       typeof urlState.status === 'string' &&
       (allowedStatuses as readonly string[]).includes(urlState.status)

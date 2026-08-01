@@ -267,6 +267,7 @@ describe('InvoiceList', () => {
     render(<InvoiceList {...baseProps} />);
 
     const deleteButton = screen.getByText('Delete');
+    expect(deleteButton).toHaveClass('bg-red-600');
     fireEvent.click(deleteButton);
 
     expect(baseProps.onDelete).toHaveBeenCalledWith(mockInvoice);

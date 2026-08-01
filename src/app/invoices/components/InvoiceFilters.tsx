@@ -8,24 +8,19 @@ import {
   filterSelectClasses,
   filterToolbarClasses,
 } from '@/utils/filterUI';
+import type { InvoiceStatus } from '@/types';
+import { INVOICE_STATUSES } from '@/utils/invoiceStatusTransitions';
 
-export type InvoiceStatus =
-  | 'draft'
-  | 'sent'
-  | 'paid'
-  | 'overdue'
-  | 'cancelled'
-  | 'void';
-
+export type { InvoiceStatus };
 export type InvoiceFilterStatus = InvoiceStatus | '';
 
-export interface InvoiceItem {
-  id?: string;
-  description: string;
-  quantity: number;
-  unit_price: number;
-  amount?: number; // derived (quantity * unit_price)
-}
+const STATUS_FILTER_LABELS: Record<InvoiceStatus, string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  paid: 'Paid',
+  overdue: 'Overdue',
+  cancelled: 'Cancelled',
+};
 
 interface InvoiceFiltersProps {
   search: string;
@@ -68,12 +63,10 @@ export default function InvoiceFilters({
     onChange: (value: string) => onStatusChange(value as InvoiceFilterStatus),
     options: [
       { value: '', label: 'All Status' },
-      { value: 'draft', label: 'Draft' },
-      { value: 'sent', label: 'Sent' },
-      { value: 'paid', label: 'Paid' },
-      { value: 'overdue', label: 'Overdue' },
-      { value: 'cancelled', label: 'Cancelled' },
-      { value: 'void', label: 'Voided' },
+      ...INVOICE_STATUSES.map(value => ({
+        value,
+        label: STATUS_FILTER_LABELS[value],
+      })),
     ],
   });
 

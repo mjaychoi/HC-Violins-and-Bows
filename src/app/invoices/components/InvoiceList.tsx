@@ -369,7 +369,7 @@ function InvoiceList({
                             isInvoiceHardDeletable(invoice.status) &&
                             (canDeleteInvoice ? (
                               <Button
-                                variant="secondary"
+                                variant="danger"
                                 size="sm"
                                 onClick={() => onDelete(invoice)}
                               >
@@ -377,7 +377,7 @@ function InvoiceList({
                               </Button>
                             ) : (
                               <Button
-                                variant="secondary"
+                                variant="danger"
                                 size="sm"
                                 disabled
                                 title="Admin only"
