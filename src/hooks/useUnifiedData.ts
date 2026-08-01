@@ -683,19 +683,46 @@ export function useUnifiedDashboard() {
   // `fetchConnections({ all: true })` in the DataInitializer initial load) plus
   // clients and instruments in context. Do not use this for correctness if only
   // a paged connection subset was loaded.
+  //
+  // The connections API embeds only a narrow instrument projection on each row
+  // (id, maker, type, year, price - see CONNECTION_INSTRUMENT_COLUMNS in
+  // src/app/api/connections/route.ts). That narrowing is a wire-payload
+  // minimization on the /api/connections response itself (see commit
+  // ebd6162) - it does not mean status/serial_number/cost_price/note/etc.
+  // are meant to stay hidden everywhere. `state.instruments` is fetched via
+  // a separate, already-authorized org-wide request (/api/instruments,
+  // full row) for the same signed-in org member, and the Dashboard/Clients
+  // surfaces already render those full fields from it. So this merge does
+  // not reintroduce any exposure the connections audit was guarding
+  // against; it only reconciles two already-loaded, already-authorized
+  // client-side data sources into one coherent view-model.
+  //
+  // The full instrumentMap entry wins on every overlapping field
+  // (id/maker/type/year/price), not just the fields it uniquely has. The
+  // two sources are independent fetches with no ordering guarantee, so if a
+  // field existed in both and we picked whichever happened to be non-null,
+  // a single instrument object could end up with mismatched-vintage fields
+  // (e.g. a `price` from the connections snapshot next to a `status` from
+  // the instruments snapshot, from two different points in time). Treating
+  // the org-wide instrument fetch as the single coherent source of truth
+  // avoids that. The embedded projection is used only as a whole-object
+  // fallback for the rare case where the instrument isn't present in
+  // state.instruments at all (e.g. not yet loaded).
   const clientRelationships = useMemo<EnrichedConnection[]>(() => {
     const clientMap = new Map(state.clients.map(c => [c.id, c]));
     const instrumentMap = new Map(state.instruments.map(i => [i.id, i]));
 
     return state.connections
-      .map(connection => ({
-        ...connection,
-        client: clientMap.get(connection.client_id),
-        instrument:
-          connection.instrument ??
-          instrumentMap.get(connection.instrument_id) ??
-          null,
-      }))
+      .map(connection => {
+        const fullInstrument = instrumentMap.get(connection.instrument_id);
+        return {
+          ...connection,
+          client: clientMap.get(connection.client_id),
+          instrument: fullInstrument
+            ? { ...connection.instrument, ...fullInstrument }
+            : (connection.instrument ?? null),
+        };
+      })
       .filter((rel): rel is EnrichedConnection => rel.client !== undefined);
   }, [state.connections, state.clients, state.instruments]);
 

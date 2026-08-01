@@ -586,7 +586,10 @@ function ClientForm({
             </div>
 
             <div>
-              <label htmlFor="client-form-note" className={classNames.formLabel}>
+              <label
+                htmlFor="client-form-note"
+                className={classNames.formLabel}
+              >
                 Note
               </label>
               <textarea
