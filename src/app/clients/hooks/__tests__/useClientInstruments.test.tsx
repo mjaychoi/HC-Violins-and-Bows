@@ -290,6 +290,36 @@ describe('useClientInstruments', () => {
     );
   });
 
+  it('does not let a narrow embedded connection.instrument erase fields from the full org-wide instrument (regression: connections API only embeds id/maker/type/year/price)', async () => {
+    // Mirrors what GET /api/connections actually embeds today:
+    // CONNECTION_INSTRUMENT_COLUMNS = 'id, maker, type, year, price'.
+    const narrowEmbeddedInstrument = {
+      id: '1',
+      maker: 'Stradivari',
+      type: 'Violin',
+      year: 1700,
+      price: 1000000,
+    } as Instrument;
+    const relWithNarrowInstrument: ClientInstrument = {
+      ...mockInstrumentRelationship,
+      instrument: narrowEmbeddedInstrument,
+    };
+    mockConnectionsRef.current = [relWithNarrowInstrument];
+    mockInstrumentsRef.current = [mockInstrument]; // full org-wide instrument, has status/serial_number/etc.
+
+    const { result } = renderHook(() => useClientInstruments());
+
+    await act(async () => {
+      await flushPromises();
+    });
+
+    const enriched = result.current.instrumentRelationships[0].instrument;
+    expect(enriched?.status).toBe('Available');
+    expect(enriched?.serial_number).toBe('STR001');
+    expect(enriched?.note).toBe('Famous violin');
+    expect(enriched).toEqual(mockInstrument);
+  });
+
   it('keeps null instrument when missing from org map', async () => {
     const relWithoutInstrument: ClientInstrument = {
       ...mockInstrumentRelationship,

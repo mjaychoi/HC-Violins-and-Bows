@@ -13,7 +13,12 @@ import {
  * Uses DataContext as the single source of truth:
  * - Connections are fetched and managed by DataContext
  * - Enriches flat connection rows with InstrumentsContext map (no N+1)
- * - Keeps already-embedded `instrument` when present on a row
+ * - The connections API embeds a narrow instrument projection on each row
+ *   (id, maker, type, year, price - see CONNECTION_INSTRUMENT_COLUMNS in
+ *   src/app/api/connections/route.ts), not the full Instrument shape, so the
+ *   org-wide instrument map (source of status/serial_number/etc.) always
+ *   wins on overlapping fields; the embedded projection is only a fallback
+ *   for instruments not yet present in the map.
  *
  * @returns Client-instrument relationship data and operations
  */
@@ -31,12 +36,15 @@ export const useClientInstruments = () => {
 
   const instrumentRelationships = useMemo((): ClientInstrument[] => {
     return rawConnections.map(rel => {
+      const fromMap = instrumentMap.get(rel.instrument_id);
+      if (fromMap) {
+        return { ...rel, instrument: { ...rel.instrument, ...fromMap } };
+      }
       if (rel.instrument) return rel;
 
-      const fromMap = instrumentMap.get(rel.instrument_id);
       return {
         ...rel,
-        instrument: fromMap ?? null,
+        instrument: null,
       };
     });
   }, [rawConnections, instrumentMap]);

@@ -683,19 +683,30 @@ export function useUnifiedDashboard() {
   // `fetchConnections({ all: true })` in the DataInitializer initial load) plus
   // clients and instruments in context. Do not use this for correctness if only
   // a paged connection subset was loaded.
+  //
+  // The connections API embeds a narrow instrument projection on each row
+  // (id, maker, type, year, price - see CONNECTION_INSTRUMENT_COLUMNS in
+  // src/app/api/connections/route.ts), not the full Instrument shape. The
+  // separately-fetched org-wide `state.instruments` list is the only source
+  // for fields like status/serial_number/cost_price/etc., so the full
+  // instrumentMap entry must win on every overlapping field. The embedded
+  // projection is kept only as a fallback for the rare case where the
+  // instrument isn't present in state.instruments (e.g. not yet loaded).
   const clientRelationships = useMemo<EnrichedConnection[]>(() => {
     const clientMap = new Map(state.clients.map(c => [c.id, c]));
     const instrumentMap = new Map(state.instruments.map(i => [i.id, i]));
 
     return state.connections
-      .map(connection => ({
-        ...connection,
-        client: clientMap.get(connection.client_id),
-        instrument:
-          connection.instrument ??
-          instrumentMap.get(connection.instrument_id) ??
-          null,
-      }))
+      .map(connection => {
+        const fullInstrument = instrumentMap.get(connection.instrument_id);
+        return {
+          ...connection,
+          client: clientMap.get(connection.client_id),
+          instrument: fullInstrument
+            ? { ...connection.instrument, ...fullInstrument }
+            : (connection.instrument ?? null),
+        };
+      })
       .filter((rel): rel is EnrichedConnection => rel.client !== undefined);
   }, [state.connections, state.clients, state.instruments]);
 
