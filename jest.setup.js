@@ -6,10 +6,14 @@ require('whatwg-fetch');
 const React = require('react');
 require('@testing-library/jest-dom');
 
-process.env.NEXT_PUBLIC_SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://example.com';
-process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'anon';
+// Force hermetic public Supabase defaults for unit tests. Do not inherit
+// leaked local/rehearsal SUPABASE_* values from the host process — production
+// middleware auth prefers SUPABASE_URL over NEXT_PUBLIC_SUPABASE_URL.
+delete process.env.SUPABASE_URL;
+delete process.env.SUPABASE_ANON_KEY;
+delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.com';
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon';
 
 // Polyfill performance.now in Node test env
 if (typeof global.performance === 'undefined') {

@@ -31,10 +31,15 @@ describe('supabase-middleware-auth', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Isolate from leaked host env. Production code prefers SUPABASE_URL /
+    // SUPABASE_ANON_KEY over NEXT_PUBLIC_* equivalents, so both must be set
+    // (or cleared) for deterministic assertions.
     process.env = {
       ...originalEnv,
       NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
       NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_ANON_KEY: 'anon-key',
     };
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   });
