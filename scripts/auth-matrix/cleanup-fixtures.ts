@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
+import { assertUrlIsNotConfiguredProduction } from '../staging/env-guard';
 
 dotenv.config({ path: '.env.local' });
 
@@ -18,9 +19,7 @@ async function main() {
     throw new Error('Missing Supabase URL or service role key for cleanup.');
   }
 
-  if (url.includes('dmilmlhquttcozxlpfxw')) {
-    throw new Error('Refusing to cleanup production Supabase project.');
-  }
+  assertUrlIsNotConfiguredProduction(url);
 
   const supabase = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },

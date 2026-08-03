@@ -43,18 +43,8 @@ jobs:
           bash -n scripts/staging/run-pr58-audits.sh
           bash -n scripts/auth-matrix/reset-environment.sh
 
-      - name: Assert workflow does not require JWT or fixture-id secrets
-        run: |
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-          text = Path('.github/workflows/hosted-staging-integration.yml').read_text()
-          if re.search(r'secrets\.AUTH_MATRIX_', text):
-              raise SystemExit(
-                  'Workflow must not read AUTH_MATRIX_* values from GitHub secrets.'
-              )
-          print('Workflow secret contract OK: no AUTH_MATRIX_* GitHub secrets referenced.')
-          PY
+      - name: Assert workflow configuration contract (no real ref values)
+        run: npx tsx scripts/staging/assert-no-hardcoded-project-refs.ts
 
   hosted-db-validation:
     needs: static-validation
@@ -72,6 +62,7 @@ jobs:
       STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
       STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
       STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+      PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v4
 
@@ -101,20 +92,32 @@ jobs:
             exit 1
           fi
 
+      - name: Require production project-ref configuration
+        run: |
+          if [ -z "${PRODUCTION_SUPABASE_PROJECT_REF:-}" ]; then
+            echo "Missing repository/environment variable PRODUCTION_SUPABASE_PROJECT_REF."
+            echo "Configure it before hosted staging integration can run (identifier, not a secret)."
+            exit 1
+          fi
+
       - name: Deny production project unconditionally
         run: |
-          if [ "$STAGING_SUPABASE_PROJECT_REF" = "dmilmlhquttcozxlpfxw" ]; then
+          if [ "$STAGING_SUPABASE_PROJECT_REF" = "$PRODUCTION_SUPABASE_PROJECT_REF" ]; then
             echo "Production project ref is not allowed for hosted staging integration."
             exit 1
           fi
-          if echo "$STAGING_SUPABASE_URL" | grep -q 'dmilmlhquttcozxlpfxw'; then
-            echo "Production Supabase URL detected."
-            exit 1
-          fi
-          if echo "$STAGING_DATABASE_URL" | grep -q 'dmilmlhquttcozxlpfxw'; then
-            echo "Production DATABASE_URL detected."
-            exit 1
-          fi
+          case "$STAGING_SUPABASE_URL" in
+            *"$PRODUCTION_SUPABASE_PROJECT_REF"*)
+              echo "Production Supabase URL detected."
+              exit 1
+              ;;
+          esac
+          case "$STAGING_DATABASE_URL" in
+            *"$PRODUCTION_SUPABASE_PROJECT_REF"*)
+              echo "Production DATABASE_URL detected."
+              exit 1
+              ;;
+          esac
 
       - run: npm ci
 
@@ -157,6 +160,7 @@ jobs:
       STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
       STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
       STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+      PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
       AUTH_MATRIX_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
       AUTH_MATRIX_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
       AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}

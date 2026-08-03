@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
+import { assertUrlIsNotConfiguredProduction } from '../staging/env-guard';
 
 dotenv.config({ path: '.env.local' });
 
@@ -21,9 +22,7 @@ async function main() {
     );
   }
 
-  if (url.includes('dmilmlhquttcozxlpfxw')) {
-    throw new Error('Refusing to seed production Supabase project.');
-  }
+  assertUrlIsNotConfiguredProduction(url);
 
   const supabase = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },

@@ -32,6 +32,7 @@
     "staging:verify-migrations": "tsx scripts/staging/verify-migration-set.ts",
     "staging:audits": "bash scripts/staging/run-pr58-audits.sh",
     "test:staging-guard": "jest --runInBand tests/integration/staging/env-guard.test.ts",
+    "check:staging-ref-hardcodes": "tsx scripts/staging/assert-no-hardcoded-project-refs.ts",
     "test:auth-matrix": "jest --runInBand tests/integration/auth-matrix/matrix.test.ts",
     "test:production-guards": "jest --runInBand tests/integration/production/db-deploy-guards.test.ts",
     "test:production-guards-integration": "jest --runInBand --forceExit tests/integration/production/db-probe-cli.integration.test.ts tests/integration/production/postflight-catalog.integration.test.ts --testPathIgnorePatterns=/node_modules/ --globalSetup=./tests/integration/production/helpers/global-setup.cjs --globalTeardown=./tests/integration/production/helpers/global-teardown.cjs",

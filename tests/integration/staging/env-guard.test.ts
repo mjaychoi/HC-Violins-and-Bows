@@ -1,17 +1,30 @@
 /** @jest-environment node */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import {
-  PRODUCTION_PROJECT_REF,
+  PRODUCTION_SUPABASE_PROJECT_REF_ENV,
   assertStagingEnvironment,
   extractProjectRefFromDatabaseUrl,
   extractProjectRefFromSupabaseUrl,
   loadStagingEnvironmentFromProcessEnv,
+  resolveProductionProjectRef,
 } from '../../../scripts/staging/env-guard';
+import {
+  DEFAULT_SCAN_TARGETS,
+  assertGuardCalledBeforeCreateClient,
+  assertHostedStagingWorkflowContract,
+  scanFilesForHardcodedProjectRefs,
+  scanSourceForHardcodedProjectRefs,
+} from '../../../scripts/staging/assert-no-hardcoded-project-refs';
 
+/** Synthetic refs only — never use a real project identifier in fixtures. */
 const stagingRef = 'stagingexample1234';
+const productionRef = 'prodrefexample9999';
 
 const baseStaging = {
   approvedProjectRef: stagingRef,
+  productionProjectRef: productionRef,
   supabaseUrl: `https://${stagingRef}.supabase.co`,
   supabaseAnonKey: 'anon-key',
   serviceRoleKey:
@@ -21,37 +34,119 @@ const baseStaging = {
 };
 
 describe('staging env guard', () => {
-  it('allows approved staging target', () => {
+  it('allows approved staging target with distinct production ref', () => {
     const env = assertStagingEnvironment(baseStaging);
     expect(env.approvedProjectRef).toBe(stagingRef);
+    expect(env.productionProjectRef).toBe(productionRef);
     expect(env.environment).toBe('staging');
   });
 
-  it('blocks production project ref in approved ref', () => {
+  it('blocks when staging and production refs are equal', () => {
     expect(() =>
       assertStagingEnvironment({
         ...baseStaging,
-        approvedProjectRef: PRODUCTION_PROJECT_REF,
+        approvedProjectRef: productionRef,
+        productionProjectRef: productionRef,
+      })
+    ).toThrow(/distinct|equal/i);
+  });
+
+  it('blocks missing production project ref', () => {
+    expect(() =>
+      assertStagingEnvironment(
+        {
+          ...baseStaging,
+          productionProjectRef: undefined,
+        },
+        { requireProductionProjectRef: true }
+      )
+    ).toThrow(new RegExp(PRODUCTION_SUPABASE_PROJECT_REF_ENV));
+  });
+
+  it('blocks missing staging project ref', () => {
+    expect(() =>
+      assertStagingEnvironment({
+        ...baseStaging,
+        approvedProjectRef: undefined,
+      })
+    ).toThrow(/incomplete|missing/i);
+  });
+
+  it('blocks malformed project ref', () => {
+    expect(() =>
+      assertStagingEnvironment({
+        ...baseStaging,
+        productionProjectRef: 'NOT_VALID!!!',
+      })
+    ).toThrow(/malformed|corruption|quote/i);
+
+    expect(() =>
+      assertStagingEnvironment({
+        ...baseStaging,
+        approvedProjectRef: 'short',
+      })
+    ).toThrow(/malformed/i);
+  });
+
+  it('blocks staging URL/ref mismatch', () => {
+    expect(() =>
+      assertStagingEnvironment({
+        ...baseStaging,
+        supabaseUrl: 'https://otherstaging9999.supabase.co',
+      })
+    ).toThrow(/does not match approved staging/i);
+  });
+
+  it('blocks public URL/ref mismatch against staging', () => {
+    expect(() =>
+      assertStagingEnvironment({
+        ...baseStaging,
+        publicSupabaseUrl: 'https://otherstaging9999.supabase.co',
+      })
+    ).toThrow(/NEXT_PUBLIC_SUPABASE_URL/i);
+  });
+
+  it('blocks production ref appearing in staging URL', () => {
+    expect(() =>
+      assertStagingEnvironment({
+        ...baseStaging,
+        supabaseUrl: `https://${productionRef}.supabase.co`,
       })
     ).toThrow(/production/i);
   });
 
-  it('blocks production Supabase URL', () => {
+  it('blocks production ref appearing in database URL', () => {
     expect(() =>
       assertStagingEnvironment({
         ...baseStaging,
-        supabaseUrl: `https://${PRODUCTION_PROJECT_REF}.supabase.co`,
+        databaseUrl: `postgresql://postgres.${productionRef}:password@aws-0-us-east-1.pooler.supabase.com:6543/postgres`,
       })
-    ).toThrow(/production/i);
+    ).toThrow(/production|match/i);
   });
 
-  it('blocks production DATABASE_URL', () => {
+  it('blocks newline/quote corruption on production ref', () => {
     expect(() =>
       assertStagingEnvironment({
         ...baseStaging,
-        databaseUrl: `postgresql://postgres:${PRODUCTION_PROJECT_REF}@db.${PRODUCTION_PROJECT_REF}.supabase.co:5432/postgres`,
+        productionProjectRef: `${productionRef}\n`,
       })
-    ).toThrow(/production/i);
+    ).toThrow(/quote or newline corruption/i);
+
+    expect(() =>
+      assertStagingEnvironment({
+        ...baseStaging,
+        productionProjectRef: `"${productionRef}"`,
+      })
+    ).toThrow(/quote or newline corruption/i);
+  });
+
+  it('blocks empty or whitespace-only production ref', () => {
+    expect(() =>
+      assertStagingEnvironment({
+        ...baseStaging,
+        productionProjectRef: '   ',
+      })
+    ).toThrow(/empty or whitespace/i);
   });
 
   it('blocks missing project identity', () => {
@@ -76,43 +171,6 @@ describe('staging env guard', () => {
     ).toThrow(/match/i);
   });
 
-  it('accepts STAGING_PROJECT_REF env alias for approved project ref', () => {
-    const touched = [
-      'STAGING_PROJECT_REF',
-      'STAGING_SUPABASE_URL',
-      'STAGING_SUPABASE_ANON_KEY',
-      'STAGING_SUPABASE_SERVICE_ROLE_KEY',
-      'STAGING_DATABASE_URL',
-      'STAGING_APP_BASE_URL',
-      'STAGING_SUPABASE_PROJECT_REF',
-    ] as const;
-    const previous = Object.fromEntries(
-      touched.map(key => [key, process.env[key]])
-    );
-
-    process.env.STAGING_PROJECT_REF = stagingRef;
-    process.env.STAGING_SUPABASE_URL = baseStaging.supabaseUrl;
-    process.env.STAGING_SUPABASE_ANON_KEY = baseStaging.supabaseAnonKey;
-    process.env.STAGING_SUPABASE_SERVICE_ROLE_KEY = baseStaging.serviceRoleKey;
-    process.env.STAGING_DATABASE_URL = baseStaging.databaseUrl;
-    process.env.STAGING_APP_BASE_URL = baseStaging.appBaseUrl;
-    delete process.env.STAGING_SUPABASE_PROJECT_REF;
-
-    try {
-      const env = loadStagingEnvironmentFromProcessEnv();
-      expect(env.approvedProjectRef).toBe(stagingRef);
-    } finally {
-      for (const key of touched) {
-        const value = previous[key];
-        if (value === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = value;
-        }
-      }
-    }
-  });
-
   it('extracts project refs from Supabase and database URLs', () => {
     expect(
       extractProjectRefFromSupabaseUrl(`https://${stagingRef}.supabase.co`)
@@ -122,5 +180,169 @@ describe('staging env guard', () => {
         `postgresql://postgres.${stagingRef}:password@aws-0-us-east-1.pooler.supabase.com:6543/postgres`
       )
     ).toBe(stagingRef);
+  });
+
+  it('resolveProductionProjectRef fails closed when required and missing', () => {
+    expect(() =>
+      resolveProductionProjectRef({
+        value: null,
+        required: true,
+        env: {},
+      })
+    ).toThrow(new RegExp(PRODUCTION_SUPABASE_PROJECT_REF_ENV));
+  });
+
+  it('loadStagingEnvironmentFromProcessEnv cross-checks public URL', () => {
+    expect(() =>
+      loadStagingEnvironmentFromProcessEnv({
+        STAGING_SUPABASE_PROJECT_REF: stagingRef,
+        [PRODUCTION_SUPABASE_PROJECT_REF_ENV]: productionRef,
+        STAGING_SUPABASE_URL: `https://${stagingRef}.supabase.co`,
+        NEXT_PUBLIC_SUPABASE_URL: 'https://otherstaging9999.supabase.co',
+        STAGING_SUPABASE_ANON_KEY: 'anon',
+        STAGING_SUPABASE_SERVICE_ROLE_KEY: baseStaging.serviceRoleKey,
+        STAGING_DATABASE_URL: baseStaging.databaseUrl,
+        STAGING_APP_BASE_URL: baseStaging.appBaseUrl,
+      })
+    ).toThrow(/NEXT_PUBLIC_SUPABASE_URL/i);
+  });
+});
+
+describe('generic active-code project-ref hard-code scan', () => {
+  it('flags bare project-ref-shaped literals without knowing a real ref', () => {
+    const findings = scanSourceForHardcodedProjectRefs(
+      `if (projectRef === '${productionRef}') {\n  throw new Error('blocked');\n}\n`,
+      'synthetic.ts',
+      { bareLiteralMode: 'contextual' }
+    );
+    expect(findings.some(f => f.kind === 'bare_project_ref_literal')).toBe(
+      true
+    );
+  });
+
+  it('does not flag unrelated shaped words outside project-ref bindings', () => {
+    const findings = scanSourceForHardcodedProjectRefs(
+      `await supabase.from('organizations').delete();\nif (process.env.NODE_ENV === 'production') {}\n`,
+      'synthetic.ts',
+      { bareLiteralMode: 'contextual' }
+    );
+    expect(findings.filter(f => f.kind === 'bare_project_ref_literal')).toEqual(
+      []
+    );
+  });
+
+  it('flags fragment-join reconstruction without knowing a real ref', () => {
+    const findings = scanSourceForHardcodedProjectRefs(
+      "const former = ['aaaa', 'bbbb', 'cccc', 'dddd'].join('');\n",
+      'synthetic.ts'
+    );
+    expect(findings.some(f => f.kind === 'fragment_join_reconstruction')).toBe(
+      true
+    );
+  });
+
+  it('finds no hard-coded or reconstructed refs in active guard/workflow files', () => {
+    const findings = scanFilesForHardcodedProjectRefs(
+      process.cwd(),
+      DEFAULT_SCAN_TARGETS
+    );
+    expect(findings).toEqual([]);
+  });
+});
+
+describe('hosted-staging-integration workflow contract', () => {
+  const workflowPath = path.join(
+    process.cwd(),
+    '.github/workflows/hosted-staging-integration.yml'
+  );
+  const workflow = fs.readFileSync(workflowPath, 'utf8');
+
+  it('satisfies the variable/configuration contract without embedding a real ref', () => {
+    expect(assertHostedStagingWorkflowContract(workflow)).toEqual([]);
+  });
+
+  it('passes PRODUCTION_SUPABASE_PROJECT_REF through env: from vars', () => {
+    expect(workflow).toMatch(
+      /PRODUCTION_SUPABASE_PROJECT_REF:\s*\$\{\{\s*vars\.PRODUCTION_SUPABASE_PROJECT_REF\s*\}\}/
+    );
+  });
+
+  it('does not source production ref from secrets or define a static fallback', () => {
+    expect(workflow).not.toMatch(
+      /PRODUCTION_SUPABASE_PROJECT_REF:\s*\$\{\{\s*secrets\./
+    );
+    expect(workflow).not.toMatch(
+      /\$\{PRODUCTION_SUPABASE_PROJECT_REF:-[^}]+\}/
+    );
+  });
+
+  it('does not interpolate production ref into a shell command string', () => {
+    expect(workflow).not.toMatch(
+      /run:[\s\S]{0,200}\$\{\{\s*vars\.PRODUCTION_SUPABASE_PROJECT_REF/
+    );
+  });
+
+  it('gates hosted database work on workflow_dispatch and hosted-staging', () => {
+    expect(workflow).toMatch(/on:\s*\n\s*workflow_dispatch:/);
+    expect(workflow).toMatch(/pull_request:/);
+    expect(workflow).toMatch(/github\.event_name\s*==\s*'workflow_dispatch'/);
+    expect(workflow).toMatch(/environment:\s*hosted-staging/);
+  });
+
+  it('runs env-guard-cli before hosted SQL/HTTP steps', () => {
+    const hostedJob = workflow.match(
+      /hosted-db-validation:[\s\S]*?(?=\n  [a-z0-9_-]+:|\n*$)/
+    )?.[0];
+    expect(hostedJob).toBeTruthy();
+    const guardIdx = hostedJob!.indexOf('scripts/staging/env-guard-cli.ts');
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(hostedJob!.indexOf('verify-migration-set.ts')).toBeGreaterThan(
+      guardIdx
+    );
+    expect(hostedJob!.indexOf('run-pr58-audits.sh')).toBeGreaterThan(guardIdx);
+    expect(hostedJob!.indexOf('/api/health')).toBeGreaterThan(guardIdx);
+  });
+
+  it('remains staging-only without production secrets or workflow_call', () => {
+    expect(workflow).not.toMatch(/workflow_call/);
+    expect(workflow).not.toMatch(/secrets\.PRODUCTION_/);
+    expect(workflow).not.toMatch(/secrets\.AUTH_MATRIX_/);
+    expect(workflow).not.toMatch(
+      /SUPABASE_SERVICE_ROLE_KEY:\s*\$\{\{\s*secrets\.(?!STAGING_)/
+    );
+  });
+
+  it('contains no project-ref-shaped literals or fragment-join reconstructions', () => {
+    expect(scanSourceForHardcodedProjectRefs(workflow, workflowPath)).toEqual(
+      []
+    );
+  });
+});
+
+describe('auth-matrix seed/cleanup guard ordering', () => {
+  it('seed-fixtures calls the shared guard before createClient', () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), 'scripts/auth-matrix/seed-fixtures.ts'),
+      'utf8'
+    );
+    expect(
+      assertGuardCalledBeforeCreateClient(
+        source,
+        'assertUrlIsNotConfiguredProduction'
+      )
+    ).toBeNull();
+  });
+
+  it('cleanup-fixtures calls the shared guard before createClient', () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), 'scripts/auth-matrix/cleanup-fixtures.ts'),
+      'utf8'
+    );
+    expect(
+      assertGuardCalledBeforeCreateClient(
+        source,
+        'assertUrlIsNotConfiguredProduction'
+      )
+    ).toBeNull();
   });
 });

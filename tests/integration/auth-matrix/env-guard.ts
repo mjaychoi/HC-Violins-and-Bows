@@ -1,9 +1,19 @@
 /**
  * Guards integration tests against production Supabase / app hosts.
  * Never commit secret values — only env var names are referenced elsewhere.
+ *
+ * Production project ref is configured via PRODUCTION_SUPABASE_PROJECT_REF
+ * (identifier, not a credential). Pass it explicitly in unit tests.
  */
 
-const PRODUCTION_PROJECT_REFS = new Set(['dmilmlhquttcozxlpfxw']);
+import {
+  PRODUCTION_SUPABASE_PROJECT_REF_ENV,
+  isHostedCiMode,
+  resolveProductionProjectRef,
+  valueContainsProjectRef,
+} from '../../../scripts/staging/env-guard';
+
+export { assertUrlIsNotConfiguredProduction } from '../../../scripts/staging/env-guard';
 
 const PRODUCTION_HOST_PATTERNS = [
   /hc-violins-and-bows\.vercel\.app/i,
@@ -17,20 +27,26 @@ export type AuthMatrixEnvironment = {
   serviceRoleKey: string;
   baseUrl: string;
   projectRef: string | null;
+  productionProjectRef: string;
+};
+
+export type AuthMatrixGuardInput = Partial<AuthMatrixEnvironment> & {
+  productionProjectRef?: string;
 };
 
 function extractProjectRef(supabaseUrl: string): string | null {
   try {
     const host = new URL(supabaseUrl).hostname;
     const match = host.match(/^([a-z0-9]+)\.supabase\.co$/i);
-    return match?.[1] ?? null;
+    return match?.[1]?.toLowerCase() ?? null;
   } catch {
     return null;
   }
 }
 
 export function assertNonProductionAuthMatrixEnv(
-  env: Partial<AuthMatrixEnvironment>
+  env: AuthMatrixGuardInput,
+  options: { requireProductionProjectRef?: boolean } = {}
 ): AuthMatrixEnvironment {
   const supabaseUrl = env.supabaseUrl?.trim();
   const supabaseAnonKey = env.supabaseAnonKey?.trim();
@@ -43,11 +59,31 @@ export function assertNonProductionAuthMatrixEnv(
     );
   }
 
+  const requireProduction =
+    options.requireProductionProjectRef ?? isHostedCiMode();
+
+  const productionProjectRef = resolveProductionProjectRef({
+    value: env.productionProjectRef,
+    required: requireProduction,
+  });
+
+  if (!productionProjectRef) {
+    throw new Error(
+      `Auth matrix aborted: ${PRODUCTION_SUPABASE_PROJECT_REF_ENV} is required (no hard-coded fallback).`
+    );
+  }
+
   const projectRef = extractProjectRef(supabaseUrl);
 
-  if (projectRef && PRODUCTION_PROJECT_REFS.has(projectRef)) {
+  if (projectRef && projectRef === productionProjectRef) {
     throw new Error(
-      `Auth matrix aborted: Supabase project ref ${projectRef} matches production blocklist.`
+      'Auth matrix aborted: Supabase project ref matches configured production ref.'
+    );
+  }
+
+  if (valueContainsProjectRef(supabaseUrl, productionProjectRef)) {
+    throw new Error(
+      'Auth matrix aborted: Supabase URL contains configured production project ref.'
     );
   }
 
@@ -69,6 +105,7 @@ export function assertNonProductionAuthMatrixEnv(
     serviceRoleKey,
     baseUrl,
     projectRef,
+    productionProjectRef,
   };
 }
 
@@ -86,6 +123,7 @@ export function loadAuthMatrixEnvironment(): AuthMatrixEnvironment | null {
     supabaseAnonKey: process.env.AUTH_MATRIX_SUPABASE_ANON_KEY,
     serviceRoleKey: process.env.AUTH_MATRIX_SERVICE_ROLE_KEY,
     baseUrl: process.env.AUTH_MATRIX_BASE_URL,
+    productionProjectRef: process.env[PRODUCTION_SUPABASE_PROJECT_REF_ENV],
   });
 }
 
