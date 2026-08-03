@@ -9,6 +9,10 @@ Reusable guard and automation for **non-production** Supabase staging validation
 - The staging guard fails closed when that variable is missing, empty, malformed,
   equal to the staging ref, or present inside staging URLs.
 - Never hard-code a production project ref in source or workflow shell scripts.
+- Static validation checks the variable/configuration contract only — it does
+  not embed, fragment, encode, or reconstruct any real production project ref.
+- Run `npm run check:staging-ref-hardcodes` to scan active guard/workflow files
+  for project-ref-shaped literals and reconstruction tricks.
 - Never commit secrets, JWTs, or connection strings.
 - Run `npm run staging:guard` before migrations, fixtures, audits, Vault writes, or HTTP mutation tests.
 
@@ -53,6 +57,7 @@ AUTH_MATRIX_READY=true
 ```bash
 export PRODUCTION_SUPABASE_PROJECT_REF=<production-project-ref>
 npm run staging:guard
+npm run check:staging-ref-hardcodes
 npm run check:migrations
 npm run staging:verify-migrations
 npm run staging:audits

@@ -10,6 +10,13 @@ import {
   loadStagingEnvironmentFromProcessEnv,
   resolveProductionProjectRef,
 } from '../../../scripts/staging/env-guard';
+import {
+  DEFAULT_SCAN_TARGETS,
+  assertGuardCalledBeforeCreateClient,
+  assertHostedStagingWorkflowContract,
+  scanFilesForHardcodedProjectRefs,
+  scanSourceForHardcodedProjectRefs,
+} from '../../../scripts/staging/assert-no-hardcoded-project-refs';
 
 /** Synthetic refs only — never use a real project identifier in fixtures. */
 const stagingRef = 'stagingexample1234';
@@ -108,6 +115,15 @@ describe('staging env guard', () => {
     ).toThrow(/production/i);
   });
 
+  it('blocks production ref appearing in database URL', () => {
+    expect(() =>
+      assertStagingEnvironment({
+        ...baseStaging,
+        databaseUrl: `postgresql://postgres.${productionRef}:password@aws-0-us-east-1.pooler.supabase.com:6543/postgres`,
+      })
+    ).toThrow(/production|match/i);
+  });
+
   it('blocks newline/quote corruption on production ref', () => {
     expect(() =>
       assertStagingEnvironment({
@@ -190,21 +206,47 @@ describe('staging env guard', () => {
       })
     ).toThrow(/NEXT_PUBLIC_SUPABASE_URL/i);
   });
+});
 
-  it('does not embed a real production project ref in this test module', () => {
-    const source = fs.readFileSync(__filename, 'utf8');
-    const formerHardCodedRef = [
-      'dmi',
-      'lml',
-      'hqu',
-      'ttc',
-      'ozx',
-      'lpf',
-      'xw',
-    ].join('');
-    expect(source).not.toContain(formerHardCodedRef);
-    expect(source).toContain(stagingRef);
-    expect(source).toContain(productionRef);
+describe('generic active-code project-ref hard-code scan', () => {
+  it('flags bare project-ref-shaped literals without knowing a real ref', () => {
+    const findings = scanSourceForHardcodedProjectRefs(
+      `if (projectRef === '${productionRef}') {\n  throw new Error('blocked');\n}\n`,
+      'synthetic.ts',
+      { bareLiteralMode: 'contextual' }
+    );
+    expect(findings.some(f => f.kind === 'bare_project_ref_literal')).toBe(
+      true
+    );
+  });
+
+  it('does not flag unrelated shaped words outside project-ref bindings', () => {
+    const findings = scanSourceForHardcodedProjectRefs(
+      `await supabase.from('organizations').delete();\nif (process.env.NODE_ENV === 'production') {}\n`,
+      'synthetic.ts',
+      { bareLiteralMode: 'contextual' }
+    );
+    expect(findings.filter(f => f.kind === 'bare_project_ref_literal')).toEqual(
+      []
+    );
+  });
+
+  it('flags fragment-join reconstruction without knowing a real ref', () => {
+    const findings = scanSourceForHardcodedProjectRefs(
+      "const former = ['aaaa', 'bbbb', 'cccc', 'dddd'].join('');\n",
+      'synthetic.ts'
+    );
+    expect(findings.some(f => f.kind === 'fragment_join_reconstruction')).toBe(
+      true
+    );
+  });
+
+  it('finds no hard-coded or reconstructed refs in active guard/workflow files', () => {
+    const findings = scanFilesForHardcodedProjectRefs(
+      process.cwd(),
+      DEFAULT_SCAN_TARGETS
+    );
+    expect(findings).toEqual([]);
   });
 });
 
@@ -214,15 +256,10 @@ describe('hosted-staging-integration workflow contract', () => {
     '.github/workflows/hosted-staging-integration.yml'
   );
   const workflow = fs.readFileSync(workflowPath, 'utf8');
-  const formerHardCodedRef = [
-    'dmi',
-    'lml',
-    'hqu',
-    'ttc',
-    'ozx',
-    'lpf',
-    'xw',
-  ].join('');
+
+  it('satisfies the variable/configuration contract without embedding a real ref', () => {
+    expect(assertHostedStagingWorkflowContract(workflow)).toEqual([]);
+  });
 
   it('passes PRODUCTION_SUPABASE_PROJECT_REF through env: from vars', () => {
     expect(workflow).toMatch(
@@ -230,8 +267,13 @@ describe('hosted-staging-integration workflow contract', () => {
     );
   });
 
-  it('does not hard-code a production project ref literal', () => {
-    expect(workflow).not.toContain(formerHardCodedRef);
+  it('does not source production ref from secrets or define a static fallback', () => {
+    expect(workflow).not.toMatch(
+      /PRODUCTION_SUPABASE_PROJECT_REF:\s*\$\{\{\s*secrets\./
+    );
+    expect(workflow).not.toMatch(
+      /\$\{PRODUCTION_SUPABASE_PROJECT_REF:-[^}]+\}/
+    );
   });
 
   it('does not interpolate production ref into a shell command string', () => {
@@ -240,11 +282,67 @@ describe('hosted-staging-integration workflow contract', () => {
     );
   });
 
+  it('gates hosted database work on workflow_dispatch and hosted-staging', () => {
+    expect(workflow).toMatch(/on:\s*\n\s*workflow_dispatch:/);
+    expect(workflow).toMatch(/pull_request:/);
+    expect(workflow).toMatch(/github\.event_name\s*==\s*'workflow_dispatch'/);
+    expect(workflow).toMatch(/environment:\s*hosted-staging/);
+  });
+
+  it('runs env-guard-cli before hosted SQL/HTTP steps', () => {
+    const hostedJob = workflow.match(
+      /hosted-db-validation:[\s\S]*?(?=\n  [a-z0-9_-]+:|\n*$)/
+    )?.[0];
+    expect(hostedJob).toBeTruthy();
+    const guardIdx = hostedJob!.indexOf('scripts/staging/env-guard-cli.ts');
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(hostedJob!.indexOf('verify-migration-set.ts')).toBeGreaterThan(
+      guardIdx
+    );
+    expect(hostedJob!.indexOf('run-pr58-audits.sh')).toBeGreaterThan(guardIdx);
+    expect(hostedJob!.indexOf('/api/health')).toBeGreaterThan(guardIdx);
+  });
+
   it('remains staging-only without production secrets or workflow_call', () => {
     expect(workflow).not.toMatch(/workflow_call/);
     expect(workflow).not.toMatch(/secrets\.PRODUCTION_/);
+    expect(workflow).not.toMatch(/secrets\.AUTH_MATRIX_/);
     expect(workflow).not.toMatch(
       /SUPABASE_SERVICE_ROLE_KEY:\s*\$\{\{\s*secrets\.(?!STAGING_)/
     );
+  });
+
+  it('contains no project-ref-shaped literals or fragment-join reconstructions', () => {
+    expect(scanSourceForHardcodedProjectRefs(workflow, workflowPath)).toEqual(
+      []
+    );
+  });
+});
+
+describe('auth-matrix seed/cleanup guard ordering', () => {
+  it('seed-fixtures calls the shared guard before createClient', () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), 'scripts/auth-matrix/seed-fixtures.ts'),
+      'utf8'
+    );
+    expect(
+      assertGuardCalledBeforeCreateClient(
+        source,
+        'assertUrlIsNotConfiguredProduction'
+      )
+    ).toBeNull();
+  });
+
+  it('cleanup-fixtures calls the shared guard before createClient', () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), 'scripts/auth-matrix/cleanup-fixtures.ts'),
+      'utf8'
+    );
+    expect(
+      assertGuardCalledBeforeCreateClient(
+        source,
+        'assertUrlIsNotConfiguredProduction'
+      )
+    ).toBeNull();
   });
 });

@@ -43,31 +43,8 @@ jobs:
           bash -n scripts/staging/run-pr58-audits.sh
           bash -n scripts/auth-matrix/reset-environment.sh
 
-      - name: Assert workflow production-ref contract
-        run: |
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-          text = Path('.github/workflows/hosted-staging-integration.yml').read_text()
-          if re.search(r'secrets\.AUTH_MATRIX_', text):
-              raise SystemExit(
-                  'Workflow must not read AUTH_MATRIX_* values from GitHub secrets.'
-              )
-          # Former hard-coded production ref must not appear as a contiguous literal.
-          former = ''.join(['dmi', 'lml', 'hqu', 'ttc', 'ozx', 'lpf', 'xw'])
-          if former in text:
-              raise SystemExit(
-                  'Workflow must not hard-code a production project ref literal.'
-              )
-          if not re.search(
-              r'PRODUCTION_SUPABASE_PROJECT_REF:\s*\$\{\{\s*vars\.PRODUCTION_SUPABASE_PROJECT_REF\s*\}\}',
-              text,
-          ):
-              raise SystemExit(
-                  'Workflow must pass PRODUCTION_SUPABASE_PROJECT_REF via env from vars.'
-              )
-          print('Workflow secret/variable contract OK.')
-          PY
+      - name: Assert workflow configuration contract (no real ref values)
+        run: npx tsx scripts/staging/assert-no-hardcoded-project-refs.ts
 
   hosted-db-validation:
     needs: static-validation

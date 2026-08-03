@@ -1,12 +1,15 @@
 /** @jest-environment node */
 
-import * as fs from 'fs';
 import {
   assertNonProductionAuthMatrixEnv,
   isAuthMatrixEnabled,
   loadAuthMatrixEnvironment,
 } from './env-guard';
 import { PRODUCTION_SUPABASE_PROJECT_REF_ENV } from '../../../scripts/staging/env-guard';
+import {
+  DEFAULT_SCAN_TARGETS,
+  scanFilesForHardcodedProjectRefs,
+} from '../../../scripts/staging/assert-no-hardcoded-project-refs';
 
 /** Synthetic refs only — never use a real project identifier in fixtures. */
 const stagingRef = 'stagingexample1234';
@@ -76,17 +79,13 @@ describe('auth matrix env guard', () => {
     }
   });
 
-  it('does not embed a real production project ref in this test module', () => {
-    const source = fs.readFileSync(__filename, 'utf8');
-    const formerHardCodedRef = [
-      'dmi',
-      'lml',
-      'hqu',
-      'ttc',
-      'ozx',
-      'lpf',
-      'xw',
-    ].join('');
-    expect(source).not.toContain(formerHardCodedRef);
+  it('keeps auth-matrix guard helper free of hard-coded project refs', () => {
+    const findings = scanFilesForHardcodedProjectRefs(process.cwd(), [
+      'tests/integration/auth-matrix/env-guard.ts',
+    ]);
+    expect(findings).toEqual([]);
+    expect(DEFAULT_SCAN_TARGETS).toContain(
+      'tests/integration/auth-matrix/env-guard.ts'
+    );
   });
 });
