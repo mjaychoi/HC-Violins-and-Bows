@@ -226,6 +226,56 @@ export type PendingSummary = {
   pendingDigest: string;
 };
 
+// ---------------------------------------------------------------------------
+// Migration-specific pre-deploy audit gate (PR #78 sale-price contract).
+// ---------------------------------------------------------------------------
+
+/**
+ * The one migration this repository currently gates behind a read-only
+ * pre-deploy data audit (scripts/supabase/sale_price_predeploy_audit.sql —
+ * ships together with this version in the same PR that introduces it, so it
+ * is never referenced without also being present). Kept as a single named
+ * constant rather than a generic per-migration config table because this PR
+ * intentionally ships the minimal wiring for exactly one gated migration; see
+ * docs/PRODUCTION_MIGRATION_WORKFLOW.md for the rationale and the path to
+ * generalizing this later.
+ */
+export const SALE_PRICE_PRECISION_MIGRATION_VERSION = '20260804010000';
+
+/**
+ * Whether `version` is in the exact pending set — used to conditionally run
+ * a migration-specific pre-deploy audit only when that migration is actually
+ * about to be applied, never unconditionally and never when it has already
+ * been applied (it would no longer be pending).
+ */
+export function isVersionPending(
+  reconciliation: Pick<MigrationReconciliation, 'pendingVersions'>,
+  version: string
+): boolean {
+  return reconciliation.pendingVersions.includes(version);
+}
+
+/**
+ * Splits a `.sql` file's text into top-level statements for the pre-deploy
+ * audit runner (scripts/production/run-predeploy-audit.ts). Strips `--`
+ * line comments first, then splits on `;`. Deliberately simple: the audit
+ * files this gates are plain sequential `SELECT`s with no string literals
+ * containing `--` or `;`, so this never needs a real SQL tokenizer. Returns
+ * only non-empty, trimmed statements — blank lines and comment-only lines
+ * between statements never count as statements.
+ */
+export function splitSqlStatements(sql: string): string[] {
+  const withoutLineComments = sql
+    .split('\n')
+    .map(line => line.replace(/--.*$/, ''))
+    .join('\n');
+
+  return withoutLineComments
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(statement => statement.length > 0);
+}
+
 /**
  * Bounded summary suitable for logs: count + first/last version + digest.
  * Never includes the complete pending-version list.

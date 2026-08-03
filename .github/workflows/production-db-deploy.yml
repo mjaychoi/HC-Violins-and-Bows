@@ -167,6 +167,7 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, \`remote=\${r.remoteUniqueVersionCount}\n\`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT, \`local=\${r.localVersionCount}\n\`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT, \`digest=\${r.pendingDigest}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`sale_price_pending=\${r.salePriceMigrationPending}\n\`);
           "
           rm -f history.json
 
@@ -181,6 +182,26 @@ jobs:
           CONFIRMED_PENDING_DIGEST: ${{ github.event.inputs.confirmed_pending_migration_digest }}
           ACTUAL_PENDING_DIGEST: ${{ steps.history.outputs.digest }}
         run: npx tsx scripts/production/assert-gates.ts pending-digest
+
+      - name: Sale-price pre-deploy audit (conditional, read-only, blocking)
+        id: sale_price_audit
+        # Migration 20260804010000 (enforce_sale_price_precision_and_maximum)
+        # is gated behind a read-only data audit — see
+        # scripts/production/db-deploy-guards.ts
+        # (SALE_PRICE_PRECISION_MIGRATION_VERSION) and
+        # docs/PRODUCTION_MIGRATION_WORKFLOW.md. Runs only when that specific
+        # migration is in the pending set computed above; every one of the 9
+        # audits (including ones documented as informational) must return
+        # zero rows or this step fails and the job stops before
+        # `supabase db push`.
+        if: steps.history.outputs.sale_price_pending == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/production/run-predeploy-audit.ts scripts/supabase/sale_price_predeploy_audit.sql 9
+
+      - name: Sale-price pre-deploy audit — not applicable
+        if: steps.history.outputs.sale_price_pending != 'true'
+        run: echo "Migration 20260804010000 is not in the pending set; sale-price pre-deploy audit skipped."
 
       - name: Apply Supabase migrations
         id: apply
@@ -229,6 +250,7 @@ jobs:
             echo ""
             echo "| Check | Result |"
             echo "|---|---|"
+            echo "| Sale-price pre-deploy audit (conditional; skipped = migration not pending) | ${{ steps.sale_price_audit.outcome }} |"
             echo "| Migration apply (\`supabase db push\`) | ${{ steps.apply.outcome }} |"
             echo "| Catalog postflight (authoritative, blocking) | ${{ steps.postflight.outputs.passed == 'true' && 'passed' || 'FAILED' }} |"
             echo "| PostgREST schema:ready (diagnostic only, non-blocking) | ${{ steps.schema_ready.outcome }} |"
