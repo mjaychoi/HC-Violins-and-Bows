@@ -5,8 +5,11 @@ Real HTTP / PostgREST / RLS integration tests for HC Violins and Bows.
 ## Safety
 
 - **Never** point these scripts at production.
-- Production Supabase ref `dmilmlhquttcozxlpfxw` is blocklisted in `tests/integration/auth-matrix/env-guard.ts`.
+- Production project ref is configured via `PRODUCTION_SUPABASE_PROJECT_REF`
+  (identifier, not a credential). The auth-matrix and staging guards fail closed
+  when it is missing in hosted/CI mode or when a URL targets that ref.
 - Do not commit JWTs, service role keys, or passwords.
+- Do not hard-code a production project ref in source.
 
 ## Authentication contract (important)
 
