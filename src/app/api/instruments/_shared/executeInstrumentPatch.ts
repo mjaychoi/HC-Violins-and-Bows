@@ -9,6 +9,10 @@ import {
   requireInstrumentPatchUpdatedAt,
 } from '@/app/api/instruments/_shared/instrumentApiContract';
 import { validateDateString, validateUUID } from '@/utils/inputValidation';
+import {
+  validateSalePrice,
+  type SalePriceErrorCode,
+} from '@/utils/salePriceRules';
 import * as typeGuards from '@/utils/typeGuards';
 import { errorHandler } from '@/utils/errorHandler';
 import { logInfo, logWarn } from '@/utils/logger';
@@ -56,6 +60,7 @@ type SaleTransitionParseResult =
   | {
       ok: false;
       error: string;
+      errorCode?: SalePriceErrorCode;
     };
 
 const RPC_PATCH_KEYS = [
@@ -157,23 +162,25 @@ function parseSaleTransition(
 
     if (rawSalePrice === null || rawSalePrice === undefined) {
       salePrice = null;
-    } else if (
-      typeof rawSalePrice === 'number' &&
-      Number.isFinite(rawSalePrice)
-    ) {
-      if (rawSalePrice === 0) {
+    } else {
+      // sale_transition.sale_price always means "the amount to sell for" on
+      // this endpoint — unlike POST /api/sales, there is no carve-out for a
+      // client-supplied negative amount here. Refund amounts are always
+      // derived server-side from the stored original sale (see
+      // update_instrument_sale_transition_atomic), never taken from this field.
+      const validated = validateSalePrice(rawSalePrice, {
+        requirePositive: true,
+      });
+
+      if (!validated.ok) {
         return {
           ok: false,
-          error: 'sale_transition.sale_price must be non-zero when provided',
+          error: `sale_transition.sale_price: ${validated.message}`,
+          errorCode: validated.code,
         };
       }
 
-      salePrice = rawSalePrice;
-    } else {
-      return {
-        ok: false,
-        error: 'sale_transition.sale_price must be a finite number',
-      };
+      salePrice = Number(validated.amountDecimal);
     }
   }
 
@@ -477,6 +484,7 @@ export async function executeInstrumentPatch(
     return {
       payload: {
         error: saleTransitionResult.error,
+        error_code: saleTransitionResult.errorCode,
         success: false,
       },
       status: 400,
@@ -486,10 +494,15 @@ export async function executeInstrumentPatch(
   const saleTransition = saleTransitionResult.data;
 
   if (saleTransition) {
-    if (updates.status !== 'Sold') {
+    // Let the RPC decide sell vs unsell from DB status vs requested status.
+    if (
+      !Object.prototype.hasOwnProperty.call(updates, 'status') ||
+      typeof updates.status !== 'string' ||
+      updates.status.trim() === ''
+    ) {
       return {
         payload: {
-          error: 'sale_transition requires status to be set to Sold.',
+          error: 'sale_transition requires a status value.',
           success: false,
         },
         status: 400,

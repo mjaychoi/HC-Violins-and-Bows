@@ -7,6 +7,7 @@ import { normalizeUnifiedResourceErrors } from '@/hooks/unifiedResourceErrors';
 import { useLoadingState } from '@/hooks/useLoadingState';
 import { useToast } from '@/contexts/ToastContext';
 import { format } from 'date-fns';
+import { evaluateSalePriceNumber } from '@/utils/salePriceRules';
 
 type DashboardSaleTransition = {
   sale_price?: number | null;
@@ -111,69 +112,77 @@ export const useDashboardData = () => {
         );
       }
 
-      // 이전 상태 확인 (O(1) lookup)
-      const previousInstrument = instrumentMap.get(itemId) as
+      // Cache is optional convenience only (CAS updated_at, price hint, same-status
+      // suppression). It is never authoritative for previous status — the server RPC
+      // compares the DB row. Map membership must not gate sale_transition.
+      const cachedInstrument = instrumentMap.get(itemId) as
         | Instrument
         | undefined;
+      const cachedStatus = cachedInstrument?.status;
 
-      // FIXED: Clearer status change logic
       const nextStatus = formData.status; // possibly undefined
-      const statusIsChanging = nextStatus !== undefined;
-
-      const wasSold = previousInstrument?.status === 'Sold';
-      const isNowSold = nextStatus === 'Sold';
-      const baseUpdatedAt =
-        formData.updated_at ?? previousInstrument?.updated_at;
+      const baseUpdatedAt = formData.updated_at ?? cachedInstrument?.updated_at;
 
       let updatePayload: Partial<Omit<Instrument, 'id' | 'created_at'>> & {
         sale_transition?: DashboardSaleTransition;
       } = { ...formData, updated_at: baseUpdatedAt };
 
-      if (!statusIsChanging) {
+      // No status in the request → ordinary field edit, never a sale lifecycle.
+      if (nextStatus === undefined) {
         return await updateInstrument(itemId, updatePayload);
       }
 
-      if (isNowSold && !wasSold && previousInstrument) {
-        const rawPrice =
-          formData.price !== undefined && formData.price !== null
-            ? Number(formData.price)
-            : previousInstrument.price !== undefined &&
-                previousInstrument.price !== null
-              ? Number(previousInstrument.price)
-              : null;
+      if (nextStatus === 'Sold') {
+        // Skip only when cache confirms already Sold (same-status metadata edit).
+        // On cache miss, still send transition — server no-ops if already Sold.
+        if (cachedStatus !== 'Sold') {
+          const rawPrice =
+            formData.price !== undefined && formData.price !== null
+              ? Number(formData.price)
+              : cachedInstrument?.price !== undefined &&
+                  cachedInstrument.price !== null
+                ? Number(cachedInstrument.price)
+                : null;
 
-        if (
-          typeof rawPrice !== 'number' ||
-          !Number.isFinite(rawPrice) ||
-          rawPrice < 0
-        ) {
-          throw new Error(
-            'Sale price is required when marking an instrument as Sold.'
-          );
+          if (typeof rawPrice !== 'number' || Number.isNaN(rawPrice)) {
+            throw new Error(
+              'Sale price is required when marking an instrument as Sold.'
+            );
+          }
+
+          // Early client-side feedback only — the server (executeInstrumentPatch)
+          // re-validates with the same rules and remains authoritative.
+          const priceValidation = evaluateSalePriceNumber(rawPrice, {
+            requirePositive: true,
+          });
+
+          if (!priceValidation.ok) {
+            throw new Error(priceValidation.message);
+          }
+
+          const soldConnection = soldConnectionsMap.get(itemId);
+
+          updatePayload = {
+            ...formData,
+            updated_at: baseUpdatedAt,
+            sale_transition: {
+              sale_price: Number(priceValidation.amountDecimal),
+              sale_date: format(new Date(), 'yyyy-MM-dd'),
+              client_id: soldConnection?.client_id || null,
+              sales_note: 'Auto-created when instrument status changed to Sold',
+            },
+          };
         }
-
-        const salePrice = rawPrice;
-
-        const saleDate = format(new Date(), 'yyyy-MM-dd');
-        const soldConnection = soldConnectionsMap.get(itemId);
-
-        updatePayload = {
-          ...formData,
-          updated_at: baseUpdatedAt,
-          sale_transition: {
-            sale_price: salePrice,
-            sale_date: saleDate,
-            client_id: soldConnection?.client_id || null,
-            sales_note: 'Auto-created when instrument status changed to Sold',
-          },
-        };
-      } else if (wasSold && !isNowSold && previousInstrument) {
+      } else if (cachedStatus === 'Sold' || cachedInstrument === undefined) {
+        // Leaving Sold, or cache miss with a non-Sold target: attach unsell
+        // transition. Server no-ops when the row is not currently Sold.
+        // When cache shows a non-Sold status, this is an ordinary status edit.
         updatePayload = {
           ...formData,
           updated_at: baseUpdatedAt,
           sale_transition: {
             sales_note: `Auto-refunded when instrument status changed from Sold to ${
-              formData.status || 'Available'
+              nextStatus || 'Available'
             } on ${format(new Date(), 'yyyy-MM-dd')}`,
           },
         };

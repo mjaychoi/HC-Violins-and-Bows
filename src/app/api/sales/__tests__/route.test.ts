@@ -1102,7 +1102,23 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.message).toBe('Sale price and date are required.');
+      expect(body.message).toBe('Sale date is required.');
+    });
+
+    it('should validate sale_price is required when omitted', async () => {
+      const request = new NextRequest('http://localhost:3000/api/sales', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-2b' },
+        body: JSON.stringify({
+          sale_date: '2024-01-15',
+        }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error_code).toBe('SALE_PRICE_REQUIRED');
     });
 
     it('should validate sale_price is a number', async () => {
@@ -1119,7 +1135,44 @@ describe('/api/sales', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.message).toBe('Sale price must be a number.');
+      expect(body.message).toBe(
+        'Sale price must be a number, not a string or other type.'
+      );
+      expect(body.error_code).toBe('SALE_PRICE_INVALID_TYPE');
+    });
+
+    it('should reject a sale_price with more than two decimal places instead of rounding it', async () => {
+      const request = new NextRequest('http://localhost:3000/api/sales', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-3b' },
+        body: JSON.stringify({
+          sale_price: 2500.999,
+          sale_date: '2024-01-15',
+        }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error_code).toBe('SALE_PRICE_PRECISION_EXCEEDED');
+    });
+
+    it('should reject a sale_price above the shared maximum', async () => {
+      const request = new NextRequest('http://localhost:3000/api/sales', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-key-3c' },
+        body: JSON.stringify({
+          sale_price: 1_000_000_000.01,
+          sale_date: '2024-01-15',
+        }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error_code).toBe('SALE_PRICE_EXCEEDS_MAXIMUM');
     });
 
     it('should handle null optional fields', async () => {

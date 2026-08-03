@@ -312,6 +312,209 @@ describe('useDashboardData', () => {
     expect(mockUpdateInstrument).not.toHaveBeenCalled();
   });
 
+  it('rejects zero sale price client-side before sending Sold transition', async () => {
+    setDashboardState({
+      instruments: [{ ...mockInstrument, price: 0 }],
+    });
+
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await expect(
+        result.current.handleUpdateItem(mockInstrument.id, {
+          status: 'Sold',
+          price: 0,
+        })
+      ).rejects.toThrow('Sale price must be greater than zero.');
+    });
+
+    expect(mockUpdateInstrument).not.toHaveBeenCalled();
+  });
+
+  it('rejects negative and non-finite sale prices client-side', async () => {
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await expect(
+        result.current.handleUpdateItem(mockInstrument.id, {
+          status: 'Sold',
+          price: -100,
+        })
+      ).rejects.toThrow('Sale price must be greater than zero.');
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.handleUpdateItem(mockInstrument.id, {
+          status: 'Sold',
+          price: Number.NaN,
+        })
+      ).rejects.toThrow(
+        'Sale price is required when marking an instrument as Sold.'
+      );
+    });
+
+    expect(mockUpdateInstrument).not.toHaveBeenCalled();
+  });
+
+  it('accepts a positive valid sale price for Sold transition', async () => {
+    mockUpdateInstrument.mockResolvedValue({
+      ...mockInstrument,
+      status: 'Sold' as const,
+      price: 2500,
+    });
+
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await result.current.handleUpdateItem(mockInstrument.id, {
+        status: 'Sold',
+        price: 2500,
+      });
+    });
+
+    expect(mockUpdateInstrument).toHaveBeenCalledWith(
+      mockInstrument.id,
+      expect.objectContaining({
+        sale_transition: expect.objectContaining({
+          sale_price: 2500,
+        }),
+      })
+    );
+  });
+
+  it('rejects a sale price with more than two decimal places instead of rounding it', async () => {
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await expect(
+        result.current.handleUpdateItem(mockInstrument.id, {
+          status: 'Sold',
+          price: 2500.999,
+        })
+      ).rejects.toThrow('Sale price cannot have more than two decimal places.');
+    });
+
+    expect(mockUpdateInstrument).not.toHaveBeenCalled();
+  });
+
+  it('rejects a sale price above the shared maximum', async () => {
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await expect(
+        result.current.handleUpdateItem(mockInstrument.id, {
+          status: 'Sold',
+          price: 1_000_000_000.01,
+        })
+      ).rejects.toThrow(/cannot exceed/);
+    });
+
+    expect(mockUpdateInstrument).not.toHaveBeenCalled();
+  });
+
+  it('includes sale_transition when instrument is absent from instrumentMap', async () => {
+    mockUpdateInstrument.mockResolvedValue({
+      ...mockInstrument,
+      status: 'Sold' as const,
+    });
+    // Simulate truncated / incomplete cache: target instrument not in list
+    setDashboardState({
+      instruments: [],
+      truncated: true,
+    });
+
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await result.current.handleUpdateItem(mockInstrument.id, {
+        status: 'Sold',
+        price: 1500000,
+        updated_at: mockInstrument.updated_at,
+      });
+    });
+
+    expect(mockUpdateInstrument).toHaveBeenCalledWith(
+      mockInstrument.id,
+      expect.objectContaining({
+        status: 'Sold',
+        sale_transition: expect.objectContaining({
+          sale_price: 1500000,
+          sales_note: 'Auto-created when instrument status changed to Sold',
+        }),
+      })
+    );
+  });
+
+  it('includes sale_transition under a simulated truncated all-instruments dataset', async () => {
+    mockUpdateInstrument.mockResolvedValue({
+      ...mockInstrument,
+      id: 'inst-truncated',
+      status: 'Sold' as const,
+    });
+    // Only the first page of instruments is cached; the edited id is truncated out
+    setDashboardState({
+      instruments: Array.from({ length: 3 }, (_, i) => ({
+        ...mockInstrument,
+        id: `other-${i}`,
+      })),
+      truncated: true,
+    });
+
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await result.current.handleUpdateItem('inst-truncated', {
+        status: 'Sold',
+        price: 999,
+        updated_at: '2024-01-02T00:00:00Z',
+      });
+    });
+
+    expect(mockUpdateInstrument).toHaveBeenCalledWith(
+      'inst-truncated',
+      expect.objectContaining({
+        status: 'Sold',
+        sale_transition: expect.objectContaining({
+          sale_price: 999,
+        }),
+      })
+    );
+  });
+
+  it('includes sale_transition immediately after create before a full refetch', async () => {
+    const createdId = 'inst-just-created';
+    mockUpdateInstrument.mockResolvedValue({
+      ...mockInstrument,
+      id: createdId,
+      status: 'Sold' as const,
+    });
+    // Create succeeded but instruments list has not yet been refetched
+    setDashboardState({
+      instruments: [],
+    });
+
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await result.current.handleUpdateItem(createdId, {
+        status: 'Sold',
+        price: 4200,
+        updated_at: mockInstrument.updated_at,
+      });
+    });
+
+    expect(mockUpdateInstrument).toHaveBeenCalledWith(
+      createdId,
+      expect.objectContaining({
+        status: 'Sold',
+        sale_transition: expect.objectContaining({
+          sale_price: 4200,
+        }),
+      })
+    );
+  });
+
   it('uses atomic refund transition payload when moving away from Sold', async () => {
     const soldInstrument = { ...mockInstrument, status: 'Sold' as const };
     const updatedInstrument = {
@@ -343,6 +546,117 @@ describe('useDashboardData', () => {
         }),
       })
     );
+  });
+
+  it('sends refund transition for Sold → Available even when instrumentMap lookup misses', async () => {
+    mockUpdateInstrument.mockResolvedValue({
+      ...mockInstrument,
+      status: 'Available' as const,
+    });
+    setDashboardState({
+      instruments: [],
+    });
+
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await result.current.handleUpdateItem(mockInstrument.id, {
+        status: 'Available',
+        updated_at: mockInstrument.updated_at,
+      });
+    });
+
+    expect(mockUpdateInstrument).toHaveBeenCalledWith(
+      mockInstrument.id,
+      expect.objectContaining({
+        status: 'Available',
+        sale_transition: expect.objectContaining({
+          sales_note: expect.stringContaining(
+            'Auto-refunded when instrument status changed from Sold to Available'
+          ),
+        }),
+      })
+    );
+  });
+
+  it('does not send sale_transition for ordinary same-session updates without status', async () => {
+    mockUpdateInstrument.mockResolvedValue({
+      ...mockInstrument,
+      maker: 'Updated Maker',
+    });
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await result.current.handleUpdateItem(mockInstrument.id, {
+        maker: 'Updated Maker',
+      });
+    });
+
+    expect(mockUpdateInstrument).toHaveBeenCalledWith(
+      mockInstrument.id,
+      expect.objectContaining({
+        maker: 'Updated Maker',
+      })
+    );
+    expect(mockUpdateInstrument.mock.calls[0][1]).not.toHaveProperty(
+      'sale_transition'
+    );
+  });
+
+  it('does not send sale_transition for same-status Sold metadata edits', async () => {
+    const soldInstrument = {
+      ...mockInstrument,
+      status: 'Sold' as const,
+      note: 'old',
+    };
+    mockUpdateInstrument.mockResolvedValue({
+      ...soldInstrument,
+      note: 'cleaned',
+    });
+    setDashboardState({
+      instruments: [soldInstrument],
+    });
+
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await result.current.handleUpdateItem(soldInstrument.id, {
+        status: 'Sold',
+        note: 'cleaned',
+      });
+    });
+
+    expect(mockUpdateInstrument).toHaveBeenCalledWith(
+      soldInstrument.id,
+      expect.objectContaining({
+        status: 'Sold',
+        note: 'cleaned',
+      })
+    );
+    expect(mockUpdateInstrument.mock.calls[0][1]).not.toHaveProperty(
+      'sale_transition'
+    );
+  });
+
+  it('surfaces server sale errors without pretending the sale succeeded', async () => {
+    const serverError = new Error(
+      'This record was updated elsewhere. Refresh and try again.'
+    );
+    mockUpdateInstrument.mockRejectedValue(serverError);
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await expect(
+        result.current.handleUpdateItem(mockInstrument.id, {
+          status: 'Sold',
+          price: 1500000,
+        })
+      ).rejects.toThrow(
+        'This record was updated elsewhere. Refresh and try again.'
+      );
+    });
+
+    expect(mockShowSuccess).not.toHaveBeenCalled();
   });
 
   it('propagates update failures', async () => {
