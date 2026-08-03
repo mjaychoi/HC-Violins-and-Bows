@@ -31,8 +31,7 @@
 --     -f supabase/migrations/20260423140004_update_instrument_sale_transition_atomic_concurrency.sql \
 --     -f supabase/migrations/20260423140005_update_instrument_sale_transition_revoke_public.sql \
 --     -f supabase/migrations/20260423140006_update_instrument_sale_transition_grant_authenticated.sql \
---     -f supabase/migrations/20260803131709_create_sale_atomic_active_sale_guard.sql \
---     -f supabase/migrations/20260803140000_restore_instrument_sold_boundary_fail_closed.sql
+--     -f supabase/migrations/20260804020000_harden_sale_lifecycle_authorization.sql
 --   psql hc_sold_boundary_verify -v ON_ERROR_STOP=1 \
 --     -f scripts/supabase/instrument_sold_boundary_enforcement.test.sql
 
@@ -230,7 +229,7 @@ BEFORE UPDATE ON public.instruments
 FOR EACH ROW
 EXECUTE FUNCTION public.touch_instrument_updated_at();
 
--- Placeholder body (pre-20260803131709 shape, from
+-- Placeholder body (pre-20260804020000 shape, from
 -- supabase/migrations/00000000000058_enforce_status_transitions.sql).
 -- The migration files applied after this bootstrap CREATE OR REPLACE this
 -- function's body in place; the trigger below keeps pointing at the same

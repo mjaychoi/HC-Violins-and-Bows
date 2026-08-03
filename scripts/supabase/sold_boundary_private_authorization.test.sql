@@ -1,16 +1,18 @@
 -- Permanent regression tests for the private, transaction-scoped
--- Sold-boundary authorization mechanism introduced in
--- supabase/migrations/20260803150000_replace_sold_boundary_guc_with_private_authorization.sql,
--- which replaces the caller-forgeable custom GUC
--- (app.instrument_sold_transition_authorized) used by
--- 20260803140000_restore_instrument_sold_boundary_fail_closed.sql.
+-- Sold-boundary authorization mechanism (the sale_auth schema/table)
+-- introduced in
+-- supabase/migrations/20260804020000_harden_sale_lifecycle_authorization.sql.
+-- That migration goes straight from PR #78's baseline to this mechanism;
+-- an earlier draft of the same fix used a caller-forgeable custom GUC
+-- (app.instrument_sold_transition_authorized) as an intermediate step,
+-- but that step was never shipped as its own migration -- see this
+-- migration's header comment for why.
 --
 -- Prerequisites (local disposable DB):
 --   scripts/supabase/instrument_sold_boundary_test_bootstrap.sql, followed
 --   by the real migration chain through
---   supabase/migrations/20260803150000_replace_sold_boundary_guc_with_private_authorization.sql
---   (see that bootstrap file's header comment for the file list, plus
---   20260803150000 appended at the end). Also run
+--   supabase/migrations/20260804020000_harden_sale_lifecycle_authorization.sql
+--   (see that bootstrap file's header comment for the file list). Also run
 --   scripts/supabase/instrument_sold_boundary_enforcement.test.sql first
 --   (or after -- these tests are additive and independent).
 --

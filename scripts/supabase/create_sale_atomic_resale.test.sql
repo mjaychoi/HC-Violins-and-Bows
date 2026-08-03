@@ -1,7 +1,7 @@
 -- Permanent regression tests: create_sale_atomic active-sale / resale guard.
 --
 -- Prerequisites (local disposable DB):
---   1. Schema + RPCs applied (including 20260803131709_create_sale_atomic_active_sale_guard)
+--   1. Schema + RPCs applied (including 20260804020000_harden_sale_lifecycle_authorization)
 --   2. auth.jwt() / auth.uid() stubs that honor request.jwt.claims (see
 --      scripts/supabase/sale_resale_test_bootstrap.sql for a disposable harness)
 --

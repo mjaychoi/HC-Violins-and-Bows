@@ -5,8 +5,20 @@
 -- Prerequisites (local disposable DB):
 --   scripts/supabase/instrument_sold_boundary_test_bootstrap.sql, followed
 --   by the real migration chain through
---   supabase/migrations/20260803140000_restore_instrument_sold_boundary_fail_closed.sql
+--   supabase/migrations/20260804020000_harden_sale_lifecycle_authorization.sql
 --   (see that bootstrap file's header comment for the exact file list).
+--
+-- These tests were originally written against an intermediate migration
+-- chain step that gated the Sold boundary with a caller-settable GUC
+-- (app.instrument_sold_transition_authorized). That intermediate step was
+-- never shipped as its own migration -- 20260804020000 goes straight from
+-- PR #78's baseline to the final private-authorization mechanism (see
+-- scripts/supabase/sold_boundary_private_authorization.test.sql) -- but
+-- every assertion below still holds against the final schema: the GUC
+-- name is now inert (the trigger never reads it), so setting it has no
+-- effect, and every direct-UPDATE-across-the-Sold-boundary case that this
+-- file expects to fail still fails, just via the private sale_auth table
+-- instead.
 --
 -- Run:
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
@@ -420,7 +432,7 @@ END $$;
 -- Test 10: concurrency — see
 -- scripts/supabase/create_sale_atomic_resale_concurrency.test.sh,
 -- run separately (needs two live psql connections) against a DB with
--- 20260803140000 applied. Documented here, not duplicated inline.
+-- 20260804020000 applied. Documented here, not duplicated inline.
 -- ============================================================
 SELECT 'test 10: run scripts/supabase/create_sale_atomic_resale_concurrency.test.sh separately' AS note;
 

@@ -1,23 +1,32 @@
--- Rollback for 20260804020000_create_sale_atomic_active_sale_guard.sql
--- Restores the exact pre-chain state: the historical-positive-sale
+-- Rollback for 20260804020000_harden_sale_lifecycle_authorization.sql
+-- Restores the exact pre-migration state: the historical-positive-sale
 -- predicate (any sale_price > 0 row blocks resale, including fully
--- refunded ones) and the unconditionally Sold-locked instrument status
--- transition trigger, both exactly as defined by
--- 20260804010000_enforce_sale_price_precision_and_maximum.sql (create_sale_atomic /
--- update_instrument_sale_transition_atomic) and
--- 00000000000058_enforce_status_transitions.sql (the trigger function) --
--- i.e. real latest-origin/main-before-this-PR bodies, not any older
--- pre-reconciliation/pre-certificate_name shape.
+-- refunded ones), the unconditionally Sold-locked instrument status
+-- transition trigger, the inline (non-RLS-safe) refund-source lookup,
+-- and drops the private sale_auth schema/table and every function this
+-- migration introduced -- i.e. the real latest-origin/main-before-this-PR
+-- bodies from 20260804010000_enforce_sale_price_precision_and_maximum.sql
+-- (create_sale_atomic / update_instrument_sale_transition_atomic) and
+-- 00000000000058_enforce_status_transitions.sql (the trigger function).
 --
--- WARNING: this restores the status quo bug where a refunded sale can
--- never be followed by a resale (any historical sale_price > 0 row blocks
--- it forever) and where update_instrument_sale_transition_atomic's own
--- refund branch cannot complete (the trigger unconditionally rejects any
--- OLD.status = 'Sold' transition). Only use this to fully revert the PR;
--- it does not partially roll back just the resale-guard behavior while
--- keeping the Sold boundary open, since main never had that combination.
+-- WARNING: this restores the status quo bugs the migration fixed --
+-- a refunded sale can never be followed by a resale, the refund branch
+-- of update_instrument_sale_transition_atomic can never complete (the
+-- trigger unconditionally rejects any OLD.status = 'Sold' transition),
+-- and the refund-source lookup returns nothing for real RLS-bound
+-- `authenticated` callers. Only use this to fully revert the migration.
 
-CREATE OR REPLACE FUNCTION public.enforce_instrument_status_transition()
+-- ──────────────────────────────────────────────
+-- Trigger function: DROP ... CASCADE (removes the dependent trigger too)
+-- + CREATE, not CREATE OR REPLACE, so the fresh function regains the
+-- default PUBLIC EXECUTE grant that
+-- 20260804020000_harden_sale_lifecycle_authorization.sql revoked --
+-- CREATE OR REPLACE alone would preserve the revoked grant.
+-- ──────────────────────────────────────────────
+
+DROP FUNCTION IF EXISTS public.enforce_instrument_status_transition() CASCADE;
+
+CREATE FUNCTION public.enforce_instrument_status_transition()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -45,6 +54,20 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+DROP TRIGGER IF EXISTS tr_enforce_instrument_status_transition ON public.instruments;
+CREATE TRIGGER tr_enforce_instrument_status_transition
+BEFORE UPDATE OF status ON public.instruments
+FOR EACH ROW
+EXECUTE FUNCTION public.enforce_instrument_status_transition();
+
+-- ──────────────────────────────────────────────
+-- create_sale_atomic / update_instrument_sale_transition_atomic: restore
+-- the pre-migration bodies. CREATE OR REPLACE is safe here (unlike the
+-- trigger function above) since neither had any grant revoked by
+-- 20260804020000_harden_sale_lifecycle_authorization.sql -- both kept
+-- their pre-existing grants unchanged throughout.
+-- ──────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.create_sale_atomic(
   p_sale_price    NUMERIC,
@@ -248,5 +271,14 @@ BEGIN
 END;
 $$;
 
+-- ──────────────────────────────────────────────
+-- Drop everything else this migration introduced. Order matters: both
+-- RPCs above have already been redefined to no longer reference these,
+-- so it's safe to drop them now.
+-- ──────────────────────────────────────────────
+
+DROP FUNCTION IF EXISTS public.find_refundable_sale_for_update(UUID, UUID);
+DROP TABLE IF EXISTS sale_auth.sold_transition_authorization;
+DROP SCHEMA IF EXISTS sale_auth;
 DROP FUNCTION IF EXISTS public.instrument_has_active_sale(UUID, UUID);
 DROP FUNCTION IF EXISTS public.sale_lifecycle_net_amount(UUID, UUID);

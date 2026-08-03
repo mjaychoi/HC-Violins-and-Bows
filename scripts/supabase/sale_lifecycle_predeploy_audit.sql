@@ -2,7 +2,7 @@
 -- Do NOT run corrective UPDATEs from this file against production.
 --
 -- Expected: each section returns 0 rows on a healthy tenant.
--- Safe to run before applying 20260803131709_create_sale_atomic_active_sale_guard.sql
+-- Safe to run before applying 20260804020000_harden_sale_lifecycle_authorization.sql
 
 -- 1) Instruments with more than one currently active/unrefunded sale lifecycle
 --    (net amount > 0). Uses the same net definition as the forward migration.

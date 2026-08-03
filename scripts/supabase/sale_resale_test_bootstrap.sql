@@ -11,9 +11,7 @@
 --     -f supabase/migrations/00000000000016_create_sale_adjustment_atomic.sql \
 --     -f supabase/migrations/00000000000031_create_sale_atomic_idempotent.sql \
 --     -f supabase/migrations/20260423140004_update_instrument_sale_transition_atomic_concurrency.sql \
---     -f supabase/migrations/20260803131709_create_sale_atomic_active_sale_guard.sql \
---     -f supabase/migrations/20260803140000_restore_instrument_sold_boundary_fail_closed.sql \
---     -f supabase/migrations/20260803140001_fix_refund_source_lookup_rls_gap.sql
+--     -f supabase/migrations/20260804020000_harden_sale_lifecycle_authorization.sql
 --   psql hc_sale_resale_verify -v ON_ERROR_STOP=1 -f scripts/supabase/create_sale_atomic_resale.test.sql
 --   DATABASE_URL=postgresql:///hc_sale_resale_verify \
 --     bash scripts/supabase/create_sale_atomic_resale_concurrency.test.sh
@@ -210,7 +208,7 @@ FOR EACH ROW
 EXECUTE FUNCTION public.touch_instrument_updated_at();
 
 -- Pre-fix instrument status transition guard (Sold is terminal).
--- Forward migration 20260803131709 replaces this function body.
+-- Forward migration 20260804020000 replaces this function body.
 CREATE OR REPLACE FUNCTION public.enforce_instrument_status_transition()
 RETURNS trigger
 LANGUAGE plpgsql

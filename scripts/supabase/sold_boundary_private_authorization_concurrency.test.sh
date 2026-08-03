@@ -4,7 +4,7 @@
 # consume or reuse one another's authorization records).
 #
 # Requires a disposable DB with the full migration chain applied through
-# supabase/migrations/20260803150000_replace_sold_boundary_guc_with_private_authorization.sql
+# supabase/migrations/20260804020000_harden_sale_lifecycle_authorization.sql
 # (see scripts/supabase/instrument_sold_boundary_test_bootstrap.sql).
 #
 # Usage:
