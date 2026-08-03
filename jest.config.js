@@ -26,6 +26,13 @@ const customJestConfig = {
     '<rootDir>/node_modules/',
     '<rootDir>/tests/e2e/',
     '<rootDir>/src/app/calendar/__tests__/page.test.tsx',
+    // Spin up a real, isolated local Postgres (embedded-postgres) per file —
+    // run explicitly via `npm run test:production-guards-integration`
+    // (wired into ci.yml as its own step), not part of the default fast
+    // `npm test` loop. The pure-unit guard tests in
+    // tests/integration/production/db-deploy-guards.test.ts are unaffected
+    // and still run under plain `npm test`.
+    '<rootDir>/tests/integration/production/.*\\.integration\\.test\\.ts$',
   ],
   collectCoverageFrom: [
     'src/**/*.{js,jsx,ts,tsx}',

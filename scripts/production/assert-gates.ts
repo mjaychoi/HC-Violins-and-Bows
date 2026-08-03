@@ -8,11 +8,14 @@
  *   tsx scripts/production/assert-gates.ts sha
  *   tsx scripts/production/assert-gates.ts ack <label> <envVarName>
  *   tsx scripts/production/assert-gates.ts pending-count
+ *   tsx scripts/production/assert-gates.ts pending-digest
  */
 import {
   assertOperatorAcknowledgement,
   assertPendingCountMatches,
+  assertPendingDigestMatches,
   assertShaMatches,
+  normalizePendingDigest,
   parseNonNegativeInteger,
 } from './db-deploy-guards';
 
@@ -60,8 +63,22 @@ function main(): void {
     return;
   }
 
+  if (mode === 'pending-digest') {
+    const reviewed = normalizePendingDigest(
+      requireEnv('CONFIRMED_PENDING_DIGEST'),
+      'Reviewed pending-migration-set digest'
+    );
+    const actual = normalizePendingDigest(
+      requireEnv('ACTUAL_PENDING_DIGEST'),
+      'Actual pending-migration-set digest'
+    );
+    assertPendingDigestMatches(reviewed, actual);
+    console.log('Pending migration-set digest acknowledgement OK.');
+    return;
+  }
+
   throw new Error(
-    `Unknown mode "${mode}". Expected one of: sha, ack, pending-count.`
+    `Unknown mode "${mode}". Expected one of: sha, ack, pending-count, pending-digest.`
   );
 }
 

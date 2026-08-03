@@ -43,6 +43,16 @@ jobs:
       - name: Run tests (CI mode)
         run: npm run test -- --ci --coverage
 
+      - name: Production deploy-guard CLI contract tests (isolated local Postgres)
+        # Spins up a throwaway, in-process Postgres (embedded-postgres) to
+        # exercise scripts/production/db-probe.ts and
+        # scripts/production/postflight-catalog.ts as real child processes.
+        # Never touches DATABASE_URL, a hosted Supabase project, or
+        # production — the instance is created and destroyed within this
+        # step and never leaves the runner. See
+        # docs/PRODUCTION_MIGRATION_WORKFLOW.md.
+        run: npm run test:production-guards-integration
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:

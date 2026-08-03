@@ -20,6 +20,7 @@ const eslintConfig = [
       'next-env.d.ts',
       'scripts/**/*.js', // Ignore JS files in scripts folder (migration scripts)
       'scripts/**/*.cjs', // CommonJS middleware verification scripts
+      'tests/**/*.cjs', // CommonJS Jest globalSetup/globalTeardown helpers
     ],
   },
   {
