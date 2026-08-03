@@ -33,6 +33,8 @@
     "staging:audits": "bash scripts/staging/run-pr58-audits.sh",
     "test:staging-guard": "jest --runInBand tests/integration/staging/env-guard.test.ts",
     "test:auth-matrix": "jest --runInBand tests/integration/auth-matrix/matrix.test.ts",
+    "test:production-guards": "jest --runInBand tests/integration/production/db-deploy-guards.test.ts",
+    "test:production-guards-integration": "jest --runInBand --forceExit tests/integration/production/db-probe-cli.integration.test.ts tests/integration/production/postflight-catalog.integration.test.ts --testPathIgnorePatterns=/node_modules/ --globalSetup=./tests/integration/production/helpers/global-setup.cjs --globalTeardown=./tests/integration/production/helpers/global-teardown.cjs",
     "schema:ready": "tsx scripts/check-schema-readiness.ts",
     "format": "prettier --write .",
     "final": "npm run lint && npm run type-check && npm run test && npm run build",
@@ -75,6 +77,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "next": "15.5.22",
+    "pg": "^8.16.3",
     "react": "19.1.0",
     "react-big-calendar": "^1.19.4",
     "react-dnd": "^16.0.1",
@@ -84,7 +87,6 @@
     "react-window-infinite-loader": "^2.0.0",
     "recharts": "^3.5.1",
     "tailwind-merge": "^3.3.1",
-    "pg": "^8.16.3",
     "zod": "^4.1.13"
   },
   "devDependencies": {
@@ -105,6 +107,7 @@
     "@typescript-eslint/eslint-plugin": "^8.46.2",
     "@typescript-eslint/parser": "^8.46.2",
     "dotenv": "^17.4.2",
+    "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "15.5.22",
     "husky": "^9.1.7",

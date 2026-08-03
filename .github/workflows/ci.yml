@@ -43,6 +43,16 @@ jobs:
       - name: Run tests (CI mode)
         run: npm run test -- --ci --coverage
 
+      - name: Production deploy-guard CLI contract tests (isolated local Postgres)
+        # Spins up a throwaway, in-process Postgres (embedded-postgres) to
+        # exercise scripts/production/db-probe.ts and
+        # scripts/production/postflight-catalog.ts as real child processes.
+        # Never touches DATABASE_URL, a hosted Supabase project, or
+        # production — the instance is created and destroyed within this
+        # step and never leaves the runner. See
+        # docs/PRODUCTION_MIGRATION_WORKFLOW.md.
+        run: npm run test:production-guards-integration
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
@@ -72,36 +82,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup Supabase CLI
-        if: ${{ github.event_name == 'push' }}
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
-      - name: Apply Supabase migrations
-        if: ${{ github.event_name == 'push' }}
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "DATABASE_URL is required to apply Supabase migrations."
-            exit 1
-          fi
-          supabase db push --db-url "$DATABASE_URL" --include-all --yes
-
-      - name: Schema readiness
-        if: ${{ github.event_name == 'push' }}
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          echo "SUPABASE_URL=${SUPABASE_URL:+set}"
-          echo "NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:+set}"
-          echo "SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:+set}"
-          echo "DATABASE_URL=${DATABASE_URL:+set}"
-          npm run schema:ready
+      # Production database deployment (supabase db push, schema readiness)
+      # intentionally does not run here. See
+      # .github/workflows/production-db-deploy.yml for the separately
+      # invoked, approval-gated production migration workflow.
 
       - name: Build application
         run: npm run build

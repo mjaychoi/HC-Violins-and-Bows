@@ -1,0 +1,241 @@
+name: Production DB Migration Deploy
+
+# Manual, approval-gated production migration deployment. This workflow is
+# intentionally decoupled from application CI (.github/workflows/ci.yml):
+# it never runs on push or pull_request, only ever from main, and requires
+# an operator to explicitly acknowledge the reviewed commit, the reviewed
+# pending-migration count AND the reviewed pending-migration-set digest, a
+# backup/PITR checkpoint, and a maintenance window before any secret is
+# loaded or any mutation is attempted.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmed_sha:
+        description: 'Reviewed commit SHA (must equal the checked-out main SHA)'
+        required: true
+        type: string
+      confirmed_pending_migration_count:
+        description: 'Reviewed pending migration count (must equal the count computed from exact version-set reconciliation at runtime)'
+        required: true
+        type: string
+      confirmed_pending_migration_digest:
+        description: 'Reviewed pending-migration-set SHA-256 digest (must equal the digest computed from exact version-set reconciliation at runtime; printed by a dry-run history read)'
+        required: true
+        type: string
+      backup_pitr_confirmed:
+        description: 'A fresh backup / PITR checkpoint exists for this database before running migrations'
+        required: true
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+        default: 'no'
+      maintenance_window_approved:
+        description: 'This run is inside an approved maintenance window'
+        required: true
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+        default: 'no'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-db-migration-deploy
+  cancel-in-progress: false
+
+jobs:
+  guard-ref:
+    name: Guard - main branch only
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require refs/heads/main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "This workflow may only be run from refs/heads/main. Got: ${{ github.ref }}"
+            exit 1
+          fi
+          echo "Ref check passed: ${{ github.ref }}"
+
+  deploy:
+    name: Deploy production migrations
+    needs: guard-ref
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Record checked-out SHA
+        id: sha
+        run: |
+          actual_sha="$(git rev-parse HEAD)"
+          echo "Checked out main SHA: $actual_sha"
+          echo "sha=$actual_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Stop if reviewed SHA does not match checked-out SHA
+        env:
+          CONFIRMED_SHA: ${{ github.event.inputs.confirmed_sha }}
+          ACTUAL_SHA: ${{ steps.sha.outputs.sha }}
+        run: npx tsx scripts/production/assert-gates.ts sha
+
+      - name: Stop if backup/PITR confirmation is missing
+        env:
+          BACKUP_PITR_CONFIRMED: ${{ github.event.inputs.backup_pitr_confirmed }}
+        run: npx tsx scripts/production/assert-gates.ts ack "backup/PITR confirmation" BACKUP_PITR_CONFIRMED
+
+      - name: Stop if maintenance-window approval is missing
+        env:
+          MAINTENANCE_WINDOW_APPROVED: ${{ github.event.inputs.maintenance_window_approved }}
+        run: npx tsx scripts/production/assert-gates.ts ack "maintenance-window approval" MAINTENANCE_WINDOW_APPROVED
+
+      - name: Stop if the expected production project ref is not configured
+        env:
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: |
+          if [ -z "$EXPECTED_SUPABASE_PROJECT_REF" ]; then
+            echo "EXPECTED_SUPABASE_PROJECT_REF is not configured on the production Environment. Refusing to deploy without a protected expected project reference."
+            exit 1
+          fi
+          echo "EXPECTED_SUPABASE_PROJECT_REF is configured."
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          # Pinned to the exact version used for the completed migration
+          # rehearsal (fresh x2, upgrade x2, restart/resume). Bump only
+          # after rerunning that full rehearsal against the new version —
+          # never float on "latest" and never claim equivalence untested.
+          version: 2.111.0
+
+      - name: Record Supabase CLI capabilities
+        run: |
+          echo "--- supabase --version ---"
+          supabase --version
+          echo "--- supabase db push --help (capability check only; not invoked) ---"
+          help_output="$(supabase db push --help 2>&1 || true)"
+          echo "$help_output"
+          for flag in --db-url --include-all --yes; do
+            if echo "$help_output" | grep -q -- "$flag"; then
+              echo "capability: $flag available"
+            else
+              echo "capability MISSING: $flag not found in 'supabase db push --help' output"
+              exit 1
+            fi
+          done
+
+      - name: Validate DATABASE_URL identity and structure (secret-safe)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: npx tsx scripts/production/db-probe.ts validate-only
+
+      - name: Read-only connectivity probe (SELECT 1)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/production/db-probe.ts probe
+
+      - name: Migration-history read (before mutation)
+        id: history
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # db-probe.ts history writes exactly one JSON document to stdout
+          # and nothing else; all diagnostics go to stderr. `tee` therefore
+          # only ever captures the JSON into history.json.
+          npx tsx scripts/production/db-probe.ts history | tee history.json
+          node -e "
+            const r = JSON.parse(require('fs').readFileSync('history.json', 'utf8'));
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`pending=\${r.pendingMigrationCount}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`remote=\${r.remoteUniqueVersionCount}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`local=\${r.localVersionCount}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`digest=\${r.pendingDigest}\n\`);
+          "
+          rm -f history.json
+
+      - name: Stop if reviewed pending count does not match actual pending count
+        env:
+          CONFIRMED_PENDING_COUNT: ${{ github.event.inputs.confirmed_pending_migration_count }}
+          ACTUAL_PENDING_COUNT: ${{ steps.history.outputs.pending }}
+        run: npx tsx scripts/production/assert-gates.ts pending-count
+
+      - name: Stop if reviewed pending-set digest does not match actual digest
+        env:
+          CONFIRMED_PENDING_DIGEST: ${{ github.event.inputs.confirmed_pending_migration_digest }}
+          ACTUAL_PENDING_DIGEST: ${{ steps.history.outputs.digest }}
+        run: npx tsx scripts/production/assert-gates.ts pending-digest
+
+      - name: Apply Supabase migrations
+        id: apply
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: supabase db push --db-url "$DATABASE_URL" --include-all --yes
+
+      - name: Post-deploy catalog postflight (authoritative, blocking)
+        id: postflight
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set +e
+          npx tsx scripts/production/postflight-catalog.ts | tee postflight.json
+          tsx_status="${PIPESTATUS[0]}"
+          set -e
+          passed="$(node -e "console.log(JSON.parse(require('fs').readFileSync('postflight.json','utf8')).passed)" 2>/dev/null || echo false)"
+          rm -f postflight.json
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
+          if [ "$tsx_status" != "0" ]; then
+            echo "Postflight catalog check failed (exit $tsx_status)."
+            exit 1
+          fi
+
+      - name: Schema readiness (post-deploy, non-authoritative diagnostic)
+        id: schema_ready
+        if: always() && steps.apply.outcome == 'success'
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run schema:ready
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "### Production migration deploy"
+            echo "- Checked-out SHA: \`${{ steps.sha.outputs.sha }}\`"
+            echo "- Local migration version count: ${{ steps.history.outputs.local }}"
+            echo "- Remote migration version count (before deploy): ${{ steps.history.outputs.remote }}"
+            echo "- Pending before deploy: ${{ steps.history.outputs.pending }}"
+            echo "- Reviewed pending-set digest matched: yes"
+            echo ""
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Migration apply (\`supabase db push\`) | ${{ steps.apply.outcome }} |"
+            echo "| Catalog postflight (authoritative, blocking) | ${{ steps.postflight.outputs.passed == 'true' && 'passed' || 'FAILED' }} |"
+            echo "| PostgREST schema:ready (diagnostic only, non-blocking) | ${{ steps.schema_ready.outcome }} |"
+            echo ""
+            if [ "${{ steps.apply.outcome }}" == "success" ]; then
+              echo "**Production mutation occurred: YES** (\`supabase db push\` ran and reported success)."
+            else
+              echo "**Production mutation occurred: unknown/no** (\`supabase db push\` did not report success)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
