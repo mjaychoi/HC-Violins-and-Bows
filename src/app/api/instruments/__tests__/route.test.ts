@@ -1486,6 +1486,68 @@ describe('/api/instruments', () => {
       );
     });
 
+    it('should use atomic sale transition RPC for Sold → Available unsell', async () => {
+      const stateQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            status: 'Sold',
+            reserved_reason: null,
+            reserved_by_user_id: null,
+            reserved_connection_id: null,
+          },
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(stateQuery),
+        rpc: jest
+          .fn()
+          .mockResolvedValueOnce({
+            data: null,
+            error: { message: 'instrument row not found for probe' },
+          })
+          .mockResolvedValueOnce({
+            data: { ...mockInstrument, status: 'Available' },
+            error: null,
+          }),
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockInstrument.id,
+          updated_at: mockInstrument.updated_at,
+          status: 'Available',
+          sale_transition: {
+            sales_note:
+              'Auto-refunded when instrument status changed from Sold to Available',
+          },
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data.status).toBe('Available');
+      expect(mockUserSupabase.rpc).toHaveBeenCalledTimes(2);
+      expect(mockUserSupabase.rpc).toHaveBeenLastCalledWith(
+        'update_instrument_sale_transition_atomic',
+        expect.objectContaining({
+          p_instrument_id: mockInstrument.id,
+          p_sale_price: null,
+          p_sale_date: null,
+          p_client_id: null,
+          p_sales_note:
+            'Auto-refunded when instrument status changed from Sold to Available',
+          p_expected_updated_at: mockInstrument.updated_at,
+          p_patch: expect.objectContaining({ status: 'Available' }),
+        })
+      );
+    });
+
     it('returns 503 when sale RPC is missing (schema contract)', async () => {
       mockUserSupabase = {
         from: jest.fn(),

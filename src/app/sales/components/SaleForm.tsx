@@ -11,6 +11,7 @@ import { logInfo } from '@/utils/logger';
 import { todayLocalYMD } from '@/utils/dateParsing';
 import { modalStyles } from '@/components/common/modals/modalStyles';
 import { ModalHeader } from '@/components/common/modals/ModalHeader';
+import { validateSalePriceInput } from '@/utils/salePriceRules';
 
 interface SaleFormProps {
   isOpen: boolean;
@@ -149,20 +150,20 @@ export default function SaleForm({
     e.preventDefault();
     setErrors([]);
 
-    // Validation
-    if (!formData.sale_price) {
-      setErrors(['Sale price is required.']);
+    // Validation — mirrors the server contract (src/utils/salePriceRules.ts)
+    // for early feedback; the server remains authoritative. Negative amounts
+    // are intentionally allowed here (not just zero-rejection) to preserve
+    // the documented standalone-refund-entry capability of this form.
+    const priceValidation = validateSalePriceInput(formData.sale_price, {
+      requirePositive: false,
+    });
+
+    if (!priceValidation.ok) {
+      setErrors([priceValidation.message]);
       return;
     }
 
-    // FIXED: Allow negative values for refunds (Option A: simple approach)
-    const parsedPrice = Number(formData.sale_price);
-    if (!Number.isFinite(parsedPrice) || parsedPrice === 0) {
-      setErrors([
-        'Sale price must be a non-zero number. Use negative for refunds.',
-      ]);
-      return;
-    }
+    const parsedPrice = Number(priceValidation.amountDecimal);
 
     // Allow empty date to fall back to today to avoid HTML validation blocking tests
     const saleDate = formData.sale_date || todayLocalYMD();

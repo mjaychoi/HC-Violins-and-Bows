@@ -23,6 +23,10 @@ import {
   validateDateString,
   escapePostgrestFilterValue,
 } from '@/utils/inputValidation';
+import {
+  validateSalePrice,
+  type SalePriceErrorCode,
+} from '@/utils/salePriceRules';
 
 import { writeAuditLog } from '@/utils/auditLog';
 import {
@@ -34,7 +38,6 @@ import {
 const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 const MAX_SEARCH_LEN = 160;
 const MAX_NOTES_LENGTH = 5_000;
-const MAX_SALE_PRICE_ABS = 1_000_000_000;
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
 const MAX_ALL_RESULTS = 1000;
@@ -287,72 +290,59 @@ function normalizeNotes(value: unknown): string | null {
   return trimmed ? trimmed.slice(0, MAX_NOTES_LENGTH) : null;
 }
 
+/**
+ * POST /api/sales intentionally allows a negative amount to record a
+ * standalone refund-style entry directly (SaleForm.tsx: "Amount (negative
+ * for refund)"; permanent test "should allow negative sale_price for
+ * refunds") — a pre-existing, documented product decision. PATCH /api/sales
+ * also needs both signs: the client-sent amount is only used to disambiguate
+ * refund vs. undo-refund intent (must exactly match ±the stored original —
+ * see hasPriceChange below), never persisted directly. So both call sites use
+ * requirePositive: false; only zero (and -0) is rejected here. This mirrors
+ * validateSalePrice from src/utils/salePriceRules.ts — the same shared
+ * validator PATCH /api/instruments uses — just with the sign requirement
+ * relaxed for this endpoint's documented carve-out.
+ */
 function parseSalePrice(
   value: unknown
-): { ok: true; value: number } | { ok: false; error: string; status: 400 } {
-  if (value === undefined || value === null || value === '') {
+):
+  | { ok: true; value: number }
+  | { ok: false; error: string; status: 400; errorCode: SalePriceErrorCode } {
+  const result = validateSalePrice(value, { requirePositive: false });
+
+  if (!result.ok) {
     return {
       ok: false,
-      error: 'Sale price is required.',
+      error: result.message,
       status: 400,
-    };
-  }
-
-  const parsed = Number(value);
-
-  if (!Number.isFinite(parsed)) {
-    return {
-      ok: false,
-      error: 'Sale price must be a number.',
-      status: 400,
-    };
-  }
-
-  if (parsed === 0) {
-    return {
-      ok: false,
-      error: 'Sale price cannot be zero.',
-      status: 400,
-    };
-  }
-
-  if (Math.abs(parsed) > MAX_SALE_PRICE_ABS) {
-    return {
-      ok: false,
-      error: 'Sale price exceeds the maximum allowed amount.',
-      status: 400,
+      errorCode: result.code,
     };
   }
 
   return {
     ok: true,
-    value: Math.round(parsed * 100) / 100,
+    value: Number(result.amountDecimal),
   };
 }
 
-function parseCreateSaleInput(
-  body: Record<string, unknown>
-):
+function parseCreateSaleInput(body: Record<string, unknown>):
   | { ok: true; value: SalesCreateInput }
-  | { ok: false; error: string; status: 400 } {
-  if (
-    body.sale_price === undefined ||
-    body.sale_price === null ||
-    body.sale_date === undefined ||
-    body.sale_date === null ||
-    body.sale_date === ''
-  ) {
-    return {
-      ok: false,
-      error: 'Sale price and date are required.',
-      status: 400,
-    };
-  }
-
+  | {
+      ok: false;
+      error: string;
+      status: 400;
+      errorCode?: SalePriceErrorCode;
+    } {
   const salePrice = parseSalePrice(body.sale_price);
   if (!salePrice.ok) return salePrice;
 
-  if (typeof body.sale_date !== 'string' || !body.sale_date.trim()) {
+  if (
+    body.sale_date === undefined ||
+    body.sale_date === null ||
+    body.sale_date === '' ||
+    typeof body.sale_date !== 'string' ||
+    !body.sale_date.trim()
+  ) {
     return {
       ok: false,
       error: 'Sale date is required.',
@@ -855,7 +845,11 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       const parsedInput = parseCreateSaleInput(bodyResult.body);
       if (!parsedInput.ok) {
         return {
-          payload: { error: parsedInput.error, success: false },
+          payload: {
+            error: parsedInput.error,
+            error_code: parsedInput.errorCode,
+            success: false,
+          },
           status: parsedInput.status,
         };
       }
@@ -1034,7 +1028,11 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         const parsedPrice = parseSalePrice(sale_price);
         if (!parsedPrice.ok) {
           return {
-            payload: { error: parsedPrice.error, success: false },
+            payload: {
+              error: parsedPrice.error,
+              error_code: parsedPrice.errorCode,
+              success: false,
+            },
             status: parsedPrice.status,
           };
         }

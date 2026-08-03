@@ -259,7 +259,40 @@ describe('SaleForm', () => {
     await waitFor(
       () => {
         expect(
-          screen.getByText(/Sale price must be a non-zero number/i)
+          screen.getByText(/Sale price cannot be zero/i)
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
+
+    expect(mockOnSubmit).not.toHaveBeenCalled();
+  });
+
+  it('should reject a sale price with more than two decimal places instead of rounding it', async () => {
+    const user = userEvent.setup();
+    render(
+      <SaleForm
+        isOpen={true}
+        onClose={mockOnClose}
+        onSubmit={mockOnSubmit}
+        submitting={false}
+      />
+    );
+
+    const priceInput = screen.getByLabelText(/Amount/i) as HTMLInputElement;
+    await user.clear(priceInput);
+    await user.type(priceInput, '19.999');
+
+    const dateInput = screen.getByLabelText(/Date/i) as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: '2024-01-15' } });
+
+    const submitButton = screen.getByText('Save Sale');
+    await user.click(submitButton);
+
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText(/more than two decimal places/i)
         ).toBeInTheDocument();
       },
       { timeout: 3000 }
