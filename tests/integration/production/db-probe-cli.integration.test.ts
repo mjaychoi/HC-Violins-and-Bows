@@ -108,6 +108,8 @@ describe('db-probe.ts — real CLI process against an isolated local Postgres', 
       lastPendingVersion: expected.pendingVersions.at(-1) ?? null,
       pendingDigest: expected.pendingDigest,
       latestApplied: expected.latestApplied,
+      salePriceMigrationPending:
+        expected.pendingVersions.includes('20260804010000'),
     });
 
     // (4) stdout contains no target/log prefix — the whole trimmed stdout
@@ -127,6 +129,53 @@ describe('db-probe.ts — real CLI process against an isolated local Postgres', 
       expect(stream).not.toContain(testPassword);
       expect(stream).not.toContain(`:${testPg.port}`);
     }
+  });
+
+  it('reports salePriceMigrationPending as a single bounded boolean, true only when 20260804010000 is actually pending', async () => {
+    const localMigrations = readRealLocalMigrations();
+    const hasSalePriceMigration = localMigrations.some(
+      m => m.version === '20260804010000'
+    );
+
+    if (!hasSalePriceMigration) {
+      // 20260804010000 ships in the PR that introduces the migration file
+      // itself; on a checkout that doesn't have it yet, it can never be
+      // pending, and the field must reflect that rather than erroring.
+      await seedMigrationHistory(testPg.connectionString, []);
+      const result = await runDbProbe('history', {
+        DATABASE_URL: testPg.connectionString,
+      });
+      expect(result.exitCode).toBe(0);
+      const parsed = JSON.parse(result.stdout.trim());
+      expect(parsed.salePriceMigrationPending).toBe(false);
+      return;
+    }
+
+    // Not yet applied remotely -> pending -> true.
+    await seedMigrationHistory(
+      testPg.connectionString,
+      localMigrations
+        .map(m => m.version)
+        .filter(version => version !== '20260804010000')
+    );
+    const pendingResult = await runDbProbe('history', {
+      DATABASE_URL: testPg.connectionString,
+    });
+    expect(
+      JSON.parse(pendingResult.stdout.trim()).salePriceMigrationPending
+    ).toBe(true);
+
+    // Already applied remotely -> not pending -> false.
+    await seedMigrationHistory(
+      testPg.connectionString,
+      localMigrations.map(m => m.version)
+    );
+    const convergedResult = await runDbProbe('history', {
+      DATABASE_URL: testPg.connectionString,
+    });
+    expect(
+      JSON.parse(convergedResult.stdout.trim()).salePriceMigrationPending
+    ).toBe(false);
   });
 
   it('emits pure JSON for `history` even at zero pending (fully converged)', async () => {

@@ -9,11 +9,14 @@ import {
   computePendingDigest,
   describeDatabaseUrlSafely,
   describeProductionEndpointForLog,
+  isVersionPending,
   normalizePendingDigest,
   parseLocalMigrationFilenames,
   parseNonNegativeInteger,
   parseRemoteVersions,
   reconcileMigrationVersions,
+  SALE_PRICE_PRECISION_MIGRATION_VERSION,
+  splitSqlStatements,
   summarizePendingVersions,
   validateDatabaseUrlStructure,
   validateProductionEndpoint,
@@ -521,6 +524,82 @@ describe('normalizePendingDigest', () => {
     expect(() => normalizePendingDigest('abcd', 'digest')).toThrow(
       /64-character/i
     );
+  });
+});
+
+describe('isVersionPending', () => {
+  it('is true when the version is in the pending set', () => {
+    const withRealVersion = [
+      { version: v(1), filename: localFile(1) },
+      {
+        version: SALE_PRICE_PRECISION_MIGRATION_VERSION,
+        filename: `${SALE_PRICE_PRECISION_MIGRATION_VERSION}_enforce_sale_price_precision_and_maximum.sql`,
+      },
+    ];
+    const result = reconcileMigrationVersions(withRealVersion, [v(1)]);
+    expect(
+      isVersionPending(result, SALE_PRICE_PRECISION_MIGRATION_VERSION)
+    ).toBe(true);
+  });
+
+  it('is false when the version has already been applied (no longer pending)', () => {
+    const versions = [
+      { version: v(1), filename: localFile(1) },
+      {
+        version: SALE_PRICE_PRECISION_MIGRATION_VERSION,
+        filename: `${SALE_PRICE_PRECISION_MIGRATION_VERSION}_enforce_sale_price_precision_and_maximum.sql`,
+      },
+    ];
+    const result = reconcileMigrationVersions(versions, [
+      v(1),
+      SALE_PRICE_PRECISION_MIGRATION_VERSION,
+    ]);
+    expect(
+      isVersionPending(result, SALE_PRICE_PRECISION_MIGRATION_VERSION)
+    ).toBe(false);
+  });
+
+  it('is false when the version does not exist in the local set at all', () => {
+    const local = parseLocalMigrationFilenames([localFile(1)]);
+    const result = reconcileMigrationVersions(local, []);
+    expect(
+      isVersionPending(result, SALE_PRICE_PRECISION_MIGRATION_VERSION)
+    ).toBe(false);
+  });
+});
+
+describe('splitSqlStatements', () => {
+  it('splits sequential statements on top-level semicolons', () => {
+    const sql = `SELECT 1;\nSELECT 2;\n`;
+    expect(splitSqlStatements(sql)).toEqual(['SELECT 1', 'SELECT 2']);
+  });
+
+  it('strips line comments before splitting', () => {
+    const sql = [
+      '-- header comment',
+      'SELECT 1 -- inline trailing comment',
+      'FROM x;',
+      '-- comment between statements',
+      'SELECT 2;',
+    ].join('\n');
+    expect(splitSqlStatements(sql)).toEqual(['SELECT 1 \nFROM x', 'SELECT 2']);
+  });
+
+  it('ignores blank lines and comment-only content between statements', () => {
+    const sql = '\n\n-- only a comment\n\nSELECT 1;\n\n-- trailing comment\n';
+    expect(splitSqlStatements(sql)).toEqual(['SELECT 1']);
+  });
+
+  it('returns an empty array for a file with no statements', () => {
+    expect(splitSqlStatements('-- just a comment\n')).toEqual([]);
+  });
+
+  it('parses the real 9-statement shape used by the sale-price audit file', () => {
+    const nineStatements = Array.from(
+      { length: 9 },
+      (_, i) => `-- ${i + 1}) audit\nSELECT ${i + 1};`
+    ).join('\n\n');
+    expect(splitSqlStatements(nineStatements)).toHaveLength(9);
   });
 });
 

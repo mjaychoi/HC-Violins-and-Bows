@@ -35,8 +35,10 @@ import { Client } from 'pg';
 import {
   describeDatabaseUrlSafely,
   describeProductionEndpointForLog,
+  isVersionPending,
   parseLocalMigrationFilenames,
   reconcileMigrationVersions,
+  SALE_PRICE_PRECISION_MIGRATION_VERSION,
   summarizePendingVersions,
   validateDatabaseUrlStructure,
   validateProductionEndpoint,
@@ -139,6 +141,16 @@ async function main() {
       lastPendingVersion: summary.lastPendingVersion,
       pendingDigest: summary.pendingDigest,
       latestApplied: reconciliation.latestApplied,
+      // Bounded, single-migration membership check (never the full pending
+      // list) so the workflow can conditionally run
+      // scripts/production/run-predeploy-audit.ts against
+      // scripts/supabase/sale_price_predeploy_audit.sql only when that
+      // specific migration is actually pending. See
+      // docs/PRODUCTION_MIGRATION_WORKFLOW.md.
+      salePriceMigrationPending: isVersionPending(
+        reconciliation,
+        SALE_PRICE_PRECISION_MIGRATION_VERSION
+      ),
     })}\n`
   );
 }

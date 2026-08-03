@@ -67,11 +67,16 @@ Gates, in order:
 project_match=yes ssl=require` is printed.
 6. A read-only connectivity probe (`SELECT 1`) runs before anything else
    touches the database.
-7. Only after every gate above passes does the workflow run:
+7. If migration `20260804010000` (`enforce_sale_price_precision_and_maximum`)
+   is in the pending set computed above, a migration-specific read-only
+   pre-deploy audit runs and must pass (see "Sale-price pre-deploy audit"
+   below) — skipped entirely, not treated as a pass, when that migration is
+   not pending.
+8. Only after every gate above passes does the workflow run:
    ```
    supabase db push --db-url "$DATABASE_URL" --include-all --yes
    ```
-8. Post-deploy, an **authoritative, blocking** direct-Postgres catalog
+9. Post-deploy, an **authoritative, blocking** direct-Postgres catalog
    postflight runs (see "Post-deploy verification" below), and `npm run
 schema:ready` runs separately as a **non-authoritative diagnostic**. The
    deployment summary reports both results, plus whether `supabase db push`
@@ -156,6 +161,46 @@ elsewhere) returns a similarly non-reconstructable structured description —
 coarse host _category_, port, database, and boolean flags only — never a
 masked-but-reconstructable `postgres://***:***@host:port/db` string.
 
+### Sale-price pre-deploy audit (migration `20260804010000`)
+
+Migration `20260804010000_enforce_sale_price_precision_and_maximum.sql` adds
+`CHECK` constraints to `public.sales_history` that `VALIDATE CONSTRAINT` on
+existing rows and fail on the _first_ violation found, without naming every
+offending row. Before that migration is applied, the workflow runs a
+read-only data audit so any pre-existing violation can be investigated ahead
+of time instead of surfacing as an opaque `VALIDATE CONSTRAINT` failure
+during `supabase db push`.
+
+- **Conditional, not unconditional.** The gate only runs when migration
+  `20260804010000` is actually in the pending set (`isVersionPending()` /
+  `SALE_PRICE_PRECISION_MIGRATION_VERSION` in
+  `scripts/production/db-deploy-guards.ts`, surfaced as the bounded
+  `salePriceMigrationPending` field on the `history` step's JSON output — a
+  single-migration membership check, never the full pending list). Once that
+  migration has been applied, it is no longer pending and the gate is
+  skipped on later runs — skip is reported distinctly from pass in the
+  deployment summary.
+- **What runs.** `scripts/production/run-predeploy-audit.ts
+scripts/supabase/sale_price_predeploy_audit.sql 9` — nine `SELECT`-only
+  statements, executed inside a single `BEGIN READ ONLY` transaction that
+  always ends in `ROLLBACK`, whether or not any audit fails.
+- **Fail-closed policy.** All nine audits must return zero rows, including
+  audit 2, which the SQL file's own header comment documents as _expected_
+  to be non-empty on any tenant using the standalone-refund-entry feature.
+  This workflow does not carve out that exception: any non-zero audit blocks
+  the deploy, and a human must investigate and decide whether to proceed
+  (there is no automated override). The runner also fails closed if the
+  audit file is missing, if it does not parse into exactly 9 statements (a
+  silently dropped or added statement is treated as a configuration error,
+  not a no-op), or if any statement errors — including an accidental write
+  statement, which the `READ ONLY` transaction itself rejects.
+- **Extensibility.** `run-predeploy-audit.ts` takes a SQL file path and an
+  expected statement count as arguments; it has no sale-price-specific logic
+  itself. Wiring a future migration behind the same kind of gate means
+  adding a new named version constant and a new conditional workflow step,
+  not modifying this runner. A generic per-migration audit registry was
+  deliberately deferred in favor of shipping this one working gate first.
+
 ### Post-deploy verification: authoritative vs. diagnostic
 
 `npm run schema:ready` (`src/app/api/_utils/schemaReadiness.ts`) reads
@@ -224,6 +269,13 @@ this PR's scope:
 
 - **Required reviewers** on the Environment (protection rule) — this is what
   makes the "GitHub holds the job for approval" gate above actually hold.
+  Nothing in this repository's code can create this rule; until an
+  operator adds at least one required reviewer, `environment: production`
+  gates on the Environment existing and its secrets/variables being scoped
+  to it, but not on anyone approving the run.
+- **Deployment branches** restricted to `main` only (Environment protection
+  rule), so a workflow_dispatch from a fork or a stray branch can never
+  reach this Environment's secrets even before `guard-ref` runs.
 - `DATABASE_URL` secret.
 - `EXPECTED_SUPABASE_PROJECT_REF` variable.
 - `SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
@@ -237,10 +289,59 @@ this PR's scope:
   (e.g. via a dry-run `history` read against the production database, or by
   running `reconcileMigrationVersions` locally against a trusted read
   replica) and supply as `confirmed_pending_migration_digest`.
+- Optional but recommended: a wait timer / change-window protection rule,
+  and deployment-history retention left at its default (never disabled) so
+  every past run remains auditable.
 
 No workflow in this repository logs a database URL, password, project ref,
 service-role key, or token in plaintext, and none of them fall back to
 staging credentials if a production secret is missing.
+
+## Required repository settings (operator checklist)
+
+None of the following can be created from code — a repository admin must
+configure them in the GitHub UI. Until they are, the technical gates above
+are the only protection in place: there is no branch protection and no
+Environment reviewer requirement configured on this repository as of this
+writing.
+
+### `main` branch protection / ruleset
+
+GitHub → Settings → Branches (classic protection) or Settings → Rules →
+Rulesets, targeting `main`:
+
+- [ ] Require a pull request before merging, with at least 1 approval.
+- [ ] Require conversation resolution before merging.
+- [ ] Require the following status checks to pass before merging (exact
+      names as they currently appear on a PR check run — verify against a
+      live PR, since GitHub sometimes prefixes the workflow name):
+  - `Test & Lint` (`.github/workflows/ci.yml`)
+  - `Build` (`.github/workflows/ci.yml`)
+  - `Security Scan` (`.github/workflows/security.yml`)
+  - `Code Quality Check` (`.github/workflows/code-quality.yml`, workflow
+    display name `Code Quality`)
+- [ ] Require branches to be up to date before merging.
+- [ ] Do not allow force pushes.
+- [ ] Do not allow deletion of the `main` branch.
+
+### `Production`/`production` Environment
+
+(See "Secrets and required production Environment configuration" above for
+the full list — repeated here only as a checklist.)
+
+- [ ] At least 1 required reviewer on the Environment.
+- [ ] Deployment branch policy restricted to `main`.
+- [ ] `DATABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` stored as Environment
+      secrets (not repository-level secrets).
+- [ ] `SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
+      `EXPECTED_SUPABASE_PROJECT_REF` stored as Environment variables.
+- [ ] Deployment history retention left enabled.
+
+**PR #78 (the sale-price contract migration) must not be merged before
+these settings are configured and this workflow's design is reviewed and
+approved — merging PR #78 first would leave `20260804010000` mergeable to
+`main` with no operative approval gate in front of the credentials that can
+apply it.**
 
 ### Known operational blocker
 
