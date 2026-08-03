@@ -1,0 +1,180 @@
+name: Production DB Migration Deploy
+
+# Manual, approval-gated production migration deployment. This workflow is
+# intentionally decoupled from application CI (.github/workflows/ci.yml):
+# it never runs on push or pull_request, only ever from main, and requires
+# an operator to explicitly acknowledge the reviewed commit, the reviewed
+# pending migration count, a backup/PITR checkpoint, and a maintenance
+# window before any secret is loaded or any mutation is attempted.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmed_sha:
+        description: 'Reviewed commit SHA (must equal the checked-out main SHA)'
+        required: true
+        type: string
+      confirmed_pending_migration_count:
+        description: 'Reviewed pending migration count (must equal the count computed from the migration-history read at runtime)'
+        required: true
+        type: string
+      backup_pitr_confirmed:
+        description: 'A fresh backup / PITR checkpoint exists for this database before running migrations'
+        required: true
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+        default: 'no'
+      maintenance_window_approved:
+        description: 'This run is inside an approved maintenance window'
+        required: true
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+        default: 'no'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-db-migration-deploy
+  cancel-in-progress: false
+
+jobs:
+  guard-ref:
+    name: Guard - main branch only
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require refs/heads/main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "This workflow may only be run from refs/heads/main. Got: ${{ github.ref }}"
+            exit 1
+          fi
+          echo "Ref check passed: ${{ github.ref }}"
+
+  deploy:
+    name: Deploy production migrations
+    needs: guard-ref
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Record checked-out SHA
+        id: sha
+        run: |
+          actual_sha="$(git rev-parse HEAD)"
+          echo "Checked out main SHA: $actual_sha"
+          echo "sha=$actual_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Stop if reviewed SHA does not match checked-out SHA
+        env:
+          CONFIRMED_SHA: ${{ github.event.inputs.confirmed_sha }}
+          ACTUAL_SHA: ${{ steps.sha.outputs.sha }}
+        run: npx tsx scripts/production/assert-gates.ts sha
+
+      - name: Stop if backup/PITR confirmation is missing
+        env:
+          BACKUP_PITR_CONFIRMED: ${{ github.event.inputs.backup_pitr_confirmed }}
+        run: npx tsx scripts/production/assert-gates.ts ack "backup/PITR confirmation" BACKUP_PITR_CONFIRMED
+
+      - name: Stop if maintenance-window approval is missing
+        env:
+          MAINTENANCE_WINDOW_APPROVED: ${{ github.event.inputs.maintenance_window_approved }}
+        run: npx tsx scripts/production/assert-gates.ts ack "maintenance-window approval" MAINTENANCE_WINDOW_APPROVED
+
+      - name: Record migration inventory
+        id: inventory
+        run: |
+          count="$(find supabase/migrations -maxdepth 1 -name '*.sql' | wc -l | tr -d ' ')"
+          echo "Local migration file count: $count"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          # Pinned to an exact released version. Bump deliberately after
+          # verifying the release notes; never float on "latest" here.
+          version: 2.22.6
+
+      - name: Validate DATABASE_URL structure (secret-safe)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/production/db-probe.ts validate-only
+
+      - name: Read-only connectivity probe (SELECT 1)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/production/db-probe.ts probe
+
+      - name: Migration-history read (before mutation)
+        id: history
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          npx tsx scripts/production/db-probe.ts history | tee history.json
+          pending="$(node -e "console.log(JSON.parse(require('fs').readFileSync('history.json','utf8')).pendingMigrationCount)")"
+          applied="$(node -e "console.log(JSON.parse(require('fs').readFileSync('history.json','utf8')).appliedMigrationCount)")"
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+          echo "applied=$applied" >> "$GITHUB_OUTPUT"
+          rm -f history.json
+
+      - name: Stop if reviewed pending count does not match actual pending count
+        env:
+          CONFIRMED_PENDING_COUNT: ${{ github.event.inputs.confirmed_pending_migration_count }}
+          ACTUAL_PENDING_COUNT: ${{ steps.history.outputs.pending }}
+        run: npx tsx scripts/production/assert-gates.ts pending-count
+
+      - name: Apply Supabase migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: supabase db push --db-url "$DATABASE_URL" --include-all --yes
+
+      - name: Schema readiness (post-deploy)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run schema:ready
+
+      - name: Post-deploy migration-history verification
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          npx tsx scripts/production/db-probe.ts history | tee post-history.json
+          pending="$(node -e "console.log(JSON.parse(require('fs').readFileSync('post-history.json','utf8')).pendingMigrationCount)")"
+          rm -f post-history.json
+          if [ "$pending" != "0" ]; then
+            echo "Post-deploy verification failed: $pending migration(s) still pending after supabase db push."
+            exit 1
+          fi
+          echo "Post-deploy verification OK: 0 migrations pending."
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "### Production migration deploy"
+            echo "- Checked-out SHA: \`${{ steps.sha.outputs.sha }}\`"
+            echo "- Local migration file count: ${{ steps.inventory.outputs.count }}"
+            echo "- Applied before deploy: ${{ steps.history.outputs.applied }}"
+            echo "- Pending before deploy: ${{ steps.history.outputs.pending }}"
+          } >> "$GITHUB_STEP_SUMMARY"
