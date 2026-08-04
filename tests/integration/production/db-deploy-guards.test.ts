@@ -1,6 +1,8 @@
 /** @jest-environment node */
 
 import { createHash } from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import {
   assertOperatorAcknowledgement,
   assertPendingCountMatches,
@@ -15,6 +17,7 @@ import {
   parseNonNegativeInteger,
   parseRemoteVersions,
   reconcileMigrationVersions,
+  SALE_LIFECYCLE_MIGRATION_VERSION,
   SALE_PRICE_PRECISION_MIGRATION_VERSION,
   splitSqlStatements,
   summarizePendingVersions,
@@ -566,6 +569,53 @@ describe('isVersionPending', () => {
       isVersionPending(result, SALE_PRICE_PRECISION_MIGRATION_VERSION)
     ).toBe(false);
   });
+
+  it('tracks SALE_LIFECYCLE_MIGRATION_VERSION independently of SALE_PRICE_PRECISION_MIGRATION_VERSION', () => {
+    const versions = [
+      {
+        version: SALE_PRICE_PRECISION_MIGRATION_VERSION,
+        filename: `${SALE_PRICE_PRECISION_MIGRATION_VERSION}_enforce_sale_price_precision_and_maximum.sql`,
+      },
+      {
+        version: SALE_LIFECYCLE_MIGRATION_VERSION,
+        filename: `${SALE_LIFECYCLE_MIGRATION_VERSION}_harden_sale_lifecycle_authorization.sql`,
+      },
+    ];
+
+    // Neither applied remotely -> both pending.
+    const bothPending = reconcileMigrationVersions(versions, []);
+    expect(
+      isVersionPending(bothPending, SALE_PRICE_PRECISION_MIGRATION_VERSION)
+    ).toBe(true);
+    expect(
+      isVersionPending(bothPending, SALE_LIFECYCLE_MIGRATION_VERSION)
+    ).toBe(true);
+
+    // Only the sale-price migration applied remotely -> lifecycle still
+    // pending, price no longer pending. The two gates must not be
+    // conflated into a single "any sale-related migration pending" flag.
+    const onlyPriceApplied = reconcileMigrationVersions(versions, [
+      SALE_PRICE_PRECISION_MIGRATION_VERSION,
+    ]);
+    expect(
+      isVersionPending(onlyPriceApplied, SALE_PRICE_PRECISION_MIGRATION_VERSION)
+    ).toBe(false);
+    expect(
+      isVersionPending(onlyPriceApplied, SALE_LIFECYCLE_MIGRATION_VERSION)
+    ).toBe(true);
+
+    // Both applied remotely -> neither pending.
+    const bothApplied = reconcileMigrationVersions(
+      versions,
+      versions.map(v => v.version)
+    );
+    expect(
+      isVersionPending(bothApplied, SALE_PRICE_PRECISION_MIGRATION_VERSION)
+    ).toBe(false);
+    expect(
+      isVersionPending(bothApplied, SALE_LIFECYCLE_MIGRATION_VERSION)
+    ).toBe(false);
+  });
 });
 
 describe('splitSqlStatements', () => {
@@ -600,6 +650,35 @@ describe('splitSqlStatements', () => {
       (_, i) => `-- ${i + 1}) audit\nSELECT ${i + 1};`
     ).join('\n\n');
     expect(splitSqlStatements(nineStatements)).toHaveLength(9);
+  });
+
+  // Guards the hardcoded expected-statement-count arguments in
+  // .github/workflows/production-db-deploy.yml
+  // ("run-predeploy-audit.ts <file> <N>"). If either audit file gains or
+  // loses a statement without the workflow being updated to match,
+  // run-predeploy-audit.ts fails closed at actual deploy time — this test
+  // catches the same drift in CI instead, before it ever reaches a real
+  // deploy run.
+  it('the real sale-price audit file has exactly 9 statements (matches the workflow-hardcoded count)', () => {
+    const sql = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../scripts/supabase/sale_price_predeploy_audit.sql'
+      ),
+      'utf8'
+    );
+    expect(splitSqlStatements(sql)).toHaveLength(9);
+  });
+
+  it('the real sale-lifecycle audit file has exactly 10 statements (matches the workflow-hardcoded count)', () => {
+    const sql = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../scripts/supabase/sale_lifecycle_predeploy_audit.sql'
+      ),
+      'utf8'
+    );
+    expect(splitSqlStatements(sql)).toHaveLength(10);
   });
 });
 

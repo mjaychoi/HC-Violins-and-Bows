@@ -227,20 +227,34 @@ export type PendingSummary = {
 };
 
 // ---------------------------------------------------------------------------
-// Migration-specific pre-deploy audit gate (PR #78 sale-price contract).
+// Migration-specific pre-deploy audit gates (PR #78 sale-price contract,
+// PR #80 sale/refund lifecycle authorization).
 // ---------------------------------------------------------------------------
 
 /**
- * The one migration this repository currently gates behind a read-only
- * pre-deploy data audit (scripts/supabase/sale_price_predeploy_audit.sql —
- * ships together with this version in the same PR that introduces it, so it
- * is never referenced without also being present). Kept as a single named
- * constant rather than a generic per-migration config table because this PR
- * intentionally ships the minimal wiring for exactly one gated migration; see
- * docs/PRODUCTION_MIGRATION_WORKFLOW.md for the rationale and the path to
- * generalizing this later.
+ * A migration this repository gates behind a read-only pre-deploy data audit
+ * (scripts/supabase/sale_price_predeploy_audit.sql — ships together with
+ * this version in the same PR that introduces it, so it is never referenced
+ * without also being present). Kept as a named constant rather than a
+ * generic per-migration config table because each PR that adds one of these
+ * intentionally ships the minimal wiring for exactly that gated migration;
+ * see docs/PRODUCTION_MIGRATION_WORKFLOW.md for the rationale and the path
+ * to generalizing this later, and SALE_LIFECYCLE_MIGRATION_VERSION below for
+ * the second instance of the same pattern.
  */
 export const SALE_PRICE_PRECISION_MIGRATION_VERSION = '20260804010000';
+
+/**
+ * The sale/refund lifecycle authorization migration
+ * (scripts/supabase/sale_lifecycle_predeploy_audit.sql, 10 statements),
+ * gated the same way and for the same reason as
+ * SALE_PRICE_PRECISION_MIGRATION_VERSION above: it validates lifecycle
+ * invariants (no instrument with more than one active/unrefunded sale,
+ * well-formed refund/undo_refund chains, no Sold/active-sale status
+ * mismatches) against existing production data before this migration's
+ * private sale_auth authorization mechanism starts enforcing them.
+ */
+export const SALE_LIFECYCLE_MIGRATION_VERSION = '20260804020000';
 
 /**
  * Whether `version` is in the exact pending set — used to conditionally run

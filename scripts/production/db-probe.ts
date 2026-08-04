@@ -38,6 +38,7 @@ import {
   isVersionPending,
   parseLocalMigrationFilenames,
   reconcileMigrationVersions,
+  SALE_LIFECYCLE_MIGRATION_VERSION,
   SALE_PRICE_PRECISION_MIGRATION_VERSION,
   summarizePendingVersions,
   validateDatabaseUrlStructure,
@@ -150,6 +151,13 @@ async function main() {
       salePriceMigrationPending: isVersionPending(
         reconciliation,
         SALE_PRICE_PRECISION_MIGRATION_VERSION
+      ),
+      // Same pattern as salePriceMigrationPending above, gating
+      // scripts/supabase/sale_lifecycle_predeploy_audit.sql instead. See
+      // docs/PRODUCTION_MIGRATION_WORKFLOW.md.
+      saleLifecycleMigrationPending: isVersionPending(
+        reconciliation,
+        SALE_LIFECYCLE_MIGRATION_VERSION
       ),
     })}\n`
   );
