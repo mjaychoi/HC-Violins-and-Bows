@@ -87,28 +87,29 @@ export const ALLOWED_SORT_COLUMNS = {
 
 ## ⚠️ 개선 권장 사항
 
-### 1. **RLS 정책 세분화**
+### 1. **RLS 정책** ✅ org-scoped + admin write 적용됨
 
-현재 모든 authenticated 사용자에게 전체 권한을 부여하는 정책이 사용되고 있습니다:
+구버전 문서의 `Allow all operations for authenticated users` 정책은 더 이상 사용하지 않습니다.
+현재 마이그레이션(`00000000000002_rls_policies.sql`) 기준:
 
-```sql
--- 현재 정책 (너무 관대함)
-CREATE POLICY "Allow all operations for authenticated users"
-  ON clients FOR ALL USING (auth.role() = 'authenticated');
-```
-
-**권장 개선:**
-
-- 사용자별 소유권 기반 정책으로 변경
-- 역할 기반 접근 제어 (RBAC) 구현
-- 필요한 경우에만 공개 읽기 정책 허용
+- SELECT → 동일 `org_id` 멤버
+- INSERT/UPDATE/DELETE → `public.is_admin()` (알림 설정·일부 contact_logs 예외)
 
 ```sql
--- 권장: 소유권 기반 정책
-CREATE POLICY clients_select_own_rows ON clients
+-- 현재 정책 모델 (요약)
+CREATE POLICY clients_select ON public.clients
   FOR SELECT TO authenticated
-  USING (owner_id = auth.uid());
+  USING (org_id = public.org_id());
+
+CREATE POLICY clients_insert ON public.clients
+  FOR INSERT TO authenticated
+  WITH CHECK (org_id = public.org_id() AND public.is_admin());
 ```
+
+**남은 선택 개선:**
+
+- 리소스별 세분 role이 필요해지면 permission 매트릭스 확장
+- 릴리즈 전 `scripts/supabase/tenant_isolation_audit.sql` / health diagnostics로 정책 회귀 확인
 
 ### 2. **Service Role Key 사용 제한**
 
@@ -175,8 +176,12 @@ Service Role Key는 RLS를 우회하므로 신중하게 사용해야 합니다.
 
 - [x] 사용자 인증 (Supabase Auth)
 - [x] RLS 활성화 (모든 테이블)
-- [ ] 세분화된 RLS 정책 (개선 필요)
-- [x] Protected routes
+- [x] 세분화된 RLS 정책 (org-scoped + admin write)
+- [x] API `withAuthRoute` / `requireAdmin`
+- [x] Protected routes (`src/middleware.ts` + AppLayout)
+- [x] `/api/health` diagnostics gated by `HEALTH_CHECK_SECRET` (production fail-closed)
+
+> 운영 노트: 프로덕션에서 상세 health 진단을 쓰려면 호스트 env에 `HEALTH_CHECK_SECRET`을 설정해야 한다. 미설정이어도 liveness는 동작하며 진단 필드는 노출되지 않는다.
 
 ### 인프라 보안
 
@@ -199,7 +204,7 @@ Service Role Key는 RLS를 우회하므로 신중하게 사용해야 합니다.
 | ----------- | ---------- | --------------------------------------- |
 | 의존성 보안 | ⭐⭐⭐⭐⭐ | 취약점 0개                              |
 | 입력 검증   | ⭐⭐⭐⭐☆  | 잘 구현됨, 일부 개선 가능               |
-| 인증/인가   | ⭐⭐⭐⭐☆  | 기본 구현 완료, RLS 정책 세분화 필요    |
+| 인증/인가   | ⭐⭐⭐⭐⭐ | org RLS + API auth + admin/member RBAC  |
 | 데이터 보호 | ⭐⭐⭐⭐⭐ | 민감 정보 마스킹 잘 구현                |
 | 인프라 보안 | ⭐⭐⭐☆☆   | 기본 헤더 있음, CSP 추가 권장           |
 | 모니터링    | ⭐⭐⭐⭐☆  | Sentry 통합, 보안 이벤트 알림 개선 가능 |
@@ -291,9 +296,8 @@ export function middleware(request: NextRequest) {
 
 **개선이 필요한 영역:**
 
-- RLS 정책 세분화 (현재 너무 관대함)
 - CSP 헤더 추가
-- Rate limiting 구현
+- Rate limiting 전역화 (현재 sales export 등 일부만)
 - 환경 변수 검증 강화
 
-전반적으로 **양호한 보안 상태**이며, 위의 개선 사항들을 적용하면 더욱 안전해질 수 있습니다.
+전반적으로 **양호한 보안 상태**이며, 인증/인가·org RLS는 적용되어 있습니다. 위의 개선 사항들을 적용하면 더욱 안전해질 수 있습니다.

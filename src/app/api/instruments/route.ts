@@ -1,7 +1,12 @@
 import { NextRequest } from 'next/server';
 import { errorHandler } from '@/utils/errorHandler';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
-import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
+import {
+  withAuthRoute,
+  getRequiredOrgId,
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { executeInstrumentPatch } from '@/app/api/instruments/_shared/executeInstrumentPatch';
@@ -166,7 +171,10 @@ async function allocateRetrySerialNumber(
   auth: AuthContext,
   instrumentInsert: InstrumentInsertRow
 ): Promise<string> {
-  const existingSerialNumbers = await getOrgSerialNumbers(auth, auth.orgId!);
+  const existingSerialNumbers = await getOrgSerialNumbers(
+    auth,
+    getRequiredOrgId(auth)
+  );
   return generateInstrumentSerialNumber(
     instrumentInsert.type?.trim() || null,
     existingSerialNumbers
@@ -225,13 +233,15 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
     },
     async () => {
       try {
-        // 1️⃣ org 체크
-        if (!auth.orgId) {
+        const orgContextError = requireOrgContext(auth);
+        if (orgContextError) {
           return {
             payload: { error: 'Organization context required', success: false },
             status: 403,
           };
         }
+
+        const orgId = getRequiredOrgId(auth);
 
         const { limited } = await applyRateLimit(searchRateLimit, auth.user.id);
         if (limited) {
@@ -280,7 +290,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         let query = auth.userSupabase
           .from('instruments')
           .select('*', { count: 'exact' })
-          .eq('org_id', auth.orgId);
+          .eq('org_id', orgId);
 
         if (ownership === 'owned') {
           query = query.eq('ownership', 'owned');
@@ -379,19 +389,23 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       context: 'InstrumentsAPI',
     },
     async () => {
-      if (!auth.orgId) {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
         return {
           payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
 
-      if (auth.role !== 'admin') {
+      const adminError = requireAdmin(auth);
+      if (adminError) {
         return {
           payload: { error: 'Admin role required', success: false },
           status: 403,
         };
       }
+
+      const orgId = getRequiredOrgId(auth);
 
       const body = await request.json();
 
@@ -461,7 +475,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         createInput.serial_number ?? null
       );
       if (!resolvedSerial) {
-        const existingSerials = await getOrgSerialNumbers(auth, auth.orgId);
+        const existingSerials = await getOrgSerialNumbers(auth, orgId);
         resolvedSerial = generateInstrumentSerialNumber(
           createInput.type?.trim() || null,
           existingSerials
@@ -472,7 +486,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         ...createInput,
         serial_number: resolvedSerial,
         status: nextStatus,
-        org_id: auth.orgId,
+        org_id: orgId,
         reserved_reason:
           nextStatus === 'Reserved'
             ? (createInput.reserved_reason?.trim() ?? null)
@@ -505,7 +519,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
 
       if (claimedIdempotencyKey) {
         logInfo('instrument_create_idempotent_registered', 'InstrumentsAPI', {
-          orgId: auth.orgId,
+          orgId,
           instrumentId: validatedResponse.id,
         });
       }
@@ -515,7 +529,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       });
 
       void writeAuditLog({
-        orgId: auth.orgId,
+        orgId,
         actorId: auth.user.id,
         actorRole: auth.role as 'admin' | 'member' | 'service',
         action: 'instrument.create',
@@ -592,14 +606,16 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
       context: 'InstrumentsAPI',
     },
     async () => {
-      if (!auth.orgId) {
+      const orgContextError = requireOrgContext(auth);
+      if (orgContextError) {
         return {
           payload: { error: 'Organization context required', success: false },
           status: 403,
         };
       }
 
-      if (auth.role !== 'admin') {
+      const adminError = requireAdmin(auth);
+      if (adminError) {
         return {
           payload: { error: 'Admin role required', success: false },
           status: 403,
@@ -623,7 +639,7 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const orgId = auth.orgId;
+      const orgId = getRequiredOrgId(auth);
 
       // Fetch storage keys before deletion so we can clean up physical files
       const [imagesResult, certificatesResult] = await Promise.all([

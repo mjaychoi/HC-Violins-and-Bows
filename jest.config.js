@@ -14,7 +14,12 @@ const customJestConfig = {
   transformIgnorePatterns: [
     '/node_modules/(?!(isows|@supabase/realtime-js|@supabase/supabase-js|@supabase|react-dnd|react-dnd-html5-backend|@dnd-kit|@upstash/redis|@upstash/ratelimit|uncrypto)/)',
   ],
-  modulePathIgnorePatterns: ['<rootDir>/.next/standalone'],
+  modulePathIgnorePatterns: [
+    '<rootDir>/.next/standalone',
+    '<rootDir>/.tmp-',
+    '<rootDir>/.health-pr-push',
+    '<rootDir>/.claude',
+  ],
   extensionsToTreatAsEsm: ['.ts', '.tsx'],
   globals: {
     'ts-jest': {
@@ -24,6 +29,9 @@ const customJestConfig = {
   testPathIgnorePatterns: [
     '<rootDir>/.next/',
     '<rootDir>/node_modules/',
+    '<rootDir>/.tmp-',
+    '<rootDir>/.health-pr-push/',
+    '<rootDir>/.claude/',
     '<rootDir>/tests/e2e/',
     '<rootDir>/src/app/calendar/__tests__/page.test.tsx',
     // Spin up a real, isolated local Postgres (embedded-postgres) per file —

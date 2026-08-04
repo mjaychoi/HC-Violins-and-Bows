@@ -7,14 +7,13 @@ interface ProtectedRouteProps {
 }
 
 /**
- * ✅ FIXED: Protected route component - redirect logic removed to prevent duplication
+ * Loading / empty shell for protected UI trees.
  *
- * ⚠️ IMPORTANT: Redirect logic has been moved to AppLayout to prevent duplicate redirects
- * This component now only provides loading/redirecting UI states
+ * Auth redirects are owned by:
+ * 1. `src/middleware.ts` (Edge, primary)
+ * 2. `AppLayout` (client fail-closed fallback for missing session / missing org)
  *
- * All protected pages use AppLayout, which handles authentication redirects centrally.
- * If you need a standalone protected route wrapper (without AppLayout), use this component,
- * but be aware that AppLayout also performs redirects, so don't use both together.
+ * Do not pair this with AppLayout when both would render conflicting shells.
  */
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading } = useAuth();

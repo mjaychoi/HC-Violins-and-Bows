@@ -1,4 +1,9 @@
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
+import {
+  getRequiredOrgId,
+  requireAdmin,
+  requireOrgContext,
+} from '@/app/api/_utils/withAuthRoute';
 import { buildReservedStateUpdate } from '@/app/api/_utils/instrumentReservedState';
 import { validateInstrumentStatusTransition } from '@/app/api/_utils/stateTransitions';
 import type { ApiHandlerResult } from '@/app/api/_utils/apiHandler';
@@ -418,21 +423,23 @@ export async function executeInstrumentPatch(
     apiPath: string;
   }
 ): Promise<ApiHandlerResult> {
-  if (!auth.orgId) {
+  const orgContextError = requireOrgContext(auth);
+  if (orgContextError) {
     return {
       payload: { error: 'Organization context required', success: false },
       status: 403,
     };
   }
 
-  if (auth.role !== 'admin') {
+  const adminError = requireAdmin(auth);
+  if (adminError) {
     return {
       payload: { error: 'Admin role required', success: false },
       status: 403,
     };
   }
 
-  const orgId = auth.orgId;
+  const orgId = getRequiredOrgId(auth);
   const instrumentId = input.instrumentId;
 
   if (!validateUUID(instrumentId)) {

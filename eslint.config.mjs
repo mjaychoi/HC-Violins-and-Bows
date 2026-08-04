@@ -21,6 +21,11 @@ const eslintConfig = [
       'scripts/**/*.js', // Ignore JS files in scripts folder (migration scripts)
       'scripts/**/*.cjs', // CommonJS middleware verification scripts
       'tests/**/*.cjs', // CommonJS Jest globalSetup/globalTeardown helpers
+      // Local verification worktrees / scratch copies must not slow pre-commit
+      '.tmp-*/**',
+      '.health-pr-push/**',
+      '.claude/**',
+      '.cursor/**',
     ],
   },
   {
