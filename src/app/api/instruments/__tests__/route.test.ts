@@ -5,6 +5,11 @@ import {
   INSTRUMENT_PATCH_UPDATED_AT_REQUIRED_CODE,
   resetInstrumentApiContractCacheForTests,
 } from '@/app/api/instruments/_shared/instrumentApiContract';
+import {
+  assertInstrumentsSchemaReadiness,
+  SchemaCheckFailedError,
+  SchemaNotReadyError,
+} from '@/app/api/_utils/schemaReadiness';
 
 jest.mock('@/app/api/_utils/rateLimit', () => ({
   searchRateLimit: null,
@@ -13,6 +18,18 @@ jest.mock('@/app/api/_utils/rateLimit', () => ({
   applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
 }));
 jest.mock('@/utils/errorHandler');
+jest.mock('@/app/api/_utils/schemaReadiness', () => {
+  const actual = jest.requireActual('@/app/api/_utils/schemaReadiness');
+  return {
+    ...actual,
+    assertInstrumentsSchemaReadiness: jest.fn().mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-07-31T00:00:00.000Z',
+      missingColumns: [],
+      missingContracts: [],
+    }),
+  };
+});
 jest.mock('@/utils/logger', () => ({
   logInfo: jest.fn(),
   logError: jest.fn(),
@@ -107,6 +124,16 @@ describe('/api/instruments', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (
+      assertInstrumentsSchemaReadiness as jest.MockedFunction<
+        typeof assertInstrumentsSchemaReadiness
+      >
+    ).mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-07-31T00:00:00.000Z',
+      missingColumns: [],
+      missingContracts: [],
+    });
     resetInstrumentApiContractCacheForTests();
     jest.spyOn(performance, 'now').mockReturnValue(0);
     mockStorage = { deleteFile: jest.fn().mockResolvedValue(true) };
@@ -664,6 +691,31 @@ describe('/api/instruments', () => {
   });
 
   describe('POST', () => {
+    it('returns SCHEMA_OUT_OF_DATE 503 when instrument schema readiness fails', async () => {
+      (
+        assertInstrumentsSchemaReadiness as jest.MockedFunction<
+          typeof assertInstrumentsSchemaReadiness
+        >
+      ).mockRejectedValueOnce(
+        new SchemaNotReadyError(
+          ['public.instruments.certificate_name'],
+          'InstrumentsAPI'
+        )
+      );
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'Violin' }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+      expect(json.retryable).toBe(false);
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should create a new instrument from a valid minimal payload', async () => {
       const createData = {
         type: 'Violin',
@@ -1305,6 +1357,61 @@ describe('/api/instruments', () => {
   });
 
   describe('PATCH', () => {
+    it('returns SCHEMA_OUT_OF_DATE 503 when instrument schema readiness fails', async () => {
+      (
+        assertInstrumentsSchemaReadiness as jest.MockedFunction<
+          typeof assertInstrumentsSchemaReadiness
+        >
+      ).mockRejectedValueOnce(
+        new SchemaNotReadyError(
+          ['public.instruments.certificate_name'],
+          'InstrumentsAPI'
+        )
+      );
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockInstrument.id,
+          updated_at: mockInstrument.updated_at,
+          note: 'x',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+      expect(json.retryable).toBe(false);
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('returns SCHEMA_CHECK_FAILED 503 with retryable=true when readiness probe fails', async () => {
+      (
+        assertInstrumentsSchemaReadiness as jest.MockedFunction<
+          typeof assertInstrumentsSchemaReadiness
+        >
+      ).mockRejectedValueOnce(
+        new SchemaCheckFailedError([], 'InstrumentsAPI', [], 'catalog timeout')
+      );
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockInstrument.id,
+          updated_at: mockInstrument.updated_at,
+          note: 'x',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(json.error_code).toBe('SCHEMA_CHECK_FAILED');
+      expect(json.retryable).toBe(true);
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should update an existing instrument', async () => {
       const updates = { note: 'Fair condition' };
       const updatedInstrument = { ...mockInstrument, ...updates };

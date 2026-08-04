@@ -272,6 +272,8 @@ export function getUserFriendlyErrorMessage(
       VALIDATION_ERROR: 'Please check your input and try again.',
       DATABASE_ERROR: 'Database error occurred. Please try again later.',
       SCHEMA_OUT_OF_DATE: 'Database migration required.',
+      SCHEMA_CHECK_FAILED:
+        'Schema readiness check failed temporarily. Please retry.',
       INTERNAL_ERROR: 'Server error occurred. Please try again later.',
       SESSION_EXPIRED: 'Session expired. Please log in again.',
       DUPLICATE_RECORD: 'This record already exists.',
@@ -340,6 +342,13 @@ export function createSafeErrorResponse(
     typeof (error as { code?: unknown }).code === 'string'
       ? (error as { code: string }).code
       : undefined;
+  const retryable =
+    error &&
+    typeof error === 'object' &&
+    'retryable' in error &&
+    typeof (error as { retryable?: unknown }).retryable === 'boolean'
+      ? (error as { retryable: boolean }).retryable
+      : undefined;
 
   return createApiErrorEnvelope(
     {
@@ -347,6 +356,7 @@ export function createSafeErrorResponse(
       error_code: errorCode,
       // Production에서는 details를 절대 포함하지 않음 (보안)
       details: isDevelopment() ? sanitized.details : undefined,
+      retryable,
       request_id: requestId,
     },
     statusCode

@@ -6,6 +6,7 @@ import {
   CERTIFICATE_PDF_TOO_LARGE_ERROR,
   MAX_CERTIFICATE_PDF_SIZE_BYTES,
 } from '@/constants/certificateUpload';
+import { assertInstrumentsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 
 const mockStorage = {
   validateFile: jest.fn(),
@@ -56,6 +57,15 @@ jest.mock('@/app/api/_utils/rateLimit', () => ({
   tooManyRequestsApiResult: () => ({
     payload: { error: 'Too many requests', success: false },
     status: 429,
+  }),
+}));
+
+jest.mock('@/app/api/_utils/schemaReadiness', () => ({
+  assertInstrumentsSchemaReadiness: jest.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-07-31T00:00:00.000Z',
+    missingColumns: [],
+    missingContracts: [],
   }),
 }));
 
@@ -244,6 +254,16 @@ function setupSuccessfulPutMocks() {
 describe('/api/instruments/[id]/certificates PDF signature validation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (
+      assertInstrumentsSchemaReadiness as jest.MockedFunction<
+        typeof assertInstrumentsSchemaReadiness
+      >
+    ).mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-07-31T00:00:00.000Z',
+      missingColumns: [],
+      missingContracts: [],
+    });
 
     mockValidateUUID.mockReturnValue(true);
     mockGetStorage.mockReturnValue(mockStorage as never);

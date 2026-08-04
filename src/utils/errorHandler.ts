@@ -688,6 +688,7 @@ export class ErrorHandler {
       ErrorCodes.NETWORK_ERROR,
       ErrorCodes.TIMEOUT_ERROR,
       ErrorCodes.INTERNAL_ERROR,
+      ErrorCodes.SCHEMA_CHECK_FAILED,
     ];
 
     if (
@@ -791,6 +792,8 @@ export class ErrorHandler {
       case ErrorCodes.SESSION_EXPIRED:
         return ErrorCategory.AUTHENTICATION;
       case ErrorCodes.DATABASE_ERROR:
+      case ErrorCodes.SCHEMA_OUT_OF_DATE:
+      case ErrorCodes.SCHEMA_CHECK_FAILED:
       case ErrorCodes.RECORD_NOT_FOUND:
       case ErrorCodes.DUPLICATE_RECORD:
         return ErrorCategory.DATABASE;

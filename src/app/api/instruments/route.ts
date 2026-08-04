@@ -30,6 +30,7 @@ import { logInfo, logError } from '@/utils/logger';
 import { getStorage } from '@/utils/storage';
 import { searchRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
 import { writeAuditLog } from '@/utils/auditLog';
+import { assertInstrumentsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 
 const MAX_SEARCH_LEN = 100;
 
@@ -392,6 +393,8 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           status: 403,
         };
       }
+
+      await assertInstrumentsSchemaReadiness({ supabase: auth.userSupabase });
 
       const body = await request.json();
 

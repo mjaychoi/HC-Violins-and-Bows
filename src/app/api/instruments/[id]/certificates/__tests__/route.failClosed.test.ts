@@ -2,6 +2,10 @@ import type { NextRequest } from 'next/server';
 import { validateUUID } from '@/utils/inputValidation';
 import { getStorage } from '@/utils/storage';
 import { GET, POST, PUT, DELETE } from '../route';
+import {
+  assertInstrumentsSchemaReadiness,
+  SchemaNotReadyError,
+} from '@/app/api/_utils/schemaReadiness';
 
 const mockStorage = {
   validateFile: jest.fn(),
@@ -40,6 +44,10 @@ jest.mock('@/utils/logger', () => ({
   logApiRequest: jest.fn(),
 }));
 
+jest.mock('@/utils/monitoring', () => ({
+  captureException: jest.fn(),
+}));
+
 jest.mock('@/app/api/_utils/rateLimit', () => ({
   searchRateLimit: null,
   exportRateLimit: null,
@@ -54,6 +62,19 @@ jest.mock('@/app/api/_utils/rateLimit', () => ({
     status: 429,
   }),
 }));
+
+jest.mock('@/app/api/_utils/schemaReadiness', () => {
+  const actual = jest.requireActual('@/app/api/_utils/schemaReadiness');
+  return {
+    ...actual,
+    assertInstrumentsSchemaReadiness: jest.fn().mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-07-31T00:00:00.000Z',
+      missingColumns: [],
+      missingContracts: [],
+    }),
+  };
+});
 
 jest.mock('@/utils/errorHandler', () => ({
   errorHandler: {
@@ -175,6 +196,16 @@ function createGetRequest() {
 describe('/api/instruments/[id]/certificates fail-closed flows', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (
+      assertInstrumentsSchemaReadiness as jest.MockedFunction<
+        typeof assertInstrumentsSchemaReadiness
+      >
+    ).mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-07-31T00:00:00.000Z',
+      missingColumns: [],
+      missingContracts: [],
+    });
 
     mockValidateUUID.mockReturnValue(true);
     mockGetStorage.mockReturnValue(mockStorage as never);
@@ -214,6 +245,34 @@ describe('/api/instruments/[id]/certificates fail-closed flows', () => {
     expect(json.message).toBe('Organization context required');
     expect(mockAuthContext.userSupabase.from).not.toHaveBeenCalled();
     expect(mockStorage.saveFile).not.toHaveBeenCalled();
+  });
+
+  it('returns SCHEMA_OUT_OF_DATE 503 when certificate schema readiness fails', async () => {
+    const instrumentChain = createAwaitableChain({
+      data: { id: instrumentId },
+      error: null,
+    });
+    mockAuthContext.userSupabase.from.mockReturnValue(instrumentChain);
+    (
+      assertInstrumentsSchemaReadiness as jest.MockedFunction<
+        typeof assertInstrumentsSchemaReadiness
+      >
+    ).mockRejectedValueOnce(
+      new SchemaNotReadyError(
+        ['public.instruments.certificate_name'],
+        'InstrumentCertificatesAPI'
+      )
+    );
+
+    const response = await POST(createPostRequest(), {
+      params: Promise.resolve({ id: instrumentId }),
+    });
+    const json = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(json.error_code).toBe('SCHEMA_OUT_OF_DATE');
+    expect(mockStorage.saveFile).not.toHaveBeenCalled();
+    expect(mockAuthContext.userSupabase.rpc).not.toHaveBeenCalled();
   });
 
   it('rejects GET without organization context before any lookup', async () => {

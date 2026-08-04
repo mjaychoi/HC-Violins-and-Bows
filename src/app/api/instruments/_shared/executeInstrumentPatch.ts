@@ -2,6 +2,7 @@ import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
 import { buildReservedStateUpdate } from '@/app/api/_utils/instrumentReservedState';
 import { validateInstrumentStatusTransition } from '@/app/api/_utils/stateTransitions';
 import type { ApiHandlerResult } from '@/app/api/_utils/apiHandler';
+import { assertInstrumentsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import {
   ensureInstrumentSaleRpcContract,
   instrumentSchemaContractMissingResult,
@@ -431,6 +432,9 @@ export async function executeInstrumentPatch(
       status: 403,
     };
   }
+
+  // Shared by collection PATCH and /api/instruments/[id] PATCH.
+  await assertInstrumentsSchemaReadiness({ supabase: auth.userSupabase });
 
   const orgId = auth.orgId;
   const instrumentId = input.instrumentId;

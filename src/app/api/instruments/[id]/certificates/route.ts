@@ -13,6 +13,10 @@ import { logError } from '@/utils/logger';
 import { createApiResponse } from '@/app/api/_utils/apiErrors';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import {
+  assertInstrumentsSchemaReadiness,
+  SchemaNotReadyError,
+} from '@/app/api/_utils/schemaReadiness';
+import {
   applyScopedRateLimit,
   destructiveMutationRateLimit,
   uploadRateLimit,
@@ -381,6 +385,8 @@ async function postHandlerInternal(
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
 
+    await assertInstrumentsSchemaReadiness({ supabase: auth.userSupabase });
+
     const uploadRateLimitResult = await applyScopedRateLimit(uploadRateLimit, {
       orgId: auth.orgId,
       userId: auth.user.id,
@@ -470,6 +476,10 @@ async function postHandlerInternal(
       message: 'Certificate uploaded successfully',
     });
   } catch (error) {
+    if (error instanceof SchemaNotReadyError) {
+      throw error;
+    }
+
     logError('Certificate upload error:', error);
     return routeJson(
       {
@@ -507,6 +517,8 @@ async function putHandlerInternal(
 
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
+
+    await assertInstrumentsSchemaReadiness({ supabase: auth.userSupabase });
 
     const uploadRateLimitResult = await applyScopedRateLimit(uploadRateLimit, {
       orgId: auth.orgId,
@@ -651,6 +663,10 @@ async function putHandlerInternal(
       },
     });
   } catch (error) {
+    if (error instanceof SchemaNotReadyError) {
+      throw error;
+    }
+
     logError('Certificate replace error:', error);
     return routeJson(
       {
@@ -693,6 +709,8 @@ async function deleteHandlerInternal(
 
     const ownership = await ensureAdminOwnedInstrument(auth, id);
     if ('response' in ownership) return ownership.response;
+
+    await assertInstrumentsSchemaReadiness({ supabase: auth.userSupabase });
 
     const deleteRateLimitResult = await applyScopedRateLimit(
       destructiveMutationRateLimit,
@@ -813,6 +831,10 @@ async function deleteHandlerInternal(
       },
     });
   } catch (error) {
+    if (error instanceof SchemaNotReadyError) {
+      throw error;
+    }
+
     logError('Certificate delete error:', error);
     return routeJson(
       {

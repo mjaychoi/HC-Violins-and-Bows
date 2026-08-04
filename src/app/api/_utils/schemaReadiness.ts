@@ -1,5 +1,6 @@
 import { getAdminSupabase } from '@/lib/supabase-server';
 import { ErrorCodes } from '@/types/errors';
+import { logWarn } from '@/utils/logger';
 
 type RequiredColumnSpec = {
   schema: 'public';
@@ -17,11 +18,14 @@ export interface SchemaReadinessResult {
   checkedAt: string;
   missingColumns: string[];
   missingContracts: string[];
+  /** True when the probe itself failed (network/timeout/permission), not schema drift. */
+  checkFailed?: boolean;
+  checkFailureCause?: string;
 }
 
 const SCHEMA_READINESS_CACHE_TTL_MS = 30_000;
 
-const REQUIRED_RUNTIME_CONTRACTS = {
+const CORE_RUNTIME_CONTRACTS = {
   api_create_idempotency_exists: 'public.api_create_idempotency table',
   api_create_idempotency_columns_ok:
     'public.api_create_idempotency required columns',
@@ -29,6 +33,66 @@ const REQUIRED_RUNTIME_CONTRACTS = {
     'public.api_create_idempotency scoped uniqueness',
   create_connection_atomic_hardened:
     'public.create_connection_atomic org-scoped parent checks',
+} as const;
+
+const ITEM_CLIENT_RUNTIME_CONTRACTS = {
+  instrument_type_nullable: 'public.instruments.type nullable contract',
+  instrument_identity_check_exists:
+    'public.instruments instruments_identity_check constraint',
+  instrument_certificate_name_check_exists:
+    'public.instruments instruments_certificate_name_check constraint',
+  client_identity_columns_exist:
+    'public.clients first_name and last_name columns',
+  client_identity_check_exists:
+    'public.clients clients_name_identity_check constraint',
+  client_rpc_5_arg_exists:
+    'public.create_client_with_connections_atomic 5-arg overload',
+  client_rpc_6_arg_exists:
+    'public.create_client_with_connections_atomic 6-arg overload',
+  client_rpc_10_arg_exists:
+    'public.create_client_with_connections_atomic 10-arg overload',
+  client_rpc_all_security_invoker:
+    'public.create_client_with_connections_atomic SECURITY INVOKER overloads',
+  client_rpc_authenticated_execute:
+    'public.create_client_with_connections_atomic authenticated EXECUTE grants',
+  client_rpc_anon_execute_revoked:
+    'public.create_client_with_connections_atomic anon EXECUTE revocation',
+} as const;
+
+const INSTRUMENT_RUNTIME_CONTRACTS = {
+  instrument_type_nullable:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.instrument_type_nullable,
+  instrument_identity_check_exists:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.instrument_identity_check_exists,
+  instrument_certificate_name_check_exists:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.instrument_certificate_name_check_exists,
+} as const;
+
+const CLIENT_RUNTIME_CONTRACTS = {
+  client_identity_columns_exist:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.client_identity_columns_exist,
+  client_identity_check_exists:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.client_identity_check_exists,
+} as const;
+
+const CLIENT_RPC_RUNTIME_CONTRACTS = {
+  client_rpc_5_arg_exists:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.client_rpc_5_arg_exists,
+  client_rpc_6_arg_exists:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.client_rpc_6_arg_exists,
+  client_rpc_10_arg_exists:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.client_rpc_10_arg_exists,
+  client_rpc_all_security_invoker:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.client_rpc_all_security_invoker,
+  client_rpc_authenticated_execute:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.client_rpc_authenticated_execute,
+  client_rpc_anon_execute_revoked:
+    ITEM_CLIENT_RUNTIME_CONTRACTS.client_rpc_anon_execute_revoked,
+} as const;
+
+const REQUIRED_RUNTIME_CONTRACTS = {
+  ...CORE_RUNTIME_CONTRACTS,
+  ...ITEM_CLIENT_RUNTIME_CONTRACTS,
 } as const;
 
 type RuntimeContractColumn = keyof typeof REQUIRED_RUNTIME_CONTRACTS;
@@ -50,6 +114,7 @@ const REQUIRED_COLUMNS_BY_TABLE = {
     'default_exchange_rate',
     'default_currency',
   ],
+  instruments: ['certificate_name'],
   instrument_images: [
     'storage_key',
     'file_name',
@@ -58,7 +123,7 @@ const REQUIRED_COLUMNS_BY_TABLE = {
     'display_order',
   ],
   client_instruments: ['display_order'],
-  clients: ['client_number'],
+  clients: ['client_number', 'first_name', 'last_name'],
 } as const satisfies Record<string, readonly string[]>;
 
 type RequiredTableName = keyof typeof REQUIRED_COLUMNS_BY_TABLE;
@@ -80,15 +145,13 @@ function getColumnKey(spec: RequiredColumnSpec): string {
 
 function buildDefaultResult(
   requiredColumns: readonly RequiredColumnSpec[],
-  includeRuntimeContracts: boolean
+  runtimeContracts: Record<string, string>
 ): SchemaReadinessResult {
   return {
     ready: false,
     checkedAt: new Date().toISOString(),
     missingColumns: requiredColumns.map(getColumnKey),
-    missingContracts: includeRuntimeContracts
-      ? Object.values(REQUIRED_RUNTIME_CONTRACTS)
-      : [],
+    missingContracts: Object.values(runtimeContracts),
   };
 }
 
@@ -107,23 +170,45 @@ function isMissingSchemaError(
     hint?: unknown;
   };
   const code = typeof candidate.code === 'string' ? candidate.code : '';
+
+  // Prefer Postgres / PostgREST codes for missing column or relation.
+  if (code === 'PGRST204' || code === '42703' || code === '42P01') {
+    return true;
+  }
+
   const haystacks = [candidate.message, candidate.details, candidate.hint]
     .filter((value): value is string => typeof value === 'string')
     .map(value => value.toLowerCase());
 
-  return (
-    code === 'PGRST204' ||
-    code === '42703' ||
-    code === '42P01' ||
-    haystacks.some(
-      text =>
-        requiredColumns.some(spec => text.includes(spec.column)) ||
-        text.includes('schema cache') ||
-        text.includes('column') ||
-        text.includes('does not exist') ||
-        text.includes('relation')
-    )
-  );
+  return haystacks.some(text => {
+    // Permission / privilege errors often mention "relation" but are not drift.
+    if (
+      text.includes('permission denied') ||
+      text.includes('insufficient privilege') ||
+      text.includes('not authorized')
+    ) {
+      return false;
+    }
+
+    if (text.includes('schema cache')) {
+      return true;
+    }
+
+    if (
+      /could not find the ['"][^'"]+['"] column/.test(text) ||
+      /column .+ does not exist/.test(text) ||
+      /relation .+ does not exist/.test(text)
+    ) {
+      return true;
+    }
+
+    return requiredColumns.some(
+      spec =>
+        text.includes(`'${spec.column}'`) ||
+        text.includes(`"${spec.column}"`) ||
+        text.includes(`.${spec.column}`)
+    );
+  });
 }
 
 function groupRequiredColumnsByTable(
@@ -175,6 +260,52 @@ export class SchemaNotReadyError extends Error {
   }
 }
 
+export class SchemaCheckFailedError extends Error {
+  code = ErrorCodes.SCHEMA_CHECK_FAILED;
+  error_code = ErrorCodes.SCHEMA_CHECK_FAILED;
+  status = 503;
+  retryable = true;
+  details: {
+    missingColumns: string[];
+    missingContracts: string[];
+    context?: string;
+    cause?: string;
+  };
+
+  constructor(
+    missingColumns: string[],
+    context?: string,
+    missingContracts: string[] = [],
+    cause?: string
+  ) {
+    super(
+      cause
+        ? `Schema readiness check failed: ${cause}`
+        : 'Schema readiness check failed temporarily'
+    );
+    this.name = 'SchemaCheckFailedError';
+    this.details = { missingColumns, missingContracts, context, cause };
+  }
+}
+
+function summarizeCheckFailureCause(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return typeof error === 'string' ? error : 'unknown error';
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    message?: unknown;
+    name?: unknown;
+  };
+  const code = typeof candidate.code === 'string' ? candidate.code : '';
+  const message =
+    typeof candidate.message === 'string' ? candidate.message : '';
+  const name = typeof candidate.name === 'string' ? candidate.name : '';
+
+  return [name, code, message].filter(Boolean).join(': ') || 'unknown error';
+}
+
 function getSpecsForTables(
   tables: readonly RequiredTableName[]
 ): RequiredColumnSpec[] {
@@ -189,11 +320,15 @@ function getSpecsForTables(
 
 function getCacheKey(
   requiredColumns: readonly RequiredColumnSpec[],
-  includeRuntimeContracts: boolean
+  runtimeContracts: Record<string, string> | null
 ): string {
+  const contractPart = runtimeContracts
+    ? Object.keys(runtimeContracts).sort().join('|')
+    : 'no-contracts';
+
   return [
     requiredColumns.map(getColumnKey).sort().join('|'),
-    includeRuntimeContracts ? 'runtime-contracts' : 'columns-only',
+    contractPart,
   ].join('::');
 }
 
@@ -220,21 +355,31 @@ function isMissingContractViewError(error: unknown): boolean {
   return (
     code === 'PGRST204' ||
     code === '42P01' ||
-    haystacks.some(
-      text =>
+    haystacks.some(text => {
+      if (
+        text.includes('permission denied') ||
+        text.includes('insufficient privilege') ||
+        text.includes('not authorized')
+      ) {
+        return false;
+      }
+
+      return (
         text.includes('runtime_contract_checks') ||
         text.includes('schema cache') ||
-        text.includes('does not exist') ||
-        text.includes('relation')
-    )
+        /relation .+ does not exist/.test(text) ||
+        /could not find the ['"][^'"]+['"]/.test(text)
+      );
+    })
   );
 }
 
 async function checkRuntimeContracts(
-  supabase: SchemaReadinessClient
+  supabase: SchemaReadinessClient,
+  runtimeContracts: Record<string, string>
 ): Promise<string[]> {
   const contractColumns = Object.keys(
-    REQUIRED_RUNTIME_CONTRACTS
+    runtimeContracts
   ) as RuntimeContractColumn[];
 
   const { data, error } = await supabase
@@ -244,7 +389,7 @@ async function checkRuntimeContracts(
 
   if (error) {
     if (isMissingContractViewError(error)) {
-      return getAllRuntimeContracts();
+      return Object.values(runtimeContracts);
     }
     throw error;
   }
@@ -252,14 +397,14 @@ async function checkRuntimeContracts(
   const row = Array.isArray(data) ? data[0] : data;
 
   if (!row || typeof row !== 'object') {
-    return getAllRuntimeContracts();
+    return Object.values(runtimeContracts);
   }
 
   const contractRow = row as RuntimeContractRow;
 
   return contractColumns
     .filter(column => contractRow[column] !== true)
-    .map(column => REQUIRED_RUNTIME_CONTRACTS[column]);
+    .map(column => runtimeContracts[column]);
 }
 
 export function __resetSchemaReadinessCacheForTests() {
@@ -271,6 +416,7 @@ export async function checkSchemaReadiness(options?: {
   supabase?: SchemaReadinessClient;
   tables?: readonly RequiredTableName[];
   requiredColumns?: readonly RequiredColumnSpec[];
+  runtimeContracts?: Record<string, string> | null;
   includeRuntimeContracts?: boolean;
 }): Promise<SchemaReadinessResult> {
   const bypassCache = options?.bypassCache === true;
@@ -280,10 +426,18 @@ export async function checkSchemaReadiness(options?: {
     (options?.tables
       ? getSpecsForTables(options.tables)
       : ALL_REQUIRED_COLUMNS);
-  const includeRuntimeContracts =
+
+  let runtimeContracts: Record<string, string> | null = null;
+  if (options?.runtimeContracts !== undefined) {
+    runtimeContracts = options.runtimeContracts;
+  } else if (
     options?.includeRuntimeContracts ??
-    (!options?.tables && !options?.requiredColumns);
-  const cacheKey = getCacheKey(requiredColumns, includeRuntimeContracts);
+    (!options?.tables && !options?.requiredColumns)
+  ) {
+    runtimeContracts = REQUIRED_RUNTIME_CONTRACTS;
+  }
+
+  const cacheKey = getCacheKey(requiredColumns, runtimeContracts);
   const cached = cachedResults.get(cacheKey);
 
   if (!bypassCache && cached && now < cached.expiresAt) {
@@ -316,8 +470,10 @@ export async function checkSchemaReadiness(options?: {
       }
     }
 
-    if (includeRuntimeContracts) {
-      missingContracts.push(...(await checkRuntimeContracts(supabase)));
+    if (runtimeContracts) {
+      missingContracts.push(
+        ...(await checkRuntimeContracts(supabase, runtimeContracts))
+      );
     }
 
     if (missingColumns.length > 0 || missingContracts.length > 0) {
@@ -349,15 +505,27 @@ export async function checkSchemaReadiness(options?: {
     });
 
     return result;
-  } catch {
-    const fallback = buildDefaultResult(
-      requiredColumns,
-      includeRuntimeContracts
+  } catch (error) {
+    const cause = summarizeCheckFailureCause(error);
+    logWarn(
+      'Schema readiness probe failed (not classified as drift)',
+      'SchemaReadiness',
+      {
+        cause,
+        includeRuntimeContracts: Boolean(runtimeContracts),
+        requiredColumnCount: requiredColumns.length,
+      }
     );
-    cachedResults.set(cacheKey, {
-      result: fallback,
-      expiresAt: now + SCHEMA_READINESS_CACHE_TTL_MS,
-    });
+
+    // Only report contracts that were actually in scope for this check.
+    // Columns-only probes must not claim unrelated runtime contracts are missing.
+    const fallback: SchemaReadinessResult = {
+      ...buildDefaultResult(requiredColumns, runtimeContracts ?? {}),
+      checkFailed: true,
+      checkFailureCause: cause,
+    };
+
+    // Do not cache infrastructure failures — retry should re-probe immediately.
     return fallback;
   }
 }
@@ -367,10 +535,20 @@ export async function assertSchemaReadiness(options?: {
   supabase?: SchemaReadinessClient;
   tables?: readonly RequiredTableName[];
   requiredColumns?: readonly RequiredColumnSpec[];
+  runtimeContracts?: Record<string, string> | null;
   includeRuntimeContracts?: boolean;
   context?: string;
 }): Promise<SchemaReadinessResult> {
   const result = await checkSchemaReadiness(options);
+
+  if (result.checkFailed) {
+    throw new SchemaCheckFailedError(
+      result.missingColumns,
+      options?.context,
+      result.missingContracts,
+      result.checkFailureCause
+    );
+  }
 
   if (!result.ready) {
     throw new SchemaNotReadyError(
@@ -390,6 +568,7 @@ export async function assertTableColumnsReady(
   options?: {
     bypassCache?: boolean;
     supabase?: SchemaReadinessClient;
+    runtimeContracts?: Record<string, string> | null;
   }
 ): Promise<SchemaReadinessResult> {
   return assertSchemaReadiness({
@@ -400,6 +579,8 @@ export async function assertTableColumnsReady(
       table: tableName,
       column,
     })),
+    runtimeContracts: options?.runtimeContracts ?? null,
+    includeRuntimeContracts: false,
   });
 }
 
@@ -410,6 +591,8 @@ export async function assertInvoiceSchemaReadiness(options?: {
   return assertSchemaReadiness({
     ...options,
     tables: ['invoices', 'invoice_settings'],
+    runtimeContracts: null,
+    includeRuntimeContracts: false,
     context: 'invoice schema readiness',
   });
 }
@@ -442,10 +625,55 @@ export async function assertClientsSchemaReadiness(options?: {
   bypassCache?: boolean;
   supabase?: SchemaReadinessClient;
 }): Promise<SchemaReadinessResult> {
-  return assertTableColumnsReady(
-    'clients',
-    REQUIRED_COLUMNS_BY_TABLE.clients,
-    'clients schema readiness',
-    options
-  );
+  return assertSchemaReadiness({
+    ...options,
+    tables: ['clients'],
+    runtimeContracts: CLIENT_RUNTIME_CONTRACTS,
+    includeRuntimeContracts: false,
+    context: 'clients schema readiness',
+  });
 }
+
+export async function assertClientRpcSchemaReadiness(options?: {
+  bypassCache?: boolean;
+  supabase?: SchemaReadinessClient;
+}): Promise<SchemaReadinessResult> {
+  return assertSchemaReadiness({
+    ...options,
+    requiredColumns: [],
+    runtimeContracts: CLIENT_RPC_RUNTIME_CONTRACTS,
+    includeRuntimeContracts: false,
+    context: 'client RPC schema readiness',
+  });
+}
+
+export async function assertInstrumentsSchemaReadiness(options?: {
+  bypassCache?: boolean;
+  supabase?: SchemaReadinessClient;
+}): Promise<SchemaReadinessResult> {
+  return assertSchemaReadiness({
+    ...options,
+    tables: ['instruments'],
+    runtimeContracts: INSTRUMENT_RUNTIME_CONTRACTS,
+    includeRuntimeContracts: false,
+    context: 'instruments schema readiness',
+  });
+}
+
+export async function assertItemClientCertificateSchemaReadiness(options?: {
+  bypassCache?: boolean;
+  supabase?: SchemaReadinessClient;
+}): Promise<SchemaReadinessResult> {
+  return assertSchemaReadiness({
+    ...options,
+    tables: ['instruments', 'clients'],
+    runtimeContracts: {
+      ...INSTRUMENT_RUNTIME_CONTRACTS,
+      ...CLIENT_RUNTIME_CONTRACTS,
+    },
+    includeRuntimeContracts: false,
+    context: 'item and client certificate schema readiness',
+  });
+}
+
+export { REQUIRED_RUNTIME_CONTRACTS, getAllRuntimeContracts };

@@ -5,6 +5,7 @@ import {
   INSTRUMENT_PATCH_UPDATED_AT_REQUIRED_CODE,
   resetInstrumentApiContractCacheForTests,
 } from '@/app/api/instruments/_shared/instrumentApiContract';
+import { assertInstrumentsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger', () => {
@@ -18,6 +19,19 @@ jest.mock('@/utils/logger', () => {
     logDebug: jest.fn(),
     logPerformance: jest.fn(),
     logApiRequest: jest.fn(),
+  };
+});
+
+jest.mock('@/app/api/_utils/schemaReadiness', () => {
+  const actual = jest.requireActual('@/app/api/_utils/schemaReadiness');
+  return {
+    ...actual,
+    assertInstrumentsSchemaReadiness: jest.fn().mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-07-31T00:00:00.000Z',
+      missingColumns: [],
+      missingContracts: [],
+    }),
   };
 });
 
@@ -65,6 +79,16 @@ describe('/api/instruments/[id]', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetInstrumentApiContractCacheForTests();
+    (
+      assertInstrumentsSchemaReadiness as jest.MockedFunction<
+        typeof assertInstrumentsSchemaReadiness
+      >
+    ).mockResolvedValue({
+      ready: true,
+      checkedAt: '2026-07-31T00:00:00.000Z',
+      missingColumns: [],
+      missingContracts: [],
+    });
     mockUserSupabase = {
       from: jest.fn(),
     };
