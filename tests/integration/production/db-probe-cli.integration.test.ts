@@ -110,6 +110,8 @@ describe('db-probe.ts — real CLI process against an isolated local Postgres', 
       latestApplied: expected.latestApplied,
       salePriceMigrationPending:
         expected.pendingVersions.includes('20260804010000'),
+      saleLifecycleMigrationPending:
+        expected.pendingVersions.includes('20260804020000'),
     });
 
     // (4) stdout contains no target/log prefix — the whole trimmed stdout
@@ -176,6 +178,71 @@ describe('db-probe.ts — real CLI process against an isolated local Postgres', 
     expect(
       JSON.parse(convergedResult.stdout.trim()).salePriceMigrationPending
     ).toBe(false);
+  });
+
+  it('reports saleLifecycleMigrationPending as a single bounded boolean, true only when 20260804020000 is actually pending, independent of salePriceMigrationPending', async () => {
+    const localMigrations = readRealLocalMigrations();
+    const hasLifecycleMigration = localMigrations.some(
+      m => m.version === '20260804020000'
+    );
+
+    if (!hasLifecycleMigration) {
+      await seedMigrationHistory(testPg.connectionString, []);
+      const result = await runDbProbe('history', {
+        DATABASE_URL: testPg.connectionString,
+      });
+      expect(result.exitCode).toBe(0);
+      const parsed = JSON.parse(result.stdout.trim());
+      expect(parsed.saleLifecycleMigrationPending).toBe(false);
+      return;
+    }
+
+    // Neither sale-price nor sale-lifecycle applied remotely -> both
+    // pending, and reported as two independent booleans, not conflated.
+    await seedMigrationHistory(
+      testPg.connectionString,
+      localMigrations
+        .map(m => m.version)
+        .filter(
+          version =>
+            version !== '20260804010000' && version !== '20260804020000'
+        )
+    );
+    const bothPendingResult = await runDbProbe('history', {
+      DATABASE_URL: testPg.connectionString,
+    });
+    const bothPendingParsed = JSON.parse(bothPendingResult.stdout.trim());
+    expect(bothPendingParsed.salePriceMigrationPending).toBe(true);
+    expect(bothPendingParsed.saleLifecycleMigrationPending).toBe(true);
+
+    // Only sale-price applied remotely -> lifecycle still pending, price no
+    // longer pending.
+    await seedMigrationHistory(
+      testPg.connectionString,
+      localMigrations
+        .map(m => m.version)
+        .filter(version => version !== '20260804020000')
+    );
+    const onlyPriceAppliedResult = await runDbProbe('history', {
+      DATABASE_URL: testPg.connectionString,
+    });
+    const onlyPriceAppliedParsed = JSON.parse(
+      onlyPriceAppliedResult.stdout.trim()
+    );
+    expect(onlyPriceAppliedParsed.salePriceMigrationPending).toBe(false);
+    expect(onlyPriceAppliedParsed.saleLifecycleMigrationPending).toBe(true);
+
+    // Both applied remotely -> neither pending.
+    await seedMigrationHistory(
+      testPg.connectionString,
+      localMigrations.map(m => m.version)
+    );
+    const bothAppliedResult = await runDbProbe('history', {
+      DATABASE_URL: testPg.connectionString,
+    });
+    const bothAppliedParsed = JSON.parse(bothAppliedResult.stdout.trim());
+    expect(bothAppliedParsed.salePriceMigrationPending).toBe(false);
+    expect(bothAppliedParsed.saleLifecycleMigrationPending).toBe(false);
   });
 
   it('emits pure JSON for `history` even at zero pending (fully converged)', async () => {

@@ -71,7 +71,11 @@ project_match=yes ssl=require` is printed.
    is in the pending set computed above, a migration-specific read-only
    pre-deploy audit runs and must pass (see "Sale-price pre-deploy audit"
    below) — skipped entirely, not treated as a pass, when that migration is
-   not pending.
+   not pending. Independently, if migration `20260804020000`
+   (`harden_sale_lifecycle_authorization`) is in the pending set, a second,
+   separate read-only pre-deploy audit runs and must pass (see "Sale-lifecycle
+   pre-deploy audit" below) — the two gates are evaluated independently; one
+   being skipped never implies anything about the other.
 8. Only after every gate above passes does the workflow run:
    ```
    supabase db push --db-url "$DATABASE_URL" --include-all --yes
@@ -199,7 +203,51 @@ scripts/supabase/sale_price_predeploy_audit.sql 9` — nine `SELECT`-only
   itself. Wiring a future migration behind the same kind of gate means
   adding a new named version constant and a new conditional workflow step,
   not modifying this runner. A generic per-migration audit registry was
-  deliberately deferred in favor of shipping this one working gate first.
+  deliberately deferred in favor of shipping this one working gate first —
+  see "Sale-lifecycle pre-deploy audit" below for the second instance of
+  this same extension path.
+
+### Sale-lifecycle pre-deploy audit (migration `20260804020000`)
+
+Migration `20260804020000_harden_sale_lifecycle_authorization.sql` starts
+enforcing, at the database level, invariants about the sale/refund lifecycle
+that were previously only assumed: at most one active (net-positive) sale
+lifecycle per instrument, well-formed refund/undo_refund parent linkage, and
+`instruments.status = 'Sold'` agreeing with whether an active sale actually
+exists. Before that migration is applied, the workflow runs a read-only data
+audit so any pre-existing data that violates one of these invariants can be
+investigated ahead of time, the same rationale as the sale-price audit above.
+
+- **Conditional, not unconditional; evaluated independently of the
+  sale-price audit.** The gate only runs when migration `20260804020000` is
+  actually in the pending set (`isVersionPending()` /
+  `SALE_LIFECYCLE_MIGRATION_VERSION` in
+  `scripts/production/db-deploy-guards.ts`, surfaced as the bounded
+  `saleLifecycleMigrationPending` field on the `history` step's JSON
+  output — a single-migration membership check, never the full pending
+  list, and never conflated with `salePriceMigrationPending`). Once that
+  migration has been applied, it is no longer pending and the gate is
+  skipped on later runs — skip is reported distinctly from pass in the
+  deployment summary.
+- **What runs.** `scripts/production/run-predeploy-audit.ts
+scripts/supabase/sale_lifecycle_predeploy_audit.sql 10` — ten `SELECT`-only
+  statements (sections 1-5 of that file; section 2 alone is four
+  statements, 2a-2d), executed inside a single `BEGIN READ ONLY` transaction
+  that always ends in `ROLLBACK`, whether or not any audit fails.
+- **Fail-closed policy.** All ten audits must return zero rows. The runner
+  also fails closed if the audit file is missing, if it does not parse into
+  exactly 10 statements (a silently dropped or added statement is treated as
+  a configuration error, not a no-op), or if any statement errors —
+  including an accidental write statement, which the `READ ONLY` transaction
+  itself rejects. A dedicated unit test
+  (`tests/integration/production/db-deploy-guards.test.ts`) reads the real
+  audit file from disk and asserts it parses into exactly 10 statements, so
+  a future edit to the audit file that adds/removes a statement without
+  updating the workflow's hardcoded count fails in CI, not silently at
+  actual deploy time.
+- **Extensibility.** Reuses the same generic `run-predeploy-audit.ts` runner
+  as the sale-price audit; no runner changes were needed to add this second
+  gate.
 
 ### Post-deploy verification: authoritative vs. diagnostic
 
