@@ -16,10 +16,10 @@ interface EditConnectionModalProps {
   onClose: () => void;
   onSave: (
     connectionId: string,
-    updates: {
+    updates: Partial<{
       relationshipType: RelationshipType;
       notes: string;
-    }
+    }>
   ) => Promise<void>;
   connection: ClientInstrument | null;
   clients?: Client[];
@@ -50,12 +50,31 @@ export const EditConnectionModal = ({
     e.preventDefault();
     if (!connection) return;
 
+    // Only submit fields the user actually changed from what this modal
+    // loaded. `connection` stays referentially stable for the lifetime of
+    // this open modal (see useConnectionEdit), so this diff is against the
+    // values shown to the user, not a re-fetched copy. Sending an untouched
+    // field back unconditionally would let this save silently overwrite a
+    // change someone else made to that field while the modal was open.
+    const updates: Partial<{
+      relationshipType: RelationshipType;
+      notes: string;
+    }> = {};
+    if (relationshipType !== connection.relationship_type) {
+      updates.relationshipType = relationshipType;
+    }
+    if (notes !== (connection.notes || '')) {
+      updates.notes = notes;
+    }
+
+    // Still submit (even with an empty diff) rather than special-casing a
+    // silent close: Save Changes should always go through the same submit
+    // path so loading/error/close behavior stays consistent regardless of
+    // whether anything actually changed. An empty update is a harmless
+    // no-op for the API/RPC.
     setSubmitting(true);
     try {
-      await onSave(connection.id, {
-        relationshipType,
-        notes,
-      });
+      await onSave(connection.id, updates);
       // Parent closes the modal only after a confirmed server result (e.g. valid updated row).
       // Do not call onClose here: onSave may resolve with soft-failure semantics at the data layer.
     } catch {
