@@ -292,13 +292,24 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
   const deduped = useCallback(
     <T extends () => Promise<void>>(
       tenantKey: string,
-      fn: T
+      fn: T,
+      options?: { force?: boolean }
     ): Promise<void> => {
       const existing = inflight.current.get(tenantKey);
 
-      if (existing) return existing;
+      if (existing && !options?.force) return existing;
 
-      const promise = fn().finally(() => {
+      // A forced call (e.g. the refetch after a mutation this caller just
+      // awaited) must not silently attach to an unrelated in-flight fetch
+      // that may have started *before* that mutation committed - doing so
+      // can hand the caller a response that predates their own write,
+      // making it look reverted until some later, unrelated fetch happens
+      // to run. If one is already in flight, wait for it to settle first
+      // (so forced calls still queue instead of piling up parallel
+      // requests), then always issue a fresh fetch of our own.
+      const run = existing ? existing.catch(() => undefined).then(fn) : fn();
+
+      const promise = run.finally(() => {
         if (inflight.current.get(tenantKey) === promise) {
           inflight.current.delete(tenantKey);
         }
@@ -444,7 +455,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
 
       const modeKey = all ? 'all' : `paged:${page}:${pageSize}`;
 
-      return deduped(`${inflightKey}:${modeKey}`, runFetch);
+      return deduped(`${inflightKey}:${modeKey}`, runFetch, { force });
     },
     [deduped]
   );

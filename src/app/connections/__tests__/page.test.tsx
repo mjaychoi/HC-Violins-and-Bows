@@ -1014,9 +1014,12 @@ describe('ConnectedClientsPage', () => {
     });
 
     await waitFor(() => {
+      // notes is intentionally omitted: sending only the changed field
+      // (relationshipType) lets the update preserve whatever notes
+      // currently exist server-side instead of overwriting them with this
+      // possibly-stale local copy.
       expect(mockUpdateConnection).toHaveBeenCalledWith('conn-1', {
         relationshipType: 'Sold',
-        notes: 'test notes',
       });
       expect(mockFetchConnections).toHaveBeenCalled();
     });

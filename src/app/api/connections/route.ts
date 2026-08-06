@@ -158,6 +158,13 @@ const CONNECTION_ERROR_CODE_PREFIXES: Array<{
       'Sold relationships cannot be deleted. Use the sales refund/adjustment workflow instead.',
   },
   {
+    prefix: 'DUPLICATE_CONNECTION',
+    status: 409,
+    error_code: 'DUPLICATE_CONNECTION',
+    message:
+      'A connection with this relationship type already exists between this client and instrument.',
+  },
+  {
     // F13: the API layer already rejects client_id/instrument_id on PATCH
     // with an explicit 400 before ever calling the RPC (see patchHandler
     // below), so this path is normally unreachable through this API.

@@ -93,9 +93,12 @@ export const useClientInstruments = () => {
       relationshipId: string,
       relationshipType: ClientInstrument['relationship_type']
     ) => {
+      // Notes intentionally omitted: this call only changes the
+      // relationship type, and updateConnection now only overwrites fields
+      // it's explicitly given, so existing notes are preserved instead of
+      // being wiped by an implicit empty string.
       return await updateConnection(relationshipId, {
         relationshipType: relationshipType,
-        notes: '',
       });
     },
     [updateConnection]

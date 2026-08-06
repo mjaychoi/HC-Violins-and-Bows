@@ -845,12 +845,28 @@ export function useConnectedClientsData() {
   const updateConnection = useCallback(
     async (
       connectionId: string,
-      updates: { relationshipType: RelationshipType; notes: string }
+      updates: Partial<{ relationshipType: RelationshipType; notes: string }>
     ) => {
-      return await connectionsContext.actions.updateConnection(connectionId, {
-        relationship_type: updates.relationshipType,
-        notes: updates.notes || null,
-      });
+      // Only forward fields the caller actually provided. Sending an
+      // omitted field back to the API as its old/blank value would let this
+      // update silently clobber a concurrent change to that field made by
+      // someone else in the meantime (update_connection_atomic only touches
+      // fields present in the JSONB payload).
+      const mapped: {
+        relationship_type?: RelationshipType;
+        notes?: string | null;
+      } = {};
+      if (updates.relationshipType !== undefined) {
+        mapped.relationship_type = updates.relationshipType;
+      }
+      if (updates.notes !== undefined) {
+        mapped.notes = updates.notes || null;
+      }
+
+      return await connectionsContext.actions.updateConnection(
+        connectionId,
+        mapped
+      );
     },
     [connectionsContext.actions]
   );

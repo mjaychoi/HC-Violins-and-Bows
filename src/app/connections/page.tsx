@@ -417,7 +417,7 @@ function ConnectedClientsPageContent() {
   // Handle connection update
   const handleUpdateConnection = async (
     connectionId: string,
-    updates: { relationshipType: RelationshipType; notes: string }
+    updates: Partial<{ relationshipType: RelationshipType; notes: string }>
   ) => {
     try {
       await withSubmitting(async () => {
@@ -466,10 +466,11 @@ function ConnectedClientsPageContent() {
             return;
           }
 
-          // Use updateConnection with relationshipType (it will convert to relationship_type internally)
+          // Only relationshipType is sent - omitting notes lets the update
+          // leave whatever notes currently exist on the row untouched,
+          // instead of overwriting them with this possibly-stale local copy.
           await updateConnection(connectionId, {
             relationshipType: newType,
-            notes: connection.notes || '', // Preserve existing notes
           });
           await fetchConnections({ all: true, force: true });
         });
