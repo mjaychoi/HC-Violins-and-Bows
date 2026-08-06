@@ -8,7 +8,10 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo } from 'react';
 import AppHeader, { type AppHeaderActionButton } from './AppHeader';
 import AppSidebar from './AppSidebar';
-import { buildOnboardingRedirect } from '@/utils/authRedirect';
+import {
+  buildLoginRedirect,
+  buildOnboardingRedirect,
+} from '@/utils/authRedirect';
 
 interface AppLayoutProps {
   title: string;
@@ -31,16 +34,27 @@ export default function AppLayout({
   const { isTenantTransitioning } = useTenantIdentity();
   const router = useRouter();
 
+  // Fail-closed client fallback when page middleware is bypassed or session
+  // is cleared after hydration. Edge middleware remains the primary gate.
+  const loginRedirectTarget = useMemo(() => {
+    if (loading || user) return null;
+    return buildLoginRedirect(pathname || '/dashboard');
+  }, [loading, pathname, user]);
+
   const orgRedirectTarget = useMemo(() => {
     if (loading || !user || hasOrgContext) return null;
     return buildOnboardingRedirect(pathname || '/dashboard');
   }, [hasOrgContext, loading, pathname, user]);
 
   useEffect(() => {
+    if (loginRedirectTarget) {
+      router.replace(loginRedirectTarget);
+      return;
+    }
     if (orgRedirectTarget) {
       router.replace(orgRedirectTarget);
     }
-  }, [orgRedirectTarget, router]);
+  }, [loginRedirectTarget, orgRedirectTarget, router]);
 
   const renderBlockingShell = (message: string) => (
     <div className="min-h-screen bg-gray-50">
@@ -83,8 +97,8 @@ export default function AppLayout({
     return renderBlockingShell('Refreshing your workspace...');
   }
 
-  if (!user) {
-    return renderBlockingShell('Restoring access...');
+  if (loginRedirectTarget || !user) {
+    return renderBlockingShell('Redirecting to sign in...');
   }
 
   if (orgRedirectTarget) {

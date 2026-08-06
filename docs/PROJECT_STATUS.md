@@ -1,6 +1,6 @@
 # 프로젝트 상태 및 작업 관리 (Project Status & Task Management)
 
-**최종 업데이트**: 2025-12-17
+**최종 업데이트**: 2026-08-05
 **프로젝트**: HC Violins and Bows
 **프로젝트 상태**: 약 98% 완료
 
@@ -200,11 +200,11 @@
 
 #### ⚠️ 개선 필요
 
-1. **인증/인가** (프로덕션 전 필수)
-   - RLS (Row Level Security) 정책 검토 및 강화
-   - API 라우트 인증 미들웨어 추가
-   - 세션 관리 개선
-   - 권한 기반 접근 제어 구현
+1. ~~**인증/인가** (프로덕션 전 필수)~~ ✅ **완료**
+   - ✅ RLS (Row Level Security) org-scoped + admin write 정책
+   - ✅ API 라우트 인증 미들웨어 (`withAuthRoute` / `requireOrgContext` / `requireAdmin`)
+   - ✅ 세션 관리 (`src/middleware.ts` + AuthContext + AppLayout fail-closed)
+   - ✅ 권한 기반 접근 제어 (`usePermissions` + DB `is_admin()`)
 
 ---
 
@@ -298,23 +298,31 @@
 
 ## 🔴 Critical (프로덕션 전 필수)
 
-### 1. 인증/인가 강화 ⚠️ **최우선**
+### 1. 인증/인가 강화 ✅ **완료**
 
 **예상 시간**: 3-5일
 **중요도**: ⭐⭐⭐⭐⭐
-**프로덕션 전 필수**: ✅
+**프로덕션 전 필수**: ✅ (구현 완료)
 
 **작업 내용**:
 
-- [ ] RLS (Row Level Security) 정책 검토 및 강화
-- [ ] API 라우트 인증 미들웨어 추가
-- [ ] 세션 관리 개선
-- [ ] 권한 기반 접근 제어 구현
-- [ ] API 엔드포인트별 권한 검증
+- [x] RLS (Row Level Security) 정책 검토 및 강화 — org 멤버 읽기 / admin 쓰기 (`00000000000002_rls_policies.sql`)
+- [x] API 라우트 인증 미들웨어 추가 — `withAuthRoute` + `requireOrgContext` / `requireAdmin`
+- [x] 세션 관리 개선 — `src/middleware.ts` 등록, cookie 세션 검증, AppLayout 로그인 리다이렉트
+- [x] 권한 기반 접근 제어 구현 — `usePermissions` + RLS `is_admin()`
+- [x] API 엔드포인트별 권한 검증 — 주요 mutation 경로 admin 강제
+
+**코드 완료 vs 배포 준비:**
+
+- ✅ 코드/정책/미들웨어/권한 헬퍼 구현 완료
+- ⚠️ 프로덕션 배포 전 운영 설정: Vercel(또는 호스트)에 `HEALTH_CHECK_SECRET` 설정
+  - 미설정 시 `/api/health`는 liveness(`status`/`timestamp`)만 반환하고 상세 진단은 비공개(fail-closed)
 
 **위치**:
 
-- `src/app/api/**/route.ts` (모든 API 라우트)
+- `src/middleware.ts`, `src/lib/protectedRoutePolicy.ts`, `src/lib/supabase-middleware-auth.ts`
+- `src/app/api/_utils/withAuthRoute.ts`
+- `src/hooks/usePermissions.ts`
 - `supabase/migrations/**/*.sql` (RLS 정책)
 
 ---
@@ -699,9 +707,9 @@
 
 ## 권장 작업 순서
 
-### Phase 1: 보안 강화 (프로덕션 전 필수) ⚠️
+### Phase 1: 보안 강화 (프로덕션 전 필수) ✅
 
-1. **인증/인가 강화** (3-5일) ⚠️ **최우선**
+1. **인증/인가 강화** ✅ **완료**
 
 ### Phase 2: UX 개선 (14-19일)
 
@@ -734,7 +742,7 @@
 
 | 작업             | 중요도     | 긴급도     | 예상 시간   | 효과     | 상태        |
 | ---------------- | ---------- | ---------- | ----------- | -------- | ----------- |
-| 인증/인가 강화   | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | 3-5일       | 보안     | 🔴 미완료   |
+| 인증/인가 강화   | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ✅ 완료     | 보안     | ✅ 완료     |
 | 페이지 간 연결성 | ⭐⭐⭐⭐   | ⭐⭐⭐     | 1-2일       | UX       | 🔄 부분완료 |
 | 일괄 작업 기능   | ⭐⭐⭐⭐   | ⭐⭐       | 4-5일       | UX       | 🔴 미완료   |
 | 검색/필터 개선   | ⭐⭐⭐⭐   | ⭐⭐       | 5-7일       | UX       | 🔴 미완료   |
@@ -753,7 +761,7 @@
 
 ### 🔴 High Priority
 
-- 인증/인가 강화: 3-5일 ⚠️ **프로덕션 전 필수**
+- 인증/인가 강화: ✅ 완료
 - 페이지 간 연결성 개선: 1-2일 (브레드크럼만 남음)
 - 일괄 작업 기능: 4-5일
 - 검색/필터링 개선: 5-7일 (통합 검색 3-4일 + 필터 상태 유지 2-3일)

@@ -103,7 +103,26 @@ describe('AppLayout', () => {
     expect(screen.queryByText('content')).not.toBeInTheDocument();
   });
 
-  it('shows fallback shell instead of client-side login redirect when user is missing', () => {
+  it('does not login-redirect when the session is present', async () => {
+    useAuth.mockReturnValue({
+      user: { email: 'test@example.com' },
+      loading: false,
+      hasOrgContext: true,
+    });
+
+    render(
+      <AppLayout title="Dashboard">
+        <div>content</div>
+      </AppLayout>
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText('content')).toBeInTheDocument()
+    );
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('redirects to login when the session is missing after auth resolves', async () => {
     useAuth.mockReturnValue({
       user: null,
       loading: false,
@@ -116,7 +135,11 @@ describe('AppLayout', () => {
       </AppLayout>
     );
 
-    expect(screen.getByText('Restoring access...')).toBeInTheDocument();
-    expect(mockReplace).not.toHaveBeenCalled();
+    expect(screen.getByText('Redirecting to sign in...')).toBeInTheDocument();
+    expect(screen.queryByText('content')).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/?next=%2Fdashboard');
+    });
   });
 });
