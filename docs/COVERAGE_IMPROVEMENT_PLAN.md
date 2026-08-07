@@ -32,11 +32,7 @@
    - 현재: 테스트 있으나 커버리지 확인 필요
    - 상태: `__tests__/ClientRowExpand.test.tsx` 존재
 
-2. **TodayFollowUps.tsx**
-   - 현재: 테스트 있으나 커버리지 확인 필요
-   - 상태: `__tests__/TodayFollowUps.test.tsx` 존재
-
-3. **SalesFilters.tsx**
+2. **SalesFilters.tsx**
    - 현재: 테스트 있음
    - 상태: `__tests__/SalesFilters.test.tsx` 존재
 

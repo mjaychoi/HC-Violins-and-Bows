@@ -9,4 +9,3 @@ export { default as ClientTagSelector } from './ClientTagSelector';
 export { default as InterestSelector } from './InterestSelector';
 export { default as ContactLog } from './ContactLog';
 export { default as FollowUpButton } from './FollowUpButton';
-// export { default as TodayFollowUps } from './TodayFollowUps';
