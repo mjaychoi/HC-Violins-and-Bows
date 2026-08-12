@@ -11,6 +11,7 @@ import {
   Client,
   ClientInstrument,
   MaintenanceTask,
+  NoteRecord,
   SalesHistory,
   TaskType,
   TaskStatus,
@@ -926,6 +927,37 @@ export const createMaintenanceTaskSchema = z.object({
 });
 
 /**
+ * Note Schema (full row, for response validation).
+ * Immutable / server-managed: id, org_id, user_id, created_at, updated_at.
+ */
+export const noteSchema = z.object({
+  id: uuidSchema,
+  org_id: uuidSchema,
+  user_id: uuidSchema,
+  title: z.string(),
+  content: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+/**
+ * Note creation schema (for POST requests - client supplies only title/content;
+ * id/org_id/user_id/created_at/updated_at are always server-derived)
+ */
+export const createNoteSchema = z.object({
+  title: z.string(),
+  content: z.string(),
+});
+
+/**
+ * Partial Note Schema for updates (mutable fields only).
+ */
+export const partialNoteSchema = z.object({
+  title: z.string().optional(),
+  content: z.string().optional(),
+});
+
+/**
  * Partial SalesHistory Schema for updates
  */
 /**
@@ -985,6 +1017,70 @@ export function validatePartialClient(data: unknown): Partial<Client> {
     throw new Error(`Invalid Client update: ${errorMessages}`);
   }
   return result.data as Partial<Client>;
+}
+
+/**
+ * Validate and parse a Note, throwing a descriptive error on failure
+ */
+export function validateNote(data: unknown): NoteRecord {
+  const result = noteSchema.safeParse(data);
+  if (!result.success) {
+    const errorMessages = result.error.issues
+      ? result.error.issues.map(e => e.message).join(', ')
+      : result.error.message || 'Validation failed';
+    throw new Error(`Invalid Note: ${errorMessages}`);
+  }
+  return result.data;
+}
+
+/**
+ * Validate an array of Notes
+ */
+export function validateNoteArray(data: unknown): NoteRecord[] {
+  if (!Array.isArray(data)) {
+    throw new Error('Expected an array of Notes');
+  }
+  return data.map((item, index) => {
+    try {
+      return validateNote(item);
+    } catch (error) {
+      throw new Error(
+        `Invalid Note at index ${index}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  });
+}
+
+/**
+ * Validate Note creation data (for POST requests)
+ */
+export function validateCreateNote(
+  data: unknown
+): Pick<NoteRecord, 'title' | 'content'> {
+  const result = createNoteSchema.safeParse(data);
+  if (!result.success) {
+    const errorMessages = result.error.issues
+      ? result.error.issues.map((e: z.ZodIssue) => e.message).join(', ')
+      : result.error.message || 'Validation failed';
+    throw new Error(`Invalid Note creation data: ${errorMessages}`);
+  }
+  return result.data;
+}
+
+/**
+ * Validate partial Note update
+ */
+export function validatePartialNote(
+  data: unknown
+): Partial<Pick<NoteRecord, 'title' | 'content'>> {
+  const result = partialNoteSchema.safeParse(data);
+  if (!result.success) {
+    const errorMessages = result.error.issues
+      ? result.error.issues.map((e: z.ZodIssue) => e.message).join(', ')
+      : result.error.message || 'Validation failed';
+    throw new Error(`Invalid Note update: ${errorMessages}`);
+  }
+  return result.data;
 }
 
 /**
