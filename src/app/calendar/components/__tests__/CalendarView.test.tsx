@@ -28,6 +28,7 @@ jest.mock('react-big-calendar', () => {
       onSelectSlot,
       selectable,
       draggableAccessor,
+      eventPropGetter,
     }: any) => {
       const taskFromResource = (r: any) =>
         r?.task && typeof r.task === 'object' ? r.task : r;
@@ -52,6 +53,10 @@ jest.mock('react-big-calendar', () => {
                   typeof draggableAccessor === 'function'
                     ? Boolean(draggableAccessor(event))
                     : false;
+                const propGetterResult =
+                  typeof eventPropGetter === 'function'
+                    ? eventPropGetter(event) || {}
+                    : {};
                 return React.createElement(
                   'button',
                   {
@@ -59,6 +64,7 @@ jest.mock('react-big-calendar', () => {
                     type: 'button',
                     'data-testid': `calendar-event-${eventId}`,
                     'data-draggable': canDrag ? 'true' : 'false',
+                    className: propGetterResult.className,
                     onClick: (e: any) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -274,6 +280,37 @@ describe('CalendarView', () => {
 
     expect(screen.getByTestId('calendar-events')).toBeInTheDocument();
     expect(screen.getByTestId('calendar-event-1')).toBeInTheDocument();
+  });
+
+  it('renders overdue styling for a pending task with only an old received_date (regression: placement/status date parity)', () => {
+    jest.useFakeTimers({ now: new Date(2024, 1, 15, 12, 0, 0).getTime() }); // "today" = 2024-02-15
+
+    try {
+      const taskOldReceivedOnly: MaintenanceTask = {
+        ...mockTasks[0],
+        status: 'pending',
+        due_date: null,
+        personal_due_date: null,
+        scheduled_date: null,
+        received_date: '2024-02-01', // 14 days in the past, no other date fields
+      };
+
+      render(
+        <CalendarView
+          tasks={[taskOldReceivedOnly]}
+          instruments={mockInstruments}
+          onSelectEvent={mockOnSelectEvent}
+          onSelectSlot={mockOnSelectSlot}
+          currentDate={new Date(2024, 1, 15)}
+          onNavigate={mockOnNavigate}
+        />
+      );
+
+      const eventButton = screen.getByTestId('calendar-event-1');
+      expect(eventButton.className).toContain('status-overdue');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('should render with empty tasks', () => {
