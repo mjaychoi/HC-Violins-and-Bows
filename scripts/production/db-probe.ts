@@ -14,9 +14,11 @@
  * instance used by tests/integration/production/*.integration.test.ts,
  * without needing to fake a Supabase-shaped hostname.
  *
- * Invoked only from .github/workflows/production-db-deploy.yml, after the
- * `production` GitHub Environment has granted approval. Never logs
- * credentials, hostnames, project refs, or full connection strings.
+ * Invoked from .github/workflows/production-db-deploy.yml (all three
+ * modes), after the `production` GitHub Environment has granted approval,
+ * and from .github/workflows/production-db-reconcile.yml (`validate-only`
+ * mode only, ahead of scripts/production/db-reconcile-readonly.ts). Never
+ * logs credentials, hostnames, project refs, or full connection strings.
  *
  * Stdout/stderr contract (load-bearing — the workflow pipes stdout through
  * `tee history.json` and calls JSON.parse() on the file):
