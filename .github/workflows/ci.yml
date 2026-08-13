@@ -53,6 +53,16 @@ jobs:
         # docs/PRODUCTION_MIGRATION_WORKFLOW.md.
         run: npm run test:production-guards-integration
 
+      - name: update_instrument_sale_transition_atomic migration consolidation tests (isolated local Postgres)
+        # Spins up a throwaway, in-process Postgres (embedded-postgres) to
+        # prove supabase/migrations/20260423140001_update_instrument_sale_transition_atomic_consolidated.sql
+        # converges safely from every reachable starting catalog state and
+        # that a failure inside it cannot leave a partially-applied state.
+        # Never touches DATABASE_URL, a hosted Supabase project, or
+        # production — the instance is created and destroyed within this
+        # step and never leaves the runner.
+        run: npm run test:sale-transition-migration-consolidation
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
