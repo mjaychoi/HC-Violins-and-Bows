@@ -234,6 +234,8 @@ export default function CalendarPage() {
     try {
       await deleteTask(confirmDeleteTask.id);
     } catch {
+      // deleteTask already notifies via useErrorHandler; just keep the
+      // confirm dialog + task in place and stop the success/refetch path.
       return;
     }
 

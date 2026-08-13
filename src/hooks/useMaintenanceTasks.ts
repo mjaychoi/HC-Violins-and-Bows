@@ -36,6 +36,8 @@ interface UseMaintenanceTasksReturn {
   };
   error: unknown;
   displayError: AppError | null;
+  mutationError: unknown;
+  mutationDisplayError: AppError | null;
   fetchTasks: (filters?: TaskFilters) => Promise<void>;
   fetchTaskById: (id: string) => Promise<MaintenanceTask | null>;
   createTask: (
@@ -276,6 +278,12 @@ export function useMaintenanceTasks(
   });
   const [error, setError] = useState<unknown>(null);
   const [displayError, setDisplayError] = useState<AppError | null>(null);
+  // Mutation (create/update/delete) errors are tracked separately from
+  // fetch/list errors above so a failed mutation never triggers the
+  // full-page fetch-error UI over already-loaded Calendar content.
+  const [mutationError, setMutationError] = useState<unknown>(null);
+  const [mutationDisplayError, setMutationDisplayError] =
+    useState<AppError | null>(null);
 
   const { handleError } = useErrorHandler();
   const { tenantIdentityKey } = useTenantIdentity();
@@ -331,6 +339,8 @@ export function useMaintenanceTasks(
     setNotificationTasks([]);
     setError(null);
     setDisplayError(null);
+    setMutationError(null);
+    setMutationDisplayError(null);
 
     fetchReqIdRef.current += 1;
     rangeFetchSeqRef.current += 1;
@@ -510,8 +520,8 @@ export function useMaintenanceTasks(
     ): Promise<MaintenanceTask> => {
       const requestTenantIdentityKey = tenantIdentityKeyRef.current;
       startMutate();
-      setError(null);
-      setDisplayError(null);
+      setMutationError(null);
+      setMutationDisplayError(null);
 
       try {
         const res = await apiFetch(
@@ -559,13 +569,13 @@ export function useMaintenanceTasks(
           throw err;
         }
 
-        setError(err);
+        setMutationError(err);
 
         const appError =
           handleError(err, 'Failed to create maintenance task') ??
           errorHandler.normalizeError(err, 'Failed to create maintenance task');
 
-        setDisplayError(appError);
+        setMutationDisplayError(appError);
         throw err;
       } finally {
         endMutate();
@@ -586,8 +596,8 @@ export function useMaintenanceTasks(
     ): Promise<MaintenanceTask> => {
       const requestTenantIdentityKey = tenantIdentityKeyRef.current;
       startMutate();
-      setError(null);
-      setDisplayError(null);
+      setMutationError(null);
+      setMutationDisplayError(null);
 
       try {
         const res = await apiFetch('/api/maintenance-tasks', {
@@ -646,13 +656,13 @@ export function useMaintenanceTasks(
           throw err;
         }
 
-        setError(err);
+        setMutationError(err);
 
         const appError =
           handleError(err, 'Failed to update maintenance task') ??
           errorHandler.normalizeError(err, 'Failed to update maintenance task');
 
-        setDisplayError(appError);
+        setMutationDisplayError(appError);
         throw err;
       } finally {
         endMutate();
@@ -665,8 +675,8 @@ export function useMaintenanceTasks(
     async (id: string) => {
       const requestTenantIdentityKey = tenantIdentityKeyRef.current;
       startMutate();
-      setError(null);
-      setDisplayError(null);
+      setMutationError(null);
+      setMutationDisplayError(null);
 
       try {
         const res = await apiFetch(
@@ -708,13 +718,13 @@ export function useMaintenanceTasks(
           throw err;
         }
 
-        setError(err);
+        setMutationError(err);
 
         const appError =
           handleError(err, 'Failed to delete maintenance task') ??
           errorHandler.normalizeError(err, 'Failed to delete maintenance task');
 
-        setDisplayError(appError);
+        setMutationDisplayError(appError);
         throw err;
       } finally {
         endMutate();
@@ -999,6 +1009,8 @@ export function useMaintenanceTasks(
     loading,
     error,
     displayError,
+    mutationError,
+    mutationDisplayError,
     fetchTasks,
     fetchTaskById,
     createTask,

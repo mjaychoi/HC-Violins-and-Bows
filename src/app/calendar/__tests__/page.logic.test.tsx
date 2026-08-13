@@ -838,10 +838,15 @@ describe('CalendarPage - Core Logic', () => {
 
       await flushPromises();
 
-      expect(mockHandleError).not.toHaveBeenCalled();
-
+      // Regression: CalendarPage must not notify a second time on top of
+      // useMaintenanceTasks.deleteTask's own error handling — the hook owns
+      // notification for this failure (see useMaintenanceTasks tests).
+      expect(mockDeleteTask).toHaveBeenCalledWith(mockTasks[0].id);
       expect(mockRefetchCurrentRange).not.toHaveBeenCalled();
       expect(mockShowSuccess).not.toHaveBeenCalled();
+      // The confirm dialog (and the task it targets) must remain visible so
+      // the user can see what happened and retry; delete state is not
+      // dismissed on failure.
       expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
     });
   });
