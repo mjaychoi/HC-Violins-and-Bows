@@ -45,10 +45,11 @@ jobs:
 
       - name: Production deploy-guard CLI contract tests (isolated local Postgres)
         # Spins up a throwaway, in-process Postgres (embedded-postgres) to
-        # exercise scripts/production/db-probe.ts and
-        # scripts/production/postflight-catalog.ts as real child processes.
-        # Never touches DATABASE_URL, a hosted Supabase project, or
-        # production — the instance is created and destroyed within this
+        # exercise scripts/production/db-probe.ts,
+        # scripts/production/postflight-catalog.ts, and
+        # scripts/production/db-reconcile-readonly.ts as real child
+        # processes. Never touches DATABASE_URL, a hosted Supabase project,
+        # or production — the instance is created and destroyed within this
         # step and never leaves the runner. See
         # docs/PRODUCTION_MIGRATION_WORKFLOW.md.
         run: npm run test:production-guards-integration
