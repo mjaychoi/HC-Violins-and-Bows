@@ -476,7 +476,7 @@ describe('useMaintenanceTasks', () => {
         () => {
           expect(result.current.loading.fetch).toBe(false);
           expect(result.current.loading.mutate).toBe(false);
-          expect(result.current.error).toMatchObject({
+          expect(result.current.mutationError).toMatchObject({
             message: 'Create failed',
             error_code: 'TASK_CREATE_FAILED',
             retryable: false,
@@ -487,6 +487,9 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
+      // Mutation failures must never populate the fetch/list error surface.
+      expect(result.current.error).toBe(null);
+      expect(result.current.displayError).toBe(null);
       expect(result.current.tasks).toEqual([]);
     });
 
@@ -698,12 +701,16 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      expect(result.current.error).toMatchObject({
+      expect(result.current.mutationError).toMatchObject({
         message: 'Update failed',
         error_code: 'TASK_UPDATE_FAILED',
         retryable: true,
         status: 500,
       });
+      // A mutation failure must never populate the fetch/list error surface,
+      // which is what drives Calendar's full-page "Failed to load" state.
+      expect(result.current.error).toBe(null);
+      expect(result.current.displayError).toBe(null);
       // Task should not be updated
       await waitFor(
         () => {
@@ -924,12 +931,16 @@ describe('useMaintenanceTasks', () => {
         { timeout: 3000 }
       );
 
-      expect(result.current.error).toMatchObject({
+      expect(result.current.mutationError).toMatchObject({
         message: 'Delete failed',
         error_code: 'TASK_DELETE_FAILED',
         retryable: false,
         status: 500,
       });
+      // A mutation failure must never populate the fetch/list error surface,
+      // which is what drives Calendar's full-page "Failed to load" state.
+      expect(result.current.error).toBe(null);
+      expect(result.current.displayError).toBe(null);
       // Task should not be deleted
       await waitFor(
         () => {
@@ -941,6 +952,197 @@ describe('useMaintenanceTasks', () => {
         },
         { timeout: 3000 }
       );
+    });
+  });
+
+  describe('Mutation vs. fetch error isolation (Calendar full-page regression)', () => {
+    // Regression coverage for: a failed create/update/delete must never look
+    // like a failed fetch. `error`/`displayError` are what Calendar's page
+    // feeds into CalendarContent's full-page "Failed to load maintenance
+    // tasks" UI, so those must stay untouched by mutation failures — and any
+    // already-loaded tasks must survive the failed mutation intact.
+
+    it('PATCH failure (e.g. 409 conflict) leaves loaded tasks and fetch error state untouched', async () => {
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [mockTask] }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 409,
+          json: jest.fn().mockResolvedValue({
+            message: 'Task was modified by someone else',
+            error_code: 'TASK_STATUS_CONFLICT',
+            retryable: false,
+          }),
+        });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasks();
+      });
+
+      await waitFor(() => {
+        expect(result.current.tasks).toEqual([mockTask]);
+      });
+
+      await act(async () => {
+        await expect(
+          result.current.updateTask('1', { title: 'Conflicting update' })
+        ).rejects.toMatchObject({ status: 409 });
+      });
+
+      await waitFor(() => {
+        expect(result.current.mutationError).toMatchObject({ status: 409 });
+      });
+
+      // The previously loaded tasks and fetch/list error state must survive
+      // the failed mutation exactly as-is.
+      expect(result.current.tasks).toEqual([mockTask]);
+      expect(result.current.error).toBe(null);
+      expect(result.current.displayError).toBe(null);
+    });
+
+    it('DELETE failure leaves the task and fetch error state untouched (not silently swallowed)', async () => {
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [mockTask] }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          json: jest.fn().mockResolvedValue({
+            message: 'Delete failed',
+            error_code: 'TASK_DELETE_FAILED',
+            retryable: false,
+          }),
+        });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasks();
+      });
+
+      await waitFor(() => {
+        expect(result.current.tasks).toEqual([mockTask]);
+      });
+
+      await act(async () => {
+        // deleteTask must reject rather than resolve silently, so callers
+        // cannot accidentally swallow the failure.
+        await expect(result.current.deleteTask('1')).rejects.toMatchObject({
+          status: 500,
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.mutationError).toMatchObject({ status: 500 });
+      });
+
+      expect(result.current.tasks).toEqual([mockTask]);
+      expect(result.current.error).toBe(null);
+      expect(result.current.displayError).toBe(null);
+    });
+
+    it('POST failure leaves previously loaded tasks and fetch error state untouched', async () => {
+      (apiFetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({ data: [mockTask] }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          json: jest.fn().mockResolvedValue({
+            message: 'Create failed',
+            error_code: 'TASK_CREATE_FAILED',
+            retryable: false,
+          }),
+        });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasks();
+      });
+
+      await waitFor(() => {
+        expect(result.current.tasks).toEqual([mockTask]);
+      });
+
+      await act(async () => {
+        await expect(
+          result.current.createTask({
+            instrument_id: 'instrument-2',
+            client_id: null,
+            task_type: 'repair' as TaskType,
+            title: 'Another Repair',
+            description: null,
+            status: 'pending' as TaskStatus,
+            received_date: '2024-01-02',
+            due_date: null,
+            personal_due_date: null,
+            scheduled_date: null,
+            completed_date: null,
+            priority: 'medium' as TaskPriority,
+            estimated_hours: null,
+            actual_hours: null,
+            cost: null,
+            notes: null,
+          })
+        ).rejects.toMatchObject({ status: 500 });
+      });
+
+      await waitFor(() => {
+        expect(result.current.mutationError).toMatchObject({ status: 500 });
+      });
+
+      // The background Calendar's already-loaded data must be untouched by
+      // the failed create — no duplicate, no clearing.
+      expect(result.current.tasks).toEqual([mockTask]);
+      expect(result.current.error).toBe(null);
+      expect(result.current.displayError).toBe(null);
+    });
+
+    it('a genuine fetch failure still populates error/displayError normally', async () => {
+      (apiFetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: jest.fn().mockResolvedValue({
+          message: 'Service unavailable',
+          error_code: 'SERVICE_UNAVAILABLE',
+          retryable: true,
+        }),
+      });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.fetchTasks();
+      });
+
+      await waitFor(() => {
+        expect(result.current.error).toMatchObject({ status: 503 });
+        expect(result.current.displayError).not.toBeNull();
+      });
+
+      expect(result.current.mutationError).toBe(null);
+      expect(result.current.mutationDisplayError).toBe(null);
     });
   });
 

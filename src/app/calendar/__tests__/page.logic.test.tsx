@@ -838,10 +838,17 @@ describe('CalendarPage - Core Logic', () => {
 
       await flushPromises();
 
-      expect(mockHandleError).not.toHaveBeenCalled();
+      // Regression: a failed delete must surface actionable feedback via the
+      // existing error/toast mechanism instead of being silently swallowed.
+      expect(mockHandleError).toHaveBeenCalledWith(
+        error,
+        'Failed to delete task'
+      );
 
       expect(mockRefetchCurrentRange).not.toHaveBeenCalled();
       expect(mockShowSuccess).not.toHaveBeenCalled();
+      // The confirm dialog (and the task it targets) must remain visible so
+      // the user can see what happened and retry.
       expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
     });
   });
