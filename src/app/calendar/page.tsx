@@ -29,7 +29,6 @@ import {
   CALENDAR_MESSAGES,
   CALENDAR_WARNING_MESSAGES,
   CALENDAR_CONFIRM_MESSAGES,
-  CALENDAR_ERROR_MESSAGES,
 } from './constants';
 
 // Dynamic imports for large components to reduce initial bundle size
@@ -234,10 +233,9 @@ export default function CalendarPage() {
 
     try {
       await deleteTask(confirmDeleteTask.id);
-    } catch (err) {
-      // Keep the confirm dialog + task in place; surface the failure instead
-      // of silently discarding it so the user can see what happened and retry.
-      handleError(err, CALENDAR_ERROR_MESSAGES.DELETE_TASK);
+    } catch {
+      // deleteTask already notifies via useErrorHandler; just keep the
+      // confirm dialog + task in place and stop the success/refetch path.
       return;
     }
 
@@ -253,7 +251,6 @@ export default function CalendarPage() {
     deleteTask,
     refreshCalendarAfterMutation,
     showSuccess,
-    handleError,
   ]);
 
   const handleSelectEvent = (task: MaintenanceTask) => {

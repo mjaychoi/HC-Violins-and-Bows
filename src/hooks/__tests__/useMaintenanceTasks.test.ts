@@ -941,6 +941,14 @@ describe('useMaintenanceTasks', () => {
       // which is what drives Calendar's full-page "Failed to load" state.
       expect(result.current.error).toBe(null);
       expect(result.current.displayError).toBe(null);
+      // deleteTask owns notification for its own failures; callers (e.g.
+      // CalendarPage) must not call handleError a second time for the same
+      // rejection, or the user gets two toasts for one failed delete.
+      expect(mockHandleError).toHaveBeenCalledTimes(1);
+      expect(mockHandleError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Delete failed' }),
+        'Failed to delete maintenance task'
+      );
       // Task should not be deleted
       await waitFor(
         () => {
