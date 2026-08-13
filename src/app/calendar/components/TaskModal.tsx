@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   MaintenanceTask,
   Instrument,
@@ -15,6 +15,7 @@ import { todayLocalYMD } from '@/utils/dateParsing';
 import { useOutsideClose } from '@/hooks/useOutsideClose';
 import { modalStyles } from '@/components/common/modals/modalStyles';
 import { ModalHeader } from '@/components/common/modals/ModalHeader';
+import ConfirmDialog from '@/components/common/modals/ConfirmDialog';
 import { getStatusLabel } from '@/utils/calendar';
 import { getAllowedMaintenanceTaskNextStatuses } from '@/utils/maintenanceTaskTransitions';
 
@@ -75,6 +76,47 @@ function createEmptyFormState(scheduledDate = ''): TaskFormState {
   };
 }
 
+// Normalizes an optional text field the same way handleSubmit does
+// (trims, empty -> null) so trailing whitespace doesn't register as dirty.
+function normalizeOptionalText(
+  value: string | null | undefined
+): string | null {
+  const trimmed = (value ?? '').trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+// Mirrors the numeric parsing in handleSubmit so "2" and "2.0" compare equal.
+function normalizeOptionalNumber(
+  value: string | null | undefined
+): number | null {
+  const trimmed = (value ?? '').trim();
+  if (trimmed === '') return null;
+  const num = parseFloat(trimmed);
+  return isNaN(num) ? null : num;
+}
+
+// Comparable projection of the editable fields, excluding completed_date
+// (not directly editable; it is derived from status at submit time).
+function normalizeTaskFormState(state: TaskFormState) {
+  return {
+    instrument_id: state.instrument_id || null,
+    client_id: state.client_id || null,
+    task_type: state.task_type,
+    title: state.title.trim(),
+    description: normalizeOptionalText(state.description),
+    status: state.status,
+    received_date: state.received_date,
+    due_date: normalizeOptionalText(state.due_date),
+    personal_due_date: normalizeOptionalText(state.personal_due_date),
+    scheduled_date: normalizeOptionalText(state.scheduled_date),
+    priority: state.priority,
+    estimated_hours: normalizeOptionalNumber(state.estimated_hours),
+    actual_hours: normalizeOptionalNumber(state.actual_hours),
+    cost: normalizeOptionalNumber(state.cost),
+    notes: normalizeOptionalText(state.notes),
+  };
+}
+
 export default function TaskModal({
   isOpen,
   onClose,
@@ -91,34 +133,49 @@ export default function TaskModal({
   );
 
   const [errors, setErrors] = useState<string[]>([]);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  // Snapshot of the form as it looked right after the last reset (open /
+  // task switch), used as the baseline for dirty-state comparison.
+  const initialSnapshotRef = useRef<TaskFormState>(createEmptyFormState());
 
   useEffect(() => {
-    if (selectedTask && isEditing) {
-      setFormData({
-        instrument_id: selectedTask.instrument_id,
-        client_id: selectedTask.client_id || '',
-        task_type: selectedTask.task_type,
-        title: selectedTask.title,
-        description: selectedTask.description || '',
-        status: selectedTask.status,
-        received_date: selectedTask.received_date,
-        due_date: selectedTask.due_date || '',
-        personal_due_date: selectedTask.personal_due_date || '',
-        scheduled_date: selectedTask.scheduled_date || '',
-        priority: selectedTask.priority,
-        estimated_hours: selectedTask.estimated_hours?.toString() || '',
-        actual_hours: selectedTask.actual_hours?.toString() || '',
-        cost: selectedTask.cost?.toString() || '',
-        notes: selectedTask.notes || '',
-        completed_date: selectedTask.completed_date || '',
-      });
-    } else {
-      // Reset form for new task
-      // FIXED: Use todayLocalYMD() instead of toISOString() to avoid UTC timezone issues
-      setFormData(createEmptyFormState(defaultScheduledDate || ''));
-    }
+    const nextFormState: TaskFormState =
+      selectedTask && isEditing
+        ? {
+            instrument_id: selectedTask.instrument_id,
+            client_id: selectedTask.client_id || '',
+            task_type: selectedTask.task_type,
+            title: selectedTask.title,
+            description: selectedTask.description || '',
+            status: selectedTask.status,
+            received_date: selectedTask.received_date,
+            due_date: selectedTask.due_date || '',
+            personal_due_date: selectedTask.personal_due_date || '',
+            scheduled_date: selectedTask.scheduled_date || '',
+            priority: selectedTask.priority,
+            estimated_hours: selectedTask.estimated_hours?.toString() || '',
+            actual_hours: selectedTask.actual_hours?.toString() || '',
+            cost: selectedTask.cost?.toString() || '',
+            notes: selectedTask.notes || '',
+            completed_date: selectedTask.completed_date || '',
+          }
+        : // Reset form for new task
+          // FIXED: Use todayLocalYMD() instead of toISOString() to avoid UTC timezone issues
+          createEmptyFormState(defaultScheduledDate || '');
+
+    initialSnapshotRef.current = nextFormState;
+    setFormData(nextFormState);
     setErrors([]);
+    setShowDiscardConfirm(false);
   }, [selectedTask, isEditing, isOpen, defaultScheduledDate]);
+
+  const isDirty = useMemo(
+    () =>
+      JSON.stringify(normalizeTaskFormState(formData)) !==
+      JSON.stringify(normalizeTaskFormState(initialSnapshotRef.current)),
+    [formData]
+  );
 
   const handleInputChange = (
     e: React.ChangeEvent<
@@ -214,11 +271,31 @@ export default function TaskModal({
     }
   };
 
+  // Intercept every non-save close path: dirty forms require explicit
+  // discard confirmation instead of closing immediately.
+  const requestClose = () => {
+    if (showDiscardConfirm) return;
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
+  const handleConfirmDiscard = () => {
+    setShowDiscardConfirm(false);
+    onClose();
+  };
+
+  const handleKeepEditing = () => {
+    setShowDiscardConfirm(false);
+  };
+
   // Close modal with ESC key and outside click
   const modalRef = useRef<HTMLDivElement>(null);
   useOutsideClose(modalRef, {
     isOpen,
-    onClose,
+    onClose: requestClose,
   });
 
   if (!isOpen) return null;
@@ -249,7 +326,7 @@ export default function TaskModal({
       className={modalStyles.overlay}
       onClick={e => {
         if (e.target === e.currentTarget) {
-          onClose();
+          requestClose();
         }
       }}
     >
@@ -263,7 +340,7 @@ export default function TaskModal({
         <ModalHeader
           title={isEditing ? 'Edit Task' : 'Add New Task'}
           icon="task"
-          onClose={onClose}
+          onClose={requestClose}
           titleId="task-modal-title"
         />
 
@@ -520,7 +597,7 @@ export default function TaskModal({
             <Button
               type="button"
               variant="secondary"
-              onClick={onClose}
+              onClick={requestClose}
               disabled={submitting}
             >
               Cancel
@@ -558,6 +635,16 @@ export default function TaskModal({
           </div>
         </form>
       </div>
+
+      <ConfirmDialog
+        isOpen={showDiscardConfirm}
+        title="Discard changes?"
+        message="You have unsaved changes. If you close now, they will be lost."
+        confirmLabel="Discard changes"
+        cancelLabel="Keep editing"
+        onConfirm={handleConfirmDiscard}
+        onCancel={handleKeepEditing}
+      />
     </div>
   );
 }
