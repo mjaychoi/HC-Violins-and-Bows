@@ -1,14 +1,22 @@
 -- Rollback for
 -- 20260423140001_update_instrument_sale_transition_atomic_consolidated.sql
 --
--- Restores the exact pre-transition callable contract and privileges
--- established by 00000000000037_update_instrument_sale_transition_atomic.sql,
+-- Restores the pre-transition six-argument
+-- update_instrument_sale_transition_atomic callable contract (no
+-- p_expected_updated_at optimistic-concurrency parameter, SECURITY
+-- INVOKER) originally established by
+-- 00000000000037_update_instrument_sale_transition_atomic.sql,
 -- 00000000000038_update_instrument_sale_transition_atomic_revoke_public.sql,
 -- and
--- 00000000000039_update_instrument_sale_transition_atomic_grant_authenticated.sql:
--- a six-argument update_instrument_sale_transition_atomic (no
--- p_expected_updated_at optimistic-concurrency parameter), SECURITY
--- INVOKER, revoked from PUBLIC, and granted to authenticated only.
+-- 00000000000039_update_instrument_sale_transition_atomic_grant_authenticated.sql,
+-- while preserving authenticated-only exposure -- this is NOT a byte-exact
+-- restoration of those three files' privileges. Production's live catalog
+-- was separately verified to have explicit anon EXECUTE grants on this and
+-- several adjacent RPCs, something the original 00000000000037-39 baseline
+-- never explicitly revoked (only the forward six-file transition later
+-- did). An emergency rollback must not silently reopen that anon access,
+-- so this file explicitly REVOKEs from anon in addition to PUBLIC even
+-- though the historical baseline it otherwise reproduces did not.
 --
 -- WARNING: this drops the seven-argument signature entirely. Any caller
 -- relying on p_expected_updated_at (optimistic concurrency) or on any of
@@ -112,6 +120,10 @@ $$;
 REVOKE ALL ON FUNCTION public.update_instrument_sale_transition_atomic(
   UUID, JSONB, NUMERIC, DATE, UUID, TEXT
 ) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.update_instrument_sale_transition_atomic(
+  UUID, JSONB, NUMERIC, DATE, UUID, TEXT
+) FROM anon;
 
 GRANT EXECUTE ON FUNCTION public.update_instrument_sale_transition_atomic(
   UUID, JSONB, NUMERIC, DATE, UUID, TEXT

@@ -26,6 +26,15 @@
  * of the four reachable starting catalog states: old six-argument
  * function only, drifted seven-argument function only, both signatures
  * present, and neither present.
+ *
+ * Also covers the matching rollback
+ * (supabase/manual/20260423140001_update_instrument_sale_transition_atomic_consolidated.rollback.sql),
+ * which must not silently reopen anon access: production's live catalog
+ * was separately verified to already have explicit anon EXECUTE grants on
+ * this and adjacent RPCs, so a real Supabase-managed Postgres would
+ * auto-grant anon EXECUTE on the rollback's freshly (re)created
+ * six-argument function via default privileges unless the rollback
+ * explicitly revokes it back off.
  */
 import fs from 'fs';
 import path from 'path';
@@ -37,6 +46,12 @@ const MIGRATION_FILE = path.join(
   'supabase',
   'migrations',
   '20260423140001_update_instrument_sale_transition_atomic_consolidated.sql'
+);
+const ROLLBACK_FILE = path.join(
+  REPO_ROOT,
+  'supabase',
+  'manual',
+  '20260423140001_update_instrument_sale_transition_atomic_consolidated.rollback.sql'
 );
 const BOOTSTRAP_FILE = path.join(
   REPO_ROOT,
@@ -66,66 +81,20 @@ function readSql(filePath: string): string {
 }
 
 const MIGRATION_SQL = readSql(MIGRATION_FILE);
+const ROLLBACK_SQL = readSql(ROLLBACK_FILE);
 
-// Exact pre-transition baseline, matching
-// 00000000000037_update_instrument_sale_transition_atomic.sql,
-// 00000000000038_..._revoke_public.sql, and
-// 00000000000039_..._grant_authenticated.sql combined. Deliberately
-// inlined (not read from disk) because those historical files still exist
-// under their original filenames/timestamps in supabase/migrations and
-// are exercised for real elsewhere; this constant only needs to reproduce
-// their net effect as the "old six-argument function" starting state.
-const OLD_SIX_ARG_BASELINE_SQL = `
-CREATE OR REPLACE FUNCTION public.${FN_NAME}(
-  p_instrument_id UUID,
-  p_patch         JSONB   DEFAULT '{}'::jsonb,
-  p_sale_price    NUMERIC DEFAULT NULL,
-  p_sale_date     DATE    DEFAULT NULL,
-  p_client_id     UUID    DEFAULT NULL,
-  p_sales_note    TEXT    DEFAULT NULL
-)
-RETURNS public.instruments
-LANGUAGE plpgsql
-SECURITY INVOKER
-AS $$
-DECLARE
-  v_org_id        UUID := public.org_id();
-  v_current       public.instruments%ROWTYPE;
-  v_result        public.instruments%ROWTYPE;
-  v_next_status   TEXT;
-  v_refund_source UUID;
-BEGIN
-  IF v_org_id IS NULL      THEN RAISE EXCEPTION 'Organization context required'; END IF;
-  IF NOT public.is_admin() THEN RAISE EXCEPTION 'Admin role required'; END IF;
-
-  SELECT * INTO v_current FROM public.instruments
-  WHERE id = p_instrument_id AND org_id = v_org_id
-  FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Instrument not found'; END IF;
-
-  v_next_status := COALESCE(NULLIF(p_patch->>'status', ''), v_current.status);
-
-  IF v_current.status <> 'Sold' AND v_next_status = 'Sold' THEN
-    IF p_sale_price IS NULL OR p_sale_price <= 0 THEN
-      RAISE EXCEPTION 'Sale price must be a positive number when marking as Sold';
-    END IF;
-    PERFORM public.create_sale_atomic(
-      p_sale_price, COALESCE(p_sale_date, CURRENT_DATE), p_client_id, p_instrument_id, p_sales_note
-    );
-  END IF;
-
-  UPDATE public.instruments SET
-    status = CASE WHEN p_patch ? 'status' THEN NULLIF(p_patch->>'status','') ELSE status END
-  WHERE id = p_instrument_id AND org_id = v_org_id
-  RETURNING * INTO v_result;
-
-  RETURN v_result;
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.${FN_NAME}(UUID, JSONB, NUMERIC, DATE, UUID, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.${FN_NAME}(UUID, JSONB, NUMERIC, DATE, UUID, TEXT) TO authenticated;
-`;
+// Byte-exact pre-transition baseline: read directly from the real
+// historical files (00000000000037/38/39) rather than an inline
+// approximation, so the "old six-argument function" starting state is the
+// actual repository history, not a hand-maintained stand-in that could
+// drift from it.
+const OLD_SIX_ARG_BASELINE_FILES = [
+  '00000000000037_update_instrument_sale_transition_atomic.sql',
+  '00000000000038_update_instrument_sale_transition_atomic_revoke_public.sql',
+  '00000000000039_update_instrument_sale_transition_atomic_grant_authenticated.sql',
+].map(name => path.join(REPO_ROOT, 'supabase', 'migrations', name));
+const OLD_SIX_ARG_BASELINE_SQL =
+  OLD_SIX_ARG_BASELINE_FILES.map(readSql).join('\n');
 
 // Simulates the verified production catalog drift: the seven-argument
 // function already exists (same body/signature the consolidated migration
@@ -331,5 +300,47 @@ describe('20260423140001 update_instrument_sale_transition_atomic consolidation'
         p => p.grantee === 'authenticated' && p.privilege_type === 'EXECUTE'
       )
     ).toBe(true);
+  });
+
+  test('rollback restores the 6-arg signature as authenticated-only and does not reopen anon access, even under Supabase-style default privileges that would otherwise auto-grant anon EXECUTE on the freshly (re)created function', async () => {
+    // Start from the forward-migrated 7-arg state.
+    await setPrecondition(client, 'neither');
+    await client.query(MIGRATION_SQL);
+    await assertConvergedSevenArgState(client);
+
+    // Simulate a Supabase-like environment where newly-created functions
+    // in the public schema automatically pick up an explicit anon EXECUTE
+    // grant (this project's real Supabase-managed Postgres does exactly
+    // this via default privileges) -- production's live catalog was
+    // separately verified to already have such explicit anon EXECUTE
+    // grants on this and adjacent RPCs. Without the rollback's own
+    // explicit REVOKE FROM anon, this would cause the CREATE OR REPLACE
+    // inside the rollback to silently reopen anon access on the
+    // recreated six-argument function.
+    await client.query(
+      'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon;'
+    );
+
+    try {
+      await client.query(ROLLBACK_SQL);
+
+      const signatures = await getFunctionSignatures(client);
+      expect(signatures).toEqual([{ pronargs: 6 }]);
+
+      const privileges = await getPrivileges(client);
+      expect(privileges.some(p => p.grantee === 'PUBLIC')).toBe(false);
+      expect(privileges.some(p => p.grantee === 'anon')).toBe(false);
+      expect(
+        privileges.some(
+          p => p.grantee === 'authenticated' && p.privilege_type === 'EXECUTE'
+        )
+      ).toBe(true);
+    } finally {
+      // Don't leak this default-privilege change into any test that runs
+      // after this one.
+      await client.query(
+        'ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon;'
+      );
+    }
   });
 });
