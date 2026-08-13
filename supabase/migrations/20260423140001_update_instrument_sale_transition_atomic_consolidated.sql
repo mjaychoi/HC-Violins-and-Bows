@@ -1,3 +1,80 @@
+-- ============================================================
+-- Consolidates the six-file update_instrument_sale_transition_atomic
+-- transition originally drafted as
+-- 20260423140001_update_instrument_sale_transition_revoke_public_old.sql
+-- through
+-- 20260423140006_update_instrument_sale_transition_grant_authenticated.sql
+-- into one atomic migration.
+--
+-- Why: Supabase applies pending migrations in timestamp order and commits
+-- each file to schema_migrations independently. Split across six files,
+-- a deploy that stopped partway through the chain could permanently leave
+-- one of several unsafe intermediate states applied:
+--   - after file 1-2 alone: the six-argument function still exists but is
+--     REVOKEd from PUBLIC/authenticated, i.e. callable by no one -- an
+--     outage, not a security hole, but still an unintended halfway state;
+--   - after file 3 alone: the six-argument function is dropped and no
+--     replacement exists yet -- RPC callers get "function does not
+--     exist";
+--   - after file 4 alone: the new seven-argument function exists but has
+--     not yet had its default PUBLIC EXECUTE privilege revoked -- briefly
+--     callable by anyone, including anon, until files 5-6 land.
+-- Folding all six steps into one migration file removes that window
+-- entirely: Supabase applies each migration file as a single transaction,
+-- so this file either fully applies or fully fails with no visible
+-- intermediate state.
+--
+-- This migration is also written to converge safely regardless of which
+-- of these signatures is already present in the catalog when it runs,
+-- because production's live catalog currently contains the
+-- seven-argument function despite these six migration versions being
+-- unapplied there (out-of-band catalog drift, verified separately -- not
+-- something this migration can detect, only something it must tolerate):
+--   a. only the six-argument function present (the pre-transition /
+--      00000000000037-39 baseline state);
+--   b. only the seven-argument function present (e.g. the drifted
+--      production catalog);
+--   c. both signatures present simultaneously (Postgres allows function
+--      overloading by argument count, so this is a real reachable state);
+--   d. neither signature present (a fresh database that has never run
+--      00000000000037 or any of this chain).
+-- DROP FUNCTION IF EXISTS is a no-op when its target signature is absent,
+-- and CREATE OR REPLACE FUNCTION creates the seven-argument function
+-- fresh when absent or replaces its body in place when present, so all
+-- four starting states converge on the same end state below.
+--
+-- The seven-argument function body is unchanged from
+-- 20260423140004_update_instrument_sale_transition_atomic_concurrency.sql
+-- (adds the p_expected_updated_at optimistic-concurrency parameter over
+-- the six-argument baseline). Later migrations
+-- (20260728153000_sale_transition_certificate_name.sql,
+-- 20260804010000_enforce_sale_price_precision_and_maximum.sql,
+-- 20260804020000_harden_sale_lifecycle_authorization.sql) already exist
+-- unchanged in this repo and continue to CREATE OR REPLACE this same
+-- seven-argument signature further; they are out of scope for this
+-- consolidation.
+--
+-- Privileges are made explicit and unconditional rather than relying on
+-- CREATE OR REPLACE's ACL-preservation behavior: REPLACE preserves
+-- whatever privileges the target signature already had (which, for the
+-- drifted production catalog, includes an EXECUTE grant callable by
+-- anon -- REVOKE ... FROM PUBLIC alone does not remove anon's
+-- explicit/default grant, since anon is a distinct role, not merely a
+-- PUBLIC member for this purpose in this project's default-privilege
+-- setup). So this migration always ends with an explicit REVOKE ALL FROM
+-- PUBLIC, REVOKE ALL FROM anon, and GRANT EXECUTE TO authenticated on the
+-- final seven-argument signature, regardless of what privileges it
+-- entered this migration with.
+-- ============================================================
+
+-- Drop the six-argument signature if it is still present. No-ops
+-- (including on the drifted-production and fresh-database states) when
+-- it is not; safe to run whether or not files 1-2 of the original chain
+-- ever separately revoked its PUBLIC/authenticated privileges first.
+DROP FUNCTION IF EXISTS public.update_instrument_sale_transition_atomic(
+  UUID, JSONB, NUMERIC, DATE, UUID, TEXT
+);
+
 CREATE OR REPLACE FUNCTION public.update_instrument_sale_transition_atomic(
   p_instrument_id UUID,
   p_patch         JSONB   DEFAULT '{}'::jsonb,
@@ -89,3 +166,18 @@ BEGIN
   RETURN v_result;
 END;
 $$;
+
+-- Unconditional, explicit privilege convergence on the final
+-- seven-argument signature -- see header comment for why this cannot
+-- rely on CREATE OR REPLACE's ACL-preservation behavior alone.
+REVOKE ALL ON FUNCTION public.update_instrument_sale_transition_atomic(
+  UUID, JSONB, NUMERIC, DATE, UUID, TEXT, TIMESTAMPTZ
+) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.update_instrument_sale_transition_atomic(
+  UUID, JSONB, NUMERIC, DATE, UUID, TEXT, TIMESTAMPTZ
+) FROM anon;
+
+GRANT EXECUTE ON FUNCTION public.update_instrument_sale_transition_atomic(
+  UUID, JSONB, NUMERIC, DATE, UUID, TEXT, TIMESTAMPTZ
+) TO authenticated;

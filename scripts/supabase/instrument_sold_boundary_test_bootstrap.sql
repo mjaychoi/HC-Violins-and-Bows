@@ -25,12 +25,7 @@
 --     -f supabase/migrations/00000000000037_update_instrument_sale_transition_atomic.sql \
 --     -f supabase/migrations/00000000000038_update_instrument_sale_transition_atomic_revoke_public.sql \
 --     -f supabase/migrations/00000000000039_update_instrument_sale_transition_atomic_grant_authenticated.sql \
---     -f supabase/migrations/20260423140001_update_instrument_sale_transition_revoke_public_old.sql \
---     -f supabase/migrations/20260423140002_update_instrument_sale_transition_revoke_authenticated_old.sql \
---     -f supabase/migrations/20260423140003_update_instrument_sale_transition_drop_old.sql \
---     -f supabase/migrations/20260423140004_update_instrument_sale_transition_atomic_concurrency.sql \
---     -f supabase/migrations/20260423140005_update_instrument_sale_transition_revoke_public.sql \
---     -f supabase/migrations/20260423140006_update_instrument_sale_transition_grant_authenticated.sql \
+--     -f supabase/migrations/20260423140001_update_instrument_sale_transition_atomic_consolidated.sql \
 --     -f supabase/migrations/20260804020000_harden_sale_lifecycle_authorization.sql
 --   psql hc_sold_boundary_verify -v ON_ERROR_STOP=1 \
 --     -f scripts/supabase/instrument_sold_boundary_enforcement.test.sql
@@ -38,6 +33,12 @@
 \set ON_ERROR_STOP on
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+DO $$
+BEGIN
+  CREATE ROLE anon NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 DO $$
 BEGIN

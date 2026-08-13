@@ -10,7 +10,7 @@
 --     -f supabase/migrations/00000000000013_create_sale_atomic.sql \
 --     -f supabase/migrations/00000000000016_create_sale_adjustment_atomic.sql \
 --     -f supabase/migrations/00000000000031_create_sale_atomic_idempotent.sql \
---     -f supabase/migrations/20260423140004_update_instrument_sale_transition_atomic_concurrency.sql \
+--     -f supabase/migrations/20260423140001_update_instrument_sale_transition_atomic_consolidated.sql \
 --     -f supabase/migrations/20260804020000_harden_sale_lifecycle_authorization.sql
 --   psql hc_sale_resale_verify -v ON_ERROR_STOP=1 -f scripts/supabase/create_sale_atomic_resale.test.sql
 --   DATABASE_URL=postgresql:///hc_sale_resale_verify \
@@ -21,6 +21,11 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+DO $$
+BEGIN
+  CREATE ROLE anon NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 DO $$
 BEGIN
   CREATE ROLE authenticated NOLOGIN;
