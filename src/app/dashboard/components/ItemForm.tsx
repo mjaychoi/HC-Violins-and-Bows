@@ -57,6 +57,7 @@ function ItemForm({
     cost_price?: string;
     consignment_price?: string;
     serial_number?: string;
+    reserved_reason?: string;
   }>({});
   const [success, setSuccess] = useState(false);
   const lastInitializedItemId = useRef<string | null>(null);
@@ -77,6 +78,7 @@ function ItemForm({
       'cost_price',
       'consignment_price',
       'serial_number',
+      'reserved_reason',
     ];
     for (const field of order) {
       if (fieldErrs[field]) {
@@ -126,6 +128,7 @@ function ItemForm({
       updateField('ownership', selectedItem.ownership || '');
       updateField('note', selectedItem.note || '');
       updateField('serial_number', selectedItem.serial_number || '');
+      updateField('reserved_reason', selectedItem.reserved_reason || '');
     } else if (!isEditing && !selectedItem) {
       // FIXED: Create mode - handle initialization and serial regeneration
       if (!hasInitializedCreate.current) {
@@ -190,6 +193,8 @@ function ItemForm({
       validationErrors.forEach(msg => {
         if (msg.includes('Year')) mappedFieldErrors.year = msg;
         if (msg.includes('Price')) mappedFieldErrors.price = msg;
+        if (msg.includes('Reservation reason'))
+          mappedFieldErrors.reserved_reason = msg;
       });
       if (Object.keys(mappedFieldErrors).length > 0) {
         setFieldErrors(mappedFieldErrors);
@@ -296,6 +301,13 @@ function ItemForm({
         ownership: formData.ownership?.trim() || null,
         note: formData.note?.trim() || null,
         serial_number: serialValidation.normalizedSerial || normalizedSerial,
+        // Only send reserved_reason when saving as Reserved — the API clears
+        // (or, for Reserved -> Booked, carries forward) reservation metadata
+        // on its own for every other status, so omitting the key elsewhere
+        // preserves that existing server-side behavior.
+        ...(formData.status === 'Reserved'
+          ? { reserved_reason: (formData.reserved_reason || '').trim() }
+          : {}),
       };
 
       const submitResult = await onSubmit(instrumentData);
@@ -566,6 +578,20 @@ function ItemForm({
                 error={fieldErrors.price}
               />
             </div>
+
+            {isEditing && formData.status === 'Reserved' && (
+              <Input
+                id="reserved_reason"
+                label="Reservation Reason"
+                name="reserved_reason"
+                value={formData.reserved_reason}
+                onChange={handleInputChange}
+                placeholder="Why is this instrument reserved?"
+                error={fieldErrors.reserved_reason}
+                helperText="Required while status is Reserved."
+                required
+              />
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <Input
