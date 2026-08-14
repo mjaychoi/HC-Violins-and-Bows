@@ -98,6 +98,18 @@ const SALE_TRANSITION_KEYS = [
 
 const MAX_SALES_NOTE_LENGTH = 2_000;
 
+// cost_price/consignment_price are excluded here on purpose: the DB no
+// longer grants `authenticated` direct SELECT on those columns — see
+// supabase/migrations/20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+// This whole function requires admin (see requireAdmin() call below), so we
+// fetch them back via the SECURITY DEFINER get_instruments_financials() RPC.
+const INSTRUMENT_SAFE_COLUMNS = `
+  id, org_id, type, maker, subtype, year, certificate,
+  size, weight, price, ownership, note, serial_number, status,
+  reserved_reason, reserved_by_user_id, reserved_connection_id,
+  created_at, updated_at
+`;
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -814,7 +826,7 @@ export async function executeInstrumentPatch(
     .eq('id', instrumentId)
     .eq('org_id', orgId)
     .eq('updated_at', expectedUpdatedAt)
-    .select('*');
+    .select(INSTRUMENT_SAFE_COLUMNS);
 
   if (error) {
     throw errorHandler.handleSupabaseError(error, 'Update instrument');
@@ -879,8 +891,31 @@ export async function executeInstrumentPatch(
     });
   }
 
+  // This function is admin-gated (requireAdmin above), so it's safe to
+  // fetch the financial columns back via the SECURITY DEFINER RPC — the
+  // base-table select above deliberately excludes them.
+  const { data: financialsData, error: financialsError } =
+    await auth.userSupabase.rpc('get_instruments_financials', {
+      p_instrument_ids: [instrumentId],
+    });
+
+  if (financialsError) {
+    throw errorHandler.handleSupabaseError(
+      financialsError,
+      'Fetch instrument financials'
+    );
+  }
+
+  const financials = financialsData?.[0];
+
   return {
-    payload: { data: typeGuards.validateInstrument(data) },
+    payload: {
+      data: typeGuards.validateInstrument({
+        ...data,
+        cost_price: financials?.cost_price ?? null,
+        consignment_price: financials?.consignment_price ?? null,
+      }),
+    },
     status: 200,
     metadata: { instrumentId },
   };

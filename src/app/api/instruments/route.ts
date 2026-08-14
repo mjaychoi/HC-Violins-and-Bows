@@ -38,6 +38,18 @@ import { writeAuditLog } from '@/utils/auditLog';
 
 const MAX_SEARCH_LEN = 100;
 
+// cost_price/consignment_price are excluded here on purpose: the DB no
+// longer grants `authenticated` (the shared Postgres role for both admin
+// and member JWTs) direct SELECT on those columns — see
+// supabase/migrations/20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+// Admins get them back via get_instruments_financials() below.
+const INSTRUMENT_SAFE_COLUMNS = `
+  id, org_id, type, maker, subtype, year, certificate,
+  size, weight, price, ownership, note, serial_number, status,
+  reserved_reason, reserved_by_user_id, reserved_connection_id,
+  created_at, updated_at
+`;
+
 type InstrumentInsertRow = TablesInsert<'instruments'>;
 type CreateInstrumentInput = {
   status?: Instrument['status'];
@@ -67,23 +79,79 @@ type InstrumentInsertInput = CreateInstrumentInput & {
 const SERIAL_CONFLICT_MAX_RETRIES = 3;
 const MAX_ALL_RESULTS = 1000;
 
+type InstrumentFinancials = {
+  cost_price: number | null;
+  consignment_price: number | null;
+};
+
 function toPublicInstrumentRow<T extends { certificate?: boolean | null }>(
   item: T,
-  isAdmin: boolean
+  isAdmin: boolean,
+  financials?: InstrumentFinancials
 ) {
   const transformed = {
     ...item,
     has_certificate: !!item.certificate,
   };
 
-  if (isAdmin) {
-    return transformed;
-  }
-
   const rest = { ...transformed } as Record<string, unknown>;
+  // Always drop base-table financial columns. Admins get them back only from
+  // get_instruments_financials(); members never receive them.
   delete rest.cost_price;
   delete rest.consignment_price;
+
+  if (isAdmin && financials) {
+    rest.cost_price = financials.cost_price;
+    rest.consignment_price = financials.consignment_price;
+  }
+
   return rest;
+}
+
+async function loadInstrumentFinancialsById(
+  auth: AuthContext,
+  instrumentIds: string[]
+): Promise<
+  | { ok: true; byId: Map<string, InstrumentFinancials> }
+  | {
+      ok: false;
+      payload: { error: string; success: false };
+      status: 500;
+    }
+> {
+  if (instrumentIds.length === 0) {
+    return { ok: true, byId: new Map() };
+  }
+
+  const { data: financialsData, error: financialsError } =
+    await auth.userSupabase.rpc('get_instruments_financials', {
+      p_instrument_ids: instrumentIds,
+    });
+
+  if (financialsError) {
+    errorHandler.handleSupabaseError(
+      financialsError,
+      'Fetch instrument financials'
+    );
+    return {
+      ok: false,
+      payload: { error: 'Database error', success: false },
+      status: 500,
+    };
+  }
+
+  return {
+    ok: true,
+    byId: new Map(
+      (financialsData || []).map(row => [
+        row.id,
+        {
+          cost_price: row.cost_price,
+          consignment_price: row.consignment_price,
+        },
+      ])
+    ),
+  };
 }
 
 function normalizeNullableText(
@@ -207,10 +275,14 @@ async function createInstrumentWithRetry(
   let nextInsert = instrumentInsert;
 
   for (let attempt = 0; attempt <= SERIAL_CONFLICT_MAX_RETRIES; attempt += 1) {
+    // .select(INSTRUMENT_SAFE_COLUMNS), not the bare .select() default of
+    // `*`: the DB no longer grants `authenticated` SELECT on
+    // cost_price/consignment_price (see 20260814160000_...sql). The caller
+    // already knows those values from nextInsert and merges them back in.
     const { data, error } = await auth.userSupabase
       .from('instruments')
       .insert(nextInsert)
-      .select()
+      .select(INSTRUMENT_SAFE_COLUMNS)
       .single();
 
     if (!error) {
@@ -286,7 +358,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
           const { data, error } = await auth.userSupabase
             .from('instruments')
-            .select('*')
+            .select(INSTRUMENT_SAFE_COLUMNS)
             .eq('org_id', orgId)
             .eq('id', requestedId)
             .maybeSingle();
@@ -307,7 +379,15 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           }
 
           const isAdmin = auth.role === 'admin';
-          const row = toPublicInstrumentRow(data, isAdmin);
+          let financials: InstrumentFinancials | undefined;
+          if (isAdmin) {
+            const loaded = await loadInstrumentFinancialsById(auth, [data.id]);
+            if (!loaded.ok) {
+              return loaded;
+            }
+            financials = loaded.byId.get(data.id);
+          }
+          const row = toPublicInstrumentRow(data, isAdmin, financials);
 
           return {
             payload: {
@@ -361,7 +441,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
         let query = auth.userSupabase
           .from('instruments')
-          .select('*', { count: 'exact' })
+          .select(INSTRUMENT_SAFE_COLUMNS, { count: 'exact' })
           .eq('org_id', orgId);
 
         if (ownership === 'owned') {
@@ -407,9 +487,29 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         // Product policy: cost_price and consignment_price are internal financial
         // fields (purchase cost / consignor settlement). Members see the retail
         // price but not the margin data. Admins receive the full record.
+        //
+        // The base query above deliberately omits these columns — the DB no
+        // longer grants `authenticated` direct SELECT on them (see
+        // 20260814160000_enforce_financial_confidentiality_db_boundary.sql).
+        // For admins we fetch them separately through the SECURITY DEFINER
+        // get_instruments_financials() RPC, which checks is_admin() and
+        // org_id() internally.
         const isAdmin = auth.role === 'admin';
+        let financialsById = new Map<string, InstrumentFinancials>();
+
+        if (isAdmin && rows.length > 0) {
+          const loaded = await loadInstrumentFinancialsById(
+            auth,
+            rows.map(item => item.id)
+          );
+          if (!loaded.ok) {
+            return loaded;
+          }
+          financialsById = loaded.byId;
+        }
+
         const responseRows = rows.map(item =>
-          toPublicInstrumentRow(item, isAdmin)
+          toPublicInstrumentRow(item, isAdmin, financialsById.get(item.id))
         );
 
         const responsePageSize = listAll ? responseRows.length : responseLimit;
@@ -581,7 +681,14 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         throw error;
       }
 
-      const validatedResponse = validateInstrument(data);
+      // createInstrumentWithRetry's own select() excludes cost_price/
+      // consignment_price (DB column privilege); merge back the values the
+      // caller (admin, per requireAdmin above) just submitted.
+      const validatedResponse = validateInstrument({
+        ...data,
+        cost_price: instrumentInsert.cost_price ?? null,
+        consignment_price: instrumentInsert.consignment_price ?? null,
+      });
       const payload = { data: validatedResponse };
 
       await completeCreateIdempotency(
