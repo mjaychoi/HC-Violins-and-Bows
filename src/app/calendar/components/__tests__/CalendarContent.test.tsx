@@ -196,7 +196,7 @@ describe('CalendarContent', () => {
 
     // 단순히 브랜치 실행을 보장하기 위한 상호작용이므로,
     // 여기서는 예외 없이 렌더되고 동작하는지만 확인하면 충분하다.
-    expect(screen.getByText('All Tasks')).toBeInTheDocument();
+    expect(screen.getAllByText(/Tasks in/).length).toBeGreaterThan(0);
   });
 
   it('keeps tasks with a today due date visible when other date fields are outside today', () => {
@@ -267,5 +267,76 @@ describe('CalendarContent', () => {
 
     expect(todayButtons[0].className).not.toMatch(/bg-green-100/);
     expect(todayButtons[0].className).toMatch(/bg-white/);
+  });
+
+  it('never labels the List/Search surface "All Tasks"; it is scoped to the loaded range', () => {
+    const navigation = createNavigationOverrides();
+
+    render(
+      <CalendarContent
+        tasks={[baseTask]}
+        instruments={[baseInstrument]}
+        clients={[baseClient]}
+        loading={{ fetch: false, mutate: false }}
+        navigation={navigation}
+        view="list"
+        setView={jest.fn()}
+        onTaskClick={jest.fn()}
+        onTaskDelete={jest.fn()}
+        onSelectEvent={jest.fn()}
+        onSelectSlot={jest.fn()}
+        draggingEventId={null}
+        onOpenNewTask={jest.fn()}
+      />
+    );
+
+    expect(screen.queryByText('All Tasks')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/^Tasks in /).length).toBeGreaterThan(0);
+  });
+
+  it('does not claim tasks are globally absent when a search misses within a range that loaded zero tasks', () => {
+    const navigation = createNavigationOverrides();
+
+    render(
+      <CalendarContent
+        tasks={[]}
+        instruments={[]}
+        clients={[]}
+        loading={{ fetch: false, mutate: false }}
+        navigation={navigation}
+        view="list"
+        setView={jest.fn()}
+        onTaskClick={jest.fn()}
+        onTaskDelete={jest.fn()}
+        onSelectEvent={jest.fn()}
+        onSelectSlot={jest.fn()}
+        draggingEventId={null}
+        onOpenNewTask={jest.fn()}
+      />
+    );
+
+    // Sanity check: with no search active and zero loaded tasks, the blank
+    // "get started" prompt is the correct (truthful) state.
+    expect(screen.getByText('No tasks yet')).toBeInTheDocument();
+
+    const searchInput = screen.getByPlaceholderText(
+      'Search tasks, instruments, owners...'
+    );
+    fireEvent.change(searchInput, {
+      target: { value: 'nonexistent-task-xyz' },
+    });
+
+    // A search miss must never fall back to the blank "no tasks at all"
+    // copy — that reads as "this task doesn't exist" when it may simply be
+    // outside the currently loaded Calendar range.
+    expect(screen.queryByText('No tasks yet')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Get started by creating your first maintenance task.')
+    ).not.toBeInTheDocument();
+
+    expect(screen.getByText('No tasks found')).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/This search only covers tasks loaded for/).length
+    ).toBeGreaterThan(0);
   });
 });

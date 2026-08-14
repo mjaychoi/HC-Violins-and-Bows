@@ -279,8 +279,21 @@ function CalendarContentInner({
 
   const isEmptyState =
     !loading.fetch && !fetchError && filteredTasks.length === 0;
-  const emptyStateHasActiveFilters = tasks.length > 0 && hasActiveFilters;
+  // Search/filter results are always bounded by the currently loaded Calendar
+  // range, so the scope-aware empty state must show whenever a filter/search
+  // is active — even if the range itself loaded zero tasks. Gating this on
+  // `tasks.length > 0` would fall back to the "No tasks yet, get started"
+  // copy while a search is active, which reads as "nothing exists" rather
+  // than "nothing in this range matched."
+  const emptyStateHasActiveFilters = hasActiveFilters;
   const showPagination = totalPages > 1 && isListView;
+  // Reused for the List heading and the empty-state scope disclaimer so the
+  // "All Tasks" wording never implies a tenant-wide dataset beyond what's
+  // actually loaded for the visible Calendar range.
+  const rangeLabel = getViewRangeLabel(
+    navigation.calendarView,
+    navigation.currentDate
+  );
 
   return (
     <div className="p-6 pb-14">
@@ -289,7 +302,7 @@ function CalendarContentInner({
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-1">
               <h2 className="text-lg font-semibold text-gray-900">
-                All Tasks
+                Tasks in {rangeLabel}
                 {hasActiveFilters && (
                   <span className="ml-2 text-sm font-normal text-gray-500">
                     ({filteredTasks.length} of {tasks.length})
@@ -401,10 +414,7 @@ function CalendarContentInner({
             </div>
 
             <h1 className="text-base font-semibold tracking-tight text-gray-900 whitespace-nowrap">
-              {getViewRangeLabel(
-                navigation.calendarView,
-                navigation.currentDate
-              )}
+              {rangeLabel}
             </h1>
 
             <div className="hidden md:block h-6 w-px bg-gray-300" />
@@ -637,6 +647,7 @@ function CalendarContentInner({
           canCreateTask={canCreateTask}
           createTaskDisabledReason={createTaskDisabledReason}
           resultCount={filteredTasks.length}
+          scopeLabel={rangeLabel}
           activeFilters={{
             status: filterStatus,
             owner: filterOwnership,
@@ -685,7 +696,7 @@ function CalendarContentInner({
             ) : (
               <div className="flex items-center justify-between">
                 <h2 className="text-base md:text-lg font-semibold text-gray-900">
-                  All Tasks
+                  Tasks in {rangeLabel}
                 </h2>
                 {filteredTasks.length > 0 && (
                   <span className="text-xs text-gray-500">

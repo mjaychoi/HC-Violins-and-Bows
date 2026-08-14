@@ -18,6 +18,12 @@ interface CalendarEmptyStateProps {
     dateRange?: { from?: string; to?: string } | null;
     searchTerm?: string;
   };
+  /**
+   * Label for the currently loaded Calendar range (e.g. "August 2026").
+   * Search/filter only run over tasks already loaded for this range, so a
+   * search miss must be attributed to the range, not to a global absence.
+   */
+  scopeLabel?: string;
 }
 
 export default function CalendarEmptyState({
@@ -28,7 +34,10 @@ export default function CalendarEmptyState({
   createTaskDisabledReason,
   resultCount = 0,
   activeFilters,
+  scopeLabel,
 }: CalendarEmptyStateProps) {
+  const hasSearchTerm = Boolean(activeFilters?.searchTerm?.trim());
+  const isScopedSearchMiss = hasActiveFilters && hasSearchTerm && scopeLabel;
   // Build filter summary text
   const filterSummaryParts: string[] = [];
   if (activeFilters?.status && activeFilters.status !== 'all') {
@@ -60,9 +69,11 @@ export default function CalendarEmptyState({
       <div className="mx-auto max-w-md">
         {/* Screen reader announcement */}
         <div role="status" aria-live="polite" className="sr-only">
-          {hasActiveFilters
-            ? `No tasks found for current filters. ${resultCount} results. ${filterSummaryText ? `Active filters: ${filterSummaryText}` : ''}`
-            : `No tasks yet. ${resultCount} results.`}
+          {isScopedSearchMiss
+            ? `No tasks found for current filters within ${scopeLabel}. ${resultCount} results. This search only covers tasks loaded for ${scopeLabel}; a matching task may still exist outside this period. ${filterSummaryText ? `Active filters: ${filterSummaryText}` : ''}`
+            : hasActiveFilters
+              ? `No tasks found for current filters. ${resultCount} results. ${filterSummaryText ? `Active filters: ${filterSummaryText}` : ''}`
+              : `No tasks yet. ${resultCount} results.`}
         </div>
         <div className="mb-4">
           {/* FIXED: Decorative SVG hidden from screen readers */}
@@ -93,9 +104,11 @@ export default function CalendarEmptyState({
           </div>
         )}
         <p className="text-sm text-gray-500 mb-6">
-          {hasActiveFilters
-            ? 'Try adjusting your filters or create a new task.'
-            : 'Get started by creating your first maintenance task.'}
+          {isScopedSearchMiss
+            ? `This search only covers tasks loaded for ${scopeLabel}. A matching task may still exist outside this period — try a different date range or clear filters.`
+            : hasActiveFilters
+              ? 'Try adjusting your filters or create a new task.'
+              : 'Get started by creating your first maintenance task.'}
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           {hasActiveFilters && (
