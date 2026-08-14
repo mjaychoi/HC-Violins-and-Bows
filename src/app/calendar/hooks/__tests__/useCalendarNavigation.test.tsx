@@ -3,7 +3,7 @@ import { useCalendarNavigation } from '../useCalendarNavigation';
 
 // Mock date utilities
 jest.mock('../../utils/dateUtils', () => ({
-  getDateRangeForView: jest.fn((view, date) => {
+  getDateRangeForView: jest.fn(date => {
     const start = new Date(date);
     start.setDate(1);
     const end = new Date(start);
@@ -14,12 +14,12 @@ jest.mock('../../utils/dateUtils', () => ({
       endDate: end.toISOString().split('T')[0],
     };
   }),
-  navigatePrevious: jest.fn((view, date) => {
+  navigatePrevious: jest.fn(date => {
     const newDate = new Date(date);
     newDate.setMonth(newDate.getMonth() - 1);
     return newDate;
   }),
-  navigateNext: jest.fn((view, date) => {
+  navigateNext: jest.fn(date => {
     const newDate = new Date(date);
     newDate.setMonth(newDate.getMonth() + 1);
     return newDate;
@@ -41,7 +41,6 @@ describe('useCalendarNavigation', () => {
       })
     );
 
-    expect(result.current.calendarView).toBe('month');
     expect(result.current.currentDate).toBeInstanceOf(Date);
     expect(result.current.selectedDate).toBeNull();
   });
@@ -50,13 +49,11 @@ describe('useCalendarNavigation', () => {
     const initialDate = new Date('2024-06-15');
     const { result } = renderHook(() =>
       useCalendarNavigation({
-        initialView: 'week',
         initialDate,
         fetchTasksByDateRange: mockFetchTasksByDateRange,
       })
     );
 
-    expect(result.current.calendarView).toBe('week');
     expect(result.current.currentDate).toEqual(initialDate);
   });
 
@@ -135,20 +132,6 @@ describe('useCalendarNavigation', () => {
     expect(result.current.selectedDate).toBeInstanceOf(Date);
   });
 
-  it('should change view', () => {
-    const { result } = renderHook(() =>
-      useCalendarNavigation({
-        fetchTasksByDateRange: mockFetchTasksByDateRange,
-      })
-    );
-
-    act(() => {
-      result.current.setCalendarView('week');
-    });
-
-    expect(result.current.calendarView).toBe('week');
-  });
-
   it('should handle fetch error', async () => {
     const mockError = new Error('Fetch failed');
     const failingFetch = jest.fn().mockRejectedValue(mockError);
@@ -176,24 +159,6 @@ describe('useCalendarNavigation', () => {
 
     act(() => {
       result.current.setCurrentDate(new Date('2024-07-15'));
-    });
-
-    await waitFor(() => {
-      expect(mockFetchTasksByDateRange).toHaveBeenCalled();
-    });
-  });
-
-  it('should refetch when view changes', async () => {
-    const { result } = renderHook(() =>
-      useCalendarNavigation({
-        fetchTasksByDateRange: mockFetchTasksByDateRange,
-      })
-    );
-
-    mockFetchTasksByDateRange.mockClear();
-
-    act(() => {
-      result.current.setCalendarView('week');
     });
 
     await waitFor(() => {

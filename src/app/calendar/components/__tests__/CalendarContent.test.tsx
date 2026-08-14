@@ -2,7 +2,6 @@ import React from 'react';
 import { render, screen, fireEvent } from '@/test-utils/render';
 import CalendarContent from '../CalendarContent';
 import type { MaintenanceTask, Instrument, Client } from '@/types';
-import type { ExtendedView } from '../CalendarView';
 import { todayLocalYMD } from '@/utils/dateParsing';
 
 jest.mock('../CalendarView', () => ({
@@ -64,13 +63,11 @@ const baseClient: Client = {
 
 type CalendarNavigationOverrides = {
   currentDate: Date;
-  calendarView: ExtendedView;
   selectedDate: Date | null;
   handlePrevious: () => void;
   handleNext: () => void;
   handleGoToToday: () => void;
   setCurrentDate: (date: Date) => void;
-  setCalendarView: (view: ExtendedView) => void;
   setSelectedDate: (date: Date | null) => void;
 };
 
@@ -80,13 +77,11 @@ function createNavigationOverrides(
   const today = new Date();
   return {
     currentDate: today,
-    calendarView: 'month' as ExtendedView,
     selectedDate: null,
     handlePrevious: jest.fn(),
     handleNext: jest.fn(),
     handleGoToToday: jest.fn(),
     setCurrentDate: jest.fn(),
-    setCalendarView: jest.fn(),
     setSelectedDate: jest.fn(),
     ...overrides,
   };
@@ -148,6 +143,12 @@ describe('CalendarContent', () => {
     // Today 버튼 클릭 시 navigation.handleGoToToday 호출
     fireEvent.click(screen.getByRole('button', { name: /go to today/i }));
     expect(navigation.handleGoToToday).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /^previous$/i }));
+    expect(navigation.handlePrevious).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }));
+    expect(navigation.handleNext).toHaveBeenCalled();
 
     // 뷰 토글 버튼 클릭 시 setView 호출
     // Note: Buttons are in a tablist, so we need to find them by role="tab"

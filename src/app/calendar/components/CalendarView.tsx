@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useCallback } from 'react';
-import { Calendar, dateFnsLocalizer, Event, View } from 'react-big-calendar';
+import { Calendar, dateFnsLocalizer, Event } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 // Note: react-dnd v16 exports DndProvider from dist/core path
 // This is the stable import path for react-big-calendar compatibility
@@ -19,8 +19,6 @@ import { enUS } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 import { MaintenanceTask } from '@/types';
-import YearView from './YearView';
-import TimelineView from './TimelineView';
 import { getDateStatus } from '@/utils/tasks/style';
 import { parseYMDLocal } from '@/utils/dateParsing';
 import { parseISO, isValid } from 'date-fns';
@@ -42,10 +40,6 @@ const localizer = dateFnsLocalizer({
   getDay,
   locales,
 });
-
-// Extended view type to include custom views
-// Only allow specific views we support
-export type ExtendedView = 'month' | 'week' | 'agenda' | 'year' | 'timeline';
 
 // Unified calendar resource types
 export interface EventData {
@@ -91,8 +85,6 @@ interface CalendarViewProps {
   draggingEventId?: string | null; // Track currently dragging event for visual feedback
   currentDate?: Date;
   onNavigate?: (date: Date) => void;
-  currentView?: ExtendedView;
-  onViewChange?: (view: ExtendedView) => void;
 }
 
 // Enhanced Calendar with drag and drop
@@ -125,29 +117,9 @@ export default function CalendarView({
   draggingEventId,
   currentDate = new Date(),
   onNavigate,
-  currentView = 'month',
-  onViewChange,
 }: CalendarViewProps) {
-  // FIXED: Fully controlled component - use currentView prop directly
-  // Removed internalView state to avoid controlled/uncontrolled mixing
-  const view = currentView ?? 'month';
   const allowSlotCreate = Boolean(canCreateTask && onSelectSlot);
   const allowEventDrag = Boolean(canManageTask && onEventDrop);
-
-  const handleViewChange = (view: View | ExtendedView) => {
-    // Type guard: only accept views that are in our ExtendedView type
-    const validViews: ExtendedView[] = [
-      'month',
-      'week',
-      'agenda',
-      'year',
-      'timeline',
-    ];
-    if (validViews.includes(view as ExtendedView)) {
-      const extendedView = view as ExtendedView;
-      onViewChange?.(extendedView);
-    }
-  };
 
   // Convert tasks to calendar events
   const events: Event[] = useMemo(() => {
@@ -311,8 +283,6 @@ export default function CalendarView({
       previous: 'Previous',
       today: 'Today',
       month: 'Month',
-      week: 'Week',
-      agenda: 'Agenda',
       date: 'Date',
       time: 'Time',
       event: 'Event',
@@ -322,48 +292,6 @@ export default function CalendarView({
     []
   );
 
-  // Render custom views
-  if (view === 'year' || view === 'timeline') {
-    if (view === 'year') {
-      return (
-        <div
-          className="w-full calendar-container"
-          role="region"
-          aria-label="Maintenance calendar"
-          style={{ minHeight: '700px', padding: '1rem' }}
-        >
-          <YearView
-            currentDate={currentDate}
-            tasks={tasks}
-            instruments={instruments}
-            onSelectEvent={onSelectEvent}
-            onNavigate={onNavigate}
-          />
-        </div>
-      );
-    }
-
-    if (view === 'timeline') {
-      return (
-        <div
-          className="w-full calendar-container"
-          role="region"
-          aria-label="Maintenance calendar"
-          style={{ minHeight: '700px', padding: '1rem' }}
-        >
-          <TimelineView
-            currentDate={currentDate}
-            tasks={tasks}
-            instruments={instruments}
-            onSelectEvent={onSelectEvent}
-            onNavigate={onNavigate}
-          />
-        </div>
-      );
-    }
-  }
-
-  // Render standard react-big-calendar views
   return (
     <>
       <DndProvider backend={HTML5Backend}>
@@ -403,18 +331,9 @@ export default function CalendarView({
               resizable: false,
               date: currentDate,
               onNavigate,
-              view: view as View,
-              onView: (newView: View) => {
-                // Handle standard react-big-calendar views (day view not supported)
-                if (
-                  newView === 'month' ||
-                  newView === 'week' ||
-                  newView === 'agenda'
-                ) {
-                  handleViewChange(newView);
-                }
-              },
-              views: ['month', 'week', 'agenda'],
+              toolbar: false,
+              view: 'month',
+              views: ['month'],
               messages,
               popup: true,
               showMultiDayTimes: true,

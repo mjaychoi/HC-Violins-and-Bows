@@ -4,10 +4,8 @@ import {
   navigatePrevious,
   navigateNext,
 } from '../utils/dateUtils';
-import type { ExtendedView } from '../components/CalendarView';
 
 interface UseCalendarNavigationOptions {
-  initialView?: ExtendedView;
   initialDate?: Date;
   /**
    * Tenant identity included in request dedup keys so org switches always refetch
@@ -29,7 +27,6 @@ interface UseCalendarNavigationOptions {
 }
 
 export const useCalendarNavigation = ({
-  initialView = 'month',
   initialDate = new Date(),
   tenantIdentityKey = null,
   fetchTasksByDateRange,
@@ -37,7 +34,6 @@ export const useCalendarNavigation = ({
   onRefetchFailure,
 }: UseCalendarNavigationOptions) => {
   const [currentDate, setCurrentDate] = useState(initialDate);
-  const [calendarView, setCalendarView] = useState<ExtendedView>(initialView);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
   // FIXED: Stash fetchTasksByDateRange and onError in refs to avoid stale closure issues
@@ -73,8 +69,8 @@ export const useCalendarNavigation = ({
 
   // Current date range for the view (memoized)
   const currentRange = useMemo(() => {
-    return getDateRangeForView(calendarView, currentDate);
-  }, [calendarView, currentDate]);
+    return getDateRangeForView(currentDate);
+  }, [currentDate]);
 
   const tenantKey = tenantIdentityKey ?? '__no_tenant__';
 
@@ -87,7 +83,7 @@ export const useCalendarNavigation = ({
       }
     ) => {
       // Include tenant so identical ranges across orgs never dedup together
-      const requestKey = `${tenantKey}|${calendarView}|${currentRange.startDate}|${currentRange.endDate}`;
+      const requestKey = `${tenantKey}|${currentRange.startDate}|${currentRange.endDate}`;
 
       // Skip if this is the same request as the last one (StrictMode double-invoke prevention)
       // Unless force=true (for manual refresh after external changes)
@@ -150,13 +146,7 @@ export const useCalendarNavigation = ({
         }
       }
     },
-    [
-      tenantKey,
-      tenantIdentityKey,
-      calendarView,
-      currentRange.startDate,
-      currentRange.endDate,
-    ]
+    [tenantKey, tenantIdentityKey, currentRange.startDate, currentRange.endDate]
   );
 
   // Force refetch: bypass deduplication for manual refresh (e.g., after external task changes)
@@ -180,7 +170,7 @@ export const useCalendarNavigation = ({
     }
   }, [tenantIdentityKey]);
 
-  // Fetch tasks when date, view, or tenant changes (with deduplication)
+  // Fetch tasks when date or tenant changes (with deduplication)
   useEffect(() => {
     void refetchCurrentRange().catch((err: unknown) => {
       onRefetchFailureRef.current?.(err);
@@ -189,19 +179,19 @@ export const useCalendarNavigation = ({
 
   // Navigate to previous period
   const handlePrevious = useCallback(() => {
-    const newDate = navigatePrevious(calendarView, currentDate);
+    const newDate = navigatePrevious(currentDate);
     setCurrentDate(newDate);
     // Clear selectedDate when navigating to avoid stale selection
     setSelectedDate(null);
-  }, [calendarView, currentDate]);
+  }, [currentDate]);
 
   // Navigate to next period
   const handleNext = useCallback(() => {
-    const newDate = navigateNext(calendarView, currentDate);
+    const newDate = navigateNext(currentDate);
     setCurrentDate(newDate);
     // Clear selectedDate when navigating to avoid stale selection
     setSelectedDate(null);
-  }, [calendarView, currentDate]);
+  }, [currentDate]);
 
   // Navigate to today
   const handleGoToToday = useCallback(() => {
@@ -210,19 +200,10 @@ export const useCalendarNavigation = ({
     setSelectedDate(now);
   }, []);
 
-  // Handle view change
-  const handleViewChange = useCallback((view: ExtendedView) => {
-    setCalendarView(view);
-    // Clear selectedDate when changing view to avoid stale selection
-    setSelectedDate(null);
-  }, []);
-
   return {
     currentDate,
-    calendarView,
     selectedDate,
     setCurrentDate,
-    setCalendarView: handleViewChange,
     setSelectedDate,
     handlePrevious,
     handleNext,

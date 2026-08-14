@@ -22,7 +22,6 @@ import { getViewRangeLabel } from '../utils/viewUtils';
 import dynamic from 'next/dynamic';
 import { TableSkeleton, Pagination } from '@/components/common';
 import { Button } from '@/components/common/inputs';
-import type { ExtendedView } from './CalendarView';
 import type { CalendarViewMode } from '../hooks/useCalendarView';
 import { errorHandler } from '@/utils/errorHandler';
 
@@ -50,13 +49,11 @@ interface CalendarContentProps {
   };
   navigation: {
     currentDate: Date;
-    calendarView: ExtendedView;
     selectedDate: Date | null;
     handlePrevious: () => void;
     handleNext: () => void;
     handleGoToToday: () => void;
     setCurrentDate: (date: Date) => void;
-    setCalendarView: (view: ExtendedView) => void;
     setSelectedDate: (date: Date | null) => void;
   };
   view: CalendarViewMode;
@@ -290,10 +287,7 @@ function CalendarContentInner({
   // Reused for the List heading and the empty-state scope disclaimer so the
   // "All Tasks" wording never implies a tenant-wide dataset beyond what's
   // actually loaded for the visible Calendar range.
-  const rangeLabel = getViewRangeLabel(
-    navigation.calendarView,
-    navigation.currentDate
-  );
+  const rangeLabel = getViewRangeLabel(navigation.currentDate);
 
   return (
     <div className="p-6 pb-14">
@@ -667,8 +661,6 @@ function CalendarContentInner({
           draggingEventId={draggingEventId}
           currentDate={navigation.currentDate}
           onNavigate={navigation.setCurrentDate}
-          currentView={navigation.calendarView}
-          onViewChange={navigation.setCalendarView}
         />
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm">

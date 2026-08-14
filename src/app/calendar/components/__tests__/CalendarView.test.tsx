@@ -29,14 +29,16 @@ jest.mock('react-big-calendar', () => {
       selectable,
       draggableAccessor,
       eventPropGetter,
+      toolbar,
+      views,
+      view,
     }: any) => {
       const taskFromResource = (r: any) =>
         r?.task && typeof r.task === 'object' ? r.task : r;
 
       const handleEventClick = (event: any) => {
-        const task = taskFromResource(event.resource);
-        if (onSelectEvent && task) {
-          onSelectEvent(task);
+        if (onSelectEvent) {
+          onSelectEvent(event);
         }
       };
 
@@ -82,6 +84,9 @@ jest.mock('react-big-calendar', () => {
         {
           'data-testid': 'react-big-calendar',
           'data-selectable': selectable ? 'true' : 'false',
+          'data-toolbar': toolbar === false ? 'false' : 'true',
+          'data-views': Array.isArray(views) ? views.join(',') : '',
+          'data-view': view || '',
         },
         React.createElement('div', null, 'Calendar Component'),
         eventElements,
@@ -399,8 +404,7 @@ describe('CalendarView', () => {
     expect(screen.getByTestId('react-big-calendar')).toBeInTheDocument();
   });
 
-  it('should handle view changes', () => {
-    const mockOnViewChange = jest.fn();
+  it('uses month as the only RBC production view and does not render the native toolbar', () => {
     render(
       <CalendarView
         tasks={mockTasks}
@@ -409,44 +413,39 @@ describe('CalendarView', () => {
         onSelectSlot={mockOnSelectSlot}
         currentDate={new Date()}
         onNavigate={mockOnNavigate}
-        currentView="month"
-        onViewChange={mockOnViewChange}
       />
     );
 
-    expect(screen.getByTestId('react-big-calendar')).toBeInTheDocument();
+    const calendar = screen.getByTestId('react-big-calendar');
+    expect(calendar).toHaveAttribute('data-view', 'month');
+    expect(calendar).toHaveAttribute('data-views', 'month');
+    expect(calendar).toHaveAttribute('data-toolbar', 'false');
+    expect(
+      screen.queryByRole('button', { name: /^week$/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^agenda$/i })
+    ).not.toBeInTheDocument();
   });
 
-  it('should handle year view', () => {
+  it('opens the task path when a month event is clicked', async () => {
+    const user = userEvent.setup();
     render(
       <CalendarView
         tasks={mockTasks}
         instruments={mockInstruments}
         onSelectEvent={mockOnSelectEvent}
+        onSelectSlot={mockOnSelectSlot}
         currentDate={new Date()}
         onNavigate={mockOnNavigate}
-        currentView="year"
       />
     );
 
-    // YearView should be rendered instead of Calendar
-    expect(screen.queryByTestId('react-big-calendar')).not.toBeInTheDocument();
-  });
+    await user.click(screen.getByTestId('calendar-event-1'));
 
-  it('should handle timeline view', () => {
-    render(
-      <CalendarView
-        tasks={mockTasks}
-        instruments={mockInstruments}
-        onSelectEvent={mockOnSelectEvent}
-        currentDate={new Date()}
-        onNavigate={mockOnNavigate}
-        currentView="timeline"
-      />
+    expect(mockOnSelectEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '1' })
     );
-
-    // TimelineView should be rendered instead of Calendar
-    expect(screen.queryByTestId('react-big-calendar')).not.toBeInTheDocument();
   });
 
   it('should handle dragging event ID', () => {
