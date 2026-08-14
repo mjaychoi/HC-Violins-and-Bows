@@ -3,6 +3,10 @@ import { renderHook as renderHookWithoutProviders } from '@testing-library/react
 import { AuthProvider, useAuth } from '../AuthContext';
 import { useRouter } from 'next/navigation';
 import { logError, logApiRequest } from '@/utils/logger';
+import {
+  signalAuthChanged,
+  AUTH_CROSS_TAB_SIGNAL_KEY,
+} from '@/lib/authCrossTabSignal';
 
 const mockGetSupabaseClient = jest.fn();
 const mockGetSupabaseClientSync = jest.fn();
@@ -18,6 +22,13 @@ jest.mock('@/utils/logger', () => ({
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
 }));
+jest.mock('@/lib/authCrossTabSignal', () => {
+  const actual = jest.requireActual('@/lib/authCrossTabSignal');
+  return {
+    ...actual,
+    signalAuthChanged: jest.fn(),
+  };
+});
 
 const mockUseRouter = useRouter as jest.MockedFunction<typeof useRouter>;
 
@@ -415,5 +426,210 @@ describe('AuthContext', () => {
     );
     expect(mockSignOut).toHaveBeenCalled();
     // handleInvalidRefreshToken calls signOut + clearAuthState but does NOT call router.push
+  });
+});
+
+describe('AuthContext cross-tab identity reconciliation (V7-001)', () => {
+  const mockGetSession = jest.fn();
+  const mockSignUp = jest.fn();
+  const mockSignIn = jest.fn();
+  const mockSignOut = jest.fn();
+  const mockRefreshSession = jest.fn();
+  const mockOnAuthStateChange = jest.fn(() => ({
+    data: { subscription: { unsubscribe: jest.fn() } },
+  }));
+
+  const sessionA = {
+    user: { id: 'user-A', email: 'a@example.com', app_metadata: {} },
+    access_token: 'token-a-1',
+    expires_at: 1000,
+  };
+
+  const sessionB = {
+    user: { id: 'user-B', email: 'b@example.com', app_metadata: {} },
+    access_token: 'token-b-1',
+    expires_at: 2000,
+  };
+
+  // The "shared browser cookie": both simulated tabs' getSession() calls
+  // read from this, mirroring the fact that cookies (unlike localStorage)
+  // are already synchronously shared across tabs by the browser.
+  let sharedCookieSession: typeof sessionA | null = null;
+
+  function AuthProviderWrapper({ children }: { children: React.ReactNode }) {
+    return <AuthProvider>{children}</AuthProvider>;
+  }
+
+  function makeWrapper() {
+    return AuthProviderWrapper;
+  }
+
+  function dispatchCrossTabSignal() {
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: AUTH_CROSS_TAB_SIGNAL_KEY,
+          newValue: String(Date.now()),
+        })
+      );
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sharedCookieSession = sessionA;
+
+    mockGetSession.mockImplementation(() =>
+      Promise.resolve({ data: { session: sharedCookieSession }, error: null })
+    );
+
+    mockSignOut.mockImplementation(() => {
+      sharedCookieSession = null;
+      return Promise.resolve({ error: null });
+    });
+
+    mockSignIn.mockImplementation(({ email }: { email: string }) => {
+      const next = email === sessionB.user.email ? sessionB : sessionA;
+      sharedCookieSession = next;
+      return Promise.resolve({
+        data: { session: next, user: next.user },
+        error: null,
+      });
+    });
+
+    const mockSupabaseClient = {
+      auth: {
+        getSession: mockGetSession,
+        onAuthStateChange: mockOnAuthStateChange,
+        signUp: mockSignUp,
+        signInWithPassword: mockSignIn,
+        signOut: mockSignOut,
+        refreshSession: mockRefreshSession,
+      },
+    };
+
+    mockGetSupabaseClient.mockResolvedValue(mockSupabaseClient as any);
+    mockGetSupabaseClientSync.mockReturnValue(mockSupabaseClient as any);
+  });
+
+  it('TEST-1: tab A reconciles to logged out after tab B logs out', async () => {
+    const tabA = renderHook(() => useAuth(), { wrapper: makeWrapper() });
+    const tabB = renderHook(() => useAuth(), { wrapper: makeWrapper() });
+
+    await waitFor(() => expect(tabA.result.current.loading).toBe(false));
+    await waitFor(() => expect(tabB.result.current.loading).toBe(false));
+    expect(tabA.result.current.user?.id).toBe('user-A');
+
+    await act(async () => {
+      await tabB.result.current.signOut();
+    });
+    expect(signalAuthChanged).toHaveBeenCalled();
+
+    dispatchCrossTabSignal();
+
+    await waitFor(() => {
+      expect(tabA.result.current.user).toBeNull();
+    });
+    expect(tabA.result.current.session).toBeNull();
+    expect(tabA.result.current.loading).toBe(false);
+  });
+
+  it('TEST-2: tab A reconciles from A to B after tab B signs in as another user', async () => {
+    const tabA = renderHook(() => useAuth(), { wrapper: makeWrapper() });
+    const tabB = renderHook(() => useAuth(), { wrapper: makeWrapper() });
+
+    await waitFor(() => expect(tabA.result.current.loading).toBe(false));
+    await waitFor(() => expect(tabB.result.current.loading).toBe(false));
+    expect(tabA.result.current.user?.id).toBe('user-A');
+
+    await act(async () => {
+      await tabB.result.current.signIn('b@example.com', 'password');
+    });
+
+    dispatchCrossTabSignal();
+
+    await waitFor(() => {
+      expect(tabA.result.current.user?.id).toBe('user-B');
+    });
+    // The stale A identity must never be the settled state once B is authoritative.
+    expect(tabA.result.current.user?.id).not.toBe('user-A');
+    expect(tabA.result.current.loading).toBe(false);
+  });
+
+  it('TEST-3: same-user session refresh does not behave like an account switch', async () => {
+    const tabA = renderHook(() => useAuth(), { wrapper: makeWrapper() });
+
+    await waitFor(() => expect(tabA.result.current.loading).toBe(false));
+    expect(tabA.result.current.user?.id).toBe('user-A');
+
+    // A refreshed token for the SAME user, simulating another tab's
+    // auto-refresh updating the shared cookie.
+    sharedCookieSession = {
+      ...sessionA,
+      access_token: 'token-a-2',
+      expires_at: 3000,
+    };
+
+    dispatchCrossTabSignal();
+
+    await waitFor(() => {
+      expect(tabA.result.current.session?.access_token).toBe('token-a-2');
+    });
+
+    // Identity is unchanged: no forced sign-out / clear was triggered.
+    expect(tabA.result.current.user?.id).toBe('user-A');
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it('TEST-4: refreshSession() does not itself ping other tabs', async () => {
+    mockRefreshSession.mockResolvedValue({
+      data: { session: { ...sessionA, access_token: 'token-a-refreshed' } },
+      error: null,
+    });
+
+    const tabA = renderHook(() => useAuth(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(tabA.result.current.loading).toBe(false));
+
+    await act(async () => {
+      await tabA.result.current.refreshSession();
+    });
+
+    expect(signalAuthChanged).not.toHaveBeenCalled();
+  });
+
+  it('TEST-5: an unrelated storage event does not trigger reconciliation', async () => {
+    const tabA = renderHook(() => useAuth(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(tabA.result.current.loading).toBe(false));
+
+    mockGetSession.mockClear();
+
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'some-unrelated-key',
+          newValue: 'x',
+        })
+      );
+    });
+
+    expect(mockGetSession).not.toHaveBeenCalled();
+  });
+
+  it('TEST-6: reconciling from a remote signal does not rebroadcast (no event loop)', async () => {
+    const tabA = renderHook(() => useAuth(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(tabA.result.current.loading).toBe(false));
+
+    (signalAuthChanged as jest.Mock).mockClear();
+    sharedCookieSession = null;
+
+    dispatchCrossTabSignal();
+
+    await waitFor(() => {
+      expect(tabA.result.current.user).toBeNull();
+    });
+
+    // Reconciling from an authoritative re-read must not itself write a new
+    // signal — otherwise every tab receiving a signal would rebroadcast it.
+    expect(signalAuthChanged).not.toHaveBeenCalled();
   });
 });
