@@ -4,11 +4,18 @@ export interface Note {
   content: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Last successfully synced server `updated_at`, used as the optimistic
+   * concurrency token for PATCH. Always set for notes loaded/created from
+   * the API; legacy localStorage-only notes omit it until migrated.
+   */
+  syncedUpdatedAt?: string;
 }
 
 export interface NotesStorageKeys {
   list: string;
   search: string;
+  migrated: string;
 }
 
 const NOTES_STORAGE_VERSION = 'v2';
@@ -32,10 +39,11 @@ export function getNotesStorageKeys({
   return {
     list: `${prefix}:list`,
     search: `${prefix}:search`,
+    migrated: `${prefix}:migrated-to-server`,
   };
 }
 
-function isNote(value: unknown): value is Note {
+function isLegacyLocalNote(value: unknown): value is Note {
   if (!value || typeof value !== 'object') return false;
 
   const note = value as Record<string, unknown>;
@@ -48,13 +56,36 @@ function isNote(value: unknown): value is Note {
   );
 }
 
+/** Parse Phase-1 localStorage note arrays for one-time server migration. */
 export function parseStoredNotes(value: string | null): Note[] {
   if (!value) return [];
 
   try {
     const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed) && parsed.every(isNote) ? parsed : [];
+    return Array.isArray(parsed) && parsed.every(isLegacyLocalNote)
+      ? parsed
+      : [];
   } catch {
     return [];
   }
+}
+
+export function isNotesMigratedFlagSet(value: string | null): boolean {
+  return value === '1';
+}
+
+/**
+ * Persist the remaining Phase-1 local notes after a successful per-note
+ * migration. An empty list clears the pending key so a later visit can
+ * mark migration complete.
+ */
+export function writePendingLegacyNotes(
+  listKey: string,
+  remaining: Note[]
+): void {
+  if (remaining.length === 0) {
+    localStorage.removeItem(listKey);
+    return;
+  }
+  localStorage.setItem(listKey, JSON.stringify(remaining));
 }
