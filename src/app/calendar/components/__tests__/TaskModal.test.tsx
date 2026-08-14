@@ -664,7 +664,9 @@ describe('TaskModal', () => {
       await user.keyboard('{Escape}');
       await user.keyboard('{Escape}');
 
-      expect(screen.getAllByRole('heading', { name: /discard changes\?/i })).toHaveLength(1);
+      expect(
+        screen.getAllByRole('heading', { name: /discard changes\?/i })
+      ).toHaveLength(1);
       expect(mockOnClose).not.toHaveBeenCalled();
     });
   });
