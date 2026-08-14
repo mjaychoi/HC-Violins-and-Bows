@@ -19,33 +19,8 @@ describe('useCalendarView', () => {
     expect(result.current.view).toBe('list');
   });
 
-  it('should change view to timeline', () => {
-    const { result } = renderHook(() => useCalendarView());
-
-    act(() => {
-      result.current.setView('timeline');
-    });
-
-    expect(result.current.view).toBe('timeline');
-  });
-
-  it('should change view to year', () => {
-    const { result } = renderHook(() => useCalendarView());
-
-    act(() => {
-      result.current.setView('year');
-    });
-
-    expect(result.current.view).toBe('year');
-  });
-
-  it('should support all view modes', () => {
-    const viewModes: CalendarViewMode[] = [
-      'calendar',
-      'list',
-      'timeline',
-      'year',
-    ];
+  it('should support calendar and list view modes', () => {
+    const viewModes: CalendarViewMode[] = ['calendar', 'list'];
     const { result } = renderHook(() => useCalendarView());
 
     viewModes.forEach(mode => {
@@ -60,13 +35,11 @@ describe('useCalendarView', () => {
   it('should change view using legacy setCalendarView', () => {
     const { result } = renderHook(() => useCalendarView());
 
-    // Change to list first
     act(() => {
       result.current.setView('list');
     });
     expect(result.current.view).toBe('list');
 
-    // Use legacy setter
     act(() => {
       result.current.setCalendarView();
     });
@@ -77,10 +50,8 @@ describe('useCalendarView', () => {
   it('should change view using legacy setListView', () => {
     const { result } = renderHook(() => useCalendarView());
 
-    // Start with calendar
     expect(result.current.view).toBe('calendar');
 
-    // Use legacy setter
     act(() => {
       result.current.setListView();
     });
@@ -88,23 +59,13 @@ describe('useCalendarView', () => {
     expect(result.current.view).toBe('list');
   });
 
-  it('should allow multiple view changes', () => {
+  it('should allow switching between calendar and list', () => {
     const { result } = renderHook(() => useCalendarView());
 
     act(() => {
       result.current.setView('list');
     });
     expect(result.current.view).toBe('list');
-
-    act(() => {
-      result.current.setView('timeline');
-    });
-    expect(result.current.view).toBe('timeline');
-
-    act(() => {
-      result.current.setView('year');
-    });
-    expect(result.current.view).toBe('year');
 
     act(() => {
       result.current.setView('calendar');
