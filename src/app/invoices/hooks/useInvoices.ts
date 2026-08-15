@@ -30,6 +30,24 @@ interface FetchInvoicesOptions {
   suppressErrorToast?: boolean;
 }
 
+export interface FetchInvoicesResult {
+  invoices: Invoice[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  aborted?: boolean;
+}
+
+function emptyFetchResult(page: number, aborted = false): FetchInvoicesResult {
+  return {
+    invoices: [],
+    totalCount: 0,
+    totalPages: 1,
+    page,
+    ...(aborted ? { aborted: true as const } : {}),
+  };
+}
+
 interface InvoiceListDiagnostics {
   partial: boolean;
   droppedCount: number;
@@ -220,7 +238,7 @@ export function useInvoices() {
         });
 
         if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
-          return [];
+          return emptyFetchResult(currentPage, true);
         }
 
         const result = await readApiResponseEnvelope<Invoice[]>(
@@ -228,9 +246,29 @@ export function useInvoices() {
           `Failed to fetch invoices (${response.status})`
         );
         const data = Array.isArray(result.data) ? result.data : [];
+        const pagination =
+          result.pagination && typeof result.pagination === 'object'
+            ? (result.pagination as {
+                page?: unknown;
+                totalCount?: unknown;
+                totalPages?: unknown;
+              })
+            : null;
         const rawCount =
-          typeof result.count === 'number' ? result.count : undefined;
+          typeof result.count === 'number'
+            ? result.count
+            : typeof pagination?.totalCount === 'number'
+              ? pagination.totalCount
+              : undefined;
         const safeCount = typeof rawCount === 'number' ? rawCount : data.length;
+        const resolvedTotalPages =
+          typeof result.totalPages === 'number'
+            ? result.totalPages
+            : typeof pagination?.totalPages === 'number'
+              ? pagination.totalPages
+              : Math.max(1, Math.ceil(safeCount / (options.pageSize || 10)));
+        const resolvedPage =
+          typeof pagination?.page === 'number' ? pagination.page : currentPage;
         const partial = result.partial === true;
         const droppedCount =
           typeof result.droppedCount === 'number' ? result.droppedCount : 0;
@@ -249,11 +287,7 @@ export function useInvoices() {
           setInvoices(data);
           setStatus(data.length > 0 || partial ? 'success' : 'empty');
           setTotalCount(safeCount);
-          setTotalPages(
-            typeof result.totalPages === 'number'
-              ? result.totalPages
-              : Math.max(1, Math.ceil(safeCount / (options.pageSize || 10)))
-          );
+          setTotalPages(resolvedTotalPages);
           setListDiagnostics({
             partial,
             droppedCount,
@@ -282,13 +316,18 @@ export function useInvoices() {
           }
         }
 
-        return data as Invoice[];
+        return {
+          invoices: data as Invoice[],
+          totalCount: safeCount,
+          totalPages: resolvedTotalPages,
+          page: resolvedPage,
+        };
       } catch (error) {
         if (
           controller.signal.aborted ||
           (error instanceof DOMException && error.name === 'AbortError')
         ) {
-          return [];
+          return emptyFetchResult(currentPage, true);
         }
         // Log the actual error for debugging
         logError(
@@ -296,7 +335,7 @@ export function useInvoices() {
           error instanceof Error ? error.message : String(error)
         );
         if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
-          return [];
+          return emptyFetchResult(currentPage, true);
         }
         setError(error);
         const appError =
@@ -322,7 +361,7 @@ export function useInvoices() {
         if (options.throwOnError) {
           throw error;
         }
-        return [];
+        return emptyFetchResult(currentPage);
       } finally {
         if (
           abortRef.current === controller &&
