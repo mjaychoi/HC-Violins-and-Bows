@@ -33,6 +33,7 @@ import {
   writePendingLegacyNotes,
   type Note,
 } from '../notesStorage';
+import { reconcileNotesCollection } from '../utils/reconcileNotesCollection';
 
 function isAlreadyDeletedNoteError(error: unknown): boolean {
   return error instanceof ApiResponseError && error.status === 404;
@@ -236,7 +237,7 @@ export function useNotesPage() {
         }
 
         let hadError = false;
-        let hadConflict = false;
+        const conflictedIds = new Set<string>();
         const succeeded = new Map<string, Note>();
 
         results.forEach((result, index) => {
@@ -256,7 +257,7 @@ export function useNotesPage() {
               reason instanceof ApiResponseError &&
               reason.error_code === 'NOTES_CONFLICT'
             ) {
-              hadConflict = true;
+              conflictedIds.add(original.id);
             }
             logError(
               'Failed to save note to server:',
@@ -288,7 +289,7 @@ export function useNotesPage() {
           }
         }
 
-        if (hadConflict) {
+        if (conflictedIds.size > 0) {
           try {
             const latest = await fetchNotes();
             if (
@@ -296,9 +297,17 @@ export function useNotesPage() {
               activeListKeyRef.current === listKey &&
               tenantGenerationRef.current === generation
             ) {
-              dirtyNoteIdsRef.current.clear();
-              notesRef.current = latest;
-              setNotes(latest);
+              for (const id of conflictedIds) {
+                dirtyNoteIdsRef.current.delete(id);
+              }
+              const merged = reconcileNotesCollection({
+                localNotes: notesRef.current,
+                serverNotes: latest,
+                dirtyIds: dirtyNoteIdsRef.current,
+                conflictedIds,
+              });
+              notesRef.current = merged;
+              setNotes(merged);
               markSaveError(CONFLICT_TEXT);
             }
           } catch (error) {
