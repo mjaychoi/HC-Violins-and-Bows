@@ -41,6 +41,11 @@ const customJestConfig = {
     // tests/integration/production/db-deploy-guards.test.ts are unaffected
     // and still run under plain `npm test`.
     '<rootDir>/tests/integration/production/.*\\.integration\\.test\\.ts$',
+    // Same reasoning as the production integration tests above: spins up
+    // its own real, isolated local Postgres (embedded-postgres) via
+    // `npm run test:sale-transition-migration-consolidation`, not part of
+    // the default fast `npm test` loop.
+    '<rootDir>/tests/integration/migrations/.*\\.integration\\.test\\.ts$',
   ],
   collectCoverageFrom: [
     'src/**/*.{js,jsx,ts,tsx}',

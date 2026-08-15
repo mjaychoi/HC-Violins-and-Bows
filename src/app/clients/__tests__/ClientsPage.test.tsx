@@ -411,6 +411,7 @@ jest.mock('../hooks', () => ({
     stopEditing: mockStopEditing,
     updateViewFormData: mockUpdateViewFormData,
     handleViewInputChange: mockHandleViewInputChange,
+    syncFromCollection: jest.fn(),
   }),
   useInstrumentSearch: () => ({
     showInstrumentSearch: false,
@@ -911,6 +912,7 @@ describe('ClientsPage', () => {
           stopEditing: mockStopEditing,
           updateViewFormData: mockUpdateViewFormData,
           handleViewInputChange: mockHandleViewInputChange,
+          syncFromCollection: jest.fn(),
         }),
         useInstrumentSearch: () => ({
           showInstrumentSearch: false,
@@ -1044,6 +1046,7 @@ describe('ClientsPage', () => {
           stopEditing: mockStopEditing,
           updateViewFormData: mockUpdateViewFormData,
           handleViewInputChange: mockHandleViewInputChange,
+          syncFromCollection: jest.fn(),
         }),
         useInstrumentSearch: () => ({
           showInstrumentSearch: false,

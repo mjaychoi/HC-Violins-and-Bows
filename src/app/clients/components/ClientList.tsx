@@ -34,6 +34,14 @@ import {
 import { INTEREST_LEVELS } from '../constants';
 import dynamic from 'next/dynamic';
 import { usePermissions } from '@/hooks/usePermissions';
+import {
+  CLIENT_STALE_CONFLICT_MESSAGE,
+  isClientStaleConflict,
+} from '@/app/api/clients/_utils/concurrency';
+import {
+  CLIENT_LIST_COLUMNS,
+  type ClientListSortField,
+} from '@/app/api/clients/_utils/clientSort';
 
 const MessageComposer = dynamic(
   () => import('@/components/messages/MessageComposer'),
@@ -398,10 +406,13 @@ interface ClientListProps {
   clients: Client[];
   clientInstruments: ClientInstrument[];
   onClientClick: (client: Client) => void; // Kept for interface compatibility but not used (handles expand instead)
-  onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
+  onUpdateClient: (
+    clientId: string,
+    updates: Partial<Client> & { expected_updated_at?: string }
+  ) => Promise<void>;
   onDeleteClient?: (client: Client) => void;
-  onColumnSort: (column: keyof Client) => void;
-  getSortArrow: (column: keyof Client) => string;
+  onColumnSort: (column: ClientListSortField) => void;
+  getSortArrow: (column: string) => string;
   // UX: For displaying instrument count and recent activity
   clientsWithInstruments?: Set<string>;
   // Pagination
@@ -457,14 +468,20 @@ const ClientList = memo(function ClientList({
   // 인라인 편집 훅 (interest와 tags만 별도 편집)
   const inlineEditInterest = useInlineEdit<Client>({
     onSave: async (id, data) => {
-      await onUpdateClient(id, { interest: data.interest as string });
+      await onUpdateClient(id, {
+        interest: data.interest as string,
+        expected_updated_at: data.updated_at ?? undefined,
+      });
     },
     highlightDuration: 2000,
   });
 
   const inlineEditTags = useInlineEdit<Client>({
     onSave: async (id, data) => {
-      await onUpdateClient(id, { tags: data.tags as string[] });
+      await onUpdateClient(id, {
+        tags: data.tags as string[],
+        expected_updated_at: data.updated_at ?? undefined,
+      });
     },
     highlightDuration: 2000,
   });
@@ -494,8 +511,10 @@ const ClientList = memo(function ClientList({
       last_name: client.last_name,
       email: client.email,
       contact_number: client.contact_number,
+      tags: [...(client.tags ?? [])],
       interest: client.interest,
       note: client.note,
+      updated_at: client.updated_at,
     });
     setEditError(null);
   }, []);
@@ -519,10 +538,12 @@ const ClientList = memo(function ClientList({
       return;
     }
 
-    const updates: Partial<Client> = {
-      ...editData,
+    const { updated_at: expectedUpdatedAt, ...editFields } = editData;
+    const updates: Partial<Client> & { expected_updated_at?: string } = {
+      ...editFields,
       first_name: firstName || null,
       last_name: lastName || null,
+      expected_updated_at: expectedUpdatedAt ?? undefined,
     };
 
     setIsSaving(true);
@@ -533,8 +554,12 @@ const ClientList = memo(function ClientList({
       // If updateClient returns null or throws an error, editing mode will remain open
       setEditingClient(null);
       setEditData({});
-    } catch {
-      setEditError('Unable to save client changes. Please try again.');
+    } catch (error) {
+      setEditError(
+        isClientStaleConflict(error)
+          ? CLIENT_STALE_CONFLICT_MESSAGE
+          : 'Unable to save client changes. Please try again.'
+      );
     } finally {
       setIsSaving(false);
     }
@@ -671,16 +696,20 @@ const ClientList = memo(function ClientList({
                   <th className={`${classNames.tableHeaderCell} text-right`}>
                     <span>Actions</span>
                   </th>
-                  {(
-                    [
-                      ['first_name', 'Name'],
-                      ['contact_number', 'Contact'],
-                      ['tags', 'Tags'],
-                      ['interest', 'Interest'],
-                      ['client_number', 'Client #'],
-                    ] as const
-                  ).map(([field, label]) => {
-                    const arrow = getSortArrow(field);
+                  {CLIENT_LIST_COLUMNS.map(column => {
+                    if (!column.sortable) {
+                      return (
+                        <th
+                          key={column.field}
+                          scope="col"
+                          className={classNames.tableHeaderCell}
+                        >
+                          <span>{column.label}</span>
+                        </th>
+                      );
+                    }
+
+                    const arrow = getSortArrow(column.field);
                     const ariaSort =
                       arrow === '↑'
                         ? 'ascending'
@@ -689,26 +718,26 @@ const ClientList = memo(function ClientList({
                           : 'none';
                     return (
                       <th
-                        key={field}
+                        key={column.field}
                         scope="col"
                         className={cn(
                           classNames.tableHeaderCellSortable,
                           'group'
                         )}
-                        onClick={() => onColumnSort(field)}
+                        onClick={() => onColumnSort(column.field)}
                         onKeyDown={e => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            onColumnSort(field);
+                            onColumnSort(column.field);
                           }
                         }}
                         tabIndex={0}
                         role="columnheader"
                         aria-sort={ariaSort}
-                        aria-label={`Sort by ${label.toLowerCase()}`}
+                        aria-label={`Sort by ${column.label.toLowerCase()}`}
                       >
                         <span className="inline-flex items-center gap-1">
-                          {label}
+                          {column.label}
                           <span
                             className={`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 ${
                               arrow !== '' ? 'opacity-100 text-gray-900' : ''

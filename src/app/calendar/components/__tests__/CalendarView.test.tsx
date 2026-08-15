@@ -28,14 +28,17 @@ jest.mock('react-big-calendar', () => {
       onSelectSlot,
       selectable,
       draggableAccessor,
+      eventPropGetter,
+      toolbar,
+      views,
+      view,
     }: any) => {
       const taskFromResource = (r: any) =>
         r?.task && typeof r.task === 'object' ? r.task : r;
 
       const handleEventClick = (event: any) => {
-        const task = taskFromResource(event.resource);
-        if (onSelectEvent && task) {
-          onSelectEvent(task);
+        if (onSelectEvent) {
+          onSelectEvent(event);
         }
       };
 
@@ -52,6 +55,10 @@ jest.mock('react-big-calendar', () => {
                   typeof draggableAccessor === 'function'
                     ? Boolean(draggableAccessor(event))
                     : false;
+                const propGetterResult =
+                  typeof eventPropGetter === 'function'
+                    ? eventPropGetter(event) || {}
+                    : {};
                 return React.createElement(
                   'button',
                   {
@@ -59,6 +66,7 @@ jest.mock('react-big-calendar', () => {
                     type: 'button',
                     'data-testid': `calendar-event-${eventId}`,
                     'data-draggable': canDrag ? 'true' : 'false',
+                    className: propGetterResult.className,
                     onClick: (e: any) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -76,6 +84,9 @@ jest.mock('react-big-calendar', () => {
         {
           'data-testid': 'react-big-calendar',
           'data-selectable': selectable ? 'true' : 'false',
+          'data-toolbar': toolbar === false ? 'false' : 'true',
+          'data-views': Array.isArray(views) ? views.join(',') : '',
+          'data-view': view || '',
         },
         React.createElement('div', null, 'Calendar Component'),
         eventElements,
@@ -276,6 +287,37 @@ describe('CalendarView', () => {
     expect(screen.getByTestId('calendar-event-1')).toBeInTheDocument();
   });
 
+  it('renders overdue styling for a pending task with only an old received_date (regression: placement/status date parity)', () => {
+    jest.useFakeTimers({ now: new Date(2024, 1, 15, 12, 0, 0).getTime() }); // "today" = 2024-02-15
+
+    try {
+      const taskOldReceivedOnly: MaintenanceTask = {
+        ...mockTasks[0],
+        status: 'pending',
+        due_date: null,
+        personal_due_date: null,
+        scheduled_date: null,
+        received_date: '2024-02-01', // 14 days in the past, no other date fields
+      };
+
+      render(
+        <CalendarView
+          tasks={[taskOldReceivedOnly]}
+          instruments={mockInstruments}
+          onSelectEvent={mockOnSelectEvent}
+          onSelectSlot={mockOnSelectSlot}
+          currentDate={new Date(2024, 1, 15)}
+          onNavigate={mockOnNavigate}
+        />
+      );
+
+      const eventButton = screen.getByTestId('calendar-event-1');
+      expect(eventButton.className).toContain('status-overdue');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('should render with empty tasks', () => {
     render(
       <CalendarView
@@ -362,8 +404,7 @@ describe('CalendarView', () => {
     expect(screen.getByTestId('react-big-calendar')).toBeInTheDocument();
   });
 
-  it('should handle view changes', () => {
-    const mockOnViewChange = jest.fn();
+  it('uses month as the only RBC production view and does not render the native toolbar', () => {
     render(
       <CalendarView
         tasks={mockTasks}
@@ -372,44 +413,39 @@ describe('CalendarView', () => {
         onSelectSlot={mockOnSelectSlot}
         currentDate={new Date()}
         onNavigate={mockOnNavigate}
-        currentView="month"
-        onViewChange={mockOnViewChange}
       />
     );
 
-    expect(screen.getByTestId('react-big-calendar')).toBeInTheDocument();
+    const calendar = screen.getByTestId('react-big-calendar');
+    expect(calendar).toHaveAttribute('data-view', 'month');
+    expect(calendar).toHaveAttribute('data-views', 'month');
+    expect(calendar).toHaveAttribute('data-toolbar', 'false');
+    expect(
+      screen.queryByRole('button', { name: /^week$/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^agenda$/i })
+    ).not.toBeInTheDocument();
   });
 
-  it('should handle year view', () => {
+  it('opens the task path when a month event is clicked', async () => {
+    const user = userEvent.setup();
     render(
       <CalendarView
         tasks={mockTasks}
         instruments={mockInstruments}
         onSelectEvent={mockOnSelectEvent}
+        onSelectSlot={mockOnSelectSlot}
         currentDate={new Date()}
         onNavigate={mockOnNavigate}
-        currentView="year"
       />
     );
 
-    // YearView should be rendered instead of Calendar
-    expect(screen.queryByTestId('react-big-calendar')).not.toBeInTheDocument();
-  });
+    await user.click(screen.getByTestId('calendar-event-1'));
 
-  it('should handle timeline view', () => {
-    render(
-      <CalendarView
-        tasks={mockTasks}
-        instruments={mockInstruments}
-        onSelectEvent={mockOnSelectEvent}
-        currentDate={new Date()}
-        onNavigate={mockOnNavigate}
-        currentView="timeline"
-      />
+    expect(mockOnSelectEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '1' })
     );
-
-    // TimelineView should be rendered instead of Calendar
-    expect(screen.queryByTestId('react-big-calendar')).not.toBeInTheDocument();
   });
 
   it('should handle dragging event ID', () => {
@@ -543,6 +579,23 @@ describe('CalendarView', () => {
         'data-draggable',
         'false'
       );
+    });
+
+    it('does not invoke an event handler when onSelectEvent is omitted', async () => {
+      const user = userEvent.setup();
+      render(
+        <CalendarView
+          tasks={mockTasks}
+          instruments={mockInstruments}
+          currentDate={new Date()}
+          onNavigate={mockOnNavigate}
+          canCreateTask={false}
+          canManageTask={false}
+        />
+      );
+
+      await user.click(screen.getByTestId('calendar-event-1'));
+      expect(mockOnSelectEvent).not.toHaveBeenCalled();
     });
 
     it('defaults allow slot create and task drag when callbacks and perms are enabled', () => {

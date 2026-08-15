@@ -879,6 +879,44 @@ export type Database = {
           },
         ];
       };
+      notes: {
+        Row: {
+          id: string;
+          org_id: string;
+          user_id: string;
+          title: string;
+          content: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          user_id: string;
+          title?: string;
+          content?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          org_id?: string;
+          user_id?: string;
+          title?: string;
+          content?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'notes_org_id_fkey';
+            columns: ['org_id'];
+            isOneToOne: false;
+            referencedRelation: 'organizations';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -975,6 +1013,63 @@ export type Database = {
         Returns: string;
       };
       generate_invoice_number: { Args: never; Returns: string };
+      get_client_purchase_aggregate: {
+        Args: {
+          p_from_date?: string | null;
+          p_to_date?: string | null;
+        };
+        Returns: {
+          total_spend: number;
+          purchase_count: number;
+          most_recent: string | null;
+        }[];
+      };
+      get_sales_summary_by_client: {
+        Args: {
+          p_from_date?: string | null;
+          p_to_date?: string | null;
+        };
+        Returns: {
+          client_id: string;
+          total_spend: number;
+          purchase_count: number;
+          last_purchase_date: string | null;
+          first_purchase_date: string | null;
+        }[];
+      };
+      get_instruments_financials: {
+        Args: {
+          p_instrument_ids: string[];
+        };
+        Returns: {
+          id: string;
+          cost_price: number | null;
+          consignment_price: number | null;
+        }[];
+      };
+      get_sales_financials: {
+        Args: {
+          p_sale_ids: string[];
+        };
+        Returns: {
+          id: string;
+          sale_price: number;
+        }[];
+      };
+      get_sales_totals: {
+        Args: {
+          p_from_date?: string | null;
+          p_to_date?: string | null;
+          p_search?: string | null;
+          p_has_client?: boolean | null;
+          p_instrument_id?: string | null;
+        };
+        Returns: {
+          revenue: number;
+          avg_ticket: number;
+          refund_total: number;
+        }[];
+      };
       reorder_connections_atomic: {
         Args: {
           p_orders: Json;
@@ -1007,8 +1102,21 @@ export type Database = {
           p_invoice_id: string;
           p_invoice: Json;
           p_items?: Json | null;
+          p_expected_updated_at?: string | null;
         };
         Returns: undefined;
+      };
+      update_invoice_atomic_idempotent: {
+        Args: {
+          p_route_key: string;
+          p_idempotency_key: string;
+          p_request_hash: string;
+          p_invoice_id: string;
+          p_invoice: Json;
+          p_items?: Json | null;
+          p_expected_updated_at?: string | null;
+        };
+        Returns: string;
       };
       update_sale_notes_atomic: {
         Args: {

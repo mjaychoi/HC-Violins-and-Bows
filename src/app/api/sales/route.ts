@@ -13,6 +13,7 @@ import { apiHandler } from '@/app/api/_utils/apiHandler';
 import {
   validateSalesHistory,
   validateSalesHistoryArray,
+  validateSalesHistoryMemberArray,
   validatePartialSalesHistory,
   validateCreateSalesHistory,
   safeValidate,
@@ -43,17 +44,48 @@ const MAX_PAGE_SIZE = 100;
 const MAX_ALL_RESULTS = 1000;
 const MAX_EXPORT_PAGE_SIZE = 5_000;
 
+// sale_price is excluded here on purpose: the DB no longer grants
+// `authenticated` (the shared Postgres role for both admin and member
+// JWTs) direct SELECT on that column — see
+// supabase/migrations/20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+// Admin callers get it back via attachSalePrices()/get_sales_financials().
 const SALES_SELECT_COLUMNS = `
   id,
   instrument_id,
   client_id,
-  sale_price,
   sale_date,
   notes,
   created_at,
   entry_kind,
   adjustment_of_sale_id
 `;
+
+// Merges sale_price back onto rows fetched via SALES_SELECT_COLUMNS, using
+// the SECURITY DEFINER get_sales_financials() RPC (checks is_admin() and
+// org_id() internally — returns no rows for a non-admin caller).
+async function attachSalePrices<T extends { id: string }>(
+  auth: AuthContext,
+  rows: T[]
+): Promise<(T & { sale_price: number })[]> {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await auth.userSupabase.rpc('get_sales_financials', {
+    p_sale_ids: rows.map(row => row.id),
+  });
+
+  if (error) {
+    throw errorHandler.handleSupabaseError(error, 'Fetch sale financials');
+  }
+
+  const priceById = new Map((data || []).map(row => [row.id, row.sale_price]));
+
+  return rows.map(row => ({
+    ...row,
+    sale_price: priceById.get(row.id) ?? 0,
+  }));
+}
 
 type SalesFilterState = {
   fromDate?: string;
@@ -389,6 +421,10 @@ function escapeIlikePattern(value: string): string {
   return `%${escapePostgrestFilterValue(value)}%`;
 }
 
+// Admin-only. sale_price is no longer a directly-selectable column for the
+// shared `authenticated` role (see SALES_SELECT_COLUMNS comment above), so
+// this now delegates the aggregate computation to the SECURITY DEFINER
+// get_sales_totals() RPC, which checks is_admin()/org_id() internally.
 async function fetchSalesTotals(
   auth: AuthContext,
   filters: SalesFilterState,
@@ -398,100 +434,23 @@ async function fetchSalesTotals(
     return null;
   }
 
-  let positiveTotalsQuery = auth.userSupabase
-    .from('sales_history')
-    .select('revenue:sale_price.sum(), avg_ticket:sale_price.avg()')
-    .eq('org_id', auth.orgId!)
-    .gt('sale_price', 0);
+  const { data, error } = await auth.userSupabase.rpc('get_sales_totals', {
+    p_from_date: filters.fromDate ?? null,
+    p_to_date: filters.toDate ?? null,
+    p_search: filters.search ?? null,
+    p_has_client: filters.hasClient ?? null,
+    p_instrument_id: filters.instrumentId ?? null,
+  });
 
-  if (filters.fromDate) {
-    positiveTotalsQuery = positiveTotalsQuery.gte(
-      'sale_date',
-      filters.fromDate
-    );
+  if (error) {
+    throw errorHandler.handleSupabaseError(error, 'Fetch sales totals');
   }
 
-  if (filters.toDate) {
-    positiveTotalsQuery = positiveTotalsQuery.lte('sale_date', filters.toDate);
-  }
+  const totals = data?.[0];
 
-  if (filters.search) {
-    positiveTotalsQuery = positiveTotalsQuery.ilike(
-      'notes',
-      escapeIlikePattern(filters.search)
-    );
-  }
-
-  if (filters.hasClient !== undefined) {
-    positiveTotalsQuery = filters.hasClient
-      ? positiveTotalsQuery.not('client_id', 'is', null)
-      : positiveTotalsQuery.is('client_id', null);
-  }
-
-  if (filters.instrumentId) {
-    positiveTotalsQuery = positiveTotalsQuery.eq(
-      'instrument_id',
-      filters.instrumentId
-    );
-  }
-
-  const { data: positiveTotals, error: positiveTotalsError } =
-    await positiveTotalsQuery.single();
-
-  if (positiveTotalsError) {
-    throw errorHandler.handleSupabaseError(
-      positiveTotalsError,
-      'Fetch sales totals'
-    );
-  }
-
-  let refundTotalsQuery = auth.userSupabase
-    .from('sales_history')
-    .select('refund_total:sale_price.sum()')
-    .eq('org_id', auth.orgId!)
-    .lt('sale_price', 0);
-
-  if (filters.fromDate) {
-    refundTotalsQuery = refundTotalsQuery.gte('sale_date', filters.fromDate);
-  }
-
-  if (filters.toDate) {
-    refundTotalsQuery = refundTotalsQuery.lte('sale_date', filters.toDate);
-  }
-
-  if (filters.search) {
-    refundTotalsQuery = refundTotalsQuery.ilike(
-      'notes',
-      escapeIlikePattern(filters.search)
-    );
-  }
-
-  if (filters.hasClient !== undefined) {
-    refundTotalsQuery = filters.hasClient
-      ? refundTotalsQuery.not('client_id', 'is', null)
-      : refundTotalsQuery.is('client_id', null);
-  }
-
-  if (filters.instrumentId) {
-    refundTotalsQuery = refundTotalsQuery.eq(
-      'instrument_id',
-      filters.instrumentId
-    );
-  }
-
-  const { data: refundTotals, error: refundTotalsError } =
-    await refundTotalsQuery.single();
-
-  if (refundTotalsError) {
-    throw errorHandler.handleSupabaseError(
-      refundTotalsError,
-      'Fetch sales totals'
-    );
-  }
-
-  const revenue = Math.max(0, Number(positiveTotals?.revenue ?? 0));
-  const avgTicket = Math.max(0, Number(positiveTotals?.avg_ticket ?? 0));
-  const refund = Math.abs(Number(refundTotals?.refund_total ?? 0));
+  const revenue = Math.max(0, Number(totals?.revenue ?? 0));
+  const avgTicket = Math.max(0, Number(totals?.avg_ticket ?? 0));
+  const refund = Math.abs(Number(totals?.refund_total ?? 0));
   const totalSalesAmount = revenue + refund;
   const refundRate =
     totalSalesAmount > 0
@@ -516,6 +475,8 @@ function isSaleConflict(message: string): boolean {
   );
 }
 
+// Only called from admin-gated handlers (PATCH/POST below), so it's safe
+// to always attach sale_price via the admin-only get_sales_financials() RPC.
 async function fetchSaleById(auth: AuthContext, saleId: string) {
   if (!auth.orgId) {
     throw new Error('Organization context required for sale lookup');
@@ -533,7 +494,9 @@ async function fetchSaleById(auth: AuthContext, saleId: string) {
     throw errorHandler.handleSupabaseError(error, 'Fetch sale');
   }
 
-  return validateSalesHistory(data);
+  const [enriched] = await attachSalePrices(auth, [data]);
+
+  return validateSalesHistory(enriched);
 }
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
@@ -653,13 +616,15 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       const ascending = sortDirection === 'asc';
 
+      // sale_price is no longer a directly orderable column for the shared
+      // `authenticated` role (see SALES_SELECT_COLUMNS comment above) — an
+      // ORDER BY on it would fail at the DB level for every caller,
+      // member and admin alike. Fall back to sale_date ordering.
       let orderColumn: string;
       switch (sortColumn) {
         case 'sale_date':
-          orderColumn = 'sale_date';
-          break;
         case 'sale_price':
-          orderColumn = 'sale_price';
+          orderColumn = 'sale_date';
           break;
         default:
           orderColumn = 'sale_date';
@@ -678,7 +643,20 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       const rawRows = data || [];
       const truncated = fetchAll && rawRows.length > pageSize;
       const rows = truncated ? rawRows.slice(0, pageSize) : rawRows;
-      const validationResult = safeValidate(rows, validateSalesHistoryArray);
+
+      // Product policy: sale_price is a completed-transaction financial
+      // figure. Non-admin members can see that a sale occurred but not the
+      // amount. allScope (export/all) is already admin-gated above. The
+      // base query above no longer selects sale_price at all (see
+      // SALES_SELECT_COLUMNS comment) — for admins we merge it back via
+      // the admin-only get_sales_financials() RPC before validating/
+      // returning the rows.
+      const isAdmin = auth.role === 'admin';
+      const enrichedRows = isAdmin ? await attachSalePrices(auth, rows) : rows;
+
+      const validationResult = isAdmin
+        ? safeValidate(enrichedRows, validateSalesHistoryArray)
+        : safeValidate(enrichedRows, validateSalesHistoryMemberArray);
       const validationWarning = !validationResult.success;
 
       if (validationWarning) {
@@ -690,7 +668,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
       let totals = null;
 
-      if (!allScope && count !== null && count > 0) {
+      if (isAdmin && !allScope && count !== null && count > 0) {
         totals = await fetchSalesTotals(
           auth,
           {
@@ -745,16 +723,11 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      // Product policy: sale_price is a completed-transaction financial figure.
-      // Non-admin members can see that a sale occurred but not the amount.
-      // allScope (export/all) is already admin-gated above.
-      const isAdmin = auth.role === 'admin';
-      const safeRows = isAdmin
-        ? rows
-        : rows.map(
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            ({ sale_price: _sp, ...rest }: Record<string, unknown>) => rest
-          );
+      // enrichedRows already carries sale_price only for admin (see above);
+      // members never had it selected from the DB in the first place.
+      const safeRows = validationResult.success
+        ? validationResult.data
+        : enrichedRows;
 
       return {
         payload: {
@@ -1116,15 +1089,21 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           if (isSaleConflict(errorMessage)) {
             const { data: existing } = await auth.userSupabase
               .from('sales_history')
-              .select('*')
+              .select(SALES_SELECT_COLUMNS)
               .eq('adjustment_of_sale_id', id)
               .eq('entry_kind', adjustmentKind)
               .eq('org_id', auth.orgId!)
               .maybeSingle();
 
             if (existing) {
+              // patchHandler is admin-gated (requireAdmin above), so it's
+              // safe to attach sale_price here.
+              const [enrichedExisting] = await attachSalePrices(auth, [
+                existing,
+              ]);
+
               return {
-                payload: { data: existing, success: true },
+                payload: { data: enrichedExisting, success: true },
                 metadata: {
                   id: existing.id,
                   idempotencyKeyPresent: true,

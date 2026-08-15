@@ -4,6 +4,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import CalendarPage from '../page';
+import { usePermissions } from '@/hooks/usePermissions';
 import { MaintenanceTask, ContactLog } from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
 import { flushPromises } from '@/../tests/utils/flushPromises';
@@ -169,6 +170,7 @@ jest.mock('@/hooks/useMaintenanceTasks', () => ({
     deleteTask: mockDeleteTask,
     fetchTasksByDateRange: mockFetchTasksByDateRange,
     refreshNotificationTasks: jest.fn().mockResolvedValue(mockTasks),
+    fetchTaskById: jest.fn(),
   })),
 }));
 
@@ -216,43 +218,52 @@ jest.mock('../components/CalendarContent', () => {
     onEventDrop,
     onOpenNewTask,
     onTaskDelete,
+    canCreateTask,
   }: any) {
     return (
       <div data-testid="calendar-content">
-        <button data-testid="open-new-task-btn" onClick={onOpenNewTask}>
-          Open New Task
-        </button>
-        <button
-          data-testid="select-slot-btn"
-          onClick={() =>
-            onSelectSlot?.({
-              start: new Date('2024-01-20'),
-              end: new Date('2024-01-20'),
-            })
-          }
-        >
-          Select Slot
-        </button>
-        <button
-          data-testid="select-event-btn"
-          onClick={() => onSelectEvent?.(mockTasks[0])}
-        >
-          Select Event
-        </button>
-        <button
-          data-testid="event-drop-btn"
-          onClick={() =>
-            onEventDrop?.({
-              event: {
-                resource: { kind: 'task', task: mockTasks[0] },
-              },
-              start: new Date('2024-01-20'),
-              end: new Date('2024-01-20'),
-            })
-          }
-        >
-          Drop Event
-        </button>
+        {canCreateTask ? (
+          <button data-testid="open-new-task-btn" onClick={onOpenNewTask}>
+            Open New Task
+          </button>
+        ) : null}
+        {onSelectSlot ? (
+          <button
+            data-testid="select-slot-btn"
+            onClick={() =>
+              onSelectSlot({
+                start: new Date('2024-01-20'),
+                end: new Date('2024-01-20'),
+              })
+            }
+          >
+            Select Slot
+          </button>
+        ) : null}
+        {onSelectEvent ? (
+          <button
+            data-testid="select-event-btn"
+            onClick={() => onSelectEvent(mockTasks[0])}
+          >
+            Select Event
+          </button>
+        ) : null}
+        {onEventDrop ? (
+          <button
+            data-testid="event-drop-btn"
+            onClick={() =>
+              onEventDrop({
+                event: {
+                  resource: { kind: 'task', task: mockTasks[0] },
+                },
+                start: new Date('2024-01-20'),
+                end: new Date('2024-01-20'),
+              })
+            }
+          >
+            Drop Event
+          </button>
+        ) : null}
         <button
           data-testid="delete-task-btn"
           onClick={() => onTaskDelete?.(mockTasks[0])}
@@ -838,10 +849,15 @@ describe('CalendarPage - Core Logic', () => {
 
       await flushPromises();
 
-      expect(mockHandleError).not.toHaveBeenCalled();
-
+      // Regression: CalendarPage must not notify a second time on top of
+      // useMaintenanceTasks.deleteTask's own error handling — the hook owns
+      // notification for this failure (see useMaintenanceTasks tests).
+      expect(mockDeleteTask).toHaveBeenCalledWith(mockTasks[0].id);
       expect(mockRefetchCurrentRange).not.toHaveBeenCalled();
       expect(mockShowSuccess).not.toHaveBeenCalled();
+      // The confirm dialog (and the task it targets) must remain visible so
+      // the user can see what happened and retry; delete state is not
+      // dismissed on failure.
       expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
     });
   });
@@ -866,6 +882,7 @@ describe('CalendarPage - Core Logic', () => {
       await waitFor(() => {
         expect(mockUpdateTask).toHaveBeenCalledWith(mockTasks[0].id, {
           due_date: expectedDate,
+          expected_updated_at: mockTasks[0].updated_at,
         });
       });
 
@@ -1059,6 +1076,37 @@ describe('CalendarPage - Core Logic', () => {
 
       // The notification badge click handler is set up to call handleGoToToday
       // This is verified through the component structure and usePageNotifications configuration
+    });
+  });
+
+  describe('Member mutation affordances', () => {
+    beforeEach(() => {
+      (usePermissions as jest.Mock).mockReturnValue({
+        canCreateTask: false,
+        canManageTasks: false,
+        createTaskDisabledReason: 'Admin only',
+      });
+    });
+
+    afterEach(() => {
+      (usePermissions as jest.Mock).mockReturnValue({
+        canCreateTask: true,
+        canManageTasks: true,
+        createTaskDisabledReason: undefined,
+      });
+    });
+
+    it('does not expose create, edit, or drag handlers to a member', async () => {
+      render(<CalendarPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('calendar-content')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByTestId('open-new-task-btn')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('select-slot-btn')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('select-event-btn')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('event-drop-btn')).not.toBeInTheDocument();
     });
   });
 });

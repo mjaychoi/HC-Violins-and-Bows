@@ -388,4 +388,31 @@ describe('useClientInstruments', () => {
     expect(result.current.hasInstrumentRelationship('1', '1')).toBe(true);
     expect(result.current.hasInstrumentRelationship('1', '2')).toBe(false);
   });
+
+  it('C5/C6/C7: later-page shared-cache relationships are visible to Clients selectors', async () => {
+    const laterPageRelationship: ClientInstrument = {
+      ...mockInstrumentRelationship,
+      id: 'later-rel',
+      client_id: 'client-later',
+      instrument_id: 'instrument-later',
+    };
+    mockConnectionsRef.current = [laterPageRelationship];
+
+    const { result } = renderHook(() => useClientInstruments());
+
+    await act(async () => {
+      await flushPromises();
+    });
+
+    expect(result.current.getClientInstruments('client-later')).toHaveLength(1);
+    expect(
+      result.current.hasInstrumentRelationship(
+        'client-later',
+        'instrument-later'
+      )
+    ).toBe(true);
+    expect(result.current.clientsWithInstruments.has('client-later')).toBe(
+      true
+    );
+  });
 });

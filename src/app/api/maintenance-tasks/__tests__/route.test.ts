@@ -723,18 +723,45 @@ describe('/api/maintenance-tasks', () => {
   });
 
   describe('PATCH', () => {
-    it('should update an existing maintenance task', async () => {
-      const updates = { status: 'in_progress', priority: 'high' };
-      const updatedTask = { ...mockTask, ...updates };
+    const T0 = '2024-01-15T00:00:00Z';
+    const T1 = '2024-01-15T01:00:00Z';
 
-      const mockQuery = {
+    function patchRequest(body: Record<string, unknown>) {
+      return new NextRequest('http://localhost/api/maintenance-tasks', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+    }
+
+    function mockUpdateChain(result: { data: unknown; error: unknown }) {
+      return {
         update: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn(),
+        select: jest.fn().mockResolvedValue(result),
       };
-      (mockQuery.single as jest.Mock).mockResolvedValue({
-        data: updatedTask,
+    }
+
+    function mockExistsChain(existing: { id: string } | null) {
+      return {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: existing,
+          error: null,
+        }),
+      };
+    }
+
+    it('should update an existing maintenance task', async () => {
+      const updates = { notes: 'Needs inspection', priority: 'high' };
+      const updatedTask = {
+        ...mockTask,
+        ...updates,
+        updated_at: T1,
+      };
+
+      const mockQuery = mockUpdateChain({
+        data: [updatedTask],
         error: null,
       });
 
@@ -742,24 +769,27 @@ describe('/api/maintenance-tasks', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       };
 
-      const request = new NextRequest(
-        'http://localhost/api/maintenance-tasks',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ id: mockTask.id, ...updates }),
-        }
-      );
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: T0,
+        ...updates,
+      });
       const response = await PATCH(request);
       const json = await response.json();
 
       expect(response.status).toBe(200);
       expect(json.data).toBeDefined();
+      expect(json.data.updated_at).toBe(T1);
       expect(mockQuery.eq).toHaveBeenCalledWith('id', mockTask.id);
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', TEST_ORG_ID);
+      expect(mockQuery.eq).toHaveBeenCalledWith('updated_at', T0);
       expect(mockQuery.update).toHaveBeenCalled();
+      const updatePayload = (mockQuery.update as jest.Mock).mock.calls[0][0];
+      expect(updatePayload).not.toHaveProperty('expected_updated_at');
+      expect(updatePayload).not.toHaveProperty('updated_at');
     });
 
-    it('does not persist created_at from PATCH body (stripped from update payload)', async () => {
+    it('does not persist created_at or client-supplied updated_at from PATCH body', async () => {
       const actualTg = jest.requireActual('@/utils/typeGuards');
       const tg = require('@/utils/typeGuards');
       (tg.safeValidate as jest.Mock).mockImplementation(
@@ -774,14 +804,8 @@ describe('/api/maintenance-tasks', () => {
         }
       );
 
-      const mockQuery = {
-        update: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn(),
-      };
-      (mockQuery.single as jest.Mock).mockResolvedValue({
-        data: { ...mockTask, priority: 'low' },
+      const mockQuery = mockUpdateChain({
+        data: [{ ...mockTask, priority: 'low', updated_at: T1 }],
         error: null,
       });
 
@@ -789,18 +813,13 @@ describe('/api/maintenance-tasks', () => {
         from: jest.fn().mockReturnValue(mockQuery),
       };
 
-      const request = new NextRequest(
-        'http://localhost/api/maintenance-tasks',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({
-            id: mockTask.id,
-            priority: 'low',
-            created_at: '1999-01-01T00:00:00Z',
-            updated_at: '1999-01-02T00:00:00Z',
-          }),
-        }
-      );
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: T0,
+        priority: 'low',
+        created_at: '1999-01-01T00:00:00Z',
+        updated_at: '1999-01-02T00:00:00Z',
+      });
       const response = await PATCH(request);
 
       expect(response.status).toBe(200);
@@ -810,16 +829,15 @@ describe('/api/maintenance-tasks', () => {
       );
       expect(updatePayload).not.toHaveProperty('created_at');
       expect(updatePayload).not.toHaveProperty('updated_at');
+      expect(updatePayload).not.toHaveProperty('expected_updated_at');
+      expect(mockQuery.eq).toHaveBeenCalledWith('updated_at', T0);
     });
 
     it('should return 400 when id is missing', async () => {
-      const request = new NextRequest(
-        'http://localhost/api/maintenance-tasks',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ status: 'completed' }),
-        }
-      );
+      const request = patchRequest({
+        status: 'completed',
+        expected_updated_at: T0,
+      });
       const response = await PATCH(request);
       const json = await response.json();
 
@@ -833,18 +851,63 @@ describe('/api/maintenance-tasks', () => {
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(false);
 
-      const request = new NextRequest(
-        'http://localhost/api/maintenance-tasks',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ id: 'invalid-id', status: 'completed' }),
-        }
-      );
+      const request = patchRequest({
+        id: 'invalid-id',
+        expected_updated_at: T0,
+        status: 'completed',
+      });
       const response = await PATCH(request);
       const json = await response.json();
 
       expect(response.status).toBe(400);
       expect(json.message).toBe('Invalid task ID format');
+    });
+
+    it('rejects missing expected_updated_at', async () => {
+      const request = patchRequest({
+        id: mockTask.id,
+        notes: 'Needs inspection',
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error_code).toBe(
+        'MAINTENANCE_TASK_EXPECTED_UPDATED_AT_REQUIRED'
+      );
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('rejects empty expected_updated_at', async () => {
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: '   ',
+        notes: 'Needs inspection',
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error_code).toBe(
+        'MAINTENANCE_TASK_EXPECTED_UPDATED_AT_REQUIRED'
+      );
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('rejects malformed expected_updated_at', async () => {
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: 'not-a-timestamp',
+        notes: 'Needs inspection',
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error_code).toBe(
+        'MAINTENANCE_TASK_EXPECTED_UPDATED_AT_INVALID'
+      );
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it('should return 409 for invalid maintenance task status transition', async () => {
@@ -856,14 +919,8 @@ describe('/api/maintenance-tasks', () => {
           error: null,
         }),
       };
-      const updateQuery = {
-        update: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn(),
-      };
-      (updateQuery.single as jest.Mock).mockResolvedValue({
-        data: { ...mockTask, status: 'pending' },
+      const updateQuery = mockUpdateChain({
+        data: [{ ...mockTask, status: 'pending' }],
         error: null,
       });
 
@@ -874,13 +931,11 @@ describe('/api/maintenance-tasks', () => {
           .mockReturnValueOnce(updateQuery),
       };
 
-      const request = new NextRequest(
-        'http://localhost/api/maintenance-tasks',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ id: mockTask.id, status: 'pending' }),
-        }
-      );
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: T0,
+        status: 'pending',
+      });
       const response = await PATCH(request);
       const json = await response.json();
 
@@ -910,14 +965,8 @@ describe('/api/maintenance-tasks', () => {
         }
       );
 
-      const updateQuery = {
-        update: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn(),
-      };
-      (updateQuery.single as jest.Mock).mockResolvedValue({
-        data: { ...mockTask, priority: 'low' },
+      const updateQuery = mockUpdateChain({
+        data: [{ ...mockTask, priority: 'low', updated_at: T1 }],
         error: null,
       });
 
@@ -925,19 +974,150 @@ describe('/api/maintenance-tasks', () => {
         from: jest.fn().mockReturnValue(updateQuery),
       };
 
-      const request = new NextRequest(
-        'http://localhost/api/maintenance-tasks',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ id: mockTask.id, priority: 'low' }),
-        }
-      );
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: T0,
+        priority: 'low',
+      });
       const response = await PATCH(request);
       const json = await response.json();
 
       expect(response.status).toBe(422);
       expect(json.error_code).toBe('maintenance_task_response_invalid');
       expect(String(json.message)).toMatch(/validation|invalid/i);
+    });
+
+    it('returns 409 and mutates nothing when the version precondition matches zero rows', async () => {
+      const updateQuery = mockUpdateChain({ data: [], error: null });
+      const existsQuery = mockExistsChain({ id: mockTask.id });
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(updateQuery)
+          .mockReturnValueOnce(existsQuery),
+      };
+
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: T0,
+        notes: 'Needs inspection',
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('MAINTENANCE_TASK_STALE_VERSION');
+      expect(json.success).toBe(false);
+      expect(json.data).toBeUndefined();
+      expect(updateQuery.eq).toHaveBeenCalledWith('id', mockTask.id);
+      expect(updateQuery.eq).toHaveBeenCalledWith('org_id', TEST_ORG_ID);
+      expect(updateQuery.eq).toHaveBeenCalledWith('updated_at', T0);
+      expect(updateQuery.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          notes: 'Needs inspection',
+        })
+      );
+      expect(existsQuery.maybeSingle).toHaveBeenCalled();
+    });
+
+    it('returns 404 when a conditional update matches no visible task', async () => {
+      const updateQuery = mockUpdateChain({ data: [], error: null });
+      const existsQuery = mockExistsChain(null);
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(updateQuery)
+          .mockReturnValueOnce(existsQuery),
+      };
+
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: T0,
+        notes: 'Gone',
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.message).toBe('Task not found');
+      expect(json.success).toBe(false);
+    });
+
+    it('returns 409 for a same-field stale status write after a newer version exists', async () => {
+      const statusQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { status: 'in_progress' },
+          error: null,
+        }),
+      };
+      const updateQuery = mockUpdateChain({ data: [], error: null });
+      const existsQuery = mockExistsChain({ id: mockTask.id });
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(statusQuery)
+          .mockReturnValueOnce(updateQuery)
+          .mockReturnValueOnce(existsQuery),
+      };
+
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: T0,
+        status: 'in_progress',
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('MAINTENANCE_TASK_STALE_VERSION');
+      expect(updateQuery.eq).toHaveBeenCalledWith('updated_at', T0);
+    });
+
+    it('denies same-org member PATCH (authorization unchanged)', async () => {
+      mockAuthContext = { ...mockAuthContext, role: 'member' };
+
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: T0,
+        notes: 'Member write',
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.message).toBe('Admin role required');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('scopes the conditional update to the authenticated org', async () => {
+      const otherOrgId = '223e4567-e89b-12d3-a456-426614174099';
+      mockAuthContext = { ...mockAuthContext, orgId: otherOrgId };
+
+      const updateQuery = mockUpdateChain({ data: [], error: null });
+      const existsQuery = mockExistsChain(null);
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(updateQuery)
+          .mockReturnValueOnce(existsQuery),
+      };
+
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: T0,
+        notes: 'Cross-org overwrite',
+      });
+      const response = await PATCH(request);
+
+      expect(response.status).toBe(404);
+      expect(updateQuery.eq).toHaveBeenCalledWith('org_id', otherOrgId);
+      expect(existsQuery.eq).toHaveBeenCalledWith('org_id', otherOrgId);
     });
   });
 

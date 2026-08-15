@@ -1,0 +1,118 @@
+name: Production DB Read-Only Reconciliation
+
+# Authoritative, READ-ONLY production migration reconciliation. Manual
+# workflow_dispatch only, restricted to refs/heads/main.
+#
+# This workflow can never mutate production:
+#   - it never installs the Supabase CLI and never runs any `supabase`
+#     command (in particular, never `supabase db push` and never
+#     `supabase migration list --linked` — the latter was observed
+#     attempting `ALTER ROLE cli_login_postgres ...` against production,
+#     i.e. a write, despite being framed as a read-only listing command, and
+#     is not an approved reconciliation mechanism anywhere in this
+#     repository);
+#   - the only SQL it issues against production is one
+#     `SELECT version FROM supabase_migrations.schema_migrations`, run
+#     inside a transaction whose read-only mode is verified at the Postgres
+#     session level (`SHOW transaction_read_only` must return `on`), always
+#     followed by `ROLLBACK`, never `COMMIT`
+#     (scripts/production/db-reconcile-readonly.ts);
+#   - it requests no `workflow_dispatch` acknowledgement inputs (unlike
+#     production-db-deploy.yml's backup/PITR and maintenance-window
+#     confirmations), because there is no mutation here for an operator to
+#     authorize.
+#
+# It is a diagnostic/dry-run companion to production-db-deploy.yml, not a
+# replacement for any of that workflow's gates, and has no bearing on
+# whether a subsequent production-db-deploy.yml run is authorized.
+# production-db-deploy.yml itself must never be used as a reconciliation
+# dry-run — it contains the real `supabase db push` mutation path.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-db-reconcile
+  cancel-in-progress: false
+
+jobs:
+  guard-ref:
+    name: Guard - main branch only
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require refs/heads/main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "This workflow may only be run from refs/heads/main. Got: ${{ github.ref }}"
+            exit 1
+          fi
+          echo "Ref check passed: ${{ github.ref }}"
+
+  reconcile:
+    name: Read-only production migration reconciliation
+    needs: guard-ref
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Stop if the expected production project ref is not configured
+        env:
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: |
+          if [ -z "$EXPECTED_SUPABASE_PROJECT_REF" ]; then
+            echo "EXPECTED_SUPABASE_PROJECT_REF is not configured on the production Environment. Refusing to reconcile without a protected expected project reference."
+            exit 1
+          fi
+          echo "EXPECTED_SUPABASE_PROJECT_REF is configured."
+
+      - name: Validate DATABASE_URL identity and structure (secret-safe)
+        # Reuses the same production-identity guard as
+        # production-db-deploy.yml — validateProductionEndpoint in
+        # scripts/production/db-deploy-guards.ts — via the existing
+        # scripts/production/db-probe.ts `validate-only` entrypoint, not a
+        # copy of that check.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: npx tsx scripts/production/db-probe.ts validate-only
+
+      - name: Read-only production migration reconciliation
+        id: reconcile
+        # scripts/production/db-reconcile-readonly.ts: git-tracked local
+        # migrations only (git ls-tree, never directory enumeration), one
+        # SELECT against supabase_migrations.schema_migrations inside a
+        # verified BEGIN READ ONLY transaction, always ROLLBACK. No
+        # Supabase CLI, no `supabase` commands, no DDL/DML. Prints the
+        # reconciliation report as JSON to stdout (captured in this step's
+        # log) and never prints DATABASE_URL or credentials.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/production/db-reconcile-readonly.ts
+
+      - name: Reconciliation summary
+        if: always()
+        run: |
+          {
+            echo "### Production migration reconciliation (read-only)"
+            echo "This workflow never runs the Supabase CLI, never issues DDL/DML, and its single database transaction is verified read-only and always rolled back. See the \"Read-only production migration reconciliation\" step log above for the full JSON report."
+            echo ""
+            echo "This run has no bearing on production-db-deploy.yml authorization."
+          } >> "$GITHUB_STEP_SUMMARY"

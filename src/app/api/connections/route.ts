@@ -144,6 +144,9 @@ function getConnectionConflictStatus(errorMessage: string): number {
  * to getConnectionConflictStatus's brittle free-text matching or the generic
  * 500 fallback.
  */
+const DUPLICATE_CONNECTION_MESSAGE =
+  'A connection with this relationship type already exists between this client and instrument.';
+
 const CONNECTION_ERROR_CODE_PREFIXES: Array<{
   prefix: string;
   status: number;
@@ -156,6 +159,12 @@ const CONNECTION_ERROR_CODE_PREFIXES: Array<{
     error_code: 'SOLD_CONNECTION_IMMUTABLE',
     message:
       'Sold relationships cannot be deleted. Use the sales refund/adjustment workflow instead.',
+  },
+  {
+    prefix: 'DUPLICATE_CONNECTION',
+    status: 409,
+    error_code: 'DUPLICATE_CONNECTION',
+    message: DUPLICATE_CONNECTION_MESSAGE,
   },
   {
     // F13: the API layer already rejects client_id/instrument_id on PATCH
@@ -174,12 +183,12 @@ const CONNECTION_ERROR_CODE_PREFIXES: Array<{
 ];
 
 /**
- * Postgres unique-violation (23505) constraint names that map to a specific
- * conflict response. Matched by constraint name (embedded in the Postgres
- * error message by PostgREST), not free-text phrasing, so message wording
- * changes upstream cannot silently break this mapping. Unique violations on
- * any other constraint intentionally fall through to generic error handling
- * so they retain their existing classification.
+ * Postgres unique-violation (23505) constraint/index names that map to a
+ * specific conflict response. Matched by the exact stable name (embedded in
+ * the Postgres error message by PostgREST), not free-text phrasing, so
+ * message wording changes upstream cannot silently break this mapping.
+ * Unique violations on any other constraint intentionally fall through to
+ * generic error handling so they retain their existing classification.
  */
 const UNIQUE_VIOLATION_CONFLICTS: Record<
   string,
@@ -189,6 +198,11 @@ const UNIQUE_VIOLATION_CONFLICTS: Record<
     status: 409,
     error_code: 'INSTRUMENT_ALREADY_OWNED',
     message: 'This instrument already has an active Owned relationship.',
+  },
+  client_instruments_unique_interested_booked_per_pair: {
+    status: 409,
+    error_code: 'DUPLICATE_CONNECTION',
+    message: DUPLICATE_CONNECTION_MESSAGE,
   },
 };
 
@@ -331,6 +345,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       }
 
       query = query.order(orderBy, { ascending });
+      // Stable page partitioning for complete-cache drains: created_at is
+      // not unique, so equal timestamps would otherwise shuffle across
+      // offset pages. Keep the caller's primary column; add `id` only as
+      // a tiebreaker (PR-26 client sorting stays separate).
+      if (orderBy !== 'id') {
+        query = query.order('id', { ascending });
+      }
 
       const offset = (page - 1) * pageSize;
       const to = offset + pageSize - 1;
@@ -363,6 +384,9 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
 
         retryQuery = retryQuery.order(orderBy, { ascending });
+        if (orderBy !== 'id') {
+          retryQuery = retryQuery.order('id', { ascending });
+        }
 
         if (fetchAll) {
           retryQuery = retryQuery.limit(MAX_ALL_RESULTS + 1);

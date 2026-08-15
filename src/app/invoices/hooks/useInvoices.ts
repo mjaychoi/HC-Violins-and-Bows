@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Invoice, InvoiceStatus } from '@/types';
-import { apiFetch } from '@/utils/apiFetch';
+import { apiFetch, ApiFetchNetworkError } from '@/utils/apiFetch';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { logError } from '@/utils/logger';
 import {
@@ -28,6 +28,24 @@ interface FetchInvoicesOptions {
   sortDirection?: 'asc' | 'desc';
   throwOnError?: boolean;
   suppressErrorToast?: boolean;
+}
+
+export interface FetchInvoicesResult {
+  invoices: Invoice[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  aborted?: boolean;
+}
+
+function emptyFetchResult(page: number, aborted = false): FetchInvoicesResult {
+  return {
+    invoices: [],
+    totalCount: 0,
+    totalPages: 1,
+    page,
+    ...(aborted ? { aborted: true as const } : {}),
+  };
 }
 
 interface InvoiceListDiagnostics {
@@ -154,6 +172,7 @@ export function useInvoices() {
   const { handleError } = useErrorHandler();
   const abortRef = useRef<AbortController | null>(null);
   const createIdempotencyRef = useRef<string | null>(null);
+  const updateIdempotencyRef = useRef<string | null>(null);
   const { tenantIdentityKey } = useTenantIdentity();
   const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
 
@@ -162,6 +181,7 @@ export function useInvoices() {
     abortRef.current?.abort();
     abortRef.current = null;
     createIdempotencyRef.current = null;
+    updateIdempotencyRef.current = null;
     setInvoices([]);
     setStatus('loading');
     setPageState(1);
@@ -220,7 +240,7 @@ export function useInvoices() {
         });
 
         if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
-          return [];
+          return emptyFetchResult(currentPage, true);
         }
 
         const result = await readApiResponseEnvelope<Invoice[]>(
@@ -228,9 +248,29 @@ export function useInvoices() {
           `Failed to fetch invoices (${response.status})`
         );
         const data = Array.isArray(result.data) ? result.data : [];
+        const pagination =
+          result.pagination && typeof result.pagination === 'object'
+            ? (result.pagination as {
+                page?: unknown;
+                totalCount?: unknown;
+                totalPages?: unknown;
+              })
+            : null;
         const rawCount =
-          typeof result.count === 'number' ? result.count : undefined;
+          typeof result.count === 'number'
+            ? result.count
+            : typeof pagination?.totalCount === 'number'
+              ? pagination.totalCount
+              : undefined;
         const safeCount = typeof rawCount === 'number' ? rawCount : data.length;
+        const resolvedTotalPages =
+          typeof result.totalPages === 'number'
+            ? result.totalPages
+            : typeof pagination?.totalPages === 'number'
+              ? pagination.totalPages
+              : Math.max(1, Math.ceil(safeCount / (options.pageSize || 10)));
+        const resolvedPage =
+          typeof pagination?.page === 'number' ? pagination.page : currentPage;
         const partial = result.partial === true;
         const droppedCount =
           typeof result.droppedCount === 'number' ? result.droppedCount : 0;
@@ -249,11 +289,7 @@ export function useInvoices() {
           setInvoices(data);
           setStatus(data.length > 0 || partial ? 'success' : 'empty');
           setTotalCount(safeCount);
-          setTotalPages(
-            typeof result.totalPages === 'number'
-              ? result.totalPages
-              : Math.max(1, Math.ceil(safeCount / (options.pageSize || 10)))
-          );
+          setTotalPages(resolvedTotalPages);
           setListDiagnostics({
             partial,
             droppedCount,
@@ -282,13 +318,18 @@ export function useInvoices() {
           }
         }
 
-        return data as Invoice[];
+        return {
+          invoices: data as Invoice[],
+          totalCount: safeCount,
+          totalPages: resolvedTotalPages,
+          page: resolvedPage,
+        };
       } catch (error) {
         if (
           controller.signal.aborted ||
           (error instanceof DOMException && error.name === 'AbortError')
         ) {
-          return [];
+          return emptyFetchResult(currentPage, true);
         }
         // Log the actual error for debugging
         logError(
@@ -296,7 +337,7 @@ export function useInvoices() {
           error instanceof Error ? error.message : String(error)
         );
         if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
-          return [];
+          return emptyFetchResult(currentPage, true);
         }
         setError(error);
         const appError =
@@ -322,7 +363,7 @@ export function useInvoices() {
         if (options.throwOnError) {
           throw error;
         }
-        return [];
+        return emptyFetchResult(currentPage);
       } finally {
         if (
           abortRef.current === controller &&
@@ -516,9 +557,11 @@ export function useInvoices() {
           image_url: string | null;
           display_order: number;
         }>;
-      }>
+      }>,
+      options: { expectedUpdatedAt: string }
     ): Promise<UpdateInvoiceResult> => {
       const requestTenantIdentityKey = tenantIdentityKeyRef.current;
+      let sawDefiniteResponse = false;
       try {
         // Filter out undefined values to avoid validation errors
         // Keep null values as they are valid for nullable fields
@@ -526,13 +569,35 @@ export function useInvoices() {
           Object.entries(invoiceData).filter(([, value]) => value !== undefined)
         );
 
-        const response = await apiFetch(`/api/invoices/${id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
+        // V5-002 + V5-003: one stable key per logical Save press, reused
+        // across a network-level retry of that same press (see the catch
+        // block below), so the server can recognize a retry instead of
+        // risking a second mutation. `updated_at` is the version this draft
+        // was opened from; the server rejects the update with 409 if the row
+        // has moved on instead of silently overwriting it.
+        if (!updateIdempotencyRef.current) {
+          updateIdempotencyRef.current =
+            typeof crypto !== 'undefined' && 'randomUUID' in crypto
+              ? crypto.randomUUID()
+              : `invoice-update-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        }
+        const idempotencyKey = updateIdempotencyRef.current;
+
+        const response = await apiFetch(
+          `/api/invoices/${id}`,
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              ...cleanedData,
+              updated_at: options.expectedUpdatedAt,
+            }),
           },
-          body: JSON.stringify(cleanedData),
-        });
+          { idempotencyKey }
+        );
+        sawDefiniteResponse = true;
 
         if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
           throw new DOMException(
@@ -558,6 +623,7 @@ export function useInvoices() {
             'AbortError'
           );
         }
+        updateIdempotencyRef.current = null;
         return {
           invoice: result.data,
           result:
@@ -576,6 +642,15 @@ export function useInvoices() {
       } catch (error) {
         if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
           throw error;
+        }
+        // A definite server response (success or a mapped error, including
+        // 409 conflict) resolves this logical save attempt: the next Save
+        // press is a new operation and must mint a fresh key. Only a
+        // network-level failure -- no response reached the server at all --
+        // preserves the key, so a follow-up attempt with the same draft is
+        // recognized as a retry of the same operation rather than a new one.
+        if (sawDefiniteResponse || !(error instanceof ApiFetchNetworkError)) {
+          updateIdempotencyRef.current = null;
         }
         handleError(error, 'Update invoice');
         throw error;

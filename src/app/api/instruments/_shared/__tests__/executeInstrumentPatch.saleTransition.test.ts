@@ -73,7 +73,11 @@ function instrumentStateRow(
 function makeAuth(overrides: Record<string, unknown> = {}) {
   const userSupabase = {
     from: jest.fn(),
-    rpc: jest.fn(),
+    // get_instruments_financials() default — see
+    // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+    // Tests that care about the returned cost_price/consignment_price
+    // override this explicitly.
+    rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
   };
 
   return {
@@ -452,7 +456,18 @@ describe('executeInstrumentPatch sale_transition contract', () => {
 
     expect(result.status).toBe(200);
     expect(updateChain.update).toHaveBeenCalled();
-    expect(auth.userSupabase.rpc).not.toHaveBeenCalled();
+    // No sale-transition RPC (would create a sale record) — the only rpc()
+    // call here is the post-update get_instruments_financials() fetch
+    // (cost_price/consignment_price are no longer part of the base
+    // .select() result, see 20260814160000_...sql).
+    expect(auth.userSupabase.rpc).not.toHaveBeenCalledWith(
+      'update_instrument_sale_transition_atomic',
+      expect.anything()
+    );
+    expect(auth.userSupabase.rpc).toHaveBeenCalledWith(
+      'get_instruments_financials',
+      { p_instrument_ids: [INSTRUMENT_ID] }
+    );
   });
 
   it('rejects member role before mutation', async () => {

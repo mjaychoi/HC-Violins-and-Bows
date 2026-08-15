@@ -14,6 +14,11 @@ import {
 } from '@/utils/uniqueNumberGenerator';
 import { modalStyles } from '@/components/common/modals/modalStyles';
 import { ModalHeader } from '@/components/common/modals/ModalHeader';
+import {
+  INSTRUMENT_CONFLICT_MESSAGE,
+  INSTRUMENT_RELOAD_LATEST_LABEL,
+  isInstrumentConflictError,
+} from '../utils/instrumentConflict';
 
 interface ItemFormProps {
   isOpen: boolean;
@@ -57,13 +62,22 @@ function ItemForm({
     cost_price?: string;
     consignment_price?: string;
     serial_number?: string;
+    reserved_reason?: string;
   }>({});
   const [success, setSuccess] = useState(false);
+  const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null);
+  const [isConflict, setIsConflict] = useState(false);
   const lastInitializedItemId = useRef<string | null>(null);
   const hasInitializedCreate = useRef(false);
   const lastAutoSerialRef = useRef<string>('');
   const lastSerialsKeyRef = useRef<string>('');
+  const draftBaseSerialRef = useRef<string | null>(null);
   const formDataRef = useRef(formData);
+  const draftUpdatedAtRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    draftUpdatedAtRef.current = draftUpdatedAt;
+  }, [draftUpdatedAt]);
 
   // Keep formDataRef in sync with formData
   useEffect(() => {
@@ -77,6 +91,7 @@ function ItemForm({
       'cost_price',
       'consignment_price',
       'serial_number',
+      'reserved_reason',
     ];
     for (const field of order) {
       if (fieldErrs[field]) {
@@ -95,37 +110,70 @@ function ItemForm({
     [existingSerialNumbers]
   );
 
+  const applyItemSnapshot = (item: Instrument) => {
+    updateField('status', item.status || 'Available');
+    updateField('maker', item.maker || '');
+    updateField('type', item.type || '');
+    updateField('subtype', item.subtype || '');
+    updateField('year', item.year?.toString() || '');
+    handlePriceChange(item.price?.toString() || '');
+    handleCostPriceChange(item.cost_price?.toString() || '');
+    handleConsignmentPriceChange(item.consignment_price?.toString() || '');
+    updateField(
+      'certificate',
+      Boolean(item.has_certificate || item.certificate)
+    );
+    updateField('certificate_name', item.certificate_name || '');
+    updateField('size', item.size || '');
+    updateField('weight', item.weight || '');
+    updateField('ownership', item.ownership || '');
+    updateField('note', item.note || '');
+    updateField('serial_number', item.serial_number || '');
+    const nextToken = item.updated_at?.trim() ? item.updated_at : null;
+    setDraftUpdatedAt(nextToken);
+    draftUpdatedAtRef.current = nextToken;
+    draftBaseSerialRef.current = item.serial_number ?? null;
+  };
+
+  const resolveLatestServerItem = (): Instrument | null => {
+    if (!selectedItem) return null;
+    return (
+      instruments.find(instrument => instrument.id === selectedItem.id) ?? null
+    );
+  };
+
+  const handleReloadLatest = () => {
+    const latest = resolveLatestServerItem();
+    if (!latest) {
+      setFormError(
+        'Could not load the latest item. Close this editor and open it again.'
+      );
+      return;
+    }
+    applyItemSnapshot(latest);
+    setIsConflict(false);
+    setFormError(null);
+    setErrors([]);
+    setFieldErrors({});
+    setSuccess(false);
+  };
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      lastInitializedItemId.current = null;
+      setDraftUpdatedAt(null);
+      draftUpdatedAtRef.current = null;
+      draftBaseSerialRef.current = null;
+      setIsConflict(false);
+      return;
+    }
 
     if (selectedItem && isEditing) {
       // Prevent re-initializing the same item on every render
       if (lastInitializedItemId.current === selectedItem.id) return;
       lastInitializedItemId.current = selectedItem.id;
       hasInitializedCreate.current = false;
-      // Populate form with selected item data when editing
-      updateField('status', selectedItem.status || 'Available');
-      updateField('maker', selectedItem.maker || '');
-      updateField('type', selectedItem.type || '');
-      updateField('subtype', selectedItem.subtype || '');
-      updateField('year', selectedItem.year?.toString() || '');
-      // FIXED: Don't update formData.price - use priceInput directly
-      // priceInput will be set via handlePriceChange
-      handlePriceChange(selectedItem.price?.toString() || '');
-      handleCostPriceChange(selectedItem.cost_price?.toString() || '');
-      handleConsignmentPriceChange(
-        selectedItem.consignment_price?.toString() || ''
-      );
-      updateField(
-        'certificate',
-        Boolean(selectedItem.has_certificate || selectedItem.certificate)
-      );
-      updateField('certificate_name', selectedItem.certificate_name || '');
-      updateField('size', selectedItem.size || '');
-      updateField('weight', selectedItem.weight || '');
-      updateField('ownership', selectedItem.ownership || '');
-      updateField('note', selectedItem.note || '');
-      updateField('serial_number', selectedItem.serial_number || '');
+      applyItemSnapshot(selectedItem);
     } else if (!isEditing && !selectedItem) {
       // FIXED: Create mode - handle initialization and serial regeneration
       if (!hasInitializedCreate.current) {
@@ -190,6 +238,8 @@ function ItemForm({
       validationErrors.forEach(msg => {
         if (msg.includes('Year')) mappedFieldErrors.year = msg;
         if (msg.includes('Price')) mappedFieldErrors.price = msg;
+        if (msg.includes('Reservation reason'))
+          mappedFieldErrors.reserved_reason = msg;
       });
       if (Object.keys(mappedFieldErrors).length > 0) {
         setFieldErrors(mappedFieldErrors);
@@ -216,7 +266,9 @@ function ItemForm({
       const serialValidation = validateInstrumentSerial(
         normalizedSerial || null,
         existingSerialNumbers,
-        isEditing ? (selectedItem?.serial_number ?? null) : undefined,
+        isEditing
+          ? (draftBaseSerialRef.current ?? selectedItem?.serial_number ?? null)
+          : undefined,
         instruments
       );
       if (!serialValidation.valid) {
@@ -296,7 +348,18 @@ function ItemForm({
         ownership: formData.ownership?.trim() || null,
         note: formData.note?.trim() || null,
         serial_number: serialValidation.normalizedSerial || normalizedSerial,
+        // Only send reserved_reason when saving as Reserved — the API clears
+        // (or, for Reserved -> Booked, carries forward) reservation metadata
+        // on its own for every other status, so omitting the key elsewhere
+        // preserves that existing server-side behavior.
+        ...(formData.status === 'Reserved'
+          ? { reserved_reason: (formData.reserved_reason || '').trim() }
+          : {}),
       };
+
+      if (isEditing && draftUpdatedAtRef.current) {
+        instrumentData.updated_at = draftUpdatedAtRef.current;
+      }
 
       const submitResult = await onSubmit(instrumentData);
 
@@ -326,6 +389,16 @@ function ItemForm({
       }
     } catch (e) {
       setSuccess(false);
+      if (isInstrumentConflictError(e)) {
+        setIsConflict(true);
+        const message =
+          e instanceof Error && e.message.trim().length > 0
+            ? e.message
+            : INSTRUMENT_CONFLICT_MESSAGE;
+        setFormError(message);
+        return;
+      }
+      setIsConflict(false);
       const message =
         e instanceof Error
           ? e.message
@@ -464,9 +537,26 @@ function ItemForm({
             </div>
           )}
 
-          {formError && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-              <p className="text-sm">{formError}</p>
+          {(formError || isConflict) && (
+            <div
+              className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded"
+              data-testid={isConflict ? 'item-conflict-banner' : undefined}
+            >
+              <p className="text-sm">
+                {formError || INSTRUMENT_CONFLICT_MESSAGE}
+              </p>
+              {isConflict ? (
+                <div className="mt-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleReloadLatest}
+                  >
+                    {INSTRUMENT_RELOAD_LATEST_LABEL}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -543,10 +633,15 @@ function ItemForm({
                 >
                   <option value="Available">Available</option>
                   <option value="Booked">Booked</option>
-                  <option value="Sold">Sold</option>
+                  {isEditing && <option value="Sold">Sold</option>}
                   {isEditing && <option value="Reserved">Reserved</option>}
                   <option value="Maintenance">Maintenance</option>
                 </select>
+                {!isEditing && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Sold status is set automatically through the sales flow.
+                  </p>
+                )}
                 {!isEditing && (
                   <p className="mt-1 text-xs text-gray-500">
                     Reserved status can be set after creation.
@@ -566,6 +661,20 @@ function ItemForm({
                 error={fieldErrors.price}
               />
             </div>
+
+            {isEditing && formData.status === 'Reserved' && (
+              <Input
+                id="reserved_reason"
+                label="Reservation Reason"
+                name="reserved_reason"
+                value={formData.reserved_reason}
+                onChange={handleInputChange}
+                placeholder="Why is this instrument reserved?"
+                error={fieldErrors.reserved_reason}
+                helperText="Required while status is Reserved."
+                required
+              />
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <Input

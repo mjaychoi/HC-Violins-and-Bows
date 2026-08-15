@@ -54,6 +54,7 @@ import type {
 } from '@/types';
 import { logInfo, logDebug, logWarn } from '@/utils/logger';
 import { normalizeUnifiedResourceErrors } from './unifiedResourceErrors';
+import { resolveConnectionsView } from '@/app/connections/utils/resolveConnectionRelatedEntities';
 
 // ----------------------------
 // Module-level singletons
@@ -172,6 +173,34 @@ async function refreshConnectionsAfterStructuralDeleteFromActions(actions: {
   }
 }
 
+function reconcileRelatedClientAfterUpdate(
+  actions: {
+    reconcileRelatedClient: (
+      client: Client,
+      mutationTenantIdentityKey?: string | null
+    ) => void;
+  },
+  updated: Client | null | undefined,
+  mutationTenantIdentityKey: string | null
+) {
+  if (!updated) return;
+  actions.reconcileRelatedClient(updated, mutationTenantIdentityKey);
+}
+
+function reconcileRelatedInstrumentAfterUpdate(
+  actions: {
+    reconcileRelatedInstrument: (
+      instrument: Instrument,
+      mutationTenantIdentityKey?: string | null
+    ) => void;
+  },
+  updated: Instrument | null | undefined,
+  mutationTenantIdentityKey: string | null
+) {
+  if (!updated) return;
+  actions.reconcileRelatedInstrument(updated, mutationTenantIdentityKey);
+}
+
 export function __resetUnifiedDataGlobalsForTests() {
   globalTenantIdentityKeyRef.current = null;
   resetGlobalsForTenantChange();
@@ -280,10 +309,41 @@ export function useUnifiedData() {
         connectionsContext.actions
       );
 
+    const updateClient = async (
+      id: string,
+      client: Partial<Client> & { expected_updated_at?: string }
+    ) => {
+      const mutationTenantIdentityKey = tenantIdentityKey;
+      const updated = await clientsContext.actions.updateClient(id, client);
+      reconcileRelatedClientAfterUpdate(
+        connectionsContext.actions,
+        updated,
+        mutationTenantIdentityKey
+      );
+      return updated;
+    };
+
+    const updateInstrument = async (
+      id: string,
+      instrument: Partial<Instrument>
+    ) => {
+      const mutationTenantIdentityKey = tenantIdentityKey;
+      const updated = await instrumentsContext.actions.updateInstrument(
+        id,
+        instrument
+      );
+      reconcileRelatedInstrumentAfterUpdate(
+        connectionsContext.actions,
+        updated,
+        mutationTenantIdentityKey
+      );
+      return updated;
+    };
+
     return {
       fetchClients: clientsContext.actions.fetchClients,
       createClient: clientsContext.actions.createClient,
-      updateClient: clientsContext.actions.updateClient,
+      updateClient,
       deleteClient: async (id: string) => {
         const ok = await clientsContext.actions.deleteClient(id);
         if (ok) {
@@ -294,7 +354,7 @@ export function useUnifiedData() {
 
       fetchInstruments: instrumentsContext.actions.fetchInstruments,
       createInstrument: instrumentsContext.actions.createInstrument,
-      updateInstrument: instrumentsContext.actions.updateInstrument,
+      updateInstrument,
       deleteInstrument: async (id: string) => {
         await instrumentsContext.actions.deleteInstrument(id);
         await refreshConnectionsAfterStructuralDelete();
@@ -326,6 +386,7 @@ export function useUnifiedData() {
     clientsContext.actions,
     instrumentsContext.actions,
     connectionsContext.actions,
+    tenantIdentityKey,
   ]);
 
   const actionsRef = useRef(actions);
@@ -451,7 +512,10 @@ export function useUnifiedData() {
           a.fetchInstruments({ all: true })
         ),
         runOne('connections', needConnections, () =>
-          a.fetchConnections({ all: true })
+          // rejectOnError is required: fetchConnections swallows errors
+          // unless asked, and a resolved-but-failed complete drain must
+          // never set globalFetched.connections.
+          a.fetchConnections({ all: true, rejectOnError: true })
         ),
       ]);
     };
@@ -533,7 +597,7 @@ export function useUnifiedData() {
 export function useUnifiedClients() {
   const clientsHook = useClients();
   const connectionsContext = useConnectionsContext();
-  const { isTenantTransitioning } = useTenantScopeGuard();
+  const { isTenantTransitioning, tenantIdentityKey } = useTenantScopeGuard();
 
   const deleteClient = useCallback(
     async (id: string) => {
@@ -548,8 +612,26 @@ export function useUnifiedClients() {
     [clientsHook, connectionsContext.actions]
   );
 
+  const updateClient = useCallback(
+    async (
+      id: string,
+      client: Partial<Client> & { expected_updated_at?: string }
+    ) => {
+      const mutationTenantIdentityKey = tenantIdentityKey;
+      const updated = await clientsHook.updateClient(id, client);
+      reconcileRelatedClientAfterUpdate(
+        connectionsContext.actions,
+        updated,
+        mutationTenantIdentityKey
+      );
+      return updated;
+    },
+    [clientsHook, connectionsContext.actions, tenantIdentityKey]
+  );
+
   return {
     ...clientsHook,
+    updateClient,
     deleteClient,
     clients: isTenantTransitioning ? [] : clientsHook.clients,
     loading: {
@@ -569,10 +651,26 @@ export function useUnifiedClients() {
 
 export function useUnifiedInstruments() {
   const instrumentsHook = useInstruments();
-  const { isTenantTransitioning } = useTenantScopeGuard();
+  const connectionsContext = useConnectionsContext();
+  const { isTenantTransitioning, tenantIdentityKey } = useTenantScopeGuard();
+
+  const updateInstrument = useCallback(
+    async (id: string, instrument: Partial<Instrument>) => {
+      const mutationTenantIdentityKey = tenantIdentityKey;
+      const updated = await instrumentsHook.updateInstrument(id, instrument);
+      reconcileRelatedInstrumentAfterUpdate(
+        connectionsContext.actions,
+        updated,
+        mutationTenantIdentityKey
+      );
+      return updated;
+    },
+    [instrumentsHook, connectionsContext.actions, tenantIdentityKey]
+  );
 
   return {
     ...instrumentsHook,
+    updateInstrument,
     instruments: isTenantTransitioning ? [] : instrumentsHook.instruments,
     loading: isTenantTransitioning ? true : instrumentsHook.loading,
   };
@@ -597,6 +695,7 @@ export function useUnifiedDashboard() {
   const clientsContext = useClientsContext();
   const instrumentsContext = useInstrumentsContext();
   const connectionsContext = useConnectionsContext();
+  const { tenantIdentityKey, isTenantTransitioning } = useTenantScopeGuard();
 
   const state = useMemo(
     () => ({
@@ -630,10 +729,41 @@ export function useUnifiedDashboard() {
         connectionsContext.actions
       );
 
+    const updateClient = async (
+      id: string,
+      client: Partial<Client> & { expected_updated_at?: string }
+    ) => {
+      const mutationTenantIdentityKey = tenantIdentityKey;
+      const updated = await clientsContext.actions.updateClient(id, client);
+      reconcileRelatedClientAfterUpdate(
+        connectionsContext.actions,
+        updated,
+        mutationTenantIdentityKey
+      );
+      return updated;
+    };
+
+    const updateInstrument = async (
+      id: string,
+      instrument: Partial<Instrument>
+    ) => {
+      const mutationTenantIdentityKey = tenantIdentityKey;
+      const updated = await instrumentsContext.actions.updateInstrument(
+        id,
+        instrument
+      );
+      reconcileRelatedInstrumentAfterUpdate(
+        connectionsContext.actions,
+        updated,
+        mutationTenantIdentityKey
+      );
+      return updated;
+    };
+
     return {
       fetchClients: clientsContext.actions.fetchClients,
       createClient: clientsContext.actions.createClient,
-      updateClient: clientsContext.actions.updateClient,
+      updateClient,
       deleteClient: async (id: string) => {
         const ok = await clientsContext.actions.deleteClient(id);
         if (ok) {
@@ -643,7 +773,7 @@ export function useUnifiedDashboard() {
       },
       fetchInstruments: instrumentsContext.actions.fetchInstruments,
       createInstrument: instrumentsContext.actions.createInstrument,
-      updateInstrument: instrumentsContext.actions.updateInstrument,
+      updateInstrument,
       deleteInstrument: async (id: string) => {
         await instrumentsContext.actions.deleteInstrument(id);
         await refreshConnectionsAfterStructuralDelete();
@@ -672,6 +802,7 @@ export function useUnifiedDashboard() {
     clientsContext.actions,
     instrumentsContext.actions,
     connectionsContext.actions,
+    tenantIdentityKey,
   ]);
 
   type EnrichedConnection = ClientInstrument & {
@@ -736,7 +867,6 @@ export function useUnifiedDashboard() {
     () => normalizeUnifiedResourceErrors(state.errors),
     [state.errors]
   );
-  const { isTenantTransitioning } = useTenantScopeGuard();
   const safeClients = isTenantTransitioning ? [] : state.clients;
   const safeInstruments = isTenantTransitioning ? [] : state.instruments;
   const safeConnections = isTenantTransitioning ? [] : state.connections;
@@ -825,6 +955,16 @@ export function useConnectedClientsData() {
     [clientsContext.state, instrumentsContext.state, connectionsContext.state]
   );
 
+  const resolvedConnections = useMemo(
+    () =>
+      resolveConnectionsView(
+        state.connections,
+        state.clients,
+        state.instruments
+      ),
+    [state.connections, state.clients, state.instruments]
+  );
+
   const createConnection = useCallback(
     async (
       clientId: string,
@@ -845,12 +985,28 @@ export function useConnectedClientsData() {
   const updateConnection = useCallback(
     async (
       connectionId: string,
-      updates: { relationshipType: RelationshipType; notes: string }
+      updates: Partial<{ relationshipType: RelationshipType; notes: string }>
     ) => {
-      return await connectionsContext.actions.updateConnection(connectionId, {
-        relationship_type: updates.relationshipType,
-        notes: updates.notes || null,
-      });
+      // Only forward fields the caller actually provided. Sending an
+      // omitted field back to the API as its old/blank value would let this
+      // update silently clobber a concurrent change to that field made by
+      // someone else in the meantime (update_connection_atomic only touches
+      // fields present in the JSONB payload).
+      const mapped: {
+        relationship_type?: RelationshipType;
+        notes?: string | null;
+      } = {};
+      if (updates.relationshipType !== undefined) {
+        mapped.relationship_type = updates.relationshipType;
+      }
+      if (updates.notes !== undefined) {
+        mapped.notes = updates.notes || null;
+      }
+
+      return await connectionsContext.actions.updateConnection(
+        connectionId,
+        mapped
+      );
     },
     [connectionsContext.actions]
   );
@@ -864,7 +1020,7 @@ export function useConnectedClientsData() {
   return {
     clients: isTenantTransitioning ? [] : state.clients,
     instruments: isTenantTransitioning ? [] : state.instruments,
-    connections: isTenantTransitioning ? [] : state.connections,
+    connections: isTenantTransitioning ? [] : resolvedConnections,
 
     loading: {
       clients: isTenantTransitioning ? true : state.loading.clients,

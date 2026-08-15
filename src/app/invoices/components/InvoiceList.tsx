@@ -342,32 +342,22 @@ function InvoiceList({
                               Download PDF
                             </Button>
                           )}
-                          {onEdit &&
-                            (canEditInvoice ? (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => onEdit(invoice)}
-                              >
-                                Edit
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                disabled
-                                title="Admin only"
-                              >
-                                Edit
-                              </Button>
-                            ))}
+                          {onEdit && canEditInvoice && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => onEdit(invoice)}
+                            >
+                              Edit
+                            </Button>
+                          )}
                           {/* F5: issued invoices can never be hard deleted -
                               the API always rejects it with 409
                               INVOICE_IMMUTABLE - so the action is not offered
                               for them at all. */}
                           {onDelete &&
-                            isInvoiceHardDeletable(invoice.status) &&
-                            (canDeleteInvoice ? (
+                            canDeleteInvoice &&
+                            isInvoiceHardDeletable(invoice.status) && (
                               <Button
                                 variant="danger"
                                 size="sm"
@@ -375,16 +365,7 @@ function InvoiceList({
                               >
                                 Delete
                               </Button>
-                            ) : (
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                disabled
-                                title="Admin only"
-                              >
-                                Delete
-                              </Button>
-                            ))}
+                            )}
                         </div>
                       </td>
                     </tr>

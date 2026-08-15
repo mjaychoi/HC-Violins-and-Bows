@@ -2,6 +2,7 @@
 import { fireEvent, render, screen } from '@/test-utils/render';
 import InvoiceList from '../InvoiceList';
 import { Invoice } from '@/types';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // Mock dependencies
 jest.mock('@/hooks/usePermissions', () => ({
@@ -271,6 +272,23 @@ describe('InvoiceList', () => {
     fireEvent.click(deleteButton);
 
     expect(baseProps.onDelete).toHaveBeenCalledWith(mockInvoice);
+  });
+
+  it('does not render disabled Admin-only Edit or Delete buttons when unauthorized', () => {
+    (usePermissions as jest.Mock).mockReturnValue({
+      canEditInvoice: false,
+      canDeleteInvoice: false,
+    });
+
+    render(<InvoiceList {...baseProps} />);
+
+    expect(screen.queryByText('Edit')).not.toBeInTheDocument();
+    expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Admin only')).not.toBeInTheDocument();
+    (usePermissions as jest.Mock).mockReturnValue({
+      canEditInvoice: true,
+      canDeleteInvoice: true,
+    });
   });
 
   it('renders date-only invoice and due dates without timezone shift', () => {

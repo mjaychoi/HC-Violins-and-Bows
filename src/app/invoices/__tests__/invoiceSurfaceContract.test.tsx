@@ -152,6 +152,8 @@ beforeEach(() => {
     handleError: jest.fn(),
   } as any);
   mockUsePermissions.mockReturnValue({
+    permissionsReady: true,
+    canViewInvoices: true,
     canEditInvoice: true,
     canDeleteInvoice: true,
     canManageInvoiceSettings: true,

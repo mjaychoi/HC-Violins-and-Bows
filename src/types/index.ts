@@ -140,7 +140,16 @@ export type MaintenanceTaskUpdatePayload = Partial<
     MaintenanceTask,
     'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
   >
->;
+> & {
+  expected_updated_at?: string;
+};
+
+export type MaintenanceTaskSubmitPayload = Omit<
+  MaintenanceTask,
+  'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+> & {
+  expected_updated_at?: string;
+};
 
 // Calendar Event Types
 export interface CalendarEvent {
@@ -262,6 +271,16 @@ export interface ContactLog {
   updated_at: string;
   client?: Client;
   instrument?: Instrument;
+}
+
+export interface NoteRecord {
+  id: string;
+  org_id: string;
+  user_id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // Re-export sort types

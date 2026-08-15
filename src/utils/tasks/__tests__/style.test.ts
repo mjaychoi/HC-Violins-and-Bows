@@ -237,6 +237,94 @@ describe('tasks/style', () => {
       expect(result).toHaveProperty('status');
       expect(result).toHaveProperty('days');
     });
+
+    // Regression: getDateStatus must use the same placement-date source
+    // (getCalendarPlacementDate) as the Calendar summary/grid, including the
+    // received_date fallback, so a task can't be "overdue" in one and
+    // "normal" in the other.
+    describe('placement-date parity with getCalendarPlacementDate (regression)', () => {
+      beforeEach(() => {
+        jest.useFakeTimers({ now: new Date(2024, 5, 15, 12, 0, 0).getTime() }); // "today" = 2024-06-15
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('A. pending task with only an old received_date is classified overdue', () => {
+        const task = makeTask({
+          status: 'pending',
+          due_date: null,
+          personal_due_date: null,
+          scheduled_date: null,
+          received_date: '2024-06-01',
+        });
+
+        const result = getDateStatus(task);
+        expect(result.status).toBe('overdue');
+      });
+
+      it('B. received_date of today is classified as today (not overdue, 0 days)', () => {
+        const task = makeTask({
+          status: 'pending',
+          due_date: null,
+          personal_due_date: null,
+          scheduled_date: null,
+          received_date: '2024-06-15',
+        });
+
+        const result = getDateStatus(task);
+        expect(result.status).not.toBe('overdue');
+        expect(result.days).toBe(0);
+      });
+
+      it('C. due_date remains the selected placement date even with an older received_date', () => {
+        const task = makeTask({
+          status: 'pending',
+          due_date: '2024-06-17',
+          personal_due_date: null,
+          scheduled_date: null,
+          received_date: '2024-01-01',
+        });
+
+        const result = getDateStatus(task);
+        // due_date (2024-06-17, 2 days out) wins over the stale received_date,
+        // which alone would have been classified overdue.
+        expect(result.status).toBe('upcoming');
+        expect(result.days).toBe(2);
+      });
+
+      it('D. completed task with only an old received_date: getDateStatus still reports overdue, but getCalendarEventStyle keeps terminal styling (not overdue red)', () => {
+        const task = makeTask({
+          status: 'completed',
+          due_date: null,
+          personal_due_date: null,
+          scheduled_date: null,
+          received_date: '2024-06-01',
+        });
+
+        // getDateStatus is a pure date function; terminal-status exclusion
+        // happens at the styling layer (getCalendarEventStyle), not here.
+        expect(getDateStatus(task).status).toBe('overdue');
+
+        const style = getCalendarEventStyle(task);
+        expect(style.backgroundColor).toBe('#9ca3af'); // gray, not red
+        expect(style.textDecoration).toBe('line-through');
+      });
+
+      it('D2. cancelled task with only an old received_date does not get overdue (red) styling', () => {
+        const task = makeTask({
+          status: 'cancelled',
+          due_date: null,
+          personal_due_date: null,
+          scheduled_date: null,
+          received_date: '2024-06-01',
+        });
+
+        const style = getCalendarEventStyle(task);
+        expect(style.backgroundColor).toBe('#9ca3af'); // gray, not red (#ef4444)
+      });
+    });
   });
 
   describe('getCalendarEventStyle', () => {

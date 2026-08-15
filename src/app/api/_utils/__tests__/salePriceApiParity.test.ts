@@ -381,7 +381,17 @@ describe('sale price API parity — /api/instruments vs /api/sales', () => {
           eq: jest.fn().mockReturnThis(),
           single: jest.fn().mockResolvedValue({ data: mockSale, error: null }),
         }),
-        rpc: jest.fn().mockResolvedValue({ data: mockSale.id, error: null }),
+        // get_sales_financials() is also called (fetchSaleById) — see
+        // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+        rpc: jest.fn().mockImplementation((fn: string) => {
+          if (fn === 'get_sales_financials') {
+            return Promise.resolve({
+              data: [{ id: mockSale.id, sale_price: mockSale.sale_price }],
+              error: null,
+            });
+          }
+          return Promise.resolve({ data: mockSale.id, error: null });
+        }),
       };
 
       const request = new NextRequest('http://localhost:3000/api/sales', {

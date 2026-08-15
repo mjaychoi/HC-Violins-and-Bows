@@ -36,6 +36,13 @@ interface ConnectionModalProps {
   submitting: boolean;
 }
 
+// Mirrors assert_bookable_instrument_state (supabase/migrations/00000000000004):
+// the DB rejects a Booked connection for these statuses.
+const UNBOOKABLE_STATUSES: ReadonlySet<Instrument['status']> = new Set([
+  'Sold',
+  'Maintenance',
+]);
+
 export default function ConnectionModal({
   isOpen,
   onClose,
@@ -56,9 +63,16 @@ export default function ConnectionModal({
   onInstrumentSearchChange,
   submitting,
 }: ConnectionModalProps) {
+  const isBookingUnavailable =
+    relationshipType === 'Booked' &&
+    items.find(item => item.id === selectedInstrument) !== undefined &&
+    UNBOOKABLE_STATUSES.has(
+      items.find(item => item.id === selectedInstrument)!.status
+    );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedClient || !selectedInstrument) return;
+    if (!selectedClient || !selectedInstrument || isBookingUnavailable) return;
 
     try {
       // FIXED: Let parent handle closing - don't call onClose() here
@@ -259,20 +273,40 @@ export default function ConnectionModal({
             >
               {items.map(item => {
                 const isSelected = selectedInstrument === item.id;
-                const label = `${formatInstrumentName(item)}, Year: ${item.year ?? 'unknown'}`;
+                // Only Booked has DB-enforced status restrictions
+                // (assert_bookable_instrument_state); other relationship
+                // types accept any instrument status.
+                const isUnbookable =
+                  relationshipType === 'Booked' &&
+                  UNBOOKABLE_STATUSES.has(item.status);
+                const label = `${formatInstrumentName(item)}, Year: ${item.year ?? 'unknown'}${
+                  item.status !== 'Available' ? `, Status: ${item.status}` : ''
+                }${isUnbookable ? ' (not available for Booked)' : ''}`;
                 return (
                   <button
                     key={item.id}
                     type="button"
                     role="option"
                     aria-selected={isSelected}
+                    aria-disabled={isUnbookable}
                     aria-label={label}
+                    disabled={isUnbookable}
+                    title={
+                      isUnbookable
+                        ? `This instrument is ${item.status} and can't be Booked.`
+                        : undefined
+                    }
                     className={`w-full text-left p-3 border-b border-gray-100 last:border-b-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
-                      isSelected
-                        ? 'bg-blue-50 border-l-4 border-l-blue-500'
-                        : 'border-l-4 border-l-transparent hover:bg-gray-50'
+                      isUnbookable
+                        ? 'opacity-50 cursor-not-allowed border-l-4 border-l-transparent'
+                        : isSelected
+                          ? 'bg-blue-50 border-l-4 border-l-blue-500'
+                          : 'border-l-4 border-l-transparent hover:bg-gray-50'
                     }`}
-                    onClick={() => onInstrumentChange(item.id)}
+                    onClick={() => {
+                      if (isUnbookable) return;
+                      onInstrumentChange(item.id);
+                    }}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
@@ -281,6 +315,21 @@ export default function ConnectionModal({
                         </div>
                         <div className="text-sm text-gray-500">
                           Year: {item.year}
+                          {item.status !== 'Available' && (
+                            <>
+                              {' '}
+                              &middot;{' '}
+                              <span
+                                className={
+                                  isUnbookable
+                                    ? 'text-red-600 font-medium'
+                                    : undefined
+                                }
+                              >
+                                {item.status}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                       {isSelected && (
@@ -326,11 +375,26 @@ export default function ConnectionModal({
             <select
               id="connection-relationship-type"
               value={relationshipType}
-              onChange={e =>
-                onRelationshipTypeChange(
-                  e.target.value as ClientInstrument['relationship_type']
-                )
-              }
+              onChange={e => {
+                const nextType = e.target
+                  .value as ClientInstrument['relationship_type'];
+                onRelationshipTypeChange(nextType);
+
+                // Switching to Booked can make the already-selected
+                // instrument invalid (assert_bookable_instrument_state
+                // rejects Sold/Maintenance) - clear it instead of leaving a
+                // selection that will fail on submit.
+                const selected = items.find(
+                  item => item.id === selectedInstrument
+                );
+                if (
+                  nextType === 'Booked' &&
+                  selected &&
+                  UNBOOKABLE_STATUSES.has(selected.status)
+                ) {
+                  onInstrumentChange('');
+                }
+              }}
               className={classNames.input}
             >
               {EDITABLE_RELATIONSHIP_TYPES.map(type => (
@@ -342,6 +406,12 @@ export default function ConnectionModal({
             <p className="text-xs text-gray-500 mt-1">
               Sold relationships are created through the sales workflow.
             </p>
+            {isBookingUnavailable && (
+              <p className="text-xs text-red-600 mt-1" role="alert">
+                The selected instrument can&apos;t be Booked in its current
+                status. Choose a different instrument or relationship type.
+              </p>
+            )}
           </div>
 
           {/* Notes */}
@@ -367,7 +437,12 @@ export default function ConnectionModal({
             </button>
             <button
               type="submit"
-              disabled={!selectedClient || !selectedInstrument || submitting}
+              disabled={
+                !selectedClient ||
+                !selectedInstrument ||
+                submitting ||
+                isBookingUnavailable
+              }
               aria-busy={submitting}
               className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >

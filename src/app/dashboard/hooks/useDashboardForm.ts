@@ -19,6 +19,7 @@ export function useDashboardForm() {
     ownership: '',
     note: '',
     serial_number: '',
+    reserved_reason: '',
   };
 
   const { formData, updateField, updateFields, resetForm } =

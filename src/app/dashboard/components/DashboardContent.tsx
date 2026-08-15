@@ -9,6 +9,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { downloadItemCSV } from '../utils/itemCsvExport';
 import type { Instrument, Client, ClientInstrument } from '@/types';
+import type { DashboardInstrumentDeepLinkStatus } from '../hooks/useDashboardInstrumentDeepLink';
 
 type EnrichedInstrument = Instrument & {
   clients: ClientInstrument[];
@@ -36,6 +37,11 @@ interface DashboardContentProps {
   newlyCreatedItemId?: string | null;
   onNewlyCreatedItemShown?: () => void;
   onInstrumentCertificatesChanged?: () => void;
+  instrumentDeepLink?: {
+    status: DashboardInstrumentDeepLinkStatus;
+    onShowAllItems: () => void;
+    onRetry: () => void;
+  };
 }
 
 function DashboardContentInner({
@@ -53,6 +59,7 @@ function DashboardContentInner({
   newlyCreatedItemId,
   onNewlyCreatedItemShown,
   onInstrumentCertificatesChanged,
+  instrumentDeepLink,
 }: DashboardContentProps) {
   const { canManageInstruments } = usePermissions();
   const { tenantIdentityKey, isTenantTransitioning } = useTenantIdentity();
@@ -134,6 +141,13 @@ function DashboardContentInner({
     Boolean(searchTerm) ||
     Boolean(dateRange?.from) ||
     Boolean(dateRange?.to);
+
+  const deepLinkStatus = instrumentDeepLink?.status ?? 'idle';
+  const showDeepLinkPanel =
+    deepLinkStatus === 'loading' ||
+    deepLinkStatus === 'not_found' ||
+    deepLinkStatus === 'invalid' ||
+    deepLinkStatus === 'error';
 
   return (
     <div className="p-6 space-y-4">
@@ -228,7 +242,7 @@ function DashboardContentInner({
           </div>
         </div>
 
-        {showFilters && (
+        {showFilters && !showDeepLinkPanel && (
           <ItemFilters
             items={enrichedItems}
             searchTerm={searchTerm}
@@ -248,34 +262,115 @@ function DashboardContentInner({
           />
         )}
 
-        <ItemList
-          items={paginatedItems}
-          loading={loading.hasAnyLoading}
-          onDeleteClick={onDeleteClick}
-          onEditClick={onEditClick}
-          onRowClick={onRowClick}
-          onUpdateItem={onUpdateItemInline}
-          clientRelationships={clientRelationships}
-          allClients={clients}
-          clientsLoading={clientsLoading}
-          getSortArrow={getSortArrow}
-          onSort={handleSort}
-          onAddClick={onAddClick}
-          newlyCreatedItemId={newlyCreatedItemId}
-          onNewlyCreatedItemShown={onNewlyCreatedItemShown}
-          emptyState={{
-            hasActiveFilters,
-            message: hasActiveFilters
-              ? 'No items found matching your filters'
-              : undefined,
-          }}
-          onInstrumentCertificatesChanged={onInstrumentCertificatesChanged}
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalCount={totalCount}
-          pageSize={pageSize}
-          onPageChange={setPage}
-        />
+        {showDeepLinkPanel ? (
+          <DashboardInstrumentDeepLinkPanel
+            status={deepLinkStatus}
+            onShowAllItems={instrumentDeepLink?.onShowAllItems}
+            onRetry={instrumentDeepLink?.onRetry}
+          />
+        ) : (
+          <ItemList
+            items={paginatedItems}
+            loading={loading.hasAnyLoading}
+            onDeleteClick={onDeleteClick}
+            onEditClick={onEditClick}
+            onRowClick={onRowClick}
+            onUpdateItem={onUpdateItemInline}
+            clientRelationships={clientRelationships}
+            allClients={clients}
+            clientsLoading={clientsLoading}
+            getSortArrow={getSortArrow}
+            onSort={handleSort}
+            onAddClick={onAddClick}
+            newlyCreatedItemId={newlyCreatedItemId}
+            onNewlyCreatedItemShown={onNewlyCreatedItemShown}
+            emptyState={{
+              hasActiveFilters,
+              message: hasActiveFilters
+                ? 'No items found matching your filters'
+                : undefined,
+            }}
+            onInstrumentCertificatesChanged={onInstrumentCertificatesChanged}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DashboardInstrumentDeepLinkPanel({
+  status,
+  onShowAllItems,
+  onRetry,
+}: {
+  status: DashboardInstrumentDeepLinkStatus;
+  onShowAllItems?: () => void;
+  onRetry?: () => void;
+}) {
+  if (status === 'loading') {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="rounded-xl border border-gray-200 bg-white p-6"
+      >
+        <p className="text-sm text-gray-700">Loading item…</p>
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div
+        role="alert"
+        aria-live="assertive"
+        className="rounded-xl border border-red-200 bg-red-50 p-6"
+      >
+        <h2 className="text-lg font-semibold text-red-900">
+          Couldn&apos;t load this item
+        </h2>
+        <p className="mt-2 text-sm text-red-800">
+          Something went wrong while opening this Item. Please try again.
+        </p>
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="rounded-xl border border-gray-200 bg-white p-6"
+    >
+      <h2 className="text-lg font-semibold text-gray-900">
+        Item not found or unavailable.
+      </h2>
+      <p className="mt-2 text-sm text-gray-600">
+        This Item may have been deleted or is not available in the current
+        organization.
+      </p>
+      <div className="mt-4">
+        <button
+          type="button"
+          onClick={onShowAllItems}
+          className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          Show all items
+        </button>
       </div>
     </div>
   );

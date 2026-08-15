@@ -97,6 +97,10 @@ export const getRelationshipTypeCounts = (
 /**
  * Sort connections for All tab display
  * Priority: relationship_type → client name → instrument maker/type
+ *
+ * Uses the Client/Instrument already on each Connection row. Pass
+ * canonical-resolved connections (see resolveConnectionsView) so sort
+ * order matches display/search rather than a stale embed.
  */
 export const sortConnectionsForAllTab = (
   connections: ClientInstrument[]

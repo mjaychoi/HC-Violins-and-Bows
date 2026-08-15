@@ -9,6 +9,7 @@ import { useURLState } from '@/hooks/useURLState';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { ConnectionModal, ConnectionSearch } from './components';
 import { RELATIONSHIP_TYPES } from './utils/connectionGrouping';
+import { buildConnectionSearchText } from './utils/resolveConnectionRelatedEntities';
 import EmptyState from '@/components/common/empty-state/EmptyState';
 import { GuideModal } from '@/components/common/empty-state/GuideModal';
 import { useErrorHandler } from '@/contexts/ToastContext';
@@ -169,26 +170,12 @@ function ConnectedClientsPageContent() {
   const [currentPage, setCurrentPage] = useState(initialPage);
   const pageSize = 20;
 
-  // FIXED: Create searchable connections with nested field support
-  // Includes all searchable fields: relationship_type, notes, client info, instrument info, tags, price
+  // Search uses the same canonical-resolved Connection representation as
+  // display (see useConnectedClientsData). Do not index raw embedded snapshots.
   const connectionsWithSearch = useMemo(() => {
     return connections.map(c => ({
       ...c,
-      _searchText: [
-        c.relationship_type,
-        c.notes,
-        c.client?.first_name,
-        c.client?.last_name,
-        c.client?.email,
-        ...(c.client?.tags ?? []),
-        c.instrument?.maker,
-        c.instrument?.type,
-        c.instrument?.year?.toString(),
-        c.instrument?.price?.toString(),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase(),
+      _searchText: buildConnectionSearchText(c),
     }));
   }, [connections]);
 
@@ -417,7 +404,7 @@ function ConnectedClientsPageContent() {
   // Handle connection update
   const handleUpdateConnection = async (
     connectionId: string,
-    updates: { relationshipType: RelationshipType; notes: string }
+    updates: Partial<{ relationshipType: RelationshipType; notes: string }>
   ) => {
     try {
       await withSubmitting(async () => {
@@ -466,10 +453,11 @@ function ConnectedClientsPageContent() {
             return;
           }
 
-          // Use updateConnection with relationshipType (it will convert to relationship_type internally)
+          // Only relationshipType is sent - omitting notes lets the update
+          // leave whatever notes currently exist on the row untouched,
+          // instead of overwriting them with this possibly-stale local copy.
           await updateConnection(connectionId, {
             relationshipType: newType,
-            notes: connection.notes || '', // Preserve existing notes
           });
           await fetchConnections({ all: true, force: true });
         });

@@ -10,7 +10,11 @@ import React, {
   useRef,
   ReactNode,
 } from 'react';
-import { ClientInstrument } from '@/types';
+import { Client, ClientInstrument, Instrument } from '@/types';
+import {
+  patchConnectionsRelatedClient,
+  patchConnectionsRelatedInstrument,
+} from '@/app/connections/utils/resolveConnectionRelatedEntities';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
 import {
@@ -19,6 +23,11 @@ import {
 } from '@/utils/handleApiResponse';
 import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
+import {
+  CONNECTIONS_COMPLETE_PAGE_SIZE,
+  ConnectionCompleteFetchCancelled,
+  fetchCompleteConnectionCollection,
+} from '@/contexts/fetchCompleteConnectionCollection';
 
 interface ConnectionsState {
   connections: ClientInstrument[];
@@ -28,10 +37,11 @@ interface ConnectionsState {
   error: unknown | null;
   lastUpdated: Date | null;
   /**
-   * F2: true when the most recent org-wide ("all") fetch hit the server-side
-   * row cap and more relationships exist than were returned. Reset on every
-   * successful fetch and on tenant switch (via RESET_STATE) so a stale
-   * warning from a previous organization can never leak into a new one.
+   * True when the most recently committed *bounded* snapshot was truncated.
+   * A successful complete org-wide drain always stores `false`. Partial
+   * paged fetches never set this. Reset on tenant switch (RESET_STATE).
+   * `truncated === true` and org-wide completeness must never describe the
+   * same snapshot.
    */
   truncated: boolean;
 }
@@ -52,6 +62,8 @@ type ConnectionsAction =
     }
   | { type: 'REMOVE_CONNECTION'; payload: string }
   | { type: 'UPSERT_CONNECTIONS'; payload: ClientInstrument[] }
+  | { type: 'RECONCILE_RELATED_CLIENT'; payload: Client }
+  | { type: 'RECONCILE_RELATED_INSTRUMENT'; payload: Instrument }
   | { type: 'INVALIDATE_CACHE' }
   | { type: 'RESET_STATE' };
 
@@ -162,6 +174,34 @@ function connectionsReducer(
       };
     }
 
+    case 'RECONCILE_RELATED_CLIENT': {
+      const connections = patchConnectionsRelatedClient(
+        state.connections,
+        action.payload
+      );
+      if (connections === state.connections) return state;
+
+      return {
+        ...state,
+        connections,
+        lastUpdated: new Date(),
+      };
+    }
+
+    case 'RECONCILE_RELATED_INSTRUMENT': {
+      const connections = patchConnectionsRelatedInstrument(
+        state.connections,
+        action.payload
+      );
+      if (connections === state.connections) return state;
+
+      return {
+        ...state,
+        connections,
+        lastUpdated: new Date(),
+      };
+    }
+
     case 'INVALIDATE_CACHE':
       return {
         ...state,
@@ -201,6 +241,16 @@ type ConnectionsContextValue = {
     deleteConnection: (id: string) => Promise<boolean>;
 
     upsertConnections: (connections: ClientInstrument[]) => void;
+
+    reconcileRelatedClient: (
+      client: Client,
+      mutationTenantIdentityKey?: string | null
+    ) => void;
+
+    reconcileRelatedInstrument: (
+      instrument: Instrument,
+      mutationTenantIdentityKey?: string | null
+    ) => void;
 
     invalidateCache: () => void;
 
@@ -258,6 +308,16 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     stateRef.current = state;
   }, [state]);
 
+  /**
+   * Org-wide completeness for the *currently visible* cache snapshot.
+   *
+   * Set true only after a successful full page-drain for this tenant.
+   * A capped/truncated `all=true` snapshot must never set this.
+   * A failed drain leaves the previous value: false when nothing complete
+   * was ever committed; true when the last-known-good complete cache C0
+   * is still on screen. Local ADD/UPDATE/REMOVE do not change this flag,
+   * so a partial cache plus one mutation cannot become "complete".
+   */
   const orgWideFetchCompleteRef = useRef(false);
 
   const { handleError } = useErrorHandler();
@@ -292,13 +352,24 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
   const deduped = useCallback(
     <T extends () => Promise<void>>(
       tenantKey: string,
-      fn: T
+      fn: T,
+      options?: { force?: boolean }
     ): Promise<void> => {
       const existing = inflight.current.get(tenantKey);
 
-      if (existing) return existing;
+      if (existing && !options?.force) return existing;
 
-      const promise = fn().finally(() => {
+      // A forced call (e.g. the refetch after a mutation this caller just
+      // awaited) must not silently attach to an unrelated in-flight fetch
+      // that may have started *before* that mutation committed - doing so
+      // can hand the caller a response that predates their own write,
+      // making it look reverted until some later, unrelated fetch happens
+      // to run. If one is already in flight, wait for it to settle first
+      // (so forced calls still queue instead of piling up parallel
+      // requests), then always issue a fresh fetch of our own.
+      const run = existing ? existing.catch(() => undefined).then(fn) : fn();
+
+      const promise = run.finally(() => {
         if (inflight.current.get(tenantKey) === promise) {
           inflight.current.delete(tenantKey);
         }
@@ -334,6 +405,40 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const isCurrentMutationTenant = useCallback(
+    (mutationTenantIdentityKey?: string | null) => {
+      if (mutationTenantIdentityKey === undefined) return true;
+      return tenantIdentityKeyRef.current === mutationTenantIdentityKey;
+    },
+    []
+  );
+
+  const reconcileRelatedClient = useCallback(
+    (client: Client, mutationTenantIdentityKey?: string | null) => {
+      if (!client?.id) return;
+      if (!isCurrentMutationTenant(mutationTenantIdentityKey)) return;
+
+      dispatch({
+        type: 'RECONCILE_RELATED_CLIENT',
+        payload: client,
+      });
+    },
+    [isCurrentMutationTenant]
+  );
+
+  const reconcileRelatedInstrument = useCallback(
+    (instrument: Instrument, mutationTenantIdentityKey?: string | null) => {
+      if (!instrument?.id) return;
+      if (!isCurrentMutationTenant(mutationTenantIdentityKey)) return;
+
+      dispatch({
+        type: 'RECONCILE_RELATED_INSTRUMENT',
+        payload: instrument,
+      });
+    },
+    [isCurrentMutationTenant]
+  );
+
   const fetchConnections = useCallback(
     async (opts?: {
       force?: boolean;
@@ -350,15 +455,19 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       const suppressErrorToast = opts?.suppressErrorToast ?? false;
       const rejectOnError = opts?.rejectOnError ?? false;
 
-      if (!force) {
-        if (all) {
-          if (orgWideFetchCompleteRef.current) return;
-        } else {
-          const currentState = stateRef.current;
+      if (all) {
+        if (!force && orgWideFetchCompleteRef.current) return;
+      } else if (orgWideFetchCompleteRef.current) {
+        // Paged mode is not a production writer of the shared cache.
+        // If a complete org-wide snapshot already exists, never replace it
+        // with one page — including force — so other consumers cannot
+        // observe an invisible downgrade.
+        return;
+      } else if (!force) {
+        const currentState = stateRef.current;
 
-          if (currentState.lastUpdated && currentState.connections.length > 0) {
-            return;
-          }
+        if (currentState.lastUpdated && currentState.connections.length > 0) {
+          return;
         }
       }
 
@@ -370,36 +479,72 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_ERROR', payload: null });
 
         try {
-          const base = new URLSearchParams({
-            orderBy: 'created_at',
-            ascending: 'false',
-          });
+          const isCurrentTenant = () =>
+            tenantIdentityKeyRef.current === fetchTenantIdentityKey;
+
+          let next: ClientInstrument[];
+          let nextTruncated = false;
+          let markComplete = false;
 
           if (all) {
-            base.set('all', 'true');
+            next = await fetchCompleteConnectionCollection({
+              pageSize: CONNECTIONS_COMPLETE_PAGE_SIZE,
+              isCancelled: () => !isCurrentTenant(),
+              fetchPage: async (requestPage, requestPageSize) => {
+                if (!isCurrentTenant()) {
+                  throw new ConnectionCompleteFetchCancelled();
+                }
+
+                const params = new URLSearchParams({
+                  orderBy: 'created_at',
+                  ascending: 'false',
+                  page: String(requestPage),
+                  pageSize: String(requestPageSize),
+                });
+                const res = await apiFetch(
+                  `/api/connections?${params.toString()}`
+                );
+
+                return readApiResponseEnvelope<ClientInstrument[]>(
+                  res,
+                  `Failed to fetch connections (${res.status})`
+                );
+              },
+            });
+            nextTruncated = false;
+            markComplete = true;
           } else {
-            base.set('page', String(page));
-            base.set('pageSize', String(pageSize));
+            const params = new URLSearchParams({
+              orderBy: 'created_at',
+              ascending: 'false',
+              page: String(page),
+              pageSize: String(pageSize),
+            });
+            const res = await apiFetch(`/api/connections?${params.toString()}`);
+            const body = await readApiResponseEnvelope<ClientInstrument[]>(
+              res,
+              `Failed to fetch connections (${res.status})`
+            );
+
+            next = Array.isArray(body.data) ? body.data : [];
+            nextTruncated = false;
+            markComplete = false;
           }
 
-          const res = await apiFetch(`/api/connections?${base.toString()}`);
-          const body = await readApiResponseEnvelope<ClientInstrument[]>(
-            res,
-            `Failed to fetch connections (${res.status})`
-          );
-
-          const next = Array.isArray(body.data) ? body.data : [];
-          // Only the org-wide "all" fetch can hit MAX_ALL_RESULTS; a
-          // paginated fetch is truncated by design (by page), not silently.
-          const nextTruncated = all && body.truncated === true;
-
-          if (tenantIdentityKeyRef.current !== fetchTenantIdentityKey) {
+          if (!isCurrentTenant()) {
             return;
           }
 
-          orgWideFetchCompleteRef.current = all;
-
-          if (
+          // Complete only after the full drain succeeded. Always commit the
+          // aggregate, including a legitimate empty org, so lastUpdated and
+          // truncated distinguish "fetched empty" from "not fetched".
+          if (markComplete) {
+            orgWideFetchCompleteRef.current = true;
+            dispatch({
+              type: 'SET_CONNECTIONS',
+              payload: { connections: next, truncated: nextTruncated },
+            });
+          } else if (
             !sameConnections(stateRef.current.connections, next) ||
             stateRef.current.truncated !== nextTruncated
           ) {
@@ -416,13 +561,19 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
           // F5: an aborted request (e.g. a superseded in-flight fetch) is not
           // a user-facing failure - surfacing it as an error would flash a
           // false error state for a request nobody is waiting on anymore.
-          if (err instanceof DOMException && err.name === 'AbortError') {
+          if (
+            (err instanceof DOMException && err.name === 'AbortError') ||
+            err instanceof ConnectionCompleteFetchCancelled
+          ) {
             return;
           }
 
           if (isAuthLikeTenantError(err)) {
             orgWideFetchCompleteRef.current = false;
             dispatch({ type: 'RESET_STATE' });
+            if (rejectOnError) {
+              throw err instanceof Error ? err : new Error(String(err));
+            }
             return;
           }
 
@@ -444,7 +595,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
 
       const modeKey = all ? 'all' : `paged:${page}:${pageSize}`;
 
-      return deduped(`${inflightKey}:${modeKey}`, runFetch);
+      return deduped(`${inflightKey}:${modeKey}`, runFetch, { force });
     },
     [deduped]
   );
@@ -626,6 +777,8 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       updateConnection,
       deleteConnection,
       upsertConnections,
+      reconcileRelatedClient,
+      reconcileRelatedInstrument,
       invalidateCache,
       resetState,
     }),
@@ -635,6 +788,8 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       updateConnection,
       deleteConnection,
       upsertConnections,
+      reconcileRelatedClient,
+      reconcileRelatedInstrument,
       invalidateCache,
       resetState,
     ]

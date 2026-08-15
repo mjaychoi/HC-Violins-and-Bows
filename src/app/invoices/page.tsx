@@ -15,11 +15,17 @@ import { Invoice } from '@/types';
 import type { InvoiceSortColumn, SortDirection } from '@/types/invoice';
 import { INVOICE_SORT_COLUMNS } from '@/types/invoice';
 import { useInvoices, useInvoiceSort } from './hooks';
+import {
+  INVOICE_PAGE_SIZE,
+  syncInvoicePageAfterDelete,
+} from './invoiceListPagination';
 import { InvoiceList } from './components';
+import InvoiceAccessState from './components/InvoiceAccessState';
 import InvoiceFilters, {
   type InvoiceFilterStatus,
 } from './components/InvoiceFilters';
 import { apiFetch } from '@/utils/apiFetch';
+import { ApiResponseError } from '@/utils/handleApiResponse';
 import dynamic from 'next/dynamic';
 import { useURLState } from '@/hooks/useURLState';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -73,8 +79,10 @@ function InvoicesPageContent() {
   const { showSuccess, showWarning, handleError } = useAppFeedback();
   const { tenantIdentityKey, isTenantTransitioning } = useTenantIdentity();
   const {
+    permissionsReady,
+    canViewInvoices,
+    invoiceAccessDisabledReason,
     canCreateInvoice,
-    createInvoiceDisabledReason,
     canManageInvoiceSettings,
   } = usePermissions();
   const {
@@ -306,6 +314,8 @@ function InvoicesPageContent() {
 
   // 초기 로드 및 필터/페이지/정렬 변경 시 API 호출
   useEffect(() => {
+    if (!permissionsReady || !canViewInvoices) return;
+
     // 동기화 중이라면 대기
     if (isSyncingFromURLRef.current) return;
 
@@ -322,7 +332,7 @@ function InvoicesPageContent() {
     hasFetchedRef.current = true;
     fetchInvoices({
       page: effectivePage,
-      pageSize: 10,
+      pageSize: INVOICE_PAGE_SIZE,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
       search: debouncedSearch || undefined,
@@ -344,11 +354,15 @@ function InvoicesPageContent() {
     sortColumn,
     sortDirection,
     fetchInvoices,
+    permissionsReady,
+    canViewInvoices,
   ]);
 
   // URL 동기화가 완료되었지만 아직 fetch하지 않은 경우 강제로 fetch (안전장치)
   useEffect(() => {
     if (
+      permissionsReady &&
+      canViewInvoices &&
       isURLSyncReady &&
       urlStateInitializedRef.current &&
       !isSyncingFromURLRef.current &&
@@ -361,7 +375,7 @@ function InvoicesPageContent() {
           hasFetchedRef.current = true;
           fetchInvoices({
             page: 1,
-            pageSize: 10,
+            pageSize: INVOICE_PAGE_SIZE,
             fromDate: fromDate || undefined,
             toDate: toDate || undefined,
             search: debouncedSearch || undefined,
@@ -385,6 +399,8 @@ function InvoicesPageContent() {
     status,
     sortColumn,
     sortDirection,
+    permissionsReady,
+    canViewInvoices,
   ]);
 
   useEffect(() => {
@@ -439,7 +455,7 @@ function InvoicesPageContent() {
     async (targetPage: number) =>
       fetchInvoices({
         page: targetPage,
-        pageSize: 10,
+        pageSize: INVOICE_PAGE_SIZE,
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         search: debouncedSearch || undefined,
@@ -468,7 +484,16 @@ function InvoicesPageContent() {
       await withInvoiceSubmitting(async () => {
         try {
           if (editingInvoice) {
-            const updateResult = await updateInvoice(editingInvoice.id, data);
+            if (!editingInvoice.updated_at) {
+              showWarning(
+                'This invoice is missing version information. Close and reopen it to try again.'
+              );
+              return;
+            }
+
+            const updateResult = await updateInvoice(editingInvoice.id, data, {
+              expectedUpdatedAt: editingInvoice.updated_at,
+            });
             try {
               await refreshInvoiceList(page);
               if (updateResult.result === 'partial_success') {
@@ -504,7 +529,9 @@ function InvoicesPageContent() {
               try {
                 const refreshedInvoices = await refreshInvoiceList(1);
                 setPage(1);
-                setHighlightedInvoiceId(refreshedInvoices[0]?.id ?? null);
+                setHighlightedInvoiceId(
+                  refreshedInvoices.invoices[0]?.id ?? null
+                );
                 showWarning(createResult.message);
                 setIsModalOpen(false);
                 setEditingInvoice(null);
@@ -546,6 +573,34 @@ function InvoicesPageContent() {
             return;
           }
         } catch (error) {
+          // V5-003: a 409 concurrency conflict means someone else changed
+          // this invoice since the modal was opened. The user's draft must
+          // survive the error (the modal stays open; editingInvoice is left
+          // untouched so InvoiceForm keeps its local, uncontrolled state) and
+          // must not be auto-resubmitted against the newer row. Refreshing
+          // the list in the background only updates what a *reopened* edit
+          // would see next, matching the same pattern used for instrument
+          // conflicts (src/contexts/InstrumentsContext.tsx).
+          if (
+            editingInvoice &&
+            error instanceof ApiResponseError &&
+            error.status === 409 &&
+            error.error_code === 'INVOICE_CONCURRENCY_CONFLICT'
+          ) {
+            void refreshInvoiceList(page).catch(refreshError => {
+              handleError(
+                refreshError,
+                'Refresh invoices after update conflict',
+                undefined,
+                { notify: false }
+              );
+            });
+            showWarning(
+              'This invoice was updated elsewhere. Your changes were not saved — close and reopen it to see the latest version before retrying.'
+            );
+            return;
+          }
+
           handleError(
             error,
             editingInvoice ? 'Update invoice' : 'Create invoice'
@@ -599,7 +654,13 @@ function InvoicesPageContent() {
         await deleteInvoice(confirmDeleteInvoice.id);
         setConfirmDeleteInvoice(null);
         try {
-          await refreshInvoiceList(page);
+          const synced = await syncInvoicePageAfterDelete({
+            currentPage: page,
+            refresh: refreshInvoiceList,
+          });
+          if (synced.page !== page) {
+            setPage(synced.page);
+          }
           showSuccess('Invoice deleted successfully.');
         } catch (refreshError) {
           handleError(
@@ -624,6 +685,7 @@ function InvoicesPageContent() {
     handleError,
     refreshInvoiceList,
     page,
+    setPage,
     isMutatingInvoice,
     withInvoiceSubmitting,
   ]);
@@ -793,29 +855,149 @@ function InvoicesPageContent() {
 
   // Handle add new invoice
   const handleAddInvoice = useCallback(() => {
+    if (!canCreateInvoice) return;
     setEditingInvoice(null);
     setIsModalOpen(true);
-  }, []);
+  }, [canCreateInvoice]);
+
+  const invoiceBody = !permissionsReady ? (
+    <div className="p-6">
+      <div className="text-sm text-gray-600">Loading...</div>
+    </div>
+  ) : !canViewInvoices ? (
+    <InvoiceAccessState reason={invoiceAccessDisabledReason} />
+  ) : (
+    <>
+      <div className="p-6 space-y-6">
+        {/* Filters */}
+        <InvoiceFilters
+          search={search}
+          onSearchChange={setSearch}
+          fromDate={fromDate}
+          onFromDateChange={setFromDate}
+          toDate={toDate}
+          onToDateChange={setToDate}
+          status={status}
+          onStatusChange={setStatus}
+          onClearFilters={clearFilters}
+          hasActiveFilters={hasActiveFilters}
+          onOpenSettings={
+            canManageInvoiceSettings
+              ? () => setIsSettingsModalOpen(true)
+              : undefined
+          }
+          settingsDisabled={isMutatingInvoice}
+          settingsDisabledReason={
+            isMutatingInvoice
+              ? 'Please wait for the current submission to finish'
+              : undefined
+          }
+        />
+
+        {/* Invoice List */}
+        <InvoiceList
+          invoices={invoices}
+          loading={loading}
+          status={invoicesStatus}
+          fetchError={invoicesDisplayError ?? invoicesError}
+          partial={listDiagnostics.partial}
+          droppedCount={listDiagnostics.droppedCount}
+          returnedCount={listDiagnostics.returnedCount}
+          warning={listDiagnostics.warning}
+          highlightedInvoiceId={highlightedInvoiceId}
+          onSort={handleSort}
+          getSortState={getSortState}
+          onEdit={handleEditInvoice}
+          onDelete={handleDeleteInvoice}
+          onDownload={handleDownloadInvoice}
+          hasActiveFilters={hasActiveFilters}
+          onResetFilters={clearFilters}
+          currentPage={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={INVOICE_PAGE_SIZE}
+          onPageChange={setPage}
+          onRetry={() => {
+            void fetchInvoices({
+              page,
+              pageSize: INVOICE_PAGE_SIZE,
+              fromDate: fromDate || undefined,
+              toDate: toDate || undefined,
+              search: debouncedSearch || undefined,
+              status: status || undefined,
+              sortColumn: sortColumn || undefined,
+              sortDirection: sortDirection || undefined,
+            });
+          }}
+          emptyTitle={orgScopeEmptyTitle}
+          emptyDescription={orgScopeEmptyDescription}
+        />
+      </div>
+
+      {/* Invoice Modal */}
+      {isModalOpen && (
+        <InvoiceModalDynamic
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          invoice={editingInvoice}
+          isEditing={!!editingInvoice}
+          invoiceSettings={invoiceSettings}
+          settingsStatus={editingInvoice ? 'success' : invoiceSettingsStatus}
+          settingsErrorMessage={
+            invoiceSettingsError
+              ? errorHandler.getDisplayMessage(
+                  invoiceSettingsError,
+                  'Invoice settings could not be loaded. Retry before creating the invoice.'
+                )
+              : null
+          }
+          onRetrySettingsLoad={() => {
+            void loadInvoiceSettingsForCreate();
+          }}
+          onSubmit={handleSubmitInvoice}
+          submitting={isMutatingInvoice}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={Boolean(confirmDeleteInvoice)}
+        title="Delete draft invoice?"
+        message={
+          confirmDeleteInvoice
+            ? `Permanently delete draft invoice ${confirmDeleteInvoice.invoice_number} and all of its line items? This action cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDeleteInvoice(null)}
+        submitting={isMutatingInvoice}
+      />
+
+      {/* Invoice Settings Modal */}
+      {isSettingsModalOpen && (
+        <InvoiceSettingsModalDynamic
+          isOpen={isSettingsModalOpen}
+          onClose={() => setIsSettingsModalOpen(false)}
+        />
+      )}
+    </>
+  );
 
   return (
     <ErrorBoundary>
       <AppLayout
         title="Invoices"
         actionButton={
-          canCreateInvoice || createInvoiceDisabledReason
+          canCreateInvoice
             ? {
                 label: 'Add Invoice',
-                onClick: canCreateInvoice
-                  ? handleAddInvoice
-                  : () => {
-                      /* disabled — see disabledReason */
-                    },
-                disabled: !canCreateInvoice || isMutatingInvoice,
-                disabledReason: !canCreateInvoice
-                  ? createInvoiceDisabledReason
-                  : isMutatingInvoice
-                    ? 'Please wait for the current submission to finish'
-                    : undefined,
+                onClick: handleAddInvoice,
+                disabled: isMutatingInvoice,
+                disabledReason: isMutatingInvoice
+                  ? 'Please wait for the current submission to finish'
+                  : undefined,
                 icon: (
                   <svg
                     className="h-4 w-4"
@@ -837,118 +1019,7 @@ function InvoicesPageContent() {
             : undefined
         }
       >
-        <div className="p-6 space-y-6">
-          {/* Filters */}
-          <InvoiceFilters
-            search={search}
-            onSearchChange={setSearch}
-            fromDate={fromDate}
-            onFromDateChange={setFromDate}
-            toDate={toDate}
-            onToDateChange={setToDate}
-            status={status}
-            onStatusChange={setStatus}
-            onClearFilters={clearFilters}
-            hasActiveFilters={hasActiveFilters}
-            onOpenSettings={() => setIsSettingsModalOpen(true)}
-            settingsDisabled={!canManageInvoiceSettings || isMutatingInvoice}
-            settingsDisabledReason={
-              !canManageInvoiceSettings
-                ? 'Admin only'
-                : isMutatingInvoice
-                  ? 'Please wait for the current submission to finish'
-                  : undefined
-            }
-          />
-
-          {/* Invoice List */}
-          <InvoiceList
-            invoices={invoices}
-            loading={loading}
-            status={invoicesStatus}
-            fetchError={invoicesDisplayError ?? invoicesError}
-            partial={listDiagnostics.partial}
-            droppedCount={listDiagnostics.droppedCount}
-            returnedCount={listDiagnostics.returnedCount}
-            warning={listDiagnostics.warning}
-            highlightedInvoiceId={highlightedInvoiceId}
-            onSort={handleSort}
-            getSortState={getSortState}
-            onEdit={handleEditInvoice}
-            onDelete={handleDeleteInvoice}
-            onDownload={handleDownloadInvoice}
-            hasActiveFilters={hasActiveFilters}
-            onResetFilters={clearFilters}
-            currentPage={page}
-            totalPages={totalPages}
-            totalCount={totalCount}
-            pageSize={10}
-            onPageChange={setPage}
-            onRetry={() => {
-              void fetchInvoices({
-                page,
-                pageSize: 10,
-                fromDate: fromDate || undefined,
-                toDate: toDate || undefined,
-                search: debouncedSearch || undefined,
-                status: status || undefined,
-                sortColumn: sortColumn || undefined,
-                sortDirection: sortDirection || undefined,
-              });
-            }}
-            emptyTitle={orgScopeEmptyTitle}
-            emptyDescription={orgScopeEmptyDescription}
-          />
-        </div>
-
-        {/* Invoice Modal */}
-        {isModalOpen && (
-          <InvoiceModalDynamic
-            isOpen={isModalOpen}
-            onClose={handleCloseModal}
-            invoice={editingInvoice}
-            isEditing={!!editingInvoice}
-            invoiceSettings={invoiceSettings}
-            settingsStatus={editingInvoice ? 'success' : invoiceSettingsStatus}
-            settingsErrorMessage={
-              invoiceSettingsError
-                ? errorHandler.getDisplayMessage(
-                    invoiceSettingsError,
-                    'Invoice settings could not be loaded. Retry before creating the invoice.'
-                  )
-                : null
-            }
-            onRetrySettingsLoad={() => {
-              void loadInvoiceSettingsForCreate();
-            }}
-            onSubmit={handleSubmitInvoice}
-            submitting={isMutatingInvoice}
-          />
-        )}
-
-        {/* Delete Confirmation Dialog */}
-        <ConfirmDialog
-          isOpen={Boolean(confirmDeleteInvoice)}
-          title="Delete draft invoice?"
-          message={
-            confirmDeleteInvoice
-              ? `Permanently delete draft invoice ${confirmDeleteInvoice.invoice_number} and all of its line items? This action cannot be undone.`
-              : ''
-          }
-          confirmLabel="Delete"
-          cancelLabel="Cancel"
-          onConfirm={handleConfirmDelete}
-          onCancel={() => setConfirmDeleteInvoice(null)}
-          submitting={isMutatingInvoice}
-        />
-
-        {/* Invoice Settings Modal */}
-        {isSettingsModalOpen && (
-          <InvoiceSettingsModalDynamic
-            isOpen={isSettingsModalOpen}
-            onClose={() => setIsSettingsModalOpen(false)}
-          />
-        )}
+        {invoiceBody}
       </AppLayout>
     </ErrorBoundary>
   );

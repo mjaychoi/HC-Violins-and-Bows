@@ -9,6 +9,8 @@ import {
 import { parseTaskDateLocal } from '@/utils/dateParsing';
 // ✅ FIXED: Use centralized color tokens
 import { getTaskStatusColor, getTaskStatusDotColor } from '@/utils/colorTokens';
+// Single source of truth for which date a task is placed on in the Calendar
+import { getCalendarPlacementDate } from '@/utils/calendar';
 
 export interface StatusColorOptions {
   isOverdue?: boolean;
@@ -104,7 +106,9 @@ export function getDateStatus(task: MaintenanceTask): {
   status: 'overdue' | 'upcoming' | 'normal';
   days: number;
 } {
-  const raw = task.due_date || task.personal_due_date || task.scheduled_date;
+  // Use the same placement date as the Calendar grid/summary so a task can't
+  // be "overdue" in one and "normal" in the other (falls through to received_date).
+  const raw = getCalendarPlacementDate(task);
   if (!raw) {
     return { status: 'normal', days: 0 };
   }

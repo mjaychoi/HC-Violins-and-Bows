@@ -45,13 +45,34 @@ jobs:
 
       - name: Production deploy-guard CLI contract tests (isolated local Postgres)
         # Spins up a throwaway, in-process Postgres (embedded-postgres) to
-        # exercise scripts/production/db-probe.ts and
-        # scripts/production/postflight-catalog.ts as real child processes.
-        # Never touches DATABASE_URL, a hosted Supabase project, or
-        # production — the instance is created and destroyed within this
+        # exercise scripts/production/db-probe.ts,
+        # scripts/production/postflight-catalog.ts, and
+        # scripts/production/db-reconcile-readonly.ts as real child
+        # processes. Never touches DATABASE_URL, a hosted Supabase project,
+        # or production — the instance is created and destroyed within this
         # step and never leaves the runner. See
         # docs/PRODUCTION_MIGRATION_WORKFLOW.md.
         run: npm run test:production-guards-integration
+
+      - name: update_instrument_sale_transition_atomic migration consolidation tests (isolated local Postgres)
+        # Spins up a throwaway, in-process Postgres (embedded-postgres) to
+        # prove supabase/migrations/20260423140001_update_instrument_sale_transition_atomic_consolidated.sql
+        # converges safely from every reachable starting catalog state and
+        # that a failure inside it cannot leave a partially-applied state.
+        # Never touches DATABASE_URL, a hosted Supabase project, or
+        # production — the instance is created and destroyed within this
+        # step and never leaves the runner.
+        run: npm run test:sale-transition-migration-consolidation
+
+      - name: Interested/Booked relationship uniqueness migration tests (isolated local Postgres)
+        # Spins up a throwaway, in-process Postgres (embedded-postgres) to
+        # prove supabase/migrations/20260815120000_enforce_unique_interested_booked_connections.sql
+        # against the current tracked migration chain: clean apply, fail-closed
+        # duplicate preflight, concurrent unique rejection, and neighboring
+        # Owned/Sold contracts. Never touches DATABASE_URL, a hosted Supabase
+        # project, or production — the instance is created and destroyed
+        # within this step and never leaves the runner.
+        run: npm run test:connection-relationship-uniqueness-migration
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3

@@ -193,4 +193,106 @@ describe('CalendarEmptyState', () => {
     const announcement = screen.getByRole('status');
     expect(announcement).toHaveTextContent('5 results');
   });
+
+  it('shows scope-aware copy naming the loaded range when a search term is active and scopeLabel is provided', () => {
+    render(
+      <CalendarEmptyState
+        hasActiveFilters={true}
+        onResetFilters={mockOnResetFilters}
+        onOpenNewTask={mockOnOpenNewTask}
+        scopeLabel="August 2026"
+        activeFilters={{ searchTerm: 'missing-task' }}
+      />
+    );
+
+    // Still a genuine "no match" heading, not a fabricated global claim.
+    expect(screen.getByText('No tasks found')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'This search only covers tasks loaded for August 2026. A matching task may still exist outside this period — try a different date range or clear filters.'
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Try adjusting your filters or create a new task.')
+    ).not.toBeInTheDocument();
+
+    const announcement = screen.getByRole('status');
+    expect(announcement).toHaveTextContent(
+      'a matching task may still exist outside this period'
+    );
+  });
+
+  it('falls back to generic filter copy when filters are active without a search term, even if scopeLabel is set', () => {
+    render(
+      <CalendarEmptyState
+        hasActiveFilters={true}
+        onResetFilters={mockOnResetFilters}
+        onOpenNewTask={mockOnOpenNewTask}
+        scopeLabel="August 2026"
+        activeFilters={{ status: 'pending' }}
+      />
+    );
+
+    expect(
+      screen.getByText('Try adjusting your filters or create a new task.')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/This search only covers tasks loaded for/)
+    ).not.toBeInTheDocument();
+  });
+
+  it('falls back to generic filter copy when a search term is active but no scopeLabel is provided', () => {
+    render(
+      <CalendarEmptyState
+        hasActiveFilters={true}
+        onResetFilters={mockOnResetFilters}
+        onOpenNewTask={mockOnOpenNewTask}
+        activeFilters={{ searchTerm: 'missing-task' }}
+      />
+    );
+
+    expect(
+      screen.getByText('Try adjusting your filters or create a new task.')
+    ).toBeInTheDocument();
+  });
+
+  it('does not offer Add task or create copy to a member', () => {
+    render(
+      <CalendarEmptyState
+        hasActiveFilters={false}
+        onResetFilters={mockOnResetFilters}
+        onOpenNewTask={mockOnOpenNewTask}
+        canCreateTask={false}
+      />
+    );
+
+    expect(screen.getByText('No tasks in this range')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Get started by creating your first maintenance task.')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /add maintenance task/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the admin Add task CTA while a mutation is in progress', () => {
+    render(
+      <CalendarEmptyState
+        hasActiveFilters={false}
+        onResetFilters={mockOnResetFilters}
+        onOpenNewTask={mockOnOpenNewTask}
+        canCreateTask={true}
+        createTaskDisabledReason="Please wait for the current submission to finish"
+      />
+    );
+
+    const addButton = screen.getByRole('button', {
+      name: /add maintenance task/i,
+    });
+    expect(addButton).toBeDisabled();
+    expect(addButton).toHaveAttribute(
+      'title',
+      'Please wait for the current submission to finish'
+    );
+  });
 });

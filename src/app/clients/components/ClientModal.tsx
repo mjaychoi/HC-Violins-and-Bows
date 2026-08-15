@@ -35,6 +35,7 @@ interface ClientModalProps {
   onSave: (clientData: Partial<Client>) => Promise<void>;
   onDelete: () => void;
   onCancel: () => void;
+  saveError?: string | null;
   submitting: boolean;
   instrumentRelationships: ClientInstrument[];
   onAddInstrument: (
@@ -67,6 +68,7 @@ export default function ClientModal({
   onSave,
   onDelete,
   onCancel,
+  saveError,
   submitting,
   instrumentRelationships,
   onAddInstrument,
@@ -206,6 +208,11 @@ export default function ClientModal({
                 {nameError ? (
                   <p className="text-sm text-red-600" role="alert">
                     {nameError}
+                  </p>
+                ) : null}
+                {saveError ? (
+                  <p className="text-sm text-red-600" role="alert">
+                    {saveError}
                   </p>
                 ) : null}
                 <div>

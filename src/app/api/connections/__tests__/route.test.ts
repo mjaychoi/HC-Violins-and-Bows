@@ -490,6 +490,33 @@ describe('/api/connections', () => {
       expect(json.totalPages).toBe(2);
     });
 
+    it('applies an id tiebreaker after the primary sort for stable paging', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [mockConnection],
+          error: null,
+          count: 1,
+        }),
+      };
+
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
+
+      const request = new NextRequest(
+        'http://localhost/api/connections?page=1&pageSize=5&orderBy=created_at&ascending=false'
+      );
+      await GET(request);
+
+      expect(mockQuery.order).toHaveBeenNthCalledWith(1, 'created_at', {
+        ascending: false,
+      });
+      expect(mockQuery.order).toHaveBeenNthCalledWith(2, 'id', {
+        ascending: false,
+      });
+    });
+
     it('should return 400 for invalid client_id', async () => {
       const { validateUUID } = require('@/utils/inputValidation');
       (validateUUID as jest.Mock).mockReturnValueOnce(false);
@@ -879,6 +906,127 @@ describe('/api/connections', () => {
       expect(json.error).not.toContain('constraint');
     });
 
+    it('maps Interested/Booked unique-index 23505 to 409 DUPLICATE_CONNECTION', async () => {
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: '23505',
+          message:
+            'duplicate key value violates unique constraint "client_instruments_unique_interested_booked_per_pair"',
+          details:
+            'Key (org_id, client_id, instrument_id, relationship_type)=(org, client, instrument, Interested) already exists.',
+        },
+      });
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Interested',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('DUPLICATE_CONNECTION');
+      expect(json.error).toBe(
+        'A connection with this relationship type already exists between this client and instrument.'
+      );
+      expect(json.error).not.toContain(
+        'client_instruments_unique_interested_booked_per_pair'
+      );
+      expect(json.error).not.toContain('duplicate key');
+      expect(json.error).not.toContain('already exists.');
+    });
+
+    it('maps RPC DUPLICATE_CONNECTION to 409 without exposing the Postgres prefix', async () => {
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: {
+          message:
+            'DUPLICATE_CONNECTION: A Interested connection already exists between this client and instrument.',
+        },
+      });
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Interested',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('DUPLICATE_CONNECTION');
+      expect(json.error).toBe(
+        'A connection with this relationship type already exists between this client and instrument.'
+      );
+      expect(json.error).not.toContain('DUPLICATE_CONNECTION:');
+    });
+
+    it('rejects direct Sold creation without calling the RPC', async () => {
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: jest.fn(),
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Sold',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error).toBe(
+        'Sold relationship cannot be created directly. Use the sales API.'
+      );
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('rejects member create with existing 403 authorization', async () => {
+      mockAuthContext = {
+        ...mockAuthContext,
+        role: 'member',
+      };
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: jest.fn(),
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: mockConnection.client_id,
+          instrument_id: mockConnection.instrument_id,
+          relationship_type: 'Interested',
+        }),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.error).toBe('Admin role required');
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
+
     it('F12: unrelated unique violations are not reclassified as INSTRUMENT_ALREADY_OWNED', async () => {
       const mockRpc = jest.fn().mockResolvedValue({
         data: null,
@@ -906,6 +1054,7 @@ describe('/api/connections', () => {
 
       expect(response.status).toBe(500);
       expect(json.error_code).not.toBe('INSTRUMENT_ALREADY_OWNED');
+      expect(json.error_code).not.toBe('DUPLICATE_CONNECTION');
     });
 
     it('should return 400 for malformed JSON', async () => {
@@ -1031,6 +1180,43 @@ describe('/api/connections', () => {
 
       expect(response.status).toBe(409);
       expect(json.error_code).toBe('INSTRUMENT_ALREADY_OWNED');
+    });
+
+    it('maps Interested/Booked unique-index 23505 to 409 DUPLICATE_CONNECTION on update', async () => {
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: '23505',
+          message:
+            'duplicate key value violates unique constraint "client_instruments_unique_interested_booked_per_pair"',
+          details:
+            'Key (org_id, client_id, instrument_id, relationship_type)=(org, client, instrument, Booked) already exists.',
+        },
+      });
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockConnection.id,
+          relationship_type: 'Booked',
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('DUPLICATE_CONNECTION');
+      expect(json.error).toBe(
+        'A connection with this relationship type already exists between this client and instrument.'
+      );
+      expect(json.error).not.toContain(
+        'client_instruments_unique_interested_booked_per_pair'
+      );
+      expect(json.error).not.toContain('duplicate key');
     });
 
     it('F13: rejects client_id reassignment with 400 and does not call the RPC', async () => {
