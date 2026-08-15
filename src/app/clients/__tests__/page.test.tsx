@@ -67,6 +67,7 @@ jest.mock('../hooks', () => ({
     showInterestDropdown: false,
     updateViewFormData: jest.fn(),
     handleViewInputChange: jest.fn(),
+    syncFromCollection: jest.fn(),
   })),
   useInstrumentSearch: jest.fn(() => ({
     showInstrumentSearch: false,
@@ -563,6 +564,7 @@ describe('ClientsPage', () => {
       showInterestDropdown: false,
       updateViewFormData: jest.fn(),
       handleViewInputChange: jest.fn(),
+      syncFromCollection: jest.fn(),
       applyServerClient: jest.fn(),
     } as any);
 
@@ -1005,6 +1007,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
 
       render(
@@ -1153,6 +1156,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
 
       render(
@@ -1182,6 +1186,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
 
       render(
@@ -1217,6 +1222,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
 
       render(
@@ -1250,6 +1256,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
 
       render(
@@ -1285,6 +1292,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
       mockAddInstrumentRelationship.mockResolvedValue({
         id: 'rel-new',
@@ -1333,6 +1341,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
       const error = new Error('Add failed');
       mockAddInstrumentRelationship.mockRejectedValue(error);
@@ -1368,6 +1377,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
       mockRemoveInstrumentRelationship.mockResolvedValue(true);
 
@@ -1405,6 +1415,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
       const error = new Error('Remove failed');
       mockRemoveInstrumentRelationship.mockRejectedValue(error);
@@ -1440,6 +1451,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
       mockUseInstrumentSearch.mockReturnValue({
         showInstrumentSearch: false,
@@ -1477,6 +1489,7 @@ describe('ClientsPage', () => {
         showInterestDropdown: false,
         updateViewFormData: jest.fn(),
         handleViewInputChange: jest.fn(),
+        syncFromCollection: jest.fn(),
       } as any);
       mockUseInstrumentSearch.mockReturnValue({
         showInstrumentSearch: true,

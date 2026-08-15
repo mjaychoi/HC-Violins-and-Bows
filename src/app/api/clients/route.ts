@@ -44,6 +44,11 @@ import {
   parseClientsListQuery,
   runClientsListQuery,
 } from '@/app/api/clients/_utils/listQuery';
+import {
+  CLIENT_STALE_CONFLICT_MESSAGE,
+  CLIENT_STALE_VERSION_CODE,
+  parseExpectedUpdatedAt,
+} from '@/app/api/clients/_utils/concurrency';
 
 function normalizeClientRows(rows: unknown[]): Client[] {
   return rows.map(raw =>
@@ -391,7 +396,13 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const body = await request.json();
-      const { id, ...updates } = body || {};
+      const {
+        id,
+        expected_updated_at: rawExpectedUpdatedAt,
+        updated_at,
+        ...updates
+      } = body || {};
+      void updated_at;
 
       if (!id) {
         return { payload: { error: 'Client ID is required' }, status: 400 };
@@ -399,6 +410,18 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
       if (!validateUUID(id)) {
         return { payload: { error: 'Invalid client ID format' }, status: 400 };
+      }
+
+      const expectedVersion = parseExpectedUpdatedAt(rawExpectedUpdatedAt);
+      if (!expectedVersion.ok) {
+        return {
+          payload: {
+            error: expectedVersion.error,
+            error_code: expectedVersion.error_code,
+            success: false,
+          },
+          status: 400,
+        };
       }
 
       const validation = safeValidate(updates, validatePartialClient);
@@ -411,8 +434,12 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
 
       const patchFields = { ...validation.data } as Partial<Client> & {
         client_number?: unknown;
+        updated_at?: unknown;
+        expected_updated_at?: unknown;
       };
       delete patchFields.client_number;
+      delete patchFields.updated_at;
+      delete patchFields.expected_updated_at;
 
       await assertClientsSchemaReadiness({ supabase: auth.userSupabase });
 
@@ -467,11 +494,35 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         .update(dbPatch)
         .eq('id', id)
         .eq('org_id', auth.orgId!)
+        .eq('updated_at', expectedVersion.expectedUpdatedAt)
         .select(CLIENT_TABLE_SELECT)
-        .single();
+        .maybeSingle();
 
       if (error) {
         throw errorHandler.handleSupabaseError(error, 'Update client');
+      }
+
+      if (!data) {
+        const { data: exists } = await auth.userSupabase
+          .from('clients')
+          .select('id')
+          .eq('id', id)
+          .eq('org_id', auth.orgId!)
+          .maybeSingle();
+
+        if (!exists) {
+          return { payload: { error: 'Client not found' }, status: 404 };
+        }
+
+        return {
+          payload: {
+            error: CLIENT_STALE_CONFLICT_MESSAGE,
+            error_code: CLIENT_STALE_VERSION_CODE,
+            success: false,
+          },
+          status: 409,
+          metadata: { clientId: id },
+        };
       }
 
       const validated = validateClient(mapClientsTableRowToClient(data));

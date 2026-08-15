@@ -760,6 +760,8 @@ describe('/api/clients', () => {
   });
 
   describe('PATCH', () => {
+    const expectedUpdatedAt = '2024-01-01T00:00:00.000Z';
+
     it('should update persisted fields and normalize empty strings to null', async () => {
       const updates = {
         first_name: 'Jane',
@@ -767,6 +769,7 @@ describe('/api/clients', () => {
         note: 'Updated note',
         email: '   ',
         contact_number: '',
+        expected_updated_at: expectedUpdatedAt,
       };
 
       const currentQuery = {
@@ -781,7 +784,7 @@ describe('/api/clients', () => {
         update: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
+        maybeSingle: jest.fn().mockResolvedValue({
           data: {
             id: mockClient.id,
             org_id: 'test-org',
@@ -828,6 +831,10 @@ describe('/api/clients', () => {
       });
       expect(updateQuery.eq).toHaveBeenCalledWith('id', mockClient.id);
       expect(updateQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(updateQuery.eq).toHaveBeenCalledWith(
+        'updated_at',
+        expectedUpdatedAt
+      );
     });
 
     it('ignores client_number on PATCH and does not write it', async () => {
@@ -843,7 +850,7 @@ describe('/api/clients', () => {
         update: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
+        maybeSingle: jest.fn().mockResolvedValue({
           data: {
             id: mockClient.id,
             org_id: 'test-org',
@@ -876,6 +883,7 @@ describe('/api/clients', () => {
           id: mockClient.id,
           client_number: 'CL999',
           note: 'still works',
+          expected_updated_at: expectedUpdatedAt,
         }),
       });
       const response = await PATCH(request);
@@ -909,6 +917,7 @@ describe('/api/clients', () => {
           id: mockClient.id,
           first_name: '   ',
           last_name: '',
+          expected_updated_at: expectedUpdatedAt,
         }),
       });
       const response = await PATCH(request);
@@ -964,7 +973,7 @@ describe('/api/clients', () => {
         update: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
+        maybeSingle: jest.fn().mockResolvedValue({
           data: {
             id: mockClient.id,
             org_id: 'test-org',
@@ -996,6 +1005,7 @@ describe('/api/clients', () => {
           first_name: 'John',
           last_name: 'Updated',
           note: 'new note',
+          expected_updated_at: expectedUpdatedAt,
         }),
       });
       const response = await PATCH(request);

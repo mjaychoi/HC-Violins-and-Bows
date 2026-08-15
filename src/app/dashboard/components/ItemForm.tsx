@@ -62,6 +62,7 @@ function ItemForm({
     cost_price?: string;
     consignment_price?: string;
     serial_number?: string;
+    reserved_reason?: string;
   }>({});
   const [success, setSuccess] = useState(false);
   const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null);
@@ -90,6 +91,7 @@ function ItemForm({
       'cost_price',
       'consignment_price',
       'serial_number',
+      'reserved_reason',
     ];
     for (const field of order) {
       if (fieldErrs[field]) {
@@ -236,6 +238,8 @@ function ItemForm({
       validationErrors.forEach(msg => {
         if (msg.includes('Year')) mappedFieldErrors.year = msg;
         if (msg.includes('Price')) mappedFieldErrors.price = msg;
+        if (msg.includes('Reservation reason'))
+          mappedFieldErrors.reserved_reason = msg;
       });
       if (Object.keys(mappedFieldErrors).length > 0) {
         setFieldErrors(mappedFieldErrors);
@@ -344,6 +348,13 @@ function ItemForm({
         ownership: formData.ownership?.trim() || null,
         note: formData.note?.trim() || null,
         serial_number: serialValidation.normalizedSerial || normalizedSerial,
+        // Only send reserved_reason when saving as Reserved — the API clears
+        // (or, for Reserved -> Booked, carries forward) reservation metadata
+        // on its own for every other status, so omitting the key elsewhere
+        // preserves that existing server-side behavior.
+        ...(formData.status === 'Reserved'
+          ? { reserved_reason: (formData.reserved_reason || '').trim() }
+          : {}),
       };
 
       if (isEditing && draftUpdatedAtRef.current) {
@@ -622,10 +633,15 @@ function ItemForm({
                 >
                   <option value="Available">Available</option>
                   <option value="Booked">Booked</option>
-                  <option value="Sold">Sold</option>
+                  {isEditing && <option value="Sold">Sold</option>}
                   {isEditing && <option value="Reserved">Reserved</option>}
                   <option value="Maintenance">Maintenance</option>
                 </select>
+                {!isEditing && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Sold status is set automatically through the sales flow.
+                  </p>
+                )}
                 {!isEditing && (
                   <p className="mt-1 text-xs text-gray-500">
                     Reserved status can be set after creation.
@@ -645,6 +661,20 @@ function ItemForm({
                 error={fieldErrors.price}
               />
             </div>
+
+            {isEditing && formData.status === 'Reserved' && (
+              <Input
+                id="reserved_reason"
+                label="Reservation Reason"
+                name="reserved_reason"
+                value={formData.reserved_reason}
+                onChange={handleInputChange}
+                placeholder="Why is this instrument reserved?"
+                error={fieldErrors.reserved_reason}
+                helperText="Required while status is Reserved."
+                required
+              />
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <Input

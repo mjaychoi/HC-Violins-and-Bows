@@ -1054,4 +1054,456 @@ describe('NotesPage', () => {
     expect(getPrimaryNewNoteButton()).not.toBeDisabled();
     expect(createNoteMock).toHaveBeenCalledTimes(1);
   });
+
+  const notesConflictError = () =>
+    new ApiResponseError('Note was updated elsewhere', {
+      status: 409,
+      error_code: 'NOTES_CONFLICT',
+    });
+
+  const noteRow = (title: string) => {
+    const row = screen
+      .getAllByText(title)
+      .map(node => node.closest('[role="button"]'))
+      .find((node): node is HTMLElement => node instanceof HTMLElement);
+    if (!row) {
+      throw new Error(`${title} row not found`);
+    }
+    return row;
+  };
+
+  const selectNote = (title: string) => {
+    fireEvent.click(noteRow(title));
+  };
+
+  const contentArea = () => screen.getByPlaceholderText(/start writing/i);
+
+  describe('V3-001 conflict draft isolation', () => {
+    it('preserves an unrelated dirty draft when another note hits NOTES_CONFLICT', async () => {
+      jest.useFakeTimers();
+
+      const noteA0 = makeNote('note-a', 'Note A', 'A0');
+      const noteB0 = makeNote('note-b', 'Note B', 'B0');
+      const noteAServer = {
+        ...makeNote('note-a', 'Note A remote', 'A-server-new'),
+        updatedAt: '2026-07-29T00:00:05.000Z',
+        syncedUpdatedAt: '2026-07-29T00:00:05.000Z',
+      };
+
+      let resolveA!: (error: Error) => void;
+      const pendingA = new Promise<Note>((_resolve, reject) => {
+        resolveA = reject;
+      });
+
+      fetchNotesMock
+        .mockResolvedValueOnce([noteA0, noteB0])
+        .mockResolvedValue([noteAServer, noteB0]);
+      updateNoteMock.mockImplementation(input => {
+        if (input.id === 'note-a') {
+          return pendingA;
+        }
+        return Promise.resolve(
+          makeNote(input.id, input.title ?? 'Untitled', input.content ?? '')
+        );
+      });
+
+      render(<NotesPage />);
+      expect(await screen.findByDisplayValue('Note A')).toBeInTheDocument();
+
+      fireEvent.change(contentArea(), { target: { value: 'A-local' } });
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledTimes(1);
+      });
+
+      selectNote('Note B');
+      fireEvent.change(contentArea(), { target: { value: 'B-local' } });
+      expect(contentArea()).toHaveValue('B-local');
+
+      await act(async () => {
+        resolveA(notesConflictError());
+        await pendingA.catch(() => undefined);
+      });
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/updated elsewhere/i);
+      expect(await screen.findByText('Note A remote')).toBeInTheDocument();
+
+      selectNote('Note A remote');
+      expect(contentArea()).toHaveValue('A-server-new');
+
+      selectNote('Note B');
+      expect(contentArea()).toHaveValue('B-local');
+      expect(screen.queryByDisplayValue('B0')).not.toBeInTheDocument();
+
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'note-b',
+            content: 'B-local',
+            updated_at: '2026-07-29T00:00:00.000Z',
+          }),
+          expect.anything()
+        );
+      });
+
+      jest.useRealTimers();
+    });
+
+    it('keeps two dirty notes isolated so only the conflicted note reloads', async () => {
+      jest.useFakeTimers();
+
+      const noteA0 = makeNote('note-a', 'Note A', 'A0');
+      const noteB0 = makeNote('note-b', 'Note B', 'B0');
+      const noteAServer = {
+        ...makeNote('note-a', 'Note A remote', 'A-server-new'),
+        updatedAt: '2026-07-29T00:00:05.000Z',
+        syncedUpdatedAt: '2026-07-29T00:00:05.000Z',
+      };
+      const noteBSaved = {
+        ...makeNote('note-b', 'Note B', 'B-local'),
+        updatedAt: '2026-07-29T00:00:02.000Z',
+        syncedUpdatedAt: '2026-07-29T00:00:02.000Z',
+      };
+
+      fetchNotesMock
+        .mockResolvedValueOnce([noteA0, noteB0])
+        .mockResolvedValue([noteAServer, noteB0]);
+      updateNoteMock.mockImplementation(async input => {
+        if (input.id === 'note-a') {
+          throw notesConflictError();
+        }
+        return {
+          ...makeNote(input.id, input.title ?? 'Note B', input.content ?? ''),
+          updatedAt: '2026-07-29T00:00:02.000Z',
+          syncedUpdatedAt: '2026-07-29T00:00:02.000Z',
+        };
+      });
+
+      render(<NotesPage />);
+      expect(await screen.findByDisplayValue('Note A')).toBeInTheDocument();
+
+      fireEvent.change(contentArea(), { target: { value: 'A-local' } });
+      selectNote('Note B');
+      fireEvent.change(contentArea(), { target: { value: 'B-local' } });
+
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        /updated elsewhere/i
+      );
+      expect(screen.getByDisplayValue('B-local')).toBeInTheDocument();
+      expect(updateNoteMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'note-b',
+          content: 'B-local',
+          updated_at: '2026-07-29T00:00:00.000Z',
+        }),
+        expect.anything()
+      );
+
+      fireEvent.change(contentArea(), { target: { value: 'B-local-2' } });
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'note-b',
+            content: 'B-local-2',
+            updated_at: noteBSaved.syncedUpdatedAt,
+          }),
+          expect.anything()
+        );
+      });
+      expect(contentArea()).toHaveValue('B-local-2');
+      expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+
+      jest.useRealTimers();
+    });
+
+    it('preserves multiple unrelated drafts while still refreshing a clean note', async () => {
+      jest.useFakeTimers();
+
+      const noteA0 = makeNote('note-a', 'Note A', 'A0');
+      const noteB0 = makeNote('note-b', 'Note B', 'B0');
+      const noteC0 = makeNote('note-c', 'Note C', 'C0');
+      const noteD0 = makeNote('note-d', 'Note D', 'D0');
+      const noteAServer = {
+        ...makeNote('note-a', 'Note A remote', 'A-server-new'),
+        updatedAt: '2026-07-29T00:00:05.000Z',
+        syncedUpdatedAt: '2026-07-29T00:00:05.000Z',
+      };
+      const noteDServer = {
+        ...makeNote('note-d', 'Note D remote', 'D-server-new'),
+        updatedAt: '2026-07-29T00:00:04.000Z',
+        syncedUpdatedAt: '2026-07-29T00:00:04.000Z',
+      };
+
+      let resolveA!: (error: Error) => void;
+      const pendingA = new Promise<Note>((_resolve, reject) => {
+        resolveA = reject;
+      });
+
+      fetchNotesMock
+        .mockResolvedValueOnce([noteA0, noteB0, noteC0, noteD0])
+        .mockResolvedValue([noteAServer, noteB0, noteC0, noteDServer]);
+      updateNoteMock.mockImplementation(input => {
+        if (input.id === 'note-a') {
+          return pendingA;
+        }
+        return Promise.resolve(
+          makeNote(input.id, input.title ?? 'Untitled', input.content ?? '')
+        );
+      });
+
+      render(<NotesPage />);
+      expect(await screen.findByDisplayValue('Note A')).toBeInTheDocument();
+
+      fireEvent.change(contentArea(), { target: { value: 'A-local' } });
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledTimes(1);
+      });
+
+      selectNote('Note B');
+      fireEvent.change(contentArea(), { target: { value: 'B-local' } });
+      selectNote('Note C');
+      fireEvent.change(contentArea(), { target: { value: 'C-local' } });
+
+      await act(async () => {
+        resolveA(notesConflictError());
+        await pendingA.catch(() => undefined);
+      });
+
+      expect(await screen.findByText('Note D remote')).toBeInTheDocument();
+      expect(screen.getByText('D-server-new')).toBeInTheDocument();
+
+      selectNote('Note B');
+      expect(contentArea()).toHaveValue('B-local');
+      selectNote('Note C');
+      expect(contentArea()).toHaveValue('C-local');
+      selectNote('Note D remote');
+      expect(contentArea()).toHaveValue('D-server-new');
+
+      jest.useRealTimers();
+    });
+
+    it('lets a pending unrelated autosave persist the local draft after a conflict', async () => {
+      jest.useFakeTimers();
+
+      const noteA0 = makeNote('note-a', 'Note A', 'A0');
+      const noteB0 = makeNote('note-b', 'Note B', 'B0');
+      const noteAServer = {
+        ...makeNote('note-a', 'Note A remote', 'A-server-new'),
+        updatedAt: '2026-07-29T00:00:05.000Z',
+        syncedUpdatedAt: '2026-07-29T00:00:05.000Z',
+      };
+
+      let resolveA!: (error: Error) => void;
+      const pendingA = new Promise<Note>((_resolve, reject) => {
+        resolveA = reject;
+      });
+
+      fetchNotesMock
+        .mockResolvedValueOnce([noteA0, noteB0])
+        .mockResolvedValue([noteAServer, noteB0]);
+      updateNoteMock.mockImplementation(input => {
+        if (input.id === 'note-a') {
+          return pendingA;
+        }
+        return Promise.resolve({
+          ...makeNote(input.id, input.title ?? 'Note B', input.content ?? ''),
+          updatedAt: '2026-07-29T00:00:02.000Z',
+          syncedUpdatedAt: '2026-07-29T00:00:02.000Z',
+        });
+      });
+
+      render(<NotesPage />);
+      expect(await screen.findByDisplayValue('Note A')).toBeInTheDocument();
+
+      fireEvent.change(contentArea(), { target: { value: 'A-local' } });
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'note-a', content: 'A-local' }),
+          expect.anything()
+        );
+      });
+
+      selectNote('Note B');
+      fireEvent.change(contentArea(), { target: { value: 'B-local' } });
+
+      await act(async () => {
+        resolveA(notesConflictError());
+        await pendingA.catch(() => undefined);
+      });
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        /updated elsewhere/i
+      );
+      expect(contentArea()).toHaveValue('B-local');
+
+      const callsAfterConflict = updateNoteMock.mock.calls.length;
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+
+      await waitFor(() => {
+        expect(updateNoteMock.mock.calls.length).toBeGreaterThan(
+          callsAfterConflict
+        );
+        expect(updateNoteMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'note-b',
+            content: 'B-local',
+            updated_at: '2026-07-29T00:00:00.000Z',
+          }),
+          expect.anything()
+        );
+      });
+      expect(
+        updateNoteMock.mock.calls.some(call => call[0].content === 'A0')
+      ).toBe(false);
+      expect(
+        updateNoteMock.mock.calls.some(
+          call => call[0].content === 'A-server-new'
+        )
+      ).toBe(false);
+
+      jest.useRealTimers();
+    });
+
+    it('does not let a stale conflict refresh revert a successful in-flight B save', async () => {
+      jest.useFakeTimers();
+
+      const noteA0 = makeNote('note-a', 'Note A', 'A0');
+      const noteB0 = makeNote('note-b', 'Note B', 'B0');
+      const noteAServer = {
+        ...makeNote('note-a', 'Note A remote', 'A-server-new'),
+        updatedAt: '2026-07-29T00:00:05.000Z',
+        syncedUpdatedAt: '2026-07-29T00:00:05.000Z',
+      };
+      const noteBSaved = {
+        ...makeNote('note-b', 'Note B', 'B-local'),
+        updatedAt: '2026-07-29T00:00:08.000Z',
+        syncedUpdatedAt: '2026-07-29T00:00:08.000Z',
+      };
+
+      let resolveB!: (note: Note) => void;
+      const pendingB = new Promise<Note>(resolve => {
+        resolveB = resolve;
+      });
+      let resolveRefresh!: (notes: Note[]) => void;
+      const pendingRefresh = new Promise<Note[]>(resolve => {
+        resolveRefresh = resolve;
+      });
+
+      fetchNotesMock
+        .mockResolvedValueOnce([noteA0, noteB0])
+        .mockImplementationOnce(() => pendingRefresh);
+      updateNoteMock.mockImplementation(input => {
+        if (input.id === 'note-a') {
+          return Promise.reject(notesConflictError());
+        }
+        return pendingB;
+      });
+
+      render(<NotesPage />);
+      expect(await screen.findByDisplayValue('Note A')).toBeInTheDocument();
+
+      fireEvent.change(contentArea(), { target: { value: 'A-local' } });
+      selectNote('Note B');
+      fireEvent.change(contentArea(), { target: { value: 'B-local' } });
+
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledTimes(2);
+      });
+
+      await act(async () => {
+        resolveB(noteBSaved);
+        await pendingB;
+      });
+
+      await waitFor(() => {
+        expect(fetchNotesMock).toHaveBeenCalledTimes(2);
+      });
+
+      await act(async () => {
+        resolveRefresh([noteAServer, noteB0]);
+        await pendingRefresh;
+      });
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        /updated elsewhere/i
+      );
+      expect(contentArea()).toHaveValue('B-local');
+      expect(screen.queryByDisplayValue('B0')).not.toBeInTheDocument();
+
+      jest.useRealTimers();
+    });
+
+    it('does not auto-resubmit a conflicted note using only a refreshed CAS token', async () => {
+      jest.useFakeTimers();
+
+      const noteA0 = makeNote('note-a', 'Note A', 'A0');
+      const noteAServer = {
+        ...makeNote('note-a', 'Note A remote', 'A-server-new'),
+        updatedAt: '2026-07-29T00:00:05.000Z',
+        syncedUpdatedAt: '2026-07-29T00:00:05.000Z',
+      };
+
+      fetchNotesMock
+        .mockResolvedValueOnce([noteA0])
+        .mockResolvedValue([noteAServer]);
+      updateNoteMock.mockRejectedValue(notesConflictError());
+
+      render(<NotesPage />);
+      fireEvent.change(await screen.findByPlaceholderText(/start writing/i), {
+        target: { value: 'A-local' },
+      });
+
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        /updated elsewhere/i
+      );
+      expect(screen.getByDisplayValue('A-server-new')).toBeInTheDocument();
+      expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+
+      const saveCallsAfterConflict = updateNoteMock.mock.calls.length;
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      expect(updateNoteMock).toHaveBeenCalledTimes(saveCallsAfterConflict);
+      expect(updateNoteMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'note-a',
+          content: 'A-local',
+          updated_at: noteAServer.syncedUpdatedAt,
+        }),
+        expect.anything()
+      );
+
+      jest.useRealTimers();
+    });
+  });
 });
