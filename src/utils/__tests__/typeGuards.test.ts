@@ -371,6 +371,24 @@ describe('Validation Functions', () => {
       expect(() => validateClient(null)).toThrow('Invalid Client');
       expect(() => validateClient({})).toThrow('Invalid Client');
     });
+
+    it('preserves updated_at as the Client version token', () => {
+      const data: Client = {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        last_name: 'Doe',
+        first_name: 'John',
+        contact_number: '123-456-7890',
+        email: 'john@example.com',
+        tags: ['vip'],
+        interest: null,
+        note: null,
+        client_number: 'CL001',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+      };
+
+      expect(validateClient(data).updated_at).toBe('2024-01-02T00:00:00Z');
+    });
   });
 
   describe('validateMaintenanceTask', () => {

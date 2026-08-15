@@ -20,6 +20,7 @@ import {
 import { logInfo, logWarn } from '@/utils/logger';
 import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
+import { isClientStaleConflict } from '@/app/api/clients/_utils/concurrency';
 
 interface ClientsState {
   clients: Client[];
@@ -164,7 +165,7 @@ type ClientsContextValue = {
     ) => Promise<Client | null>;
     updateClient: (
       id: string,
-      client: Partial<Client>
+      client: Partial<Client> & { expected_updated_at?: string }
     ) => Promise<Client | null>;
     deleteClient: (id: string) => Promise<boolean>;
     upsertClient: (client: Client) => void;
@@ -426,16 +427,26 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
   );
 
   const updateClient = useCallback(
-    async (id: string, client: Partial<Client>) => {
+    async (
+      id: string,
+      client: Partial<Client> & { expected_updated_at?: string }
+    ) => {
       const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
 
       dispatch({ type: 'SET_SUBMITTING', payload: true });
 
       try {
+        const { expected_updated_at, updated_at, ...fields } = client;
+        void updated_at;
+
         const res = await apiFetch('/api/clients', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, ...client }),
+          body: JSON.stringify({
+            id,
+            ...fields,
+            expected_updated_at,
+          }),
         });
 
         if (!res.ok) {
@@ -472,6 +483,10 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
         if (isAuthLikeTenantError(err)) {
           dispatch({ type: 'RESET_STATE' });
           return null;
+        }
+
+        if (isClientStaleConflict(err)) {
+          throw err;
         }
 
         handleErrorRef.current(err, 'Update client');

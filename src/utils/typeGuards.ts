@@ -231,6 +231,7 @@ export const clientSchema: z.ZodType<Client> = z.object({
     .enum(['Active', 'Browsing', 'In Negotiation', 'Inactive'])
     .optional(),
   created_at: z.string(),
+  updated_at: z.string().nullable().optional(),
 });
 
 /**

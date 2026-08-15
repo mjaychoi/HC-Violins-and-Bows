@@ -36,6 +36,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { readApiResponseBody } from '@/utils/handleApiResponse';
+import {
+  CLIENT_STALE_CONFLICT_MESSAGE,
+  isClientStaleConflict,
+} from '@/app/api/clients/_utils/concurrency';
 
 type PendingInstrumentLink = {
   instrument: Instrument;
@@ -83,6 +87,7 @@ function ClientsPageInner() {
   const { canCreateClient, createClientDisabledReason } = usePermissions();
   const { tenantIdentityKey } = useTenantIdentity();
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
+  const [clientSaveError, setClientSaveError] = useState<string | null>(null);
 
   // Track newly created client for scroll/highlight feedback
   const [newlyCreatedClientId, setNewlyCreatedClientId] = useState<
@@ -154,6 +159,7 @@ function ClientsPageInner() {
     showViewModal,
     selectedClient,
     isEditing,
+    expectedUpdatedAt,
     openClientView,
     closeClientView,
     startEditing,
@@ -163,6 +169,7 @@ function ClientsPageInner() {
     updateViewFormData,
     handleViewInputChange,
     applyServerClient,
+    syncFromCollection,
   } = useClientView();
 
   const {
@@ -349,15 +356,14 @@ function ClientsPageInner() {
     clearOwnedItems();
   }, [clearOwnedItems, tenantIdentityKey]);
 
-  // Keep modal selection in sync when the clients list refetches fresher rows.
+  // Keep the closed/viewing modal in sync with collection refreshes.
+  // A dirty editor must keep its loaded version token and local draft.
   useEffect(() => {
     if (!selectedClient) return;
     const fresh = clients.find(c => c.id === selectedClient.id);
     if (!fresh) return;
-    if (fresh.updated_at !== selectedClient.updated_at) {
-      applyServerClient(fresh);
-    }
-  }, [clients, selectedClient, applyServerClient]);
+    syncFromCollection(fresh);
+  }, [clients, selectedClient, syncFromCollection]);
 
   const confirmDeleteClient = async () => {
     if (!confirmDelete) return;
@@ -536,7 +542,9 @@ function ClientsPageInner() {
                 showSuccess('Client information updated successfully.');
                 await collectionRefetchRef.current?.();
               } catch (error) {
-                handleError(error, 'Failed to update client');
+                if (!isClientStaleConflict(error)) {
+                  handleError(error, 'Failed to update client');
+                }
                 throw error; // Re-throw to prevent saveEditing from closing editing mode
               }
             }}
@@ -560,23 +568,44 @@ function ClientsPageInner() {
         {/* View/Edit Client Modal */}
         <ClientModal
           isOpen={showViewModal}
-          onClose={closeClientView}
+          onClose={() => {
+            setClientSaveError(null);
+            closeClientView();
+          }}
           client={selectedClient}
           isEditing={isEditing}
           onEdit={startEditing}
           onSave={async (clientData: Partial<Client>) => {
-            if (selectedClient) {
-              const updated = await updateClient(selectedClient.id, clientData);
+            if (!selectedClient) {
+              return;
+            }
+
+            setClientSaveError(null);
+            try {
+              const updated = await updateClient(selectedClient.id, {
+                ...clientData,
+                expected_updated_at: expectedUpdatedAt ?? undefined,
+              });
               if (!updated) {
                 return;
               }
               applyServerClient(updated);
               stopEditing();
               showSuccess('Client information updated successfully.');
+            } catch (error) {
+              if (isClientStaleConflict(error)) {
+                setClientSaveError(CLIENT_STALE_CONFLICT_MESSAGE);
+                return;
+              }
+              throw error;
             }
           }}
           onDelete={handleDeleteClient}
-          onCancel={stopEditing}
+          onCancel={() => {
+            setClientSaveError(null);
+            stopEditing();
+          }}
+          saveError={clientSaveError}
           submitting={submitting.hasAnySubmitting}
           instrumentRelationships={instrumentRelationships}
           onAddInstrument={addInstrumentRelationship}
