@@ -121,7 +121,14 @@ export const useDashboardData = () => {
       const cachedStatus = cachedInstrument?.status;
 
       const nextStatus = formData.status; // possibly undefined
-      const baseUpdatedAt = formData.updated_at ?? cachedInstrument?.updated_at;
+      // Dirty drafts must keep their frozen CAS token. Only callers that omit
+      // updated_at (inline edits) may fall back to the collection cache.
+      const baseUpdatedAt = Object.prototype.hasOwnProperty.call(
+        formData,
+        'updated_at'
+      )
+        ? formData.updated_at
+        : cachedInstrument?.updated_at;
 
       let updatePayload: Partial<Omit<Instrument, 'id' | 'created_at'>> & {
         sale_transition?: DashboardSaleTransition;

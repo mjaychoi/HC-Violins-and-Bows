@@ -233,6 +233,67 @@ describe('useDashboardData', () => {
     expect(mockShowSuccess).not.toHaveBeenCalled();
   });
 
+  it('TEST-6/9: keeps an explicit dirty draft T0 token when the collection is already T1', async () => {
+    const t0 = '2024-01-02T00:00:00Z';
+    const t1 = '2024-01-02T00:00:01Z';
+    setDashboardState({
+      instruments: [
+        {
+          ...mockInstrument,
+          ownership: 'Shelf B',
+          note: 'Old',
+          updated_at: t1,
+        },
+      ],
+    });
+    mockUpdateInstrument.mockResolvedValue({
+      ...mockInstrument,
+      ownership: 'Shelf B',
+      note: 'A note',
+      updated_at: t1,
+    });
+
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await result.current.handleUpdateItem(mockInstrument.id, {
+        ownership: 'Shelf A',
+        note: 'A note',
+        cost_price: 400,
+        updated_at: t0,
+      });
+    });
+
+    expect(mockUpdateInstrument).toHaveBeenCalledWith(mockInstrument.id, {
+      ownership: 'Shelf A',
+      note: 'A note',
+      cost_price: 400,
+      updated_at: t0,
+    });
+    expect(mockUpdateInstrument.mock.calls[0][1].updated_at).not.toBe(t1);
+  });
+
+  it('TEST-18: does not treat a network failure as a token upgrade', async () => {
+    mockUpdateInstrument.mockRejectedValue(new Error('Network error'));
+    const { result } = renderHook(() => useDashboardData());
+
+    await act(async () => {
+      await expect(
+        result.current.handleUpdateItem(mockInstrument.id, {
+          note: 'A note',
+          updated_at: mockInstrument.updated_at,
+        })
+      ).rejects.toThrow('Network error');
+    });
+
+    expect(mockUpdateInstrument).toHaveBeenCalledTimes(1);
+    expect(mockUpdateInstrument).toHaveBeenCalledWith(mockInstrument.id, {
+      note: 'A note',
+      updated_at: mockInstrument.updated_at,
+    });
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+  });
+
   it('uses atomic sale transition payload when moving to Sold', async () => {
     const soldInstrument = { ...mockInstrument, status: 'Sold' as const };
     mockUpdateInstrument.mockResolvedValue(soldInstrument);
