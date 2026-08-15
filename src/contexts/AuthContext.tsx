@@ -20,6 +20,10 @@ import {
   getSupabaseClient,
   getSupabaseClientSync,
 } from '@/lib/supabase-client';
+import {
+  isAuthCrossTabSignalEvent,
+  signalAuthChanged,
+} from '@/lib/authCrossTabSignal';
 
 export type AuthRole = 'admin' | 'member';
 
@@ -170,12 +174,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // ignore
       } finally {
+        signalAuthChanged();
         if (!mountedRef.current || eventId !== authEventIdRef.current) return;
         clearAuthState();
         setLoading(false);
       }
     },
     [clearAuthState, ensureSupabase]
+  );
+
+  const syncFromAuthoritativeSession = useCallback(
+    async (source: string) => {
+      const eventId = ++authEventIdRef.current;
+      setLoading(true);
+
+      try {
+        const supabase = await ensureSupabase();
+        const { data, error } = await supabase.auth.getSession();
+
+        if (!mountedRef.current || eventId !== authEventIdRef.current) return;
+
+        if (error) {
+          if (isInvalidRefreshTokenError(error.message)) {
+            await handleInvalidRefreshToken(source, error);
+          } else {
+            logError('Failed to reconcile session', error, 'AuthContext', {
+              source,
+            });
+            clearAuthState();
+            setLoading(false);
+          }
+          return;
+        }
+
+        const nextSession = data.session ?? null;
+
+        logInfo('Session reconciled', 'AuthContext', {
+          source,
+          hasSession: !!nextSession,
+          userId: nextSession?.user?.id,
+        });
+
+        applySessionState(nextSession);
+        setLoading(false);
+      } catch (err) {
+        if (!mountedRef.current || eventId !== authEventIdRef.current) return;
+
+        const message = err instanceof Error ? err.message : String(err);
+
+        if (isInvalidRefreshTokenError(message)) {
+          await handleInvalidRefreshToken(source, err);
+        } else if (isNetworkishError(message)) {
+          logError(
+            'Network error while reconciling session; clearing.',
+            err,
+            'AuthContext',
+            { source }
+          );
+          clearAuthState();
+          setLoading(false);
+        } else {
+          logError('Failed to reconcile session', err, 'AuthContext', {
+            source,
+          });
+          clearAuthState();
+          setLoading(false);
+        }
+      }
+    },
+    [
+      ensureSupabase,
+      handleInvalidRefreshToken,
+      clearAuthState,
+      applySessionState,
+    ]
   );
 
   useEffect(() => {
@@ -279,6 +351,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     applySessionState,
   ]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleStorage = (event: StorageEvent) => {
+      if (!isAuthCrossTabSignalEvent(event)) return;
+      if (!mountedRef.current) return;
+
+      void syncFromAuthoritativeSession('cross-tab-storage-signal');
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [syncFromAuthoritativeSession]);
+
   const signUp: AuthContextType['signUp'] = useCallback(
     async (email, password) => {
       const startTime = now();
@@ -317,6 +403,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             applySessionState(data.session);
             setLoading(false);
           }
+          signalAuthChanged();
         }
 
         logApiRequest('POST', 'auth/signup', 200, duration, 'AuthContext', {
@@ -377,6 +464,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             applySessionState(data.session);
             setLoading(false);
           }
+          signalAuthChanged();
         }
 
         logApiRequest('POST', 'auth/signin', 200, duration, 'AuthContext', {
@@ -457,6 +545,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       }
     } finally {
+      signalAuthChanged();
       if (!mountedRef.current || eventId !== authEventIdRef.current) return;
       clearAuthState();
       setLoading(false);
