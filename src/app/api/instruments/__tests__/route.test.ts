@@ -113,6 +113,13 @@ describe('/api/instruments', () => {
     mockWriteAuditLog = jest.fn().mockResolvedValue(undefined);
     mockUserSupabase = {
       from: jest.fn(),
+      // get_instruments_financials() — see
+      // supabase/migrations/20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+      // Tests that care about admin financials configure this explicitly
+      // (see the F7 block below); everyone else gets an empty result,
+      // which the route treats as "no financial data for this row" and
+      // omits cost_price/consignment_price entirely.
+      rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
     };
     mockAuthContext = {
       user: { id: 'test-user' },
@@ -182,6 +189,7 @@ describe('/api/instruments', () => {
         from: jest.fn((table: string) =>
           table === 'instrument_certificates' ? mockCertQuery : mockQuery
         ),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
       } as any;
       mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
 
@@ -218,6 +226,7 @@ describe('/api/instruments', () => {
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
       } as any;
       mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
 
@@ -249,7 +258,10 @@ describe('/api/instruments', () => {
           error: null,
         }),
       };
-      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) } as any;
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
+      } as any;
       mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
 
       const request = new NextRequest(
@@ -319,7 +331,10 @@ describe('/api/instruments', () => {
         limit: jest.fn(),
         order: jest.fn(),
       };
-      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) } as any;
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
+      } as any;
       mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
 
       const request = new NextRequest(
@@ -423,6 +438,7 @@ describe('/api/instruments', () => {
           .mockImplementation((table: string) =>
             table === 'instrument_certificates' ? mockCertQuery : mockQuery
           ),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments');
@@ -701,7 +717,14 @@ describe('/api/instruments', () => {
 
     // ── F7: financial field access control ──────────────────────────────────
 
-    function makeInstrumentQueryMock(instrument: object) {
+    function makeInstrumentQueryMock(
+      instrument: { id: string; [key: string]: unknown },
+      financials?: {
+        id: string;
+        cost_price: number | null;
+        consignment_price: number | null;
+      }[]
+    ) {
       const q = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -713,18 +736,35 @@ describe('/api/instruments', () => {
         error: null,
         count: 1,
       });
-      mockUserSupabase = { from: jest.fn().mockReturnValue(q) } as any;
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(q),
+        // get_instruments_financials() — real DB call for admins, see
+        // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+        rpc: jest
+          .fn()
+          .mockResolvedValue({ data: financials ?? [], error: null }),
+      } as any;
     }
 
     const richInstrument = {
       ...mockInstrument,
+      // The base row itself carries these values in this test on purpose —
+      // it proves the app-layer strip (defense in depth) still holds even
+      // if the DB privilege boundary were ever misconfigured and a base
+      // query somehow returned them anyway.
       cost_price: 1500,
       consignment_price: 800,
       price: 3000,
     };
 
     it('admin receives cost_price and consignment_price', async () => {
-      makeInstrumentQueryMock(richInstrument);
+      makeInstrumentQueryMock(richInstrument, [
+        {
+          id: richInstrument.id,
+          cost_price: 1500,
+          consignment_price: 800,
+        },
+      ]);
       mockAuthContext = { ...mockAuthContext, role: 'admin' };
 
       const response = await GET(
@@ -1493,6 +1533,7 @@ describe('/api/instruments', () => {
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {

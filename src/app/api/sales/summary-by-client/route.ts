@@ -184,22 +184,19 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         ...dateFilters.filters,
       };
 
-      const aggregateQuery = applySalesSummaryFilters(
-        auth.userSupabase
-          .from('sales_history')
-          .select(
-            [
-              'client_id',
-              'total_spend:sale_price.sum()',
-              'purchase_count:client_id.count()',
-              'last_purchase_date:sale_date.max()',
-              'first_purchase_date:sale_date.min()',
-            ].join(', ')
-          ),
-        filters
+      // sale_price is no longer a directly-selectable column for the
+      // shared authenticated role (see
+      // supabase/migrations/20260814160000_enforce_financial_confidentiality_db_boundary.sql),
+      // so this grouped aggregate is computed by the admin-only
+      // get_sales_summary_by_client() RPC instead of a raw PostgREST
+      // aggregate select.
+      const { data, error } = await auth.userSupabase.rpc(
+        'get_sales_summary_by_client',
+        {
+          p_from_date: filters.fromDate ?? null,
+          p_to_date: filters.toDate ?? null,
+        }
       );
-
-      const { data, error } = await aggregateQuery;
 
       if (error) {
         throw errorHandler.handleSupabaseError(

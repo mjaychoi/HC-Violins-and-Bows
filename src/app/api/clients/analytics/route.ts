@@ -138,21 +138,17 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         );
       }
 
-      // Aggregate sales with PostgREST — exclude null client_id so orphans
-      // do not inflate spend. Distinct client counts use a grouped summary.
-      let salesQuery = auth.userSupabase
-        .from('sales_history')
-        .select(
-          'total_spend:sale_price.sum(), purchase_count:client_id.count(), most_recent:sale_date.max()'
-        )
-        .eq('org_id', orgId)
-        .not('client_id', 'is', null);
-
-      if (fromDate) salesQuery = salesQuery.gte('sale_date', fromDate);
-      if (toDate) salesQuery = salesQuery.lte('sale_date', toDate);
-
-      const { data: salesAgg, error: salesError } =
-        await salesQuery.maybeSingle();
+      // sale_price is no longer a directly-selectable column for the
+      // shared authenticated role (see
+      // supabase/migrations/20260814160000_enforce_financial_confidentiality_db_boundary.sql),
+      // so this aggregate (exclude null client_id so orphans do not inflate
+      // spend) is computed by the admin-only get_client_purchase_aggregate()
+      // RPC instead of a raw PostgREST aggregate select.
+      const { data: salesAggRows, error: salesError } =
+        await auth.userSupabase.rpc('get_client_purchase_aggregate', {
+          p_from_date: fromDate ?? null,
+          p_to_date: toDate ?? null,
+        });
 
       if (salesError) {
         throw errorHandler.handleSupabaseError(
@@ -160,6 +156,8 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           'Aggregate sales for clients analytics'
         );
       }
+
+      const salesAgg = salesAggRows?.[0];
 
       // Distinct purchasing clients (avoids join inflation)
       let distinctQuery = auth.userSupabase

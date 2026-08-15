@@ -296,6 +296,31 @@ export const salesHistorySchema: z.ZodType<SalesHistory> = z.object({
   instrument: instrumentSchema.optional(),
 });
 
+/**
+ * SalesHistory schema for non-admin member responses. sale_price is no
+ * longer selectable from the DB for the shared `authenticated` role (see
+ * supabase/migrations/20260814160000_enforce_financial_confidentiality_db_boundary.sql),
+ * so member-facing sales_history rows never carry it — this variant omits
+ * the requirement rather than treating its absence as a validation failure.
+ * Duplicated from salesHistorySchema (rather than derived via `.omit()`)
+ * because that schema is typed as the wide `z.ZodType<SalesHistory>`
+ * interface, which doesn't expose ZodObject methods like `.omit()`.
+ */
+export const salesHistoryMemberSchema = z.object({
+  id: uuidSchema,
+  instrument_id: uuidSchema.nullable(),
+  client_id: uuidSchema.nullable(),
+  sale_date: dateStringSchema,
+  notes: z.string().nullable(),
+  created_at: z.string(),
+  entry_kind: z
+    .enum(['sale', 'refund', 'undo_refund', 'adjustment'])
+    .optional(),
+  adjustment_of_sale_id: uuidSchema.nullable().optional(),
+  client: clientSchema.optional(),
+  instrument: instrumentSchema.optional(),
+});
+
 const invoiceItemSchema = z.object({
   id: uuidSchema,
   invoice_id: uuidSchema,
@@ -651,6 +676,30 @@ export function validateSalesHistoryArray(data: unknown): SalesHistory[] {
         `Invalid SalesHistory at index ${index}: ${error instanceof Error ? error.message : String(error)}`
       );
     }
+  });
+}
+
+/**
+ * Validate an array of member-facing SalesHistory rows (no sale_price —
+ * see salesHistoryMemberSchema).
+ */
+export function validateSalesHistoryMemberArray(
+  data: unknown
+): Omit<SalesHistory, 'sale_price'>[] {
+  if (!Array.isArray(data)) {
+    throw new Error('Expected an array of SalesHistory');
+  }
+  return data.map((item, index) => {
+    const result = salesHistoryMemberSchema.safeParse(item);
+    if (!result.success) {
+      const errorMessages = result.error.issues
+        ? result.error.issues.map(e => e.message).join(', ')
+        : result.error.message || 'Validation failed';
+      throw new Error(
+        `Invalid SalesHistory at index ${index}: ${errorMessages}`
+      );
+    }
+    return result.data;
   });
 }
 

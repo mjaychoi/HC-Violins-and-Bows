@@ -48,11 +48,15 @@ const mockCaptureException = captureException as jest.MockedFunction<
 >;
 
 describe('/api/sales', () => {
-  // Helper function to create a mock Supabase client
+  // Helper function to create a mock Supabase client. Default rpc() mock
+  // resolves empty — get_sales_financials()/get_sales_totals() (see
+  // 20260814160000_enforce_financial_confidentiality_db_boundary.sql) are
+  // called for every admin-role request; tests that care about the
+  // returned sale_price/totals pass an explicit rpcMock.
   const createMockSupabaseClient = (fromMock: any, rpcMock?: any) =>
     ({
       from: jest.fn().mockReturnValue(fromMock),
-      rpc: rpcMock || jest.fn(),
+      rpc: rpcMock || jest.fn().mockResolvedValue({ data: [], error: null }),
     }) as any;
 
   beforeEach(() => {
@@ -75,7 +79,7 @@ describe('/api/sales', () => {
     };
     mockUserSupabase = {
       from: jest.fn().mockReturnValue(baseQuery),
-      rpc: jest.fn(),
+      rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
     };
     mockAuthContext = {
       user: { id: 'test-user' },
@@ -199,7 +203,13 @@ describe('/api/sales', () => {
         is: jest.fn().mockReturnThis(),
       };
 
-      mockUserSupabase = createMockSupabaseClient(mockQuery);
+      mockUserSupabase = createMockSupabaseClient(
+        mockQuery,
+        jest.fn().mockResolvedValue({
+          data: [{ id: mockData[0].id, sale_price: mockData[0].sale_price }],
+          error: null,
+        })
+      );
 
       const request = new NextRequest(
         'http://localhost:3000/api/sales?export=true&pageSize=6000'
@@ -301,48 +311,28 @@ describe('/api/sales', () => {
         single: jest.fn(),
       };
 
-      const mockPositiveTotalsQuery = {
-        select: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockReturnThis(),
-        gt: jest.fn().mockReturnThis(),
-        ilike: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        not: jest.fn().mockReturnThis(),
-        is: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: { revenue: 2500, avg_ticket: 2500 },
-          error: null,
-        }),
-      };
+      // get_sales_financials()/get_sales_totals() replace the raw
+      // PostgREST aggregate queries — see
+      // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+      const mockRpc = jest.fn().mockImplementation((fn: string) => {
+        if (fn === 'get_sales_financials') {
+          return Promise.resolve({
+            data: [{ id: mockData[0].id, sale_price: mockData[0].sale_price }],
+            error: null,
+          });
+        }
+        if (fn === 'get_sales_totals') {
+          return Promise.resolve({
+            data: [{ revenue: 2500, avg_ticket: 2500, refund_total: -500 }],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: [], error: null });
+      });
 
-      const mockRefundTotalsQuery = {
-        select: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockReturnThis(),
-        lt: jest.fn().mockReturnThis(),
-        ilike: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        not: jest.fn().mockReturnThis(),
-        is: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: { refund_total: -500 },
-          error: null,
-        }),
-      };
-
-      let callCount = 0;
       const mockSupabaseClient = {
-        from: jest.fn().mockImplementation(() => {
-          callCount++;
-          if (callCount === 1) {
-            return mockQuery as any;
-          }
-          if (callCount === 2) {
-            return mockPositiveTotalsQuery as any;
-          }
-          return mockRefundTotalsQuery as any;
-        }),
+        from: jest.fn().mockReturnValue(mockQuery),
+        rpc: mockRpc,
       } as any;
 
       mockUserSupabase = mockSupabaseClient;
@@ -374,16 +364,13 @@ describe('/api/sales', () => {
         refundRate: 16.7,
       });
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
-      expect(mockPositiveTotalsQuery.eq).toHaveBeenCalledWith(
-        'org_id',
-        'test-org'
+      expect(mockRpc).toHaveBeenCalledWith('get_sales_financials', {
+        p_sale_ids: [mockData[0].id],
+      });
+      expect(mockRpc).toHaveBeenCalledWith(
+        'get_sales_totals',
+        expect.any(Object)
       );
-      expect(mockRefundTotalsQuery.eq).toHaveBeenCalledWith(
-        'org_id',
-        'test-org'
-      );
-      expect(mockPositiveTotalsQuery.single).toHaveBeenCalled();
-      expect(mockRefundTotalsQuery.single).toHaveBeenCalled();
       expect(mockLogApiRequest).toHaveBeenCalledWith(
         'GET',
         '/api/sales',
@@ -555,48 +542,21 @@ describe('/api/sales', () => {
         single: jest.fn(),
       };
 
-      const mockPositiveTotalsQuery = {
-        select: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockReturnThis(),
-        gt: jest.fn().mockReturnThis(),
-        ilike: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        not: jest.fn().mockReturnThis(),
-        is: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: { revenue: 6000, avg_ticket: 1200 },
-          error: null,
-        }),
-      };
+      // get_sales_totals() replaces the raw PostgREST aggregate — see
+      // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+      const mockRpc = jest.fn().mockImplementation((fn: string) => {
+        if (fn === 'get_sales_totals') {
+          return Promise.resolve({
+            data: [{ revenue: 6000, avg_ticket: 1200, refund_total: 0 }],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: [], error: null });
+      });
 
-      const mockRefundTotalsQuery = {
-        select: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockReturnThis(),
-        lt: jest.fn().mockReturnThis(),
-        ilike: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        not: jest.fn().mockReturnThis(),
-        is: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: { refund_total: 0 },
-          error: null,
-        }),
-      };
-
-      let callCount = 0;
       const mockSupabaseClient = {
-        from: jest.fn().mockImplementation(() => {
-          callCount++;
-          if (callCount === 1) {
-            return mockQuery as any;
-          }
-          if (callCount === 2) {
-            return mockPositiveTotalsQuery as any;
-          }
-          return mockRefundTotalsQuery as any;
-        }),
+        from: jest.fn().mockReturnValue(mockQuery),
+        rpc: mockRpc,
       } as any;
       mockUserSupabase = mockSupabaseClient;
 
@@ -641,11 +601,39 @@ describe('/api/sales', () => {
       });
 
       const request = new NextRequest(
+        'http://localhost:3000/api/sales?page=1&sortColumn=sale_date&sortDirection=asc'
+      );
+      await GET(request);
+
+      expect(mockQuery.order).toHaveBeenCalledWith('sale_date', {
+        ascending: true,
+      });
+    });
+
+    it('falls back to sale_date ordering for sortColumn=sale_price (sale_price is not a directly orderable column at the DB boundary — see 20260814160000)', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        ilike: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+      };
+
+      mockUserSupabase = createMockSupabaseClient(mockQuery);
+      (mockQuery.range as jest.Mock).mockResolvedValue({
+        data: [],
+        error: null,
+        count: 0,
+      });
+
+      const request = new NextRequest(
         'http://localhost:3000/api/sales?page=1&sortColumn=sale_price&sortDirection=asc'
       );
       await GET(request);
 
-      expect(mockQuery.order).toHaveBeenCalledWith('sale_price', {
+      expect(mockQuery.order).toHaveBeenCalledWith('sale_date', {
         ascending: true,
       });
     });
@@ -749,47 +737,19 @@ describe('/api/sales', () => {
         single: jest.fn(),
       };
 
-      const mockPositiveTotalsQuery = {
-        select: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockReturnThis(),
-        gt: jest.fn().mockReturnThis(),
-        ilike: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        not: jest.fn().mockReturnThis(),
-        is: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: { revenue: 1000, avg_ticket: 1000 },
-          error: null,
-        }),
-      };
-
-      const mockRefundTotalsQuery = {
-        select: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockReturnThis(),
-        lt: jest.fn().mockReturnThis(),
-        ilike: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        not: jest.fn().mockReturnThis(),
-        is: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: { refund_total: 0 },
-          error: null,
-        }),
-      };
-
-      let callCount = 0;
+      // get_sales_totals()/get_sales_financials() replace the raw
+      // PostgREST aggregate queries — see
+      // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
       const mockSupabaseClient = {
-        from: jest.fn().mockImplementation(() => {
-          callCount++;
-          if (callCount === 1) {
-            return mockQuery as any;
+        from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest.fn().mockImplementation((fn: string) => {
+          if (fn === 'get_sales_totals') {
+            return Promise.resolve({
+              data: [{ revenue: 1000, avg_ticket: 1000, refund_total: 0 }],
+              error: null,
+            });
           }
-          if (callCount === 2) {
-            return mockPositiveTotalsQuery as any;
-          }
-          return mockRefundTotalsQuery as any;
+          return Promise.resolve({ data: [], error: null });
         }),
       } as any;
       mockUserSupabase = mockSupabaseClient;
@@ -902,7 +862,9 @@ describe('/api/sales', () => {
 
     // ── F7: financial field access control ──────────────────────────────────
 
-    function makeSaleQueryMock(rows: object[]) {
+    function makeSaleQueryMock(
+      rows: Array<{ id: string; sale_price?: number }>
+    ) {
       const q = {
         select: jest.fn().mockReturnThis(),
         order: jest.fn().mockReturnThis(),
@@ -919,7 +881,12 @@ describe('/api/sales', () => {
       };
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(q),
-        rpc: jest.fn().mockResolvedValue({ data: null, error: null }),
+        // get_sales_financials() — real DB call for admins, see
+        // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+        rpc: jest.fn().mockResolvedValue({
+          data: rows.map(row => ({ id: row.id, sale_price: row.sale_price })),
+          error: null,
+        }),
       } as any;
       return q;
     }
@@ -1051,9 +1018,16 @@ describe('/api/sales', () => {
         }),
       };
 
-      const mockRpc = jest.fn().mockResolvedValue({
-        data: mockSale.id,
-        error: null,
+      // get_sales_financials() — real DB call for admins, see
+      // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+      const mockRpc = jest.fn().mockImplementation((fn: string) => {
+        if (fn === 'get_sales_financials') {
+          return Promise.resolve({
+            data: [{ id: mockSale.id, sale_price: mockSale.sale_price }],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: mockSale.id, error: null });
       });
       mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
 
@@ -1195,9 +1169,14 @@ describe('/api/sales', () => {
         }),
       };
 
-      const mockRpc = jest.fn().mockResolvedValue({
-        data: mockSale.id,
-        error: null,
+      const mockRpc = jest.fn().mockImplementation((fn: string) => {
+        if (fn === 'get_sales_financials') {
+          return Promise.resolve({
+            data: [{ id: mockSale.id, sale_price: mockSale.sale_price }],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: mockSale.id, error: null });
       });
       mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
 
@@ -1288,9 +1267,14 @@ describe('/api/sales', () => {
         }),
       };
 
-      const mockRpc = jest.fn().mockResolvedValue({
-        data: mockSale.id,
-        error: null,
+      const mockRpc = jest.fn().mockImplementation((fn: string) => {
+        if (fn === 'get_sales_financials') {
+          return Promise.resolve({
+            data: [{ id: mockSale.id, sale_price: mockSale.sale_price }],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: mockSale.id, error: null });
       });
       mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
 
@@ -1364,9 +1348,14 @@ describe('/api/sales', () => {
         }),
       };
 
-      const mockRpc = jest.fn().mockResolvedValue({
-        data: mockSale.id,
-        error: null,
+      const mockRpc = jest.fn().mockImplementation((fn: string) => {
+        if (fn === 'get_sales_financials') {
+          return Promise.resolve({
+            data: [{ id: mockSale.id, sale_price: mockSale.sale_price }],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: mockSale.id, error: null });
       });
       mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
 
@@ -1406,8 +1395,10 @@ describe('/api/sales', () => {
           p_notes: 'Manual sale',
         })
       );
+      // 2nd call is the get_sales_financials() fetch after the first
+      // create (see 20260814160000_...sql); the retry's create call is 3rd.
       expect(mockRpc).toHaveBeenNthCalledWith(
-        2,
+        3,
         'create_sale_atomic_idempotent',
         expect.objectContaining({
           p_route_key: 'POST:/api/sales',
@@ -1421,7 +1412,7 @@ describe('/api/sales', () => {
         })
       );
       expect(mockRpc.mock.calls[0][1].p_request_hash).toBe(
-        mockRpc.mock.calls[1][1].p_request_hash
+        mockRpc.mock.calls[2][1].p_request_hash
       );
     });
 
@@ -1498,10 +1489,27 @@ describe('/api/sales', () => {
           }),
       };
 
-      const mockRpc = jest
-        .fn()
-        .mockResolvedValueOnce({ data: firstSale.id, error: null })
-        .mockResolvedValueOnce({ data: secondSale.id, error: null });
+      // get_sales_financials() is now also called (once per created sale,
+      // interleaved with create_sale_atomic_idempotent) — see
+      // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+      let createCalls = 0;
+      const mockRpc = jest.fn().mockImplementation((fn: string) => {
+        if (fn === 'get_sales_financials') {
+          return Promise.resolve({
+            data: [
+              createCalls === 1
+                ? { id: firstSale.id, sale_price: firstSale.sale_price }
+                : { id: secondSale.id, sale_price: secondSale.sale_price },
+            ],
+            error: null,
+          });
+        }
+        createCalls += 1;
+        return Promise.resolve({
+          data: createCalls === 1 ? firstSale.id : secondSale.id,
+          error: null,
+        });
+      });
       mockUserSupabase = createMockSupabaseClient(mockSelectQuery, mockRpc);
 
       const firstResponse = await POST(
@@ -1543,13 +1551,16 @@ describe('/api/sales', () => {
         'create_sale_atomic_idempotent',
         expect.objectContaining({ p_idempotency_key: 'sale-key-a' })
       );
+      // 2nd call is the get_sales_financials() fetch for the first sale
+      // (see 20260814160000_...sql); create_sale_atomic_idempotent for the
+      // second sale is the 3rd call.
       expect(mockRpc).toHaveBeenNthCalledWith(
-        2,
+        3,
         'create_sale_atomic_idempotent',
         expect.objectContaining({ p_idempotency_key: 'sale-key-b' })
       );
       expect(mockRpc.mock.calls[0][1].p_request_hash).toBe(
-        mockRpc.mock.calls[1][1].p_request_hash
+        mockRpc.mock.calls[2][1].p_request_hash
       );
     });
   });
@@ -1578,7 +1589,13 @@ describe('/api/sales', () => {
         }),
       };
 
-      mockUserSupabase = createMockSupabaseClient(mockFetch);
+      mockUserSupabase = createMockSupabaseClient(
+        mockFetch,
+        jest.fn().mockResolvedValue({
+          data: [{ id: saleId, sale_price: currentSale.sale_price }],
+          error: null,
+        })
+      );
       mockAuthContext = {
         ...mockAuthContext,
         orgId: 'org-123',
@@ -1667,9 +1684,24 @@ describe('/api/sales', () => {
       };
 
       let fromCallCount = 0;
-      const mockRpc = jest.fn().mockResolvedValue({
-        data: '223e4567-e89b-12d3-a456-426614174000',
-        error: null,
+      const adjustmentId = '223e4567-e89b-12d3-a456-426614174000';
+      // get_sales_financials() is also called (interleaved, once per
+      // fetchSaleById call) — see 20260814160000_...sql.
+      const mockRpc = jest.fn().mockImplementation((fn: string) => {
+        if (fn === 'get_sales_financials') {
+          return Promise.resolve({
+            data: [
+              fromCallCount === 1
+                ? { id: originalSale.id, sale_price: originalSale.sale_price }
+                : {
+                    id: mockUpdatedSale.id,
+                    sale_price: mockUpdatedSale.sale_price,
+                  },
+            ],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: adjustmentId, error: null });
       });
       mockUserSupabase = {
         from: jest.fn().mockImplementation(() => {
@@ -1874,9 +1906,25 @@ describe('/api/sales', () => {
             error: null,
           }),
       };
-      const mockRpc = jest.fn().mockResolvedValue({
-        data: saleId,
-        error: null,
+      // get_sales_financials() is also called (interleaved, once per
+      // fetchSaleById call) — see 20260814160000_...sql.
+      let fetchCalls = 0;
+      const mockRpc = jest.fn().mockImplementation((fn: string) => {
+        if (fn === 'get_sales_financials') {
+          fetchCalls += 1;
+          return Promise.resolve({
+            data: [
+              fetchCalls === 1
+                ? { id: currentSale.id, sale_price: currentSale.sale_price }
+                : {
+                    id: mockUpdatedSale.id,
+                    sale_price: mockUpdatedSale.sale_price,
+                  },
+            ],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: saleId, error: null });
       });
 
       mockUserSupabase = createMockSupabaseClient(mockFetch, mockRpc);
@@ -1924,7 +1972,13 @@ describe('/api/sales', () => {
         }),
       };
 
-      mockUserSupabase = createMockSupabaseClient(mockFetch);
+      mockUserSupabase = createMockSupabaseClient(
+        mockFetch,
+        jest.fn().mockResolvedValue({
+          data: [{ id: currentSale.id, sale_price: currentSale.sale_price }],
+          error: null,
+        })
+      );
 
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'PATCH',

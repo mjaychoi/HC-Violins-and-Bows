@@ -34,6 +34,18 @@ export const runtime = 'nodejs';
 // Maximum PDF size in bytes (20MB) - prevents returning oversized PDFs.
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 
+// cost_price/consignment_price are excluded: the DB no longer grants
+// `authenticated` direct SELECT on those columns (see
+// supabase/migrations/20260814160000_enforce_financial_confidentiality_db_boundary.sql),
+// and a client-facing provenance certificate should never include internal
+// cost/margin data regardless.
+const INSTRUMENT_CERTIFICATE_COLUMNS = `
+  id, org_id, type, maker, subtype, year, certificate,
+  size, weight, price, ownership, note, serial_number, status,
+  reserved_reason, reserved_by_user_id, reserved_connection_id,
+  created_at, updated_at
+`;
+
 // Maximum time to spend generating a PDF.
 const PDF_GENERATION_TIMEOUT_MS = 15_000;
 
@@ -255,7 +267,7 @@ async function getHandlerInternal(
     // 2) Fetch instrument
     const { data: instrument, error } = await auth.userSupabase
       .from('instruments')
-      .select('*')
+      .select(INSTRUMENT_CERTIFICATE_COLUMNS)
       .eq('id', id)
       .eq('org_id', auth.orgId!)
       .single();

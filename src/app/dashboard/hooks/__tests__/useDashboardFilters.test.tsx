@@ -541,8 +541,10 @@ describe('useDashboardFilters', () => {
       result.current.setSearchTerm('4/4');
     });
     await waitFor(() => {
+      // Assert subtype first so waitFor does not pass on the previous
+      // one-item "Cello" result while search debounce is still pending.
+      expect(result.current.filteredItems[0]?.subtype).toBe('4/4');
       expect(result.current.filteredItems).toHaveLength(1);
-      expect(result.current.filteredItems[0].subtype).toBe('4/4');
     });
   });
 
