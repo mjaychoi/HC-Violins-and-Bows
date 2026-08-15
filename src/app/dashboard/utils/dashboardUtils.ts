@@ -192,6 +192,18 @@ export const validateInstrumentData = (
     }
   }
 
+  // ✅ RESERVED REASON VALIDATION — mirrors the API's requirement that any
+  // save landing on status "Reserved" carries a non-blank reserved_reason
+  if (data.status === 'Reserved') {
+    const reservedReason =
+      typeof data.reserved_reason === 'string'
+        ? data.reserved_reason.trim()
+        : '';
+    if (!reservedReason) {
+      errors.push('Reservation reason is required when status is Reserved');
+    }
+  }
+
   return errors;
 };
 
