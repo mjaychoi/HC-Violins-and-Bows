@@ -68,6 +68,8 @@ const mockActions = {
   createConnection: jest.fn().mockResolvedValue(null),
   updateConnection: jest.fn().mockResolvedValue(null),
   deleteConnection: jest.fn().mockResolvedValue(true),
+  reconcileRelatedClient: jest.fn(),
+  reconcileRelatedInstrument: jest.fn(),
   invalidateConnectionsCache: jest.fn(),
   resetState: jest.fn(() => {
     mockState.clients = [];
@@ -203,6 +205,8 @@ describe('useUnifiedData', () => {
         createConnection: mockActions.createConnection,
         updateConnection: mockActions.updateConnection,
         deleteConnection: mockActions.deleteConnection,
+        reconcileRelatedClient: mockActions.reconcileRelatedClient,
+        reconcileRelatedInstrument: mockActions.reconcileRelatedInstrument,
         invalidateCache: mockActions.invalidateConnectionsCache,
         resetState: mockActions.resetState,
       },
@@ -241,6 +245,8 @@ describe('useUnifiedData', () => {
       createConnection: mockActions.createConnection,
       updateConnection: mockActions.updateConnection,
       deleteConnection: mockActions.deleteConnection,
+      reconcileRelatedClient: mockActions.reconcileRelatedClient,
+      reconcileRelatedInstrument: mockActions.reconcileRelatedInstrument,
       invalidateCache: jest.fn(),
       resetState: jest.fn(),
     }));
@@ -555,6 +561,28 @@ describe('useUnifiedData', () => {
       // useUnifiedClients only reads from state, doesn't fetch
       expect(mockActions.fetchClients).not.toHaveBeenCalled();
     });
+
+    it('successful updateClient reconciles nested Connection Client identity', async () => {
+      const updated = {
+        id: 'c1',
+        first_name: 'Alice',
+        last_name: 'Jones',
+      } as Client;
+      mockActions.updateClient.mockResolvedValueOnce(updated);
+
+      const { result } = rtlRenderHook(() => useUnifiedClients(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      await act(async () => {
+        await result.current.updateClient('c1', { last_name: 'Jones' });
+      });
+
+      expect(mockActions.reconcileRelatedClient).toHaveBeenCalledWith(
+        updated,
+        expect.any(String)
+      );
+    });
   });
 
   describe('useUnifiedInstruments', () => {
@@ -572,6 +600,27 @@ describe('useUnifiedData', () => {
     it.skip('should fetch instruments when empty and not loading', async () => {
       // This test is skipped because useUnifiedInstruments no longer performs fetching
       // Fetching is now handled by useUnifiedData (Single Source of Truth)
+    });
+
+    it('successful updateInstrument reconciles nested Connection Instrument identity', async () => {
+      const updated = {
+        id: 'i1',
+        maker: 'New Maker',
+      } as Instrument;
+      mockActions.updateInstrument.mockResolvedValueOnce(updated);
+
+      const { result } = rtlRenderHook(() => useUnifiedInstruments(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      await act(async () => {
+        await result.current.updateInstrument('i1', { maker: 'New Maker' });
+      });
+
+      expect(mockActions.reconcileRelatedInstrument).toHaveBeenCalledWith(
+        updated,
+        expect.any(String)
+      );
     });
   });
 
@@ -983,6 +1032,123 @@ describe('useUnifiedData', () => {
       // This test is skipped because useUnifiedConnectionForm no longer performs fetching
       // Fetching is now handled by useUnifiedData (Single Source of Truth)
       // useConnectedClientsData only provides CRUD operations
+    });
+
+    it('prefers the canonical Client/Instrument over a stale Connection embed for display and search', () => {
+      mockState.clients = [
+        {
+          id: 'client-a',
+          first_name: 'Alice',
+          last_name: 'Jones',
+          email: 'alice.jones@example.com',
+          tags: [],
+        } as unknown as Client,
+      ];
+      mockState.instruments = [
+        {
+          id: 'instrument-a',
+          maker: 'New Maker',
+          type: 'Viola',
+          year: 1921,
+          price: 2500,
+          serial_number: 'NEW456',
+        } as unknown as Instrument,
+      ];
+      mockState.connections = [
+        {
+          id: 'rel-1',
+          client_id: 'client-a',
+          instrument_id: 'instrument-a',
+          relationship_type: 'Interested',
+          notes: 'keep-me',
+          created_at: '2024-01-01T00:00:00Z',
+          client: {
+            id: 'client-a',
+            first_name: 'Alice',
+            last_name: 'Smith',
+            email: 'alice.smith@example.com',
+            tags: [],
+          },
+          instrument: {
+            id: 'instrument-a',
+            maker: 'Old Maker',
+            type: 'Violin',
+            year: 1900,
+            price: 1000,
+          },
+        } as unknown as ClientInstrument,
+        {
+          id: 'rel-2',
+          client_id: 'client-a',
+          instrument_id: 'instrument-a',
+          relationship_type: 'Owned',
+          notes: 'second',
+          created_at: '2024-01-01T00:00:00Z',
+          client: {
+            id: 'client-a',
+            first_name: 'Alice',
+            last_name: 'Smith',
+          },
+          instrument: {
+            id: 'instrument-a',
+            maker: 'Old Maker',
+            type: 'Violin',
+          },
+        } as unknown as ClientInstrument,
+      ];
+
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      expect(result.current.connections).toHaveLength(2);
+      expect(
+        result.current.connections.map(row => row.client?.last_name)
+      ).toEqual(['Jones', 'Jones']);
+      expect(
+        result.current.connections.map(row => row.instrument?.maker)
+      ).toEqual(['New Maker', 'New Maker']);
+      expect(result.current.connections[0].notes).toBe('keep-me');
+      expect(result.current.connections[1].relationship_type).toBe('Owned');
+      expect(result.current.connections[0].instrument?.serial_number).toBe(
+        'NEW456'
+      );
+    });
+
+    it('falls back to the embedded Client/Instrument when canonical collections omit that id', () => {
+      const embeddedClient = {
+        id: 'client-missing',
+        first_name: 'Pat',
+        last_name: 'Embed',
+      };
+      const embeddedInstrument = {
+        id: 'instrument-missing',
+        maker: 'Fallback Maker',
+        type: 'Cello',
+      };
+      mockState.clients = [];
+      mockState.instruments = [];
+      mockState.connections = [
+        {
+          id: 'rel-fallback',
+          client_id: 'client-missing',
+          instrument_id: 'instrument-missing',
+          relationship_type: 'Booked',
+          notes: null,
+          created_at: '2024-01-01T00:00:00Z',
+          client: embeddedClient,
+          instrument: embeddedInstrument,
+        } as unknown as ClientInstrument,
+      ];
+
+      const { result } = rtlRenderHook(() => useConnectedClientsData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      expect(result.current.connections[0].client).toEqual(embeddedClient);
+      expect(result.current.connections[0].instrument).toEqual(
+        embeddedInstrument
+      );
     });
   });
 
@@ -1465,6 +1631,71 @@ describe('useUnifiedData', () => {
 
         // After invalidation the guard is cleared; a fresh fetch can occur
         expect(__getGlobalFetchedForTests().clients).toBe(false);
+      });
+
+      it('successful updateClient patches nested Client identity on every matching Connection', async () => {
+        const { result } = await setupAllFetched();
+        const updated = {
+          id: 'c1',
+          first_name: 'Alice',
+          last_name: 'Jones',
+        } as Client;
+        mockActions.updateClient.mockResolvedValueOnce(updated);
+
+        await act(async () => {
+          await result.current.updateClient('c1', { last_name: 'Jones' });
+        });
+
+        expect(mockActions.reconcileRelatedClient).toHaveBeenCalledWith(
+          updated,
+          expect.any(String)
+        );
+      });
+
+      it('failed updateClient does not invent a new Connection identity', async () => {
+        const { result } = await setupAllFetched();
+        mockActions.updateClient.mockResolvedValueOnce(null);
+
+        await act(async () => {
+          await result.current.updateClient('c1', { last_name: 'Jones' });
+        });
+
+        expect(mockActions.reconcileRelatedClient).not.toHaveBeenCalled();
+      });
+
+      it('successful updateInstrument patches nested Instrument identity on matching Connections', async () => {
+        const { result } = await setupAllFetched();
+        const updated = {
+          id: 'i1',
+          maker: 'New Maker',
+          type: 'Viola',
+          serial_number: 'NEW456',
+        } as Instrument;
+        mockActions.updateInstrument.mockResolvedValueOnce(updated);
+
+        await act(async () => {
+          await result.current.updateInstrument('i1', { maker: 'New Maker' });
+        });
+
+        expect(mockActions.reconcileRelatedInstrument).toHaveBeenCalledWith(
+          updated,
+          expect.any(String)
+        );
+      });
+
+      it('failed updateInstrument does not invent a new Connection identity', async () => {
+        const { result } = await setupAllFetched();
+        mockActions.updateInstrument.mockRejectedValueOnce(
+          new Error('conflict')
+        );
+
+        await expect(
+          act(async () => {
+            await result.current.updateInstrument('i1', { maker: 'New Maker' });
+          })
+        ).rejects.toThrow('conflict');
+
+        expect(mockActions.reconcileRelatedInstrument).not.toHaveBeenCalled();
       });
 
       it('after deleteClient, list can refresh via invalidateCache', async () => {

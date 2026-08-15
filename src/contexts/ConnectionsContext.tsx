@@ -10,7 +10,11 @@ import React, {
   useRef,
   ReactNode,
 } from 'react';
-import { ClientInstrument } from '@/types';
+import { Client, ClientInstrument, Instrument } from '@/types';
+import {
+  patchConnectionsRelatedClient,
+  patchConnectionsRelatedInstrument,
+} from '@/app/connections/utils/resolveConnectionRelatedEntities';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { apiFetch } from '@/utils/apiFetch';
 import {
@@ -58,6 +62,8 @@ type ConnectionsAction =
     }
   | { type: 'REMOVE_CONNECTION'; payload: string }
   | { type: 'UPSERT_CONNECTIONS'; payload: ClientInstrument[] }
+  | { type: 'RECONCILE_RELATED_CLIENT'; payload: Client }
+  | { type: 'RECONCILE_RELATED_INSTRUMENT'; payload: Instrument }
   | { type: 'INVALIDATE_CACHE' }
   | { type: 'RESET_STATE' };
 
@@ -168,6 +174,34 @@ function connectionsReducer(
       };
     }
 
+    case 'RECONCILE_RELATED_CLIENT': {
+      const connections = patchConnectionsRelatedClient(
+        state.connections,
+        action.payload
+      );
+      if (connections === state.connections) return state;
+
+      return {
+        ...state,
+        connections,
+        lastUpdated: new Date(),
+      };
+    }
+
+    case 'RECONCILE_RELATED_INSTRUMENT': {
+      const connections = patchConnectionsRelatedInstrument(
+        state.connections,
+        action.payload
+      );
+      if (connections === state.connections) return state;
+
+      return {
+        ...state,
+        connections,
+        lastUpdated: new Date(),
+      };
+    }
+
     case 'INVALIDATE_CACHE':
       return {
         ...state,
@@ -207,6 +241,16 @@ type ConnectionsContextValue = {
     deleteConnection: (id: string) => Promise<boolean>;
 
     upsertConnections: (connections: ClientInstrument[]) => void;
+
+    reconcileRelatedClient: (
+      client: Client,
+      mutationTenantIdentityKey?: string | null
+    ) => void;
+
+    reconcileRelatedInstrument: (
+      instrument: Instrument,
+      mutationTenantIdentityKey?: string | null
+    ) => void;
 
     invalidateCache: () => void;
 
@@ -360,6 +404,40 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       payload: rows,
     });
   }, []);
+
+  const isCurrentMutationTenant = useCallback(
+    (mutationTenantIdentityKey?: string | null) => {
+      if (mutationTenantIdentityKey === undefined) return true;
+      return tenantIdentityKeyRef.current === mutationTenantIdentityKey;
+    },
+    []
+  );
+
+  const reconcileRelatedClient = useCallback(
+    (client: Client, mutationTenantIdentityKey?: string | null) => {
+      if (!client?.id) return;
+      if (!isCurrentMutationTenant(mutationTenantIdentityKey)) return;
+
+      dispatch({
+        type: 'RECONCILE_RELATED_CLIENT',
+        payload: client,
+      });
+    },
+    [isCurrentMutationTenant]
+  );
+
+  const reconcileRelatedInstrument = useCallback(
+    (instrument: Instrument, mutationTenantIdentityKey?: string | null) => {
+      if (!instrument?.id) return;
+      if (!isCurrentMutationTenant(mutationTenantIdentityKey)) return;
+
+      dispatch({
+        type: 'RECONCILE_RELATED_INSTRUMENT',
+        payload: instrument,
+      });
+    },
+    [isCurrentMutationTenant]
+  );
 
   const fetchConnections = useCallback(
     async (opts?: {
@@ -699,6 +777,8 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       updateConnection,
       deleteConnection,
       upsertConnections,
+      reconcileRelatedClient,
+      reconcileRelatedInstrument,
       invalidateCache,
       resetState,
     }),
@@ -708,6 +788,8 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       updateConnection,
       deleteConnection,
       upsertConnections,
+      reconcileRelatedClient,
+      reconcileRelatedInstrument,
       invalidateCache,
       resetState,
     ]
