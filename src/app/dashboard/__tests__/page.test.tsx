@@ -29,6 +29,18 @@ jest.mock('../hooks', () => ({
   useDashboardForm: jest.fn(() => ({ resetForm: jest.fn() })),
 }));
 
+const mockDeepLink = {
+  status: 'idle' as string,
+  instrumentId: null as string | null,
+  target: null as unknown,
+  clearDeepLink: jest.fn(),
+  retry: jest.fn(),
+};
+
+jest.mock('../hooks/useDashboardInstrumentDeepLink', () => ({
+  useDashboardInstrumentDeepLink: () => mockDeepLink,
+}));
+
 jest.mock('@/hooks/useModalState', () => ({
   useModalState: jest.fn(),
 }));
@@ -145,6 +157,11 @@ describe('DashboardPage', () => {
 
   beforeEach(() => {
     jest.spyOn(window, 'confirm').mockReturnValue(true);
+    mockDeepLink.status = 'idle';
+    mockDeepLink.instrumentId = null;
+    mockDeepLink.target = null;
+    mockDeepLink.clearDeepLink.mockClear();
+    mockDeepLink.retry.mockClear();
 
     (useUnifiedDashboard as jest.Mock).mockReturnValue({
       instruments: [mockInstrument],
@@ -266,6 +283,30 @@ describe('DashboardPage', () => {
 
     fireEvent.click(screen.getByText('delete'));
     expect(deleteInstrument).toHaveBeenCalledWith('1');
+  });
+
+  it('clears the instrument deep link after deleting that Item', async () => {
+    mockDeepLink.status = 'ready';
+    mockDeepLink.instrumentId = '1';
+    mockDeepLink.target = mockInstrument;
+
+    render(<DashboardPage />);
+
+    fireEvent.click(screen.getByText('delete'));
+    await waitFor(() => expect(deleteInstrument).toHaveBeenCalledWith('1'));
+    expect(mockDeepLink.clearDeepLink).toHaveBeenCalled();
+  });
+
+  it('does not clear an unrelated instrument deep link when another Item is deleted', async () => {
+    mockDeepLink.status = 'ready';
+    mockDeepLink.instrumentId = 'other-id';
+    mockDeepLink.target = mockInstrument;
+
+    render(<DashboardPage />);
+
+    fireEvent.click(screen.getByText('delete'));
+    await waitFor(() => expect(deleteInstrument).toHaveBeenCalledWith('1'));
+    expect(mockDeepLink.clearDeepLink).not.toHaveBeenCalled();
   });
 
   it('renders explicit dashboard error state instead of empty UI and retries bootstrap fetches', async () => {

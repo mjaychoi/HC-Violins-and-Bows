@@ -1,6 +1,12 @@
 'use client';
 
-import React, { useCallback, useMemo, useEffect, useState } from 'react';
+import React, {
+  useCallback,
+  useMemo,
+  useEffect,
+  useState,
+  Suspense,
+} from 'react';
 
 import { AppLayout } from '@/components/layout';
 import {
@@ -15,6 +21,7 @@ import { normalizeUnifiedResourceErrors } from '@/hooks/unifiedResourceErrors';
 
 import { useDashboardModal } from './hooks/useDashboardModal';
 import { useDashboardData } from './hooks/useDashboardData';
+import { useDashboardInstrumentDeepLink } from './hooks/useDashboardInstrumentDeepLink';
 import { ItemForm, DashboardContent } from './components';
 import InstrumentModal from './components/InstrumentModal';
 
@@ -27,7 +34,7 @@ type InstrumentFormData = Omit<Instrument, 'id' | 'created_at'>;
 
 type EnrichedInstrument = Instrument & { clients: ClientInstrument[] };
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const { showSuccess, handleError } = useAppFeedback();
   const { canCreateInstrument, createInstrumentDisabledReason } =
     usePermissions();
@@ -63,6 +70,19 @@ export default function DashboardPage() {
     handleDeleteItem,
     reloadDashboard,
   } = useDashboardData();
+
+  const {
+    status: deepLinkStatus,
+    instrumentId: deepLinkInstrumentId,
+    target: deepLinkTarget,
+    clearDeepLink,
+    retry: retryDeepLink,
+  } = useDashboardInstrumentDeepLink({
+    instruments,
+    truncated: allInstrumentResultsTruncated,
+    instrumentsLoading: loading.instruments,
+    hasFatalError,
+  });
 
   const safeErrors = useMemo(
     () => normalizeUnifiedResourceErrors(errors),
@@ -122,11 +142,27 @@ export default function DashboardPage() {
       byInstrument.set(instrumentId, arr);
     }
 
-    return instruments.map(item => ({
+    const enriched = instruments.map(item => ({
       ...item,
       clients: byInstrument.get(item.id) ?? [],
     }));
-  }, [instruments, clientRelationships]);
+
+    if (
+      deepLinkStatus !== 'ready' ||
+      !deepLinkTarget ||
+      enriched.some(item => item.id === deepLinkTarget.id)
+    ) {
+      return enriched;
+    }
+
+    return [
+      ...enriched,
+      {
+        ...deepLinkTarget,
+        clients: byInstrument.get(deepLinkTarget.id) ?? [],
+      },
+    ];
+  }, [instruments, clientRelationships, deepLinkStatus, deepLinkTarget]);
 
   // Dashboard has no tasks — notification badge is a no-op placeholder
   const notificationBadge = useMemo(
@@ -171,7 +207,12 @@ export default function DashboardPage() {
     handleCancelDelete,
     handleConfirmDelete: handleConfirmDeleteFromHook,
   } = useDashboardModal({
-    onDelete: handleDeleteItem,
+    onDelete: async itemId => {
+      await handleDeleteItem(itemId);
+      if (deepLinkInstrumentId === itemId) {
+        clearDeepLink();
+      }
+    },
     onDeleteError: error => handleError(error, 'Failed to delete item'),
     hasFatalError,
   });
@@ -372,6 +413,11 @@ export default function DashboardPage() {
               newlyCreatedItemId={newlyCreatedItemId}
               onNewlyCreatedItemShown={() => setNewlyCreatedItemId(null)}
               onInstrumentCertificatesChanged={() => void reloadDashboard()}
+              instrumentDeepLink={{
+                status: deepLinkStatus,
+                onShowAllItems: clearDeepLink,
+                onRetry: retryDeepLink,
+              }}
             />
           </>
         )}
@@ -408,5 +454,23 @@ export default function DashboardPage() {
         />
       </AppLayout>
     </ErrorBoundary>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppLayout title="Dashboard">
+          <div className="p-6">
+            <div className="flex justify-center items-center py-12">
+              <div className="text-gray-500">Loading dashboard...</div>
+            </div>
+          </div>
+        </AppLayout>
+      }
+    >
+      <DashboardPageContent />
+    </Suspense>
   );
 }

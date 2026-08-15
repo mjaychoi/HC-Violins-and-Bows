@@ -67,6 +67,25 @@ type InstrumentInsertInput = CreateInstrumentInput & {
 const SERIAL_CONFLICT_MAX_RETRIES = 3;
 const MAX_ALL_RESULTS = 1000;
 
+function toPublicInstrumentRow<T extends { certificate?: boolean | null }>(
+  item: T,
+  isAdmin: boolean
+) {
+  const transformed = {
+    ...item,
+    has_certificate: !!item.certificate,
+  };
+
+  if (isAdmin) {
+    return transformed;
+  }
+
+  const rest = { ...transformed } as Record<string, unknown>;
+  delete rest.cost_price;
+  delete rest.consignment_price;
+  return rest;
+}
+
 function normalizeNullableText(
   value: string | null | undefined
 ): string | null {
@@ -252,6 +271,59 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
 
         const searchParams = request.nextUrl.searchParams;
+        const requestedId = searchParams.get('id');
+
+        if (requestedId) {
+          if (!validateUUID(requestedId)) {
+            return {
+              payload: {
+                error: 'Invalid instrument ID format',
+                success: false,
+              },
+              status: 400,
+            };
+          }
+
+          const { data, error } = await auth.userSupabase
+            .from('instruments')
+            .select('*')
+            .eq('org_id', orgId)
+            .eq('id', requestedId)
+            .maybeSingle();
+
+          if (error) {
+            errorHandler.handleSupabaseError(error, 'Fetch instrument');
+            return {
+              payload: { error: 'Database error', success: false },
+              status: 500,
+            };
+          }
+
+          if (!data) {
+            return {
+              payload: { error: 'Instrument not found', success: false },
+              status: 404,
+            };
+          }
+
+          const isAdmin = auth.role === 'admin';
+          const row = toPublicInstrumentRow(data, isAdmin);
+
+          return {
+            payload: {
+              data: [row],
+              count: 1,
+              pagination: {
+                page: 1,
+                pageSize: 1,
+                totalCount: 1,
+                totalPages: 1,
+              },
+              scope: 'id',
+              truncated: false,
+            },
+          };
+        }
 
         const orderBy = validateSortColumn(
           'instruments',
@@ -328,26 +400,17 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           };
         }
 
-        // ✅ 🔥 핵심: has_certificate 추가
         const rawRows = data || [];
         const truncated = listAll && rawRows.length > MAX_ALL_RESULTS;
         const rows = truncated ? rawRows.slice(0, MAX_ALL_RESULTS) : rawRows;
-
-        const transformed = rows.map(item => ({
-          ...item,
-          has_certificate: !!item.certificate,
-        }));
 
         // Product policy: cost_price and consignment_price are internal financial
         // fields (purchase cost / consignor settlement). Members see the retail
         // price but not the margin data. Admins receive the full record.
         const isAdmin = auth.role === 'admin';
-        const responseRows = isAdmin
-          ? transformed
-          : transformed.map(
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              ({ cost_price: _cp, consignment_price: _cc, ...rest }) => rest
-            );
+        const responseRows = rows.map(item =>
+          toPublicInstrumentRow(item, isAdmin)
+        );
 
         const responsePageSize = listAll ? responseRows.length : responseLimit;
 
