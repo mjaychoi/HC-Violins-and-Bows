@@ -629,6 +629,74 @@ describe('useMaintenanceTasks', () => {
       });
     });
 
+    it('forwards expected_updated_at as a request precondition', async () => {
+      const updatedTask: MaintenanceTask = {
+        ...mockTask,
+        notes: 'Needs inspection',
+        updated_at: '2024-01-01T01:00:00Z',
+      };
+
+      (apiFetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: updatedTask }),
+      });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await result.current.updateTask('1', {
+          notes: 'Needs inspection',
+          expected_updated_at: mockTask.updated_at,
+        });
+      });
+
+      expect(apiFetch).toHaveBeenCalledWith('/api/maintenance-tasks', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: '1',
+          notes: 'Needs inspection',
+          expected_updated_at: mockTask.updated_at,
+        }),
+      });
+    });
+
+    it('does not toast or retry on MAINTENANCE_TASK_STALE_VERSION', async () => {
+      (apiFetch as jest.Mock).mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: jest.fn().mockResolvedValue({
+          message:
+            'This maintenance task was updated elsewhere. Review the latest version before saving again.',
+          error_code: 'MAINTENANCE_TASK_STALE_VERSION',
+          retryable: false,
+        }),
+      });
+
+      const { result } = renderHook(() =>
+        useMaintenanceTasks({ autoFetch: false })
+      );
+
+      await act(async () => {
+        await expect(
+          result.current.updateTask('1', {
+            notes: 'Needs inspection',
+            expected_updated_at: mockTask.updated_at,
+          })
+        ).rejects.toMatchObject({
+          status: 409,
+          error_code: 'MAINTENANCE_TASK_STALE_VERSION',
+        });
+      });
+
+      expect(apiFetch).toHaveBeenCalledTimes(1);
+      expect(mockHandleError).not.toHaveBeenCalled();
+      expect(result.current.tasks).toEqual([]);
+    });
+
     it('should handle update task error', async () => {
       (apiFetch as jest.Mock)
         .mockResolvedValueOnce({

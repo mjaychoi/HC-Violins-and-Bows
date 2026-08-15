@@ -260,6 +260,30 @@ describe('PATCH /api/clients optimistic concurrency', () => {
     expect(updateAttempts).toBe(0);
   });
 
+  it('rejected stale write keeps T1 tags instead of applying the T0 tag snapshot', async () => {
+    store = {
+      ...createInitialRow(),
+      tags: ['Musician', 'Dealer'],
+      updated_at: T1,
+    };
+
+    const response = await PATCH(
+      patchRequest({
+        id: CLIENT_ID,
+        note: 'A1',
+        tags: ['Musician'],
+        expected_updated_at: T0,
+      })
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(json.error_code).toBe(CLIENT_STALE_VERSION_CODE);
+    expect(store?.tags).toEqual(['Musician', 'Dealer']);
+    expect(store?.note).toBe('A0');
+    expect(store?.updated_at).toBe(T1);
+  });
+
   it('TEST-5/6/7/8: stale full-snapshot save returns 409 and changes zero fields', async () => {
     const editorA = {
       id: CLIENT_ID,

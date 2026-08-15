@@ -1,8 +1,11 @@
 import { render, screen, waitFor } from '@/test-utils/render';
+import { act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import InvoicesPage from '../page';
 import { Invoice } from '@/types';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ApiResponseError } from '@/utils/handleApiResponse';
+import { INVOICE_PAGE_SIZE } from '../invoiceListPagination';
 
 const originalCreateElement = document.createElement.bind(document);
 
@@ -181,11 +184,14 @@ jest.mock('@/components/common', () => {
       isOpen,
       onConfirm,
       onCancel,
+      submitting,
     }: any) {
       if (!isOpen) return null;
       return (
         <div data-testid="confirm-dialog">
-          <button onClick={onConfirm}>Confirm</button>
+          <button onClick={onConfirm} disabled={submitting}>
+            Confirm
+          </button>
           <button onClick={onCancel}>Cancel</button>
         </div>
       );
@@ -211,7 +217,12 @@ const mockInvoice: Invoice = {
 };
 
 describe('InvoicesPage', () => {
-  const mockFetchInvoices = jest.fn();
+  const mockFetchInvoices = jest.fn().mockResolvedValue({
+    invoices: [mockInvoice],
+    totalCount: 1,
+    totalPages: 1,
+    page: 1,
+  });
   const mockCreateInvoice = jest.fn().mockResolvedValue({
     invoice: mockInvoice,
     result: 'full_success',
@@ -251,6 +262,13 @@ describe('InvoicesPage', () => {
     }
 
     const { useInvoices } = require('../hooks/useInvoices');
+    mockFetchInvoices.mockResolvedValue({
+      invoices: [mockInvoice],
+      totalCount: 1,
+      totalPages: 1,
+      page: 1,
+    });
+    mockDeleteInvoice.mockResolvedValue(true);
     useInvoices.mockReturnValue({
       invoices: [mockInvoice],
       page: 1,
@@ -294,6 +312,43 @@ describe('InvoicesPage', () => {
       handleError: mockHandleError,
     });
   });
+
+  function mockInvoiceHook(overrides: Record<string, unknown> = {}): void {
+    const { useInvoices } = require('../hooks/useInvoices');
+    useInvoices.mockReturnValue({
+      invoices: [mockInvoice],
+      page: 1,
+      totalCount: 1,
+      totalPages: 1,
+      loading: false,
+      listDiagnostics: {
+        partial: false,
+        droppedCount: 0,
+        returnedCount: 1,
+        warning: undefined,
+      },
+      fetchInvoices: mockFetchInvoices,
+      createInvoice: mockCreateInvoice,
+      updateInvoice: mockUpdateInvoice,
+      deleteInvoice: mockDeleteInvoice,
+      setPage: mockSetPage,
+      scopeInfo: null,
+      ...overrides,
+    });
+  }
+
+  function refreshCalls() {
+    return mockFetchInvoices.mock.calls.filter(
+      ([options]) => options?.throwOnError === true
+    );
+  }
+
+  async function confirmDeleteOfFirstInvoice(
+    user: ReturnType<typeof userEvent.setup>
+  ) {
+    await user.click(screen.getByText('Delete INV0000001'));
+    await user.click(screen.getByText('Confirm'));
+  }
 
   it('renders invoices page', () => {
     render(<InvoicesPage />);
@@ -636,6 +691,711 @@ describe('InvoicesPage', () => {
     expect(screen.queryByTestId('confirm-dialog')).not.toBeInTheDocument();
   });
 
+  it('P23-1 clamps page 3 to page 2 after deleting the only last-page invoice', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 21 });
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 20,
+        totalPages: 2,
+        page: 3,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 20,
+        totalPages: 2,
+        page: 2,
+      });
+
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 20,
+        totalPages: 2,
+        page: 3,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 20,
+        totalPages: 2,
+        page: 2,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockDeleteInvoice).toHaveBeenCalledWith('inv-1');
+      expect(mockSetPage).toHaveBeenCalledWith(2);
+      expect(mockShowSuccess).toHaveBeenCalledWith(
+        'Invoice deleted successfully.'
+      );
+    });
+    expect(screen.queryByTestId('confirm-dialog')).not.toBeInTheDocument();
+    expect(refreshCalls().map(([options]) => options.page)).toEqual([3, 2]);
+    expect(
+      refreshCalls().every(
+        ([options]) => options.pageSize === INVOICE_PAGE_SIZE
+      )
+    ).toBe(true);
+    expect(mockSetPage).not.toHaveBeenCalledWith(1);
+  });
+
+  it('P23-2 clamps page 2 to page 1 after deleting the only second-page invoice', async () => {
+    mockInvoiceHook({ page: 2, totalPages: 2, totalCount: 11 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 10,
+        totalPages: 1,
+        page: 2,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 10,
+        totalPages: 1,
+        page: 1,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockSetPage).toHaveBeenCalledWith(1);
+      expect(refreshCalls().map(([options]) => options.page)).toEqual([2, 1]);
+    });
+  });
+
+  it('P23-3 stays on page 3 when a non-last last-page row is deleted', async () => {
+    mockInvoiceHook({
+      page: 3,
+      totalPages: 3,
+      totalCount: 25,
+    });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockFetchInvoices.mockResolvedValueOnce({
+      invoices: [mockInvoice],
+      totalCount: 24,
+      totalPages: 3,
+      page: 3,
+    });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockShowSuccess).toHaveBeenCalledWith(
+        'Invoice deleted successfully.'
+      );
+    });
+    expect(refreshCalls().map(([options]) => options.page)).toEqual([3]);
+    expect(mockSetPage).not.toHaveBeenCalled();
+  });
+
+  it('P23-4 keeps page 1 empty state after deleting the only matching invoice', async () => {
+    mockInvoiceHook({ page: 1, totalPages: 1, totalCount: 1 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockFetchInvoices.mockResolvedValueOnce({
+      invoices: [],
+      totalCount: 0,
+      totalPages: 1,
+      page: 1,
+    });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockShowSuccess).toHaveBeenCalledWith(
+        'Invoice deleted successfully.'
+      );
+    });
+    expect(refreshCalls()).toHaveLength(1);
+    expect(refreshCalls()[0][0].page).toBe(1);
+    expect(mockSetPage).not.toHaveBeenCalled();
+  });
+
+  it('P23-5 preserves an active status filter while clamping to page 1', async () => {
+    const { useURLState } = require('@/hooks/useURLState');
+    useURLState.mockReturnValue({
+      urlState: { status: 'draft', page: '2' },
+      updateURLState: mockUpdateURLState,
+    });
+    mockInvoiceHook({ page: 2, totalPages: 2, totalCount: 11 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 10,
+        totalPages: 1,
+        page: 2,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 10,
+        totalPages: 1,
+        page: 1,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(refreshCalls().length).toBeGreaterThan(0);
+    });
+    expect(
+      refreshCalls().every(([options]) => options.status === 'draft')
+    ).toBe(true);
+    expect(screen.getByTestId('status-select')).toHaveValue('draft');
+  });
+
+  it('P23-6 preserves search while clamping after delete', async () => {
+    const { useURLState } = require('@/hooks/useURLState');
+    useURLState.mockReturnValue({
+      urlState: { search: 'Strad', page: '2' },
+      updateURLState: mockUpdateURLState,
+    });
+    mockInvoiceHook({ page: 2, totalPages: 2, totalCount: 11 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('search-input')).toHaveValue('Strad');
+    });
+    await act(async () => {
+      await new Promise(resolve => {
+        setTimeout(resolve, 350);
+      });
+    });
+    mockFetchInvoices.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 10,
+        totalPages: 1,
+        page: 2,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 10,
+        totalPages: 1,
+        page: 1,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(refreshCalls().length).toBeGreaterThan(0);
+    });
+    expect(
+      refreshCalls().every(([options]) => options.search === 'Strad')
+    ).toBe(true);
+    expect(screen.getByTestId('search-input')).toHaveValue('Strad');
+  });
+
+  it('P23-7 preserves date filters while clamping after delete', async () => {
+    const { useURLState } = require('@/hooks/useURLState');
+    useURLState.mockReturnValue({
+      urlState: {
+        fromDate: '2024-01-01',
+        toDate: '2024-01-31',
+        page: '2',
+      },
+      updateURLState: mockUpdateURLState,
+    });
+    mockInvoiceHook({ page: 2, totalPages: 2, totalCount: 11 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 10,
+        totalPages: 1,
+        page: 2,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 10,
+        totalPages: 1,
+        page: 1,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(refreshCalls().length).toBeGreaterThan(0);
+    });
+    expect(
+      refreshCalls().every(
+        ([options]) =>
+          options.fromDate === '2024-01-01' && options.toDate === '2024-01-31'
+      )
+    ).toBe(true);
+  });
+
+  it('P23-8 preserves non-default sort while clamping after delete', async () => {
+    const { useInvoiceSort } = require('../hooks/useInvoiceSort');
+    useInvoiceSort.mockReturnValue({
+      sortColumn: 'total',
+      sortDirection: 'asc',
+      handleSort: mockHandleSort,
+      getSortState: mockGetSortState,
+      setSortColumn: mockSetSortColumn,
+      setSortDirection: mockSetSortDirection,
+    });
+    mockInvoiceHook({ page: 2, totalPages: 2, totalCount: 11 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 10,
+        totalPages: 1,
+        page: 2,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 10,
+        totalPages: 1,
+        page: 1,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(refreshCalls().length).toBeGreaterThan(0);
+    });
+    expect(
+      refreshCalls().every(
+        ([options]) =>
+          options.sortColumn === 'total' && options.sortDirection === 'asc'
+      )
+    ).toBe(true);
+  });
+
+  it('P23-9 writes URL page=2 after clamping from page 3', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 21 });
+    const user = userEvent.setup();
+    const { rerender } = render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockUpdateURLState.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 20,
+        totalPages: 2,
+        page: 3,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 20,
+        totalPages: 2,
+        page: 2,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockSetPage).toHaveBeenCalledWith(2);
+    });
+
+    mockInvoiceHook({ page: 2, totalPages: 2, totalCount: 20 });
+    rerender(<InvoicesPage />);
+
+    await waitFor(() => {
+      expect(mockUpdateURLState).toHaveBeenCalledWith(
+        expect.objectContaining({ page: '2' })
+      );
+    });
+  });
+
+  it('P23-10 removes the URL page param after clamping to page 1', async () => {
+    mockInvoiceHook({ page: 2, totalPages: 2, totalCount: 11 });
+    const user = userEvent.setup();
+    const { rerender } = render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockUpdateURLState.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 10,
+        totalPages: 1,
+        page: 2,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 10,
+        totalPages: 1,
+        page: 1,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockSetPage).toHaveBeenCalledWith(1);
+    });
+
+    mockInvoiceHook({ page: 1, totalPages: 1, totalCount: 10 });
+    rerender(<InvoicesPage />);
+
+    await waitFor(() => {
+      expect(mockUpdateURLState).toHaveBeenCalledWith(
+        expect.objectContaining({ page: null })
+      );
+    });
+  });
+
+  it('P23-11 leaves the URL page unchanged when the current page stays valid', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 25 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockUpdateURLState.mockClear();
+    mockFetchInvoices.mockResolvedValueOnce({
+      invoices: [mockInvoice],
+      totalCount: 24,
+      totalPages: 3,
+      page: 3,
+    });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockShowSuccess).toHaveBeenCalled();
+    });
+    expect(mockSetPage).not.toHaveBeenCalled();
+    const pageParams = mockUpdateURLState.mock.calls.map(
+      ([state]) => state.page
+    );
+    expect(pageParams.every(value => value === '3' || value == null)).toBe(
+      true
+    );
+    expect(pageParams).not.toContain('2');
+  });
+
+  it('P23-12 does not bounce back to the deleted page after a clamp', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 21 });
+    const { useURLState } = require('@/hooks/useURLState');
+    useURLState.mockReturnValue({
+      urlState: { page: '3' },
+      updateURLState: mockUpdateURLState,
+    });
+    const user = userEvent.setup();
+    const { rerender } = render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 20,
+        totalPages: 2,
+        page: 3,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 20,
+        totalPages: 2,
+        page: 2,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockSetPage).toHaveBeenCalledWith(2);
+    });
+    expect(mockSetPage).not.toHaveBeenCalledWith(3);
+
+    mockInvoiceHook({ page: 2, totalPages: 2, totalCount: 20 });
+    useURLState.mockReturnValue({
+      urlState: { page: '2' },
+      updateURLState: mockUpdateURLState,
+    });
+    rerender(<InvoicesPage />);
+
+    await waitFor(() => {
+      expect(mockSetPage).toHaveBeenCalledWith(2);
+    });
+    expect(mockSetPage.mock.calls.some(([nextPage]) => nextPage === 3)).toBe(
+      false
+    );
+  });
+
+  it('P23-13 does not clamp or refresh when DELETE fails', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 21 });
+    mockDeleteInvoice.mockRejectedValueOnce(new Error('Delete failed'));
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockHandleError).toHaveBeenCalledWith(
+        expect.any(Error),
+        'Delete invoice'
+      );
+    });
+    expect(refreshCalls()).toHaveLength(0);
+    expect(mockSetPage).not.toHaveBeenCalled();
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+    expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
+  });
+
+  it('P23-14 warns when DELETE succeeds but list refresh fails', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 21 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockFetchInvoices.mockRejectedValueOnce(new Error('refresh failed'));
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockShowWarning).toHaveBeenCalledWith(
+        'Invoice was deleted, but the invoice list failed to refresh.'
+      );
+    });
+    expect(mockShowSuccess).not.toHaveBeenCalledWith(
+      'Invoice deleted successfully.'
+    );
+    expect(mockHandleError).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'Delete invoice'
+    );
+    expect(screen.queryByTestId('confirm-dialog')).not.toBeInTheDocument();
+  });
+
+  it('P23-15 warns without looping when the corrective-page refresh fails', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 21 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 20,
+        totalPages: 2,
+        page: 3,
+      })
+      .mockRejectedValueOnce(new Error('corrective refresh failed'));
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockShowWarning).toHaveBeenCalledWith(
+        'Invoice was deleted, but the invoice list failed to refresh.'
+      );
+    });
+    expect(refreshCalls()).toHaveLength(2);
+    expect(mockSetPage).not.toHaveBeenCalled();
+    expect(mockShowSuccess).not.toHaveBeenCalled();
+  });
+
+  it('P23-16 converges to the authoritative page when the server count dropped further', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 21 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 10,
+        totalPages: 1,
+        page: 3,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 10,
+        totalPages: 1,
+        page: 1,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockSetPage).toHaveBeenCalledWith(1);
+    });
+    expect(refreshCalls().map(([options]) => options.page)).toEqual([3, 1]);
+    expect(mockShowSuccess).toHaveBeenCalledWith(
+      'Invoice deleted successfully.'
+    );
+  });
+
+  it('P23-17 keeps the corrected page after a later invalid-page result is aborted', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 21 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 20,
+        totalPages: 2,
+        page: 3,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 20,
+        totalPages: 2,
+        page: 2,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+
+    await waitFor(() => {
+      expect(mockSetPage).toHaveBeenCalledWith(2);
+    });
+    const pages = refreshCalls().map(([options]) => options.page);
+    expect(pages[pages.length - 1]).toBe(2);
+    expect(mockShowSuccess).toHaveBeenCalled();
+  });
+
+  it('P23-18 ignores a second confirm while delete is already submitting', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 21 });
+    let resolveDelete: ((value: boolean) => void) | undefined;
+    mockDeleteInvoice.mockImplementation(
+      () =>
+        new Promise<boolean>(resolve => {
+          resolveDelete = resolve;
+        })
+    );
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+
+    await user.click(screen.getByText('Delete INV0000001'));
+    await user.click(screen.getByText('Confirm'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Confirm')).toBeDisabled();
+    });
+    await user.click(screen.getByText('Confirm'));
+    expect(mockDeleteInvoice).toHaveBeenCalledTimes(1);
+
+    mockFetchInvoices.mockClear();
+    mockFetchInvoices.mockResolvedValue({
+      invoices: [mockInvoice],
+      totalCount: 20,
+      totalPages: 2,
+      page: 3,
+    });
+    resolveDelete?.(true);
+
+    await waitFor(() => {
+      expect(mockShowSuccess).toHaveBeenCalled();
+    });
+  });
+
+  it('does not change create refresh behavior when fetch metadata is returned', async () => {
+    const { apiFetch } = require('@/utils/apiFetch');
+    apiFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          business_name: 'HC Violins',
+          default_currency: 'USD',
+        },
+      }),
+    });
+    mockInvoiceHook({ page: 2, totalPages: 2, totalCount: 11 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+
+    await user.click(screen.getByText('Add Invoice'));
+    await user.click(screen.getByText('Submit Invoice'));
+
+    await waitFor(() => {
+      expect(mockCreateInvoice).toHaveBeenCalled();
+      expect(mockShowSuccess).toHaveBeenCalledWith(
+        'Invoice created successfully.'
+      );
+    });
+    expect(refreshCalls().map(([options]) => options.page)).toEqual([2]);
+    expect(mockSetPage).not.toHaveBeenCalled();
+  });
+
+  it('does not change update refresh behavior when fetch metadata is returned', async () => {
+    mockInvoiceHook({ page: 2, totalPages: 2, totalCount: 11 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+
+    await user.click(screen.getByText('Edit INV0000001'));
+    await user.click(screen.getByText('Submit Invoice'));
+
+    await waitFor(() => {
+      expect(mockUpdateInvoice).toHaveBeenCalled();
+      expect(mockShowSuccess).toHaveBeenCalledWith(
+        'Invoice updated successfully.'
+      );
+    });
+    expect(refreshCalls().map(([options]) => options.page)).toEqual([2]);
+    expect(mockSetPage).not.toHaveBeenCalled();
+  });
+
+  it('successive last-page deletes stay until the final row, then clamp once', async () => {
+    mockInvoiceHook({ page: 3, totalPages: 3, totalCount: 22 });
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+    mockFetchInvoices.mockClear();
+    mockSetPage.mockClear();
+    mockFetchInvoices.mockResolvedValueOnce({
+      invoices: [mockInvoice],
+      totalCount: 21,
+      totalPages: 3,
+      page: 3,
+    });
+
+    await confirmDeleteOfFirstInvoice(user);
+    await waitFor(() => {
+      expect(mockShowSuccess).toHaveBeenCalledTimes(1);
+    });
+    expect(mockSetPage).not.toHaveBeenCalled();
+
+    mockFetchInvoices.mockClear();
+    mockShowSuccess.mockClear();
+    mockFetchInvoices
+      .mockResolvedValueOnce({
+        invoices: [],
+        totalCount: 20,
+        totalPages: 2,
+        page: 3,
+      })
+      .mockResolvedValueOnce({
+        invoices: [mockInvoice],
+        totalCount: 20,
+        totalPages: 2,
+        page: 2,
+      });
+
+    await confirmDeleteOfFirstInvoice(user);
+    await waitFor(() => {
+      expect(mockSetPage).toHaveBeenCalledWith(2);
+    });
+    expect(mockSetPage).toHaveBeenCalledTimes(1);
+  });
+
   it.skip('handles download invoice', async () => {
     const user = userEvent.setup();
     // Mock window methods
@@ -778,6 +1538,44 @@ describe('InvoicesPage', () => {
     expect(mockShowSuccess).not.toHaveBeenCalledWith(
       'Invoice updated, but some item images were not linked.'
     );
+  });
+
+  it('V5-003: a 409 concurrency conflict keeps the modal open, preserves the draft, and does not auto-retry', async () => {
+    mockUpdateInvoice.mockRejectedValueOnce(
+      new ApiResponseError(
+        'This invoice was updated elsewhere. Refresh and try again.',
+        {
+          status: 409,
+          error_code: 'INVOICE_CONCURRENCY_CONFLICT',
+        }
+      )
+    );
+
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+
+    await user.click(screen.getByText('Edit INV0000001'));
+    expect(await screen.findByTestId('invoice-modal')).toBeInTheDocument();
+
+    mockFetchInvoices.mockClear();
+    await user.click(screen.getByText('Submit Invoice'));
+
+    await waitFor(() => {
+      expect(mockShowWarning).toHaveBeenCalledWith(
+        expect.stringContaining('updated elsewhere')
+      );
+    });
+
+    // The modal must stay open with the user's draft still in it -- no
+    // auto-close, and no automatic resubmission of the stale form.
+    expect(screen.getByTestId('invoice-modal')).toBeInTheDocument();
+    expect(mockUpdateInvoice).toHaveBeenCalledTimes(1);
+
+    // Background refresh so a reopened edit sees the latest row, without
+    // disturbing the currently-open draft.
+    await waitFor(() => {
+      expect(mockFetchInvoices).toHaveBeenCalled();
+    });
   });
 
   it.skip('handles invoice update', async () => {

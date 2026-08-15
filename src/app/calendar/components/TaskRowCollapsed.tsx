@@ -66,7 +66,10 @@ function TaskRowCollapsed({
       if (!canManageTask || !onTaskUpdate || !data.priority) {
         return;
       }
-      await onTaskUpdate(id, { priority: data.priority as TaskPriority });
+      await onTaskUpdate(id, {
+        priority: data.priority as TaskPriority,
+        expected_updated_at: task.updated_at,
+      });
     },
     highlightDuration: 2000,
   });
@@ -76,7 +79,10 @@ function TaskRowCollapsed({
       if (!canManageTask || !onTaskUpdate || !data.status) {
         return;
       }
-      await onTaskUpdate(id, { status: data.status as TaskStatus });
+      await onTaskUpdate(id, {
+        status: data.status as TaskStatus,
+        expected_updated_at: task.updated_at,
+      });
     },
     highlightDuration: 2000,
   });

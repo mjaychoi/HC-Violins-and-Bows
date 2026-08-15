@@ -20,7 +20,7 @@ function formDataFromClient(client: Client): ClientViewFormData {
     first_name: client.first_name || '',
     contact_number: client.contact_number || '',
     email: client.email || '',
-    tags: client.tags || [],
+    tags: [...(client.tags ?? [])],
     interest: client.interest || '',
     note: client.note || '',
   };

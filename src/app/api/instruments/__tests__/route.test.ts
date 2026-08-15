@@ -113,6 +113,13 @@ describe('/api/instruments', () => {
     mockWriteAuditLog = jest.fn().mockResolvedValue(undefined);
     mockUserSupabase = {
       from: jest.fn(),
+      // get_instruments_financials() — see
+      // supabase/migrations/20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+      // Tests that care about admin financials configure this explicitly
+      // (see the F7 block below); everyone else gets an empty result,
+      // which the route treats as "no financial data for this row" and
+      // omits cost_price/consignment_price entirely.
+      rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
     };
     mockAuthContext = {
       user: { id: 'test-user' },
@@ -182,6 +189,7 @@ describe('/api/instruments', () => {
         from: jest.fn((table: string) =>
           table === 'instrument_certificates' ? mockCertQuery : mockQuery
         ),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
       } as any;
       mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
 
@@ -218,6 +226,7 @@ describe('/api/instruments', () => {
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
       } as any;
       mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
 
@@ -238,6 +247,130 @@ describe('/api/instruments', () => {
         totalPages: 1,
       });
       expect(json.scope).toBe('all');
+    });
+
+    it('returns a single org-scoped row for GET ?id=', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: mockInstrument,
+          error: null,
+        }),
+      };
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
+      } as any;
+      mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${mockInstrument.id}`
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data).toEqual([
+        { ...mockInstrument, has_certificate: false },
+      ]);
+      expect(json.scope).toBe('id');
+      expect(json.truncated).toBe(false);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockInstrument.id);
+      expect(mockQuery.maybeSingle).toHaveBeenCalled();
+    });
+
+    it('does not query the database for an invalid GET ?id=', async () => {
+      const request = new NextRequest(
+        'http://localhost/api/instruments?id=garbage'
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error).toBe('Invalid instrument ID format');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('returns the same not-found payload for a missing or cross-org id', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: null,
+          error: null,
+        }),
+      };
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) } as any;
+      mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${mockInstrument.id}`
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.error).toBe('Instrument not found');
+      expect(json.data).toBeUndefined();
+      expect(json).not.toHaveProperty('maker');
+      expect(json).not.toHaveProperty('serial_number');
+      expect(json).not.toHaveProperty('cost_price');
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    });
+
+    it('prefers exact id lookup over all=true list truncation', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: mockInstrument,
+          error: null,
+        }),
+        limit: jest.fn(),
+        order: jest.fn(),
+      };
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
+      } as any;
+      mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${mockInstrument.id}&all=true`
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.scope).toBe('id');
+      expect(json.data).toHaveLength(1);
+      expect(mockQuery.limit).not.toHaveBeenCalled();
+      expect(mockQuery.order).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 when exact-id lookup fails', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: null,
+          error: { message: 'db down' },
+        }),
+      };
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) } as any;
+      mockAuthContext = { ...mockAuthContext, userSupabase: mockUserSupabase };
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${mockInstrument.id}`
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(json.error).toBe('Database error');
+      expect(json.data).toBeUndefined();
     });
 
     it('should prevent cross-org reads by filtering with the caller org_id', async () => {
@@ -305,6 +438,7 @@ describe('/api/instruments', () => {
           .mockImplementation((table: string) =>
             table === 'instrument_certificates' ? mockCertQuery : mockQuery
           ),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments');
@@ -583,7 +717,14 @@ describe('/api/instruments', () => {
 
     // ── F7: financial field access control ──────────────────────────────────
 
-    function makeInstrumentQueryMock(instrument: object) {
+    function makeInstrumentQueryMock(
+      instrument: { id: string; [key: string]: unknown },
+      financials?: {
+        id: string;
+        cost_price: number | null;
+        consignment_price: number | null;
+      }[]
+    ) {
       const q = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -595,18 +736,35 @@ describe('/api/instruments', () => {
         error: null,
         count: 1,
       });
-      mockUserSupabase = { from: jest.fn().mockReturnValue(q) } as any;
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(q),
+        // get_instruments_financials() — real DB call for admins, see
+        // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+        rpc: jest
+          .fn()
+          .mockResolvedValue({ data: financials ?? [], error: null }),
+      } as any;
     }
 
     const richInstrument = {
       ...mockInstrument,
+      // The base row itself carries these values in this test on purpose —
+      // it proves the app-layer strip (defense in depth) still holds even
+      // if the DB privilege boundary were ever misconfigured and a base
+      // query somehow returned them anyway.
       cost_price: 1500,
       consignment_price: 800,
       price: 3000,
     };
 
     it('admin receives cost_price and consignment_price', async () => {
-      makeInstrumentQueryMock(richInstrument);
+      makeInstrumentQueryMock(richInstrument, [
+        {
+          id: richInstrument.id,
+          cost_price: 1500,
+          consignment_price: 800,
+        },
+      ]);
       mockAuthContext = { ...mockAuthContext, role: 'admin' };
 
       const response = await GET(
@@ -660,6 +818,37 @@ describe('/api/instruments', () => {
       const keys = Object.keys(json.data[0]);
       expect(keys).not.toContain('cost_price');
       expect(keys).not.toContain('consignment_price');
+    });
+
+    it('D15: member exact-id lookup redacts cost_price and consignment_price', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: richInstrument,
+          error: null,
+        }),
+      };
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) } as any;
+      mockAuthContext = {
+        ...mockAuthContext,
+        role: 'member',
+        userSupabase: mockUserSupabase,
+      };
+
+      const response = await GET(
+        new NextRequest(
+          `http://localhost/api/instruments?id=${mockInstrument.id}`
+        )
+      );
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.data[0].price).toBe(3000);
+      expect(json.data[0].cost_price).toBeUndefined();
+      expect(json.data[0].consignment_price).toBeUndefined();
+      expect(Object.keys(json.data[0])).not.toContain('cost_price');
+      expect(Object.keys(json.data[0])).not.toContain('consignment_price');
     });
   });
 
@@ -1344,6 +1533,7 @@ describe('/api/instruments', () => {
 
       mockUserSupabase = {
         from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {

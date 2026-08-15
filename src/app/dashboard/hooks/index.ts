@@ -5,3 +5,4 @@ export { useDashboardForm } from './useDashboardForm';
 export { useDashboardClients } from './useDashboardClients';
 export { useDashboardData } from './useDashboardData';
 export { useDashboardModal } from './useDashboardModal';
+export { useDashboardInstrumentDeepLink } from './useDashboardInstrumentDeepLink';

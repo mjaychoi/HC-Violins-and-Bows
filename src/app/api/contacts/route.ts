@@ -24,6 +24,17 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 const MAX_CLIENT_IDS = 50;
 
+// cost_price/consignment_price excluded: this route is member-reachable
+// (getHandler has no admin gate) and the DB no longer grants
+// `authenticated` direct SELECT on those columns — see
+// supabase/migrations/20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+const INSTRUMENT_CONTACT_LOG_COLUMNS = `
+  id, org_id, type, maker, subtype, year, certificate,
+  size, weight, price, ownership, note, serial_number, status,
+  reserved_reason, reserved_by_user_id, reserved_connection_id,
+  created_at, updated_at
+`;
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -321,7 +332,7 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         const { data: instrumentsData, error: instrumentsError } =
           await auth.userSupabase
             .from('instruments')
-            .select('*')
+            .select(INSTRUMENT_CONTACT_LOG_COLUMNS)
             .eq('org_id', auth.orgId!)
             .in('id', Array.from(instrumentIds));
 

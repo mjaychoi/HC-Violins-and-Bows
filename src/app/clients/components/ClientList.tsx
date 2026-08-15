@@ -507,6 +507,7 @@ const ClientList = memo(function ClientList({
       last_name: client.last_name,
       email: client.email,
       contact_number: client.contact_number,
+      tags: [...(client.tags ?? [])],
       interest: client.interest,
       note: client.note,
       updated_at: client.updated_at,

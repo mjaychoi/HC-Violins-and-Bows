@@ -181,6 +181,98 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
     expect(mockHandleError).toHaveBeenCalled();
   });
 
+  it('TEST-11: validation failure does not start a create; the next valid submit is the first POST', async () => {
+    const mockOnSubmit = jest
+      .fn()
+      .mockResolvedValue({ status: 'full_success' });
+    const mockUseFormState = jest.mocked(
+      require('@/hooks/useFormState')
+    ).useFormState;
+
+    mockUseFormState.mockReturnValue({
+      formData: {
+        last_name: '',
+        first_name: '',
+        contact_number: '',
+        email: '',
+        tags: [],
+        interest: '',
+        note: '',
+        client_number: '',
+      },
+      updateField: jest.fn(),
+      resetForm: jest.fn(),
+    });
+
+    const { unmount } = render(
+      <ClientForm {...baseProps} onSubmit={mockOnSubmit} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /add client/i }));
+    expect(mockOnSubmit).not.toHaveBeenCalled();
+    unmount();
+
+    mockUseFormState.mockReturnValue({
+      formData: {
+        last_name: 'Lovelace',
+        first_name: 'Ada',
+        contact_number: '',
+        email: 'ada@example.com',
+        tags: [],
+        interest: '',
+        note: '',
+        client_number: '',
+      },
+      updateField: jest.fn(),
+      resetForm: jest.fn(),
+    });
+    render(<ClientForm {...baseProps} onSubmit={mockOnSubmit} />);
+    fireEvent.click(screen.getByRole('button', { name: /add client/i }));
+
+    await waitFor(() => {
+      expect(mockOnSubmit).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('TEST-5/37: rapid double submit invokes onSubmit once', async () => {
+    let resolveSubmit!: (value: { status: 'full_success' }) => void;
+    const mockOnSubmit = jest.fn(
+      () =>
+        new Promise<{ status: 'full_success' }>(resolve => {
+          resolveSubmit = resolve;
+        })
+    );
+    const mockUseFormState = jest.mocked(
+      require('@/hooks/useFormState')
+    ).useFormState;
+    mockUseFormState.mockReturnValue({
+      formData: {
+        last_name: 'Lovelace',
+        first_name: 'Ada',
+        contact_number: '',
+        email: 'ada@example.com',
+        tags: [],
+        interest: '',
+        note: '',
+        client_number: '',
+      },
+      updateField: jest.fn(),
+      resetForm: jest.fn(),
+    });
+
+    render(<ClientForm {...baseProps} onSubmit={mockOnSubmit} />);
+    const submitButton = screen.getByRole('button', { name: /add client/i });
+    fireEvent.click(submitButton);
+    fireEvent.click(submitButton);
+
+    expect(mockOnSubmit).toHaveBeenCalledTimes(1);
+    resolveSubmit({ status: 'full_success' });
+    await waitFor(() => {
+      expect(
+        screen.getByText('Client created successfully')
+      ).toBeInTheDocument();
+    });
+  });
+
   it('onSubmit에 instruments가 전달되지 않음 (선택된 instruments가 없을 때)', async () => {
     const mockOnSubmit = jest.fn();
     const mockUseFormState = jest.mocked(

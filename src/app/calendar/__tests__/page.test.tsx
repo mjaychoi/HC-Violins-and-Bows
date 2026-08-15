@@ -242,6 +242,7 @@ jest.mock('@/hooks/useMaintenanceTasks', () => ({
     fetchTasksByDateRange: mockFetchTasksByDateRange,
     fetchTasksByScheduledDate: mockFetchTasksByScheduledDate,
     refreshNotificationTasks: jest.fn().mockResolvedValue(mockTasks),
+    fetchTaskById: jest.fn(),
   })),
 }));
 
@@ -1332,6 +1333,7 @@ describe('CalendarPage', () => {
         deleteTask: mockDeleteTask,
         fetchTasksByDateRange: mockFetchTasksByDateRange,
         fetchTasksByScheduledDate: mockFetchTasksByScheduledDate,
+        fetchTaskById: jest.fn(),
       });
       mockFetchTasksByDateRange.mockResolvedValueOnce([]);
 

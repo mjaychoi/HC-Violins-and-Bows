@@ -20,6 +20,9 @@ export const INVOICE_DB_ERROR_CODES = [
   'INVOICE_NON_FINITE_AMOUNT',
   'INVALID_INITIAL_INVOICE_STATUS',
   'INVOICE_IMMUTABLE',
+  'INVOICE_CONCURRENCY_CONFLICT',
+  'IDEMPOTENCY_IN_PROGRESS',
+  'IDEMPOTENCY_KEY_REUSED',
 ] as const;
 
 export type InvoiceDbErrorCode = (typeof INVOICE_DB_ERROR_CODES)[number];
@@ -60,6 +63,19 @@ const ERROR_CONTRACT: Record<
     status: 409,
     error:
       'This invoice has been issued and cannot be permanently deleted. Cancel it using the invoice status workflow instead.',
+  },
+  INVOICE_CONCURRENCY_CONFLICT: {
+    status: 409,
+    error: 'This invoice was updated elsewhere. Refresh and try again.',
+  },
+  IDEMPOTENCY_IN_PROGRESS: {
+    status: 409,
+    error:
+      'This invoice update is already in progress. Please wait and try again.',
+  },
+  IDEMPOTENCY_KEY_REUSED: {
+    status: 409,
+    error: 'This request reused an idempotency key with a different payload.',
   },
 };
 

@@ -1,10 +1,18 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { useInvoices } from '../useInvoices';
-import { apiFetch } from '@/utils/apiFetch';
+import { apiFetch, ApiFetchNetworkError } from '@/utils/apiFetch';
 import { useErrorHandler } from '@/contexts/ToastContext';
 import { ApiResponseError } from '@/utils/handleApiResponse';
 
-jest.mock('@/utils/apiFetch');
+jest.mock('@/utils/apiFetch', () => {
+  // Automocking would also replace the ApiFetchNetworkError/etc. classes
+  // with empty stand-ins that don't extend the real Error (no .message, and
+  // Jest's `.rejects.toThrow()` can't recognize them as thrown errors even
+  // though the promise genuinely rejects). Keep the real error classes;
+  // mock only the `apiFetch` function itself.
+  const actual = jest.requireActual('@/utils/apiFetch');
+  return { ...actual, apiFetch: jest.fn() };
+});
 jest.mock('@/contexts/ToastContext', () => ({
   useErrorHandler: jest.fn(),
 }));
@@ -407,7 +415,9 @@ describe('useInvoices', () => {
 
     const { result } = renderHook(() => useInvoices());
 
-    const updated = await result.current.updateInvoice('inv-1', updateData);
+    const updated = await result.current.updateInvoice('inv-1', updateData, {
+      expectedUpdatedAt: '2026-04-03T00:00:00.000Z',
+    });
 
     expect(updated.invoice.status).toBe('paid');
     expect(updated.result).toBe('full_success');
@@ -416,8 +426,12 @@ describe('useInvoices', () => {
       '/api/invoices/inv-1',
       expect.objectContaining({
         method: 'PUT',
-        body: JSON.stringify(updateData),
-      })
+        body: JSON.stringify({
+          ...updateData,
+          updated_at: '2026-04-03T00:00:00.000Z',
+        }),
+      }),
+      expect.objectContaining({ idempotencyKey: expect.any(String) })
     );
   });
 
@@ -479,9 +493,11 @@ describe('useInvoices', () => {
     });
 
     const { result } = renderHook(() => useInvoices());
-    const updated = await result.current.updateInvoice('inv-1', {
-      status: 'paid',
-    });
+    const updated = await result.current.updateInvoice(
+      'inv-1',
+      { status: 'paid' },
+      { expectedUpdatedAt: '2026-04-03T00:00:00.000Z' }
+    );
 
     expect(updated.result).toBe('partial_success');
     expect(updated.message).toBe(
@@ -500,10 +516,128 @@ describe('useInvoices', () => {
     const { result } = renderHook(() => useInvoices());
 
     await expect(
-      result.current.updateInvoice('inv-1', { status: 'paid' })
+      result.current.updateInvoice(
+        'inv-1',
+        { status: 'paid' },
+        { expectedUpdatedAt: '2026-04-03T00:00:00.000Z' }
+      )
     ).rejects.toThrow();
 
     expect(mockHandleError).toHaveBeenCalled();
+  });
+
+  // ── V5-002 + V5-003: Idempotency-Key lifecycle ─────────────────────────
+
+  it('reuses the same Idempotency-Key when a network-level failure is retried', async () => {
+    (apiFetch as jest.Mock).mockRejectedValueOnce(
+      new ApiFetchNetworkError('network down')
+    );
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: { ...mockInvoices[0], status: 'paid' },
+        result: 'full_success',
+        message: 'Invoice updated successfully.',
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+
+    await expect(
+      result.current.updateInvoice(
+        'inv-1',
+        { status: 'paid' },
+        { expectedUpdatedAt: '2026-04-03T00:00:00.000Z' }
+      )
+    ).rejects.toThrow();
+
+    await result.current.updateInvoice(
+      'inv-1',
+      { status: 'paid' },
+      { expectedUpdatedAt: '2026-04-03T00:00:00.000Z' }
+    );
+
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+    const firstKey = (apiFetch as jest.Mock).mock.calls[0][2].idempotencyKey;
+    const secondKey = (apiFetch as jest.Mock).mock.calls[1][2].idempotencyKey;
+    expect(secondKey).toBe(firstKey);
+  });
+
+  it('mints a new Idempotency-Key for the next save after a successful update', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: { ...mockInvoices[0], notes: 'first' },
+        result: 'full_success',
+        message: 'Invoice updated successfully.',
+      }),
+    });
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: { ...mockInvoices[0], notes: 'second' },
+        result: 'full_success',
+        message: 'Invoice updated successfully.',
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+
+    await result.current.updateInvoice(
+      'inv-1',
+      { notes: 'first' },
+      { expectedUpdatedAt: '2026-04-03T00:00:00.000Z' }
+    );
+    await result.current.updateInvoice(
+      'inv-1',
+      { notes: 'second' },
+      { expectedUpdatedAt: '2026-04-04T00:00:00.000Z' }
+    );
+
+    const firstKey = (apiFetch as jest.Mock).mock.calls[0][2].idempotencyKey;
+    const secondKey = (apiFetch as jest.Mock).mock.calls[1][2].idempotencyKey;
+    expect(secondKey).not.toBe(firstKey);
+  });
+
+  it('mints a new Idempotency-Key for the next attempt after a 409 conflict (no stale automatic retry)', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        error: 'This invoice was updated elsewhere. Refresh and try again.',
+        error_code: 'INVOICE_CONCURRENCY_CONFLICT',
+        success: false,
+      }),
+    });
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: { ...mockInvoices[0], notes: 'reconciled' },
+        result: 'full_success',
+        message: 'Invoice updated successfully.',
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+
+    await expect(
+      result.current.updateInvoice(
+        'inv-1',
+        { notes: 'stale draft' },
+        { expectedUpdatedAt: '2026-04-03T00:00:00.000Z' }
+      )
+    ).rejects.toBeInstanceOf(ApiResponseError);
+
+    // Explicit retry after reconciliation, with the latest version.
+    await result.current.updateInvoice(
+      'inv-1',
+      { notes: 'reconciled' },
+      { expectedUpdatedAt: '2026-04-05T00:00:00.000Z' }
+    );
+
+    const firstKey = (apiFetch as jest.Mock).mock.calls[0][2].idempotencyKey;
+    const secondKey = (apiFetch as jest.Mock).mock.calls[1][2].idempotencyKey;
+    expect(secondKey).not.toBe(firstKey);
   });
 
   it('deletes invoice successfully', async () => {
@@ -590,5 +724,162 @@ describe('useInvoices', () => {
     expect(url).toContain('status=paid');
     expect(url).toContain('sortColumn=invoice_date');
     expect(url).toContain('sortDirection=desc');
+  });
+
+  it('returns pagination metadata from top-level and nested pagination fields', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: mockInvoices,
+        count: 21,
+        returnedCount: 1,
+        droppedCount: 0,
+        partial: false,
+        pagination: {
+          page: 3,
+          pageSize: 10,
+          totalCount: 21,
+          totalPages: 3,
+        },
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+    let fetched: Awaited<
+      ReturnType<typeof result.current.fetchInvoices>
+    > | null = null;
+
+    await act(async () => {
+      fetched = await result.current.fetchInvoices({ page: 3, pageSize: 10 });
+    });
+
+    expect(fetched).toEqual({
+      invoices: mockInvoices,
+      totalCount: 21,
+      totalPages: 3,
+      page: 3,
+    });
+    expect(result.current.totalCount).toBe(21);
+    expect(result.current.totalPages).toBe(3);
+    expect(result.current.invoices).toHaveLength(1);
+  });
+
+  it('returns server totalPages for an empty out-of-range page', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: [],
+        count: 20,
+        returnedCount: 0,
+        droppedCount: 0,
+        partial: false,
+        pagination: {
+          page: 3,
+          pageSize: 10,
+          totalCount: 20,
+          totalPages: 2,
+        },
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+    let fetched: Awaited<
+      ReturnType<typeof result.current.fetchInvoices>
+    > | null = null;
+
+    await act(async () => {
+      fetched = await result.current.fetchInvoices({ page: 3, pageSize: 10 });
+    });
+
+    expect(fetched).toEqual({
+      invoices: [],
+      totalCount: 20,
+      totalPages: 2,
+      page: 3,
+    });
+    expect(result.current.invoices).toEqual([]);
+    expect(result.current.totalPages).toBe(2);
+    expect(result.current.status).toBe('empty');
+  });
+
+  it('rethrows fetch errors when throwOnError is true', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'Fetch failed' }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+
+    await act(async () => {
+      await expect(
+        result.current.fetchInvoices({
+          page: 1,
+          pageSize: 10,
+          throwOnError: true,
+          suppressErrorToast: true,
+        })
+      ).rejects.toBeInstanceOf(ApiResponseError);
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.invoices).toEqual([]);
+  });
+
+  it('marks aborted fetches and does not let them overwrite a later page', async () => {
+    (apiFetch as jest.Mock)
+      .mockImplementationOnce(
+        (_url: string, options?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => {
+              const abortError = new DOMException(
+                'The operation was aborted.',
+                'AbortError'
+              );
+              reject(abortError);
+            });
+          })
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: mockInvoices,
+          count: 10,
+          returnedCount: 1,
+          droppedCount: 0,
+          partial: false,
+          totalPages: 1,
+          pagination: {
+            page: 2,
+            pageSize: 10,
+            totalCount: 10,
+            totalPages: 1,
+          },
+        }),
+      });
+
+    const { result } = renderHook(() => useInvoices());
+    let firstResult: Awaited<
+      ReturnType<typeof result.current.fetchInvoices>
+    > | null = null;
+
+    act(() => {
+      void result.current
+        .fetchInvoices({ page: 3, pageSize: 10 })
+        .then(value => {
+          firstResult = value;
+        });
+    });
+
+    await act(async () => {
+      await result.current.fetchInvoices({ page: 2, pageSize: 10 });
+    });
+
+    await waitFor(() => {
+      expect(firstResult?.aborted).toBe(true);
+    });
+    expect(result.current.invoices).toEqual(mockInvoices);
+    expect(result.current.totalPages).toBe(1);
+    expect(result.current.totalCount).toBe(10);
   });
 });

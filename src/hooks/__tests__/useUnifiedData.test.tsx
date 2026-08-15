@@ -364,6 +364,7 @@ describe('useUnifiedData', () => {
         });
         expect(mockActions.fetchConnections).toHaveBeenCalledWith({
           all: true,
+          rejectOnError: true,
         });
       });
     });
@@ -636,6 +637,39 @@ describe('useUnifiedData', () => {
       expect(result.current.clientRelationships[0].instrument).toEqual(
         instrument
       );
+    });
+
+    it('includes a later-page shared-cache connection in relationship views', () => {
+      const client: Client = {
+        id: 'client-later',
+        first_name: 'Later',
+        last_name: 'Page',
+      } as Client;
+      const instrument: Instrument = {
+        id: 'instrument-later',
+        type: 'Violin',
+        maker: 'Later Maker',
+      } as Instrument;
+      const laterPageConnection: ClientInstrument = {
+        id: 'later-rel',
+        client_id: 'client-later',
+        instrument_id: 'instrument-later',
+        relationship_type: 'Interested',
+        notes: 'beyond first page',
+        created_at: '2024-01-01T00:00:00Z',
+      } as ClientInstrument;
+
+      mockState.clients = [client];
+      mockState.instruments = [instrument];
+      mockState.connections = [laterPageConnection];
+
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      expect(result.current.clientRelationships).toHaveLength(1);
+      expect(result.current.clientRelationships[0].id).toBe('later-rel');
+      expect(result.current.instrumentRelationships[0].id).toBe('later-rel');
     });
 
     it('does not let a narrow embedded connection.instrument erase fields from the full instrument (regression: connections API only embeds id/maker/type/year/price)', () => {
@@ -1114,6 +1148,27 @@ describe('useUnifiedData', () => {
       const searchResult = result.current.searchAll('Owned');
 
       expect(searchResult.connections).toHaveLength(1);
+    });
+
+    it('can search a later-page shared-cache connection after complete load', () => {
+      const laterPageConnection: ClientInstrument = {
+        id: 'later-rel',
+        client_id: 'client-later',
+        instrument_id: 'instrument-later',
+        relationship_type: 'Booked',
+        notes: 'page-three relationship',
+        created_at: '2024-01-01T00:00:00Z',
+      } as ClientInstrument;
+      mockState.connections = [laterPageConnection];
+
+      const { result } = rtlRenderHook(() => useUnifiedSearch(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+      const byNotes = result.current.searchAll('page-three');
+      const byType = result.current.searchAll('Booked');
+
+      expect(byNotes.connections).toHaveLength(1);
+      expect(byType.connections[0].id).toBe('later-rel');
     });
 
     it('should return total count', () => {
@@ -1738,6 +1793,46 @@ describe('useUnifiedData', () => {
 
         expect(__getGlobalFetchedForTests().clients).toBe(false);
       });
+
+      it('a rejected complete connections fetch leaves globalFetched.connections false and can retry', async () => {
+        mockActions.fetchConnections.mockRejectedValueOnce(
+          new Error('connections drain failed')
+        );
+
+        const first = rtlRenderHook(() => useUnifiedData(), { wrapper });
+
+        await waitFor(() => {
+          expect(mockActions.fetchConnections).toHaveBeenCalledWith({
+            all: true,
+            rejectOnError: true,
+          });
+        });
+        await act(async () => Promise.resolve());
+        expect(__getGlobalFetchedForTests().connections).toBe(false);
+
+        first.unmount();
+        mockActions.fetchConnections.mockResolvedValueOnce(undefined);
+
+        rtlRenderHook(() => useUnifiedData(), { wrapper });
+
+        await waitFor(() => {
+          expect(mockActions.fetchConnections).toHaveBeenCalledTimes(2);
+        });
+        await waitFor(() => {
+          expect(__getGlobalFetchedForTests().connections).toBe(true);
+        });
+      });
+
+      it('a successful empty connections collection does not refetch forever', async () => {
+        await setupAllFetched();
+        expect(mockActions.fetchConnections).toHaveBeenCalledTimes(1);
+        expect(__getGlobalFetchedForTests().connections).toBe(true);
+
+        rtlRenderHook(() => useUnifiedData(), { wrapper });
+
+        await act(async () => Promise.resolve());
+        expect(mockActions.fetchConnections).toHaveBeenCalledTimes(1);
+      });
     });
 
     // -------------------------------------------------------------------------
@@ -1800,6 +1895,51 @@ describe('useUnifiedData', () => {
         // isTenantTransitioning=true because global key (org-a) ≠ new tenant key (org-b)
         // The stale array is masked to [] to prevent cross-tenant data leaks
         expect(result.current.clients).toEqual([]);
+      });
+
+      it('tenant A completing a connections drain cannot mark tenant B as fetched', async () => {
+        let resolveA: (() => void) | undefined;
+
+        mockActions.fetchConnections
+          .mockImplementationOnce(
+            () =>
+              new Promise<void>(resolve => {
+                resolveA = resolve;
+              })
+          )
+          .mockImplementation(
+            () =>
+              new Promise<void>(() => {
+                /* tenant B drain stays in flight */
+              })
+          );
+
+        const { rerender } = rtlRenderHook(() => useUnifiedData(), { wrapper });
+
+        await waitFor(() => {
+          expect(mockActions.fetchConnections).toHaveBeenCalledTimes(1);
+        });
+
+        mockUseAuth.mockReturnValue({
+          user: { id: 'mock-user' },
+          session: { access_token: 'token-b' },
+          orgId: 'org-b',
+          loading: false,
+        });
+
+        await act(async () => {
+          rerender();
+        });
+
+        await waitFor(() => {
+          expect(mockActions.fetchConnections).toHaveBeenCalledTimes(2);
+        });
+
+        await act(async () => {
+          resolveA?.();
+        });
+
+        expect(__getGlobalFetchedForTests().connections).toBe(false);
       });
     });
   });

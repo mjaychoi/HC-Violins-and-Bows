@@ -21,7 +21,11 @@ import {
   TableSkeleton,
 } from '@/components/common';
 import { Button } from '@/components/common/inputs';
-import type { MaintenanceTask, MaintenanceTaskUpdatePayload } from '@/types';
+import type {
+  MaintenanceTask,
+  MaintenanceTaskSubmitPayload,
+  MaintenanceTaskUpdatePayload,
+} from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
 import { getCalendarPlacementField } from '@/utils/calendar';
 import { useCalendarNavigation, useCalendarView } from './hooks';
@@ -67,6 +71,7 @@ export default function CalendarPage() {
     loading,
     error: fetchError,
     displayError: fetchDisplayError,
+    fetchTaskById,
     createTask,
     updateTask,
     deleteTask,
@@ -154,13 +159,11 @@ export default function CalendarPage() {
   }, [canCreateTask, openModal]);
 
   const handleCreateTask = useCallback(
-    async (
-      taskData: Omit<
-        MaintenanceTask,
-        'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
-      >
-    ) => {
-      const created = await createTask(taskData);
+    async (taskData: MaintenanceTaskSubmitPayload) => {
+      const { expected_updated_at: _ignoredExpectedUpdatedAt, ...createData } =
+        taskData;
+      void _ignoredExpectedUpdatedAt;
+      const created = await createTask(createData);
 
       if (!created?.id) {
         showWarning(
@@ -187,16 +190,15 @@ export default function CalendarPage() {
   );
 
   const handleUpdateTask = useCallback(
-    async (
-      taskData: Omit<
-        MaintenanceTask,
-        'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
-      >
-    ) => {
+    async (taskData: MaintenanceTaskSubmitPayload) => {
       if (!selectedTask) return;
+      const { expected_updated_at, ...fields } = taskData;
       let updated: MaintenanceTask;
       try {
-        updated = await updateTask(selectedTask.id, taskData);
+        updated = await updateTask(selectedTask.id, {
+          ...fields,
+          expected_updated_at,
+        });
       } catch (err) {
         throw err;
       }
@@ -326,8 +328,9 @@ export default function CalendarPage() {
           // Convert Date to YYYY-MM-DD format (date-only, no time preserved)
           const newDate = toLocalYMD(start.toISOString());
 
-          const updateData: Partial<MaintenanceTask> = {
+          const updateData: MaintenanceTaskUpdatePayload = {
             [dateField]: newDate,
+            expected_updated_at: task.updated_at,
           };
 
           updated = await updateTask(task.id, updateData);
@@ -542,6 +545,13 @@ export default function CalendarPage() {
           instruments={instruments}
           clients={clients}
           defaultScheduledDate={modalDefaultDate}
+          onFetchLatest={id =>
+            fetchTaskById(id, {
+              bypassCache: true,
+              suppressErrorToast: true,
+              silent: true,
+            })
+          }
         />
 
         <ConfirmDialog

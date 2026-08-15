@@ -59,7 +59,7 @@ export function useDashboardFilters(
       subtype: 'simple',
       ownership: 'simple',
     },
-    searchFields: ['maker', 'type', 'subtype'],
+    searchFields: ['maker', 'type', 'subtype', 'serial_number'],
     initialSortBy: 'created_at',
     initialSortOrder: 'desc',
     debounceMs: 200,
@@ -86,6 +86,7 @@ export function useDashboardFilters(
         item.maker?.toLowerCase().includes(lowerTerm) ||
         item.type?.toLowerCase().includes(lowerTerm) ||
         item.subtype?.toLowerCase().includes(lowerTerm) ||
+        item.serial_number?.toLowerCase().includes(lowerTerm) ||
         false
       );
     },
@@ -134,6 +135,9 @@ export function useDashboardFilters(
   // Pagination calculations
   const totalCount = filteredItems.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  // Slice with the clamped page in the same render so a shrinking
+  // collection cannot produce an empty page before state catches up.
+  const effectivePage = Math.min(Math.max(currentPage, 1), totalPages);
 
   // Reset to page 1 when filters change
   useEffect(() => {
@@ -146,12 +150,20 @@ export function useDashboardFilters(
     clientIdFromURL,
   ]);
 
+  // Restore 1 <= currentPage <= totalPages when Items disappear
+  // (delete, refresh, tenant reload) without waiting on navigation.
+  useEffect(() => {
+    if (currentPage !== effectivePage) {
+      setCurrentPage(effectivePage);
+    }
+  }, [currentPage, effectivePage]);
+
   // Paginated items
   const paginatedItems = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
+    const startIndex = (effectivePage - 1) * pageSize;
     const endIndex = startIndex + pageSize;
     return filteredItems.slice(startIndex, endIndex);
-  }, [filteredItems, currentPage, pageSize]);
+  }, [filteredItems, effectivePage, pageSize]);
 
   // Handle page change
   const handlePageChange = useCallback(
@@ -310,7 +322,7 @@ export function useDashboardFilters(
     dateRange,
     setDateRange,
     // Pagination
-    currentPage,
+    currentPage: effectivePage,
     totalPages,
     totalCount,
     pageSize,

@@ -15,12 +15,17 @@ import { Invoice } from '@/types';
 import type { InvoiceSortColumn, SortDirection } from '@/types/invoice';
 import { INVOICE_SORT_COLUMNS } from '@/types/invoice';
 import { useInvoices, useInvoiceSort } from './hooks';
+import {
+  INVOICE_PAGE_SIZE,
+  syncInvoicePageAfterDelete,
+} from './invoiceListPagination';
 import { InvoiceList } from './components';
 import InvoiceAccessState from './components/InvoiceAccessState';
 import InvoiceFilters, {
   type InvoiceFilterStatus,
 } from './components/InvoiceFilters';
 import { apiFetch } from '@/utils/apiFetch';
+import { ApiResponseError } from '@/utils/handleApiResponse';
 import dynamic from 'next/dynamic';
 import { useURLState } from '@/hooks/useURLState';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -327,7 +332,7 @@ function InvoicesPageContent() {
     hasFetchedRef.current = true;
     fetchInvoices({
       page: effectivePage,
-      pageSize: 10,
+      pageSize: INVOICE_PAGE_SIZE,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
       search: debouncedSearch || undefined,
@@ -370,7 +375,7 @@ function InvoicesPageContent() {
           hasFetchedRef.current = true;
           fetchInvoices({
             page: 1,
-            pageSize: 10,
+            pageSize: INVOICE_PAGE_SIZE,
             fromDate: fromDate || undefined,
             toDate: toDate || undefined,
             search: debouncedSearch || undefined,
@@ -450,7 +455,7 @@ function InvoicesPageContent() {
     async (targetPage: number) =>
       fetchInvoices({
         page: targetPage,
-        pageSize: 10,
+        pageSize: INVOICE_PAGE_SIZE,
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         search: debouncedSearch || undefined,
@@ -479,7 +484,16 @@ function InvoicesPageContent() {
       await withInvoiceSubmitting(async () => {
         try {
           if (editingInvoice) {
-            const updateResult = await updateInvoice(editingInvoice.id, data);
+            if (!editingInvoice.updated_at) {
+              showWarning(
+                'This invoice is missing version information. Close and reopen it to try again.'
+              );
+              return;
+            }
+
+            const updateResult = await updateInvoice(editingInvoice.id, data, {
+              expectedUpdatedAt: editingInvoice.updated_at,
+            });
             try {
               await refreshInvoiceList(page);
               if (updateResult.result === 'partial_success') {
@@ -515,7 +529,9 @@ function InvoicesPageContent() {
               try {
                 const refreshedInvoices = await refreshInvoiceList(1);
                 setPage(1);
-                setHighlightedInvoiceId(refreshedInvoices[0]?.id ?? null);
+                setHighlightedInvoiceId(
+                  refreshedInvoices.invoices[0]?.id ?? null
+                );
                 showWarning(createResult.message);
                 setIsModalOpen(false);
                 setEditingInvoice(null);
@@ -557,6 +573,34 @@ function InvoicesPageContent() {
             return;
           }
         } catch (error) {
+          // V5-003: a 409 concurrency conflict means someone else changed
+          // this invoice since the modal was opened. The user's draft must
+          // survive the error (the modal stays open; editingInvoice is left
+          // untouched so InvoiceForm keeps its local, uncontrolled state) and
+          // must not be auto-resubmitted against the newer row. Refreshing
+          // the list in the background only updates what a *reopened* edit
+          // would see next, matching the same pattern used for instrument
+          // conflicts (src/contexts/InstrumentsContext.tsx).
+          if (
+            editingInvoice &&
+            error instanceof ApiResponseError &&
+            error.status === 409 &&
+            error.error_code === 'INVOICE_CONCURRENCY_CONFLICT'
+          ) {
+            void refreshInvoiceList(page).catch(refreshError => {
+              handleError(
+                refreshError,
+                'Refresh invoices after update conflict',
+                undefined,
+                { notify: false }
+              );
+            });
+            showWarning(
+              'This invoice was updated elsewhere. Your changes were not saved — close and reopen it to see the latest version before retrying.'
+            );
+            return;
+          }
+
           handleError(
             error,
             editingInvoice ? 'Update invoice' : 'Create invoice'
@@ -610,7 +654,13 @@ function InvoicesPageContent() {
         await deleteInvoice(confirmDeleteInvoice.id);
         setConfirmDeleteInvoice(null);
         try {
-          await refreshInvoiceList(page);
+          const synced = await syncInvoicePageAfterDelete({
+            currentPage: page,
+            refresh: refreshInvoiceList,
+          });
+          if (synced.page !== page) {
+            setPage(synced.page);
+          }
           showSuccess('Invoice deleted successfully.');
         } catch (refreshError) {
           handleError(
@@ -635,6 +685,7 @@ function InvoicesPageContent() {
     handleError,
     refreshInvoiceList,
     page,
+    setPage,
     isMutatingInvoice,
     withInvoiceSubmitting,
   ]);
@@ -864,12 +915,12 @@ function InvoicesPageContent() {
           currentPage={page}
           totalPages={totalPages}
           totalCount={totalCount}
-          pageSize={10}
+          pageSize={INVOICE_PAGE_SIZE}
           onPageChange={setPage}
           onRetry={() => {
             void fetchInvoices({
               page,
-              pageSize: 10,
+              pageSize: INVOICE_PAGE_SIZE,
               fromDate: fromDate || undefined,
               toDate: toDate || undefined,
               search: debouncedSearch || undefined,

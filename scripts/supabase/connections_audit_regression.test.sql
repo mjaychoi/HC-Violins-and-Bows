@@ -30,6 +30,10 @@ DECLARE
   v_instrument_booked UUID := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3';
   v_instrument_interested UUID := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4';
   v_instrument_dup_owner UUID := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee5';
+  v_instrument_reassign_notes UUID := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee6';
+  v_instrument_reassign_type UUID := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee7';
+  v_instrument_notes_only UUID := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee8';
+  v_instrument_type_only UUID := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee9';
   v_conn_sold UUID := '11111111-1111-4111-8111-111111111101';
   v_conn_interested UUID := '11111111-1111-4111-8111-111111111102';
   v_conn_booked UUID := '11111111-1111-4111-8111-111111111103';
@@ -76,7 +80,11 @@ BEGIN
     (v_instrument_owned, v_org_a, 'Violin', 'CA-OWNED-001', 'Available'),
     (v_instrument_booked, v_org_a, 'Violin', 'CA-BOOKED-001', 'Available'),
     (v_instrument_interested, v_org_a, 'Violin', 'CA-INT-001', 'Available'),
-    (v_instrument_dup_owner, v_org_a, 'Violin', 'CA-DUP-001', 'Available');
+    (v_instrument_dup_owner, v_org_a, 'Violin', 'CA-DUP-001', 'Available'),
+    (v_instrument_reassign_notes, v_org_a, 'Violin', 'CA-F13-NOTES-001', 'Available'),
+    (v_instrument_reassign_type, v_org_a, 'Violin', 'CA-F13-TYPE-001', 'Available'),
+    (v_instrument_notes_only, v_org_a, 'Violin', 'CA-F13-NOTESONLY-001', 'Available'),
+    (v_instrument_type_only, v_org_a, 'Violin', 'CA-F13-TYPEONLY-001', 'Available');
 
   -- Org B fixtures, used only to prove that update_connection_atomic
   -- rejects client_id/instrument_id in p_updates unconditionally - even
@@ -92,10 +100,10 @@ BEGIN
     (v_conn_interested, v_org_a, v_client_a1, v_instrument_interested, 'Interested'),
     (v_conn_booked, v_org_a, v_client_a1, v_instrument_booked, 'Booked'),
     (v_conn_first_owner, v_org_a, v_client_a1, v_instrument_dup_owner, 'Owned'),
-    (v_conn_reassign_notes, v_org_a, v_client_a1, v_instrument_dup_owner, 'Interested'),
-    (v_conn_reassign_type, v_org_a, v_client_a1, v_instrument_dup_owner, 'Interested'),
-    (v_conn_notes_only, v_org_a, v_client_a1, v_instrument_dup_owner, 'Interested'),
-    (v_conn_type_only, v_org_a, v_client_a1, v_instrument_dup_owner, 'Interested');
+    (v_conn_reassign_notes, v_org_a, v_client_a1, v_instrument_reassign_notes, 'Interested'),
+    (v_conn_reassign_type, v_org_a, v_client_a1, v_instrument_reassign_type, 'Interested'),
+    (v_conn_notes_only, v_org_a, v_client_a1, v_instrument_notes_only, 'Interested'),
+    (v_conn_type_only, v_org_a, v_client_a1, v_instrument_type_only, 'Interested');
 
   INSERT INTO public.sales_history (id, org_id, instrument_id, client_id, sale_price, sale_date)
   VALUES (gen_random_uuid(), v_org_a, v_instrument_sold, v_client_a1, 1000, CURRENT_DATE);
@@ -450,6 +458,39 @@ BEGIN
   IF v_relationship <> 'Booked' THEN
     RAISE EXCEPTION 'an editable relationship_type-only update with no reassignment keys must succeed, got %', v_relationship;
   END IF;
+
+  -- ═══ V4-001: Interested/Booked uniqueness ════════════════════════════
+  -- Sequential duplicate Interested is rejected by the RPC EXISTS guard.
+  BEGIN
+    PERFORM public.create_connection_atomic(
+      v_client_a1,
+      v_instrument_notes_only,
+      'Interested',
+      NULL
+    );
+    RAISE EXCEPTION 'expected sequential duplicate Interested create to be rejected';
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_caught = MESSAGE_TEXT;
+    IF v_caught NOT LIKE 'DUPLICATE_CONNECTION%' THEN
+      RAISE;
+    END IF;
+  END;
+
+  -- Same pair Interested + Booked is allowed.
+  PERFORM public.create_connection_atomic(
+    v_client_a1,
+    v_instrument_notes_only,
+    'Booked',
+    NULL
+  );
+
+  -- Different clients may share the same instrument + Interested.
+  PERFORM public.create_connection_atomic(
+    v_client_a2,
+    v_instrument_notes_only,
+    'Interested',
+    NULL
+  );
 
   RESET ROLE;
   PERFORM set_config('request.jwt.claims', '', true);
