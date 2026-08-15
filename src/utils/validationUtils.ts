@@ -15,6 +15,33 @@ export interface FormValidationResult {
   errors: Record<string, string>;
 }
 
+const PHONE_DIGIT_CONTRACT = /^[+]?[1-9][\d]{0,15}$/;
+const PHONE_FORMATTING_CHARS = /[\s().-]/g;
+const PHONE_DISALLOWED_CHARS = /[^+\d\s().-]/;
+
+/**
+ * Accepts optional phones and common display formatting.
+ * Formatting characters are stripped only for validation; callers keep the
+ * original submitted representation.
+ */
+export function isAcceptablePhoneValue(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return true;
+  }
+
+  const trimmed = String(value).trim();
+  if (trimmed === '') {
+    return true;
+  }
+
+  if (PHONE_DISALLOWED_CHARS.test(trimmed)) {
+    return false;
+  }
+
+  const canonical = trimmed.replace(PHONE_FORMATTING_CHARS, '');
+  return PHONE_DIGIT_CONTRACT.test(canonical);
+}
+
 // Common validation rules
 export const commonRules = {
   required: (message = 'This field is required'): ValidationRule => ({
@@ -28,7 +55,7 @@ export const commonRules = {
   }),
 
   phone: (message = 'Please enter a valid phone number'): ValidationRule => ({
-    pattern: /^[\+]?[1-9][\d]{0,15}$/,
+    custom: value => (isAcceptablePhoneValue(value) ? null : message),
     message,
   }),
 

@@ -28,10 +28,10 @@ describe('validationUtils', () => {
 
     it('should create phone rule', () => {
       const rule = commonRules.phone();
-      expect(rule.pattern).toBeInstanceOf(RegExp);
-      expect(rule.pattern?.test('1234567890')).toBe(true);
-      expect(rule.pattern?.test('+1234567890')).toBe(true);
-      expect(rule.pattern?.test('abc')).toBe(false);
+      expect(rule.custom).toBeInstanceOf(Function);
+      expect(rule.custom?.('1234567890')).toBeNull();
+      expect(rule.custom?.('+1234567890')).toBeNull();
+      expect(rule.custom?.('abc')).toBe('Please enter a valid phone number');
     });
 
     it('should create minLength rule', () => {
@@ -330,6 +330,60 @@ describe('validationUtils', () => {
         'phone'
       );
       expect(noError).toBeNull();
+    });
+
+    it('accepts common formatted phone numbers without changing digit-only semantics', () => {
+      const validPhones = [
+        '4045551212',
+        '404-555-1212',
+        '(404) 555-1212',
+        '404 555 1212',
+        '404.555.1212',
+        '+1 404 555 1212',
+        '+1 (404) 555-1212',
+        '',
+        '   ',
+        null,
+        undefined,
+      ];
+
+      for (const phone of validPhones) {
+        expect(
+          validateField(phone, clientValidation.phone, 'phone')
+        ).toBeNull();
+      }
+    });
+
+    it('rejects letters, mixed alphanumeric text, and misplaced plus signs', () => {
+      const invalidPhones = [
+        'abc',
+        '404-CALL-NOW',
+        '++14045551212',
+        '404+5551212',
+        '+  +1 4045551212',
+        'phone: 4045551212',
+      ];
+
+      for (const phone of invalidPhones) {
+        expect(validateField(phone, clientValidation.phone, 'phone')).toBe(
+          'Please enter a valid phone number'
+        );
+      }
+    });
+
+    it('leaves email and identity rules unchanged', () => {
+      expect(
+        validateField('test@example.com', clientValidation.email, 'email')
+      ).toBeNull();
+      expect(validateField('invalid', clientValidation.email, 'email')).toBe(
+        'Please enter a valid email address'
+      );
+      expect(
+        validateField('John', clientValidation.firstName, 'firstName')
+      ).toBeNull();
+      expect(
+        validateField('A', clientValidation.firstName, 'firstName')
+      ).toContain('at least 2');
     });
 
     it('should validate address', () => {
