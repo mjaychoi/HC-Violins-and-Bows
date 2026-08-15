@@ -260,6 +260,46 @@ jest.mock('../components/ClientForm', () => {
           Submit With Instruments
         </button>
         <button
+          data-testid="submit-form-with-instruments-alt-btn"
+          onClick={() =>
+            onSubmit(
+              {
+                first_name: 'Ada',
+                last_name: 'Lovelace',
+                email: 'ada@example.com',
+                contact_number: null,
+                tags: [],
+                interest: '',
+                note: '',
+                client_number: null,
+              },
+              [
+                {
+                  instrument: {
+                    id: 'inst-123',
+                    maker: 'Maker',
+                    type: 'Violin',
+                    subtype: null,
+                    year: 2020,
+                    certificate: false,
+                    size: null,
+                    weight: null,
+                    price: 1000,
+                    ownership: null,
+                    note: null,
+                    serial_number: null,
+                    status: 'Available',
+                    created_at: '2024-01-01T00:00:00Z',
+                  },
+                  relationshipType: 'Interested',
+                },
+              ]
+            )
+          }
+        >
+          Submit With Instruments Alt
+        </button>
+        <button
           data-testid="retry-instrument-links-btn"
           onClick={() =>
             onRetryInstrumentLinks('3', [
@@ -793,6 +833,214 @@ describe('ClientsPage', () => {
       expect(mockShowSuccess).toHaveBeenCalledWith(
         'Client and instrument links created successfully'
       );
+    });
+
+    it('reuses the with-connections Idempotency-Key on a network-ambiguous retry', async () => {
+      mockApiFetch
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              data: {
+                client: {
+                  id: '3',
+                  first_name: 'New',
+                  last_name: 'Client',
+                  email: 'new@example.com',
+                  contact_number: '',
+                  tags: [],
+                  interest: '',
+                  note: '',
+                  client_number: 'CL003',
+                  created_at: '2023-01-03T00:00:00Z',
+                },
+                connections: [
+                  {
+                    id: 'conn-1',
+                    client_id: '3',
+                    instrument_id: 'inst-123',
+                    relationship_type: 'Interested',
+                    notes: null,
+                    display_order: 0,
+                    created_at: '2023-01-03T00:00:00Z',
+                  },
+                ],
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      mockUseModalState.mockReturnValue({
+        isOpen: true,
+        openModal: mockOpenModal,
+        closeModal: mockCloseModal,
+      } as any);
+
+      const user = userEvent.setup();
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
+
+      await user.click(screen.getByTestId('submit-form-with-instruments-btn'));
+      await waitFor(() => {
+        expect(mockHandleError).toHaveBeenCalled();
+      });
+      await user.click(screen.getByTestId('submit-form-with-instruments-btn'));
+
+      await waitFor(() => {
+        expect(mockUpsertClient).toHaveBeenCalledTimes(1);
+      });
+
+      const withConnCalls = mockApiFetch.mock.calls.filter(
+        c => c[0] === '/api/clients/with-connections'
+      );
+      expect(withConnCalls).toHaveLength(2);
+      expect(withConnCalls[0][2]?.idempotencyKey).toBe(
+        withConnCalls[1][2]?.idempotencyKey
+      );
+      expect(withConnCalls[0][1]).toEqual(
+        expect.objectContaining({
+          body:
+            withConnCalls[1][1] && (withConnCalls[1][1] as RequestInit).body,
+        })
+      );
+    });
+
+    it('mints a new with-connections key after the create payload changes', async () => {
+      mockApiFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      mockUseModalState.mockReturnValue({
+        isOpen: true,
+        openModal: mockOpenModal,
+        closeModal: mockCloseModal,
+      } as any);
+
+      const user = userEvent.setup();
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
+
+      await user.click(screen.getByTestId('submit-form-with-instruments-btn'));
+      await waitFor(() => {
+        expect(mockHandleError).toHaveBeenCalled();
+      });
+      await user.click(
+        screen.getByTestId('submit-form-with-instruments-alt-btn')
+      );
+
+      await waitFor(() => {
+        expect(
+          mockApiFetch.mock.calls.filter(
+            c => c[0] === '/api/clients/with-connections'
+          )
+        ).toHaveLength(2);
+      });
+
+      const withConnCalls = mockApiFetch.mock.calls.filter(
+        c => c[0] === '/api/clients/with-connections'
+      );
+      expect(withConnCalls[0][2]?.idempotencyKey).not.toBe(
+        withConnCalls[1][2]?.idempotencyKey
+      );
+    });
+
+    it('uses a new with-connections key for the next successful create', async () => {
+      mockUseModalState.mockReturnValue({
+        isOpen: true,
+        openModal: mockOpenModal,
+        closeModal: mockCloseModal,
+      } as any);
+
+      const user = userEvent.setup();
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
+
+      await user.click(screen.getByTestId('submit-form-with-instruments-btn'));
+      await waitFor(() => {
+        expect(mockUpsertClient).toHaveBeenCalledTimes(1);
+      });
+      await user.click(screen.getByTestId('submit-form-with-instruments-btn'));
+      await waitFor(() => {
+        expect(mockUpsertClient).toHaveBeenCalledTimes(2);
+      });
+
+      const withConnCalls = mockApiFetch.mock.calls.filter(
+        c => c[0] === '/api/clients/with-connections'
+      );
+      expect(withConnCalls).toHaveLength(2);
+      expect(withConnCalls[0][2]?.idempotencyKey).not.toBe(
+        withConnCalls[1][2]?.idempotencyKey
+      );
+    });
+
+    it('rapid double submit of with-connections uses one in-flight POST', async () => {
+      let resolveFetch!: (value: Response) => void;
+      mockApiFetch.mockImplementationOnce(
+        () =>
+          new Promise<Response>(resolve => {
+            resolveFetch = resolve;
+          })
+      );
+      mockUseModalState.mockReturnValue({
+        isOpen: true,
+        openModal: mockOpenModal,
+        closeModal: mockCloseModal,
+      } as any);
+
+      render(
+        <Suspense fallback={null}>
+          <ClientsPage />
+        </Suspense>
+      );
+
+      const submit = screen.getByTestId('submit-form-with-instruments-btn');
+      submit.click();
+      submit.click();
+
+      expect(mockApiFetch).toHaveBeenCalledTimes(1);
+
+      resolveFetch(
+        new Response(
+          JSON.stringify({
+            data: {
+              client: {
+                id: '3',
+                first_name: 'New',
+                last_name: 'Client',
+                email: 'new@example.com',
+                contact_number: '',
+                tags: [],
+                interest: '',
+                note: '',
+                client_number: 'CL003',
+                created_at: '2023-01-03T00:00:00Z',
+              },
+              connections: [
+                {
+                  id: 'conn-1',
+                  client_id: '3',
+                  instrument_id: 'inst-123',
+                  relationship_type: 'Interested',
+                  notes: null,
+                  display_order: 0,
+                  created_at: '2023-01-03T00:00:00Z',
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+
+      await waitFor(() => {
+        expect(mockUpsertClient).toHaveBeenCalledTimes(1);
+      });
     });
 
     it('should handle error during client creation', async () => {

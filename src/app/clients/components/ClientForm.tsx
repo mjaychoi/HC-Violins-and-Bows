@@ -217,9 +217,11 @@ function ClientForm({
   );
 
   const { handleError } = useErrorHandler();
+  const submitLockRef = useRef(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitLockRef.current) return;
 
     const clientNameError = getClientIdentityError(formData);
     if (clientNameError) {
@@ -243,48 +245,55 @@ function ClientForm({
       return;
     }
 
-    const selectedLinks =
-      selectedInstrumentsForNew.length > 0
-        ? selectedInstrumentsForNew
-        : undefined;
+    submitLockRef.current = true;
 
-    const result =
-      submissionState?.status === 'partial_success' && submissionState.clientId
-        ? await onRetryInstrumentLinks(
-            submissionState.clientId,
-            selectedInstrumentsForNew
-          )
-        : await onSubmit(formData, selectedLinks);
+    try {
+      const selectedLinks =
+        selectedInstrumentsForNew.length > 0
+          ? selectedInstrumentsForNew
+          : undefined;
 
-    if (!result) {
-      return;
-    }
+      const result =
+        submissionState?.status === 'partial_success' &&
+        submissionState.clientId
+          ? await onRetryInstrumentLinks(
+              submissionState.clientId,
+              selectedInstrumentsForNew
+            )
+          : await onSubmit(formData, selectedLinks);
 
-    if (result.status === 'full_success') {
-      const successMessage =
-        submissionState?.status === 'partial_success'
-          ? 'Remaining instrument links created successfully'
-          : selectedLinks && selectedLinks.length > 0
-            ? 'Client and instrument links created successfully'
-            : 'Client created successfully';
-
-      setSubmissionState({
-        status: 'full_success',
-        clientId: result.clientId,
-        successMessage,
-      });
-      return;
-    }
-
-    if (result.status === 'partial_success') {
-      setSubmissionState({
-        status: 'partial_success',
-        clientId: result.clientId ?? submissionState?.clientId,
-      });
-
-      if (result.failedLinks) {
-        setSelectedInstruments(result.failedLinks);
+      if (!result) {
+        return;
       }
+
+      if (result.status === 'full_success') {
+        const successMessage =
+          submissionState?.status === 'partial_success'
+            ? 'Remaining instrument links created successfully'
+            : selectedLinks && selectedLinks.length > 0
+              ? 'Client and instrument links created successfully'
+              : 'Client created successfully';
+
+        setSubmissionState({
+          status: 'full_success',
+          clientId: result.clientId,
+          successMessage,
+        });
+        return;
+      }
+
+      if (result.status === 'partial_success') {
+        setSubmissionState({
+          status: 'partial_success',
+          clientId: result.clientId ?? submissionState?.clientId,
+        });
+
+        if (result.failedLinks) {
+          setSelectedInstruments(result.failedLinks);
+        }
+      }
+    } finally {
+      submitLockRef.current = false;
     }
   };
 

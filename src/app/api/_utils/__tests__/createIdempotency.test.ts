@@ -177,6 +177,37 @@ describe('create idempotency helper', () => {
     });
   });
 
+  it('returns in-progress when the same key and hash are already claimed', async () => {
+    const requestHash = createRequestHash({ a: 1 });
+    const table = createTableMock({
+      insertError: { code: '23505' },
+      lookupRow: {
+        org_id: '123e4567-e89b-12d3-a456-426614174000',
+        user_id: '123e4567-e89b-12d3-a456-426614174999',
+        route_key: 'POST:/api/test',
+        idempotency_key: 'key-1',
+        request_hash: requestHash,
+        status: 'in_progress',
+        response_payload: null,
+      },
+    });
+
+    const claim = await claimCreateIdempotency(
+      requestWithKey('key-1'),
+      createAuth(table),
+      'POST:/api/test',
+      requestHash
+    );
+
+    expect(claim).toMatchObject({
+      kind: 'conflict',
+      status: 409,
+      payload: {
+        error_code: 'IDEMPOTENCY_IN_PROGRESS',
+      },
+    });
+  });
+
   it('stores the authoritative response payload only after successful create', async () => {
     const table = createTableMock({});
 
