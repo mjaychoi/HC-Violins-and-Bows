@@ -1,6 +1,7 @@
 import {
   groupConnectionsByType,
   getRelationshipTypeCounts,
+  sortConnectionsForAllTab,
 } from '../connectionGrouping';
 import { ClientInstrument } from '@/types';
 
@@ -43,5 +44,34 @@ describe('connectionGrouping utilities', () => {
       { type: 'Booked', count: 1 },
       { type: 'Sold', count: 1 },
     ]);
+  });
+
+  it('sorts All-tab connections by the Client/Instrument already on the row', () => {
+    const zebra: ClientInstrument = {
+      ...makeConnection('z', 'Interested'),
+      client: {
+        last_name: 'Zebra',
+        first_name: 'A',
+      } as ClientInstrument['client'],
+      instrument: {
+        maker: 'Old',
+        type: 'Violin',
+      } as ClientInstrument['instrument'],
+    };
+    const alpha: ClientInstrument = {
+      ...makeConnection('a', 'Interested'),
+      client: {
+        last_name: 'Alpha',
+        first_name: 'B',
+      } as ClientInstrument['client'],
+      instrument: {
+        maker: 'New',
+        type: 'Viola',
+      } as ClientInstrument['instrument'],
+    };
+
+    expect(sortConnectionsForAllTab([zebra, alpha]).map(row => row.id)).toEqual(
+      ['a', 'z']
+    );
   });
 });
