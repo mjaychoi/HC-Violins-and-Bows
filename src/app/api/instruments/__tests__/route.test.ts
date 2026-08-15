@@ -1945,5 +1945,174 @@ describe('/api/instruments', () => {
       expect(response.status).toBe(400);
       expect(json.error).toBe('Invalid instrument ID format');
     });
+
+    it('returns 404 when the org-scoped item is missing', async () => {
+      mockUserSupabase.from = makeDeleteFromMock({ deleteCount: 0 });
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.error).toBe('Instrument not found');
+      expect(json.error_code).not.toBe('INSTRUMENT_HAS_MAINTENANCE_HISTORY');
+      expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+      expect(mockWriteAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('returns the same 404 for a cross-org id', async () => {
+      mockUserSupabase.from = makeDeleteFromMock({ deleteCount: 0 });
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.error).toBe('Instrument not found');
+      expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+      expect(mockWriteAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when a member deletes an item', async () => {
+      mockAuthContext = { ...mockAuthContext, role: 'member' };
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.error).toBe('Admin role required');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+      expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when organization context is missing', async () => {
+      mockAuthContext = { ...mockAuthContext, orgId: null };
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.error).toBe('Organization context required');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 when delete is blocked by preserved maintenance history', async () => {
+      const insertMock = jest.fn().mockResolvedValue({ error: null });
+      mockUserSupabase.from = makeDeleteFromMock({
+        imageKeys: ['org/img1.jpg'],
+        certPaths: ['org/cert1.pdf'],
+        deleteError: {
+          code: '23503',
+          message:
+            'update or delete on table "instruments" violates foreign key constraint "maintenance_tasks_instrument_id_fkey" on table "maintenance_tasks"',
+          details:
+            'Key (id)=(123e4567-e89b-12d3-a456-426614174000) is still referenced from table "maintenance_tasks".',
+        },
+      });
+      const originalFrom = mockUserSupabase.from;
+      mockUserSupabase.from = jest.fn().mockImplementation((table: string) => {
+        if (table === 'orphaned_storage_objects') {
+          return { insert: insertMock };
+        }
+        return originalFrom(table);
+      });
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+      const serialized = JSON.stringify(json);
+
+      expect(response.status).toBe(409);
+      expect(json.success).toBe(false);
+      expect(json.error_code).toBe('INSTRUMENT_HAS_MAINTENANCE_HISTORY');
+      expect(json.error).toBe(
+        "This item can't be deleted because it has maintenance history that must be preserved."
+      );
+      expect(json.message).toBe(
+        "This item can't be deleted because it has maintenance history that must be preserved."
+      );
+      expect(serialized).not.toContain('maintenance_tasks_instrument_id_fkey');
+      expect(serialized).not.toContain('23503');
+      expect(serialized).not.toContain('violates foreign key');
+      expect(mockErrorHandler.handleSupabaseError).not.toHaveBeenCalled();
+      expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+      expect(insertMock).not.toHaveBeenCalled();
+      expect(mockWriteAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('does not map an unrelated 23503 to a maintenance-history conflict', async () => {
+      mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
+        code: 'DATABASE_ERROR',
+        message: 'Database operation failed',
+      });
+      mockUserSupabase.from = makeDeleteFromMock({
+        imageKeys: ['org/img1.jpg'],
+        deleteError: {
+          code: '23503',
+          message:
+            'update or delete on table "instruments" violates foreign key constraint "sales_instrument_id_fkey" on table "sales"',
+          details:
+            'Key (id)=(123e4567-e89b-12d3-a456-426614174000) is still referenced from table "sales".',
+        },
+      });
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+
+      expect(response.status).not.toBe(409);
+      expect(json.error_code).not.toBe('INSTRUMENT_HAS_MAINTENANCE_HISTORY');
+      expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: '23503',
+          message: expect.stringContaining('sales_instrument_id_fkey'),
+        }),
+        'Delete instrument'
+      );
+      expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+      expect(mockWriteAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('keeps existing handling for a non-23503 delete error', async () => {
+      mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
+        code: 'DATABASE_ERROR',
+        message: 'Database operation failed',
+      });
+      mockUserSupabase.from = makeDeleteFromMock({
+        deleteError: {
+          code: '57014',
+          message: 'canceling statement due to statement timeout',
+        },
+      });
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+
+      expect(response.status).not.toBe(409);
+      expect(json.error_code).not.toBe('INSTRUMENT_HAS_MAINTENANCE_HISTORY');
+      expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalledWith(
+        expect.objectContaining({ code: '57014' }),
+        'Delete instrument'
+      );
+      expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+      expect(mockWriteAuditLog).not.toHaveBeenCalled();
+    });
   });
 });
