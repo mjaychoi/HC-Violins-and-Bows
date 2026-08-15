@@ -30,6 +30,7 @@ const baseFormState = {
     ownership: '',
     note: '',
     serial_number: '',
+    reserved_reason: '',
   },
   updateField: jest.fn(),
   resetForm: jest.fn(),
@@ -242,6 +243,67 @@ describe('ItemForm', () => {
     expect(
       screen.getByText('Reserved status can be set after creation.')
     ).toBeInTheDocument();
+  });
+
+  it('does not offer Sold when creating a new instrument', () => {
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    expect(
+      screen.queryByRole('option', { name: 'Sold' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Sold status is set automatically through the sales flow.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('offers every approved initial status when creating a new instrument', () => {
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    expect(
+      screen.getByRole('option', { name: 'Available' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Booked' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: 'Maintenance' })
+    ).toBeInTheDocument();
+  });
+
+  it('offers Sold when editing an existing instrument', () => {
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing
+        existingSerialNumbers={[]}
+      />
+    );
+
+    expect(screen.getByRole('option', { name: 'Sold' })).toBeInTheDocument();
   });
 
   it('does not show image upload controls in the add flow', () => {
@@ -480,5 +542,232 @@ describe('ItemForm', () => {
       'name',
       'consignment_price'
     );
+  });
+
+  describe('Reserved status edit workflow', () => {
+    const availableInstrument = {
+      id: 'inst-available-1',
+      maker: 'Strad',
+      type: 'Violin',
+      subtype: null,
+      serial_number: 'VI0000001',
+      year: 2020,
+      ownership: null,
+      size: null,
+      weight: null,
+      note: null,
+      price: 1000,
+      certificate: false,
+      status: 'Available' as const,
+      reserved_reason: null,
+      created_at: '2024-01-01T00:00:00Z',
+    };
+
+    const legacyReservedInstrument = {
+      ...availableInstrument,
+      id: 'inst-reserved-legacy',
+      status: 'Reserved' as const,
+      reserved_reason: null,
+    };
+
+    const reservedInstrumentWithReason = {
+      ...availableInstrument,
+      id: 'inst-reserved-1',
+      status: 'Reserved' as const,
+      reserved_reason: 'Held for client pickup',
+    };
+
+    it('submits reserved_reason when moving an Available item to Reserved (TEST-2)', async () => {
+      (useDashboardForm as jest.Mock).mockReturnValue({
+        ...baseFormState,
+        formData: {
+          ...baseFormState.formData,
+          maker: 'Strad',
+          type: 'Violin',
+          serial_number: 'VI0000001',
+          status: 'Reserved',
+          reserved_reason: 'Held for client pickup',
+        },
+      });
+
+      render(
+        <ItemForm
+          isOpen
+          onClose={onClose}
+          onSubmit={onSubmit}
+          submitting={false}
+          selectedItem={availableInstrument}
+          isEditing
+          existingSerialNumbers={['VI0000001']}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Update Item' }));
+
+      await waitFor(() =>
+        expect(onSubmit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: 'Reserved',
+            reserved_reason: 'Held for client pickup',
+          })
+        )
+      );
+    });
+
+    it('blocks a blank/whitespace reservation reason with actionable validation (TEST-3)', async () => {
+      (useDashboardForm as jest.Mock).mockReturnValue({
+        ...baseFormState,
+        formData: {
+          ...baseFormState.formData,
+          maker: 'Strad',
+          type: 'Violin',
+          serial_number: 'VI0000001',
+          status: 'Reserved',
+          reserved_reason: '   ',
+        },
+      });
+
+      render(
+        <ItemForm
+          isOpen
+          onClose={onClose}
+          onSubmit={onSubmit}
+          submitting={false}
+          selectedItem={availableInstrument}
+          isEditing
+          existingSerialNumbers={['VI0000001']}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Update Item' }));
+
+      const matches = await screen.findAllByText(
+        'Reservation reason is required when status is Reserved'
+      );
+      expect(matches.length).toBeGreaterThan(0);
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('loads an existing non-null reservation reason into the Edit form (TEST-4)', () => {
+      (useDashboardForm as jest.Mock).mockReturnValue({
+        ...baseFormState,
+        formData: {
+          ...baseFormState.formData,
+          maker: 'Strad',
+          type: 'Violin',
+          serial_number: 'VI0000001',
+          status: 'Reserved',
+          reserved_reason: 'Held for client pickup',
+        },
+      });
+
+      render(
+        <ItemForm
+          isOpen
+          onClose={onClose}
+          onSubmit={onSubmit}
+          submitting={false}
+          selectedItem={reservedInstrumentWithReason}
+          isEditing
+          existingSerialNumbers={['VI0000001']}
+        />
+      );
+
+      expect(screen.getByLabelText(/Reservation Reason/i)).toHaveValue(
+        'Held for client pickup'
+      );
+    });
+
+    it('loads a legacy Reserved item with a NULL reason without crashing (TEST-5)', () => {
+      (useDashboardForm as jest.Mock).mockReturnValue({
+        ...baseFormState,
+        formData: {
+          ...baseFormState.formData,
+          maker: 'Strad',
+          type: 'Violin',
+          serial_number: 'VI0000001',
+          status: 'Reserved',
+          reserved_reason: '',
+        },
+      });
+
+      render(
+        <ItemForm
+          isOpen
+          onClose={onClose}
+          onSubmit={onSubmit}
+          submitting={false}
+          selectedItem={legacyReservedInstrument}
+          isEditing
+          existingSerialNumbers={['VI0000001']}
+        />
+      );
+
+      expect(screen.getByLabelText(/Reservation Reason/i)).toHaveValue('');
+    });
+
+    it('lets a legacy NULL-reason Reserved item move to Available without inventing a reason (TEST-6)', async () => {
+      (useDashboardForm as jest.Mock).mockReturnValue({
+        ...baseFormState,
+        formData: {
+          ...baseFormState.formData,
+          maker: 'Strad',
+          type: 'Violin',
+          serial_number: 'VI0000001',
+          status: 'Available',
+          reserved_reason: '',
+        },
+      });
+
+      render(
+        <ItemForm
+          isOpen
+          onClose={onClose}
+          onSubmit={onSubmit}
+          submitting={false}
+          selectedItem={legacyReservedInstrument}
+          isEditing
+          existingSerialNumbers={['VI0000001']}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Update Item' }));
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+      const payload = onSubmit.mock.calls[onSubmit.mock.calls.length - 1][0];
+      expect(payload.status).toBe('Available');
+      expect(
+        Object.prototype.hasOwnProperty.call(payload, 'reserved_reason')
+      ).toBe(false);
+    });
+
+    it('does not render the Reservation Reason field for non-Reserved statuses (TEST-9)', () => {
+      (useDashboardForm as jest.Mock).mockReturnValue({
+        ...baseFormState,
+        formData: {
+          ...baseFormState.formData,
+          maker: 'Strad',
+          type: 'Violin',
+          serial_number: 'VI0000001',
+          status: 'Booked',
+        },
+      });
+
+      render(
+        <ItemForm
+          isOpen
+          onClose={onClose}
+          onSubmit={onSubmit}
+          submitting={false}
+          selectedItem={availableInstrument}
+          isEditing
+          existingSerialNumbers={['VI0000001']}
+        />
+      );
+
+      expect(
+        screen.queryByLabelText(/Reservation Reason/i)
+      ).not.toBeInTheDocument();
+    });
   });
 });

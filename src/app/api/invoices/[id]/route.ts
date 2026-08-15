@@ -342,8 +342,24 @@ async function getInvoiceHandler(
 
     const { data, error } = await query;
 
-    if (error || !data) {
+    if (error?.code === 'PGRST116') {
+      return {
+        payload: { error: 'Invoice not found', success: false },
+        status: 404,
+        metadata: { scope: { enforced: true, orgId } },
+      };
+    }
+
+    if (error) {
       throw errorHandler.handleSupabaseError(error, 'Fetch invoice');
+    }
+
+    if (!data) {
+      return {
+        payload: { error: 'Invoice not found', success: false },
+        status: 404,
+        metadata: { scope: { enforced: true, orgId } },
+      };
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -14,7 +14,10 @@ interface ClientsListContentProps {
   /** Directory loading from unified data — used only as a soft signal. */
   directoryLoading?: boolean;
   onClientClick: (client: Client) => void;
-  onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
+  onUpdateClient: (
+    clientId: string,
+    updates: Partial<Client> & { expected_updated_at?: string }
+  ) => Promise<void>;
   onDeleteClient: (client: Client) => void;
   newlyCreatedClientId?: string | null;
   onNewlyCreatedClientShown?: () => void;

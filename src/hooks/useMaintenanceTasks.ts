@@ -5,7 +5,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { addDays, format } from 'date-fns';
 import { useErrorHandler } from '@/contexts/ToastContext';
-import type { MaintenanceTask, TaskFilters } from '@/types';
+import type {
+  MaintenanceTask,
+  MaintenanceTaskUpdatePayload,
+  TaskFilters,
+} from '@/types';
 import { apiFetch } from '@/utils/apiFetch';
 import {
   handleApiResponse,
@@ -21,6 +25,7 @@ import {
 } from '@/types/api/maintenanceTasks';
 import { isCalendarPlacementInRange } from '@/utils/calendar';
 import { parseYMDLocal, todayLocalYMD } from '@/utils/dateParsing';
+import { isMaintenanceTaskStaleVersionError } from '@/utils/maintenanceTaskConcurrency';
 
 interface UseMaintenanceTasksOptions {
   initialFilters?: TaskFilters;
@@ -39,7 +44,14 @@ interface UseMaintenanceTasksReturn {
   mutationError: unknown;
   mutationDisplayError: AppError | null;
   fetchTasks: (filters?: TaskFilters) => Promise<void>;
-  fetchTaskById: (id: string) => Promise<MaintenanceTask | null>;
+  fetchTaskById: (
+    id: string,
+    options?: {
+      bypassCache?: boolean;
+      suppressErrorToast?: boolean;
+      silent?: boolean;
+    }
+  ) => Promise<MaintenanceTask | null>;
   createTask: (
     task: Omit<
       MaintenanceTask,
@@ -48,12 +60,7 @@ interface UseMaintenanceTasksReturn {
   ) => Promise<MaintenanceTask>;
   updateTask: (
     id: string,
-    updates: Partial<
-      Omit<
-        MaintenanceTask,
-        'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
-      >
-    >
+    updates: MaintenanceTaskUpdatePayload
   ) => Promise<MaintenanceTask>;
   deleteTask: (id: string) => Promise<void>;
   fetchTasksByDateRange: (
@@ -461,16 +468,29 @@ export function useMaintenanceTasks(
   );
 
   const fetchTaskById = useCallback(
-    async (id: string): Promise<MaintenanceTask | null> => {
+    async (
+      id: string,
+      options?: {
+        bypassCache?: boolean;
+        suppressErrorToast?: boolean;
+        silent?: boolean;
+      }
+    ): Promise<MaintenanceTask | null> => {
       const requestTenantIdentityKey = tenantIdentityKeyRef.current;
-      startFetch();
-      setError(null);
-      setDisplayError(null);
+      const silent = options?.silent === true;
+
+      if (!silent) {
+        startFetch();
+        setError(null);
+        setDisplayError(null);
+      }
 
       try {
         const queryString = buildMaintenanceTaskQuery({ id });
         const cacheKey = makeCacheKey(`detail:${queryString}`);
-        const cachedTasks = getCachedMaintenanceTasks(cacheKey);
+        const cachedTasks = options?.bypassCache
+          ? null
+          : getCachedMaintenanceTasks(cacheKey);
 
         if (cachedTasks?.[0]) {
           if (tenantIdentityKeyRef.current !== requestTenantIdentityKey) {
@@ -496,16 +516,28 @@ export function useMaintenanceTasks(
           return null;
         }
 
-        setError(err);
+        if (!silent) {
+          setError(err);
+        }
 
-        const appError =
-          handleError(err, 'Failed to fetch maintenance task') ??
-          errorHandler.normalizeError(err, 'Failed to fetch maintenance task');
+        if (!options?.suppressErrorToast) {
+          const appError =
+            handleError(err, 'Failed to fetch maintenance task') ??
+            errorHandler.normalizeError(
+              err,
+              'Failed to fetch maintenance task'
+            );
 
-        setDisplayError(appError);
+          if (!silent) {
+            setDisplayError(appError);
+          }
+        }
+
         return null;
       } finally {
-        endFetch();
+        if (!silent) {
+          endFetch();
+        }
       }
     },
     [handleError, startFetch, endFetch, makeCacheKey]
@@ -587,12 +619,7 @@ export function useMaintenanceTasks(
   const updateTask = useCallback(
     async (
       id: string,
-      updates: Partial<
-        Omit<
-          MaintenanceTask,
-          'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
-        >
-      >
+      updates: MaintenanceTaskUpdatePayload
     ): Promise<MaintenanceTask> => {
       const requestTenantIdentityKey = tenantIdentityKeyRef.current;
       startMutate();
@@ -658,11 +685,17 @@ export function useMaintenanceTasks(
 
         setMutationError(err);
 
-        const appError =
-          handleError(err, 'Failed to update maintenance task') ??
-          errorHandler.normalizeError(err, 'Failed to update maintenance task');
+        if (!isMaintenanceTaskStaleVersionError(err)) {
+          const appError =
+            handleError(err, 'Failed to update maintenance task') ??
+            errorHandler.normalizeError(
+              err,
+              'Failed to update maintenance task'
+            );
 
-        setMutationDisplayError(appError);
+          setMutationDisplayError(appError);
+        }
+
         throw err;
       } finally {
         endMutate();

@@ -15,6 +15,10 @@ import { Invoice } from '@/types';
 import type { InvoiceSortColumn, SortDirection } from '@/types/invoice';
 import { INVOICE_SORT_COLUMNS } from '@/types/invoice';
 import { useInvoices, useInvoiceSort } from './hooks';
+import {
+  INVOICE_PAGE_SIZE,
+  syncInvoicePageAfterDelete,
+} from './invoiceListPagination';
 import { InvoiceList } from './components';
 import InvoiceFilters, {
   type InvoiceFilterStatus,
@@ -323,7 +327,7 @@ function InvoicesPageContent() {
     hasFetchedRef.current = true;
     fetchInvoices({
       page: effectivePage,
-      pageSize: 10,
+      pageSize: INVOICE_PAGE_SIZE,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
       search: debouncedSearch || undefined,
@@ -362,7 +366,7 @@ function InvoicesPageContent() {
           hasFetchedRef.current = true;
           fetchInvoices({
             page: 1,
-            pageSize: 10,
+            pageSize: INVOICE_PAGE_SIZE,
             fromDate: fromDate || undefined,
             toDate: toDate || undefined,
             search: debouncedSearch || undefined,
@@ -440,7 +444,7 @@ function InvoicesPageContent() {
     async (targetPage: number) =>
       fetchInvoices({
         page: targetPage,
-        pageSize: 10,
+        pageSize: INVOICE_PAGE_SIZE,
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         search: debouncedSearch || undefined,
@@ -514,7 +518,9 @@ function InvoicesPageContent() {
               try {
                 const refreshedInvoices = await refreshInvoiceList(1);
                 setPage(1);
-                setHighlightedInvoiceId(refreshedInvoices[0]?.id ?? null);
+                setHighlightedInvoiceId(
+                  refreshedInvoices.invoices[0]?.id ?? null
+                );
                 showWarning(createResult.message);
                 setIsModalOpen(false);
                 setEditingInvoice(null);
@@ -637,7 +643,13 @@ function InvoicesPageContent() {
         await deleteInvoice(confirmDeleteInvoice.id);
         setConfirmDeleteInvoice(null);
         try {
-          await refreshInvoiceList(page);
+          const synced = await syncInvoicePageAfterDelete({
+            currentPage: page,
+            refresh: refreshInvoiceList,
+          });
+          if (synced.page !== page) {
+            setPage(synced.page);
+          }
           showSuccess('Invoice deleted successfully.');
         } catch (refreshError) {
           handleError(
@@ -662,6 +674,7 @@ function InvoicesPageContent() {
     handleError,
     refreshInvoiceList,
     page,
+    setPage,
     isMutatingInvoice,
     withInvoiceSubmitting,
   ]);
@@ -920,12 +933,12 @@ function InvoicesPageContent() {
             currentPage={page}
             totalPages={totalPages}
             totalCount={totalCount}
-            pageSize={10}
+            pageSize={INVOICE_PAGE_SIZE}
             onPageChange={setPage}
             onRetry={() => {
               void fetchInvoices({
                 page,
-                pageSize: 10,
+                pageSize: INVOICE_PAGE_SIZE,
                 fromDate: fromDate || undefined,
                 toDate: toDate || undefined,
                 search: debouncedSearch || undefined,

@@ -67,6 +67,9 @@ describe('/api/instruments/[id]', () => {
     resetInstrumentApiContractCacheForTests();
     mockUserSupabase = {
       from: jest.fn(),
+      // get_instruments_financials() default — see
+      // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+      rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
     };
     mockAuthContext = {
       user: { id: 'test-user' },
@@ -165,6 +168,7 @@ describe('/api/instruments/[id]', () => {
         instrumentCallCount += 1;
         return instrumentCallCount === 1 ? stateQuery : updateQuery;
       }),
+      rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
     };
 
     const request = new NextRequest(

@@ -33,6 +33,13 @@ import type { TablesInsert, TablesUpdate } from '@/types/database';
 import type { MaintenanceTask } from '@/types';
 import { getCalendarPlacementDate } from '@/utils/calendar';
 import {
+  MAINTENANCE_TASK_CONFLICT_MESSAGE,
+  MAINTENANCE_TASK_EXPECTED_UPDATED_AT_INVALID,
+  MAINTENANCE_TASK_EXPECTED_UPDATED_AT_REQUIRED,
+  MAINTENANCE_TASK_STALE_VERSION,
+  parseExpectedUpdatedAt,
+} from '@/utils/maintenanceTaskConcurrency';
+import {
   claimCreateIdempotency,
   clearCreateIdempotency,
   completeCreateIdempotency,
@@ -96,9 +103,11 @@ function toMaintenanceTaskUpdateRow(
     created_at: _createdAt,
     updated_at: _updatedAt,
     org_id: _orgId,
+    expected_updated_at: _expectedUpdatedAt,
     ...rest
   } = input as Partial<MaintenanceTask> & {
     org_id?: string;
+    expected_updated_at?: string;
   };
   void instrument;
   void client;
@@ -106,6 +115,7 @@ function toMaintenanceTaskUpdateRow(
   void _createdAt;
   void _updatedAt;
   void _orgId;
+  void _expectedUpdatedAt;
 
   return rest;
 }
@@ -892,7 +902,11 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const { id, ...updates } = bodyResult.body;
+      const {
+        id,
+        expected_updated_at: expectedUpdatedAtRaw,
+        ...updates
+      } = bodyResult.body;
 
       if (typeof id !== 'string' || !id.trim()) {
         return {
@@ -907,6 +921,33 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           status: 400,
         };
       }
+
+      const expectedUpdatedAtResult =
+        parseExpectedUpdatedAt(expectedUpdatedAtRaw);
+
+      if (!expectedUpdatedAtResult.ok) {
+        if (expectedUpdatedAtResult.reason === 'missing') {
+          return {
+            payload: {
+              error: 'expected_updated_at is required',
+              error_code: MAINTENANCE_TASK_EXPECTED_UPDATED_AT_REQUIRED,
+              success: false,
+            },
+            status: 400,
+          };
+        }
+
+        return {
+          payload: {
+            error: 'expected_updated_at must be a valid timestamp',
+            error_code: MAINTENANCE_TASK_EXPECTED_UPDATED_AT_INVALID,
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
+      const expectedUpdatedAt = expectedUpdatedAtResult.value;
 
       const validationResult = safeValidate(
         updates,
@@ -959,13 +1000,15 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         }
       }
 
-      const { data, error } = await auth.userSupabase
+      const updateRow = toMaintenanceTaskUpdateRow(validationResult.data);
+
+      const { data: updatedRows, error } = await auth.userSupabase
         .from('maintenance_tasks')
-        .update(toMaintenanceTaskUpdateRow(validationResult.data))
+        .update(updateRow)
         .eq('id', id)
         .eq('org_id', auth.orgId!)
-        .select()
-        .single();
+        .eq('updated_at', expectedUpdatedAt)
+        .select();
 
       if (error) {
         throw errorHandler.handleSupabaseError(
@@ -973,6 +1016,35 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           'Update maintenance task'
         );
       }
+
+      if (!updatedRows?.length) {
+        const { data: existingTask } = await auth.userSupabase
+          .from('maintenance_tasks')
+          .select('id')
+          .eq('id', id)
+          .eq('org_id', auth.orgId!)
+          .maybeSingle();
+
+        if (!existingTask) {
+          return {
+            payload: { error: 'Task not found', success: false },
+            status: 404,
+            metadata: { taskId: id },
+          };
+        }
+
+        return {
+          payload: {
+            error: MAINTENANCE_TASK_CONFLICT_MESSAGE,
+            error_code: MAINTENANCE_TASK_STALE_VERSION,
+            success: false,
+          },
+          status: 409,
+          metadata: { taskId: id },
+        };
+      }
+
+      const data = updatedRows[0];
 
       const updatedValidation = safeValidate(data, validateMaintenanceTask);
 

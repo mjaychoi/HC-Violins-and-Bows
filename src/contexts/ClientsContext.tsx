@@ -20,6 +20,12 @@ import {
 import { logInfo, logWarn } from '@/utils/logger';
 import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
+import { isClientStaleConflict } from '@/app/api/clients/_utils/concurrency';
+import {
+  fingerprintPlainClientCreate,
+  resolveClientCreateOperation,
+  type PendingClientCreateOperation,
+} from '@/utils/clientCreateOperation';
 
 interface ClientsState {
   clients: Client[];
@@ -164,7 +170,7 @@ type ClientsContextValue = {
     ) => Promise<Client | null>;
     updateClient: (
       id: string,
-      client: Partial<Client>
+      client: Partial<Client> & { expected_updated_at?: string }
     ) => Promise<Client | null>;
     deleteClient: (id: string) => Promise<boolean>;
     upsertClient: (client: Client) => void;
@@ -176,17 +182,6 @@ type ClientsContextValue = {
 const NO_TENANT_SCOPE_KEY = '__no-tenant__';
 
 const ClientsContext = createContext<ClientsContextValue | null>(null);
-
-function generateIdempotencyKey(prefix: string): string {
-  if (
-    typeof globalThis.crypto !== 'undefined' &&
-    typeof globalThis.crypto.randomUUID === 'function'
-  ) {
-    return `${prefix}-${globalThis.crypto.randomUUID()}`;
-  }
-
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-}
 
 function sameClientList(a: Client[], b: Client[]): boolean {
   if (a === b) return true;
@@ -229,12 +224,16 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
   const { tenantIdentityKey } = useTenantIdentity();
 
   const inflight = useRef(new Map<string, Promise<void>>());
+  const pendingCreateRef = useRef<PendingClientCreateOperation | null>(null);
+  const createInFlightRef = useRef<Promise<Client | null> | null>(null);
   const tenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
   const previousTenantIdentityKeyRef = useRef<string | null>(tenantIdentityKey);
 
   useEffect(() => {
     if (previousTenantIdentityKeyRef.current !== tenantIdentityKey) {
       inflight.current.clear();
+      pendingCreateRef.current = null;
+      createInFlightRef.current = null;
       dispatch({ type: 'RESET_STATE' });
     }
 
@@ -268,6 +267,8 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
   const resetState = useCallback(() => {
     inflight.current.clear();
+    pendingCreateRef.current = null;
+    createInFlightRef.current = null;
     dispatch({ type: 'RESET_STATE' });
   }, []);
 
@@ -366,59 +367,85 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
 
   const createClient = useCallback(
     async (client: Omit<Client, 'id' | 'created_at'>) => {
-      const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
+      if (createInFlightRef.current) {
+        return createInFlightRef.current;
+      }
 
-      dispatch({ type: 'SET_SUBMITTING', payload: true });
+      pendingCreateRef.current = resolveClientCreateOperation(
+        pendingCreateRef.current,
+        fingerprintPlainClientCreate(client),
+        'client-create'
+      );
+      const idempotencyKey = pendingCreateRef.current.key;
 
-      try {
-        const res = await apiFetch(
-          '/api/clients',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(client),
-          },
-          { idempotencyKey: generateIdempotencyKey('client-create') }
-        );
+      const run = (async () => {
+        const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
 
-        if (!res.ok) {
-          throw await createApiResponseErrorFromResponse(
+        dispatch({ type: 'SET_SUBMITTING', payload: true });
+
+        try {
+          const res = await apiFetch(
+            '/api/clients',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(client),
+            },
+            { idempotencyKey }
+          );
+
+          if (!res.ok) {
+            throw await createApiResponseErrorFromResponse(
+              res,
+              `Failed to create client (${res.status})`
+            );
+          }
+
+          const body = await readApiResponseEnvelope<Client>(
             res,
             `Failed to create client (${res.status})`
           );
-        }
 
-        const body = await readApiResponseEnvelope<Client>(
-          res,
-          `Failed to create client (${res.status})`
-        );
+          if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+            pendingCreateRef.current = null;
+            return null;
+          }
 
-        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+          const created = body.data;
+
+          if (created) {
+            dispatch({ type: 'ADD_CLIENT', payload: created });
+            pendingCreateRef.current = null;
+          }
+
+          return created ?? null;
+        } catch (err) {
+          if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
+            pendingCreateRef.current = null;
+            return null;
+          }
+
+          if (isAuthLikeTenantError(err)) {
+            pendingCreateRef.current = null;
+            dispatch({ type: 'RESET_STATE' });
+            return null;
+          }
+
+          handleErrorRef.current(err, 'Create client');
           return null;
+        } finally {
+          if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
+            dispatch({ type: 'SET_SUBMITTING', payload: false });
+          }
         }
+      })();
 
-        const created = body.data;
-
-        if (created) {
-          dispatch({ type: 'ADD_CLIENT', payload: created });
-        }
-
-        return created ?? null;
-      } catch (err) {
-        if (tenantIdentityKeyRef.current !== mutationTenantIdentityKey) {
-          return null;
-        }
-
-        if (isAuthLikeTenantError(err)) {
-          dispatch({ type: 'RESET_STATE' });
-          return null;
-        }
-
-        handleErrorRef.current(err, 'Create client');
-        return null;
+      createInFlightRef.current = run;
+      try {
+        return await run;
       } finally {
-        if (tenantIdentityKeyRef.current === mutationTenantIdentityKey) {
-          dispatch({ type: 'SET_SUBMITTING', payload: false });
+        if (createInFlightRef.current === run) {
+          createInFlightRef.current = null;
         }
       }
     },
@@ -426,16 +453,26 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
   );
 
   const updateClient = useCallback(
-    async (id: string, client: Partial<Client>) => {
+    async (
+      id: string,
+      client: Partial<Client> & { expected_updated_at?: string }
+    ) => {
       const mutationTenantIdentityKey = tenantIdentityKeyRef.current;
 
       dispatch({ type: 'SET_SUBMITTING', payload: true });
 
       try {
+        const { expected_updated_at, updated_at, ...fields } = client;
+        void updated_at;
+
         const res = await apiFetch('/api/clients', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, ...client }),
+          body: JSON.stringify({
+            id,
+            ...fields,
+            expected_updated_at,
+          }),
         });
 
         if (!res.ok) {
@@ -472,6 +509,10 @@ export function ClientsProvider({ children }: { children: ReactNode }) {
         if (isAuthLikeTenantError(err)) {
           dispatch({ type: 'RESET_STATE' });
           return null;
+        }
+
+        if (isClientStaleConflict(err)) {
+          throw err;
         }
 
         handleErrorRef.current(err, 'Update client');

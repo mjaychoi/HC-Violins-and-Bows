@@ -36,10 +36,25 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { readApiResponseBody } from '@/utils/handleApiResponse';
+import {
+  CLIENT_STALE_CONFLICT_MESSAGE,
+  isClientStaleConflict,
+} from '@/app/api/clients/_utils/concurrency';
+import {
+  fingerprintClientCreateWithConnections,
+  resolveClientCreateOperation,
+  type PendingClientCreateOperation,
+} from '@/utils/clientCreateOperation';
 
 type PendingInstrumentLink = {
   instrument: Instrument;
   relationshipType: ClientInstrument['relationship_type'];
+};
+
+type ClientCreateSubmitResult = {
+  status: 'full_success' | 'partial_success' | 'full_failure';
+  clientId?: string;
+  failedLinks?: PendingInstrumentLink[];
 };
 
 type ClientsPageTab = 'list' | 'analytics';
@@ -83,23 +98,18 @@ function ClientsPageInner() {
   const { canCreateClient, createClientDisabledReason } = usePermissions();
   const { tenantIdentityKey } = useTenantIdentity();
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
+  const [clientSaveError, setClientSaveError] = useState<string | null>(null);
 
   // Track newly created client for scroll/highlight feedback
   const [newlyCreatedClientId, setNewlyCreatedClientId] = useState<
     string | null
   >(null);
   const [atomicSubmitting, setAtomicSubmitting] = useState(false);
-  const withConnectionsIdempotencyRef = useRef<string | null>(null);
-
-  const generateSubmissionIdempotencyKey = () => {
-    if (
-      typeof globalThis.crypto !== 'undefined' &&
-      typeof globalThis.crypto.randomUUID === 'function'
-    ) {
-      return `client-with-conn-${globalThis.crypto.randomUUID()}`;
-    }
-    return `client-with-conn-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-  };
+  const pendingWithConnectionsRef = useRef<PendingClientCreateOperation | null>(
+    null
+  );
+  const withConnectionsInFlightRef =
+    useRef<Promise<ClientCreateSubmitResult> | null>(null);
 
   // FIXED: useUnifiedData is now called at root layout level
   // No need to call it here - data is already fetched
@@ -154,6 +164,7 @@ function ClientsPageInner() {
     showViewModal,
     selectedClient,
     isEditing,
+    expectedUpdatedAt,
     openClientView,
     closeClientView,
     startEditing,
@@ -163,6 +174,7 @@ function ClientsPageInner() {
     updateViewFormData,
     handleViewInputChange,
     applyServerClient,
+    syncFromCollection,
   } = useClientView();
 
   const {
@@ -191,11 +203,7 @@ function ClientsPageInner() {
   const handleSubmit = async (
     clientData: Omit<Client, 'id' | 'created_at'>,
     instruments?: PendingInstrumentLink[]
-  ): Promise<{
-    status: 'full_success' | 'partial_success' | 'full_failure';
-    clientId?: string;
-    failedLinks?: PendingInstrumentLink[];
-  }> => {
+  ): Promise<ClientCreateSubmitResult> => {
     try {
       // client_number: 서버가 DB 기준으로 할당(비어 있으면 null — 프론트에서 추측하지 않음)
       const normalizedClientNumber =
@@ -209,74 +217,97 @@ function ClientsPageInner() {
       };
 
       if (instruments && instruments.length > 0) {
-        setAtomicSubmitting(true);
-        if (!withConnectionsIdempotencyRef.current) {
-          withConnectionsIdempotencyRef.current =
-            generateSubmissionIdempotencyKey();
+        if (withConnectionsInFlightRef.current) {
+          return withConnectionsInFlightRef.current;
         }
-        try {
-          const res = await apiFetch(
-            '/api/clients/with-connections',
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ...createPayload,
-                instrumentLinks: instruments.map(p => ({
-                  instrument_id: p.instrument.id,
-                  relationship_type: p.relationshipType,
-                  notes: null,
-                })),
-              }),
-            },
-            { idempotencyKey: withConnectionsIdempotencyRef.current }
-          );
 
-          const body = await readApiResponseBody<{
-            data?: {
-              client?: Client;
-              connections?: ClientInstrument[];
-            };
-          }>(res, 'Failed to create client');
+        const instrumentLinks = instruments.map(p => ({
+          instrument_id: p.instrument.id,
+          relationship_type: p.relationshipType,
+          notes: null as string | null,
+        }));
 
-          const createdClient = body?.data?.client;
-          const clientId = createdClient?.id;
-          const createdConnections = body?.data?.connections;
+        pendingWithConnectionsRef.current = resolveClientCreateOperation(
+          pendingWithConnectionsRef.current,
+          fingerprintClientCreateWithConnections(
+            createPayload,
+            instrumentLinks
+          ),
+          'client-with-conn'
+        );
+        const idempotencyKey = pendingWithConnectionsRef.current.key;
 
-          if (!clientId || !createdClient) {
-            handleError(
-              new Error('Invalid response'),
-              'Failed to create client'
+        const run = (async (): Promise<ClientCreateSubmitResult> => {
+          setAtomicSubmitting(true);
+          try {
+            const res = await apiFetch(
+              '/api/clients/with-connections',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  ...createPayload,
+                  instrumentLinks,
+                }),
+              },
+              { idempotencyKey }
             );
+
+            const body = await readApiResponseBody<{
+              data?: {
+                client?: Client;
+                connections?: ClientInstrument[];
+              };
+            }>(res, 'Failed to create client');
+
+            const createdClient = body?.data?.client;
+            const clientId = createdClient?.id;
+            const createdConnections = body?.data?.connections;
+
+            if (!clientId || !createdClient) {
+              handleError(
+                new Error('Invalid response'),
+                'Failed to create client'
+              );
+              return { status: 'full_failure' };
+            }
+
+            // API already materialized the new client and links; patch stores to avoid redundant list refetches.
+            upsertClient(createdClient);
+            if (
+              Array.isArray(createdConnections) &&
+              createdConnections.length > 0
+            ) {
+              upsertConnections(createdConnections);
+            } else {
+              // Should not happen on success, but if the payload is missing links, re-sync from the server.
+              void fetchConnections({ all: true, force: true });
+            }
+
+            setNewlyCreatedClientId(clientId);
+            pendingWithConnectionsRef.current = null;
+
+            showSuccess('Client and instrument links created successfully');
+            void collectionRefetchRef.current?.();
+            return {
+              status: 'full_success',
+              clientId,
+            };
+          } catch (error) {
+            handleError(error, 'Client creation failed');
             return { status: 'full_failure' };
+          } finally {
+            setAtomicSubmitting(false);
           }
+        })();
 
-          // API already materialized the new client and links; patch stores to avoid redundant list refetches.
-          upsertClient(createdClient);
-          if (
-            Array.isArray(createdConnections) &&
-            createdConnections.length > 0
-          ) {
-            upsertConnections(createdConnections);
-          } else {
-            // Should not happen on success, but if the payload is missing links, re-sync from the server.
-            void fetchConnections({ all: true, force: true });
-          }
-
-          setNewlyCreatedClientId(clientId);
-          withConnectionsIdempotencyRef.current = null;
-
-          showSuccess('Client and instrument links created successfully');
-          void collectionRefetchRef.current?.();
-          return {
-            status: 'full_success',
-            clientId,
-          };
-        } catch (error) {
-          handleError(error, 'Client creation failed');
-          return { status: 'full_failure' };
+        withConnectionsInFlightRef.current = run;
+        try {
+          return await run;
         } finally {
-          setAtomicSubmitting(false);
+          if (withConnectionsInFlightRef.current === run) {
+            withConnectionsInFlightRef.current = null;
+          }
         }
       }
 
@@ -346,18 +377,19 @@ function ClientsPageInner() {
   useEffect(() => {
     setConfirmDelete(null);
     setNewlyCreatedClientId(null);
+    pendingWithConnectionsRef.current = null;
+    withConnectionsInFlightRef.current = null;
     clearOwnedItems();
   }, [clearOwnedItems, tenantIdentityKey]);
 
-  // Keep modal selection in sync when the clients list refetches fresher rows.
+  // Keep the closed/viewing modal in sync with collection refreshes.
+  // A dirty editor must keep its loaded version token and local draft.
   useEffect(() => {
     if (!selectedClient) return;
     const fresh = clients.find(c => c.id === selectedClient.id);
     if (!fresh) return;
-    if (fresh.updated_at !== selectedClient.updated_at) {
-      applyServerClient(fresh);
-    }
-  }, [clients, selectedClient, applyServerClient]);
+    syncFromCollection(fresh);
+  }, [clients, selectedClient, syncFromCollection]);
 
   const confirmDeleteClient = async () => {
     if (!confirmDelete) return;
@@ -536,7 +568,9 @@ function ClientsPageInner() {
                 showSuccess('Client information updated successfully.');
                 await collectionRefetchRef.current?.();
               } catch (error) {
-                handleError(error, 'Failed to update client');
+                if (!isClientStaleConflict(error)) {
+                  handleError(error, 'Failed to update client');
+                }
                 throw error; // Re-throw to prevent saveEditing from closing editing mode
               }
             }}
@@ -560,23 +594,44 @@ function ClientsPageInner() {
         {/* View/Edit Client Modal */}
         <ClientModal
           isOpen={showViewModal}
-          onClose={closeClientView}
+          onClose={() => {
+            setClientSaveError(null);
+            closeClientView();
+          }}
           client={selectedClient}
           isEditing={isEditing}
           onEdit={startEditing}
           onSave={async (clientData: Partial<Client>) => {
-            if (selectedClient) {
-              const updated = await updateClient(selectedClient.id, clientData);
+            if (!selectedClient) {
+              return;
+            }
+
+            setClientSaveError(null);
+            try {
+              const updated = await updateClient(selectedClient.id, {
+                ...clientData,
+                expected_updated_at: expectedUpdatedAt ?? undefined,
+              });
               if (!updated) {
                 return;
               }
               applyServerClient(updated);
               stopEditing();
               showSuccess('Client information updated successfully.');
+            } catch (error) {
+              if (isClientStaleConflict(error)) {
+                setClientSaveError(CLIENT_STALE_CONFLICT_MESSAGE);
+                return;
+              }
+              throw error;
             }
           }}
           onDelete={handleDeleteClient}
-          onCancel={stopEditing}
+          onCancel={() => {
+            setClientSaveError(null);
+            stopEditing();
+          }}
+          saveError={clientSaveError}
           submitting={submitting.hasAnySubmitting}
           instrumentRelationships={instrumentRelationships}
           onAddInstrument={addInstrumentRelationship}

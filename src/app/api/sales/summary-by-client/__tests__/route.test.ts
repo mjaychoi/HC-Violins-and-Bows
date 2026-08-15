@@ -90,7 +90,11 @@ describe('/api/sales/summary-by-client', () => {
   });
 
   it('returns aggregated sales summary rows from the database', async () => {
-    const aggregateQuery = createQueryResult({
+    // sale_price is no longer directly selectable for the shared
+    // authenticated role — get_sales_summary_by_client() replaces the raw
+    // PostgREST grouped aggregate. See
+    // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+    const mockRpc = jest.fn().mockResolvedValue({
       data: [
         {
           client_id: 'client-1',
@@ -115,12 +119,9 @@ describe('/api/sales/summary-by-client', () => {
       count: 3,
     });
 
-    let callCount = 0;
     mockUserSupabase = {
-      from: jest.fn().mockImplementation(() => {
-        callCount += 1;
-        return callCount === 1 ? aggregateQuery : countQuery;
-      }),
+      from: jest.fn().mockReturnValue(countQuery),
+      rpc: mockRpc,
     };
 
     const request = new NextRequest(
@@ -148,14 +149,16 @@ describe('/api/sales/summary-by-client', () => {
     ]);
     expect(json.count).toBe(2);
     expect(json.totalSales).toBe(3);
-    expect(aggregateQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    expect(mockRpc).toHaveBeenCalledWith('get_sales_summary_by_client', {
+      p_from_date: null,
+      p_to_date: null,
+    });
     expect(countQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
-    expect(aggregateQuery.not).toHaveBeenCalledWith('client_id', 'is', null);
     expect(countQuery.not).toHaveBeenCalledWith('client_id', 'is', null);
   });
 
   it('applies date filters to both aggregate and count queries', async () => {
-    const aggregateQuery = createQueryResult({
+    const mockRpc = jest.fn().mockResolvedValue({
       data: [],
       error: null,
     });
@@ -165,12 +168,9 @@ describe('/api/sales/summary-by-client', () => {
       count: 0,
     });
 
-    let callCount = 0;
     mockUserSupabase = {
-      from: jest.fn().mockImplementation(() => {
-        callCount += 1;
-        return callCount === 1 ? aggregateQuery : countQuery;
-      }),
+      from: jest.fn().mockReturnValue(countQuery),
+      rpc: mockRpc,
     };
 
     const request = new NextRequest(
@@ -179,8 +179,10 @@ describe('/api/sales/summary-by-client', () => {
     const response = await GET(request);
 
     expect(response.status).toBe(200);
-    expect(aggregateQuery.gte).toHaveBeenCalledWith('sale_date', '2024-01-01');
-    expect(aggregateQuery.lte).toHaveBeenCalledWith('sale_date', '2024-01-31');
+    expect(mockRpc).toHaveBeenCalledWith('get_sales_summary_by_client', {
+      p_from_date: '2024-01-01',
+      p_to_date: '2024-01-31',
+    });
     expect(countQuery.gte).toHaveBeenCalledWith('sale_date', '2024-01-01');
     expect(countQuery.lte).toHaveBeenCalledWith('sale_date', '2024-01-31');
   });
@@ -203,13 +205,12 @@ describe('/api/sales/summary-by-client', () => {
   });
 
   it('returns 500 when the aggregate query fails', async () => {
-    const aggregateQuery = createQueryResult({
-      data: null,
-      error: { message: 'Database error' },
-    });
-
     mockUserSupabase = {
-      from: jest.fn().mockReturnValue(aggregateQuery),
+      from: jest.fn(),
+      rpc: jest.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Database error' },
+      }),
     };
 
     const request = new NextRequest(

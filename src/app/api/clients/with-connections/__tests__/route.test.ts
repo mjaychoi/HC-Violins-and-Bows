@@ -3,6 +3,8 @@ import { POST } from '../route';
 import { errorHandler } from '@/utils/errorHandler';
 import { ErrorCodes } from '@/types/errors';
 import { validateClient } from '@/utils/typeGuards';
+import { createRequestHash } from '@/app/api/_utils/createIdempotency';
+import { createClientInputToDbRow } from '@/utils/clientDbMap';
 
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger');
@@ -454,5 +456,156 @@ describe('POST /api/clients/with-connections', () => {
 
     expect(response.status).toBe(409);
     expect(String(json.error)).toMatch(/client number|already in use/i);
+  });
+
+  it('replays the completed with-connections payload for the same key and hash', async () => {
+    const dbRow = createClientInputToDbRow({
+      first_name: 'Jane',
+      last_name: 'Smith',
+      email: 'j@example.com',
+      contact_number: null,
+      client_number: null,
+      tags: ['Owner'],
+      interest: 'Collector',
+      note: 'Wants an instrument for quartet work',
+    });
+    const requestHash = createRequestHash({
+      name: dbRow.name.trim(),
+      email: dbRow.email,
+      phone: dbRow.phone,
+      tags: dbRow.tags ?? [],
+      interest: dbRow.interest,
+      note: dbRow.note,
+      instrumentLinks: [
+        {
+          instrument_id: validInst,
+          relationship_type: 'Interested',
+          notes: null,
+        },
+      ],
+    });
+    const replayPayload = {
+      data: { client: clientRow, connections: [connRow] },
+    };
+    const idempotency: Record<string, jest.Mock> = {};
+    Object.assign(idempotency, {
+      select: jest.fn(() => idempotency),
+      eq: jest.fn(() => idempotency),
+      insert: jest.fn(() => idempotency),
+      update: jest.fn(() => idempotency),
+      delete: jest.fn(() => idempotency),
+      single: jest.fn(async () => ({
+        data: null,
+        error: { code: '23505' },
+      })),
+      maybeSingle: jest.fn(async () => ({
+        data: {
+          request_hash: requestHash,
+          status: 'completed',
+          response_payload: replayPayload,
+        },
+        error: null,
+      })),
+    });
+
+    mockUserSupabase = {
+      rpc: jest.fn(),
+      from: jest.fn((table: string) => {
+        if (table === 'api_create_idempotency') return idempotency;
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+
+    const request = new NextRequest(
+      'http://localhost/api/clients/with-connections',
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'with-conn-key-1' },
+        body: JSON.stringify({
+          first_name: 'Jane',
+          last_name: 'Smith',
+          email: 'j@example.com',
+          contact_number: null,
+          interest: 'Collector',
+          note: 'Wants an instrument for quartet work',
+          client_number: 'CL999',
+          tags: ['Owner'],
+          instrumentLinks: [
+            {
+              instrument_id: validInst,
+              relationship_type: 'Interested',
+              notes: null,
+            },
+          ],
+        }),
+      }
+    );
+    const response = await POST(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.idempotentReplay).toBe(true);
+    expect(json.data.client.id).toBe(clientRow.id);
+    expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+  });
+
+  it('rejects with-connections key reuse with a different payload', async () => {
+    const idempotency: Record<string, jest.Mock> = {};
+    Object.assign(idempotency, {
+      select: jest.fn(() => idempotency),
+      eq: jest.fn(() => idempotency),
+      insert: jest.fn(() => idempotency),
+      single: jest.fn(async () => ({
+        data: null,
+        error: { code: '23505' },
+      })),
+      maybeSingle: jest.fn(async () => ({
+        data: {
+          request_hash: 'other-hash',
+          status: 'completed',
+          response_payload: { data: { client: clientRow, connections: [] } },
+        },
+        error: null,
+      })),
+    });
+
+    mockUserSupabase = {
+      rpc: jest.fn(),
+      from: jest.fn((table: string) => {
+        if (table === 'api_create_idempotency') return idempotency;
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+
+    const request = new NextRequest(
+      'http://localhost/api/clients/with-connections',
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'with-conn-key-1' },
+        body: JSON.stringify({
+          first_name: 'Jane',
+          last_name: 'Smith',
+          email: 'j@example.com',
+          contact_number: null,
+          interest: 'Collector',
+          note: 'Changed',
+          client_number: null,
+          tags: ['Owner'],
+          instrumentLinks: [
+            {
+              instrument_id: validInst,
+              relationship_type: 'Interested',
+              notes: null,
+            },
+          ],
+        }),
+      }
+    );
+    const response = await POST(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(json.error_code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
   });
 });

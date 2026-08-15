@@ -34,6 +34,10 @@ import {
 import { INTEREST_LEVELS } from '../constants';
 import dynamic from 'next/dynamic';
 import { usePermissions } from '@/hooks/usePermissions';
+import {
+  CLIENT_STALE_CONFLICT_MESSAGE,
+  isClientStaleConflict,
+} from '@/app/api/clients/_utils/concurrency';
 
 const MessageComposer = dynamic(
   () => import('@/components/messages/MessageComposer'),
@@ -398,7 +402,10 @@ interface ClientListProps {
   clients: Client[];
   clientInstruments: ClientInstrument[];
   onClientClick: (client: Client) => void; // Kept for interface compatibility but not used (handles expand instead)
-  onUpdateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
+  onUpdateClient: (
+    clientId: string,
+    updates: Partial<Client> & { expected_updated_at?: string }
+  ) => Promise<void>;
   onDeleteClient?: (client: Client) => void;
   onColumnSort: (column: keyof Client) => void;
   getSortArrow: (column: keyof Client) => string;
@@ -457,14 +464,20 @@ const ClientList = memo(function ClientList({
   // 인라인 편집 훅 (interest와 tags만 별도 편집)
   const inlineEditInterest = useInlineEdit<Client>({
     onSave: async (id, data) => {
-      await onUpdateClient(id, { interest: data.interest as string });
+      await onUpdateClient(id, {
+        interest: data.interest as string,
+        expected_updated_at: data.updated_at ?? undefined,
+      });
     },
     highlightDuration: 2000,
   });
 
   const inlineEditTags = useInlineEdit<Client>({
     onSave: async (id, data) => {
-      await onUpdateClient(id, { tags: data.tags as string[] });
+      await onUpdateClient(id, {
+        tags: data.tags as string[],
+        expected_updated_at: data.updated_at ?? undefined,
+      });
     },
     highlightDuration: 2000,
   });
@@ -494,8 +507,10 @@ const ClientList = memo(function ClientList({
       last_name: client.last_name,
       email: client.email,
       contact_number: client.contact_number,
+      tags: [...(client.tags ?? [])],
       interest: client.interest,
       note: client.note,
+      updated_at: client.updated_at,
     });
     setEditError(null);
   }, []);
@@ -519,10 +534,12 @@ const ClientList = memo(function ClientList({
       return;
     }
 
-    const updates: Partial<Client> = {
-      ...editData,
+    const { updated_at: expectedUpdatedAt, ...editFields } = editData;
+    const updates: Partial<Client> & { expected_updated_at?: string } = {
+      ...editFields,
       first_name: firstName || null,
       last_name: lastName || null,
+      expected_updated_at: expectedUpdatedAt ?? undefined,
     };
 
     setIsSaving(true);
@@ -533,8 +550,12 @@ const ClientList = memo(function ClientList({
       // If updateClient returns null or throws an error, editing mode will remain open
       setEditingClient(null);
       setEditData({});
-    } catch {
-      setEditError('Unable to save client changes. Please try again.');
+    } catch (error) {
+      setEditError(
+        isClientStaleConflict(error)
+          ? CLIENT_STALE_CONFLICT_MESSAGE
+          : 'Unable to save client changes. Please try again.'
+      );
     } finally {
       setIsSaving(false);
     }

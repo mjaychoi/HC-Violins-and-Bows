@@ -55,22 +55,6 @@ describe('GET /api/clients/analytics', () => {
       eq: jest.fn().mockResolvedValue({ count: 0, error: null }),
     };
 
-    const salesAgg = {
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
-      not: jest.fn().mockReturnThis(),
-      gte: jest.fn().mockReturnThis(),
-      lte: jest.fn().mockReturnThis(),
-      maybeSingle: jest.fn().mockResolvedValue({
-        data: {
-          total_spend: null,
-          purchase_count: null,
-          most_recent: null,
-        },
-        error: null,
-      }),
-    };
-
     const distinct = {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
@@ -79,26 +63,21 @@ describe('GET /api/clients/analytics', () => {
       lte: jest.fn().mockResolvedValue({ data: [], error: null }),
     };
 
-    let fromCall = 0;
     mockUserSupabase = {
       from: jest.fn((table: string) => {
         if (table === 'clients') return clientsHead;
-        fromCall += 1;
-        return fromCall === 1 ? salesAgg : distinct;
+        if (table === 'sales_history') return distinct;
+        throw new Error(`unexpected table ${table}`);
+      }),
+      // sale_price is no longer directly selectable for the shared
+      // authenticated role — get_client_purchase_aggregate() replaces the
+      // raw PostgREST aggregate. See
+      // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+      rpc: jest.fn().mockResolvedValue({
+        data: [{ total_spend: null, purchase_count: null, most_recent: null }],
+        error: null,
       }),
     };
-
-    // Fix: sales then distinct — both from sales_history
-    mockUserSupabase.from = jest.fn((table: string) => {
-      if (table === 'clients') return clientsHead;
-      if (table === 'sales_history') {
-        // First sales_history call is aggregate, second is distinct
-        if (!mockUserSupabase._salesCalls) mockUserSupabase._salesCalls = 0;
-        mockUserSupabase._salesCalls += 1;
-        return mockUserSupabase._salesCalls === 1 ? salesAgg : distinct;
-      }
-      throw new Error(`unexpected table ${table}`);
-    });
 
     const res = await GET(
       new NextRequest('http://localhost/api/clients/analytics')
@@ -113,26 +92,16 @@ describe('GET /api/clients/analytics', () => {
     expect(json.data.mostRecentPurchaseDate).toBeNull();
     expect(json.data.scope).toBe('organization');
     expect(json.complete).toBe(true);
+    expect(mockUserSupabase.rpc).toHaveBeenCalledWith(
+      'get_client_purchase_aggregate',
+      { p_from_date: null, p_to_date: null }
+    );
   });
 
   it('does not double-count clients with multiple sales', async () => {
     const clientsHead = {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockResolvedValue({ count: 1001, error: null }),
-    };
-
-    const salesAgg = {
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
-      not: jest.fn().mockReturnThis(),
-      maybeSingle: jest.fn().mockResolvedValue({
-        data: {
-          total_spend: 300,
-          purchase_count: 3,
-          most_recent: '2026-07-01',
-        },
-        error: null,
-      }),
     };
 
     const distinct = {
@@ -147,9 +116,14 @@ describe('GET /api/clients/analytics', () => {
     mockUserSupabase = {
       from: jest.fn((table: string) => {
         if (table === 'clients') return clientsHead;
-        if (!mockUserSupabase._salesCalls) mockUserSupabase._salesCalls = 0;
-        mockUserSupabase._salesCalls += 1;
-        return mockUserSupabase._salesCalls === 1 ? salesAgg : distinct;
+        if (table === 'sales_history') return distinct;
+        throw new Error(`unexpected table ${table}`);
+      }),
+      rpc: jest.fn().mockResolvedValue({
+        data: [
+          { total_spend: 300, purchase_count: 3, most_recent: '2026-07-01' },
+        ],
+        error: null,
       }),
     };
 

@@ -14,10 +14,25 @@ const EMPTY_FORM_DATA: ClientViewFormData = {
   note: '',
 };
 
+function formDataFromClient(client: Client): ClientViewFormData {
+  return {
+    last_name: client.last_name || '',
+    first_name: client.first_name || '',
+    contact_number: client.contact_number || '',
+    email: client.email || '',
+    tags: [...(client.tags ?? [])],
+    interest: client.interest || '',
+    note: client.note || '',
+  };
+}
+
 export function useClientView() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string | null>(
+    null
+  );
 
   const [viewFormData, setViewFormData] =
     useState<ClientViewFormData>(EMPTY_FORM_DATA);
@@ -30,15 +45,8 @@ export function useClientView() {
 
   const openClientView = (client: Client, editMode: boolean = true) => {
     setSelectedClient(client);
-    setViewFormData({
-      last_name: client.last_name || '',
-      first_name: client.first_name || '',
-      contact_number: client.contact_number || '',
-      email: client.email || '',
-      tags: client.tags || [],
-      interest: client.interest || '',
-      note: client.note || '',
-    });
+    setExpectedUpdatedAt(client.updated_at ?? null);
+    setViewFormData(formDataFromClient(client));
     setIsEditing(editMode);
     setShowViewModal(true);
   };
@@ -48,6 +56,7 @@ export function useClientView() {
     setShowViewModal(false);
     setSelectedClient(null);
     setIsEditing(false);
+    setExpectedUpdatedAt(null);
     setViewFormData(EMPTY_FORM_DATA);
   }, []);
 
@@ -86,6 +95,7 @@ export function useClientView() {
     setShowViewModal(false);
     setSelectedClient(null);
     setIsEditing(false);
+    setExpectedUpdatedAt(null);
     setViewFormData(EMPTY_FORM_DATA);
   }, [tenantIdentityKey]);
 
@@ -112,21 +122,31 @@ export function useClientView() {
 
   const applyServerClient = useCallback((client: Client) => {
     setSelectedClient(client);
-    setViewFormData({
-      last_name: client.last_name || '',
-      first_name: client.first_name || '',
-      contact_number: client.contact_number || '',
-      email: client.email || '',
-      tags: client.tags || [],
-      interest: client.interest || '',
-      note: client.note || '',
-    });
+    setExpectedUpdatedAt(client.updated_at ?? null);
+    setViewFormData(formDataFromClient(client));
   }, []);
+
+  const syncFromCollection = useCallback(
+    (fresh: Client) => {
+      if (isEditing) {
+        return;
+      }
+      if (!selectedClient || fresh.id !== selectedClient.id) {
+        return;
+      }
+      if (fresh.updated_at === selectedClient.updated_at) {
+        return;
+      }
+      applyServerClient(fresh);
+    },
+    [applyServerClient, isEditing, selectedClient]
+  );
 
   return {
     showViewModal,
     selectedClient,
     isEditing,
+    expectedUpdatedAt,
     showInterestDropdown,
     viewFormData,
     openClientView,
@@ -136,6 +156,7 @@ export function useClientView() {
     updateViewFormData,
     handleViewInputChange,
     applyServerClient,
+    syncFromCollection,
     setField,
     toggleTag,
   };

@@ -725,4 +725,161 @@ describe('useInvoices', () => {
     expect(url).toContain('sortColumn=invoice_date');
     expect(url).toContain('sortDirection=desc');
   });
+
+  it('returns pagination metadata from top-level and nested pagination fields', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: mockInvoices,
+        count: 21,
+        returnedCount: 1,
+        droppedCount: 0,
+        partial: false,
+        pagination: {
+          page: 3,
+          pageSize: 10,
+          totalCount: 21,
+          totalPages: 3,
+        },
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+    let fetched: Awaited<
+      ReturnType<typeof result.current.fetchInvoices>
+    > | null = null;
+
+    await act(async () => {
+      fetched = await result.current.fetchInvoices({ page: 3, pageSize: 10 });
+    });
+
+    expect(fetched).toEqual({
+      invoices: mockInvoices,
+      totalCount: 21,
+      totalPages: 3,
+      page: 3,
+    });
+    expect(result.current.totalCount).toBe(21);
+    expect(result.current.totalPages).toBe(3);
+    expect(result.current.invoices).toHaveLength(1);
+  });
+
+  it('returns server totalPages for an empty out-of-range page', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: [],
+        count: 20,
+        returnedCount: 0,
+        droppedCount: 0,
+        partial: false,
+        pagination: {
+          page: 3,
+          pageSize: 10,
+          totalCount: 20,
+          totalPages: 2,
+        },
+      }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+    let fetched: Awaited<
+      ReturnType<typeof result.current.fetchInvoices>
+    > | null = null;
+
+    await act(async () => {
+      fetched = await result.current.fetchInvoices({ page: 3, pageSize: 10 });
+    });
+
+    expect(fetched).toEqual({
+      invoices: [],
+      totalCount: 20,
+      totalPages: 2,
+      page: 3,
+    });
+    expect(result.current.invoices).toEqual([]);
+    expect(result.current.totalPages).toBe(2);
+    expect(result.current.status).toBe('empty');
+  });
+
+  it('rethrows fetch errors when throwOnError is true', async () => {
+    (apiFetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'Fetch failed' }),
+    });
+
+    const { result } = renderHook(() => useInvoices());
+
+    await act(async () => {
+      await expect(
+        result.current.fetchInvoices({
+          page: 1,
+          pageSize: 10,
+          throwOnError: true,
+          suppressErrorToast: true,
+        })
+      ).rejects.toBeInstanceOf(ApiResponseError);
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.invoices).toEqual([]);
+  });
+
+  it('marks aborted fetches and does not let them overwrite a later page', async () => {
+    (apiFetch as jest.Mock)
+      .mockImplementationOnce(
+        (_url: string, options?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => {
+              const abortError = new DOMException(
+                'The operation was aborted.',
+                'AbortError'
+              );
+              reject(abortError);
+            });
+          })
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: mockInvoices,
+          count: 10,
+          returnedCount: 1,
+          droppedCount: 0,
+          partial: false,
+          totalPages: 1,
+          pagination: {
+            page: 2,
+            pageSize: 10,
+            totalCount: 10,
+            totalPages: 1,
+          },
+        }),
+      });
+
+    const { result } = renderHook(() => useInvoices());
+    let firstResult: Awaited<
+      ReturnType<typeof result.current.fetchInvoices>
+    > | null = null;
+
+    act(() => {
+      void result.current
+        .fetchInvoices({ page: 3, pageSize: 10 })
+        .then(value => {
+          firstResult = value;
+        });
+    });
+
+    await act(async () => {
+      await result.current.fetchInvoices({ page: 2, pageSize: 10 });
+    });
+
+    await waitFor(() => {
+      expect(firstResult?.aborted).toBe(true);
+    });
+    expect(result.current.invoices).toEqual(mockInvoices);
+    expect(result.current.totalPages).toBe(1);
+    expect(result.current.totalCount).toBe(10);
+  });
 });

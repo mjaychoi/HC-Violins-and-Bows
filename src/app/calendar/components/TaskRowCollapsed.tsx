@@ -65,7 +65,10 @@ function TaskRowCollapsed({
   const inlineEditPriority = useInlineEdit<MaintenanceTask>({
     onSave: async (id, data) => {
       if (onTaskUpdate && data.priority) {
-        await onTaskUpdate(id, { priority: data.priority as TaskPriority });
+        await onTaskUpdate(id, {
+          priority: data.priority as TaskPriority,
+          expected_updated_at: task.updated_at,
+        });
       }
     },
     highlightDuration: 2000,
@@ -74,7 +77,10 @@ function TaskRowCollapsed({
   const inlineEditStatus = useInlineEdit<MaintenanceTask>({
     onSave: async (id, data) => {
       if (onTaskUpdate && data.status) {
-        await onTaskUpdate(id, { status: data.status as TaskStatus });
+        await onTaskUpdate(id, {
+          status: data.status as TaskStatus,
+          expected_updated_at: task.updated_at,
+        });
       }
     },
     highlightDuration: 2000,

@@ -22,6 +22,7 @@ jest.mock('@/utils/logger', () => {
 const mockErrorHandler = errorHandler as jest.Mocked<typeof errorHandler>;
 let mockUserSupabase: {
   from: jest.Mock;
+  rpc?: jest.Mock;
 };
 let mockAuthContext: Record<string, unknown>;
 
@@ -142,6 +143,9 @@ describe('/api/instruments/[id] PATCH identity final-state', () => {
           },
         };
       }),
+      // get_instruments_financials() default — see
+      // 20260814160000_enforce_financial_confidentiality_db_boundary.sql.
+      rpc: jest.fn().mockResolvedValue({ data: [], error: null }),
     };
 
     mockAuthContext = {
