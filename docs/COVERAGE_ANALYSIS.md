@@ -41,6 +41,7 @@
 - ✅ `ClientKPISummary.tsx` - 테스트 추가됨
 - ✅ `ClientsListContent.tsx` - 테스트 추가됨
 - ⚠️ `ClientRowExpand.tsx` - 테스트 추가 권장
+- ⚠️ `TodayFollowUps.tsx` (441줄) - 테스트 추가 권장
 - ⚠️ `FollowUpButton.tsx` - 테스트 추가 권장
 
 ##### sales/components/
@@ -109,6 +110,7 @@
 #### 컴포넌트 테스트 추가 권장
 
 - [ ] `ClientRowExpand.tsx`
+- [ ] `TodayFollowUps.tsx` (441줄, 복잡)
 - [ ] `FollowUpButton.tsx`
 - [ ] `SalesFilters.tsx`
 - [ ] `DataQualityWarning.tsx`
@@ -208,6 +210,7 @@
 - [x] `DashboardContent.tsx`
 - [x] `DashboardKPIs.tsx`
 - [ ] `ClientRowExpand.tsx` (권장)
+- [ ] `TodayFollowUps.tsx` (권장)
 - [ ] `SalesFilters.tsx` (권장)
 
 ### Context ✅
@@ -266,6 +269,7 @@ open coverage/index.html
 
 1. 나머지 컴포넌트 테스트 (권장 사항)
    - `ClientRowExpand.tsx`
+   - `TodayFollowUps.tsx`
    - `SalesFilters.tsx`
    - 등
 
