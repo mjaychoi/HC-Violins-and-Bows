@@ -611,4 +611,36 @@ describe('GroupedTaskList', () => {
     expect(mockOnTaskClick).not.toHaveBeenCalled();
     expect(mockOnTaskDelete).toHaveBeenCalled();
   });
+
+  it('does not render Edit or Delete actions for members', () => {
+    render(
+      <GroupedTaskList
+        tasks={mockTasks}
+        instruments={mockInstruments}
+        clients={mockClients}
+        onTaskClick={mockOnTaskClick}
+        onTaskDelete={mockOnTaskDelete}
+        onTaskEdit={jest.fn()}
+        canManageTask={false}
+      />
+    );
+
+    expect(screen.queryAllByLabelText(/Actions for/).length).toBe(0);
+    expect(screen.queryByText('Edit')).not.toBeInTheDocument();
+    expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+  });
+
+  it('does not render a disabled Add task CTA for members in the empty list', () => {
+    render(
+      <GroupedTaskList
+        tasks={[]}
+        onAddTask={jest.fn()}
+        canAddTask={false}
+        addTaskDisabledReason="Admin only"
+      />
+    );
+
+    expect(screen.queryByText('Add task')).not.toBeInTheDocument();
+    expect(screen.getByText('No tasks in this range.')).toBeInTheDocument();
+  });
 });

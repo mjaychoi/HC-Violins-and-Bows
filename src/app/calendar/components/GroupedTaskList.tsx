@@ -76,7 +76,6 @@ export default function GroupedTaskList({
   onResetFilters,
   onAddTask,
   canAddTask = true,
-  addTaskDisabledReason,
   canManageTask = true,
   manageTaskDisabledReason,
 }: GroupedTaskListProps) {
@@ -180,17 +179,17 @@ export default function GroupedTaskList({
         description={
           hasActiveFilters
             ? 'Try adjusting your filters or clearing them to see all tasks.'
-            : 'Create a maintenance task to start tracking your workflow.'
+            : canAddTask
+              ? 'Create a maintenance task to start tracking your workflow.'
+              : 'No tasks in this range.'
         }
         hasActiveFilters={hasActiveFilters}
         onResetFilters={hasActiveFilters ? onResetFilters : undefined}
         actionButton={
-          !hasActiveFilters && onAddTask
+          !hasActiveFilters && onAddTask && canAddTask
             ? {
                 label: 'Add task',
                 onClick: onAddTask,
-                disabled: !canAddTask,
-                disabledReason: addTaskDisabledReason,
               }
             : undefined
         }

@@ -255,4 +255,44 @@ describe('CalendarEmptyState', () => {
       screen.getByText('Try adjusting your filters or create a new task.')
     ).toBeInTheDocument();
   });
+
+  it('does not offer Add task or create copy to a member', () => {
+    render(
+      <CalendarEmptyState
+        hasActiveFilters={false}
+        onResetFilters={mockOnResetFilters}
+        onOpenNewTask={mockOnOpenNewTask}
+        canCreateTask={false}
+      />
+    );
+
+    expect(screen.getByText('No tasks in this range')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Get started by creating your first maintenance task.')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /add maintenance task/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the admin Add task CTA while a mutation is in progress', () => {
+    render(
+      <CalendarEmptyState
+        hasActiveFilters={false}
+        onResetFilters={mockOnResetFilters}
+        onOpenNewTask={mockOnOpenNewTask}
+        canCreateTask={true}
+        createTaskDisabledReason="Please wait for the current submission to finish"
+      />
+    );
+
+    const addButton = screen.getByRole('button', {
+      name: /add maintenance task/i,
+    });
+    expect(addButton).toBeDisabled();
+    expect(addButton).toHaveAttribute(
+      'title',
+      'Please wait for the current submission to finish'
+    );
+  });
 });

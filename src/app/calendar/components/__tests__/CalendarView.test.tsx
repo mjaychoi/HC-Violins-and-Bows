@@ -581,6 +581,23 @@ describe('CalendarView', () => {
       );
     });
 
+    it('does not invoke an event handler when onSelectEvent is omitted', async () => {
+      const user = userEvent.setup();
+      render(
+        <CalendarView
+          tasks={mockTasks}
+          instruments={mockInstruments}
+          currentDate={new Date()}
+          onNavigate={mockOnNavigate}
+          canCreateTask={false}
+          canManageTask={false}
+        />
+      );
+
+      await user.click(screen.getByTestId('calendar-event-1'));
+      expect(mockOnSelectEvent).not.toHaveBeenCalled();
+    });
+
     it('defaults allow slot create and task drag when callbacks and perms are enabled', () => {
       render(
         <CalendarView

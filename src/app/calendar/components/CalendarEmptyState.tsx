@@ -38,6 +38,20 @@ export default function CalendarEmptyState({
 }: CalendarEmptyStateProps) {
   const hasSearchTerm = Boolean(activeFilters?.searchTerm?.trim());
   const isScopedSearchMiss = hasActiveFilters && hasSearchTerm && scopeLabel;
+  const emptyHeading = hasActiveFilters
+    ? 'No tasks found'
+    : canCreateTask
+      ? 'No tasks yet'
+      : 'No tasks in this range';
+  const emptyDescription = isScopedSearchMiss
+    ? `This search only covers tasks loaded for ${scopeLabel}. A matching task may still exist outside this period — try a different date range or clear filters.`
+    : hasActiveFilters
+      ? canCreateTask
+        ? 'Try adjusting your filters or create a new task.'
+        : 'Try adjusting your filters.'
+      : canCreateTask
+        ? 'Get started by creating your first maintenance task.'
+        : 'There are no maintenance tasks to display for this period.';
   // Build filter summary text
   const filterSummaryParts: string[] = [];
   if (activeFilters?.status && activeFilters.status !== 'all') {
@@ -73,7 +87,7 @@ export default function CalendarEmptyState({
             ? `No tasks found for current filters within ${scopeLabel}. ${resultCount} results. This search only covers tasks loaded for ${scopeLabel}; a matching task may still exist outside this period. ${filterSummaryText ? `Active filters: ${filterSummaryText}` : ''}`
             : hasActiveFilters
               ? `No tasks found for current filters. ${resultCount} results. ${filterSummaryText ? `Active filters: ${filterSummaryText}` : ''}`
-              : `No tasks yet. ${resultCount} results.`}
+              : `${emptyHeading}. ${resultCount} results.`}
         </div>
         <div className="mb-4">
           {/* FIXED: Decorative SVG hidden from screen readers */}
@@ -95,7 +109,7 @@ export default function CalendarEmptyState({
         </div>
         {/* FIXED: Use h2 for primary empty state (depends on page structure, but typically h2 is better than h3) */}
         <h2 className="text-base font-medium text-gray-900 mb-1">
-          {hasActiveFilters ? 'No tasks found' : 'No tasks yet'}
+          {emptyHeading}
         </h2>
         {hasActiveFilters && filterSummaryText && (
           <div className="mb-2 px-4 py-2 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-600">
@@ -103,13 +117,7 @@ export default function CalendarEmptyState({
             <span>{filterSummaryText}</span>
           </div>
         )}
-        <p className="text-sm text-gray-500 mb-6">
-          {isScopedSearchMiss
-            ? `This search only covers tasks loaded for ${scopeLabel}. A matching task may still exist outside this period — try a different date range or clear filters.`
-            : hasActiveFilters
-              ? 'Try adjusting your filters or create a new task.'
-              : 'Get started by creating your first maintenance task.'}
-        </p>
+        <p className="text-sm text-gray-500 mb-6">{emptyDescription}</p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           {hasActiveFilters && (
             <button
@@ -136,30 +144,32 @@ export default function CalendarEmptyState({
             </button>
           )}
 
-          <button
-            onClick={onOpenNewTask}
-            disabled={!canCreateTask}
-            title={createTaskDisabledReason}
-            className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors disabled:cursor-not-allowed disabled:bg-blue-300 disabled:hover:bg-blue-300"
-          >
-            {/* FIXED: Decorative SVG hidden from screen readers */}
-            <svg
-              className="mr-1.5 h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              focusable="false"
+          {canCreateTask && (
+            <button
+              onClick={onOpenNewTask}
+              disabled={Boolean(createTaskDisabledReason)}
+              title={createTaskDisabledReason}
+              className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors disabled:cursor-not-allowed disabled:bg-blue-300 disabled:hover:bg-blue-300"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            Add maintenance task
-          </button>
+              {/* FIXED: Decorative SVG hidden from screen readers */}
+              <svg
+                className="mr-1.5 h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              Add maintenance task
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -21,7 +21,7 @@ import {
   TableSkeleton,
 } from '@/components/common';
 import { Button } from '@/components/common/inputs';
-import type { MaintenanceTask } from '@/types';
+import type { MaintenanceTask, MaintenanceTaskUpdatePayload } from '@/types';
 import { toLocalYMD } from '@/utils/dateParsing';
 import { getCalendarPlacementField } from '@/utils/calendar';
 import { useCalendarNavigation, useCalendarView } from './hooks';
@@ -47,8 +47,7 @@ const TaskModal = dynamic(() => import('./components/TaskModal'), {
 
 export default function CalendarPage() {
   const { handleError, showSuccess, showWarning } = useAppFeedback();
-  const { canCreateTask, canManageTasks, createTaskDisabledReason } =
-    usePermissions();
+  const { canCreateTask, canManageTasks } = usePermissions();
   const { tenantIdentityKey } = useTenantIdentity();
 
   // FIXED: useUnifiedData is now called at root layout level
@@ -147,9 +146,12 @@ export default function CalendarPage() {
   const { view, setView } = useCalendarView();
 
   const handleOpenNewTask = useCallback(() => {
+    if (!canCreateTask) {
+      return;
+    }
     setModalDefaultDate('');
     openModal();
-  }, [openModal]);
+  }, [canCreateTask, openModal]);
 
   const handleCreateTask = useCallback(
     async (
@@ -253,9 +255,15 @@ export default function CalendarPage() {
     showSuccess,
   ]);
 
-  const handleSelectEvent = (task: MaintenanceTask) => {
-    openEditModal(task);
-  };
+  const handleSelectEvent = useCallback(
+    (task: MaintenanceTask) => {
+      if (!canManageTasks) {
+        return;
+      }
+      openEditModal(task);
+    },
+    [canManageTasks, openEditModal]
+  );
 
   const handleSelectSlot = useCallback(
     (slotInfo: { start: Date; end: Date }) => {
@@ -368,9 +376,25 @@ export default function CalendarPage() {
     ]
   );
 
-  const handleTaskClick = (task: MaintenanceTask) => {
-    openEditModal(task);
-  };
+  const handleTaskClick = useCallback(
+    (task: MaintenanceTask) => {
+      if (!canManageTasks) {
+        return;
+      }
+      openEditModal(task);
+    },
+    [canManageTasks, openEditModal]
+  );
+
+  const handleTaskUpdate = useCallback(
+    async (id: string, updates: MaintenanceTaskUpdatePayload) => {
+      if (!canManageTasks) {
+        return null;
+      }
+      return updateTask(id, updates);
+    },
+    [canManageTasks, updateTask]
+  );
 
   // 테이블이 없을 때 표시할 메시지
   if (hasTableError) {
@@ -430,20 +454,14 @@ export default function CalendarPage() {
       <AppLayout
         title="Calendar"
         actionButton={
-          canCreateTask || createTaskDisabledReason
+          canCreateTask
             ? {
                 label: 'Add Task',
-                onClick: canCreateTask
-                  ? handleOpenNewTask
-                  : () => {
-                      /* disabled — see disabledReason */
-                    },
-                disabled: !canCreateTask || loading.mutate,
-                disabledReason: !canCreateTask
-                  ? createTaskDisabledReason
-                  : loading.mutate
-                    ? 'Please wait for the current submission to finish'
-                    : undefined,
+                onClick: handleOpenNewTask,
+                disabled: loading.mutate,
+                disabledReason: loading.mutate
+                  ? 'Please wait for the current submission to finish'
+                  : undefined,
                 icon: (
                   <svg
                     className="h-4 w-4"
@@ -495,22 +513,19 @@ export default function CalendarPage() {
           onTaskClick={handleTaskClick}
           onTaskDelete={handleDeleteTaskRequest}
           onTaskEdit={handleTaskClick}
-          onSelectEvent={handleSelectEvent}
+          onSelectEvent={canManageTasks ? handleSelectEvent : undefined}
           onSelectSlot={canCreateTask ? handleSelectSlot : undefined}
           onEventDrop={canManageTasks ? handleEventDrop : undefined}
           draggingEventId={draggingEventId}
           onOpenNewTask={handleOpenNewTask}
-          canCreateTask={canCreateTask && !loading.mutate}
+          canCreateTask={canCreateTask}
           createTaskDisabledReason={
-            !canCreateTask
-              ? createTaskDisabledReason
-              : loading.mutate
-                ? 'Please wait for the current submission to finish'
-                : undefined
+            canCreateTask && loading.mutate
+              ? 'Please wait for the current submission to finish'
+              : undefined
           }
           canManageTask={canManageTasks}
-          manageTaskDisabledReason="Admin only"
-          onTaskUpdate={updateTask}
+          onTaskUpdate={handleTaskUpdate}
         />
 
         {/* Task Modal */}

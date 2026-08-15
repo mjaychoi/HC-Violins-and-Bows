@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import TaskRowCollapsed from '../TaskRowCollapsed';
 import type { MaintenanceTask } from '@/types';
+import { useInlineEdit } from '@/hooks/useInlineEdit';
 
 // Mock child components
 jest.mock('../StatusPill', () => ({
@@ -316,5 +317,67 @@ describe('TaskRowCollapsed', () => {
     );
 
     expect(screen.getByText('Test Task')).toBeInTheDocument();
+  });
+
+  it('renders status and priority as read-only data for members', async () => {
+    const user = userEvent.setup();
+    const startEditing = jest.fn();
+    (useInlineEdit as jest.Mock).mockReturnValue({
+      editingId: null,
+      isSaving: false,
+      startEditing,
+      updateField: jest.fn(),
+      saveEditing: jest.fn(),
+      cancelEditing: jest.fn(),
+    });
+
+    render(
+      <TaskRowCollapsed
+        task={mockTask}
+        onTaskClick={mockOnTaskClick}
+        onTaskUpdate={mockOnTaskUpdate}
+        canManageTask={false}
+        manageTaskDisabledReason="Admin only"
+      />
+    );
+
+    expect(screen.getByTestId('status-pill')).toBeInTheDocument();
+    expect(screen.getByTestId('priority-pill')).toBeInTheDocument();
+    expect(screen.queryByTitle('Admin only')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Click to edit status')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTitle('Click to edit priority')
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('status-pill'));
+    await user.click(screen.getByTestId('priority-pill'));
+    expect(startEditing).not.toHaveBeenCalled();
+    expect(mockOnTaskUpdate).not.toHaveBeenCalled();
+  });
+
+  it('keeps status and priority interactive for admins', async () => {
+    const user = userEvent.setup();
+    const startEditing = jest.fn();
+    (useInlineEdit as jest.Mock).mockReturnValue({
+      editingId: null,
+      isSaving: false,
+      startEditing,
+      updateField: jest.fn(),
+      saveEditing: jest.fn(),
+      cancelEditing: jest.fn(),
+    });
+
+    render(
+      <TaskRowCollapsed
+        task={mockTask}
+        onTaskClick={mockOnTaskClick}
+        onTaskUpdate={mockOnTaskUpdate}
+        canManageTask={true}
+      />
+    );
+
+    expect(screen.getByTitle('Click to edit status')).toBeInTheDocument();
+    await user.click(screen.getByTestId('status-pill'));
+    expect(startEditing).toHaveBeenCalled();
   });
 });

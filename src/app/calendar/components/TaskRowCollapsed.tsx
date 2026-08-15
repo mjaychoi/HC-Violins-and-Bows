@@ -59,23 +59,24 @@ function TaskRowCollapsed({
   onTaskClick,
   onTaskUpdate,
   canManageTask = true,
-  manageTaskDisabledReason,
 }: TaskRowCollapsedProps) {
   // 인라인 편집 훅
   const inlineEditPriority = useInlineEdit<MaintenanceTask>({
     onSave: async (id, data) => {
-      if (onTaskUpdate && data.priority) {
-        await onTaskUpdate(id, { priority: data.priority as TaskPriority });
+      if (!canManageTask || !onTaskUpdate || !data.priority) {
+        return;
       }
+      await onTaskUpdate(id, { priority: data.priority as TaskPriority });
     },
     highlightDuration: 2000,
   });
 
   const inlineEditStatus = useInlineEdit<MaintenanceTask>({
     onSave: async (id, data) => {
-      if (onTaskUpdate && data.status) {
-        await onTaskUpdate(id, { status: data.status as TaskStatus });
+      if (!canManageTask || !onTaskUpdate || !data.status) {
+        return;
       }
+      await onTaskUpdate(id, { status: data.status as TaskStatus });
     },
     highlightDuration: 2000,
   });
@@ -184,11 +185,11 @@ function TaskRowCollapsed({
         {/* Top: Status + Priority (main badges) */}
         <div
           className="flex items-center gap-2"
-          onClick={e => e.stopPropagation()}
+          onClick={canManageTask ? e => e.stopPropagation() : undefined}
         >
           {!isCompleted && (
             <>
-              {inlineEditStatus.editingId === task.id ? (
+              {canManageTask && inlineEditStatus.editingId === task.id ? (
                 <div className="flex items-center gap-1">
                   <InlineSelectField<TaskStatus>
                     isEditing={true}
@@ -209,26 +210,18 @@ function TaskRowCollapsed({
                     cancelLabel=""
                   />
                 </div>
-              ) : (
+              ) : canManageTask ? (
                 <div
                   onClick={e => {
                     e.stopPropagation();
-                    if (onTaskUpdate && canManageTask) {
+                    if (onTaskUpdate) {
                       inlineEditStatus.startEditing(task.id, {
                         status: task.status,
                       });
                     }
                   }}
-                  className={
-                    canManageTask
-                      ? 'cursor-pointer hover:opacity-80 transition-opacity'
-                      : 'cursor-not-allowed opacity-60'
-                  }
-                  title={
-                    canManageTask
-                      ? 'Click to edit status'
-                      : manageTaskDisabledReason
-                  }
+                  className="cursor-pointer hover:opacity-80 transition-opacity"
+                  title="Click to edit status"
                 >
                   <StatusPill
                     task={task}
@@ -236,6 +229,12 @@ function TaskRowCollapsed({
                     isUpcoming={isDueSoon}
                   />
                 </div>
+              ) : (
+                <StatusPill
+                  task={task}
+                  isOverdue={isOverdueStatus}
+                  isUpcoming={isDueSoon}
+                />
               )}
             </>
           )}
@@ -247,7 +246,7 @@ function TaskRowCollapsed({
               Completed
             </span>
           )}
-          {inlineEditPriority.editingId === task.id ? (
+          {canManageTask && inlineEditPriority.editingId === task.id ? (
             <div className="flex items-center gap-1">
               <InlineSelectField<TaskPriority>
                 isEditing={true}
@@ -268,29 +267,23 @@ function TaskRowCollapsed({
                 cancelLabel=""
               />
             </div>
-          ) : (
+          ) : canManageTask ? (
             <div
               onClick={e => {
                 e.stopPropagation();
-                if (onTaskUpdate && canManageTask) {
+                if (onTaskUpdate) {
                   inlineEditPriority.startEditing(task.id, {
                     priority: task.priority,
                   });
                 }
               }}
-              className={
-                canManageTask
-                  ? 'cursor-pointer hover:opacity-80 transition-opacity'
-                  : 'cursor-not-allowed opacity-60'
-              }
-              title={
-                canManageTask
-                  ? 'Click to edit priority'
-                  : manageTaskDisabledReason
-              }
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+              title="Click to edit priority"
             >
               <PriorityPill priority={task.priority} />
             </div>
+          ) : (
+            <PriorityPill priority={task.priority} />
           )}
         </div>
         {/* Bottom: Workload (subtle, smaller) */}
