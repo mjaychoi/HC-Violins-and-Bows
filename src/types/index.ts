@@ -140,7 +140,16 @@ export type MaintenanceTaskUpdatePayload = Partial<
     MaintenanceTask,
     'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
   >
->;
+> & {
+  expected_updated_at?: string;
+};
+
+export type MaintenanceTaskSubmitPayload = Omit<
+  MaintenanceTask,
+  'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
+> & {
+  expected_updated_at?: string;
+};
 
 // Calendar Event Types
 export interface CalendarEvent {

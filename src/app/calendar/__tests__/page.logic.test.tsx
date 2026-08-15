@@ -169,6 +169,7 @@ jest.mock('@/hooks/useMaintenanceTasks', () => ({
     deleteTask: mockDeleteTask,
     fetchTasksByDateRange: mockFetchTasksByDateRange,
     refreshNotificationTasks: jest.fn().mockResolvedValue(mockTasks),
+    fetchTaskById: jest.fn(),
   })),
 }));
 
@@ -871,6 +872,7 @@ describe('CalendarPage - Core Logic', () => {
       await waitFor(() => {
         expect(mockUpdateTask).toHaveBeenCalledWith(mockTasks[0].id, {
           due_date: expectedDate,
+          expected_updated_at: mockTasks[0].updated_at,
         });
       });
 

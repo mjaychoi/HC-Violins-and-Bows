@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import {
+import type {
   MaintenanceTask,
+  MaintenanceTaskSubmitPayload,
   Instrument,
   Client,
   TaskType,
@@ -18,22 +19,22 @@ import { ModalHeader } from '@/components/common/modals/ModalHeader';
 import ConfirmDialog from '@/components/common/modals/ConfirmDialog';
 import { getStatusLabel } from '@/utils/calendar';
 import { getAllowedMaintenanceTaskNextStatuses } from '@/utils/maintenanceTaskTransitions';
+import {
+  isMaintenanceTaskStaleVersionError,
+  MAINTENANCE_TASK_CONFLICT_MESSAGE,
+} from '@/utils/maintenanceTaskConcurrency';
 
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (
-    task: Omit<
-      MaintenanceTask,
-      'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
-    >
-  ) => Promise<void>;
+  onSubmit: (task: MaintenanceTaskSubmitPayload) => Promise<void>;
   submitting: boolean;
   selectedTask?: MaintenanceTask | null;
   isEditing?: boolean;
   instruments: Instrument[];
   clients: Client[];
   defaultScheduledDate?: string;
+  onFetchLatest?: (id: string) => Promise<MaintenanceTask | null>;
 }
 
 type TaskFormState = {
@@ -97,6 +98,27 @@ function normalizeOptionalNumber(
 
 // Comparable projection of the editable fields, excluding completed_date
 // (not directly editable; it is derived from status at submit time).
+function taskToFormState(task: MaintenanceTask): TaskFormState {
+  return {
+    instrument_id: task.instrument_id,
+    client_id: task.client_id || '',
+    task_type: task.task_type,
+    title: task.title,
+    description: task.description || '',
+    status: task.status,
+    received_date: task.received_date,
+    due_date: task.due_date || '',
+    personal_due_date: task.personal_due_date || '',
+    scheduled_date: task.scheduled_date || '',
+    priority: task.priority,
+    estimated_hours: task.estimated_hours?.toString() || '',
+    actual_hours: task.actual_hours?.toString() || '',
+    cost: task.cost?.toString() || '',
+    notes: task.notes || '',
+    completed_date: task.completed_date || '',
+  };
+}
+
 function normalizeTaskFormState(state: TaskFormState) {
   return {
     instrument_id: state.instrument_id || null,
@@ -127,6 +149,7 @@ export default function TaskModal({
   instruments,
   clients,
   defaultScheduledDate = '',
+  onFetchLatest,
 }: TaskModalProps) {
   const [formData, setFormData] = useState<TaskFormState>(() =>
     createEmptyFormState()
@@ -134,41 +157,65 @@ export default function TaskModal({
 
   const [errors, setErrors] = useState<string[]>([]);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [hasConflict, setHasConflict] = useState(false);
+  const [reloadingLatest, setReloadingLatest] = useState(false);
 
   // Snapshot of the form as it looked right after the last reset (open /
   // task switch), used as the baseline for dirty-state comparison.
   const initialSnapshotRef = useRef<TaskFormState>(createEmptyFormState());
+  const expectedUpdatedAtRef = useRef<string | null>(null);
+  const baseStatusRef = useRef<TaskStatus | null>(null);
+  const baseCompletedDateRef = useRef<string | null>(null);
+  const selectedTaskRef = useRef(selectedTask);
+  const latestFetchGenRef = useRef(0);
+  const reloadGenRef = useRef(0);
 
-  useEffect(() => {
-    const nextFormState: TaskFormState =
-      selectedTask && isEditing
-        ? {
-            instrument_id: selectedTask.instrument_id,
-            client_id: selectedTask.client_id || '',
-            task_type: selectedTask.task_type,
-            title: selectedTask.title,
-            description: selectedTask.description || '',
-            status: selectedTask.status,
-            received_date: selectedTask.received_date,
-            due_date: selectedTask.due_date || '',
-            personal_due_date: selectedTask.personal_due_date || '',
-            scheduled_date: selectedTask.scheduled_date || '',
-            priority: selectedTask.priority,
-            estimated_hours: selectedTask.estimated_hours?.toString() || '',
-            actual_hours: selectedTask.actual_hours?.toString() || '',
-            cost: selectedTask.cost?.toString() || '',
-            notes: selectedTask.notes || '',
-            completed_date: selectedTask.completed_date || '',
-          }
-        : // Reset form for new task
-          // FIXED: Use todayLocalYMD() instead of toISOString() to avoid UTC timezone issues
-          createEmptyFormState(defaultScheduledDate || '');
+  selectedTaskRef.current = selectedTask;
 
+  const editSessionKey = isOpen
+    ? `${isEditing ? (selectedTask?.id ?? 'missing') : 'create'}:${isEditing ? '' : defaultScheduledDate}`
+    : 'closed';
+
+  const applyAuthoritativeTask = (task: MaintenanceTask) => {
+    const nextFormState = taskToFormState(task);
     initialSnapshotRef.current = nextFormState;
+    expectedUpdatedAtRef.current = task.updated_at;
+    baseStatusRef.current = task.status;
+    baseCompletedDateRef.current = task.completed_date;
     setFormData(nextFormState);
     setErrors([]);
+    setHasConflict(false);
     setShowDiscardConfirm(false);
-  }, [selectedTask, isEditing, isOpen, defaultScheduledDate]);
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      latestFetchGenRef.current += 1;
+      reloadGenRef.current += 1;
+      expectedUpdatedAtRef.current = null;
+      baseStatusRef.current = null;
+      baseCompletedDateRef.current = null;
+      setHasConflict(false);
+      setReloadingLatest(false);
+      return;
+    }
+
+    const task = selectedTaskRef.current;
+    const nextFormState: TaskFormState =
+      task && isEditing
+        ? taskToFormState(task)
+        : createEmptyFormState(defaultScheduledDate || '');
+
+    initialSnapshotRef.current = nextFormState;
+    expectedUpdatedAtRef.current = task && isEditing ? task.updated_at : null;
+    baseStatusRef.current = task && isEditing ? task.status : null;
+    baseCompletedDateRef.current =
+      task && isEditing ? task.completed_date : null;
+    setFormData(nextFormState);
+    setErrors([]);
+    setHasConflict(false);
+    setShowDiscardConfirm(false);
+  }, [editSessionKey, isOpen, isEditing, defaultScheduledDate]);
 
   const isDirty = useMemo(
     () =>
@@ -186,9 +233,43 @@ export default function TaskModal({
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const prefetchLatestTask = (taskId: string) => {
+    if (!onFetchLatest) return;
+
+    const gen = ++latestFetchGenRef.current;
+    void onFetchLatest(taskId).then(latest => {
+      if (gen !== latestFetchGenRef.current) return;
+      void latest;
+    });
+  };
+
+  const handleReloadLatest = async () => {
+    const taskId = selectedTask?.id;
+    if (!taskId || !onFetchLatest) return;
+
+    const gen = ++reloadGenRef.current;
+    latestFetchGenRef.current += 1;
+    setReloadingLatest(true);
+
+    try {
+      const latest = await onFetchLatest(taskId);
+      if (gen !== reloadGenRef.current) return;
+
+      if (!latest) {
+        setErrors(['Could not load the latest maintenance task.']);
+        return;
+      }
+
+      applyAuthoritativeTask(latest);
+    } finally {
+      if (gen === reloadGenRef.current) {
+        setReloadingLatest(false);
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrors([]);
 
     // Validation
     const newErrors: string[] = [];
@@ -207,11 +288,15 @@ export default function TaskModal({
       return;
     }
 
+    if (!hasConflict) {
+      setErrors([]);
+    }
+
     const instrumentId = formData.instrument_id as string;
 
     // Prepare task data
     // Set completed_date if status is completed and it wasn't already completed
-    const wasCompleted = selectedTask?.status === 'completed';
+    const wasCompleted = baseStatusRef.current === 'completed';
     const isNowCompleted = formData.status === 'completed';
     // FIXED: Use todayLocalYMD() instead of toISOString() to avoid UTC timezone issues
     // FIXED: If user switches status away from completed, set completed_date to null
@@ -219,13 +304,10 @@ export default function TaskModal({
       isNowCompleted && !wasCompleted
         ? todayLocalYMD()
         : isNowCompleted
-          ? selectedTask?.completed_date || todayLocalYMD()
+          ? baseCompletedDateRef.current || todayLocalYMD()
           : null;
 
-    const taskData: Omit<
-      MaintenanceTask,
-      'id' | 'created_at' | 'updated_at' | 'instrument' | 'client'
-    > = {
+    const taskData: MaintenanceTaskSubmitPayload = {
       instrument_id: instrumentId,
       client_id: formData.client_id || null,
       task_type: formData.task_type,
@@ -259,9 +341,29 @@ export default function TaskModal({
       notes: formData.notes.trim() || null,
     };
 
+    if (isEditing) {
+      const expectedUpdatedAt = expectedUpdatedAtRef.current;
+      if (!expectedUpdatedAt) {
+        setErrors([
+          'This maintenance task is missing a version to save against.',
+        ]);
+        return;
+      }
+      taskData.expected_updated_at = expectedUpdatedAt;
+    }
+
     try {
       await onSubmit(taskData);
     } catch (error) {
+      if (isMaintenanceTaskStaleVersionError(error)) {
+        setHasConflict(true);
+        setErrors([MAINTENANCE_TASK_CONFLICT_MESSAGE]);
+        if (selectedTask?.id) {
+          prefetchLatestTask(selectedTask.id);
+        }
+        return;
+      }
+
       // Show error in modal for better UX
       const errorMessage =
         error instanceof Error
@@ -316,8 +418,12 @@ export default function TaskModal({
     'cancelled',
   ];
   const taskStatuses: TaskStatus[] =
-    isEditing && selectedTask
-      ? [...getAllowedMaintenanceTaskNextStatuses(selectedTask.status)]
+    isEditing && (baseStatusRef.current ?? selectedTask?.status)
+      ? [
+          ...getAllowedMaintenanceTaskNextStatuses(
+            (baseStatusRef.current ?? selectedTask?.status) as TaskStatus
+          ),
+        ]
       : allTaskStatuses;
   const priorities: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];
 
@@ -353,6 +459,20 @@ export default function TaskModal({
                   <li key={index}>{error}</li>
                 ))}
               </ul>
+              {hasConflict && onFetchLatest && (
+                <div className="mt-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      void handleReloadLatest();
+                    }}
+                    disabled={submitting || reloadingLatest}
+                  >
+                    {reloadingLatest ? 'Loading latest...' : 'Reload latest'}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
