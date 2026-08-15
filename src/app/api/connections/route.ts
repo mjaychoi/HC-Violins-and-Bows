@@ -338,6 +338,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
       }
 
       query = query.order(orderBy, { ascending });
+      // Stable page partitioning for complete-cache drains: created_at is
+      // not unique, so equal timestamps would otherwise shuffle across
+      // offset pages. Keep the caller's primary column; add `id` only as
+      // a tiebreaker (PR-26 client sorting stays separate).
+      if (orderBy !== 'id') {
+        query = query.order('id', { ascending });
+      }
 
       const offset = (page - 1) * pageSize;
       const to = offset + pageSize - 1;
@@ -370,6 +377,9 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
 
         retryQuery = retryQuery.order(orderBy, { ascending });
+        if (orderBy !== 'id') {
+          retryQuery = retryQuery.order('id', { ascending });
+        }
 
         if (fetchAll) {
           retryQuery = retryQuery.limit(MAX_ALL_RESULTS + 1);

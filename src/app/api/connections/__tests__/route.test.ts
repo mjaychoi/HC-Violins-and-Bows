@@ -490,6 +490,33 @@ describe('/api/connections', () => {
       expect(json.totalPages).toBe(2);
     });
 
+    it('applies an id tiebreaker after the primary sort for stable paging', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        order: jest.fn().mockReturnThis(),
+        range: jest.fn().mockResolvedValue({
+          data: [mockConnection],
+          error: null,
+          count: 1,
+        }),
+      };
+
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
+
+      const request = new NextRequest(
+        'http://localhost/api/connections?page=1&pageSize=5&orderBy=created_at&ascending=false'
+      );
+      await GET(request);
+
+      expect(mockQuery.order).toHaveBeenNthCalledWith(1, 'created_at', {
+        ascending: false,
+      });
+      expect(mockQuery.order).toHaveBeenNthCalledWith(2, 'id', {
+        ascending: false,
+      });
+    });
+
     it('should return 400 for invalid client_id', async () => {
       const { validateUUID } = require('@/utils/inputValidation');
       (validateUUID as jest.Mock).mockReturnValueOnce(false);

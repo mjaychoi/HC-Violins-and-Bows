@@ -56,27 +56,17 @@ describe('ConnectionsContext F2 truncation', () => {
     };
   }
 
-  it('exposes truncated=true when an org-wide fetch is capped', async () => {
+  it('sets truncated=false after a successful complete org-wide drain', async () => {
     (apiFetch as jest.Mock).mockResolvedValueOnce(
-      okResponse({ data: [{ id: 'c1' }], truncated: true })
-    );
-
-    const { result } = renderHook(() => useConnectionsContext(), { wrapper });
-
-    await act(async () => {
-      await result.current.actions.fetchConnections({
-        force: true,
-        all: true,
-      });
-    });
-
-    expect(result.current.state.truncated).toBe(true);
-    expect(result.current.state.connections).toHaveLength(1);
-  });
-
-  it('exposes truncated=false for a complete org-wide fetch', async () => {
-    (apiFetch as jest.Mock).mockResolvedValueOnce(
-      okResponse({ data: [{ id: 'c1' }], truncated: false })
+      okResponse({
+        data: [{ id: 'c1' }],
+        truncated: false,
+        count: 1,
+        page: 1,
+        pageSize: 100,
+        totalPages: 1,
+        pagination: { page: 1, pageSize: 100, totalCount: 1, totalPages: 1 },
+      })
     );
 
     const { result } = renderHook(() => useConnectionsContext(), { wrapper });
@@ -89,6 +79,36 @@ describe('ConnectionsContext F2 truncation', () => {
     });
 
     expect(result.current.state.truncated).toBe(false);
+    expect(String((apiFetch as jest.Mock).mock.calls[0][0])).not.toContain(
+      'all=true'
+    );
+  });
+
+  it('never treats a truncated all=true-shaped payload as a complete shared cache', async () => {
+    (apiFetch as jest.Mock).mockImplementation(async (url: string) => {
+      expect(String(url)).not.toContain('all=true');
+      return okResponse({
+        data: [{ id: 'c1' }],
+        truncated: true,
+        count: 1,
+        page: 1,
+        pageSize: 100,
+        totalPages: 1,
+        pagination: { page: 1, pageSize: 100, totalCount: 1, totalPages: 1 },
+      });
+    });
+
+    const { result } = renderHook(() => useConnectionsContext(), { wrapper });
+
+    await act(async () => {
+      await result.current.actions.fetchConnections({
+        force: true,
+        all: true,
+      });
+    });
+
+    expect(result.current.state.truncated).toBe(false);
+    expect(result.current.state.connections).toHaveLength(1);
   });
 
   it('ignores a server truncated flag on a paginated (non-all) fetch', async () => {
@@ -107,24 +127,20 @@ describe('ConnectionsContext F2 truncation', () => {
       });
     });
 
-    // Only the org-wide "all" mode can be silently capped; a page is
-    // truncated by design (by page), so it must never surface the warning.
+    // A page is truncated by design (by page), so it must never surface the
+    // org-wide incomplete-collection warning.
     expect(result.current.state.truncated).toBe(false);
   });
 
   it('clears truncated on tenant switch (RESET_STATE)', async () => {
-    (apiFetch as jest.Mock).mockResolvedValueOnce(
-      okResponse({ data: [{ id: 'c1' }], truncated: true })
-    );
-
     const { result, rerender } = renderHook(() => useConnectionsContext(), {
       wrapper,
     });
 
-    await act(async () => {
-      await result.current.actions.fetchConnections({
-        force: true,
-        all: true,
+    act(() => {
+      result.current.dispatch({
+        type: 'SET_CONNECTIONS',
+        payload: { connections: [{ id: 'c1' } as never], truncated: true },
       });
     });
     expect(result.current.state.truncated).toBe(true);
@@ -138,24 +154,28 @@ describe('ConnectionsContext F2 truncation', () => {
     expect(result.current.state.connections).toEqual([]);
   });
 
-  it('resets truncated to false once a subsequent fetch is no longer capped', async () => {
-    (apiFetch as jest.Mock)
-      .mockResolvedValueOnce(
-        okResponse({ data: [{ id: 'c1' }], truncated: true })
-      )
-      .mockResolvedValueOnce(
-        okResponse({ data: [{ id: 'c1' }], truncated: false })
-      );
-
+  it('clears a leftover truncated flag after a subsequent complete drain', async () => {
     const { result } = renderHook(() => useConnectionsContext(), { wrapper });
 
-    await act(async () => {
-      await result.current.actions.fetchConnections({
-        force: true,
-        all: true,
+    act(() => {
+      result.current.dispatch({
+        type: 'SET_CONNECTIONS',
+        payload: { connections: [{ id: 'c1' } as never], truncated: true },
       });
     });
     expect(result.current.state.truncated).toBe(true);
+
+    (apiFetch as jest.Mock).mockResolvedValueOnce(
+      okResponse({
+        data: [{ id: 'c1' }],
+        truncated: true,
+        count: 1,
+        page: 1,
+        pageSize: 100,
+        totalPages: 1,
+        pagination: { page: 1, pageSize: 100, totalCount: 1, totalPages: 1 },
+      })
+    );
 
     await act(async () => {
       await result.current.actions.fetchConnections({
