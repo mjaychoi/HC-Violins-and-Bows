@@ -11,6 +11,7 @@
 // Response body: OrphanCleanupResult JSON
 
 import { NextRequest, NextResponse } from 'next/server';
+import { constantTimeSecretEqual } from '@/app/api/_utils/constantTimeSecret';
 import { getAdminSupabase } from '@/lib/supabase-server';
 import { getStorage } from '@/utils/storage';
 import { logInfo, logError } from '@/utils/logger';
@@ -41,7 +42,7 @@ function isAuthorized(request: NextRequest): boolean {
   }
   const header = request.headers.get('authorization') ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  return token === secret;
+  return constantTimeSecretEqual(token, secret);
 }
 
 async function deleteStorageObject(
