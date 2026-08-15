@@ -26,6 +26,19 @@ describe('inputValidation', () => {
       expect(result).toBe('name');
     });
 
+    it('maps legacy last_name and contact_number aliases', () => {
+      expect(validateSortColumn('clients', 'last_name')).toBe('name');
+      expect(validateSortColumn('clients', 'contact_number')).toBe('phone');
+    });
+
+    it('accepts interest as a supported clients sort column', () => {
+      expect(validateSortColumn('clients', 'interest')).toBe('interest');
+    });
+
+    it('does not silently keep unsupported display fields like tags', () => {
+      expect(validateSortColumn('clients', 'tags')).toBe('created_at');
+    });
+
     it('should return default column when column is not in allowed list', () => {
       const result = validateSortColumn('clients', 'invalid_column');
       expect(result).toBe('created_at'); // Default
@@ -430,6 +443,8 @@ describe('inputValidation', () => {
       expect(ALLOWED_SORT_COLUMNS.clients).toContain('name');
       expect(ALLOWED_SORT_COLUMNS.clients).toContain('phone');
       expect(ALLOWED_SORT_COLUMNS.clients).toContain('email');
+      expect(ALLOWED_SORT_COLUMNS.clients).toContain('interest');
+      expect(ALLOWED_SORT_COLUMNS.clients).toContain('client_number');
     });
 
     it('should contain expected columns for instruments', () => {

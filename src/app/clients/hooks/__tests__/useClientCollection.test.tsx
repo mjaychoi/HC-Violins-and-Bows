@@ -1,7 +1,7 @@
 /**
  * useClientCollection — request identity and collection contract smoke tests.
  */
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useClientCollection } from '../useClientCollection';
 
 const mockReplace = jest.fn();
@@ -128,5 +128,74 @@ describe('useClientCollection', () => {
     const client = await result.current.fetchClientById('deep');
     expect(apiFetch).toHaveBeenCalledWith('/api/clients?id=deep');
     expect(client).toMatchObject({ id: 'deep', first_name: 'Deep' });
+  });
+
+  it('S3/S4: normalizes legacy name and phone sort URLs to canonical keys', async () => {
+    mockSearchParams = new URLSearchParams('sortBy=first_name&sortOrder=asc');
+    const { result } = renderHook(() => useClientCollection());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.sortBy).toBe('name');
+    expect(result.current.getSortArrow('name')).toBe('↑');
+    expect(result.current.getSortArrow('first_name')).toBe('↑');
+    expect(result.current.getSortArrow('phone')).toBe('');
+
+    const listCall = (apiFetch as jest.Mock).mock.calls.find((c: string[]) =>
+      String(c[0]).startsWith('/api/clients?')
+    );
+    expect(String(listCall?.[0])).toContain('orderBy=name');
+  });
+
+  it('keeps contact_number alias aligned with phone sort', async () => {
+    mockSearchParams = new URLSearchParams(
+      'sort_by=contact_number&sort_direction=desc'
+    );
+    const { result } = renderHook(() => useClientCollection());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.sortBy).toBe('phone');
+    expect(result.current.sortOrder).toBe('desc');
+    expect(result.current.getSortArrow('phone')).toBe('↓');
+  });
+
+  it('S6: changing sort resets page to 1 and writes canonical URL keys', async () => {
+    mockSearchParams = new URLSearchParams('page=4&sortBy=created_at');
+    const { result } = renderHook(() => useClientCollection());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      result.current.handleColumnSort('client_number');
+    });
+
+    const url = String(mockReplace.mock.calls.at(-1)?.[0]);
+    expect(url).toContain('sortBy=client_number');
+    expect(url).toContain('orderBy=client_number');
+    expect(url).toContain('page=1');
+    expect(url).toContain('sortOrder=asc');
+  });
+
+  it('S7: invalid URL sort falls back to created_at without a false header arrow', async () => {
+    mockSearchParams = new URLSearchParams('sortBy=tags&sortOrder=asc');
+    const { result } = renderHook(() => useClientCollection());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.sortBy).toBe('created_at');
+    expect(result.current.getSortArrow('tags')).toBe('');
+    expect(result.current.getSortArrow('name')).toBe('');
+    expect(result.current.getSortArrow('client_number')).toBe('');
+  });
+
+  it('toggles sort direction on the same canonical field', async () => {
+    mockSearchParams = new URLSearchParams('sortBy=name&sortOrder=asc');
+    const { result } = renderHook(() => useClientCollection());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      result.current.handleColumnSort('name');
+    });
+
+    const url = String(mockReplace.mock.calls.at(-1)?.[0]);
+    expect(url).toContain('sortBy=name');
+    expect(url).toContain('sortOrder=desc');
   });
 });

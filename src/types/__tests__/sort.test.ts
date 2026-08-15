@@ -59,10 +59,11 @@ describe('sort types and constants', () => {
       expect(CLIENT_SORT_FIELDS).toContain('phone');
       expect(CLIENT_SORT_FIELDS).toContain('email');
       expect(CLIENT_SORT_FIELDS).toContain('client_number');
+      expect(CLIENT_SORT_FIELDS).toContain('interest');
     });
 
     it('should have correct length', () => {
-      expect(CLIENT_SORT_FIELDS.length).toBe(6);
+      expect(CLIENT_SORT_FIELDS.length).toBe(7);
     });
 
     it('should be readonly array', () => {
@@ -109,6 +110,7 @@ describe('sort types and constants', () => {
         'phone',
         'email',
         'client_number',
+        'interest',
       ];
 
       validFields.forEach(field => {

@@ -13,6 +13,11 @@ import {
   type HasInstrumentsFilter,
 } from '@/app/api/clients/_utils/listQuery';
 import {
+  canonicalizeClientSortField,
+  clientSortArrow,
+  type ClientCanonicalSortField,
+} from '@/app/api/clients/_utils/clientSort';
+import {
   EMPTY_FILTER_STATE,
   handleColumnSort as nextColumnSort,
 } from '../utils/filterUtils';
@@ -20,17 +25,7 @@ import type { ClientFilterOptions, FilterState } from '../types';
 import { HAS_INSTRUMENTS_FILTER_OPTIONS } from '../constants';
 import { isAuthLikeTenantError } from '@/utils/tenantIdentity';
 
-export type ClientCollectionSortField =
-  | 'created_at'
-  | 'name'
-  | 'email'
-  | 'phone'
-  | 'client_number'
-  | 'first_name'
-  | 'last_name'
-  | 'contact_number'
-  | 'updated_at'
-  | 'id';
+export type ClientCollectionSortField = ClientCanonicalSortField;
 
 type PaginationMeta = {
   page: number;
@@ -89,19 +84,34 @@ function parsePage(sp: URLSearchParams): number {
 }
 
 function parseSort(sp: URLSearchParams): {
-  sortBy: string;
+  sortBy: ClientCanonicalSortField;
   sortOrder: 'asc' | 'desc';
 } {
-  const sortBy =
-    sp.get('sortBy') || sp.get('sort_by') || sp.get('orderBy') || 'created_at';
-  const dir =
+  const sortBy = canonicalizeClientSortField(
+    sp.get('sortBy') || sp.get('sort_by') || sp.get('orderBy')
+  );
+  const explicitDir = (
     sp.get('sortOrder') ||
     sp.get('sort_direction') ||
-    (sp.get('ascending') === 'true' ? 'asc' : 'desc');
-  return {
-    sortBy,
-    sortOrder: dir === 'asc' ? 'asc' : 'desc',
-  };
+    sp.get('sortDirection') ||
+    ''
+  )
+    .trim()
+    .toLowerCase();
+
+  let sortOrder: 'asc' | 'desc';
+  if (explicitDir === 'asc' || explicitDir === 'ascending') {
+    sortOrder = 'asc';
+  } else if (explicitDir === 'desc' || explicitDir === 'descending') {
+    sortOrder = 'desc';
+  } else if (sp.get('ascending') === 'true') {
+    sortOrder = 'asc';
+  } else {
+    // Default collection contract: created_at newest-first.
+    sortOrder = 'desc';
+  }
+
+  return { sortBy, sortOrder };
 }
 
 const EMPTY_FILTER_OPTIONS: ClientFilterOptions = {
@@ -425,12 +435,16 @@ export function useClientCollection() {
 
   const handleColumnSort = useCallback(
     (column: string) => {
-      const next = nextColumnSort(sortBy, sortOrder, column);
+      const canonical = canonicalizeClientSortField(column);
+      const next = nextColumnSort(sortBy, sortOrder, canonical);
       replaceUrl(sp => {
         sp.set('sortBy', next.sortBy);
         sp.set('sortOrder', next.sortOrder);
         sp.set('ascending', next.sortOrder === 'asc' ? 'true' : 'false');
         sp.set('orderBy', next.sortBy);
+        sp.delete('sort_by');
+        sp.delete('sort_direction');
+        sp.delete('sortDirection');
         sp.set('page', '1');
       });
     },
@@ -438,10 +452,7 @@ export function useClientCollection() {
   );
 
   const getSortArrow = useCallback(
-    (column: string) => {
-      if (sortBy !== column) return 'sort-neutral';
-      return sortOrder === 'asc' ? 'sort-asc' : 'sort-desc';
-    },
+    (column: string) => clientSortArrow(sortBy, sortOrder, column),
     [sortBy, sortOrder]
   );
 

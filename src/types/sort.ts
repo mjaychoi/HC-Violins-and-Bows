@@ -31,7 +31,8 @@ export type ClientSortField =
   | 'name'
   | 'phone'
   | 'email'
-  | 'client_number';
+  | 'client_number'
+  | 'interest';
 
 /**
  * Generic sort order
@@ -82,4 +83,5 @@ export const CLIENT_SORT_FIELDS: readonly ClientSortField[] = [
   'phone',
   'email',
   'client_number',
+  'interest',
 ] as const;

@@ -38,6 +38,10 @@ import {
   CLIENT_STALE_CONFLICT_MESSAGE,
   isClientStaleConflict,
 } from '@/app/api/clients/_utils/concurrency';
+import {
+  CLIENT_LIST_COLUMNS,
+  type ClientListSortField,
+} from '@/app/api/clients/_utils/clientSort';
 
 const MessageComposer = dynamic(
   () => import('@/components/messages/MessageComposer'),
@@ -407,8 +411,8 @@ interface ClientListProps {
     updates: Partial<Client> & { expected_updated_at?: string }
   ) => Promise<void>;
   onDeleteClient?: (client: Client) => void;
-  onColumnSort: (column: keyof Client) => void;
-  getSortArrow: (column: keyof Client) => string;
+  onColumnSort: (column: ClientListSortField) => void;
+  getSortArrow: (column: string) => string;
   // UX: For displaying instrument count and recent activity
   clientsWithInstruments?: Set<string>;
   // Pagination
@@ -692,16 +696,20 @@ const ClientList = memo(function ClientList({
                   <th className={`${classNames.tableHeaderCell} text-right`}>
                     <span>Actions</span>
                   </th>
-                  {(
-                    [
-                      ['first_name', 'Name'],
-                      ['contact_number', 'Contact'],
-                      ['tags', 'Tags'],
-                      ['interest', 'Interest'],
-                      ['client_number', 'Client #'],
-                    ] as const
-                  ).map(([field, label]) => {
-                    const arrow = getSortArrow(field);
+                  {CLIENT_LIST_COLUMNS.map(column => {
+                    if (!column.sortable) {
+                      return (
+                        <th
+                          key={column.field}
+                          scope="col"
+                          className={classNames.tableHeaderCell}
+                        >
+                          <span>{column.label}</span>
+                        </th>
+                      );
+                    }
+
+                    const arrow = getSortArrow(column.field);
                     const ariaSort =
                       arrow === '↑'
                         ? 'ascending'
@@ -710,26 +718,26 @@ const ClientList = memo(function ClientList({
                           : 'none';
                     return (
                       <th
-                        key={field}
+                        key={column.field}
                         scope="col"
                         className={cn(
                           classNames.tableHeaderCellSortable,
                           'group'
                         )}
-                        onClick={() => onColumnSort(field)}
+                        onClick={() => onColumnSort(column.field)}
                         onKeyDown={e => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            onColumnSort(field);
+                            onColumnSort(column.field);
                           }
                         }}
                         tabIndex={0}
                         role="columnheader"
                         aria-sort={ariaSort}
-                        aria-label={`Sort by ${label.toLowerCase()}`}
+                        aria-label={`Sort by ${column.label.toLowerCase()}`}
                       >
                         <span className="inline-flex items-center gap-1">
-                          {label}
+                          {column.label}
                           <span
                             className={`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 ${
                               arrow !== '' ? 'opacity-100 text-gray-900' : ''
