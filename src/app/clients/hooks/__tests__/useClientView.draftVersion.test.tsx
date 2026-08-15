@@ -23,6 +23,7 @@ const clientT0: Client = {
 const clientT1: Client = {
   ...clientT0,
   contact_number: 'P1',
+  tags: ['Owner', 'Dealer'],
   updated_at: '2024-01-01T00:00:01Z',
 };
 
@@ -37,6 +38,7 @@ describe('useClientView draft version isolation', () => {
     expect(result.current.expectedUpdatedAt).toBe(clientT0.updated_at);
     expect(result.current.viewFormData.contact_number).toBe('P0');
     expect(result.current.viewFormData.note).toBe('A0');
+    expect(result.current.viewFormData.tags).toEqual(['Owner']);
   });
 
   it('TEST-12: collection refresh cannot upgrade a dirty T0 draft token', () => {
@@ -58,8 +60,10 @@ describe('useClientView draft version isolation', () => {
     expect(result.current.expectedUpdatedAt).toBe(clientT0.updated_at);
     expect(result.current.viewFormData.note).toBe('A1');
     expect(result.current.viewFormData.contact_number).toBe('P0');
+    expect(result.current.viewFormData.tags).toEqual(['Owner']);
     expect(result.current.selectedClient?.updated_at).toBe(clientT0.updated_at);
     expect(result.current.selectedClient?.contact_number).toBe('P0');
+    expect(result.current.selectedClient?.tags).toEqual(['Owner']);
   });
 
   it('TEST-11: explicit reconcile replaces the draft token', () => {
@@ -78,6 +82,7 @@ describe('useClientView draft version isolation', () => {
     expect(result.current.expectedUpdatedAt).toBe(clientT1.updated_at);
     expect(result.current.viewFormData.contact_number).toBe('P1');
     expect(result.current.viewFormData.note).toBe('A0');
+    expect(result.current.viewFormData.tags).toEqual(['Owner', 'Dealer']);
   });
 
   it('syncs from the collection only when the editor is not dirty', () => {
