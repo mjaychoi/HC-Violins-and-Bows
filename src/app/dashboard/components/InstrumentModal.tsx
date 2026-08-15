@@ -55,7 +55,8 @@ export default function InstrumentModal({
   onClose,
   instrument,
 }: InstrumentModalProps) {
-  const { canUploadInstrumentMedia } = usePermissions();
+  const { canUploadInstrumentMedia, canViewInstrumentFinancialData } =
+    usePermissions();
   const modalRef = useRef<HTMLDivElement>(null);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
   const certificateFileInputRef = useRef<HTMLInputElement>(null);
@@ -743,6 +744,32 @@ export default function InstrumentModal({
                     {formatInstrumentPrice(instrument.price)}
                   </div>
                 </div>
+
+                {canViewInstrumentFinancialData &&
+                  instrument.cost_price !== null &&
+                  instrument.cost_price !== undefined && (
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">
+                        Cost Price
+                      </div>
+                      <div className="text-sm text-gray-900">
+                        {formatInstrumentPrice(instrument.cost_price)}
+                      </div>
+                    </div>
+                  )}
+
+                {canViewInstrumentFinancialData &&
+                  instrument.consignment_price !== null &&
+                  instrument.consignment_price !== undefined && (
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">
+                        Consignment Price
+                      </div>
+                      <div className="text-sm text-gray-900">
+                        {formatInstrumentPrice(instrument.consignment_price)}
+                      </div>
+                    </div>
+                  )}
 
                 {instrument.size && (
                   <div>
