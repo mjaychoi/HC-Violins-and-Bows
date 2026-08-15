@@ -8,6 +8,7 @@ import { captureException } from '@/utils/monitoring';
 import fs from 'fs/promises';
 let mockUserSupabase: any;
 let mockWriteAuditLog: jest.Mock;
+let mockAuthContext: any;
 
 jest.mock('@/utils/auditLog', () => ({
   writeAuditLog: (...args: unknown[]) =>
@@ -102,15 +103,7 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
     withAuthRoute: (handler: any) => async (request: any, context?: any) =>
       handler(
         request,
-        {
-          user: { id: 'test-user' },
-          accessToken: 'test-token',
-          orgId: 'test-org',
-          clientId: 'test-client',
-          role: 'admin',
-          userSupabase: mockUserSupabase,
-          isTestBypass: true,
-        },
+        { ...mockAuthContext, userSupabase: mockUserSupabase },
         context
       ),
   };
@@ -183,6 +176,15 @@ describe('/api/invoices/[id]', () => {
     jest.clearAllMocks();
     jest.spyOn(performance, 'now').mockReturnValue(0);
     mockUserSupabase = { from: jest.fn() };
+    mockAuthContext = {
+      user: { id: 'test-user' },
+      accessToken: 'test-token',
+      orgId: 'test-org',
+      clientId: 'test-client',
+      role: 'admin',
+      userSupabase: mockUserSupabase,
+      isTestBypass: true,
+    };
     mockValidateUUID.mockReturnValue(true);
     mockRenderToBufferFn.mockClear();
     mockInvoiceDoc.mockClear();
@@ -345,13 +347,103 @@ describe('/api/invoices/[id]', () => {
       );
     });
 
-    it('should return 404 when invoice not found', async () => {
+    it('returns 403 before querying when organization context is missing', async () => {
+      mockAuthContext.orgId = null;
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockSaleId}`
+      );
+      const invoiceGet = await loadInvoiceHandler();
+      const response = await invoiceGet(request, {
+        params: Promise.resolve({ id: mockSaleId }),
+      });
+
+      expect(response.status).toBe(403);
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 before querying for a non-admin user', async () => {
+      mockAuthContext.role = 'member';
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockSaleId}`
+      );
+      const invoiceGet = await loadInvoiceHandler();
+      const response = await invoiceGet(request, {
+        params: Promise.resolve({ id: mockSaleId }),
+      });
+
+      expect(response.status).toBe(403);
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('returns a valid same-org invoice with hydrated images', async () => {
+      const invoice = {
+        id: mockSaleId,
+        invoice_number: 'INV-100',
+        client_id: '123e4567-e89b-12d3-a456-426614174001',
+        invoice_date: '2026-04-03',
+        due_date: '2026-04-10',
+        subtotal: 100,
+        tax: 0,
+        total: 100,
+        currency: 'USD',
+        status: 'draft',
+        notes: null,
+        created_at: '2026-04-03T00:00:00.000Z',
+        updated_at: '2026-04-03T00:00:00.000Z',
+        clients: null,
+        invoice_items: [],
+      };
+      const mockInvoiceQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockReturnThis(),
+        data: invoice,
+        error: null,
+      };
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockInvoiceQuery),
+      };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockSaleId}`
+      );
+      const invoiceGet = await loadInvoiceHandler();
+      const response = await invoiceGet(request, {
+        params: Promise.resolve({ id: mockSaleId }),
+      });
+      const json = await response.json();
+      const {
+        attachSignedUrlsToInvoice,
+      } = require('@/app/api/invoices/imageUrls');
+
+      expect(response.status).toBe(200);
+      expect(json.data.id).toBe(mockSaleId);
+      expect(mockInvoiceQuery.eq).toHaveBeenCalledWith('id', mockSaleId);
+      expect(mockInvoiceQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockInvoiceQuery.single).toHaveBeenCalledTimes(1);
+      expect(attachSignedUrlsToInvoice).toHaveBeenCalledWith(
+        mockUserSupabase,
+        invoice
+      );
+    });
+
+    it('returns a safe 404 for an org-scoped bare PGRST116', async () => {
+      const rawPostgrestMessage =
+        'JSON object requested, multiple (or no) rows returned';
+      const rawPostgrestDetails = 'The result contains 0 rows';
       const mockInvoiceQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockReturnThis(),
         data: null,
-        error: { code: 'PGRST116', message: 'Not found', status: 404 },
+        error: {
+          code: 'PGRST116',
+          message: rawPostgrestMessage,
+          details: rawPostgrestDetails,
+          hint: null,
+        },
       };
 
       const mockSupabaseClient = {
@@ -376,8 +468,111 @@ describe('/api/invoices/[id]', () => {
       const json = await response.json();
 
       expect(response.status).toBe(404);
-      expect(json.message).toBeDefined();
-      expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
+      expect(json).toEqual(
+        expect.objectContaining({
+          message: 'Invoice not found',
+          error: 'Invoice not found',
+          success: false,
+          retryable: false,
+          request_id: expect.any(String),
+        })
+      );
+      expect(JSON.stringify(json)).not.toContain('PGRST116');
+      expect(JSON.stringify(json)).not.toContain(rawPostgrestMessage);
+      expect(JSON.stringify(json)).not.toContain(rawPostgrestDetails);
+      expect(mockInvoiceQuery.eq).toHaveBeenCalledWith('id', mockSaleId);
+      expect(mockInvoiceQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockErrorHandler.handleSupabaseError).not.toHaveBeenCalled();
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    });
+
+    it('returns the same 404 when an invoice is invisible in the current org', async () => {
+      const mockInvoiceQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockReturnThis(),
+        data: null,
+        error: {
+          code: 'PGRST116',
+          message: 'JSON object requested, multiple (or no) rows returned',
+          details: 'The result contains 0 rows',
+          hint: null,
+        },
+      };
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockInvoiceQuery),
+      };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockSaleId}`
+      );
+      const invoiceGet = await loadInvoiceHandler();
+      const response = await invoiceGet(request, {
+        params: Promise.resolve({ id: mockSaleId }),
+      });
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.message).toBe('Invoice not found');
+      expect(mockInvoiceQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+      expect(mockUserSupabase.from).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns 404 when the detail query has null data without an error', async () => {
+      const mockInvoiceQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockReturnThis(),
+        data: null,
+        error: null,
+      };
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockInvoiceQuery),
+      };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockSaleId}`
+      );
+      const invoiceGet = await loadInvoiceHandler();
+      const response = await invoiceGet(request, {
+        params: Promise.resolve({ id: mockSaleId }),
+      });
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.message).toBe('Invoice not found');
+      expect(mockErrorHandler.handleSupabaseError).not.toHaveBeenCalled();
+    });
+
+    it('preserves 5xx handling for non-PGRST116 database failures', async () => {
+      const databaseError = {
+        code: 'PGRST_ERROR',
+        message: 'Database temporarily unavailable',
+      };
+      const mockInvoiceQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockReturnThis(),
+        data: null,
+        error: databaseError,
+      };
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockInvoiceQuery),
+      };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockSaleId}`
+      );
+      const invoiceGet = await loadInvoiceHandler();
+      const response = await invoiceGet(request, {
+        params: Promise.resolve({ id: mockSaleId }),
+      });
+
+      expect(response.status).toBe(500);
+      expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalledWith(
+        databaseError,
+        'Fetch invoice'
+      );
       expect(mockCaptureException).toHaveBeenCalled();
     });
 
