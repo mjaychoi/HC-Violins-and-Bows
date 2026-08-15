@@ -1176,6 +1176,7 @@ describe('/api/invoices/[id]', () => {
           body: JSON.stringify({
             status: 'sent',
             notes: 'Updated',
+            updated_at: '2026-04-03T00:00:00.000Z',
           }),
         }
       );
@@ -1199,9 +1200,11 @@ describe('/api/invoices/[id]', () => {
         missingPaths: [],
       });
       expect(mockUserSupabase.rpc).toHaveBeenCalledWith(
-        'update_invoice_atomic',
+        'update_invoice_atomic_idempotent',
         expect.objectContaining({
           p_invoice_id: mockInvoiceId,
+          p_idempotency_key: 'test-put-idempotency-key-1',
+          p_expected_updated_at: '2026-04-03T00:00:00.000Z',
         })
       );
       expect(supabase.updatedInvoiceQuery.eq).toHaveBeenCalledWith(
@@ -1238,6 +1241,7 @@ describe('/api/invoices/[id]', () => {
           },
           body: JSON.stringify({
             status: 'sent',
+            updated_at: '2026-04-03T00:00:00.000Z',
           }),
         }
       );
@@ -1292,6 +1296,7 @@ describe('/api/invoices/[id]', () => {
           },
           body: JSON.stringify({
             status: 'draft',
+            updated_at: '2026-04-03T00:00:00.000Z',
           }),
         }
       );
@@ -1322,7 +1327,10 @@ describe('/api/invoices/[id]', () => {
             'Idempotency-Key': 'audit-status-1',
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ status: 'sent' }),
+          body: JSON.stringify({
+            status: 'sent',
+            updated_at: '2026-04-03T00:00:00.000Z',
+          }),
         }
       );
       const context = { params: Promise.resolve({ id: mockInvoiceId }) };
@@ -1354,7 +1362,11 @@ describe('/api/invoices/[id]', () => {
             'Idempotency-Key': 'audit-fin-1',
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ subtotal: 200, total: 200 }),
+          body: JSON.stringify({
+            subtotal: 200,
+            total: 200,
+            updated_at: '2026-04-03T00:00:00.000Z',
+          }),
         }
       );
       const context = { params: Promise.resolve({ id: mockInvoiceId }) };
@@ -1387,7 +1399,12 @@ describe('/api/invoices/[id]', () => {
             'Idempotency-Key': 'audit-both-1',
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ status: 'sent', subtotal: 150, total: 150 }),
+          body: JSON.stringify({
+            status: 'sent',
+            subtotal: 150,
+            total: 150,
+            updated_at: '2026-04-03T00:00:00.000Z',
+          }),
         }
       );
       const context = { params: Promise.resolve({ id: mockInvoiceId }) };
@@ -1401,6 +1418,208 @@ describe('/api/invoices/[id]', () => {
       );
       expect(calls).toContain('invoice.update_status');
       expect(calls).toContain('invoice.update_financials');
+    });
+
+    // ── V5-002 + V5-003 ─────────────────────────────────────────────────────
+
+    it('returns 400 IDEMPOTENCY_KEY_REQUIRED and never reaches the RPC when Idempotency-Key is missing', async () => {
+      const supabase = buildUpdateSupabase();
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'sent',
+            updated_at: '2026-04-03T00:00:00.000Z',
+          }),
+        }
+      );
+      const context = { params: Promise.resolve({ id: mockInvoiceId }) };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error_code).toBe('IDEMPOTENCY_KEY_REQUIRED');
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 INVOICE_UPDATED_AT_REQUIRED and never reaches the RPC when updated_at is missing', async () => {
+      const supabase = buildUpdateSupabase();
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'missing-updated-at-1',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: 'sent' }),
+        }
+      );
+      const context = { params: Promise.resolve({ id: mockInvoiceId }) };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error_code).toBe('INVOICE_UPDATED_AT_REQUIRED');
+      expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('maps a database-side INVOICE_CONCURRENCY_CONFLICT to 409 without returning a hydrated invoice', async () => {
+      const supabase = buildUpdateSupabase();
+      supabase.rpc.mockResolvedValueOnce({
+        data: null,
+        error: {
+          message:
+            'INVOICE_CONCURRENCY_CONFLICT: Invoice was updated by someone else',
+          details: JSON.stringify({
+            error_code: 'INVOICE_CONCURRENCY_CONFLICT',
+          }),
+        },
+      });
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'conflict-1',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            notes: 'stale edit',
+            updated_at: '2026-04-03T00:00:00.000Z',
+          }),
+        }
+      );
+      const context = { params: Promise.resolve({ id: mockInvoiceId }) };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('INVOICE_CONCURRENCY_CONFLICT');
+      // No fetch-after-update was attempted: the conflict short-circuits
+      // before the route re-reads the (unchanged) invoice row.
+      expect(supabase.updatedInvoiceQuery.select).not.toHaveBeenCalled();
+    });
+
+    it('maps a database-side IDEMPOTENCY_IN_PROGRESS to 409', async () => {
+      const supabase = buildUpdateSupabase();
+      supabase.rpc.mockResolvedValueOnce({
+        data: null,
+        error: {
+          message:
+            'IDEMPOTENCY_IN_PROGRESS: Idempotent request is already in progress',
+          details: JSON.stringify({ error_code: 'IDEMPOTENCY_IN_PROGRESS' }),
+        },
+      });
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'inprogress-1',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            notes: 'x',
+            updated_at: '2026-04-03T00:00:00.000Z',
+          }),
+        }
+      );
+      const context = { params: Promise.resolve({ id: mockInvoiceId }) };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('IDEMPOTENCY_IN_PROGRESS');
+    });
+
+    it('maps a database-side IDEMPOTENCY_KEY_REUSED to 409', async () => {
+      const supabase = buildUpdateSupabase();
+      supabase.rpc.mockResolvedValueOnce({
+        data: null,
+        error: {
+          message:
+            'IDEMPOTENCY_KEY_REUSED: Idempotency key reuse with different payload',
+          details: JSON.stringify({ error_code: 'IDEMPOTENCY_KEY_REUSED' }),
+        },
+      });
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'reused-1',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            notes: 'x',
+            updated_at: '2026-04-03T00:00:00.000Z',
+          }),
+        }
+      );
+      const context = { params: Promise.resolve({ id: mockInvoiceId }) };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error_code).toBe('IDEMPOTENCY_KEY_REUSED');
+    });
+
+    it('sends the Idempotency-Key and updated_at through to update_invoice_atomic_idempotent unchanged', async () => {
+      const supabase = buildUpdateSupabase();
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const request = new NextRequest(
+        `http://localhost/api/invoices/${mockInvoiceId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Idempotency-Key': 'pass-through-1',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            notes: 'x',
+            updated_at: '2026-04-03T00:00:00.000Z',
+          }),
+        }
+      );
+      const context = { params: Promise.resolve({ id: mockInvoiceId }) };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(request, context);
+      expect(response.status).toBe(200);
+
+      expect(mockUserSupabase.rpc).toHaveBeenCalledWith(
+        'update_invoice_atomic_idempotent',
+        expect.objectContaining({
+          p_route_key: 'PUT:/api/invoices/:id',
+          p_idempotency_key: 'pass-through-1',
+          p_expected_updated_at: '2026-04-03T00:00:00.000Z',
+          p_request_hash: expect.any(String),
+        })
+      );
     });
   });
 

@@ -24,6 +24,7 @@ import InvoiceFilters, {
   type InvoiceFilterStatus,
 } from './components/InvoiceFilters';
 import { apiFetch } from '@/utils/apiFetch';
+import { ApiResponseError } from '@/utils/handleApiResponse';
 import dynamic from 'next/dynamic';
 import { useURLState } from '@/hooks/useURLState';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -472,7 +473,16 @@ function InvoicesPageContent() {
       await withInvoiceSubmitting(async () => {
         try {
           if (editingInvoice) {
-            const updateResult = await updateInvoice(editingInvoice.id, data);
+            if (!editingInvoice.updated_at) {
+              showWarning(
+                'This invoice is missing version information. Close and reopen it to try again.'
+              );
+              return;
+            }
+
+            const updateResult = await updateInvoice(editingInvoice.id, data, {
+              expectedUpdatedAt: editingInvoice.updated_at,
+            });
             try {
               await refreshInvoiceList(page);
               if (updateResult.result === 'partial_success') {
@@ -552,6 +562,34 @@ function InvoicesPageContent() {
             return;
           }
         } catch (error) {
+          // V5-003: a 409 concurrency conflict means someone else changed
+          // this invoice since the modal was opened. The user's draft must
+          // survive the error (the modal stays open; editingInvoice is left
+          // untouched so InvoiceForm keeps its local, uncontrolled state) and
+          // must not be auto-resubmitted against the newer row. Refreshing
+          // the list in the background only updates what a *reopened* edit
+          // would see next, matching the same pattern used for instrument
+          // conflicts (src/contexts/InstrumentsContext.tsx).
+          if (
+            editingInvoice &&
+            error instanceof ApiResponseError &&
+            error.status === 409 &&
+            error.error_code === 'INVOICE_CONCURRENCY_CONFLICT'
+          ) {
+            void refreshInvoiceList(page).catch(refreshError => {
+              handleError(
+                refreshError,
+                'Refresh invoices after update conflict',
+                undefined,
+                { notify: false }
+              );
+            });
+            showWarning(
+              'This invoice was updated elsewhere. Your changes were not saved — close and reopen it to see the latest version before retrying.'
+            );
+            return;
+          }
+
           handleError(
             error,
             editingInvoice ? 'Update invoice' : 'Create invoice'
