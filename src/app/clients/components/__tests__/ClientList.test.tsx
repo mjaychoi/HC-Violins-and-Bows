@@ -72,9 +72,7 @@ const mockProps = {
   onClientClick: jest.fn(),
   onUpdateClient: jest.fn(),
   onColumnSort: jest.fn(),
-  getSortArrow: jest.fn((field: keyof Client) =>
-    field === 'first_name' ? '↑' : ''
-  ),
+  getSortArrow: jest.fn((field: string) => (field === 'name' ? '↑' : '')),
 };
 
 describe('ClientList', () => {
@@ -123,7 +121,7 @@ describe('ClientList', () => {
     const nameHeader = screen.getByText('Name');
     fireEvent.click(nameHeader);
 
-    expect(mockProps.onColumnSort).toHaveBeenCalledWith('first_name');
+    expect(mockProps.onColumnSort).toHaveBeenCalledWith('name');
   });
 
   it('displays sort arrows correctly', () => {
@@ -132,6 +130,40 @@ describe('ClientList', () => {
     const nameHeader = screen.getByText('Name');
     const arrowElement = nameHeader.querySelector('span[aria-hidden="true"]');
     expect(arrowElement).toHaveTextContent('↑');
+  });
+
+  it('maps every clickable sort header to a supported server field', () => {
+    render(<ClientList {...mockProps} />);
+
+    fireEvent.click(
+      screen.getByRole('columnheader', { name: /sort by name/i })
+    );
+    fireEvent.click(
+      screen.getByRole('columnheader', { name: /sort by contact/i })
+    );
+    fireEvent.click(
+      screen.getByRole('columnheader', { name: /sort by interest/i })
+    );
+    fireEvent.click(
+      screen.getByRole('columnheader', { name: /sort by client #/i })
+    );
+
+    expect(mockProps.onColumnSort.mock.calls.map(call => call[0])).toEqual([
+      'name',
+      'phone',
+      'interest',
+      'client_number',
+    ]);
+  });
+
+  it('keeps Tags display-only with no sort affordance', () => {
+    render(<ClientList {...mockProps} />);
+
+    expect(
+      screen.queryByRole('columnheader', { name: /sort by tags/i })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Tags'));
+    expect(mockProps.onColumnSort).not.toHaveBeenCalled();
   });
 
   it('shows client tags', () => {
@@ -539,14 +571,14 @@ describe('ClientList', () => {
       expect(nameHeader).toHaveAttribute('tabIndex', '0');
 
       fireEvent.keyDown(nameHeader, { key: 'Enter' });
-      expect(mockProps.onColumnSort).toHaveBeenCalledWith('first_name');
+      expect(mockProps.onColumnSort).toHaveBeenCalledWith('name');
 
       const contactHeader = screen.getByRole('columnheader', {
         name: /sort by contact/i,
       });
       expect(contactHeader).toHaveAttribute('aria-sort', 'none');
       fireEvent.keyDown(contactHeader, { key: ' ' });
-      expect(mockProps.onColumnSort).toHaveBeenCalledWith('contact_number');
+      expect(mockProps.onColumnSort).toHaveBeenCalledWith('phone');
     });
 
     it('links expanded details via aria-controls to a real element id', () => {

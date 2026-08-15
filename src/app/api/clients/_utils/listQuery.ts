@@ -13,6 +13,7 @@ import {
   validateSortColumn,
 } from '@/utils/inputValidation';
 import { CLIENT_TABLE_SELECT } from '@/utils/clientDbMap';
+import { sortClientNumberKeys, type ClientNumberSortKey } from './clientSort';
 
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 100;
@@ -20,6 +21,12 @@ export const MAX_PAGE_SIZE = 100;
 export const MAX_ALL_LIMIT = 1000;
 /** Legacy unbound limit param (non-all) — still capped. */
 export const MAX_LIMIT = 5000;
+/**
+ * PostgREST key-scan page size for numeric Client Number ordering.
+ * Must stay at or below the typical Data API max-rows so every matching
+ * row is collected before sorting and page slicing.
+ */
+export const CLIENT_NUMBER_KEY_SCAN_PAGE_SIZE = 1000;
 
 export type HasInstrumentsFilter = 'has' | 'no' | null;
 
@@ -240,17 +247,40 @@ export async function fetchClientIdsWithInstruments(
   return { ids, error: null };
 }
 
-export async function runClientsListQuery(
+async function applyHasInstrumentsFilter(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  query: any,
   supabase: SupabaseClient,
   q: ClientsListQuery,
   orgId: string
-) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query: any = supabase
-    .from('clients')
-    .select(CLIENT_TABLE_SELECT, { count: 'exact' })
-    .eq('org_id', orgId);
+): Promise<{ query: any; error: unknown | null; empty?: boolean }> {
+  if (!q.hasInstruments) return { query, error: null };
 
+  const { ids, error } = await fetchClientIdsWithInstruments(supabase, orgId);
+  if (error) {
+    return { query, error };
+  }
+
+  if (q.hasInstruments === 'has') {
+    if (ids.length === 0) {
+      return { query, error: null, empty: true };
+    }
+    return { query: query.in('id', ids), error: null };
+  }
+
+  if (ids.length > 0) {
+    return { query: query.not('id', 'in', `(${ids.join(',')})`), error: null };
+  }
+  return { query, error: null };
+}
+
+function applyClientsListFilters(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  query: any,
+  q: ClientsListQuery
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any {
   if (q.search) {
     query = query.or(buildSearchOrFilter(q.search));
   }
@@ -262,29 +292,148 @@ export async function runClientsListQuery(
   query = applyInFilter(query, 'interest', q.interests);
 
   for (const tag of q.tags) {
-    // Array contains — exact tag match (UI filter options are exact values)
     query = query.contains('tags', [tag]);
   }
 
+  return query;
+}
+
+function reorderRowsByIds(rows: unknown[], orderedIds: string[]): unknown[] {
+  const byId = new Map<string, unknown>();
+  for (const row of rows) {
+    if (row && typeof row === 'object' && 'id' in row) {
+      byId.set(String((row as { id: unknown }).id), row);
+    }
+  }
+  return orderedIds.map(id => byId.get(id)).filter(row => row !== undefined);
+}
+
+/**
+ * Globally numeric-sort Client Number across the filtered set, then slice.
+ * Uses existing `client_number` text (no schema change). Keys are scanned in
+ * id-stable chunks so PostgREST max-rows cannot silently truncate the order.
+ */
+async function runNumericClientNumberListQuery(
+  supabase: SupabaseClient,
+  q: ClientsListQuery,
+  orgId: string
+) {
+  let instrumentClientIds: string[] | null = null;
   if (q.hasInstruments) {
     const { ids, error } = await fetchClientIdsWithInstruments(supabase, orgId);
     if (error) {
       return { data: null, error, count: null };
     }
-
-    if (q.hasInstruments === 'has') {
-      if (ids.length === 0) {
-        return { data: [], error: null, count: 0 };
-      }
-      query = query.in('id', ids);
-    } else {
-      // no instruments
-      if (ids.length > 0) {
-        // PostgREST not.in requires parenthesized list
-        query = query.not('id', 'in', `(${ids.join(',')})`);
-      }
+    if (q.hasInstruments === 'has' && ids.length === 0) {
+      return { data: [], error: null, count: 0 };
     }
+    instrumentClientIds = ids;
   }
+
+  const keys: ClientNumberSortKey[] = [];
+  let from = 0;
+  let totalCount = 0;
+
+  while (true) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let keyQuery: any = supabase
+      .from('clients')
+      .select('id, client_number', { count: 'exact' })
+      .eq('org_id', orgId);
+
+    keyQuery = applyClientsListFilters(keyQuery, q);
+    if (q.hasInstruments === 'has' && instrumentClientIds) {
+      keyQuery = keyQuery.in('id', instrumentClientIds);
+    } else if (
+      q.hasInstruments === 'no' &&
+      instrumentClientIds &&
+      instrumentClientIds.length > 0
+    ) {
+      keyQuery = keyQuery.not('id', 'in', `(${instrumentClientIds.join(',')})`);
+    }
+
+    keyQuery = keyQuery.order('id', { ascending: true });
+    const to = from + CLIENT_NUMBER_KEY_SCAN_PAGE_SIZE - 1;
+    const { data, error, count } = await keyQuery.range(from, to);
+
+    if (error) {
+      return { data: null, error, count: null };
+    }
+
+    const page = (data ?? []) as ClientNumberSortKey[];
+    if (typeof count === 'number') {
+      totalCount = count;
+    }
+    keys.push(...page);
+
+    if (
+      page.length === 0 ||
+      page.length < CLIENT_NUMBER_KEY_SCAN_PAGE_SIZE ||
+      (typeof count === 'number' && keys.length >= count)
+    ) {
+      break;
+    }
+    from += CLIENT_NUMBER_KEY_SCAN_PAGE_SIZE;
+  }
+
+  if (keys.length > totalCount) {
+    totalCount = keys.length;
+  } else if (totalCount === 0) {
+    totalCount = keys.length;
+  }
+
+  const sorted = sortClientNumberKeys(keys, q.ascending);
+  const window = q.all
+    ? sorted.slice(0, q.pageSize + 1)
+    : sorted.slice(q.rangeStart, q.rangeEnd + 1);
+  const pageIds = window.map(row => row.id);
+
+  if (pageIds.length === 0) {
+    return { data: [], error: null, count: totalCount };
+  }
+
+  const { data: fullRows, error: fullError } = await supabase
+    .from('clients')
+    .select(CLIENT_TABLE_SELECT)
+    .eq('org_id', orgId)
+    .in('id', pageIds);
+
+  if (fullError) {
+    return { data: null, error: fullError, count: null };
+  }
+
+  return {
+    data: reorderRowsByIds(fullRows ?? [], pageIds),
+    error: null,
+    count: totalCount,
+  };
+}
+
+export async function runClientsListQuery(
+  supabase: SupabaseClient,
+  q: ClientsListQuery,
+  orgId: string
+) {
+  if (q.orderBy === 'client_number') {
+    return runNumericClientNumberListQuery(supabase, q, orgId);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = supabase
+    .from('clients')
+    .select(CLIENT_TABLE_SELECT, { count: 'exact' })
+    .eq('org_id', orgId);
+
+  query = applyClientsListFilters(query, q);
+
+  const filtered = await applyHasInstrumentsFilter(query, supabase, q, orgId);
+  if (filtered.error) {
+    return { data: null, error: filtered.error, count: null };
+  }
+  if (filtered.empty) {
+    return { data: [], error: null, count: 0 };
+  }
+  query = filtered.query;
 
   // Deterministic ordering: primary + stable secondary on id
   query = query.order(q.orderBy, { ascending: q.ascending });
@@ -293,7 +442,6 @@ export async function runClientsListQuery(
   }
 
   if (q.all) {
-    // Fetch one extra row to detect truncation past MAX_ALL_LIMIT
     query = query.limit(q.pageSize + 1);
   } else {
     query = query.range(q.rangeStart, q.rangeEnd);

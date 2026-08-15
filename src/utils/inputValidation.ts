@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { parse, isValid, format } from 'date-fns';
+import { canonicalizeClientSortField } from '@/app/api/clients/_utils/clientSort';
 
 // ============================================================================
 // Whitelist Validation
@@ -24,6 +25,7 @@ export const ALLOWED_SORT_COLUMNS = {
     'email',
     'phone',
     'client_number',
+    'interest',
   ] as const,
   instruments: [
     'id',
@@ -69,8 +71,7 @@ export function validateSortColumn(
 
   // Legacy query params (first/last/contact) → rebuilt `clients` columns (name, phone)
   if (table === 'clients') {
-    if (column === 'first_name' || column === 'last_name') return 'name';
-    if (column === 'contact_number') return 'phone';
+    return canonicalizeClientSortField(column);
   }
 
   // Type-safe check
