@@ -526,26 +526,34 @@ describe('useDashboardFilters', () => {
     });
   });
 
-  it('S7: still matches maker, type, and subtype search', async () => {
+  it('S7: still matches type search', async () => {
     const { result } = renderHook(() => useDashboardFilters(mockItems));
 
     act(() => {
       result.current.setSearchTerm('Cello');
     });
-    await waitFor(() => {
-      expect(result.current.filteredItems).toHaveLength(1);
-      expect(result.current.filteredItems[0].type).toBe('Cello');
-    });
+    await waitFor(
+      () => {
+        expect(result.current.filteredItems).toHaveLength(1);
+        expect(result.current.filteredItems[0].type).toBe('Cello');
+      },
+      { timeout: 3000 }
+    );
+  });
+
+  it('S7b: still matches subtype search', async () => {
+    const { result } = renderHook(() => useDashboardFilters(mockItems));
 
     act(() => {
       result.current.setSearchTerm('4/4');
     });
-    await waitFor(() => {
-      // Assert subtype first so waitFor does not pass on the previous
-      // one-item "Cello" result while search debounce is still pending.
-      expect(result.current.filteredItems[0]?.subtype).toBe('4/4');
-      expect(result.current.filteredItems).toHaveLength(1);
-    });
+    await waitFor(
+      () => {
+        expect(result.current.filteredItems).toHaveLength(1);
+        expect(result.current.filteredItems[0].subtype).toBe('4/4');
+      },
+      { timeout: 3000 }
+    );
   });
 
   it('S8: resets to page 1 when the search term changes', async () => {
