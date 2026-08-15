@@ -213,12 +213,12 @@ src/
 
 ### 주요 문서
 
-- [마이그레이션 가이드](./docs/migrations/README.md) - 데이터베이스 마이그레이션
+- [사용자 가이드](./docs/USER_GUIDE.md) - 화면별 사용 방법
+- [문제 해결](./docs/TROUBLESHOOTING.md) - 자주 만나는 오류
 - [프로덕션 배포 가이드](./docs/DEPLOYMENT.md) - 배포 준비 및 실행
-- [데이터베이스 마이그레이션 가이드](./docs/DATABASE_MIGRATION.md) - 데이터베이스 설정
-- [캘린더 설정 가이드](./docs/CALENDAR_SETUP_GUIDE.md) - 캘린더 기능 설정
-- [기능 완성도 분석](./docs/FEATURE_COMPLETION_ANALYSIS.md) - 기능 상태 분석
-- [품질 리포트](./docs/QUALITY_REPORT.md) - 프로젝트 품질 평가
+- [프로덕션 마이그레이션 워크플로](./docs/PRODUCTION_MIGRATION_WORKFLOW.md) - CI/프로덕션 가드
+- [마이그레이션 가이드](./docs/migrations/README.md) - 데이터베이스 마이그레이션
+- [데모 데이터 시드](./docs/seed-demo-data.md) - 샘플 데이터
 
 전체 문서 목록은 [문서 인덱스](./docs/README.md)를 확인하세요.
 
