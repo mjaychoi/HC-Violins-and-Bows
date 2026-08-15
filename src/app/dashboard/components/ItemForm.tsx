@@ -555,10 +555,15 @@ function ItemForm({
                 >
                   <option value="Available">Available</option>
                   <option value="Booked">Booked</option>
-                  <option value="Sold">Sold</option>
+                  {isEditing && <option value="Sold">Sold</option>}
                   {isEditing && <option value="Reserved">Reserved</option>}
                   <option value="Maintenance">Maintenance</option>
                 </select>
+                {!isEditing && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Sold status is set automatically through the sales flow.
+                  </p>
+                )}
                 {!isEditing && (
                   <p className="mt-1 text-xs text-gray-500">
                     Reserved status can be set after creation.

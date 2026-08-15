@@ -730,6 +730,30 @@ describe('/api/instruments', () => {
       );
     });
 
+    it('rejects a direct create with status Sold and creates no instrument', async () => {
+      const createData = {
+        type: 'Violin',
+        status: 'Sold',
+      };
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'POST',
+        body: JSON.stringify(createData),
+      });
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json).toEqual(
+        expect.objectContaining({
+          error:
+            'Instrument status cannot be set to Sold directly. Use the sales flow.',
+          success: false,
+        })
+      );
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('returns existing instrument when Idempotency-Key matches completed request hash', async () => {
       const createData = { type: 'Violin' };
       const existing = {

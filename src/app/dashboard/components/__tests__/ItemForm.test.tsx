@@ -245,6 +245,67 @@ describe('ItemForm', () => {
     ).toBeInTheDocument();
   });
 
+  it('does not offer Sold when creating a new instrument', () => {
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    expect(
+      screen.queryByRole('option', { name: 'Sold' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Sold status is set automatically through the sales flow.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('offers every approved initial status when creating a new instrument', () => {
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing={false}
+        existingSerialNumbers={[]}
+      />
+    );
+
+    expect(
+      screen.getByRole('option', { name: 'Available' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Booked' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: 'Maintenance' })
+    ).toBeInTheDocument();
+  });
+
+  it('offers Sold when editing an existing instrument', () => {
+    render(
+      <ItemForm
+        isOpen
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitting={false}
+        selectedItem={null}
+        isEditing
+        existingSerialNumbers={[]}
+      />
+    );
+
+    expect(screen.getByRole('option', { name: 'Sold' })).toBeInTheDocument();
+  });
+
   it('does not show image upload controls in the add flow', () => {
     render(
       <ItemForm

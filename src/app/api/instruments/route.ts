@@ -423,6 +423,17 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       const createInput = validationResult.data as CreateInstrumentInput;
       const nextStatus = createInput.status ?? 'Available';
 
+      if (nextStatus === 'Sold') {
+        return {
+          payload: {
+            error:
+              'Instrument status cannot be set to Sold directly. Use the sales flow.',
+            success: false,
+          },
+          status: 409,
+        };
+      }
+
       if (nextStatus === 'Reserved' && !createInput.reserved_reason?.trim()) {
         return {
           payload: {
