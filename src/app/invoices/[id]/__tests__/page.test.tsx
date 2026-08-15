@@ -85,9 +85,12 @@ describe('InvoiceDetailPage', () => {
       handleError: mockHandleError,
     } as any);
     mockUsePermissions.mockReturnValue({
+      permissionsReady: true,
+      canViewInvoices: true,
       canEditInvoice: true,
       canDeleteInvoice: true,
       canManageInvoiceSettings: true,
+      invoiceAccessDisabledReason: undefined,
     } as any);
   });
 
@@ -178,5 +181,45 @@ describe('InvoiceDetailPage', () => {
     expect(screen.getByText(/Due: Jul 15, 2026/)).toBeInTheDocument();
     expect(screen.queryByText(/Jul 14/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Jul 16/)).not.toBeInTheDocument();
+  });
+
+  it('shows an admin-only access state without fetching invoice detail', async () => {
+    mockUsePermissions.mockReturnValue({
+      permissionsReady: true,
+      canViewInvoices: false,
+      canEditInvoice: false,
+      canDeleteInvoice: false,
+      canManageInvoiceSettings: false,
+      invoiceAccessDisabledReason: 'Admin only',
+    } as any);
+
+    render(<InvoiceDetailPage />);
+
+    expect(
+      await screen.findByText('Invoices are available to administrators only.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Back to Dashboard')).toBeInTheDocument();
+    expect(screen.queryByText('Edit')).not.toBeInTheDocument();
+    expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+    expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+
+  it('does not show Admin only while permissions are still resolving', () => {
+    mockUsePermissions.mockReturnValue({
+      permissionsReady: false,
+      canViewInvoices: false,
+      canEditInvoice: false,
+      canDeleteInvoice: false,
+      canManageInvoiceSettings: false,
+      invoiceAccessDisabledReason: 'Checking permissions',
+    } as any);
+
+    render(<InvoiceDetailPage />);
+
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Invoices are available to administrators only.')
+    ).not.toBeInTheDocument();
+    expect(mockApiFetch).not.toHaveBeenCalled();
   });
 });

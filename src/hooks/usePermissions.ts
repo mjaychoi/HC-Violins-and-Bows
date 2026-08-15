@@ -26,6 +26,7 @@ export function usePermissions() {
           : undefined;
 
     return {
+      permissionsReady: isReady,
       canCreateSale: canUseAdminOrgFeatures,
       canCreateInvoice: canUseAdminOrgFeatures,
       canCreateInstrument: canUseAdminOrgFeatures,
@@ -38,6 +39,7 @@ export function usePermissions() {
       canManageTasks: canUseAdminOrgFeatures,
       canManageSales: canUseAdminOrgFeatures,
       canExportSales: canUseAdminOrgFeatures,
+      canViewInvoices: canUseAdminOrgFeatures,
       canEditInvoice: canUseAdminOrgFeatures,
       canDeleteInvoice: canUseAdminOrgFeatures,
       canManageInvoiceSettings: canUseAdminOrgFeatures,
@@ -48,6 +50,10 @@ export function usePermissions() {
       canManageClients: canUseAdminOrgFeatures,
       canCreateClient: canUseAdminOrgFeatures,
       canViewInstrumentFinancialData: canUseAdminOrgFeatures,
+
+      invoiceAccessDisabledReason: canUseAdminOrgFeatures
+        ? undefined
+        : adminOnlyReason,
 
       createClientDisabledReason: canUseAdminOrgFeatures
         ? undefined

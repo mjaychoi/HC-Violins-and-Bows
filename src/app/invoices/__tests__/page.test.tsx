@@ -3,6 +3,7 @@ import { act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import InvoicesPage from '../page';
 import { Invoice } from '@/types';
+import { usePermissions } from '@/hooks/usePermissions';
 import { ApiResponseError } from '@/utils/handleApiResponse';
 import { INVOICE_PAGE_SIZE } from '../invoiceListPagination';
 
@@ -10,8 +11,11 @@ const originalCreateElement = document.createElement.bind(document);
 
 jest.mock('@/hooks/usePermissions', () => ({
   usePermissions: jest.fn(() => ({
+    permissionsReady: true,
+    canViewInvoices: true,
     canCreateInvoice: true,
     canManageInvoiceSettings: true,
+    invoiceAccessDisabledReason: undefined,
   })),
 }));
 
@@ -1626,5 +1630,111 @@ describe('InvoicesPage', () => {
 
     // Loading state should be handled by InvoiceList component
     expect(screen.getByTestId('invoice-list')).toBeInTheDocument();
+  });
+});
+
+describe('InvoicesPage member access', () => {
+  const mockFetchInvoices = jest.fn();
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const { useInvoices } = require('../hooks/useInvoices');
+    useInvoices.mockReturnValue({
+      invoices: [],
+      status: 'success',
+      page: 1,
+      totalCount: 0,
+      totalPages: 1,
+      loading: false,
+      error: null,
+      displayError: null,
+      listDiagnostics: {
+        partial: false,
+        droppedCount: 0,
+        returnedCount: 0,
+        warning: undefined,
+      },
+      fetchInvoices: mockFetchInvoices,
+      createInvoice: jest.fn(),
+      updateInvoice: jest.fn(),
+      deleteInvoice: jest.fn(),
+      setPage: jest.fn(),
+      scopeInfo: null,
+    });
+
+    const { useInvoiceSort } = require('../hooks/useInvoiceSort');
+    useInvoiceSort.mockReturnValue({
+      sortColumn: 'invoice_date',
+      sortDirection: 'desc',
+      handleSort: jest.fn(),
+      getSortState: jest.fn(() => ({ active: false })),
+      setSortColumn: jest.fn(),
+      setSortDirection: jest.fn(),
+    });
+
+    const { useURLState } = require('@/hooks/useURLState');
+    useURLState.mockReturnValue({
+      urlState: {},
+      updateURLState: jest.fn(),
+    });
+  });
+
+  it('shows an admin-only access state without fetching invoices', async () => {
+    (usePermissions as jest.Mock).mockReturnValue({
+      permissionsReady: true,
+      canViewInvoices: false,
+      canCreateInvoice: false,
+      canManageInvoiceSettings: false,
+      invoiceAccessDisabledReason: 'Admin only',
+    });
+
+    render(<InvoicesPage />);
+
+    expect(
+      await screen.findByText('Invoices are available to administrators only.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Back to Dashboard')).toBeInTheDocument();
+    expect(screen.queryByText('Add Invoice')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('invoice-list')).not.toBeInTheDocument();
+    expect(mockFetchInvoices).not.toHaveBeenCalled();
+  });
+
+  it('shows a loading state while permissions are unresolved', () => {
+    (usePermissions as jest.Mock).mockReturnValue({
+      permissionsReady: false,
+      canViewInvoices: false,
+      canCreateInvoice: false,
+      canManageInvoiceSettings: false,
+      invoiceAccessDisabledReason: 'Checking permissions',
+    });
+
+    render(<InvoicesPage />);
+
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Invoices are available to administrators only.')
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Add Invoice')).not.toBeInTheDocument();
+    expect(mockFetchInvoices).not.toHaveBeenCalled();
+  });
+
+  it('shows organization context required without labeling it admin-only', async () => {
+    (usePermissions as jest.Mock).mockReturnValue({
+      permissionsReady: true,
+      canViewInvoices: false,
+      canCreateInvoice: false,
+      canManageInvoiceSettings: false,
+      invoiceAccessDisabledReason: 'Organization context required',
+    });
+
+    render(<InvoicesPage />);
+
+    expect(
+      await screen.findByText('Organization context required')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Invoices are available to administrators only.')
+    ).not.toBeInTheDocument();
+    expect(mockFetchInvoices).not.toHaveBeenCalled();
   });
 });

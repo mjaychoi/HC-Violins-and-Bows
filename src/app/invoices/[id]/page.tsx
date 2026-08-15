@@ -14,6 +14,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import OptimizedImage from '@/components/common/OptimizedImage';
 import { cn } from '@/utils/classNames';
 import InvoiceSettingsPanel from '../components/InvoiceSettingsPanel';
+import InvoiceAccessState from '../components/InvoiceAccessState';
 import { errorHandler } from '@/utils/errorHandler';
 import {
   createApiResponseErrorFromResponse,
@@ -68,8 +69,14 @@ export default function InvoiceDetailPage() {
 
   const router = useRouter();
   const { showSuccess, handleError } = useAppFeedback();
-  const { canEditInvoice, canDeleteInvoice, canManageInvoiceSettings } =
-    usePermissions();
+  const {
+    permissionsReady,
+    canViewInvoices,
+    invoiceAccessDisabledReason,
+    canEditInvoice,
+    canDeleteInvoice,
+    canManageInvoiceSettings,
+  } = usePermissions();
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [fetchState, setFetchState] = useState<
@@ -127,8 +134,11 @@ export default function InvoiceDetailPage() {
   }, [invoiceId, handleError]);
 
   useEffect(() => {
+    if (!permissionsReady || !canViewInvoices) {
+      return;
+    }
     void fetchInvoice();
-  }, [fetchInvoice]);
+  }, [permissionsReady, canViewInvoices, fetchInvoice]);
 
   // F7: single canonical money formatter shared with the invoice list and the
   // PDF document renderer.
@@ -210,6 +220,24 @@ export default function InvoiceDetailPage() {
       setConfirmDeleteOpen(false);
     }
   }, [invoiceId, router, handleError, showSuccess, submitting]);
+
+  if (!permissionsReady) {
+    return (
+      <AppLayout title="Invoice">
+        <div className="p-6 space-y-6">
+          <div className="text-sm text-gray-600">Loading...</div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!canViewInvoices) {
+    return (
+      <AppLayout title="Invoice">
+        <InvoiceAccessState reason={invoiceAccessDisabledReason} />
+      </AppLayout>
+    );
+  }
 
   if (loading) {
     return (
@@ -302,29 +330,22 @@ export default function InvoiceDetailPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {/* <Link
-              href={`/api/invoices/${invoice.id}/pdf`}
-              target="_blank"
-              className="px-3 py-2 text-sm rounded-md bg-gray-200 text-gray-900 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
-            >
-              Open PDF
-            </Link> */}
-            <Button
-              variant="secondary"
-              disabled={submitting || !canEditInvoice}
-              title={!canEditInvoice ? 'Admin only' : undefined}
-              onClick={() => setIsModalOpen(true)}
-            >
-              Edit
-            </Button>
+            {canEditInvoice && (
+              <Button
+                variant="secondary"
+                disabled={submitting}
+                onClick={() => setIsModalOpen(true)}
+              >
+                Edit
+              </Button>
+            )}
             {/* F5: only drafts can be hard deleted. For issued invoices the
                 API always answers 409 INVOICE_IMMUTABLE, so the action is not
                 offered. */}
-            {isInvoiceHardDeletable(invoice.status) && (
+            {canDeleteInvoice && isInvoiceHardDeletable(invoice.status) && (
               <Button
                 variant="danger"
-                disabled={submitting || !canDeleteInvoice}
-                title={!canDeleteInvoice ? 'Admin only' : undefined}
+                disabled={submitting}
                 onClick={() => setConfirmDeleteOpen(true)}
               >
                 Delete

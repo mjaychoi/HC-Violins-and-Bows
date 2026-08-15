@@ -6,6 +6,7 @@ import { MaintenanceTask } from '@/types';
 import { format } from 'date-fns';
 import React from 'react';
 import { useMaintenanceTasks } from '@/hooks/useMaintenanceTasks';
+import { usePermissions } from '@/hooks/usePermissions';
 
 jest.mock('@/utils/apiFetch', () => ({
   apiFetch: (...args: Parameters<typeof fetch>) => fetch(...args),
@@ -159,8 +160,31 @@ jest.mock('@/hooks/usePermissions', () => ({
 // Mock layout to avoid auth/navigation side effects
 jest.mock('@/components/layout', () => ({
   __esModule: true,
-  AppLayout: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="app-layout">{children}</div>
+  AppLayout: ({
+    children,
+    actionButton,
+  }: {
+    children: React.ReactNode;
+    actionButton?: {
+      label: string;
+      onClick: () => void;
+      disabled?: boolean;
+      disabledReason?: string;
+    };
+  }) => (
+    <div data-testid="app-layout">
+      {actionButton ? (
+        <button
+          type="button"
+          onClick={actionButton.onClick}
+          disabled={actionButton.disabled}
+          title={actionButton.disabledReason}
+        >
+          {actionButton.label}
+        </button>
+      ) : null}
+      {children}
+    </div>
   ),
 }));
 
@@ -250,8 +274,31 @@ jest.mock('@/hooks/usePageNotifications', () => ({
 // Mock AppLayout
 jest.mock('@/components/layout', () => ({
   __esModule: true,
-  AppLayout: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="app-layout">{children}</div>
+  AppLayout: ({
+    children,
+    actionButton,
+  }: {
+    children: React.ReactNode;
+    actionButton?: {
+      label: string;
+      onClick: () => void;
+      disabled?: boolean;
+      disabledReason?: string;
+    };
+  }) => (
+    <div data-testid="app-layout">
+      {actionButton ? (
+        <button
+          type="button"
+          onClick={actionButton.onClick}
+          disabled={actionButton.disabled}
+          title={actionButton.disabledReason}
+        >
+          {actionButton.label}
+        </button>
+      ) : null}
+      {children}
+    </div>
   ),
 }));
 
@@ -2124,6 +2171,68 @@ describe('CalendarPage', () => {
       // Notification badge integration is tested via component rendering
       // The badge will only show when there are notifications (total > 0)
       // This is tested in NotificationBadge component tests
+    });
+  });
+
+  describe('Admin task affordances', () => {
+    it('renders header Add Task for an authorized admin', async () => {
+      render(<CalendarPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Task')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Member task affordances', () => {
+    beforeEach(() => {
+      (usePermissions as jest.Mock).mockReturnValue({
+        canCreateTask: false,
+        canManageTasks: false,
+        createTaskDisabledReason: 'Admin only',
+      });
+    });
+
+    afterEach(() => {
+      (usePermissions as jest.Mock).mockReturnValue({
+        canCreateTask: true,
+        canManageTasks: true,
+        createTaskDisabledReason: undefined,
+      });
+    });
+
+    it('does not render header Add Task for a member', async () => {
+      render(<CalendarPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('app-layout')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText('Add Task')).not.toBeInTheDocument();
+    });
+
+    it('does not open the editable task modal from an event click', async () => {
+      const user = userEvent.setup();
+      render(<CalendarPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('calendar-event-1')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId('calendar-event-1'));
+      expect(mockOpenEditModal).not.toHaveBeenCalled();
+    });
+
+    it('does not open a create modal from an empty slot', async () => {
+      const user = userEvent.setup();
+      render(<CalendarPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('select-slot-button')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId('select-slot-button'));
+      expect(mockOpenModal).not.toHaveBeenCalled();
     });
   });
 });

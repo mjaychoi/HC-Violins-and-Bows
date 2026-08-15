@@ -117,6 +117,62 @@ describe('CalendarContent', () => {
     expect(onOpenNewTask).toHaveBeenCalled();
   });
 
+  it('does not render Add maintenance task when the user cannot create tasks', () => {
+    const navigation = createNavigationOverrides();
+
+    render(
+      <CalendarContent
+        tasks={[baseTask]}
+        instruments={[baseInstrument]}
+        clients={[baseClient]}
+        loading={{ fetch: false, mutate: false }}
+        navigation={navigation}
+        view="calendar"
+        setView={jest.fn()}
+        onTaskClick={jest.fn()}
+        onTaskDelete={jest.fn()}
+        onSelectEvent={jest.fn()}
+        onSelectSlot={jest.fn()}
+        draggingEventId={null}
+        onOpenNewTask={jest.fn()}
+        canCreateTask={false}
+        canManageTask={false}
+      />
+    );
+
+    expect(
+      screen.queryByRole('button', { name: /add new task/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it('disables Add maintenance task during an authorized admin mutation instead of hiding it', () => {
+    const navigation = createNavigationOverrides();
+
+    render(
+      <CalendarContent
+        tasks={[baseTask]}
+        instruments={[baseInstrument]}
+        clients={[baseClient]}
+        loading={{ fetch: false, mutate: true }}
+        navigation={navigation}
+        view="calendar"
+        setView={jest.fn()}
+        onTaskClick={jest.fn()}
+        onTaskDelete={jest.fn()}
+        onSelectEvent={jest.fn()}
+        onSelectSlot={jest.fn()}
+        draggingEventId={null}
+        onOpenNewTask={jest.fn()}
+        canCreateTask={true}
+        createTaskDisabledReason="Please wait for the current submission to finish"
+        canManageTask={true}
+      />
+    );
+
+    const addButton = screen.getByRole('button', { name: /add new task/i });
+    expect(addButton).toBeDisabled();
+  });
+
   it('calls navigation handlers and view toggle callbacks', () => {
     const navigation = createNavigationOverrides();
     const setView = jest.fn();

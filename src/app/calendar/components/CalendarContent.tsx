@@ -65,7 +65,7 @@ interface CalendarContentProps {
     id: string,
     updates: MaintenanceTaskUpdatePayload
   ) => Promise<MaintenanceTask | null>;
-  onSelectEvent: (task: MaintenanceTask) => void;
+  onSelectEvent?: (task: MaintenanceTask) => void;
   onSelectSlot?: (slotInfo: { start: Date; end: Date }) => void;
   onEventDrop?: (data: {
     event: { resource?: unknown };
@@ -524,30 +524,32 @@ function CalendarContentInner({
               </button>
             </div>
 
-            <button
-              onClick={onOpenNewTask}
-              disabled={!canCreateTask}
-              title={createTaskDisabledReason}
-              className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300 disabled:hover:bg-blue-300"
-              aria-label="Add new task"
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                focusable="false"
+            {canCreateTask && (
+              <button
+                onClick={onOpenNewTask}
+                disabled={Boolean(createTaskDisabledReason)}
+                title={createTaskDisabledReason}
+                className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300 disabled:hover:bg-blue-300"
+                aria-label="Add new task"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 4v16m8-8H4"
-                />
-              </svg>
-              Add maintenance task
-            </button>
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
+                </svg>
+                Add maintenance task
+              </button>
+            )}
           </div>
         </div>
       </div>
