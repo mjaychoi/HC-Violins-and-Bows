@@ -37,6 +37,7 @@ import {
 } from '@/app/api/_utils/rateLimit';
 import { assertClientBelongsToOrg } from '../clientScope';
 import { mapInvoiceDbError } from '../rpcErrors';
+import { createRequestHash } from '@/app/api/_utils/createIdempotency';
 import {
   INVOICE_IMMUTABLE,
   INVOICE_IMMUTABLE_MESSAGE,
@@ -144,6 +145,39 @@ function requireIdempotencyKey(request: NextRequest):
     ok: true,
     idempotencyKey,
   };
+}
+
+function requireInvoiceExpectedUpdatedAt(body: Record<string, unknown>):
+  | { ok: true; expectedUpdatedAt: string }
+  | {
+      ok: false;
+      result: {
+        payload: {
+          error: string;
+          error_code: string;
+          success: false;
+        };
+        status: 400;
+      };
+    } {
+  const raw = body.updated_at;
+
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return {
+      ok: false,
+      result: {
+        payload: {
+          error:
+            'updated_at is required for optimistic concurrency. Send the invoice row’s current updated_at from the server.',
+          error_code: 'INVOICE_UPDATED_AT_REQUIRED',
+          success: false,
+        },
+        status: 400,
+      },
+    };
+  }
+
+  return { ok: true, expectedUpdatedAt: raw.trim() };
 }
 
 function getInvoiceMutationResult(
@@ -340,9 +374,13 @@ async function getInvoiceHandler(
  * PUT /api/invoices/[id]
  * Supports partial invoice fields + optional full items replacement.
  *
- * NOTE:
- * Idempotency-Key is currently a presence guard only.
- * For true replay-safe idempotency, add a DB-backed invoice_update_idempotency map.
+ * V5-002 + V5-003: requires both an Idempotency-Key header and an
+ * `updated_at` body field naming the invoice version the caller edited from.
+ * Both are enforced DB-authoritatively by update_invoice_atomic_idempotent /
+ * update_invoice_atomic (supabase/migrations/20260814170000_*.sql):
+ * duplicate requests under the same key replay the original result instead
+ * of mutating twice, and a stale `updated_at` is rejected with 409
+ * INVOICE_CONCURRENCY_CONFLICT before any row is touched.
  */
 async function updateInvoiceHandler(
   request: NextRequest,
@@ -406,6 +444,12 @@ async function updateInvoiceHandler(
         status: 400,
       };
     }
+
+    const updatedAtGate = requireInvoiceExpectedUpdatedAt(bodyResult.body);
+    if (!updatedAtGate.ok) {
+      return updatedAtGate.result;
+    }
+    const expectedUpdatedAt = updatedAtGate.expectedUpdatedAt;
 
     const validationResult = safeValidate(
       bodyResult.body,
@@ -598,20 +642,41 @@ async function updateInvoiceHandler(
       };
     }
 
+    const itemsPayload = itemsProvided
+      ? toInvoiceItemsJson(validatedInput.items)
+      : null;
+
+    // V5-002 + V5-003: request_hash binds this Idempotency-Key to the exact
+    // logical operation (which invoice, which base version, which changes).
+    // A retry with the same key and the same hash replays the prior result
+    // instead of re-running the CAS check against a row the first attempt
+    // may have already advanced; a reused key with a different hash is
+    // rejected instead of silently applying the wrong payload.
+    const requestHash = createRequestHash({
+      invoiceId: id,
+      expectedUpdatedAt,
+      invoice: invoiceUpdate,
+      items: itemsPayload,
+    });
+
     const { error: updateError } = await auth.userSupabase.rpc(
-      'update_invoice_atomic',
+      'update_invoice_atomic_idempotent',
       {
+        p_route_key: 'PUT:/api/invoices/:id',
+        p_idempotency_key: idempotency.idempotencyKey,
+        p_request_hash: requestHash,
         p_invoice_id: id,
         p_invoice: invoiceUpdate,
-        p_items: itemsProvided
-          ? toInvoiceItemsJson(validatedInput.items)
-          : null,
+        p_items: itemsPayload,
+        p_expected_updated_at: expectedUpdatedAt,
       }
     );
 
     if (updateError) {
-      // F2: database-enforced financial invariants map to stable client
-      // contracts. Raw SQL text is never forwarded.
+      // F2/V5-003: database-enforced financial invariants and the
+      // concurrency/idempotency conflict codes raised by
+      // update_invoice_atomic_idempotent map to stable client contracts. Raw
+      // SQL text is never forwarded.
       const invariantError = mapInvoiceDbError(updateError);
       if (invariantError) {
         return invariantError;

@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
 import InvoicesPage from '../page';
 import { Invoice } from '@/types';
+import { ApiResponseError } from '@/utils/handleApiResponse';
 
 const originalCreateElement = document.createElement.bind(document);
 
@@ -774,6 +775,44 @@ describe('InvoicesPage', () => {
     expect(mockShowSuccess).not.toHaveBeenCalledWith(
       'Invoice updated, but some item images were not linked.'
     );
+  });
+
+  it('V5-003: a 409 concurrency conflict keeps the modal open, preserves the draft, and does not auto-retry', async () => {
+    mockUpdateInvoice.mockRejectedValueOnce(
+      new ApiResponseError(
+        'This invoice was updated elsewhere. Refresh and try again.',
+        {
+          status: 409,
+          error_code: 'INVOICE_CONCURRENCY_CONFLICT',
+        }
+      )
+    );
+
+    const user = userEvent.setup();
+    render(<InvoicesPage />);
+
+    await user.click(screen.getByText('Edit INV0000001'));
+    expect(await screen.findByTestId('invoice-modal')).toBeInTheDocument();
+
+    mockFetchInvoices.mockClear();
+    await user.click(screen.getByText('Submit Invoice'));
+
+    await waitFor(() => {
+      expect(mockShowWarning).toHaveBeenCalledWith(
+        expect.stringContaining('updated elsewhere')
+      );
+    });
+
+    // The modal must stay open with the user's draft still in it -- no
+    // auto-close, and no automatic resubmission of the stale form.
+    expect(screen.getByTestId('invoice-modal')).toBeInTheDocument();
+    expect(mockUpdateInvoice).toHaveBeenCalledTimes(1);
+
+    // Background refresh so a reopened edit sees the latest row, without
+    // disturbing the currently-open draft.
+    await waitFor(() => {
+      expect(mockFetchInvoices).toHaveBeenCalled();
+    });
   });
 
   it.skip('handles invoice update', async () => {

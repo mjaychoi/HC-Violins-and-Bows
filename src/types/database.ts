@@ -1045,8 +1045,21 @@ export type Database = {
           p_invoice_id: string;
           p_invoice: Json;
           p_items?: Json | null;
+          p_expected_updated_at?: string | null;
         };
         Returns: undefined;
+      };
+      update_invoice_atomic_idempotent: {
+        Args: {
+          p_route_key: string;
+          p_idempotency_key: string;
+          p_request_hash: string;
+          p_invoice_id: string;
+          p_invoice: Json;
+          p_items?: Json | null;
+          p_expected_updated_at?: string | null;
+        };
+        Returns: string;
       };
       update_sale_notes_atomic: {
         Args: {

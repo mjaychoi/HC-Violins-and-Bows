@@ -37,6 +37,7 @@
     "test:production-guards": "jest --runInBand tests/integration/production/db-deploy-guards.test.ts",
     "test:production-guards-integration": "jest --runInBand --forceExit tests/integration/production/db-probe-cli.integration.test.ts tests/integration/production/postflight-catalog.integration.test.ts tests/integration/production/run-predeploy-audit.integration.test.ts tests/integration/production/db-reconcile-readonly.integration.test.ts --testPathIgnorePatterns=/node_modules/ --globalSetup=./tests/integration/production/helpers/global-setup.cjs --globalTeardown=./tests/integration/production/helpers/global-teardown.cjs",
     "test:sale-transition-migration-consolidation": "jest --runInBand --forceExit tests/integration/migrations/update_instrument_sale_transition_atomic_consolidation.integration.test.ts --testPathIgnorePatterns=/node_modules/ --globalSetup=./tests/integration/migrations/helpers/global-setup.cjs --globalTeardown=./tests/integration/migrations/helpers/global-teardown.cjs",
+    "test:invoice-update-cas-idempotency-migration": "jest --runInBand --forceExit tests/integration/migrations/update_invoice_atomic_idempotency_concurrency.integration.test.ts --testPathIgnorePatterns=/node_modules/ --globalSetup=./tests/integration/migrations/helpers/global-setup.cjs --globalTeardown=./tests/integration/migrations/helpers/global-teardown.cjs",
     "schema:ready": "tsx scripts/check-schema-readiness.ts",
     "format": "prettier --write .",
     "final": "npm run lint && npm run type-check && npm run test && npm run build",
