@@ -78,6 +78,39 @@ type InstrumentInsertInput = CreateInstrumentInput & {
 
 const SERIAL_CONFLICT_MAX_RETRIES = 3;
 const MAX_ALL_RESULTS = 1000;
+const MAINTENANCE_TASKS_INSTRUMENT_FK = 'maintenance_tasks_instrument_id_fkey';
+const INSTRUMENT_HAS_MAINTENANCE_HISTORY = 'INSTRUMENT_HAS_MAINTENANCE_HISTORY';
+const INSTRUMENT_HAS_MAINTENANCE_HISTORY_MESSAGE =
+  "This item can't be deleted because it has maintenance history that must be preserved.";
+
+function isMaintenanceHistoryDeleteConflict(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+    constraint?: unknown;
+  };
+
+  if (candidate.code !== '23503') {
+    return false;
+  }
+
+  const haystack = [
+    candidate.message,
+    candidate.details,
+    candidate.hint,
+    candidate.constraint,
+  ]
+    .filter((part): part is string => typeof part === 'string')
+    .join('\n');
+
+  return haystack.includes(MAINTENANCE_TASKS_INSTRUMENT_FK);
+}
 
 type InstrumentFinancials = {
   cost_price: number | null;
@@ -863,6 +896,17 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
         .eq('org_id', orgId);
 
       if (error) {
+        if (isMaintenanceHistoryDeleteConflict(error)) {
+          return {
+            payload: {
+              success: false,
+              error: INSTRUMENT_HAS_MAINTENANCE_HISTORY_MESSAGE,
+              error_code: INSTRUMENT_HAS_MAINTENANCE_HISTORY,
+            },
+            status: 409,
+          };
+        }
+
         throw errorHandler.handleSupabaseError(error, 'Delete instrument');
       }
 

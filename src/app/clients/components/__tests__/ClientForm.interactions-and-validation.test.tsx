@@ -91,6 +91,40 @@ describe('ClientForm - 상호작용/검증/로딩', () => {
     jest.clearAllMocks();
   });
 
+  it('formatted contact number submits without validation rejection or rewrite', async () => {
+    const mockOnSubmit = jest
+      .fn()
+      .mockResolvedValue({ status: 'full_success' });
+    const formattedPhone = '(404) 555-1212';
+    const mockUseFormState = jest.mocked(
+      require('@/hooks/useFormState')
+    ).useFormState;
+
+    mockUseFormState.mockReturnValue({
+      formData: {
+        last_name: 'Doe',
+        first_name: 'John',
+        contact_number: formattedPhone,
+        email: 'john@example.com',
+        tags: [],
+        interest: '',
+        note: '',
+        client_number: '',
+      },
+      updateField: jest.fn(),
+      resetForm: jest.fn(),
+    });
+
+    render(<ClientForm {...baseProps} onSubmit={mockOnSubmit} />);
+    fireEvent.click(screen.getByRole('button', { name: /add client/i }));
+
+    await waitFor(() => {
+      expect(mockOnSubmit).toHaveBeenCalledTimes(1);
+    });
+    expect(mockHandleError).not.toHaveBeenCalled();
+    expect(mockOnSubmit.mock.calls[0][0].contact_number).toBe(formattedPhone);
+  });
+
   it('Submit 호출', async () => {
     const mockOnSubmit = jest.fn();
     const mockUpdateField = jest.fn();
