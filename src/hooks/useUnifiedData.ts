@@ -451,7 +451,10 @@ export function useUnifiedData() {
           a.fetchInstruments({ all: true })
         ),
         runOne('connections', needConnections, () =>
-          a.fetchConnections({ all: true })
+          // rejectOnError is required: fetchConnections swallows errors
+          // unless asked, and a resolved-but-failed complete drain must
+          // never set globalFetched.connections.
+          a.fetchConnections({ all: true, rejectOnError: true })
         ),
       ]);
     };
