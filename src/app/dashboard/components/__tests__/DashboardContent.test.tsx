@@ -550,4 +550,82 @@ describe('DashboardContent', () => {
     ).toHaveAttribute('role', 'status');
     expect(itemCsvExport.downloadItemCSV).not.toHaveBeenCalled();
   });
+
+  it('shows a loading state instead of an empty list while a deep link resolves', () => {
+    render(
+      <DashboardContent
+        {...defaultProps}
+        instrumentDeepLink={{
+          status: 'loading',
+          onShowAllItems: jest.fn(),
+          onRetry: jest.fn(),
+        }}
+      />
+    );
+
+    expect(screen.getByText('Loading item…')).toBeInTheDocument();
+    expect(screen.queryByTestId('item-list')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('No items found matching your filters')
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows not-found recovery for an unavailable deep link', () => {
+    const onShowAllItems = jest.fn();
+    render(
+      <DashboardContent
+        {...defaultProps}
+        instrumentDeepLink={{
+          status: 'not_found',
+          onShowAllItems,
+          onRetry: jest.fn(),
+        }}
+      />
+    );
+
+    expect(
+      screen.getByText('Item not found or unavailable.')
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show all items' }));
+    expect(onShowAllItems).toHaveBeenCalled();
+    expect(screen.queryByTestId('item-list')).not.toBeInTheDocument();
+    expect(mockClearAllFilters).not.toHaveBeenCalled();
+  });
+
+  it('shows not-found recovery for an invalid instrument deep link', () => {
+    render(
+      <DashboardContent
+        {...defaultProps}
+        instrumentDeepLink={{
+          status: 'invalid',
+          onShowAllItems: jest.fn(),
+          onRetry: jest.fn(),
+        }}
+      />
+    );
+
+    expect(
+      screen.getByText('Item not found or unavailable.')
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('item-list')).not.toBeInTheDocument();
+  });
+
+  it('shows retryable error UI for a failed deep-link lookup', () => {
+    const onRetry = jest.fn();
+    render(
+      <DashboardContent
+        {...defaultProps}
+        instrumentDeepLink={{
+          status: 'error',
+          onShowAllItems: jest.fn(),
+          onRetry,
+        }}
+      />
+    );
+
+    expect(screen.getByText("Couldn't load this item")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalled();
+    expect(screen.queryByTestId('item-list')).not.toBeInTheDocument();
+  });
 });

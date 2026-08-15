@@ -424,4 +424,341 @@ describe('useDashboardFilters', () => {
 
     expect(result.current.showFilters).toBe(false);
   });
+
+  it('S1-S3: matches exact, partial, and case-insensitive serial numbers', async () => {
+    const items = [
+      {
+        ...mockItems[0],
+        id: 'serial-1',
+        maker: 'Vuillaume',
+        type: 'Bow',
+        subtype: 'Pernambuco',
+        serial_number: 'SM703171000026',
+        status: 'Available' as const,
+      },
+      {
+        ...mockItems[1],
+        id: 'serial-2',
+        maker: 'Tourte',
+        serial_number: 'AB999',
+      },
+    ];
+    const { result } = renderHook(() => useDashboardFilters(items));
+
+    act(() => {
+      result.current.setSearchTerm('SM703171000026');
+    });
+    await waitFor(() => {
+      expect(result.current.filteredItems).toHaveLength(1);
+      expect(result.current.filteredItems[0].serial_number).toBe(
+        'SM703171000026'
+      );
+    });
+
+    act(() => {
+      result.current.setSearchTerm('3171000026');
+    });
+    await waitFor(() => {
+      expect(result.current.filteredItems).toHaveLength(1);
+      expect(result.current.filteredItems[0].id).toBe('serial-1');
+    });
+
+    act(() => {
+      result.current.setSearchTerm('sm703');
+    });
+    await waitFor(() => {
+      expect(result.current.filteredItems).toHaveLength(1);
+      expect(result.current.filteredItems[0].id).toBe('serial-1');
+    });
+  });
+
+  it('S4: returns no rows for a non-matching serial', async () => {
+    const { result } = renderHook(() => useDashboardFilters(mockItems));
+
+    act(() => {
+      result.current.setSearchTerm('NO-SUCH-SERIAL');
+    });
+
+    await waitFor(() => {
+      expect(result.current.filteredItems).toHaveLength(0);
+    });
+  });
+
+  it('S5: does not crash or match when serial_number is null', async () => {
+    const { result } = renderHook(() => useDashboardFilters(mockItems));
+
+    act(() => {
+      result.current.setSearchTerm('SN123');
+    });
+
+    await waitFor(() => {
+      expect(result.current.filteredItems).toHaveLength(1);
+      expect(result.current.filteredItems[0].serial_number).toBe('SN123');
+    });
+  });
+
+  it('S6: intersects serial search with the status filter', async () => {
+    const items = [
+      {
+        ...mockItems[0],
+        id: 'available-serial',
+        serial_number: 'SM703171000026',
+        status: 'Available' as const,
+      },
+      {
+        ...mockItems[1],
+        id: 'sold-serial',
+        serial_number: 'SM703999',
+        status: 'Sold' as const,
+      },
+    ];
+    const { result } = renderHook(() => useDashboardFilters(items));
+
+    act(() => {
+      result.current.setSearchTerm('SM703');
+      result.current.handleFilterChange('status', 'Available');
+    });
+
+    await waitFor(() => {
+      expect(result.current.filteredItems).toHaveLength(1);
+      expect(result.current.filteredItems[0].id).toBe('available-serial');
+      expect(result.current.filteredItems[0].status).toBe('Available');
+    });
+  });
+
+  it('S7: still matches maker, type, and subtype search', async () => {
+    const { result } = renderHook(() => useDashboardFilters(mockItems));
+
+    act(() => {
+      result.current.setSearchTerm('Cello');
+    });
+    await waitFor(() => {
+      expect(result.current.filteredItems).toHaveLength(1);
+      expect(result.current.filteredItems[0].type).toBe('Cello');
+    });
+
+    act(() => {
+      result.current.setSearchTerm('4/4');
+    });
+    await waitFor(() => {
+      expect(result.current.filteredItems).toHaveLength(1);
+      expect(result.current.filteredItems[0].subtype).toBe('4/4');
+    });
+  });
+
+  it('S8: resets to page 1 when the search term changes', async () => {
+    const manyItems = Array.from({ length: 41 }, (_, index) => ({
+      ...mockItems[0],
+      id: `item-${index}`,
+      serial_number: `SN${String(index).padStart(4, '0')}`,
+      maker: `Maker ${index}`,
+    }));
+    const { result } = renderHook(() => useDashboardFilters(manyItems));
+
+    act(() => {
+      result.current.setPage(2);
+    });
+    expect(result.current.currentPage).toBe(2);
+
+    act(() => {
+      result.current.setSearchTerm('Maker 0');
+    });
+
+    await waitFor(() => {
+      expect(result.current.currentPage).toBe(1);
+      expect(result.current.filteredItems.length).toBeGreaterThan(0);
+    });
+  });
+
+  function makePagedItems(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      ...mockItems[0],
+      id: `paged-${index}`,
+      maker: `Maker ${String(index).padStart(3, '0')}`,
+      serial_number: `SN${String(index).padStart(4, '0')}`,
+    }));
+  }
+
+  it('P1: 41 → 40 on page 3 clamps to page 2 with items', () => {
+    const { result, rerender } = renderHook(
+      ({ items }) => useDashboardFilters(items),
+      { initialProps: { items: makePagedItems(41) } }
+    );
+
+    act(() => {
+      result.current.setPage(3);
+    });
+    expect(result.current.currentPage).toBe(3);
+    expect(result.current.paginatedItems).toHaveLength(1);
+
+    rerender({ items: makePagedItems(40) });
+
+    expect(result.current.totalPages).toBe(2);
+    expect(result.current.currentPage).toBe(2);
+    expect(result.current.paginatedItems).toHaveLength(20);
+  });
+
+  it('P2: 21 → 20 on page 2 clamps to page 1', () => {
+    const { result, rerender } = renderHook(
+      ({ items }) => useDashboardFilters(items),
+      { initialProps: { items: makePagedItems(21) } }
+    );
+
+    act(() => {
+      result.current.setPage(2);
+    });
+    expect(result.current.paginatedItems).toHaveLength(1);
+
+    rerender({ items: makePagedItems(20) });
+
+    expect(result.current.currentPage).toBe(1);
+    expect(result.current.totalPages).toBe(1);
+    expect(result.current.paginatedItems).toHaveLength(20);
+  });
+
+  it('P3: deleting one item on a still-valid last page stays on that page', () => {
+    const { result, rerender } = renderHook(
+      ({ items }) => useDashboardFilters(items),
+      { initialProps: { items: makePagedItems(45) } }
+    );
+
+    act(() => {
+      result.current.setPage(3);
+    });
+    expect(result.current.paginatedItems).toHaveLength(5);
+
+    rerender({ items: makePagedItems(44) });
+
+    expect(result.current.currentPage).toBe(3);
+    expect(result.current.totalPages).toBe(3);
+    expect(result.current.paginatedItems).toHaveLength(4);
+  });
+
+  it('P4: deleting the last remaining item stays on page 1 empty', () => {
+    const { result, rerender } = renderHook(
+      ({ items }) => useDashboardFilters(items),
+      { initialProps: { items: makePagedItems(1) } }
+    );
+
+    expect(result.current.currentPage).toBe(1);
+
+    rerender({ items: [] });
+
+    expect(result.current.currentPage).toBe(1);
+    expect(result.current.totalPages).toBe(1);
+    expect(result.current.paginatedItems).toHaveLength(0);
+  });
+
+  it('P5: shrinking multiple pages at once clamps to the new last page', () => {
+    const { result, rerender } = renderHook(
+      ({ items }) => useDashboardFilters(items),
+      { initialProps: { items: makePagedItems(100) } }
+    );
+
+    act(() => {
+      result.current.setPage(5);
+    });
+    expect(result.current.currentPage).toBe(5);
+
+    rerender({ items: makePagedItems(15) });
+
+    expect(result.current.currentPage).toBe(1);
+    expect(result.current.totalPages).toBe(1);
+    expect(result.current.paginatedItems).toHaveLength(15);
+  });
+
+  it('P6: does not render an empty slice solely because currentPage exceeded totalPages', () => {
+    const { result, rerender } = renderHook(
+      ({ items }) => useDashboardFilters(items),
+      { initialProps: { items: makePagedItems(41) } }
+    );
+
+    act(() => {
+      result.current.setPage(3);
+    });
+
+    rerender({ items: makePagedItems(40) });
+
+    expect(result.current.paginatedItems).not.toHaveLength(0);
+    expect(result.current.currentPage).toBeLessThanOrEqual(
+      result.current.totalPages
+    );
+  });
+
+  it('P7: manual navigation still clamps to 1..totalPages', () => {
+    const { result } = renderHook(() =>
+      useDashboardFilters(makePagedItems(41))
+    );
+
+    act(() => {
+      result.current.setPage(0);
+    });
+    expect(result.current.currentPage).toBe(1);
+
+    act(() => {
+      result.current.setPage(999);
+    });
+    expect(result.current.currentPage).toBe(3);
+
+    act(() => {
+      result.current.setPage(2);
+    });
+    expect(result.current.currentPage).toBe(2);
+    expect(result.current.paginatedItems).toHaveLength(20);
+  });
+
+  it('P8: filter changes still reset pagination to page 1', () => {
+    const { result } = renderHook(() =>
+      useDashboardFilters(makePagedItems(45))
+    );
+
+    act(() => {
+      result.current.setPage(3);
+    });
+    expect(result.current.currentPage).toBe(3);
+
+    act(() => {
+      result.current.handleFilterChange('status', 'Available');
+    });
+
+    expect(result.current.currentPage).toBe(1);
+  });
+
+  it('D14: valid clientId filtering remains unchanged', () => {
+    const { useSearchParams } = require('next/navigation');
+    (useSearchParams as jest.Mock).mockReturnValue(
+      new URL('http://localhost/dashboard?clientId=client-1').searchParams
+    );
+
+    const items = [
+      {
+        ...mockItems[0],
+        id: 'with-client',
+        clients: [
+          {
+            id: 'rel-1',
+            client_id: 'client-1',
+            instrument_id: 'with-client',
+            relationship_type: 'Sold' as const,
+            notes: null,
+            created_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      {
+        ...mockItems[1],
+        id: 'without-client',
+        clients: [],
+      },
+    ];
+
+    const { result } = renderHook(() => useDashboardFilters(items));
+
+    expect(result.current.filteredItems).toHaveLength(1);
+    expect(result.current.filteredItems[0].id).toBe('with-client');
+
+    (useSearchParams as jest.Mock).mockReturnValue(
+      new URL('http://localhost/dashboard').searchParams
+    );
+  });
 });
