@@ -473,7 +473,11 @@ describe.skip('Vertical Slice QA Tests', () => {
       const db = makeSupabase({ data: { id: CLIENT_ID }, error: null });
       mockAuthCtx = adminCtx(db);
       const res = await clientsPATCH(
-        mkReq('/api/clients', { id: CLIENT_ID, first_name: 'Updated' })
+        mkReq('/api/clients', {
+          id: CLIENT_ID,
+          first_name: 'Updated',
+          expected_updated_at: '2024-01-01T00:00:00.000Z',
+        })
       );
       expect(res.status).toBe(200);
     });
