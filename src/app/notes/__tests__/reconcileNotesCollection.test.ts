@@ -167,4 +167,29 @@ describe('reconcileNotesCollection', () => {
 
     expect(next).toEqual([noteAServer]);
   });
+
+  it('drops a deleted note even when it is still dirty locally', () => {
+    const next = reconcileNotesCollection({
+      localNotes: [noteBLocal, noteA0],
+      serverNotes: [noteAServer, noteB0],
+      dirtyIds: new Set(['b']),
+      conflictedIds: new Set(),
+      deletedIds: new Set(['b']),
+    });
+
+    expect(next.map(note => note.id)).toEqual(['a']);
+    expect(next[0].content).toBe('A-server-new');
+  });
+
+  it('does not resurrect a deleted note from a stale server collection', () => {
+    const next = reconcileNotesCollection({
+      localNotes: [noteB0],
+      serverNotes: [noteAServer, noteB0],
+      dirtyIds: new Set(),
+      conflictedIds: new Set(),
+      deletedIds: new Set(['a']),
+    });
+
+    expect(next.map(note => note.id)).toEqual(['b']);
+  });
 });

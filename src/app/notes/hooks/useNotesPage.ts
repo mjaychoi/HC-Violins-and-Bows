@@ -85,6 +85,8 @@ export function useNotesPage() {
   notesRef.current = notes;
   const dirtyNoteIdsRef = useRef<Set<string>>(new Set());
   const noteSaveGenerationRef = useRef<Map<string, number>>(new Map());
+  const deletedNoteIdsRef = useRef<Set<string>>(new Set());
+  const notesFetchGenerationRef = useRef(0);
   const isCreatingNoteRef = useRef(false);
   const isMountedRef = useRef(true);
   const flushInFlightRef = useRef<Promise<void> | null>(null);
@@ -192,7 +194,11 @@ export function useNotesPage() {
         const pending = dirtyIds
           .map(id => snapshot.find(note => note.id === id))
           .filter((note): note is Note =>
-            Boolean(note && note.syncedUpdatedAt)
+            Boolean(
+              note &&
+              note.syncedUpdatedAt &&
+              !deletedNoteIdsRef.current.has(note.id)
+            )
           );
 
         if (pending.length === 0) {
@@ -242,6 +248,9 @@ export function useNotesPage() {
 
         results.forEach((result, index) => {
           const original = pending[index];
+          if (deletedNoteIdsRef.current.has(original.id)) {
+            return;
+          }
           if (result.status === 'fulfilled') {
             succeeded.set(original.id, result.value);
             const sentGeneration = sentGenerations.get(original.id) ?? 0;
@@ -267,21 +276,26 @@ export function useNotesPage() {
         });
 
         if (succeeded.size > 0) {
-          const next = notesRef.current.map(note => {
+          const next = notesRef.current.flatMap(note => {
+            if (deletedNoteIdsRef.current.has(note.id)) {
+              return [];
+            }
             const saved = succeeded.get(note.id);
-            if (!saved) return note;
+            if (!saved) return [note];
 
             const sentGeneration = sentGenerations.get(note.id) ?? 0;
             const currentGeneration =
               noteSaveGenerationRef.current.get(note.id) ?? 0;
             if (sentGeneration === currentGeneration) {
-              return saved;
+              return [saved];
             }
 
-            return {
-              ...note,
-              syncedUpdatedAt: saved.syncedUpdatedAt,
-            };
+            return [
+              {
+                ...note,
+                syncedUpdatedAt: saved.syncedUpdatedAt,
+              },
+            ];
           });
           notesRef.current = next;
           if (shouldApplyUi) {
@@ -305,6 +319,7 @@ export function useNotesPage() {
                 serverNotes: latest,
                 dirtyIds: dirtyNoteIdsRef.current,
                 conflictedIds,
+                deletedIds: deletedNoteIdsRef.current,
               });
               notesRef.current = merged;
               setNotes(merged);
@@ -349,6 +364,8 @@ export function useNotesPage() {
     activeListKeyRef.current = listKeyForThisTenant;
     dirtyNoteIdsRef.current = new Set();
     noteSaveGenerationRef.current = new Map();
+    deletedNoteIdsRef.current = new Set();
+    notesFetchGenerationRef.current += 1;
     isCreatingNoteRef.current = false;
     searchChangedLocallyRef.current = false;
     setNotes([]);
@@ -370,10 +387,12 @@ export function useNotesPage() {
 
     const controller = new AbortController();
     let cancelled = false;
+    const fetchGeneration = notesFetchGenerationRef.current;
     const isLoadStale = () =>
       cancelled ||
       controller.signal.aborted ||
-      tenantGenerationRef.current !== generation;
+      tenantGenerationRef.current !== generation ||
+      notesFetchGenerationRef.current !== fetchGeneration;
 
     const load = async () => {
       try {
@@ -494,45 +513,64 @@ export function useNotesPage() {
   useEffect(() => {
     if (!storageKeys || loadedListKey !== storageKeys.list) return;
 
-    const refreshIfClean = () => {
+    const refreshOnFocus = () => {
       if (document.visibilityState === 'hidden') return;
-      if (dirtyNoteIdsRef.current.size > 0) return;
       if (flushInFlightRef.current) return;
 
-      const generation = tenantGenerationRef.current;
+      const tenantGeneration = tenantGenerationRef.current;
       const listKey = storageKeys.list;
+      const fetchGeneration = ++notesFetchGenerationRef.current;
+
       void fetchNotes()
         .then(latest => {
           if (
             !isMountedRef.current ||
             activeListKeyRef.current !== listKey ||
-            tenantGenerationRef.current !== generation ||
-            dirtyNoteIdsRef.current.size > 0
+            tenantGenerationRef.current !== tenantGeneration ||
+            notesFetchGenerationRef.current !== fetchGeneration
           ) {
             return;
           }
-          setNotes(latest);
+          const merged = reconcileNotesCollection({
+            localNotes: notesRef.current,
+            serverNotes: latest,
+            dirtyIds: dirtyNoteIdsRef.current,
+            conflictedIds: new Set(),
+            deletedIds: deletedNoteIdsRef.current,
+          });
+          notesRef.current = merged;
+          setNotes(merged);
+          setLoadError(null);
           setSelectedNoteId(current =>
-            current && latest.some(note => note.id === current)
+            current && merged.some(note => note.id === current)
               ? current
               : window.innerWidth >= 768
-                ? (latest[0]?.id ?? null)
+                ? (merged[0]?.id ?? null)
                 : null
           );
         })
         .catch(error => {
+          if (
+            !isMountedRef.current ||
+            activeListKeyRef.current !== listKey ||
+            tenantGenerationRef.current !== tenantGeneration ||
+            notesFetchGenerationRef.current !== fetchGeneration
+          ) {
+            return;
+          }
           logError(
             'Failed to refresh notes on focus:',
             error instanceof Error ? error.message : String(error)
           );
+          setLoadError(LOAD_ERROR_TEXT);
         });
     };
 
-    window.addEventListener('focus', refreshIfClean);
-    document.addEventListener('visibilitychange', refreshIfClean);
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnFocus);
     return () => {
-      window.removeEventListener('focus', refreshIfClean);
-      document.removeEventListener('visibilitychange', refreshIfClean);
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnFocus);
     };
   }, [loadedListKey, storageKeys]);
 
@@ -670,33 +708,43 @@ export function useNotesPage() {
   const handleConfirmDelete = useCallback(async () => {
     if (!deleteConfirmNote || !canMutateNotes) return;
     const id = deleteConfirmNote.id;
-    const noteToDelete = deleteConfirmNote;
+    const localNote =
+      notesRef.current.find(note => note.id === id) ?? deleteConfirmNote;
+    const wasDirty = dirtyNoteIdsRef.current.has(id);
+    const previousSaveGeneration = noteSaveGenerationRef.current.get(id) ?? 0;
+    const previousIndex = notesRef.current.findIndex(note => note.id === id);
+    const wasSelected = selectedNoteId === id;
     setDeleteConfirmNote(null);
 
+    deletedNoteIdsRef.current.add(id);
     dirtyNoteIdsRef.current.delete(id);
-    noteSaveGenerationRef.current.delete(id);
-    setNotes(prev => {
-      const remainingNotes = prev.filter(note => note.id !== id);
-      if (selectedNoteId === id) {
-        if (remainingNotes.length > 0) {
-          setSelectedNoteId(remainingNotes[0].id);
-        } else {
-          setSelectedNoteId(null);
-          if (!isDesktop) {
-            setViewMode('list');
-          }
+    bumpNoteSaveGeneration(id);
+
+    const remainingNotes = notesRef.current.filter(note => note.id !== id);
+    notesRef.current = remainingNotes;
+    setNotes(remainingNotes);
+    if (wasSelected) {
+      if (remainingNotes.length > 0) {
+        setSelectedNoteId(remainingNotes[0].id);
+      } else {
+        setSelectedNoteId(null);
+        if (!isDesktop) {
+          setViewMode('list');
         }
       }
-      return remainingNotes;
-    });
+    }
 
     try {
       await deleteNote(id);
+      noteSaveGenerationRef.current.delete(id);
+      dirtyNoteIdsRef.current.delete(id);
       if (isMountedRef.current) {
         markSaved();
       }
     } catch (error) {
       if (isAlreadyDeletedNoteError(error)) {
+        noteSaveGenerationRef.current.delete(id);
+        dirtyNoteIdsRef.current.delete(id);
         if (isMountedRef.current) {
           markSaved();
         }
@@ -706,11 +754,29 @@ export function useNotesPage() {
         'Failed to delete note:',
         error instanceof Error ? error.message : String(error)
       );
+      deletedNoteIdsRef.current.delete(id);
+      if (wasDirty) {
+        dirtyNoteIdsRef.current.add(id);
+        noteSaveGenerationRef.current.set(id, previousSaveGeneration + 1);
+      } else {
+        dirtyNoteIdsRef.current.delete(id);
+        noteSaveGenerationRef.current.delete(id);
+      }
       if (!isMountedRef.current) return;
-      setNotes(prev => {
-        if (prev.some(note => note.id === id)) return prev;
-        return [noteToDelete, ...prev];
-      });
+      if (!notesRef.current.some(note => note.id === id)) {
+        const next = [...notesRef.current];
+        const insertAt =
+          previousIndex < 0 ? 0 : Math.min(previousIndex, next.length);
+        next.splice(insertAt, 0, localNote);
+        notesRef.current = next;
+        setNotes(next);
+      }
+      if (wasSelected) {
+        setSelectedNoteId(id);
+        if (!isDesktop) {
+          setViewMode('edit');
+        }
+      }
       markSaveError(SAVE_ERROR_TEXT);
     }
   }, [
@@ -718,6 +784,7 @@ export function useNotesPage() {
     deleteConfirmNote,
     selectedNoteId,
     isDesktop,
+    bumpNoteSaveGeneration,
     markSaveError,
     markSaved,
   ]);

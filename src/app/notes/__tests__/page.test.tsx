@@ -521,7 +521,7 @@ describe('NotesPage', () => {
     fetchNotesMock.mockResolvedValue([
       { ...makeNote('note-x', 'Note X'), title: 'Remote conflicting title' },
     ]);
-    act(() => {
+    await act(async () => {
       window.dispatchEvent(new Event('focus'));
     });
 
@@ -1504,6 +1504,492 @@ describe('NotesPage', () => {
       );
 
       jest.useRealTimers();
+    });
+  });
+
+  describe('V3-002 mutation recovery', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    const confirmDeleteForTitle = (title: string) => {
+      const row = screen.getByText(title).closest('[role="button"]');
+      if (!row) {
+        throw new Error(`${title} row not found`);
+      }
+      const deleteButton = row.querySelector(
+        'button[aria-label="Delete note"]'
+      );
+      if (!deleteButton) {
+        throw new Error(`Delete button for ${title} not found`);
+      }
+      fireEvent.click(deleteButton);
+      fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
+    };
+
+    it('restores a clean note without marking it dirty after a failed delete', async () => {
+      jest.useFakeTimers();
+      fetchNotesMock.mockResolvedValue([makeNote('n1', 'Clean note', 'Hello')]);
+      deleteNoteMock.mockRejectedValue(
+        new ApiResponseError('Server error', { status: 500 })
+      );
+
+      render(<NotesPage />);
+      expect(await screen.findByDisplayValue('Clean note')).toBeInTheDocument();
+
+      confirmDeleteForTitle('Clean note');
+
+      expect(await screen.findByDisplayValue('Clean note')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Hello')).toBeInTheDocument();
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/save failed/i);
+
+      const saveCalls = updateNoteMock.mock.calls.length;
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      expect(updateNoteMock).toHaveBeenCalledTimes(saveCalls);
+    });
+
+    it('restores a dirty note draft, dirty flag, and original CAS token after a failed delete', async () => {
+      jest.useFakeTimers();
+      const noteA = makeNote('note-a', 'Note A', 'A0');
+      const noteB = makeNote('note-b', 'Note B', 'B0');
+      fetchNotesMock.mockResolvedValue([noteA, noteB]);
+      deleteNoteMock.mockRejectedValue(
+        new ApiResponseError('Server error', { status: 500 })
+      );
+      updateNoteMock.mockImplementation(async input =>
+        makeNote(input.id, input.title ?? 'Untitled', input.content ?? '')
+      );
+
+      render(<NotesPage />);
+      fireEvent.change(await screen.findByPlaceholderText(/start writing/i), {
+        target: { value: 'A-local-draft' },
+      });
+      fireEvent.click(screen.getByText('Note B'));
+      fireEvent.change(screen.getByPlaceholderText(/start writing/i), {
+        target: { value: 'B-local-draft' },
+      });
+
+      confirmDeleteForTitle('Note A');
+
+      expect(await screen.findByText('Note A')).toBeInTheDocument();
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/save failed/i);
+      expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Note A'));
+      expect(screen.getByPlaceholderText(/start writing/i)).toHaveValue(
+        'A-local-draft'
+      );
+      fireEvent.click(screen.getByText('Note B'));
+      expect(screen.getByPlaceholderText(/start writing/i)).toHaveValue(
+        'B-local-draft'
+      );
+
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'note-a',
+            content: 'A-local-draft',
+            updated_at: noteA.syncedUpdatedAt,
+          }),
+          expect.anything()
+        );
+        expect(updateNoteMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'note-b',
+            content: 'B-local-draft',
+            updated_at: noteB.syncedUpdatedAt,
+          }),
+          expect.anything()
+        );
+      });
+    });
+
+    it('cancels a pending autosave after a successful delete', async () => {
+      jest.useFakeTimers();
+      fetchNotesMock.mockResolvedValue([makeNote('note-a', 'Note A', 'A0')]);
+      deleteNoteMock.mockResolvedValue(undefined);
+
+      render(<NotesPage />);
+      fireEvent.change(await screen.findByPlaceholderText(/start writing/i), {
+        target: { value: 'A-pending' },
+      });
+
+      confirmDeleteForTitle('Note A');
+
+      await waitFor(() => {
+        expect(deleteNoteMock).toHaveBeenCalledWith('note-a');
+      });
+      expect(screen.queryByText('Note A')).not.toBeInTheDocument();
+
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      expect(updateNoteMock).not.toHaveBeenCalled();
+      expect(screen.queryByText('Note A')).not.toBeInTheDocument();
+      expect(await screen.findByText('No notes yet')).toBeInTheDocument();
+    });
+
+    it('does not let a late in-flight save resurrect a successfully deleted note', async () => {
+      jest.useFakeTimers();
+      let resolveSave!: (note: Note) => void;
+      const pendingSave = new Promise<Note>(resolve => {
+        resolveSave = resolve;
+      });
+
+      fetchNotesMock.mockResolvedValue([makeNote('note-a', 'Note A', 'Hello')]);
+      updateNoteMock.mockImplementationOnce(() => pendingSave);
+      deleteNoteMock.mockResolvedValue(undefined);
+
+      render(<NotesPage />);
+      fireEvent.change(await screen.findByPlaceholderText(/start writing/i), {
+        target: { value: 'Hello edit' },
+      });
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledTimes(1);
+      });
+
+      confirmDeleteForTitle('Note A');
+      await waitFor(() => {
+        expect(deleteNoteMock).toHaveBeenCalledWith('note-a');
+      });
+      expect(screen.queryByText('Note A')).not.toBeInTheDocument();
+
+      const saveCallsAfterDelete = updateNoteMock.mock.calls.length;
+      await act(async () => {
+        resolveSave({
+          ...makeNote('note-a', 'Note A', 'Hello edit'),
+          updatedAt: '2026-07-29T00:00:01.000Z',
+          syncedUpdatedAt: '2026-07-29T00:00:01.000Z',
+        });
+        await pendingSave;
+      });
+
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      expect(updateNoteMock).toHaveBeenCalledTimes(saveCallsAfterDelete);
+      expect(screen.queryByText('Note A')).not.toBeInTheDocument();
+      expect(screen.queryByDisplayValue('Hello edit')).not.toBeInTheDocument();
+      expect(await screen.findByText('No notes yet')).toBeInTheDocument();
+    });
+
+    it('keeps a non-conflict autosave failure dirty and retries the newest draft after a later edit', async () => {
+      jest.useFakeTimers();
+      let rejectFirst!: (error: Error) => void;
+      const firstSave = new Promise<Note>((_resolve, reject) => {
+        rejectFirst = reject;
+      });
+
+      fetchNotesMock.mockResolvedValue([makeNote('note-b', 'Note B', 'C0')]);
+      updateNoteMock
+        .mockImplementationOnce(() => firstSave)
+        .mockImplementation(async input => ({
+          ...makeNote(input.id, input.title ?? 'Note B', input.content ?? ''),
+          updatedAt: '2026-07-29T00:00:02.000Z',
+          syncedUpdatedAt: '2026-07-29T00:00:02.000Z',
+        }));
+
+      render(<NotesPage />);
+      fireEvent.change(await screen.findByPlaceholderText(/start writing/i), {
+        target: { value: 'C1' },
+      });
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledTimes(1);
+      });
+
+      await act(async () => {
+        rejectFirst(new Error('network down'));
+        await firstSave.catch(() => undefined);
+      });
+
+      expect(screen.getByPlaceholderText(/start writing/i)).toHaveValue('C1');
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/save failed/i);
+      expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+
+      const callsAfterFailure = updateNoteMock.mock.calls.length;
+      act(() => {
+        jest.advanceTimersByTime(8000);
+      });
+      expect(updateNoteMock).toHaveBeenCalledTimes(callsAfterFailure);
+
+      fireEvent.change(screen.getByPlaceholderText(/start writing/i), {
+        target: { value: 'C2' },
+      });
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'note-b',
+            content: 'C2',
+            updated_at: '2026-07-29T00:00:00.000Z',
+          }),
+          expect.anything()
+        );
+      });
+      expect(await screen.findByText('Saved')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/start writing/i)).toHaveValue('C2');
+      expect(
+        updateNoteMock.mock.calls.filter(call => call[0].content === 'C1')
+      ).toHaveLength(1);
+    });
+
+    it('does not let an older failed save erase a newer local edit', async () => {
+      jest.useFakeTimers();
+      let rejectFirst!: (error: Error) => void;
+      const firstSave = new Promise<Note>((_resolve, reject) => {
+        rejectFirst = reject;
+      });
+
+      fetchNotesMock.mockResolvedValue([makeNote('note-b', 'Note B', 'Hello')]);
+      updateNoteMock.mockImplementationOnce(() => firstSave);
+
+      render(<NotesPage />);
+      fireEvent.change(await screen.findByPlaceholderText(/start writing/i), {
+        target: { value: 'C1' },
+      });
+      act(() => {
+        jest.advanceTimersByTime(600);
+      });
+      await waitFor(() => {
+        expect(updateNoteMock).toHaveBeenCalledTimes(1);
+      });
+
+      fireEvent.change(screen.getByPlaceholderText(/start writing/i), {
+        target: { value: 'C2' },
+      });
+
+      await act(async () => {
+        rejectFirst(new Error('save failed'));
+        await firstSave.catch(() => undefined);
+      });
+
+      expect(screen.getByPlaceholderText(/start writing/i)).toHaveValue('C2');
+      expect(screen.queryByDisplayValue('C1')).not.toBeInTheDocument();
+      expect(screen.queryByDisplayValue('Hello')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('H6-002 load error recovery', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('clears a load error after a successful focus refresh', async () => {
+      fetchNotesMock
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue([makeNote('n1', 'Recovered note', 'Hello')]);
+
+      render(<NotesPage />);
+      expect(
+        await screen.findByText(/failed to load notes from the server/i)
+      ).toBeInTheDocument();
+      expect(screen.getByText('Unable to load notes')).toBeInTheDocument();
+      expect(getPrimaryNewNoteButton()).toBeDisabled();
+
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+
+      expect(await screen.findByText('Recovered note')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Hello')).toBeInTheDocument();
+      expect(
+        screen.queryByText(/failed to load notes from the server/i)
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('Unable to load notes')
+      ).not.toBeInTheDocument();
+      expect(getPrimaryNewNoteButton()).not.toBeDisabled();
+    });
+
+    it('restores the notes UI after a successful visibility refresh', async () => {
+      fetchNotesMock
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue([makeNote('n1', 'Visible again', 'Body')]);
+
+      render(<NotesPage />);
+      expect(
+        await screen.findByText('Unable to load notes')
+      ).toBeInTheDocument();
+
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+
+      expect(await screen.findByText('Visible again')).toBeInTheDocument();
+      expect(
+        screen.queryByText(/failed to load notes from the server/i)
+      ).not.toBeInTheDocument();
+    });
+
+    it('does not let a late failed fetch relatch load error after a newer success', async () => {
+      let rejectFirst!: (error: Error) => void;
+      let resolveSecond!: (notes: Note[]) => void;
+      const firstFetch = new Promise<Note[]>((_resolve, reject) => {
+        rejectFirst = reject;
+      });
+      const secondFetch = new Promise<Note[]>(resolve => {
+        resolveSecond = resolve;
+      });
+
+      fetchNotesMock
+        .mockRejectedValueOnce(new Error('initial down'))
+        .mockImplementationOnce(() => firstFetch)
+        .mockImplementationOnce(() => secondFetch);
+
+      render(<NotesPage />);
+      expect(
+        await screen.findByText('Unable to load notes')
+      ).toBeInTheDocument();
+
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+
+      await waitFor(() => {
+        expect(fetchNotesMock).toHaveBeenCalledTimes(3);
+      });
+
+      await act(async () => {
+        resolveSecond([makeNote('n1', 'Newer collection', 'OK')]);
+        await secondFetch;
+      });
+
+      expect(await screen.findByText('Newer collection')).toBeInTheDocument();
+      expect(
+        screen.queryByText(/failed to load notes from the server/i)
+      ).not.toBeInTheDocument();
+
+      await act(async () => {
+        rejectFirst(new Error('stale failure'));
+        await firstFetch.catch(() => undefined);
+      });
+
+      expect(screen.getByText('Newer collection')).toBeInTheDocument();
+      expect(
+        screen.queryByText(/failed to load notes from the server/i)
+      ).not.toBeInTheDocument();
+      expect(getPrimaryNewNoteButton()).not.toBeDisabled();
+    });
+
+    it('does not let a late stale success overwrite a newer collection', async () => {
+      let resolveFirst!: (notes: Note[]) => void;
+      let resolveSecond!: (notes: Note[]) => void;
+      const firstFetch = new Promise<Note[]>(resolve => {
+        resolveFirst = resolve;
+      });
+      const secondFetch = new Promise<Note[]>(resolve => {
+        resolveSecond = resolve;
+      });
+
+      fetchNotesMock
+        .mockRejectedValueOnce(new Error('initial down'))
+        .mockImplementationOnce(() => firstFetch)
+        .mockImplementationOnce(() => secondFetch);
+
+      render(<NotesPage />);
+      expect(
+        await screen.findByText('Unable to load notes')
+      ).toBeInTheDocument();
+
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+
+      await waitFor(() => {
+        expect(fetchNotesMock).toHaveBeenCalledTimes(3);
+      });
+
+      await act(async () => {
+        resolveSecond([makeNote('n2', 'Latest note', 'New')]);
+        await secondFetch;
+      });
+      expect(await screen.findByText('Latest note')).toBeInTheDocument();
+
+      await act(async () => {
+        resolveFirst([makeNote('n1', 'Stale note', 'Old')]);
+        await firstFetch;
+      });
+
+      expect(screen.getByText('Latest note')).toBeInTheDocument();
+      expect(screen.queryByText('Stale note')).not.toBeInTheDocument();
+    });
+
+    it('preserves an unrelated dirty draft across load-error recovery and still refreshes clean notes', async () => {
+      jest.useFakeTimers();
+      const noteA = makeNote('note-a', 'Note A', 'A0');
+      const noteB = makeNote('note-b', 'Note B', 'B0');
+      const noteAServer = {
+        ...makeNote('note-a', 'Note A remote', 'A-server-new'),
+        updatedAt: '2026-07-29T00:00:05.000Z',
+        syncedUpdatedAt: '2026-07-29T00:00:05.000Z',
+      };
+
+      fetchNotesMock
+        .mockResolvedValueOnce([noteA, noteB])
+        .mockRejectedValueOnce(new Error('focus failed'))
+        .mockResolvedValue([noteAServer, noteB]);
+
+      render(<NotesPage />);
+      expect(await screen.findByDisplayValue('Note A')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Note B'));
+      fireEvent.change(screen.getByPlaceholderText(/start writing/i), {
+        target: { value: 'B-local' },
+      });
+
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+
+      expect(
+        await screen.findByText(/failed to load notes from the server/i)
+      ).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/start writing/i)).toHaveValue(
+        'B-local'
+      );
+
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByText(/failed to load notes from the server/i)
+        ).not.toBeInTheDocument();
+      });
+      expect(await screen.findByText('Note A remote')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/start writing/i)).toHaveValue(
+        'B-local'
+      );
+
+      fireEvent.click(screen.getByText('Note A remote'));
+      expect(screen.getByPlaceholderText(/start writing/i)).toHaveValue(
+        'A-server-new'
+      );
     });
   });
 });
