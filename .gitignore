@@ -46,3 +46,8 @@ next-env.d.ts
 # supabase schema exports (generated files)
 supabase-schema-export.sql
 supabase/.branches/
+
+# local worktree / audit copies
+.tmp-*/
+.health-pr-push/
+.claude/worktrees/
