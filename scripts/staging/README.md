@@ -44,9 +44,9 @@ Register **only these six** secrets on the `hosted-staging` GitHub Environment:
 | `STAGING_DATABASE_URL`              | Staging Postgres connection string (pooler-compatible)                     |
 | `STAGING_APP_BASE_URL`              | Staging or localhost app base URL (non-production)                         |
 
-Do **not** store expiring JWTs or synthetic fixture UUIDs as GitHub secrets. The auth-matrix job will mint sessions and seed fixtures at workflow runtime once the cookie-backed harness lands.
+Do **not** store expiring JWTs or synthetic fixture UUIDs as GitHub secrets. The auth-matrix job mints sessions and seeds fixtures at workflow runtime.
 
-Enable the auth-matrix job only after merging `scripts/auth-matrix/run-hosted-matrix.ts` by setting repository variable:
+Enable the auth-matrix job after the cookie-backed harness is on the branch by setting repository variable:
 
 ```text
 AUTH_MATRIX_READY=true
@@ -70,7 +70,7 @@ npm run test:staging-guard
 | ------------------ | -------------------------------------------------------------------------------------------------------- |
 | SQL audit step     | PR #58 audit SQL files merged (or branch checked out at audited head)                                    |
 | `/api/health` 200  | Separate P0 PR `fix/hosted-health-catalog-checks-*` (direct DB catalog reads)                            |
-| Auth matrix job    | Cookie-backed harness + `vars.AUTH_MATRIX_READY=true`                                                    |
+| Auth matrix job    | Cookie-backed harness + opt-in `vars.AUTH_MATRIX_READY=true` (leave disabled until authorized)           |
 | Hosted DB dispatch | Repo admin creates `hosted-staging` Environment + 6 secrets + `PRODUCTION_SUPABASE_PROJECT_REF` variable |
 
 ## Auth matrix

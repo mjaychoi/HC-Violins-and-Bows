@@ -1,9 +1,10 @@
 /** @jest-environment node */
 
 /**
- * Smoke HTTP matrix. Uses interim Bearer tokens via AUTH_MATRIX_JWT_* env vars.
- * The app authenticates with cookie-backed SSR sessions; update this harness to
- * attach real Supabase auth cookies before treating 401 responses as middleware bugs.
+ * LOCAL INTERIM Bearer smoke. NON-AUTHORITATIVE.
+ * Uses AUTH_MATRIX_JWT_* env vars. The app authenticates with cookie-backed
+ * SSR sessions; hosted coverage lives in scripts/auth-matrix/run-hosted-matrix.ts.
+ * Do not treat 401s from this Bearer harness as middleware bugs.
  */
 
 import {

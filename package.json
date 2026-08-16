@@ -34,6 +34,8 @@
     "test:staging-guard": "jest --runInBand tests/integration/staging/env-guard.test.ts",
     "check:staging-ref-hardcodes": "tsx scripts/staging/assert-no-hardcoded-project-refs.ts",
     "test:auth-matrix": "jest --runInBand tests/integration/auth-matrix/matrix.test.ts",
+    "test:auth-matrix-harness": "jest --runInBand scripts/auth-matrix/__tests__",
+    "auth-matrix:hosted": "tsx scripts/auth-matrix/run-hosted-matrix.ts",
     "test:production-guards": "jest --runInBand tests/integration/production/db-deploy-guards.test.ts",
     "test:production-guards-integration": "jest --runInBand --forceExit tests/integration/production/db-probe-cli.integration.test.ts tests/integration/production/postflight-catalog.integration.test.ts tests/integration/production/run-predeploy-audit.integration.test.ts tests/integration/production/db-reconcile-readonly.integration.test.ts --testPathIgnorePatterns=/node_modules/ --globalSetup=./tests/integration/production/helpers/global-setup.cjs --globalTeardown=./tests/integration/production/helpers/global-teardown.cjs",
     "test:sale-transition-migration-consolidation": "jest --runInBand --forceExit tests/integration/migrations/update_instrument_sale_transition_atomic_consolidation.integration.test.ts --testPathIgnorePatterns=/node_modules/ --globalSetup=./tests/integration/migrations/helpers/global-setup.cjs --globalTeardown=./tests/integration/migrations/helpers/global-teardown.cjs",

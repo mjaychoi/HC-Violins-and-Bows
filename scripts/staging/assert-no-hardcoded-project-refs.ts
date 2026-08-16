@@ -25,6 +25,13 @@ export const DEFAULT_SCAN_TARGETS = [
   'scripts/staging/env-guard-cli.ts',
   'scripts/auth-matrix/seed-fixtures.ts',
   'scripts/auth-matrix/cleanup-fixtures.ts',
+  'scripts/auth-matrix/run-hosted-matrix.ts',
+  'scripts/auth-matrix/hosted-runner.ts',
+  'scripts/auth-matrix/hosted-session.ts',
+  'scripts/auth-matrix/hosted-fixtures.ts',
+  'scripts/auth-matrix/hosted-matrix.ts',
+  'scripts/auth-matrix/hosted-cleanup.ts',
+  'scripts/auth-matrix/runtime-manifest.ts',
   'tests/integration/auth-matrix/env-guard.ts',
 ] as const;
 
