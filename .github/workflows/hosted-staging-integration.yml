@@ -35,6 +35,9 @@ jobs:
       - name: Auth matrix env guard unit tests
         run: npm test -- --runInBand tests/integration/auth-matrix/env-guard.test.ts
 
+      - name: Auth matrix harness unit tests
+        run: npm test -- --runInBand scripts/auth-matrix/__tests__
+
       - name: Verify migration inventory (local filenames only)
         run: npm run check:migrations
 
@@ -165,6 +168,7 @@ jobs:
       AUTH_MATRIX_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
       AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
       AUTH_MATRIX_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+      AUTH_MATRIX_RUNTIME_MANIFEST: ${{ runner.temp }}/hc-auth-matrix-runtime.json
     steps:
       - uses: actions/checkout@v4
 

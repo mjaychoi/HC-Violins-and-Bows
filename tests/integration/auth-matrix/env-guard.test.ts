@@ -87,5 +87,8 @@ describe('auth matrix env guard', () => {
     expect(DEFAULT_SCAN_TARGETS).toContain(
       'tests/integration/auth-matrix/env-guard.ts'
     );
+    expect(DEFAULT_SCAN_TARGETS).toContain(
+      'scripts/auth-matrix/run-hosted-matrix.ts'
+    );
   });
 });

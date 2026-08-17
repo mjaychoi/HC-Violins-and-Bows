@@ -1,11 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
-import { assertUrlIsNotConfiguredProduction } from '../staging/env-guard';
+
+import {
+  PRODUCTION_SUPABASE_PROJECT_REF_ENV,
+  assertUrlIsNotConfiguredProduction,
+} from '../staging/env-guard';
+import { assertNonProductionAuthMatrixEnv } from '../../tests/integration/auth-matrix/env-guard';
+import {
+  cleanupLocalAuthMatrixFixtures,
+  executeHostedCleanup,
+} from './hosted-cleanup';
+import { readRuntimeManifestFile } from './runtime-manifest';
 
 dotenv.config({ path: '.env.local' });
-
-const ORG_A_ID = '11111111-1111-4111-8111-111111111111';
-const ORG_B_ID = '22222222-2222-4222-8222-222222222222';
 
 async function main() {
   const url =
@@ -21,17 +28,36 @@ async function main() {
 
   assertUrlIsNotConfiguredProduction(url);
 
+  const manifestPath = process.env.AUTH_MATRIX_RUNTIME_MANIFEST?.trim();
+  if (manifestPath) {
+    assertNonProductionAuthMatrixEnv({
+      supabaseUrl: process.env.AUTH_MATRIX_SUPABASE_URL || url,
+      supabaseAnonKey: process.env.AUTH_MATRIX_SUPABASE_ANON_KEY,
+      serviceRoleKey: process.env.AUTH_MATRIX_SERVICE_ROLE_KEY || serviceKey,
+      baseUrl: process.env.AUTH_MATRIX_BASE_URL,
+      productionProjectRef: process.env[PRODUCTION_SUPABASE_PROJECT_REF_ENV],
+    });
+  }
+
   const supabase = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  await supabase.from('clients').delete().in('org_id', [ORG_A_ID, ORG_B_ID]);
-  await supabase
-    .from('instruments')
-    .delete()
-    .in('org_id', [ORG_A_ID, ORG_B_ID]);
-  await supabase.from('organizations').delete().in('id', [ORG_A_ID, ORG_B_ID]);
+  if (manifestPath) {
+    const manifest = await readRuntimeManifestFile(manifestPath);
+    if (!manifest) {
+      console.log('No runtime manifest file; nothing to clean.');
+      return;
+    }
 
+    await executeHostedCleanup(supabase, manifest);
+    console.log(
+      `Auth matrix runtime fixtures removed for run ${manifest.runId}.`
+    );
+    return;
+  }
+
+  await cleanupLocalAuthMatrixFixtures(supabase);
   console.log('Auth matrix fixtures removed.');
 }
 

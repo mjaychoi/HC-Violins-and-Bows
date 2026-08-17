@@ -1,11 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import { assertUrlIsNotConfiguredProduction } from '../staging/env-guard';
+import {
+  AUTH_MATRIX_ORG_A_CLIENT_NUMBER,
+  AUTH_MATRIX_ORG_A_ID,
+  AUTH_MATRIX_ORG_A_SERIAL,
+  AUTH_MATRIX_ORG_B_CLIENT_NUMBER,
+  AUTH_MATRIX_ORG_B_ID,
+  AUTH_MATRIX_ORG_B_SERIAL,
+} from './constants';
 
 dotenv.config({ path: '.env.local' });
-
-const ORG_A_ID = '11111111-1111-4111-8111-111111111111';
-const ORG_B_ID = '22222222-2222-4222-8222-222222222222';
 
 async function main() {
   const url =
@@ -29,26 +34,26 @@ async function main() {
   });
 
   await supabase.from('organizations').upsert([
-    { id: ORG_A_ID, name: 'Auth Matrix Org A' },
-    { id: ORG_B_ID, name: 'Auth Matrix Org B' },
+    { id: AUTH_MATRIX_ORG_A_ID, name: 'Auth Matrix Org A' },
+    { id: AUTH_MATRIX_ORG_B_ID, name: 'Auth Matrix Org B' },
   ]);
 
   const instrumentRows = [
     {
-      org_id: ORG_A_ID,
+      org_id: AUTH_MATRIX_ORG_A_ID,
       maker: 'Matrix Maker A',
       type: 'Violin',
       status: 'Available',
       certificate: false,
-      serial_number: 'MX-A-001',
+      serial_number: AUTH_MATRIX_ORG_A_SERIAL,
     },
     {
-      org_id: ORG_B_ID,
+      org_id: AUTH_MATRIX_ORG_B_ID,
       maker: 'Matrix Maker B',
       type: 'Violin',
       status: 'Available',
       certificate: false,
-      serial_number: 'MX-B-001',
+      serial_number: AUTH_MATRIX_ORG_B_SERIAL,
     },
   ];
 
@@ -63,18 +68,18 @@ async function main() {
 
   const clientRows = [
     {
-      org_id: ORG_A_ID,
+      org_id: AUTH_MATRIX_ORG_A_ID,
       first_name: 'OrgA',
       last_name: 'Client',
       name: 'OrgA Client',
-      client_number: 'CL901',
+      client_number: AUTH_MATRIX_ORG_A_CLIENT_NUMBER,
     },
     {
-      org_id: ORG_B_ID,
+      org_id: AUTH_MATRIX_ORG_B_ID,
       first_name: 'OrgB',
       last_name: 'Client',
       name: 'OrgB Client',
-      client_number: 'CL902',
+      client_number: AUTH_MATRIX_ORG_B_CLIENT_NUMBER,
     },
   ];
 
@@ -86,14 +91,18 @@ async function main() {
     throw clientError;
   }
 
-  const orgAInstrument = instruments?.find(row => row.org_id === ORG_A_ID);
-  const orgBInstrument = instruments?.find(row => row.org_id === ORG_B_ID);
+  const orgAInstrument = instruments?.find(
+    row => row.org_id === AUTH_MATRIX_ORG_A_ID
+  );
+  const orgBInstrument = instruments?.find(
+    row => row.org_id === AUTH_MATRIX_ORG_B_ID
+  );
 
   console.log(
     JSON.stringify(
       {
-        orgAId: ORG_A_ID,
-        orgBId: ORG_B_ID,
+        orgAId: AUTH_MATRIX_ORG_A_ID,
+        orgBId: AUTH_MATRIX_ORG_B_ID,
         orgAInstrumentId: orgAInstrument?.id ?? null,
         orgBInstrumentId: orgBInstrument?.id ?? null,
       },

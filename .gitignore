@@ -51,3 +51,6 @@ supabase/.branches/
 .tmp-*/
 .health-pr-push/
 .claude/worktrees/
+
+# auth-matrix runtime cleanup manifest (never commit)
+hc-auth-matrix-runtime.json

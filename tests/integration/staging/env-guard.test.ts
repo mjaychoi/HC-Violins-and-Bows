@@ -345,4 +345,19 @@ describe('auth-matrix seed/cleanup guard ordering', () => {
       )
     ).toBeNull();
   });
+
+  it('run-hosted-matrix calls the shared guard before createClient', () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), 'scripts/auth-matrix/run-hosted-matrix.ts'),
+      'utf8'
+    );
+    expect(
+      assertGuardCalledBeforeCreateClient(
+        source,
+        'assertUrlIsNotConfiguredProduction'
+      )
+    ).toBeNull();
+    expect(source).not.toMatch(/AUTH_MATRIX_JWT_/);
+    expect(source).not.toMatch(/Authorization/);
+  });
 });
