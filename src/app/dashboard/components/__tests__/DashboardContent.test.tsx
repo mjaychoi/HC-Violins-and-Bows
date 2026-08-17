@@ -79,10 +79,26 @@ jest.mock('../../hooks', () => ({
 
 // Mock ItemList and ItemFilters
 jest.mock('../ItemList', () => {
-  return function MockItemList({ items, loading }: any) {
+  return function MockItemList({
+    items,
+    loading,
+    totalCount,
+    itemLabel,
+  }: {
+    items: unknown[];
+    loading?: boolean;
+    totalCount?: number;
+    itemLabel?: string;
+  }) {
     return (
       <div data-testid="item-list">
         {loading ? 'Loading...' : `Items: ${items.length}`}
+        {typeof totalCount === 'number' && (
+          <div data-testid="item-list-count">
+            of {totalCount.toLocaleString('en-US')}
+            {itemLabel ? ` ${itemLabel}` : ''}
+          </div>
+        )}
       </div>
     );
   };
@@ -627,5 +643,342 @@ describe('DashboardContent', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalled();
     expect(screen.queryByTestId('item-list')).not.toBeInTheDocument();
+  });
+
+  it('shows a global truncation warning to members without requiring export permission', () => {
+    mockCanManageInstruments = false;
+    const { useDashboardFilters } = require('../../hooks');
+    (useDashboardFilters as jest.Mock).mockReturnValue({
+      searchTerm: '',
+      setSearchTerm: mockSetSearchTerm,
+      showFilters: false,
+      setShowFilters: mockSetShowFilters,
+      filters: {
+        status: [],
+        maker: [],
+        type: [],
+        subtype: [],
+        ownership: [],
+        certificate: [],
+        priceRange: { min: '', max: '' },
+        hasClients: [],
+      },
+      filteredItems: mockEnrichedItems,
+      paginatedItems: mockEnrichedItems,
+      handleFilterChange: mockHandleFilterChange,
+      handlePriceRangeChange: mockHandlePriceRangeChange,
+      clearAllFilters: mockClearAllFilters,
+      handleSort: mockHandleSort,
+      getSortArrow: mockGetSortArrow,
+      getActiveFiltersCount: mockGetActiveFiltersCount,
+      dateRange: null,
+      setDateRange: mockSetDateRange,
+      currentPage: 1,
+      totalPages: 50,
+      totalCount: 1000,
+      pageSize: 20,
+      setPage: mockSetPage,
+    });
+
+    render(
+      <DashboardContent
+        {...defaultProps}
+        itemsTruncated
+        authoritativeTotalCount={1237}
+        baseLoadedCount={1000}
+      />
+    );
+
+    const warning = screen.getByTestId('inventory-truncation-warning');
+    expect(warning).toHaveAttribute('role', 'alert');
+    expect(warning).toHaveTextContent(
+      'Showing a partial inventory: 1,000 of 1,237 Items are loaded.'
+    );
+    expect(warning).toHaveTextContent(
+      'Search, filters, and list counts on this page apply only to the loaded Items.'
+    );
+    expect(screen.getByTestId('item-list-count')).toHaveTextContent(
+      'of 1,000 loaded Items'
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Export CSV' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the same global truncation warning to admins and still blocks export', () => {
+    mockCanManageInstruments = true;
+    const { useDashboardFilters } = require('../../hooks');
+    (useDashboardFilters as jest.Mock).mockReturnValue({
+      searchTerm: '',
+      setSearchTerm: mockSetSearchTerm,
+      showFilters: false,
+      setShowFilters: mockSetShowFilters,
+      filters: {
+        status: [],
+        maker: [],
+        type: [],
+        subtype: [],
+        ownership: [],
+        certificate: [],
+        priceRange: { min: '', max: '' },
+        hasClients: [],
+      },
+      filteredItems: mockEnrichedItems,
+      paginatedItems: mockEnrichedItems,
+      handleFilterChange: mockHandleFilterChange,
+      handlePriceRangeChange: mockHandlePriceRangeChange,
+      clearAllFilters: mockClearAllFilters,
+      handleSort: mockHandleSort,
+      getSortArrow: mockGetSortArrow,
+      getActiveFiltersCount: mockGetActiveFiltersCount,
+      dateRange: null,
+      setDateRange: mockSetDateRange,
+      currentPage: 1,
+      totalPages: 50,
+      totalCount: 1000,
+      pageSize: 20,
+      setPage: mockSetPage,
+    });
+
+    render(
+      <DashboardContent
+        {...defaultProps}
+        itemsTruncated
+        authoritativeTotalCount={1237}
+        baseLoadedCount={1000}
+      />
+    );
+
+    const warning = screen.getByRole('alert');
+    expect(warning).toHaveTextContent('1,000 of 1,237 Items are loaded');
+    expect(warning).toHaveTextContent(
+      'Search, filters, and list counts on this page apply only to the loaded Items.'
+    );
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+    expect(
+      screen.getByText(
+        'Export unavailable: the complete Item set exceeds the dashboard limit.'
+      )
+    ).toHaveAttribute('role', 'status');
+    expect(itemCsvExport.downloadItemCSV).not.toHaveBeenCalled();
+  });
+
+  it('does not show an incomplete-data warning for a complete collection', () => {
+    const { useDashboardFilters } = require('../../hooks');
+    (useDashboardFilters as jest.Mock).mockReturnValue({
+      searchTerm: '',
+      setSearchTerm: mockSetSearchTerm,
+      showFilters: false,
+      setShowFilters: mockSetShowFilters,
+      filters: {
+        status: [],
+        maker: [],
+        type: [],
+        subtype: [],
+        ownership: [],
+        certificate: [],
+        priceRange: { min: '', max: '' },
+        hasClients: [],
+      },
+      filteredItems: mockEnrichedItems,
+      paginatedItems: mockEnrichedItems,
+      handleFilterChange: mockHandleFilterChange,
+      handlePriceRangeChange: mockHandlePriceRangeChange,
+      clearAllFilters: mockClearAllFilters,
+      handleSort: mockHandleSort,
+      getSortArrow: mockGetSortArrow,
+      getActiveFiltersCount: mockGetActiveFiltersCount,
+      dateRange: null,
+      setDateRange: mockSetDateRange,
+      currentPage: 1,
+      totalPages: 4,
+      totalCount: 61,
+      pageSize: 20,
+      setPage: mockSetPage,
+    });
+
+    render(
+      <DashboardContent
+        {...defaultProps}
+        itemsTruncated={false}
+        authoritativeTotalCount={61}
+        baseLoadedCount={61}
+      />
+    );
+
+    expect(
+      screen.queryByTestId('inventory-truncation-warning')
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('item-list-count')).toHaveTextContent('of 61');
+    expect(screen.getByTestId('item-list-count')).not.toHaveTextContent(
+      'loaded Items'
+    );
+  });
+
+  it('fails closed when truncated and the authoritative total is unknown', () => {
+    const { useDashboardFilters } = require('../../hooks');
+    (useDashboardFilters as jest.Mock).mockReturnValue({
+      searchTerm: '',
+      setSearchTerm: mockSetSearchTerm,
+      showFilters: false,
+      setShowFilters: mockSetShowFilters,
+      filters: {
+        status: [],
+        maker: [],
+        type: [],
+        subtype: [],
+        ownership: [],
+        certificate: [],
+        priceRange: { min: '', max: '' },
+        hasClients: [],
+      },
+      filteredItems: mockEnrichedItems,
+      paginatedItems: mockEnrichedItems,
+      handleFilterChange: mockHandleFilterChange,
+      handlePriceRangeChange: mockHandlePriceRangeChange,
+      clearAllFilters: mockClearAllFilters,
+      handleSort: mockHandleSort,
+      getSortArrow: mockGetSortArrow,
+      getActiveFiltersCount: mockGetActiveFiltersCount,
+      dateRange: null,
+      setDateRange: mockSetDateRange,
+      currentPage: 1,
+      totalPages: 50,
+      totalCount: 1000,
+      pageSize: 20,
+      setPage: mockSetPage,
+    });
+
+    render(
+      <DashboardContent
+        {...defaultProps}
+        itemsTruncated
+        authoritativeTotalCount={null}
+        baseLoadedCount={1000}
+      />
+    );
+
+    const warning = screen.getByTestId('inventory-truncation-warning');
+    expect(warning).toHaveAttribute('role', 'alert');
+    expect(warning).toHaveTextContent(
+      'Showing a partial inventory. Only 1,000 Items are loaded.'
+    );
+    expect(warning).toHaveTextContent(
+      'Search, filters, and list counts on this page apply only to the loaded Items.'
+    );
+    expect(warning).not.toHaveTextContent('of 1,000 Items are loaded');
+    expect(warning).not.toHaveTextContent('1,237');
+    expect(screen.getByTestId('item-list-count')).toHaveTextContent(
+      'loaded Items'
+    );
+  });
+
+  it('qualifies filtered counts as loaded-subset matches when truncated', () => {
+    const { useDashboardFilters } = require('../../hooks');
+    (useDashboardFilters as jest.Mock).mockReturnValue({
+      searchTerm: 'Strad',
+      setSearchTerm: mockSetSearchTerm,
+      showFilters: false,
+      setShowFilters: mockSetShowFilters,
+      filters: {
+        status: [],
+        maker: [],
+        type: [],
+        subtype: [],
+        ownership: [],
+        certificate: [],
+        priceRange: { min: '', max: '' },
+        hasClients: [],
+      },
+      filteredItems: mockEnrichedItems,
+      paginatedItems: mockEnrichedItems,
+      handleFilterChange: mockHandleFilterChange,
+      handlePriceRangeChange: mockHandlePriceRangeChange,
+      clearAllFilters: mockClearAllFilters,
+      handleSort: mockHandleSort,
+      getSortArrow: mockGetSortArrow,
+      getActiveFiltersCount: jest.fn(() => 1),
+      dateRange: null,
+      setDateRange: mockSetDateRange,
+      currentPage: 1,
+      totalPages: 3,
+      totalCount: 48,
+      pageSize: 20,
+      setPage: mockSetPage,
+    });
+
+    render(
+      <DashboardContent
+        {...defaultProps}
+        itemsTruncated
+        authoritativeTotalCount={1237}
+        baseLoadedCount={1000}
+      />
+    );
+
+    expect(
+      screen.getByTestId('inventory-truncation-warning')
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('filtered-loaded-count')).toHaveTextContent(
+      '48 matches in loaded Items'
+    );
+    expect(screen.queryByText(/48 total matches/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('item-list-count')).toHaveTextContent(
+      'of 48 loaded matches'
+    );
+  });
+
+  it('does not treat a deep-linked extra row as the base loaded count', () => {
+    const deepLinkedItem = {
+      ...mockEnrichedItems[0],
+      id: 'deep-link-target',
+    };
+    const { useDashboardFilters } = require('../../hooks');
+    (useDashboardFilters as jest.Mock).mockReturnValue({
+      searchTerm: '',
+      setSearchTerm: mockSetSearchTerm,
+      showFilters: false,
+      setShowFilters: mockSetShowFilters,
+      filters: {
+        status: [],
+        maker: [],
+        type: [],
+        subtype: [],
+        ownership: [],
+        certificate: [],
+        priceRange: { min: '', max: '' },
+        hasClients: [],
+      },
+      filteredItems: [...mockEnrichedItems, deepLinkedItem],
+      paginatedItems: [...mockEnrichedItems, deepLinkedItem],
+      handleFilterChange: mockHandleFilterChange,
+      handlePriceRangeChange: mockHandlePriceRangeChange,
+      clearAllFilters: mockClearAllFilters,
+      handleSort: mockHandleSort,
+      getSortArrow: mockGetSortArrow,
+      getActiveFiltersCount: mockGetActiveFiltersCount,
+      dateRange: null,
+      setDateRange: mockSetDateRange,
+      currentPage: 1,
+      totalPages: 51,
+      totalCount: 1001,
+      pageSize: 20,
+      setPage: mockSetPage,
+    });
+
+    render(
+      <DashboardContent
+        {...defaultProps}
+        enrichedItems={[...mockEnrichedItems, deepLinkedItem]}
+        itemsTruncated
+        authoritativeTotalCount={1237}
+        baseLoadedCount={1000}
+      />
+    );
+
+    const warning = screen.getByTestId('inventory-truncation-warning');
+    expect(warning).toHaveTextContent('1,000 of 1,237 Items are loaded');
+    expect(warning).not.toHaveTextContent('1,001');
   });
 });

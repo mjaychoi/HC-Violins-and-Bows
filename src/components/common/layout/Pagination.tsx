@@ -21,6 +21,11 @@ export interface PaginationProps {
    * compact 모드 여부 (현재 구현에서는 레이아웃만 제어하고 텍스트는 동일)
    */
   compact?: boolean;
+  /**
+   * Qualifier after the total count, e.g. "loaded Items".
+   * When omitted, the count is shown as a bare number.
+   */
+  itemLabel?: string;
 }
 
 export default function Pagination({
@@ -33,6 +38,7 @@ export default function Pagination({
   filteredCount,
   hasFilters,
   compact = false,
+  itemLabel,
 }: PaginationProps) {
   // compact는 현재 레이아웃 분기만을 위한 힌트로, 아직 구체적인 스타일 분기는 없지만
   // 향후 확장을 위해 타입과 시그니처를 유지한다.
@@ -60,6 +66,7 @@ export default function Pagination({
     onPageChange(safeTotalPages);
   };
 
+  const countNoun = itemLabel ? ` ${itemLabel}` : '';
   const showCount =
     typeof totalCount === 'number' && typeof pageSize === 'number';
 
@@ -88,8 +95,8 @@ export default function Pagination({
                   of{' '}
                   <span className="font-medium">
                     {totalCount.toLocaleString()}
-                  </span>{' '}
-                  (filtered)
+                  </span>
+                  {countNoun} (filtered)
                 </>
               ) : (
                 <>
@@ -101,6 +108,7 @@ export default function Pagination({
                   <span className="font-medium">
                     {totalCount.toLocaleString()}
                   </span>
+                  {countNoun}
                 </>
               )}
             </span>

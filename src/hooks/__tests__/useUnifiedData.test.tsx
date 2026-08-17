@@ -38,6 +38,9 @@ export const mockState = {
   clients: [] as Client[],
   instruments: [] as Instrument[],
   connections: [] as ClientInstrument[],
+  allResultsTruncated: false,
+  allResultsTotalCount: null as number | null,
+  allResultsLoadedCount: 0,
   loading: {
     clients: false,
     instruments: false,
@@ -75,6 +78,9 @@ const mockActions = {
     mockState.clients = [];
     mockState.instruments = [];
     mockState.connections = [];
+    mockState.allResultsTruncated = false;
+    mockState.allResultsTotalCount = null;
+    mockState.allResultsLoadedCount = 0;
     mockState.lastUpdated = {
       clients: null,
       instruments: null,
@@ -140,6 +146,9 @@ describe('useUnifiedData', () => {
     mockState.clients = [];
     mockState.instruments = [];
     mockState.connections = [];
+    mockState.allResultsTruncated = false;
+    mockState.allResultsTotalCount = null;
+    mockState.allResultsLoadedCount = 0;
     mockState.loading = {
       clients: false,
       instruments: false,
@@ -178,6 +187,9 @@ describe('useUnifiedData', () => {
     mockUseInstrumentsContext.mockImplementation(() => ({
       state: {
         instruments: mockState.instruments,
+        allResultsTruncated: mockState.allResultsTruncated,
+        allResultsTotalCount: mockState.allResultsTotalCount,
+        allResultsLoadedCount: mockState.allResultsLoadedCount,
         loading: mockState.loading.instruments,
         submitting: mockState.submitting.instruments,
         error: null,
@@ -651,6 +663,56 @@ describe('useUnifiedData', () => {
       expect(result.current.instruments).toEqual([]);
       expect(result.current.connections).toEqual([]);
       expect(result.current.clients).toEqual([]);
+    });
+
+    it('forwards instrument collection completeness metadata', () => {
+      mockState.allResultsTruncated = true;
+      mockState.allResultsTotalCount = 1237;
+      mockState.allResultsLoadedCount = 1000;
+
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      expect(result.current.allInstrumentResultsTruncated).toBe(true);
+      expect(result.current.allInstrumentResultsTotalCount).toBe(1237);
+      expect(result.current.allInstrumentResultsLoadedCount).toBe(1000);
+    });
+
+    it('masks completeness metadata while tenant identity is transitioning', () => {
+      mockState.instruments = [
+        { id: '1', type: 'Violin', maker: 'Test' } as Instrument,
+      ];
+      mockState.allResultsTruncated = true;
+      mockState.allResultsTotalCount = 1237;
+      mockState.allResultsLoadedCount = 1000;
+
+      mockUseAuth.mockReturnValue({
+        user: { id: 'mock-user' },
+        session: { access_token: 'token-a' },
+        orgId: 'org-a',
+        loading: false,
+      });
+
+      rtlRenderHook(() => useUnifiedData(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      mockUseAuth.mockReturnValue({
+        user: { id: 'mock-user' },
+        session: { access_token: 'token-b' },
+        orgId: 'org-b',
+        loading: false,
+      });
+
+      const { result } = rtlRenderHook(() => useUnifiedDashboard(), {
+        wrapper: ({ children }) => <>{children}</>,
+      });
+
+      expect(result.current.instruments).toEqual([]);
+      expect(result.current.allInstrumentResultsTruncated).toBe(false);
+      expect(result.current.allInstrumentResultsTotalCount).toBeNull();
+      expect(result.current.allInstrumentResultsLoadedCount).toBe(0);
     });
 
     it('should calculate client relationships', () => {
