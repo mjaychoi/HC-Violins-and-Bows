@@ -74,6 +74,46 @@ function toError(error: unknown, fallbackMessage: string): Error {
   );
 }
 
+function parseNonNegativeInteger(value: unknown): number | null {
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < 0
+  ) {
+    return null;
+  }
+
+  return value;
+}
+
+function parseAuthoritativeTotalCount(result: unknown): number | null {
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+
+  const record = result as { pagination?: unknown; count?: unknown };
+  const pagination =
+    record.pagination &&
+    typeof record.pagination === 'object' &&
+    !Array.isArray(record.pagination)
+      ? (record.pagination as { totalCount?: unknown })
+      : null;
+
+  const fromPagination = parseNonNegativeInteger(pagination?.totalCount);
+  if (fromPagination !== null) {
+    return fromPagination;
+  }
+
+  return parseNonNegativeInteger(record.count);
+}
+
+const EMPTY_ALL_RESULTS_METADATA = {
+  allResultsTruncated: false,
+  allResultsTotalCount: null as number | null,
+  allResultsLoadedCount: 0,
+};
+
 interface InstrumentsState {
   instruments: Instrument[];
   loadedAccessScopeKey: string | null;
@@ -83,6 +123,8 @@ interface InstrumentsState {
   error: unknown | null;
   lastUpdated: Date | null;
   allResultsTruncated: boolean;
+  allResultsTotalCount: number | null;
+  allResultsLoadedCount: number;
 }
 
 type InstrumentsAction =
@@ -94,7 +136,16 @@ type InstrumentsAction =
       type: 'SET_INSTRUMENTS';
       payload: { instruments: Instrument[]; loadedAccessScopeKey: string };
     }
-  | { type: 'SET_ALL_RESULTS_TRUNCATED'; payload: boolean }
+  | {
+      type: 'SET_INSTRUMENT_COLLECTION';
+      payload: {
+        instruments: Instrument[];
+        loadedAccessScopeKey: string;
+        allResultsTruncated: boolean;
+        allResultsTotalCount: number | null;
+        allResultsLoadedCount: number;
+      };
+    }
   | {
       type: 'ADD_INSTRUMENT';
       payload: { instrument: Instrument; accessScopeKey: string };
@@ -122,7 +173,7 @@ const initialState: InstrumentsState = {
   submitting: false,
   error: null,
   lastUpdated: null,
-  allResultsTruncated: false,
+  ...EMPTY_ALL_RESULTS_METADATA,
 };
 
 function instrumentsReducer(
@@ -169,6 +220,7 @@ function instrumentsReducer(
         instruments: [],
         loadedAccessScopeKey: null,
         error: action.payload,
+        ...EMPTY_ALL_RESULTS_METADATA,
       };
 
     case 'SET_INSTRUMENTS':
@@ -180,10 +232,16 @@ function instrumentsReducer(
         lastUpdated: new Date(),
       };
 
-    case 'SET_ALL_RESULTS_TRUNCATED':
+    case 'SET_INSTRUMENT_COLLECTION':
       return {
         ...state,
-        allResultsTruncated: action.payload,
+        instruments: action.payload.instruments,
+        loadedAccessScopeKey: action.payload.loadedAccessScopeKey,
+        allResultsTruncated: action.payload.allResultsTruncated,
+        allResultsTotalCount: action.payload.allResultsTotalCount,
+        allResultsLoadedCount: action.payload.allResultsLoadedCount,
+        error: null,
+        lastUpdated: new Date(),
       };
 
     case 'ADD_INSTRUMENT':
@@ -197,6 +255,7 @@ function instrumentsReducer(
         ],
         loadedAccessScopeKey: action.payload.accessScopeKey,
         lastUpdated: new Date(),
+        allResultsTotalCount: null,
       };
 
     case 'UPDATE_INSTRUMENT':
@@ -219,6 +278,7 @@ function instrumentsReducer(
         ),
         loadedAccessScopeKey: action.payload.accessScopeKey,
         lastUpdated: new Date(),
+        allResultsTotalCount: null,
       };
 
     case 'INVALIDATE_CACHE':
@@ -357,9 +417,22 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
           const instruments = ((result?.data || []) as Instrument[]).map(
             parseInstrumentType
           );
-          const allResultsTruncated = result.truncated === true;
 
           if (accessScopeKeyRef.current !== fetchAccessScopeKey) {
+            return;
+          }
+
+          if (listAll) {
+            dispatch({
+              type: 'SET_INSTRUMENT_COLLECTION',
+              payload: {
+                instruments,
+                loadedAccessScopeKey: fetchAccessScopeKey,
+                allResultsTruncated: result.truncated === true,
+                allResultsTotalCount: parseAuthoritativeTotalCount(result),
+                allResultsLoadedCount: instruments.length,
+              },
+            });
             return;
           }
 
@@ -370,13 +443,6 @@ export function InstrumentsProvider({ children }: { children: ReactNode }) {
               loadedAccessScopeKey: fetchAccessScopeKey,
             },
           });
-
-          if (listAll) {
-            dispatch({
-              type: 'SET_ALL_RESULTS_TRUNCATED',
-              payload: allResultsTruncated,
-            });
-          }
         } catch (error) {
           if (accessScopeKeyRef.current !== fetchAccessScopeKey) {
             return;
@@ -678,17 +744,14 @@ export function useInstruments() {
   const { state, actions } = useInstrumentsContext();
   const { accessScopeKey } = useTenantIdentity();
 
-  const instruments =
+  const scopeMatches =
     state.loadedAccessScopeKey !== null &&
-    state.loadedAccessScopeKey === accessScopeKey
-      ? state.instruments
-      : [];
+    state.loadedAccessScopeKey === accessScopeKey;
 
-  const allResultsTruncated =
-    state.loadedAccessScopeKey !== null &&
-    state.loadedAccessScopeKey === accessScopeKey
-      ? state.allResultsTruncated
-      : false;
+  const instruments = scopeMatches ? state.instruments : [];
+  const allResultsTruncated = scopeMatches ? state.allResultsTruncated : false;
+  const allResultsTotalCount = scopeMatches ? state.allResultsTotalCount : null;
+  const allResultsLoadedCount = scopeMatches ? state.allResultsLoadedCount : 0;
 
   return {
     instruments,
@@ -697,6 +760,8 @@ export function useInstruments() {
     error: state.error,
     lastUpdated: state.lastUpdated,
     allResultsTruncated,
+    allResultsTotalCount,
+    allResultsLoadedCount,
     ...actions,
   };
 }

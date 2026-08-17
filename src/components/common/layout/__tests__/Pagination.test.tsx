@@ -251,6 +251,23 @@ describe('Pagination', () => {
 
       expect(screen.getByText(/1,000,000/)).toBeInTheDocument();
     });
+
+    it('qualifies the total as loaded Items when itemLabel is provided', () => {
+      render(
+        <Pagination
+          currentPage={1}
+          totalPages={50}
+          onPageChange={mockOnPageChange}
+          totalCount={1000}
+          pageSize={20}
+          itemLabel="loaded Items"
+        />
+      );
+
+      expect(screen.getByText(/1-20/)).toBeInTheDocument();
+      expect(screen.getByText(/1,000/)).toBeInTheDocument();
+      expect(screen.getByText(/loaded Items/)).toBeInTheDocument();
+    });
   });
 
   describe('Edge cases', () => {

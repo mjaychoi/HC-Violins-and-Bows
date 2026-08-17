@@ -73,6 +73,11 @@ interface ItemListProps {
   totalCount?: number;
   pageSize?: number;
   onPageChange?: (page: number) => void;
+  /**
+   * Qualifies the pagination count noun (e.g. "loaded Items") so a capped
+   * collection is not presented as the complete inventory.
+   */
+  itemLabel?: string;
   // UX: Newly created item feedback
   newlyCreatedItemId?: string | null;
   onNewlyCreatedItemShown?: () => void;
@@ -98,6 +103,7 @@ const ItemList = memo(function ItemList({
   totalCount,
   pageSize,
   onPageChange,
+  itemLabel,
   newlyCreatedItemId,
   onNewlyCreatedItemShown,
   onInstrumentCertificatesChanged,
@@ -1085,6 +1091,7 @@ const ItemList = memo(function ItemList({
               loading={loading}
               totalCount={totalCount}
               pageSize={pageSize}
+              itemLabel={itemLabel}
             />
           </div>
         )}
@@ -1100,6 +1107,7 @@ const ItemList = memo(function ItemList({
             loading={loading}
             totalCount={totalCount}
             pageSize={pageSize}
+            itemLabel={itemLabel}
           />
         </div>
       )}

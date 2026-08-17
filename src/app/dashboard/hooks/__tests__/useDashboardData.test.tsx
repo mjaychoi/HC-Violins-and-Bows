@@ -114,6 +114,20 @@ describe('useDashboardData', () => {
     expect(typeof result.current.handleDeleteItem).toBe('function');
   });
 
+  it('forwards instrument collection completeness metadata', () => {
+    setDashboardState({
+      allInstrumentResultsTruncated: true,
+      allInstrumentResultsTotalCount: 1237,
+      allInstrumentResultsLoadedCount: 1000,
+    });
+
+    const { result } = renderHook(() => useDashboardData());
+
+    expect(result.current.allInstrumentResultsTruncated).toBe(true);
+    expect(result.current.allInstrumentResultsTotalCount).toBe(1237);
+    expect(result.current.allInstrumentResultsLoadedCount).toBe(1000);
+  });
+
   it('normalizes missing error fields instead of crashing on incomplete hook data', () => {
     setDashboardState({
       errors: undefined,

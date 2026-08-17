@@ -18,6 +18,8 @@ type EnrichedInstrument = Instrument & {
 interface DashboardContentProps {
   enrichedItems: EnrichedInstrument[];
   itemsTruncated?: boolean;
+  authoritativeTotalCount?: number | null;
+  baseLoadedCount?: number;
   clients: Client[];
   clientRelationships: ClientInstrument[];
   clientsLoading: boolean;
@@ -44,9 +46,33 @@ interface DashboardContentProps {
   };
 }
 
+function formatCount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
+function buildTruncationWarning({
+  loadedCount,
+  totalCount,
+}: {
+  loadedCount: number;
+  totalCount: number | null;
+}): string {
+  const loadedLabel = formatCount(loadedCount);
+
+  if (totalCount !== null) {
+    return `Showing a partial inventory: ${loadedLabel} of ${formatCount(
+      totalCount
+    )} Items are loaded. Search, filters, and list counts on this page apply only to the loaded Items.`;
+  }
+
+  return `Showing a partial inventory. Only ${loadedLabel} Items are loaded. Search, filters, and list counts on this page apply only to the loaded Items.`;
+}
+
 function DashboardContentInner({
   enrichedItems,
   itemsTruncated = false,
+  authoritativeTotalCount = null,
+  baseLoadedCount,
   clients,
   clientRelationships,
   clientsLoading,
@@ -141,6 +167,36 @@ function DashboardContentInner({
     Boolean(searchTerm) ||
     Boolean(dateRange?.from) ||
     Boolean(dateRange?.to);
+
+  const loadedCount =
+    typeof baseLoadedCount === 'number' &&
+    Number.isFinite(baseLoadedCount) &&
+    Number.isInteger(baseLoadedCount) &&
+    baseLoadedCount >= 0
+      ? baseLoadedCount
+      : null;
+  const knownTotalCount =
+    typeof authoritativeTotalCount === 'number' &&
+    Number.isFinite(authoritativeTotalCount) &&
+    Number.isInteger(authoritativeTotalCount) &&
+    authoritativeTotalCount >= 0
+      ? authoritativeTotalCount
+      : null;
+  const filteredLoadedCount = totalCount;
+  const truncationWarning =
+    itemsTruncated && loadedCount !== null
+      ? buildTruncationWarning({
+          loadedCount,
+          totalCount: knownTotalCount,
+        })
+      : itemsTruncated
+        ? 'Showing a partial inventory. Search, filters, and list counts on this page apply only to the loaded Items.'
+        : null;
+  const paginationItemLabel = itemsTruncated
+    ? hasActiveFilters
+      ? 'loaded matches'
+      : 'loaded Items'
+    : undefined;
 
   const deepLinkStatus = instrumentDeepLink?.status ?? 'idle';
   const showDeepLinkPanel =
@@ -242,6 +298,25 @@ function DashboardContentInner({
           </div>
         </div>
 
+        {truncationWarning && (
+          <div
+            role="alert"
+            data-testid="inventory-truncation-warning"
+            className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          >
+            {truncationWarning}
+          </div>
+        )}
+
+        {itemsTruncated && hasActiveFilters && (
+          <p
+            data-testid="filtered-loaded-count"
+            className="text-sm text-gray-600"
+          >
+            {formatCount(filteredLoadedCount)} matches in loaded Items
+          </p>
+        )}
+
         {showFilters && !showDeepLinkPanel && (
           <ItemFilters
             items={enrichedItems}
@@ -296,6 +371,7 @@ function DashboardContentInner({
             totalCount={totalCount}
             pageSize={pageSize}
             onPageChange={setPage}
+            itemLabel={paginationItemLabel}
           />
         )}
       </div>

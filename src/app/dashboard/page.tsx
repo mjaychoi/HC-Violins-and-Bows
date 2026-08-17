@@ -58,6 +58,8 @@ function DashboardPageContent() {
   const {
     instruments,
     allInstrumentResultsTruncated,
+    allInstrumentResultsTotalCount,
+    allInstrumentResultsLoadedCount,
     clientRelationships,
     clients,
     loading,
@@ -401,6 +403,8 @@ function DashboardPageContent() {
             <DashboardContent
               enrichedItems={enrichedItems}
               itemsTruncated={allInstrumentResultsTruncated}
+              authoritativeTotalCount={allInstrumentResultsTotalCount}
+              baseLoadedCount={allInstrumentResultsLoadedCount}
               clients={clients}
               clientRelationships={clientRelationships}
               clientsLoading={clientsLoading}

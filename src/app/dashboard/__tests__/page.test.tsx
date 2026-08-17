@@ -110,13 +110,35 @@ jest.mock('../components', () => ({
         <button onClick={() => onSubmit({ maker: 'M' })}>submit-form</button>
       </div>
     ) : null,
-  DashboardContent: ({ onDeleteClick, onUpdateItemInline, onSort }: any) => (
+  DashboardContent: (props: {
+    onDeleteClick?: (item: { id: string }) => void;
+    onUpdateItemInline?: (id: string, updates: { maker: string }) => void;
+    onSort?: (field: string) => void;
+    itemsTruncated?: boolean;
+    authoritativeTotalCount?: number | null;
+    baseLoadedCount?: number;
+    enrichedItems?: unknown[];
+  }) => (
     <div data-testid="dashboard-content">
-      <button onClick={() => onDeleteClick({ id: '1' })}>delete</button>
-      <button onClick={() => onUpdateItemInline('1', { maker: 'Updated' })}>
+      <span data-testid="items-truncated">
+        {String(Boolean(props.itemsTruncated))}
+      </span>
+      <span data-testid="authoritative-total">
+        {String(props.authoritativeTotalCount ?? '')}
+      </span>
+      <span data-testid="base-loaded-count">
+        {String(props.baseLoadedCount ?? '')}
+      </span>
+      <span data-testid="enriched-count">
+        {String(props.enrichedItems?.length ?? 0)}
+      </span>
+      <button onClick={() => props.onDeleteClick?.({ id: '1' })}>delete</button>
+      <button
+        onClick={() => props.onUpdateItemInline?.('1', { maker: 'Updated' })}
+      >
         update
       </button>
-      <button onClick={() => onSort('maker')}>sort</button>
+      <button onClick={() => props.onSort?.('maker')}>sort</button>
     </div>
   ),
 }));
@@ -358,5 +380,54 @@ describe('DashboardPage', () => {
         all: true,
       });
     });
+  });
+
+  it('does not inflate base loaded count with a deep-linked Item', () => {
+    const extra = { ...mockInstrument, id: 'deep-link-only' };
+    mockDeepLink.status = 'ready';
+    mockDeepLink.instrumentId = extra.id;
+    mockDeepLink.target = extra;
+
+    (useUnifiedDashboard as jest.Mock).mockReturnValue({
+      instruments: [mockInstrument],
+      allInstrumentResultsTruncated: true,
+      allInstrumentResultsTotalCount: 1237,
+      allInstrumentResultsLoadedCount: 1000,
+      clients: [],
+      loading: {
+        clients: false,
+        instruments: false,
+        connections: false,
+        any: false,
+        hasAnyLoading: false,
+      },
+      errors: {
+        clients: null,
+        instruments: null,
+        connections: null,
+        any: false,
+        hasAnyError: false,
+      },
+      submitting: {
+        instruments: false,
+        connections: false,
+        any: false,
+        hasAnySubmitting: false,
+      },
+      clientRelationships: [],
+      fetchClients,
+      fetchInstruments,
+      fetchConnections,
+      createInstrument,
+      updateInstrument,
+      deleteInstrument,
+    });
+
+    render(<DashboardPage />);
+
+    expect(screen.getByTestId('base-loaded-count')).toHaveTextContent('1000');
+    expect(screen.getByTestId('enriched-count')).toHaveTextContent('2');
+    expect(screen.getByTestId('authoritative-total')).toHaveTextContent('1237');
+    expect(screen.getByTestId('items-truncated')).toHaveTextContent('true');
   });
 });

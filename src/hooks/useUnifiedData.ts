@@ -278,6 +278,10 @@ export function useUnifiedData() {
       instruments: instrumentsContext.state.instruments,
       allInstrumentResultsTruncated:
         instrumentsContext.state.allResultsTruncated,
+      allInstrumentResultsTotalCount:
+        instrumentsContext.state.allResultsTotalCount,
+      allInstrumentResultsLoadedCount:
+        instrumentsContext.state.allResultsLoadedCount,
       connections: connectionsContext.state.connections,
       loading: {
         clients: clientsContext.state.loading,
@@ -703,6 +707,10 @@ export function useUnifiedDashboard() {
       instruments: instrumentsContext.state.instruments,
       allInstrumentResultsTruncated:
         instrumentsContext.state.allResultsTruncated,
+      allInstrumentResultsTotalCount:
+        instrumentsContext.state.allResultsTotalCount,
+      allInstrumentResultsLoadedCount:
+        instrumentsContext.state.allResultsLoadedCount,
       connections: connectionsContext.state.connections,
       loading: {
         clients: clientsContext.state.loading,
@@ -878,7 +886,17 @@ export function useUnifiedDashboard() {
     instruments: safeInstruments,
     allInstrumentResultsTruncated: isTenantTransitioning
       ? false
-      : state.allInstrumentResultsTruncated,
+      : state.allInstrumentResultsTruncated === true,
+    allInstrumentResultsTotalCount: isTenantTransitioning
+      ? null
+      : typeof state.allInstrumentResultsTotalCount === 'number'
+        ? state.allInstrumentResultsTotalCount
+        : null,
+    allInstrumentResultsLoadedCount: isTenantTransitioning
+      ? 0
+      : typeof state.allInstrumentResultsLoadedCount === 'number'
+        ? state.allInstrumentResultsLoadedCount
+        : 0,
     connections: safeConnections,
     clients: safeClients,
 
