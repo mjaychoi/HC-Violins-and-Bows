@@ -16,6 +16,10 @@
 //
 // Production enforcement is distributed via Upstash Redis. Process-local
 // Maps/counters are not an authoritative rate-limit backend.
+//
+// Ordinary production deploys must pass `npm run check:env` so missing
+// Upstash configuration fails before a successful build. Do not set
+// RATE_LIMITING_DISABLED=true as a substitute for Upstash credentials.
 
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
