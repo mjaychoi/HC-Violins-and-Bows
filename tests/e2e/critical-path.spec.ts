@@ -16,6 +16,23 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function clientCreatePayload(options: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  note: string;
+}) {
+  return {
+    first_name: options.firstName,
+    last_name: options.lastName,
+    email: options.email,
+    contact_number: null,
+    tags: ['E2E-CRITICAL'],
+    interest: 'Critical path',
+    note: options.note,
+  };
+}
+
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -33,11 +50,6 @@ async function cleanup(page: Page, paths: string[]) {
 }
 
 test.describe('Critical path', () => {
-  // Logout calls supabase.auth.signOut() with the default global scope, which
-  // revokes every admin session including the shared storageState. Keep this
-  // file serial and run logout after the admin API tests.
-  test.describe.configure({ mode: 'serial' });
-
   test.describe('unauthenticated session', () => {
     test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -127,12 +139,12 @@ test.describe('Critical path', () => {
         const suffix = uniqueSuffix();
         const firstName = `Crit ${suffix}`;
         const createResponse = await page.request.post('/api/clients', {
-          data: {
-            first_name: firstName,
-            last_name: 'Path',
+          data: clientCreatePayload({
+            firstName,
+            lastName: 'Path',
             email: `crit-${suffix}@example.com`,
-            tags: ['E2E-CRITICAL'],
-          },
+            note: suffix,
+          }),
         });
         const created = await expectOkJson(createResponse);
         const client = created.data as {
@@ -214,12 +226,12 @@ test.describe('Critical path', () => {
         try {
           const clientJson = await expectOkJson(
             await page.request.post('/api/clients', {
-              data: {
-                first_name: `Sale ${suffix}`,
-                last_name: 'Client',
+              data: clientCreatePayload({
+                firstName: `Sale ${suffix}`,
+                lastName: 'Client',
                 email: `sale-${suffix}@example.com`,
-                tags: ['E2E-CRITICAL'],
-              },
+                note: suffix,
+              }),
             })
           );
           const clientId = clientJson.data.id as string;
@@ -345,6 +357,8 @@ test.describe('Critical path', () => {
       }
     );
 
+    // Must stay after admin API tests: default signOut() is global and
+    // revokes the shared admin storageState session.
     test(
       'persists the authenticated dashboard session and can log out',
       {
