@@ -34,6 +34,7 @@ import {
 } from '@/app/api/_utils/requestContext';
 import { todayLocalYMD } from '@/utils/dateParsing';
 import { exportRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
+import { INVOICE_PDF_SELECT } from './invoicePdfQuery';
 
 export const runtime = 'nodejs';
 
@@ -393,16 +394,7 @@ async function generateInvoicePdfResponse(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query: any = auth.userSupabase
       .from('invoices')
-      .select(
-        `
-          *,
-          clients (*),
-          invoice_items (
-            *,
-            instruments (*)
-          )
-        `
-      )
+      .select(INVOICE_PDF_SELECT)
       .eq('id', id);
 
     query = query.eq('org_id', orgId);
