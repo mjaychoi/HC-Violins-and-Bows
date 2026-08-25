@@ -33,6 +33,11 @@ async function cleanup(page: Page, paths: string[]) {
 }
 
 test.describe('Critical path', () => {
+  // Logout calls supabase.auth.signOut() with the default global scope, which
+  // revokes every admin session including the shared storageState. Keep this
+  // file serial and run logout after the admin API tests.
+  test.describe.configure({ mode: 'serial' });
+
   test.describe('unauthenticated session', () => {
     test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -108,7 +113,7 @@ test.describe('Critical path', () => {
     test.use({ storageState: ADMIN_AUTH_STATE_PATH });
 
     test(
-      'persists the authenticated dashboard session and can log out',
+      'creates, reads, updates, and deletes a client',
       {
         tag: '@critical',
       },
@@ -118,31 +123,6 @@ test.describe('Critical path', () => {
           timeout: 20000,
         });
         await waitForPageLoad(page, 15000, { skipNetworkIdle: true });
-        await assertCookieBackedAuth(page);
-        await expect(
-          page.getByRole('heading', { name: /dashboard/i }).first()
-        ).toBeVisible();
-        await expect(
-          page.getByRole('button', { name: /sign out/i })
-        ).toBeVisible();
-
-        await page.getByRole('button', { name: /sign out/i }).click();
-        await page.waitForURL(url => new URL(url).pathname === '/', {
-          timeout: 20000,
-        });
-        await expect(page.getByLabel(/email/i)).toBeVisible();
-        expect((await page.request.get('/api/clients?limit=1')).status()).toBe(
-          401
-        );
-      }
-    );
-
-    test(
-      'creates, reads, updates, and deletes a client',
-      {
-        tag: '@critical',
-      },
-      async ({ page }) => {
         await assertCookieBackedAuth(page);
         const suffix = uniqueSuffix();
         const firstName = `Crit ${suffix}`;
@@ -221,6 +201,11 @@ test.describe('Critical path', () => {
         tag: '@critical',
       },
       async ({ page }) => {
+        await page.goto('/dashboard', {
+          waitUntil: 'domcontentloaded',
+          timeout: 20000,
+        });
+        await waitForPageLoad(page, 15000, { skipNetworkIdle: true });
         await assertCookieBackedAuth(page);
         const suffix = uniqueSuffix();
         const saleDate = todayIsoDate();
@@ -357,6 +342,36 @@ test.describe('Critical path', () => {
         } finally {
           await cleanup(page, cleanupPaths);
         }
+      }
+    );
+
+    test(
+      'persists the authenticated dashboard session and can log out',
+      {
+        tag: '@critical',
+      },
+      async ({ page }) => {
+        await page.goto('/dashboard', {
+          waitUntil: 'domcontentloaded',
+          timeout: 20000,
+        });
+        await waitForPageLoad(page, 15000, { skipNetworkIdle: true });
+        await assertCookieBackedAuth(page);
+        await expect(
+          page.getByRole('heading', { name: /dashboard/i }).first()
+        ).toBeVisible();
+        await expect(
+          page.getByRole('button', { name: /sign out/i })
+        ).toBeVisible();
+
+        await page.getByRole('button', { name: /sign out/i }).click();
+        await page.waitForURL(url => new URL(url).pathname === '/', {
+          timeout: 20000,
+        });
+        await expect(page.getByLabel(/email/i)).toBeVisible();
+        expect((await page.request.get('/api/clients?limit=1')).status()).toBe(
+          401
+        );
       }
     );
   });
