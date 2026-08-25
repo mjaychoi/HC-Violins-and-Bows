@@ -45,6 +45,8 @@ describe('protectedRoutePolicy', () => {
     it('leaves API routes to withAuthRoute', () => {
       expect(isApiPath('/api/invoices')).toBe(true);
       expect(requiresAuthSession('/api/invoices')).toBe(false);
+      expect(requiresAuthSession('/api/health')).toBe(false);
+      expect(requiresAuthSession('/api/ready')).toBe(false);
     });
 
     it('requires auth for protected pages', () => {

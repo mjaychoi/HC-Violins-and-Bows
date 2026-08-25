@@ -303,6 +303,28 @@ async function main() {
       throw assertionError('GET /api/invoices expected application/json');
     }
 
+    const health = await request('/api/health');
+    assertNoAuthRedirect('GET /api/health', health);
+    if (health.status !== 200) {
+      throw assertionError(
+        `GET /api/health expected 200, got ${health.status}`
+      );
+    }
+    if (health.location) {
+      throw assertionError('GET /api/health must not HTML-redirect');
+    }
+
+    const ready = await request('/api/ready');
+    assertNoAuthRedirect('GET /api/ready', ready);
+    if (![200, 503].includes(ready.status)) {
+      throw assertionError(
+        `GET /api/ready expected 200 or 503, got ${ready.status}`
+      );
+    }
+    if (ready.location) {
+      throw assertionError('GET /api/ready must not HTML-redirect');
+    }
+
     const loopProbe = await request('/dashboard', {
       maxRedirects: MAX_REDIRECTS,
     });
@@ -323,6 +345,8 @@ async function main() {
             'malformed cookie redirect',
             'favicon no auth redirect',
             'api 401 json',
+            'unauthenticated /api/health 200',
+            'unauthenticated /api/ready 200-or-503',
             'no redirect loop within limit',
           ],
           harnessStorageDefaults: Object.keys(HARNESS_STORAGE_DEFAULTS),

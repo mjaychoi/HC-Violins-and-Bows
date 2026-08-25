@@ -20,11 +20,12 @@ Reusable guard and automation for **non-production** Supabase staging validation
 
 Workflow: `.github/workflows/hosted-staging-integration.yml`
 
-| Job                    | Trigger                                                | Secrets              | Purpose                                                              |
-| ---------------------- | ------------------------------------------------------ | -------------------- | -------------------------------------------------------------------- |
-| `static-validation`    | `pull_request` + `workflow_dispatch`                   | none                 | Guard unit tests, migration inventory lint, shell script syntax      |
-| `hosted-db-validation` | `workflow_dispatch` only                               | 6× `STAGING_*` below | Guard CLI, migration set, SQL audits, `/api/health`                  |
-| `auth-matrix`          | `workflow_dispatch` when `vars.AUTH_MATRIX_READY=true` | same 6× `STAGING_*`  | Runtime fixture bootstrap + cookie-backed matrix (follow-up harness) |
+| Job                    | Trigger                                                | Secrets                                                   | Purpose                                                                             |
+| ---------------------- | ------------------------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `static-validation`    | `pull_request` + `workflow_dispatch`                   | none                                                      | Guard unit tests, migration inventory lint, shell script syntax                     |
+| `hosted-db-validation` | `workflow_dispatch` only                               | 6× `STAGING_*` below                                      | Guard CLI, migration set, SQL audits, `/api/health` liveness, wait for `/api/ready` |
+| `postdeploy-synthetic` | `workflow_dispatch` after hosted-db-validation         | 6× `STAGING_*` + `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` | Cookie-authenticated staging client CRUD                                            |
+| `auth-matrix`          | `workflow_dispatch` when `vars.AUTH_MATRIX_READY=true` | same 6× `STAGING_*`                                       | Runtime fixture bootstrap + cookie-backed matrix (follow-up harness)                |
 
 ### Required GitHub variable (identifier, not a secret)
 
@@ -32,7 +33,7 @@ Workflow: `.github/workflows/hosted-staging-integration.yml`
 | --------------------------------- | ----------------------------------------------------------------------- |
 | `PRODUCTION_SUPABASE_PROJECT_REF` | Production Supabase project ref used to fail closed on staging/prod mix |
 
-Register **only these six** secrets on the `hosted-staging` GitHub Environment:
+Register these secrets on the `hosted-staging` GitHub Environment. The original six `STAGING_*` secrets remain required for hosted DB validation. `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` are required for the post-deploy synthetic job.
 
 | Variable                            | Purpose                                                                    |
 | ----------------------------------- | -------------------------------------------------------------------------- |
@@ -43,6 +44,8 @@ Register **only these six** secrets on the `hosted-staging` GitHub Environment:
 | `STAGING_SUPABASE_SERVICE_ROLE_KEY` | Staging service role (fixture bootstrap only)                              |
 | `STAGING_DATABASE_URL`              | Staging Postgres connection string (pooler-compatible)                     |
 | `STAGING_APP_BASE_URL`              | Staging or localhost app base URL (non-production)                         |
+| `SYNTHETIC_EMAIL`                   | Dedicated staging synthetic admin email (post-deploy job only)             |
+| `SYNTHETIC_PASSWORD`                | Dedicated staging synthetic admin password (post-deploy job only)          |
 
 Do **not** store expiring JWTs or synthetic fixture UUIDs as GitHub secrets. The auth-matrix job mints sessions and seeds fixtures at workflow runtime.
 
@@ -62,16 +65,20 @@ npm run check:migrations
 npm run staging:verify-migrations
 npm run staging:audits
 npm run test:staging-guard
+npm run wait:ready
+npm run test:synthetic:postdeploy
 ```
 
 ## Prerequisites (outside this scaffold)
 
-| Gate               | Depends on                                                                                               |
-| ------------------ | -------------------------------------------------------------------------------------------------------- |
-| SQL audit step     | PR #58 audit SQL files merged (or branch checked out at audited head)                                    |
-| `/api/health` 200  | Separate P0 PR `fix/hosted-health-catalog-checks-*` (direct DB catalog reads)                            |
-| Auth matrix job    | Cookie-backed harness + opt-in `vars.AUTH_MATRIX_READY=true` (leave disabled until authorized)           |
-| Hosted DB dispatch | Repo admin creates `hosted-staging` Environment + 6 secrets + `PRODUCTION_SUPABASE_PROJECT_REF` variable |
+| Gate                         | Depends on                                                                                               |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| SQL audit step               | PR #58 audit SQL files merged (or branch checked out at audited head)                                    |
+| `/api/health` 200 (liveness) | Process is up. Not a schema/DB gate.                                                                     |
+| `/api/ready` 200             | Runtime config + DB + schema are ready for traffic.                                                      |
+| Post-deploy synthetic        | `npm run test:synthetic:postdeploy` against `STAGING_APP_BASE_URL`                                       |
+| Auth matrix job              | Cookie-backed harness + opt-in `vars.AUTH_MATRIX_READY=true` (leave disabled until authorized)           |
+| Hosted DB dispatch           | Repo admin creates `hosted-staging` Environment + 6 secrets + `PRODUCTION_SUPABASE_PROJECT_REF` variable |
 
 ## Auth matrix
 

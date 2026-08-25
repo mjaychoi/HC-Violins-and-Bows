@@ -301,6 +301,7 @@ describe('hosted-staging-integration workflow contract', () => {
     );
     expect(hostedJob!.indexOf('run-pr58-audits.sh')).toBeGreaterThan(guardIdx);
     expect(hostedJob!.indexOf('/api/health')).toBeGreaterThan(guardIdx);
+    expect(hostedJob!.indexOf('/api/ready')).toBeGreaterThan(guardIdx);
   });
 
   it('remains staging-only without production secrets or workflow_call', () => {

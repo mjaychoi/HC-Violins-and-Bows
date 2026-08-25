@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/staging/**'
       - 'scripts/auth-matrix/**'
+      - 'scripts/postdeploy/**'
       - 'tests/integration/auth-matrix/**'
       - 'tests/integration/staging/**'
       - '.github/workflows/hosted-staging-integration.yml'
@@ -138,14 +139,67 @@ jobs:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: bash scripts/staging/run-pr58-audits.sh
 
-      - name: Health check
+      - name: Liveness
         run: |
           body="$(curl -fsS "${STAGING_APP_BASE_URL%/}/api/health")"
           echo "$body" | jq -e '.status == "ok"' >/dev/null
-          echo "$body" | jq -e '.version != "dev"' >/dev/null
-          echo "$body" | jq -e '.checks.requiredColumnsPresent == true' >/dev/null
-          echo "$body" | jq -e '(.diagnostics.missingMigrationVersions | length) == 0' >/dev/null
-          echo "$body" | jq -e '(.diagnostics.missingColumns | length) == 0' >/dev/null
+
+      - name: Wait for readiness
+        env:
+          POSTDEPLOY_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+        run: npm run wait:ready
+
+      - name: Readiness
+        run: |
+          body="$(curl -fsS --max-time 10 "${STAGING_APP_BASE_URL%/}/api/ready")"
+          echo "$body" | jq -e '.status == "ready"' >/dev/null
+          echo "$body" | jq -e '.checks.configuration == "ok"' >/dev/null
+          echo "$body" | jq -e '.checks.database == "ok"' >/dev/null
+          echo "$body" | jq -e '.checks.schema == "ok"' >/dev/null
+
+  postdeploy-synthetic:
+    needs: hosted-db-validation
+    if: >-
+      ${{ needs.hosted-db-validation.result == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          github.repository == 'mjaychoi/HC-Violins-and-Bows' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: hosted-staging
+    env:
+      STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+      POSTDEPLOY_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+      PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+      SYNTHETIC_EMAIL: ${{ secrets.SYNTHETIC_EMAIL }}
+      SYNTHETIC_PASSWORD: ${{ secrets.SYNTHETIC_PASSWORD }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Staging environment guard
+        env:
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: npx tsx scripts/staging/env-guard-cli.ts
+
+      - name: Wait for readiness
+        run: npm run wait:ready
+
+      - name: Post-deploy synthetic
+        run: npm run test:synthetic:postdeploy
 
   auth-matrix:
     needs: hosted-db-validation
