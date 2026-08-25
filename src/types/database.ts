@@ -968,6 +968,27 @@ export type Database = {
         };
         Returns: string;
       };
+      create_instrument_admin: {
+        Args: {
+          p_type?: string | null;
+          p_maker?: string | null;
+          p_subtype?: string | null;
+          p_year?: number | null;
+          p_certificate?: boolean | null;
+          p_certificate_name?: string | null;
+          p_cost_price?: number | null;
+          p_consignment_price?: number | null;
+          p_size?: string | null;
+          p_weight?: string | null;
+          p_price?: number | null;
+          p_ownership?: string | null;
+          p_note?: string | null;
+          p_serial_number?: string | null;
+          p_status?: string | null;
+          p_reserved_reason?: string | null;
+        };
+        Returns: Json;
+      };
       create_invoice_atomic: {
         Args: {
           p_invoice: Json;

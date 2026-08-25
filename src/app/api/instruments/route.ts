@@ -30,7 +30,7 @@ import {
 } from '@/utils/inputValidation';
 import { generateInstrumentSerialNumber } from '@/utils/uniqueNumberGenerator';
 import { Instrument } from '@/types';
-import type { TablesInsert } from '@/types/database';
+import type { Database, TablesInsert } from '@/types/database';
 import { logInfo, logError } from '@/utils/logger';
 import { getStorage } from '@/utils/storage';
 import { searchRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
@@ -51,6 +51,8 @@ const INSTRUMENT_SAFE_COLUMNS = `
 `;
 
 type InstrumentInsertRow = TablesInsert<'instruments'>;
+type CreateInstrumentRpcArgs =
+  Database['public']['Functions']['create_instrument_admin']['Args'];
 type CreateInstrumentInput = {
   status?: Instrument['status'];
   reserved_reason?: string | null;
@@ -231,6 +233,29 @@ function toInstrumentInsertRow(
   };
 }
 
+function toCreateInstrumentRpcArgs(
+  instrument: InstrumentInsertRow
+): CreateInstrumentRpcArgs {
+  return {
+    p_type: instrument.type ?? null,
+    p_maker: instrument.maker ?? null,
+    p_subtype: instrument.subtype ?? null,
+    p_year: instrument.year ?? null,
+    p_certificate: instrument.certificate ?? false,
+    p_certificate_name: instrument.certificate_name ?? null,
+    p_cost_price: instrument.cost_price ?? null,
+    p_consignment_price: instrument.consignment_price ?? null,
+    p_size: instrument.size ?? null,
+    p_weight: instrument.weight ?? null,
+    p_price: instrument.price ?? null,
+    p_ownership: instrument.ownership ?? null,
+    p_note: instrument.note ?? null,
+    p_serial_number: instrument.serial_number ?? null,
+    p_status: instrument.status ?? 'Available',
+    p_reserved_reason: instrument.reserved_reason ?? null,
+  };
+}
+
 function normalizeIdempotencyKey(headerValue: string | null): string | null {
   if (!headerValue) {
     return null;
@@ -308,15 +333,13 @@ async function createInstrumentWithRetry(
   let nextInsert = instrumentInsert;
 
   for (let attempt = 0; attempt <= SERIAL_CONFLICT_MAX_RETRIES; attempt += 1) {
-    // .select(INSTRUMENT_SAFE_COLUMNS), not the bare .select() default of
-    // `*`: the DB no longer grants `authenticated` SELECT on
-    // cost_price/consignment_price (see 20260814160000_...sql). The caller
-    // already knows those values from nextInsert and merges them back in.
-    const { data, error } = await auth.userSupabase
-      .from('instruments')
-      .insert(nextInsert)
-      .select(INSTRUMENT_SAFE_COLUMNS)
-      .single();
+    // The authenticated role intentionally lacks table-level SELECT on
+    // instruments. This admin-only, org-derived RPC performs the insert and
+    // returns exactly the created row without weakening that ACL boundary.
+    const { data, error } = await auth.userSupabase.rpc(
+      'create_instrument_admin',
+      toCreateInstrumentRpcArgs(nextInsert)
+    );
 
     if (!error) {
       return data;
@@ -714,14 +737,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         throw error;
       }
 
-      // createInstrumentWithRetry's own select() excludes cost_price/
-      // consignment_price (DB column privilege); merge back the values the
-      // caller (admin, per requireAdmin above) just submitted.
-      const validatedResponse = validateInstrument({
-        ...data,
-        cost_price: instrumentInsert.cost_price ?? null,
-        consignment_price: instrumentInsert.consignment_price ?? null,
-      });
+      const validatedResponse = validateInstrument(data);
       const payload = { data: validatedResponse };
 
       await completeCreateIdempotency(
