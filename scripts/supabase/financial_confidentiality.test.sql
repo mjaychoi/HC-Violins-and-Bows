@@ -22,6 +22,8 @@
 --   TEST-12    sale_lifecycle_net_amount RPC bypass is blocked
 --   TEST-13    supported member/admin write paths do not regress
 --   TEST-14    admin financial workflows (totals aggregate) still work
+--   TEST-15    admin invoice PDF-shaped join (instrument.serial_number only)
+--              remains valid; SELECT * / cost_price / consignment_price stay denied
 
 \set ON_ERROR_STOP on
 BEGIN;
@@ -59,10 +61,11 @@ BEGIN
     (v_client_a, v_org_a, 'Client A');
 
   INSERT INTO public.instruments (
-    id, org_id, type, maker, price, cost_price, consignment_price, status
+    id, org_id, type, maker, price, cost_price, consignment_price, status,
+    serial_number
   ) VALUES
-    (v_instrument_a, v_org_a, 'Violin', 'Stradivarius', 3000, 1500, 800, 'Available'),
-    (v_instrument_b, v_org_b, 'Violin', 'Guarneri', 5000, 2500, 1200, 'Available');
+    (v_instrument_a, v_org_a, 'Violin', 'Stradivarius', 3000, 1500, 800, 'Available', 'SN-A-001'),
+    (v_instrument_b, v_org_b, 'Violin', 'Guarneri', 5000, 2500, 1200, 'Available', 'SN-B-001');
 
   INSERT INTO public.sales_history (
     id, org_id, instrument_id, client_id, sale_price, sale_date, entry_kind
@@ -340,6 +343,65 @@ BEGIN
     RAISE EXCEPTION 'TEST-10 FAILED: admin A could not read invoice_items (% rows)', v_row_count;
   END IF;
   RAISE NOTICE 'TEST-10 PASSED: admin invoice access PASS';
+
+  -- ═══════════════════════════════════════════════════════════════════
+  -- TEST-15 — invoice PDF data query remains valid under the column ACL.
+  -- Mirrors GET /api/invoices/:id/pdf: invoice + invoice_items +
+  -- instruments.serial_number only. SELECT * and financial columns must
+  -- still fail for the shared authenticated role (admin included).
+  -- ═══════════════════════════════════════════════════════════════════
+  SELECT COUNT(*) INTO v_row_count
+  FROM (
+    SELECT inv.id, ii.description, ii.qty, ii.rate, ii.amount, inst.serial_number
+    FROM public.invoices AS inv
+    JOIN public.invoice_items AS ii ON ii.invoice_id = inv.id
+    JOIN public.instruments AS inst ON inst.id = ii.instrument_id
+    WHERE inv.id = v_invoice_a
+      AND inv.org_id = v_org_a
+  ) sub;
+  IF v_row_count <> 1 THEN
+    RAISE EXCEPTION 'TEST-15 FAILED: admin PDF-shaped join returned % rows', v_row_count;
+  END IF;
+
+  SELECT inst.serial_number INTO v_caught
+  FROM public.invoices AS inv
+  JOIN public.invoice_items AS ii ON ii.invoice_id = inv.id
+  JOIN public.instruments AS inst ON inst.id = ii.instrument_id
+  WHERE inv.id = v_invoice_a;
+  IF v_caught IS DISTINCT FROM 'SN-A-001' THEN
+    RAISE EXCEPTION 'TEST-15 FAILED: PDF join serial_number mismatch got %', v_caught;
+  END IF;
+
+  BEGIN
+    EXECUTE 'SELECT * FROM public.instruments WHERE id = $1' USING v_instrument_a;
+    RAISE EXCEPTION 'TEST-15 FAILED: admin SELECT * on instruments succeeded';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'TEST-15 PASSED: admin instruments SELECT * BLOCKED';
+  END;
+
+  BEGIN
+    PERFORM inst.cost_price
+    FROM public.invoices AS inv
+    JOIN public.invoice_items AS ii ON ii.invoice_id = inv.id
+    JOIN public.instruments AS inst ON inst.id = ii.instrument_id
+    WHERE inv.id = v_invoice_a;
+    RAISE EXCEPTION 'TEST-15 FAILED: PDF join could read cost_price';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'TEST-15 PASSED: PDF join cannot read cost_price';
+  END;
+
+  BEGIN
+    PERFORM inst.consignment_price
+    FROM public.invoices AS inv
+    JOIN public.invoice_items AS ii ON ii.invoice_id = inv.id
+    JOIN public.instruments AS inst ON inst.id = ii.instrument_id
+    WHERE inv.id = v_invoice_a;
+    RAISE EXCEPTION 'TEST-15 FAILED: PDF join could read consignment_price';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'TEST-15 PASSED: PDF join cannot read consignment_price';
+  END;
+
+  RAISE NOTICE 'TEST-15 PASSED: admin invoice PDF-shaped join PASS';
 
   RESET ROLE;
 
