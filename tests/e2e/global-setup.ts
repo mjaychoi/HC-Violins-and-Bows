@@ -1,4 +1,8 @@
-import { chromium, type FullConfig } from '@playwright/test';
+import {
+  chromium,
+  type BrowserContext,
+  type FullConfig,
+} from '@playwright/test';
 import { createClient, type Session, type User } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -10,18 +14,28 @@ import {
   getCookieDiagnostics,
   validateProtectedApiAccess,
 } from './test-helpers';
+import {
+  ADMIN_AUTH_STATE_PATH,
+  MEMBER_AUTH_STATE_PATH,
+  getE2EAdminIdentity,
+  getE2EMemberIdentity,
+  type E2EIdentity,
+} from './e2e-identities';
 import { logInfo, logWarn } from '../../src/utils/logger';
 
 dotenv.config({ path: '.env.local' });
-
-const AUTH_STATE_PATH = path.join(__dirname, '.auth', 'user.json');
-const DEFAULT_E2E_ORG_ID = '00000000-0000-4000-8000-0000000000e2';
 
 type SupabaseEnv = {
   url: string;
   anonKey: string;
   serviceRoleKey?: string;
 };
+
+function requiresDeterministicSeed(): boolean {
+  return (
+    process.env.CI === 'true' || process.env.PLAYWRIGHT_SUITE === 'critical'
+  );
+}
 
 function getBaseURL(config: FullConfig): string {
   const configured =
@@ -47,14 +61,6 @@ function getSupabaseEnv(): SupabaseEnv {
   }
 
   return { url, anonKey, serviceRoleKey };
-}
-
-function getTestIdentity() {
-  return {
-    email: process.env.E2E_TEST_EMAIL || 'test@test.com',
-    password: process.env.E2E_TEST_PASSWORD || 'test123',
-    orgId: process.env.E2E_TEST_ORG_ID || DEFAULT_E2E_ORG_ID,
-  };
 }
 
 async function findAuthUserByEmail(
@@ -84,10 +90,67 @@ async function findAuthUserByEmail(
   throw new Error('Could not find E2E auth user within first 20 pages.');
 }
 
+async function upsertAuthUser(
+  admin: ReturnType<typeof createClient<any>>,
+  identity: E2EIdentity
+): Promise<void> {
+  const app_metadata = { org_id: identity.orgId, role: identity.role };
+  const existing = await findAuthUserByEmail(admin, identity.email);
+
+  if (existing) {
+    const { error } = await admin.auth.admin.updateUserById(existing.id, {
+      password: identity.password,
+      email_confirm: true,
+      app_metadata,
+    });
+
+    if (error) {
+      throw new Error(
+        `Could not update E2E ${identity.role} auth user: ${error.message}`
+      );
+    }
+
+    logInfo('E2E auth user seed verified', 'PlaywrightGlobalSetup', {
+      email: identity.email,
+      userId: existing.id,
+      orgId: identity.orgId,
+      role: identity.role,
+    });
+    return;
+  }
+
+  const { data, error } = await admin.auth.admin.createUser({
+    email: identity.email,
+    password: identity.password,
+    email_confirm: true,
+    app_metadata,
+  });
+
+  if (error) {
+    throw new Error(
+      `Could not create E2E ${identity.role} auth user: ${error.message}`
+    );
+  }
+
+  logInfo('E2E auth user seed created', 'PlaywrightGlobalSetup', {
+    email: identity.email,
+    userId: data.user?.id,
+    orgId: identity.orgId,
+    role: identity.role,
+  });
+}
+
 async function ensureTestSeed(env: SupabaseEnv): Promise<void> {
-  const { email, password, orgId } = getTestIdentity();
+  const adminIdentity = getE2EAdminIdentity();
+  const memberIdentity = getE2EMemberIdentity();
 
   if (!env.serviceRoleKey) {
+    if (requiresDeterministicSeed()) {
+      throw new Error(
+        'CI/critical E2E requires SUPABASE_SERVICE_ROLE_KEY so test users and org membership can be seeded deterministically. Do not skip this setup.'
+      );
+    }
+
     logWarn(
       'SUPABASE_SERVICE_ROLE_KEY is not set; skipping deterministic E2E user seed and using existing credentials.'
     );
@@ -100,7 +163,7 @@ async function ensureTestSeed(env: SupabaseEnv): Promise<void> {
 
   const { error: orgError } = await admin.from('organizations').upsert(
     {
-      id: orgId,
+      id: adminIdentity.orgId,
       name: process.env.E2E_TEST_ORG_NAME || 'HC Violins and Bows',
     },
     { onConflict: 'id' }
@@ -110,68 +173,32 @@ async function ensureTestSeed(env: SupabaseEnv): Promise<void> {
     throw new Error(`Could not ensure E2E organization: ${orgError.message}`);
   }
 
-  const app_metadata = { org_id: orgId, role: 'admin' as const };
-  const existing = await findAuthUserByEmail(admin, email);
-
-  if (existing) {
-    const { error } = await admin.auth.admin.updateUserById(existing.id, {
-      password,
-      email_confirm: true,
-      app_metadata,
-    });
-
-    if (error) {
-      throw new Error(`Could not update E2E auth user: ${error.message}`);
-    }
-
-    logInfo('E2E auth user seed verified', 'PlaywrightGlobalSetup', {
-      email,
-      userId: existing.id,
-      orgId,
-      role: app_metadata.role,
-    });
-    return;
-  }
-
-  const { data, error } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    app_metadata,
-  });
-
-  if (error) {
-    throw new Error(`Could not create E2E auth user: ${error.message}`);
-  }
-
-  logInfo('E2E auth user seed created', 'PlaywrightGlobalSetup', {
-    email,
-    userId: data.user?.id,
-    orgId,
-    role: app_metadata.role,
-  });
+  await upsertAuthUser(admin, adminIdentity);
+  await upsertAuthUser(admin, memberIdentity);
 }
 
-async function signIn(env: SupabaseEnv): Promise<Session> {
-  const { email, password } = getTestIdentity();
+async function signIn(
+  env: SupabaseEnv,
+  identity: E2EIdentity
+): Promise<Session> {
   const supabase = createClient(env.url, env.anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
   const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
+    email: identity.email,
+    password: identity.password,
   });
 
   if (error || !data.session) {
     throw new Error(
-      `Supabase sign-in failed for ${email}: ${error?.message ?? 'missing session'}`
+      `Supabase sign-in failed for ${identity.email}: ${error?.message ?? 'missing session'}`
     );
   }
 
   const appMeta = (data.user.app_metadata ?? {}) as Record<string, unknown>;
   logInfo('Supabase sign-in succeeded for E2E user', 'PlaywrightGlobalSetup', {
-    email,
+    email: identity.email,
     userId: data.user.id,
     orgId: typeof appMeta.org_id === 'string' ? appMeta.org_id : null,
     role: typeof appMeta.role === 'string' ? appMeta.role : null,
@@ -199,11 +226,56 @@ function buildAuthCookies(baseURL: string, session: Session) {
   );
 }
 
+async function persistAuthenticatedState(options: {
+  context: BrowserContext;
+  baseURL: string;
+  env: SupabaseEnv;
+  identity: E2EIdentity;
+  statePath: string;
+  protectedApiPath: string;
+}): Promise<void> {
+  const { context, baseURL, env, identity, statePath, protectedApiPath } =
+    options;
+
+  const session = await signIn(env, identity);
+  await context.addCookies(buildAuthCookies(baseURL, session));
+
+  const page = await context.newPage();
+  await page.goto('/dashboard', {
+    waitUntil: 'domcontentloaded',
+    timeout: 30000,
+  });
+
+  await assertCookieBackedAuth(page);
+  const protectedApi = await validateProtectedApiAccess(page, protectedApiPath);
+
+  if (protectedApi.status !== 200) {
+    throw new Error(
+      `Protected API auth validation failed for ${identity.role} ${identity.email}: status=${protectedApi.status}, body=${protectedApi.bodySnippet}`
+    );
+  }
+
+  const cookieDiagnostics = await getCookieDiagnostics(context);
+  logInfo('Cookie-backed E2E auth validated', 'PlaywrightGlobalSetup', {
+    baseURL,
+    email: identity.email,
+    role: identity.role,
+    cookieDiagnostics,
+    protectedApiStatus: protectedApi.status,
+    protectedApiPath,
+  });
+
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  await context.storageState({ path: statePath });
+  logInfo(`Authentication state saved to ${statePath}`);
+}
+
 async function globalSetup(config: FullConfig) {
   const baseURL = getBaseURL(config);
   const env = getSupabaseEnv();
   const browser = await chromium.launch();
-  const context = await browser.newContext({ baseURL });
+  const adminContext = await browser.newContext({ baseURL });
+  const memberContext = await browser.newContext({ baseURL });
 
   try {
     logInfo(
@@ -212,46 +284,33 @@ async function globalSetup(config: FullConfig) {
       {
         baseURL,
         supabaseHost: new URL(env.url).host,
-        email: getTestIdentity().email,
+        email: getE2EAdminIdentity().email,
       }
     );
 
     await ensureTestSeed(env);
 
-    const session = await signIn(env);
-    const authCookies = buildAuthCookies(baseURL, session);
-    await context.addCookies(authCookies);
-
-    const page = await context.newPage();
-    await page.goto('/dashboard', {
-      waitUntil: 'domcontentloaded',
-      timeout: 30000,
-    });
-
-    await assertCookieBackedAuth(page);
-    const protectedApi = await validateProtectedApiAccess(
-      page,
-      '/api/clients?limit=1'
-    );
-
-    if (protectedApi.status !== 200) {
-      throw new Error(
-        `Protected API auth validation failed: status=${protectedApi.status}, body=${protectedApi.bodySnippet}`
-      );
-    }
-
-    const cookieDiagnostics = await getCookieDiagnostics(context);
-    logInfo('Cookie-backed E2E auth validated', 'PlaywrightGlobalSetup', {
+    await persistAuthenticatedState({
+      context: adminContext,
       baseURL,
-      cookieDiagnostics,
-      protectedApiStatus: protectedApi.status,
+      env,
+      identity: getE2EAdminIdentity(),
+      statePath: ADMIN_AUTH_STATE_PATH,
+      protectedApiPath: '/api/clients?limit=1',
     });
 
-    fs.mkdirSync(path.dirname(AUTH_STATE_PATH), { recursive: true });
-    await context.storageState({ path: AUTH_STATE_PATH });
-    logInfo(`Authentication state saved to ${AUTH_STATE_PATH}`);
+    if (env.serviceRoleKey || requiresDeterministicSeed()) {
+      await persistAuthenticatedState({
+        context: memberContext,
+        baseURL,
+        env,
+        identity: getE2EMemberIdentity(),
+        statePath: MEMBER_AUTH_STATE_PATH,
+        protectedApiPath: '/api/sales?pageSize=1',
+      });
+    }
   } catch (error) {
-    const cookieDiagnostics = await getCookieDiagnostics(context).catch(
+    const cookieDiagnostics = await getCookieDiagnostics(adminContext).catch(
       diagnosticError => ({
         error:
           diagnosticError instanceof Error
@@ -259,7 +318,7 @@ async function globalSetup(config: FullConfig) {
             : String(diagnosticError),
       })
     );
-    const protectedApi = await context.request
+    const protectedApi = await adminContext.request
       .get(`${baseURL}/api/clients?limit=1`)
       .then(async response => ({
         status: response.status(),
@@ -274,7 +333,7 @@ async function globalSetup(config: FullConfig) {
     logWarn('E2E auth setup failed', 'PlaywrightGlobalSetup', {
       baseURL,
       supabaseHost: new URL(env.url).host,
-      email: getTestIdentity().email,
+      email: getE2EAdminIdentity().email,
       cookieDiagnostics,
       protectedApi,
       error: error instanceof Error ? error.message : String(error),
@@ -282,7 +341,8 @@ async function globalSetup(config: FullConfig) {
 
     throw error;
   } finally {
-    await context.close().catch(() => undefined);
+    await adminContext.close().catch(() => undefined);
+    await memberContext.close().catch(() => undefined);
     await browser.close().catch(() => undefined);
   }
 }

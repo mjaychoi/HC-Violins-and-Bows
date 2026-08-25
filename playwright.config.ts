@@ -1,6 +1,19 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000';
+const isCriticalSuite = process.env.PLAYWRIGHT_SUITE === 'critical';
+const useProductionServer =
+  process.env.PLAYWRIGHT_WEB_SERVER === 'production' ||
+  (isCriticalSuite && process.env.PLAYWRIGHT_WEB_SERVER !== 'dev');
+const webServerUrl = new URL(baseURL);
+const webServerHost = webServerUrl.hostname || '127.0.0.1';
+const webServerPort = webServerUrl.port || '3000';
+const productionWebServerCommand = `HOSTNAME=${webServerHost} PORT=${webServerPort} node scripts/start-e2e-production-server.cjs`;
+
+const chromiumProject = {
+  name: 'chromium',
+  use: { ...devices['Desktop Chrome'] },
+};
 
 /**
  * @see https://playwright.dev/docs/test-configuration
@@ -18,7 +31,10 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
+  reporter: process.env.CI
+    ? [['list'], ['html', { open: 'never' }], ['github']]
+    : [['list'], ['html']],
+  grep: isCriticalSuite ? /@critical/ : undefined,
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
@@ -29,6 +45,7 @@ export default defineConfig({
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
 
     /* Default timeout for actions (click, fill, etc.) */
     actionTimeout: 15000,
@@ -46,65 +63,66 @@ export default defineConfig({
   },
 
   /* Configure projects for major browsers */
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
+  projects: isCriticalSuite
+    ? [chromiumProject]
+    : [
+        chromiumProject,
 
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
+        {
+          name: 'firefox',
+          use: { ...devices['Desktop Firefox'] },
+        },
 
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
+        {
+          name: 'webkit',
+          use: { ...devices['Desktop Safari'] },
+        },
 
-    /* Test against mobile viewports. */
-    {
-      name: 'Mobile Chrome',
-      use: {
-        ...devices['Pixel 5'],
-        /* Mobile Chrome needs longer timeouts due to mobile rendering */
-        actionTimeout: 20000,
-        navigationTimeout: 45000,
-      },
-      /* Mobile Chrome tests need more time */
-      timeout: 90000, // 90 seconds for Mobile Chrome
-      /* Mobile Chrome: expect timeout also increased */
-      expect: {
-        timeout: 15000, // 15 seconds for assertions on Mobile Chrome
-      },
-    },
-    {
-      name: 'Mobile Safari',
-      use: {
-        ...devices['iPhone 12'],
-        /* Mobile Safari needs longer timeouts due to slower rendering */
-        actionTimeout: 20000,
-        navigationTimeout: 45000,
-        /* Collect trace on failure for Mobile Safari to debug timeout issues */
-        trace: 'retain-on-failure',
-      },
-      /* Mobile Safari tests need more time */
-      timeout: 90000, // 90 seconds for Mobile Safari
-      /* Mobile Safari: expect timeout also increased */
-      expect: {
-        timeout: 15000, // 15 seconds for assertions on Mobile Safari
-      },
-      /* Mobile Safari: Run only smoke tests (key functionality) to avoid timeout issues */
-      /* Uncomment the testMatch line below to run only smoke tests on Mobile Safari */
-      // testMatch: /smoke|critical|essential/i,
-    },
-  ],
+        /* Test against mobile viewports. */
+        {
+          name: 'Mobile Chrome',
+          use: {
+            ...devices['Pixel 5'],
+            /* Mobile Chrome needs longer timeouts due to mobile rendering */
+            actionTimeout: 20000,
+            navigationTimeout: 45000,
+          },
+          /* Mobile Chrome tests need more time */
+          timeout: 90000, // 90 seconds for Mobile Chrome
+          /* Mobile Chrome: expect timeout also increased */
+          expect: {
+            timeout: 15000, // 15 seconds for assertions on Mobile Chrome
+          },
+        },
+        {
+          name: 'Mobile Safari',
+          use: {
+            ...devices['iPhone 12'],
+            /* Mobile Safari needs longer timeouts due to slower rendering */
+            actionTimeout: 20000,
+            navigationTimeout: 45000,
+            /* Collect trace on failure for Mobile Safari to debug timeout issues */
+            trace: 'retain-on-failure',
+          },
+          /* Mobile Safari tests need more time */
+          timeout: 90000, // 90 seconds for Mobile Safari
+          /* Mobile Safari: expect timeout also increased */
+          expect: {
+            timeout: 15000, // 15 seconds for assertions on Mobile Safari
+          },
+          /* Mobile Safari: Run only smoke tests (key functionality) to avoid timeout issues */
+          /* Uncomment the testMatch line below to run only smoke tests on Mobile Safari */
+          // testMatch: /smoke|critical|essential/i,
+        },
+      ],
 
-  /* Run your local dev server before starting the tests */
+  /* Start the app before tests. Critical/CI production suite uses the standalone artifact. */
   webServer: {
-    command: 'npm run dev',
+    command: useProductionServer ? productionWebServerCommand : 'npm run dev',
     url: baseURL,
     reuseExistingServer: process.env.PLAYWRIGHT_REUSE_SERVER === 'true',
-    timeout: 120 * 1000, // 2 minutes timeout
+    timeout: useProductionServer ? 10 * 60 * 1000 : 120 * 1000,
+    stdout: 'pipe',
+    stderr: 'pipe',
   },
 });

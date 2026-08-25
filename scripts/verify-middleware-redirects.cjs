@@ -103,7 +103,7 @@ async function waitForServer(timeoutMs = 60000, childState) {
   while (Date.now() - start < timeoutMs) {
     if (childState.exited) {
       throw assertionError(
-        `next start exited early with code ${childState.exitCode}`
+        `standalone production server exited early with code ${childState.exitCode}`
       );
     }
     try {
@@ -162,12 +162,16 @@ function buildChildEnv() {
   return env;
 }
 
-function resolveNextBin() {
-  try {
-    return require.resolve('next/dist/bin/next');
-  } catch {
+function resolveStandaloneStarter() {
+  const starter = path.join(
+    process.cwd(),
+    'scripts',
+    'start-e2e-production-server.cjs'
+  );
+  if (!fs.existsSync(starter)) {
     return null;
   }
+  return starter;
 }
 
 async function waitForChildExit(childState, timeoutMs) {
@@ -184,26 +188,29 @@ async function main() {
     throw assertionError('missing .next/BUILD_ID — run next build first');
   }
 
-  const nextBin = resolveNextBin();
-  if (!nextBin) {
-    throw assertionError('unable to resolve next/dist/bin/next');
+  const starter = resolveStandaloneStarter();
+  if (!starter) {
+    throw assertionError(
+      'unable to resolve scripts/start-e2e-production-server.cjs'
+    );
   }
 
   const childState = { exited: false, exitCode: null };
   let stdout = '';
   let stderr = '';
 
-  // Spawn Next directly (not via npx) so SIGTERM/SIGKILL reach the server.
-  const child = spawn(
-    process.execPath,
-    [nextBin, 'start', '-H', HOST, '-p', String(PORT)],
-    {
-      cwd: process.cwd(),
-      env: buildChildEnv(),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: process.platform !== 'win32',
-    }
-  );
+  // Spawn the standalone production server so SIGTERM/SIGKILL reach the wrapper.
+  const child = spawn(process.execPath, [starter], {
+    cwd: process.cwd(),
+    env: {
+      ...buildChildEnv(),
+      HOSTNAME: HOST,
+      PORT: String(PORT),
+      PLAYWRIGHT_SKIP_BUILD: 'true',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
+  });
 
   child.stdout.on('data', chunk => {
     stdout += chunk.toString('utf8');
@@ -331,16 +338,16 @@ async function main() {
     console.error(message);
     if (childState.exited) {
       console.error(
-        `next start child exit: ${JSON.stringify(childState.exitCode)}`
+        `standalone production server child exit: ${JSON.stringify(childState.exitCode)}`
       );
     }
     const out = sanitizeLogText(stdout);
     const err = sanitizeLogText(stderr);
     if (out) {
-      console.error('next start stdout (truncated):\n' + out);
+      console.error('standalone production server stdout (truncated):\n' + out);
     }
     if (err) {
-      console.error('next start stderr (truncated):\n' + err);
+      console.error('standalone production server stderr (truncated):\n' + err);
     }
   } finally {
     process.removeListener('SIGINT', onSignal);
