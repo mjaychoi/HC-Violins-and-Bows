@@ -872,21 +872,13 @@ describe('/api/instruments', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({ data: [], error: null }),
       };
-      const insertQuery = {
-        insert: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn(),
-      };
-      (insertQuery.single as jest.Mock).mockResolvedValue({
-        data: createdInstrument,
-        error: null,
-      });
+      const createRpc = jest
+        .fn()
+        .mockResolvedValue({ data: createdInstrument, error: null });
 
       mockUserSupabase = {
-        from: jest
-          .fn()
-          .mockReturnValueOnce(serialListQuery)
-          .mockReturnValue(insertQuery),
+        from: jest.fn().mockReturnValueOnce(serialListQuery),
+        rpc: createRpc,
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {
@@ -897,13 +889,13 @@ describe('/api/instruments', () => {
       const json = await response.json();
 
       expect(response.status).toBe(201);
-      expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect(createRpc).toHaveBeenCalledWith(
+        'create_instrument_admin',
         expect.objectContaining({
-          org_id: 'test-org',
-          type: 'Violin',
-          status: 'Available',
-          certificate: false,
-          serial_number: 'VI0000001',
+          p_type: 'Violin',
+          p_status: 'Available',
+          p_certificate: false,
+          p_serial_number: 'VI0000001',
         })
       );
       expect(json.data).toEqual(
@@ -1124,18 +1116,14 @@ describe('/api/instruments', () => {
         status: 'Available',
       };
 
-      const mockQuery = {
-        insert: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn(),
-      };
-      (mockQuery.single as jest.Mock).mockResolvedValue({
+      const createRpc = jest.fn().mockResolvedValue({
         data: { ...mockInstrument, ...createData },
         error: null,
       });
 
       mockUserSupabase = {
-        from: jest.fn().mockReturnValue(mockQuery),
+        from: jest.fn(),
+        rpc: createRpc,
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {
@@ -1147,7 +1135,10 @@ describe('/api/instruments', () => {
 
       expect(response.status).toBe(201);
       expect(json.data).toBeDefined();
-      expect(mockQuery.insert).toHaveBeenCalled();
+      expect(createRpc).toHaveBeenCalledWith(
+        'create_instrument_admin',
+        expect.objectContaining({ p_serial_number: 'SN67890' })
+      );
     });
 
     it('should persist certificate_name and strip unknown fields before inserting', async () => {
@@ -1163,12 +1154,7 @@ describe('/api/instruments', () => {
         status: 'Available',
       };
 
-      const mockQuery = {
-        insert: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn(),
-      };
-      (mockQuery.single as jest.Mock).mockResolvedValue({
+      const createRpc = jest.fn().mockResolvedValue({
         data: {
           ...mockInstrument,
           ...createData,
@@ -1178,7 +1164,8 @@ describe('/api/instruments', () => {
       });
 
       mockUserSupabase = {
-        from: jest.fn().mockReturnValue(mockQuery),
+        from: jest.fn(),
+        rpc: createRpc,
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {
@@ -1188,14 +1175,16 @@ describe('/api/instruments', () => {
       const response = await POST(request);
 
       expect(response.status).toBe(201);
-      expect(mockQuery.insert).toHaveBeenCalledWith(
+      expect(createRpc).toHaveBeenCalledWith(
+        'create_instrument_admin',
         expect.objectContaining({
-          certificate: true,
-          certificate_name: 'Original Label',
-          type: 'Violin',
+          p_certificate: true,
+          p_certificate_name: 'Original Label',
+          p_type: 'Violin',
         })
       );
-      expect(mockQuery.insert).toHaveBeenCalledWith(
+      expect(createRpc).toHaveBeenCalledWith(
+        'create_instrument_admin',
         expect.not.objectContaining({
           has_certificate: expect.anything(),
           image_url: expect.anything(),
@@ -1211,10 +1200,9 @@ describe('/api/instruments', () => {
         status: 'Available',
       };
 
-      const firstInsertQuery = {
-        insert: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
+      const createRpc = jest
+        .fn()
+        .mockResolvedValueOnce({
           data: null,
           error: {
             code: '23505',
@@ -1222,8 +1210,15 @@ describe('/api/instruments', () => {
             details:
               'Key (org_id, serial_number)=(test-org, VI0000002) already exists.',
           },
-        }),
-      };
+        })
+        .mockResolvedValueOnce({
+          data: {
+            ...mockInstrument,
+            ...createData,
+            serial_number: 'VI0000003',
+          },
+          error: null,
+        });
       const serialLookupQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({
@@ -1234,25 +1229,10 @@ describe('/api/instruments', () => {
           error: null,
         }),
       };
-      const secondInsertQuery = {
-        insert: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: {
-            ...mockInstrument,
-            ...createData,
-            serial_number: 'VI0000003',
-          },
-          error: null,
-        }),
-      };
 
       mockUserSupabase = {
-        from: jest
-          .fn()
-          .mockReturnValueOnce(firstInsertQuery)
-          .mockReturnValueOnce(serialLookupQuery)
-          .mockReturnValueOnce(secondInsertQuery),
+        from: jest.fn().mockReturnValueOnce(serialLookupQuery),
+        rpc: createRpc,
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {
@@ -1263,13 +1243,17 @@ describe('/api/instruments', () => {
       const json = await response.json();
 
       expect(response.status).toBe(201);
-      expect(firstInsertQuery.insert).toHaveBeenCalledWith(
-        expect.objectContaining({ serial_number: 'VI0000002' })
+      expect(createRpc).toHaveBeenNthCalledWith(
+        1,
+        'create_instrument_admin',
+        expect.objectContaining({ p_serial_number: 'VI0000002' })
       );
       expect(serialLookupQuery.select).toHaveBeenCalledWith('serial_number');
       expect(serialLookupQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
-      expect(secondInsertQuery.insert).toHaveBeenCalledWith(
-        expect.objectContaining({ serial_number: 'VI0000003' })
+      expect(createRpc).toHaveBeenNthCalledWith(
+        2,
+        'create_instrument_admin',
+        expect.objectContaining({ p_serial_number: 'VI0000003' })
       );
       expect(json.data.serial_number).toBe('VI0000003');
     });
@@ -1289,14 +1273,10 @@ describe('/api/instruments', () => {
           'Key (org_id, serial_number)=(test-org, VI0000002) already exists.',
       };
 
-      const insertFail = {
-        insert: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
-          data: null,
-          error: serialConflictErr,
-        }),
-      };
+      const createRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: serialConflictErr,
+      });
       const serialLookup = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({
@@ -1308,13 +1288,10 @@ describe('/api/instruments', () => {
       mockUserSupabase = {
         from: jest
           .fn()
-          .mockReturnValueOnce(insertFail)
           .mockReturnValueOnce(serialLookup)
-          .mockReturnValueOnce(insertFail)
           .mockReturnValueOnce(serialLookup)
-          .mockReturnValueOnce(insertFail)
-          .mockReturnValueOnce(serialLookup)
-          .mockReturnValueOnce(insertFail),
+          .mockReturnValueOnce(serialLookup),
+        rpc: createRpc,
       } as any;
 
       mockErrorHandler.handleSupabaseError = jest
@@ -1329,6 +1306,7 @@ describe('/api/instruments', () => {
 
       expect(response.status).toBeGreaterThanOrEqual(400);
       expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalled();
+      expect(createRpc).toHaveBeenCalledTimes(4);
     });
 
     it('should return 403 when the user is not an admin (matches instruments_insert RLS)', async () => {
@@ -1396,18 +1374,11 @@ describe('/api/instruments', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({ data: [], error: null }),
       };
-      const insertQuery = {
-        insert: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValueOnce(serialListQuery),
+        rpc: jest
           .fn()
           .mockResolvedValue({ data: createdInstrument, error: null }),
-      };
-      mockUserSupabase = {
-        from: jest
-          .fn()
-          .mockReturnValueOnce(serialListQuery)
-          .mockReturnValue(insertQuery),
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {
@@ -1441,18 +1412,11 @@ describe('/api/instruments', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({ data: [], error: null }),
       };
-      const insertQuery = {
-        insert: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValueOnce(serialListQuery),
+        rpc: jest
           .fn()
           .mockResolvedValue({ data: createdInstrument, error: null }),
-      };
-      mockUserSupabase = {
-        from: jest
-          .fn()
-          .mockReturnValueOnce(serialListQuery)
-          .mockReturnValue(insertQuery),
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {
@@ -1493,18 +1457,11 @@ describe('/api/instruments', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({ data: [], error: null }),
       };
-      const insertQuery = {
-        insert: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        single: jest
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValueOnce(serialListQuery),
+        rpc: jest
           .fn()
           .mockResolvedValue({ data: createdInstrument, error: null }),
-      };
-      mockUserSupabase = {
-        from: jest
-          .fn()
-          .mockReturnValueOnce(serialListQuery)
-          .mockReturnValue(insertQuery),
       } as any;
 
       const request = new NextRequest('http://localhost/api/instruments', {

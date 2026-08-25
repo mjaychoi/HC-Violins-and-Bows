@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS public.instruments (
   subtype               TEXT,
   year                  INTEGER,
   certificate           BOOLEAN NOT NULL DEFAULT false,
+  certificate_name      TEXT,
   cost_price            NUMERIC(12,2),
   consignment_price     NUMERIC(12,2),
   size                  TEXT,
