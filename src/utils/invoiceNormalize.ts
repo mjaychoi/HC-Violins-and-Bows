@@ -110,8 +110,40 @@ function normalizeInvoiceItem(raw: unknown): InvoiceItem | null {
     image_signed_url: (record.image_signed_url as string | null) ?? null,
     display_order: sanitizeNumber(record.display_order) ?? 0,
     created_at: createdAt,
-    instrument: record.instrument as InvoiceItem['instrument'],
+    instrument: normalizeEmbeddedInstrument(
+      record.instrument ?? record.instruments
+    ),
   };
+}
+
+function unwrapJoinRecord(raw: unknown): Record<string, unknown> | null {
+  if (Array.isArray(raw) && raw.length > 0) {
+    if (typeof raw[0] === 'object' && raw[0] !== null) {
+      return raw[0] as Record<string, unknown>;
+    }
+    return null;
+  }
+
+  if (typeof raw === 'object' && raw !== null) {
+    return raw as Record<string, unknown>;
+  }
+
+  return null;
+}
+
+function normalizeEmbeddedInstrument(
+  raw: unknown
+): InvoiceItem['instrument'] | undefined {
+  const record = unwrapJoinRecord(raw);
+  if (!record) return undefined;
+
+  // PDF (and any other invoice-item join) only needs serial_number.
+  // Never forward restricted financial columns even if a caller payload
+  // included them.
+  return {
+    serial_number:
+      typeof record.serial_number === 'string' ? record.serial_number : null,
+  } as InvoiceItem['instrument'];
 }
 
 export function normalizeSupabaseInvoiceItemsJoin(raw: unknown): InvoiceItem[] {

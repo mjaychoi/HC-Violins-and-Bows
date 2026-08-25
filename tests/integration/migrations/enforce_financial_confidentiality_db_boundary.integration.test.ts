@@ -107,6 +107,7 @@ describe('20260814160000 enforce_financial_confidentiality_db_boundary (V7-003)'
     expect(columns.has('consignment_price')).toBe(false);
     expect(columns.has('price')).toBe(true);
     expect(columns.has('maker')).toBe(true);
+    expect(columns.has('serial_number')).toBe(true);
   });
 
   test('sales_history column privileges: authenticated has no SELECT on sale_price, retains it on non-financial columns', async () => {
@@ -170,6 +171,21 @@ describe('20260814160000 enforce_financial_confidentiality_db_boundary (V7-003)'
       expect(grantees).not.toContain('anon');
       expect(grantees).toContain('authenticated');
     }
+  });
+
+  test('invoice PDF instrument columns remain selectable after the financial ACL', async () => {
+    const result = await client.query<{ column_name: string }>(
+      `SELECT column_name
+       FROM information_schema.column_privileges
+       WHERE table_schema = 'public' AND table_name = 'instruments'
+         AND grantee = 'authenticated' AND privilege_type = 'SELECT'`
+    );
+    const columns = new Set(result.rows.map(r => r.column_name));
+
+    expect(columns.has('serial_number')).toBe(true);
+    expect(columns.has('cost_price')).toBe(false);
+    expect(columns.has('consignment_price')).toBe(false);
+    expect(columns.has('*')).toBe(false);
   });
 
   test('financial_confidentiality.test.sql: full role-context regression suite (admin/member/cross-org/anon) passes', async () => {
