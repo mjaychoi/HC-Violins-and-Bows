@@ -43,6 +43,7 @@ Firefox/WebKit/모바일 프로젝트는 PR blocking 경로에 포함하지 않�
 
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`: production-db workflows only
 - `STAGING_SUPABASE_URL`, `STAGING_SUPABASE_ANON_KEY`, `STAGING_SUPABASE_SERVICE_ROLE_KEY`: E2E Tests job용 테스트/스테이징 Supabase
+- `STAGING_SUPABASE_PROJECT_REF` (repository variable): E2E Tests가 해당 스테이징 project ref만 사용하도록 allowlist
 - `VERCEL_TOKEN`: Vercel 토큰
 - `ORG_ID`: Vercel Org ID
 - `PROJECT_ID`: Vercel Project ID
@@ -151,6 +152,10 @@ repository secrets에 전용 테스트 또는 스테이징 Supabase 값을 넣�
 - `STAGING_SUPABASE_URL`
 - `STAGING_SUPABASE_ANON_KEY`
 - `STAGING_SUPABASE_SERVICE_ROLE_KEY`
+
+Repository variable (identifier, not a credential):
+
+- `STAGING_SUPABASE_PROJECT_REF`: E2E Tests allowlist. The Supabase URL host must match this ref; mismatch fail-closes. Do not point this at production.
 
 선택:
 

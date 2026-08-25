@@ -149,6 +149,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
       PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
       E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
       E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
@@ -189,15 +190,10 @@ jobs:
             echo "Set repository secrets STAGING_SUPABASE_URL, STAGING_SUPABASE_ANON_KEY, and STAGING_SUPABASE_SERVICE_ROLE_KEY on a dedicated test/staging project. Do not use production credentials."
             exit 1
           fi
-          if [ -n "${PRODUCTION_SUPABASE_PROJECT_REF:-}" ]; then
-            case "${NEXT_PUBLIC_SUPABASE_URL}" in
-              *"${PRODUCTION_SUPABASE_PROJECT_REF}"*)
-                echo "E2E Tests must not use the production Supabase project."
-                exit 1
-                ;;
-            esac
-          fi
           echo "Required E2E environment variables are present."
+
+      - name: Require staging project allowlist
+        run: npx tsx scripts/assert-e2e-staging-project-allowlist.ts
 
       - name: Assert critical suite is non-empty
         run: node scripts/assert-critical-e2e-selected.cjs
