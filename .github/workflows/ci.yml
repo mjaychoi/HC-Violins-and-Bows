@@ -127,51 +127,85 @@ jobs:
           path: .next/
           retention-days: 1
 
-  # E2E tests disabled temporarily
-  # e2e-tests:
-  #   name: E2E Tests
-  #   runs-on: ubuntu-latest
-  #   needs: build
-  #
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #
-  #     - name: Setup Node.js
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20.x'
-  #         cache: 'npm'
-  #
-  #     - name: Install dependencies
-  #       run: npm ci
-  #
-  #     - name: Install Playwright browsers
-  #       run: npm run test:e2e:install
-  #
-  #     - name: Download build artifacts (optional)
-  #       id: download-artifact
-  #       uses: actions/download-artifact@v4
-  #       continue-on-error: true
-  #       with:
-  #         name: build-files
-  #         path: .next/
-  #
-  #     - name: Build application (if artifact not found)
-  #       if: steps.download-artifact.outcome == 'failure'
-  #       run: npm run build
-  #
-  #     - name: Run E2E tests
-  #       run: npm run test:e2e
-  #       env:
-  #         NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-  #         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-  #         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-  #
-  #     - name: Upload E2E test results
-  #       uses: actions/upload-artifact@v4
-  #       if: failure()
-  #       with:
-  #         name: playwright-report
-  #         path: playwright-report/
-  #         retention-days: 30
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 45
+    env:
+      PLAYWRIGHT_SUITE: critical
+      PLAYWRIGHT_WEB_SERVER: production
+      PLAYWRIGHT_SKIP_BUILD: 'true'
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+      RATE_LIMITING_DISABLED: 'true'
+      STORAGE_TYPE: s3
+      S3_BUCKET_NAME: e2e-ci-placeholder
+      S3_REGION: us-east-1
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
+      E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
+      E2E_TEST_MEMBER_EMAIL: ${{ secrets.E2E_TEST_MEMBER_EMAIL }}
+      E2E_TEST_MEMBER_PASSWORD: ${{ secrets.E2E_TEST_MEMBER_PASSWORD }}
+      E2E_TEST_ORG_ID: ${{ secrets.E2E_TEST_ORG_ID }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Setup npm
+        run: npm install --global npm@11.7.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Require E2E test environment
+        run: |
+          missing=()
+          for name in \
+            NEXT_PUBLIC_SUPABASE_URL \
+            NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            SUPABASE_SERVICE_ROLE_KEY
+          do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing required E2E secrets: ${missing[*]}"
+            echo "Provision a dedicated test/staging Supabase project in repository secrets. Do not use production credentials."
+            exit 1
+          fi
+          echo "Required E2E environment variables are present."
+
+      - name: Assert critical suite is non-empty
+        run: node scripts/assert-critical-e2e-selected.cjs
+
+      - name: Install Playwright Chromium
+        run: npm run test:e2e:install:chromium
+
+      - name: Build production application
+        run: npm run build
+
+      - name: Run critical-path E2E tests
+        run: npm run test:e2e:critical
+
+      - name: Upload E2E test results
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: warn
