@@ -141,11 +141,15 @@ jobs:
       STORAGE_TYPE: s3
       S3_BUCKET_NAME: e2e-ci-placeholder
       S3_REGION: us-east-1
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # Dedicated test/staging project only. Do not reuse the production
+      # NEXT_PUBLIC_SUPABASE_* / SUPABASE_SERVICE_ROLE_KEY repo secrets —
+      # production-db-deploy.yml still consumes those.
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
       E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
       E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
       E2E_TEST_MEMBER_EMAIL: ${{ secrets.E2E_TEST_MEMBER_EMAIL }}
@@ -182,8 +186,16 @@ jobs:
           done
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "Missing required E2E secrets: ${missing[*]}"
-            echo "Provision a dedicated test/staging Supabase project in repository secrets. Do not use production credentials."
+            echo "Set repository secrets STAGING_SUPABASE_URL, STAGING_SUPABASE_ANON_KEY, and STAGING_SUPABASE_SERVICE_ROLE_KEY on a dedicated test/staging project. Do not use production credentials."
             exit 1
+          fi
+          if [ -n "${PRODUCTION_SUPABASE_PROJECT_REF:-}" ]; then
+            case "${NEXT_PUBLIC_SUPABASE_URL}" in
+              *"${PRODUCTION_SUPABASE_PROJECT_REF}"*)
+                echo "E2E Tests must not use the production Supabase project."
+                exit 1
+                ;;
+            esac
           fi
           echo "Required E2E environment variables are present."
 

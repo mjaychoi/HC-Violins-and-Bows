@@ -25,7 +25,7 @@
    - `build` job 완료 후 실행 (blocking, `continue-on-error` 없음)
    - 전용 테스트/스테이징 Supabase 시크릿이 없으면 실패 (silent skip 없음)
    - Chromium만 설치
-   - `next build` 후 `next start`로 프로덕션 서버를 기동
+   - `next build` 후 standalone artifact(`node .next/standalone/server.js`)로 프로덕션 서버를 기동
    - `npm run test:e2e:critical` 실행
    - 실패 시 Playwright HTML 리포트/`test-results` 아티팩트 업로드 (`.env`/세션 파일은 업로드하지 않음)
 
@@ -41,7 +41,8 @@ Firefox/WebKit/모바일 프로젝트는 PR blocking 경로에 포함하지 않�
 
 ### 필요 시크릿
 
-- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`: E2E Tests job용 테스트/스테이징 Supabase
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`: production-db workflows only
+- `STAGING_SUPABASE_URL`, `STAGING_SUPABASE_ANON_KEY`, `STAGING_SUPABASE_SERVICE_ROLE_KEY`: E2E Tests job용 테스트/스테이징 Supabase
 - `VERCEL_TOKEN`: Vercel 토큰
 - `ORG_ID`: Vercel Org ID
 - `PROJECT_ID`: Vercel Project ID
@@ -112,7 +113,7 @@ Settings > Branches에서 `main` 브랜치 보호 규칙 추가:
 - Required status checks:
   - `Test & Lint`
   - `Build`
-  - `E2E Tests` (Chromium critical-path suite against `next build && next start`)
+  - `E2E Tests` (Chromium critical-path suite against the production standalone artifact)
 - Require pull request reviews before merging
 
 ## 로컬에서 재현
@@ -130,8 +131,8 @@ npm run test:e2e:critical
 ```
 
 PR CI의 blocking 게이트는 `npm run test:e2e:critical`입니다. 이 명령은
-`next build` 후 `next start`로 프로덕션 서버를 기동하고 Chromium에서
-`@critical` 태그가 붙은 시나리오만 실행합니다. 이미 빌드된 `.next`가 있으면
+`next build` 후 standalone artifact를 기동하고 Chromium에서 `@critical`
+태그가 붙은 시나리오만 실행합니다. 이미 빌드된 `.next`가 있으면
 `PLAYWRIGHT_SKIP_BUILD=true npm run test:e2e:critical`로 서버만 다시 띄울 수
 있습니다. 개발 서버 대상 빠른 반복은 `npm run test:e2e:critical:dev` 또는
 기존 `npm run test:e2e`를 사용하세요.
@@ -143,11 +144,13 @@ PR CI의 blocking 게이트는 `npm run test:e2e:critical`입니다. 이 명령�
 ### E2E에 필요한 시크릿 (테스트/스테이징 전용)
 
 `E2E Tests` job은 실제 프로덕션 자격 증명을 사용하지 않습니다. GitHub Actions
-repository secrets에 전용 테스트 또는 스테이징 Supabase 값을 넣으세요:
+repository secrets에 전용 테스트 또는 스테이징 Supabase 값을 넣으세요. 이
+값들은 `production-db-deploy.yml`이 쓰는 `NEXT_PUBLIC_SUPABASE_*` /
+`SUPABASE_SERVICE_ROLE_KEY`와 분리되어 있어야 합니다:
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `STAGING_SUPABASE_URL`
+- `STAGING_SUPABASE_ANON_KEY`
+- `STAGING_SUPABASE_SERVICE_ROLE_KEY`
 
 선택:
 

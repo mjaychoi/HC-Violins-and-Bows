@@ -5,15 +5,10 @@ const isCriticalSuite = process.env.PLAYWRIGHT_SUITE === 'critical';
 const useProductionServer =
   process.env.PLAYWRIGHT_WEB_SERVER === 'production' ||
   (isCriticalSuite && process.env.PLAYWRIGHT_WEB_SERVER !== 'dev');
-const skipPreexistingBuild = process.env.PLAYWRIGHT_SKIP_BUILD === 'true';
-
 const webServerUrl = new URL(baseURL);
 const webServerHost = webServerUrl.hostname || '127.0.0.1';
 const webServerPort = webServerUrl.port || '3000';
-const startCommand = `npx next start -H ${webServerHost} -p ${webServerPort}`;
-const productionWebServerCommand = skipPreexistingBuild
-  ? `node -e "if(!require('fs').existsSync('.next/BUILD_ID')){console.error('missing .next/BUILD_ID — run next build first'); process.exit(1)}" && ${startCommand}`
-  : `npm run build && ${startCommand}`;
+const productionWebServerCommand = `HOSTNAME=${webServerHost} PORT=${webServerPort} node scripts/start-e2e-production-server.cjs`;
 
 const chromiumProject = {
   name: 'chromium',
@@ -121,7 +116,7 @@ export default defineConfig({
         },
       ],
 
-  /* Start the app before tests. Critical/CI production suite uses next start. */
+  /* Start the app before tests. Critical/CI production suite uses the standalone artifact. */
   webServer: {
     command: useProductionServer ? productionWebServerCommand : 'npm run dev',
     url: baseURL,
