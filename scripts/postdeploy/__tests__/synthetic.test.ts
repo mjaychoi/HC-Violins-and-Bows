@@ -1,7 +1,12 @@
 /** @jest-environment node */
 
-import { runPostDeploySynthetic } from '../synthetic';
+import {
+  buildSyntheticClientCreatePayload,
+  runPostDeploySynthetic,
+  SYNTHETIC_CLIENT_CREATE_KEYS,
+} from '../synthetic';
 import type { FetchLike } from '../types';
+import { createClientSchema } from '@/utils/typeGuards';
 
 const stagingRef = 'stagingexample1234';
 const productionRef = 'prodrefexample9999';
@@ -41,7 +46,9 @@ function fixtureFetch(overrides?: {
   createBody?: unknown;
   getCreatedStatus?: number;
   getCreatedBody?: unknown;
+  getCreatedError?: Error;
   deleteStatus?: number;
+  deleteError?: Error;
 }): FetchLike {
   return jest.fn(async (input: string, init?: { method?: string }) => {
     const url = new URL(input);
@@ -77,6 +84,9 @@ function fixtureFetch(overrides?: {
       method === 'GET' &&
       url.searchParams.get('id') === created.id
     ) {
+      if (overrides?.getCreatedError) {
+        throw overrides.getCreatedError;
+      }
       return jsonResponse(
         overrides?.getCreatedStatus ?? 200,
         overrides?.getCreatedBody ?? { data: created }
@@ -88,11 +98,39 @@ function fixtureFetch(overrides?: {
       method === 'DELETE' &&
       url.searchParams.get('id') === created.id
     ) {
+      if (overrides?.deleteError) {
+        throw overrides.deleteError;
+      }
       return jsonResponse(overrides?.deleteStatus ?? 200, { success: true });
     }
 
     return jsonResponse(500, { error: 'unexpected fixture path' });
   });
+}
+
+function clientDeleteCalls(fetchImpl: FetchLike) {
+  return (fetchImpl as jest.Mock).mock.calls.filter(
+    ([input, init]: [string, { method?: string } | undefined]) => {
+      const url = new URL(input);
+      return (
+        url.pathname === '/api/clients' &&
+        (init?.method ?? 'GET').toUpperCase() === 'DELETE' &&
+        url.searchParams.get('id') === created.id
+      );
+    }
+  );
+}
+
+function postedClientBody(fetchImpl: FetchLike): Record<string, unknown> {
+  const postCall = (fetchImpl as jest.Mock).mock.calls.find(
+    ([input, init]: [string, { method?: string; body?: string } | undefined]) =>
+      new URL(input).pathname === '/api/clients' &&
+      (init?.method ?? 'GET').toUpperCase() === 'POST'
+  ) as [string, { body?: string } | undefined] | undefined;
+
+  expect(postCall).toBeDefined();
+  expect(postCall?.[1]?.body).toEqual(expect.any(String));
+  return JSON.parse(postCall![1]!.body!) as Record<string, unknown>;
 }
 
 const authenticate = jest.fn(async () => ({
@@ -267,6 +305,120 @@ describe('runPostDeploySynthetic', () => {
     });
 
     const combined = logs.join('\n');
+    expect(combined).not.toContain('super-secret-password');
+    expect(combined).not.toContain('session-cookie');
+    expect(combined).not.toContain('anon-key');
+    expect(combined).not.toMatch(/Bearer /);
+  });
+
+  it('POSTs every required client-create key, using null for unused fields', async () => {
+    const fetchImpl = fixtureFetch();
+    await runPostDeploySynthetic(env, {
+      fetchImpl,
+      authenticate,
+      randomId: () => 'fixed',
+    });
+
+    const body = postedClientBody(fetchImpl);
+    expect(Object.keys(body).sort()).toEqual(
+      [...SYNTHETIC_CLIENT_CREATE_KEYS].sort()
+    );
+    expect(body).toEqual(buildSyntheticClientCreatePayload('synthetic-fixed'));
+    expect(body).toEqual(
+      expect.objectContaining({
+        first_name: 'Synthetic',
+        last_name: 'synthetic-fixed',
+        contact_number: null,
+        email: null,
+        interest: null,
+        note: 'synthetic-fixed',
+        tags: ['synthetic-postdeploy'],
+      })
+    );
+    expect(createClientSchema.safeParse(body).success).toBe(true);
+  });
+
+  it('still DELETEs when create succeeds and read-after-write returns HTTP failure', async () => {
+    const fetchImpl = fixtureFetch({ getCreatedStatus: 500 });
+    const result = await runPostDeploySynthetic(env, {
+      fetchImpl,
+      authenticate,
+      randomId: () => 'fixed',
+    });
+
+    expect(clientDeleteCalls(fetchImpl)).toHaveLength(1);
+    expect(result.exitCode).toBe(1);
+    expect(result.steps.find(step => step.name === 'create')?.status).toBe(
+      'PASS'
+    );
+    expect(
+      result.steps.find(step => step.name === 'read_after_write')?.status
+    ).toBe('FAIL');
+    expect(result.steps.find(step => step.name === 'cleanup')?.status).toBe(
+      'PASS'
+    );
+  });
+
+  it('still DELETEs when create succeeds and read-after-write times out or throws', async () => {
+    const fetchImpl = fixtureFetch({
+      getCreatedError: new Error('Request timeout'),
+    });
+    const result = await runPostDeploySynthetic(env, {
+      fetchImpl,
+      authenticate,
+      randomId: () => 'fixed',
+    });
+
+    expect(clientDeleteCalls(fetchImpl)).toHaveLength(1);
+    expect(result.exitCode).toBe(1);
+    expect(
+      result.steps.find(step => step.name === 'read_after_write')?.status
+    ).toBe('FAIL');
+    expect(result.steps.find(step => step.name === 'cleanup')?.status).toBe(
+      'PASS'
+    );
+  });
+
+  it('preserves the original failure when cleanup later succeeds', async () => {
+    const result = await runPostDeploySynthetic(env, {
+      fetchImpl: fixtureFetch({ getCreatedStatus: 404 }),
+      authenticate,
+      randomId: () => 'fixed',
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.summary).toMatch(/create\.+\sPASS/);
+    expect(result.summary).toMatch(/read-after-write\.+\sFAIL/);
+    expect(result.summary).toMatch(/cleanup\.+\sPASS/);
+  });
+
+  it('reports cleanup failure alongside the original failure and logs only the resource id', async () => {
+    const logs: string[] = [];
+    const result = await runPostDeploySynthetic(env, {
+      fetchImpl: fixtureFetch({
+        getCreatedStatus: 500,
+        deleteStatus: 500,
+      }),
+      authenticate,
+      randomId: () => 'fixed',
+      logger: {
+        info: message => logs.push(message),
+        error: message => logs.push(message),
+      },
+    });
+
+    const combined = logs.join('\n');
+    expect(result.exitCode).toBe(1);
+    expect(
+      result.steps.find(step => step.name === 'read_after_write')?.status
+    ).toBe('FAIL');
+    expect(result.steps.find(step => step.name === 'cleanup')?.status).toBe(
+      'FAIL'
+    );
+    expect(result.summary).toMatch(/read-after-write\.+\sFAIL/);
+    expect(result.summary).toMatch(/cleanup\.+\sFAIL/);
+    expect(combined).toContain(created.id);
+    expect(combined).toContain('operator cleanup required');
     expect(combined).not.toContain('super-secret-password');
     expect(combined).not.toContain('session-cookie');
     expect(combined).not.toContain('anon-key');

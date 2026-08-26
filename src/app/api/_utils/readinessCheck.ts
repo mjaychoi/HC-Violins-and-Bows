@@ -236,12 +236,24 @@ export async function pingApplicationDatabase(): Promise<CheckOutcome> {
   }
 }
 
+/**
+ * Schema probe used by public `GET /api/ready`.
+ *
+ * Uses the existing 30s in-process schema readiness cache. Bypassing that cache
+ * on every unauthenticated request is not required for deployment correctness:
+ * new instances start with an empty cache (first post-deploy poll is live),
+ * process boot still calls `assertSchemaReadiness({ bypassCache: true })`, and
+ * the operator CLI still bypasses. Cached not-ready remains HTTP 503 (fail
+ * closed). Cached ready is bounded to 30s. Stale-negative can delay
+ * `wait:ready` by at most one TTL, which stays inside the 120s poll budget and
+ * never reports ready when the schema is not ready.
+ */
 export async function checkApplicationSchema(): Promise<CheckOutcome> {
   const startedAt = Date.now();
 
   try {
     const [schema, instrumentContract] = await Promise.all([
-      checkSchemaReadiness({ bypassCache: true }),
+      checkSchemaReadiness(),
       checkInstrumentApiContractAdmin(),
     ]);
 

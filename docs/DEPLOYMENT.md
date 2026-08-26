@@ -350,12 +350,12 @@ vercel --prod
 
 ### Health / readiness / synthetic
 
-| Endpoint/command                    | Meaning                                                                                                                   | Expected consumer                                  |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `GET /api/health`                   | Process liveness only. HTTP 200 while the process can serve HTTP. Does not probe DB, schema, or third-party integrations. | Container/platform supervision, cheap uptime pings |
-| `GET /api/ready`                    | Runtime configuration + database reachability + schema compatibility. HTTP 200 only when ready; otherwise HTTP 503.       | Deployment traffic / release validation            |
-| `npm run wait:ready`                | Bounded poll of `/api/ready` until ready or deadline                                                                      | Post-deploy CI                                     |
-| `npm run test:synthetic:postdeploy` | Cookie-authenticated staging client create/read/delete                                                                    | Staging/post-deploy release check                  |
+| Endpoint/command                    | Meaning                                                                                                                                                                                                        | Expected consumer                                  |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `GET /api/health`                   | Process liveness only. HTTP 200 while the process can serve HTTP. Does not probe DB, schema, or third-party integrations.                                                                                      | Container/platform supervision, cheap uptime pings |
+| `GET /api/ready`                    | Runtime configuration + database reachability + schema compatibility. HTTP 200 only when ready; otherwise HTTP 503. Public; uses the existing 30s schema readiness cache (see `scripts/postdeploy/README.md`). | Deployment traffic / release validation            |
+| `npm run wait:ready`                | Bounded poll of `/api/ready` until ready or deadline                                                                                                                                                           | Post-deploy CI                                     |
+| `npm run test:synthetic:postdeploy` | Cookie-authenticated staging client create/read/delete                                                                                                                                                         | Staging/post-deploy release check                  |
 
 **Compatibility:** `/api/health` previously returned HTTP 503 (and optional diagnostics) when catalog/schema checks failed. Those checks now live on `/api/ready`. Do not treat liveness 200 as release-ready.
 

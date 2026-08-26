@@ -42,6 +42,20 @@ describe('schemaReadiness', () => {
     return { supabase, selections };
   }
 
+  it('reuses the 30s in-process cache unless bypassCache is set', async () => {
+    const { supabase } = createSupabaseMock();
+
+    await checkSchemaReadiness({ supabase });
+    const firstCalls = supabase.from.mock.calls.length;
+    expect(firstCalls).toBeGreaterThan(0);
+
+    await checkSchemaReadiness({ supabase });
+    expect(supabase.from).toHaveBeenCalledTimes(firstCalls);
+
+    await checkSchemaReadiness({ bypassCache: true, supabase });
+    expect(supabase.from.mock.calls.length).toBeGreaterThan(firstCalls);
+  });
+
   it('checks required columns for all high-risk API tables', async () => {
     const { supabase, selections } = createSupabaseMock();
 

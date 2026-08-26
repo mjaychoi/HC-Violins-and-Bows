@@ -73,7 +73,7 @@
     "test:middleware-routing": "node scripts/verify-middleware-redirects.cjs",
     "wait:ready": "tsx scripts/postdeploy/run-wait-for-ready.ts",
     "test:synthetic:postdeploy": "tsx scripts/postdeploy/run-synthetic.ts",
-    "test:readiness": "jest --runInBand src/app/api/health/__tests__ src/app/api/ready/__tests__ src/app/api/_utils/__tests__/readinessCheck.test.ts src/app/api/_utils/__tests__/withBoundedTimeout.test.ts src/app/api/_utils/__tests__/healthDiagnosticsAuth.test.ts",
+    "test:readiness": "jest --runInBand src/app/api/health/__tests__ src/app/api/ready/__tests__ src/app/api/_utils/__tests__/readinessCheck.test.ts src/app/api/_utils/__tests__/checkApplicationSchema.test.ts src/app/api/_utils/__tests__/schemaReadiness.test.ts src/app/api/_utils/__tests__/withBoundedTimeout.test.ts src/app/api/_utils/__tests__/healthDiagnosticsAuth.test.ts",
     "test:synthetic": "jest --runInBand scripts/postdeploy/__tests__"
   },
   "dependencies": {

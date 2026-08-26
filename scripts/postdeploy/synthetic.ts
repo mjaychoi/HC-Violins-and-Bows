@@ -21,6 +21,37 @@ import type {
 
 export const DEFAULT_SYNTHETIC_REQUEST_TIMEOUT_MS = 15_000;
 
+/** Keys `validateCreateClient` / `createClientSchema` require on POST /api/clients. */
+export const SYNTHETIC_CLIENT_CREATE_KEYS = [
+  'first_name',
+  'last_name',
+  'contact_number',
+  'email',
+  'interest',
+  'note',
+  'tags',
+] as const;
+
+export function buildSyntheticClientCreatePayload(marker: string): {
+  first_name: string;
+  last_name: string;
+  contact_number: null;
+  email: null;
+  interest: null;
+  note: string;
+  tags: string[];
+} {
+  return {
+    first_name: 'Synthetic',
+    last_name: marker,
+    contact_number: null,
+    email: null,
+    interest: null,
+    note: marker,
+    tags: ['synthetic-postdeploy'],
+  };
+}
+
 const STEP_LABELS: Record<StepName, string> = {
   allowlist: 'allowlist',
   credentials: 'credentials',
@@ -244,12 +275,7 @@ export async function runPostDeploySynthetic(
           ...cookieHeaders,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          first_name: 'Synthetic',
-          last_name: marker,
-          note: marker,
-          tags: ['synthetic-postdeploy'],
-        }),
+        body: JSON.stringify(buildSyntheticClientCreatePayload(marker)),
       },
       requestTimeoutMs
     );
@@ -274,6 +300,14 @@ export async function runPostDeploySynthetic(
     });
   }
 
+  const recordFail = (
+    name: StepName,
+    startedAt: number,
+    extra: Partial<StepResult> = {}
+  ) => {
+    steps.push(createStep(name, 'FAIL', startedAt, now, extra));
+  };
+
   const readAfterWriteStarted = now();
   try {
     const response = await fetchWithTimeout(
@@ -293,18 +327,19 @@ export async function runPostDeploySynthetic(
       lastName !== marker ||
       note !== marker
     ) {
-      return fail('read_after_write', readAfterWriteStarted, {
+      recordFail('read_after_write', readAfterWriteStarted, {
         httpStatus: response.status,
         resourceId: createdId,
         detail: 'Read-after-write did not return the synthetic client.',
       });
+    } else {
+      pass('read_after_write', readAfterWriteStarted, {
+        httpStatus: response.status,
+        resourceId: createdId,
+      });
     }
-    pass('read_after_write', readAfterWriteStarted, {
-      httpStatus: response.status,
-      resourceId: createdId,
-    });
   } catch (error) {
-    return fail('read_after_write', readAfterWriteStarted, {
+    recordFail('read_after_write', readAfterWriteStarted, {
       resourceId: createdId,
       detail: safeErrorMessage(error),
     });
@@ -322,27 +357,33 @@ export async function runPostDeploySynthetic(
       logError(
         `cleanup failed for synthetic client id=${createdId}; operator cleanup required`
       );
-      return fail('cleanup', cleanupStarted, {
+      recordFail('cleanup', cleanupStarted, {
         httpStatus: response.status,
         resourceId: createdId,
         detail: 'Cleanup failed.',
       });
+    } else {
+      pass('cleanup', cleanupStarted, {
+        httpStatus: response.status,
+        resourceId: createdId,
+      });
     }
-    pass('cleanup', cleanupStarted, {
-      httpStatus: response.status,
-      resourceId: createdId,
-    });
   } catch (error) {
     logError(
       `cleanup failed for synthetic client id=${createdId}; operator cleanup required`
     );
-    return fail('cleanup', cleanupStarted, {
+    recordFail('cleanup', cleanupStarted, {
       resourceId: createdId,
       detail: safeErrorMessage(error),
     });
   }
 
   const summary = formatStepSummary(steps);
+  const failed = steps.some(step => step.status === 'FAIL');
+  if (failed) {
+    logError(summary);
+    return { exitCode: 1, steps, summary };
+  }
   log(summary);
   return { exitCode: 0, steps, summary };
 }
