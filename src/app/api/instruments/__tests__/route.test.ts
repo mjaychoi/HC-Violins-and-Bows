@@ -11,6 +11,15 @@ jest.mock('@/app/api/_utils/rateLimit', () => ({
   exportRateLimit: null,
   authRateLimit: null,
   applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  applyScopedRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  extractClientIp: jest.fn(),
+  RATE_LIMIT_ROUTE_KEYS: {
+    instrumentsList: 'instruments:list',
+  },
+  tooManyRequestsApiResult: () => ({
+    payload: { error: 'Too many requests', success: false },
+    status: 429,
+  }),
 }));
 jest.mock('@/utils/errorHandler');
 jest.mock('@/utils/logger', () => ({
@@ -138,8 +147,10 @@ describe('/api/instruments', () => {
 
   describe('GET', () => {
     it('returns 429 when searchRateLimit is exceeded', async () => {
-      const { applyRateLimit } = require('@/app/api/_utils/rateLimit');
-      (applyRateLimit as jest.Mock).mockResolvedValueOnce({ limited: true });
+      const { applyScopedRateLimit } = require('@/app/api/_utils/rateLimit');
+      (applyScopedRateLimit as jest.Mock).mockResolvedValueOnce({
+        limited: true,
+      });
 
       const request = new NextRequest('http://localhost/api/instruments');
       const response = await GET(request);
@@ -147,6 +158,16 @@ describe('/api/instruments', () => {
 
       expect(response.status).toBe(429);
       expect(json.error).toBe('Too many requests');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+      expect(applyScopedRateLimit).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          orgId: 'test-org',
+          userId: 'test-user',
+          method: 'GET',
+          routeKey: 'instruments:list',
+        })
+      );
     });
 
     it('should reject requests without org context', async () => {

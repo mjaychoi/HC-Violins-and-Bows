@@ -32,7 +32,10 @@ import {
 import { writeAuditLog } from '@/utils/auditLog';
 import {
   applyScopedRateLimit,
+  exportRateLimit,
+  extractClientIp,
   mutationRateLimit,
+  RATE_LIMIT_ROUTE_KEYS,
   tooManyRequestsApiResult,
 } from '@/app/api/_utils/rateLimit';
 
@@ -535,6 +538,23 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         }
       }
 
+      // export=true is admin-only bulk export (up to MAX_EXPORT_PAGE_SIZE).
+      // all=true is a separate UI fetch-all (capped at MAX_ALL_RESULTS) and
+      // intentionally stays off the export bucket — historically only
+      // export=true was rate-limited, and the product semantics differ.
+      if (isExport) {
+        const rateLimit = await applyScopedRateLimit(exportRateLimit, {
+          orgId: auth.orgId,
+          userId: auth.user.id,
+          method: 'GET',
+          routeKey: RATE_LIMIT_ROUTE_KEYS.salesExport,
+          ip: extractClientIp(request.headers),
+        });
+        if (rateLimit.limited) {
+          return tooManyRequestsApiResult();
+        }
+      }
+
       let page = parsePageNumber(searchParams.get('page'));
       const pageSize = fetchAll
         ? MAX_ALL_RESULTS
@@ -796,7 +816,7 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         userId: auth.user.id,
         method: 'POST',
         routeKey: 'sales',
-        ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+        ip: extractClientIp(request.headers),
       });
       if (rateLimit.limited) {
         return tooManyRequestsApiResult();
@@ -965,7 +985,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
         userId: auth.user.id,
         method: 'PATCH',
         routeKey: 'sales',
-        ip: request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim(),
+        ip: extractClientIp(request.headers),
       });
       if (rateLimit.limited) {
         return tooManyRequestsApiResult();

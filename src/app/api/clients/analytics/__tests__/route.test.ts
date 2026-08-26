@@ -7,6 +7,15 @@ import { GET } from '../route';
 jest.mock('@/app/api/_utils/rateLimit', () => ({
   searchRateLimit: null,
   applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  applyScopedRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  extractClientIp: jest.fn(),
+  RATE_LIMIT_ROUTE_KEYS: {
+    clientsAnalytics: 'clients:analytics',
+  },
+  tooManyRequestsApiResult: () => ({
+    payload: { error: 'Too many requests', success: false },
+    status: 429,
+  }),
 }));
 jest.mock('@/utils/errorHandler', () => ({
   errorHandler: {
@@ -139,5 +148,64 @@ describe('GET /api/clients/analytics', () => {
     expect(json.data.purchaseCount).toBe(3);
     expect(json.data.avgSpendPerCustomer).toBe(150);
     expect(json.data.mostRecentPurchaseDate).toBe('2026-07-01');
+  });
+
+  it('uses a scoped search limiter with a stable route key', async () => {
+    const { applyScopedRateLimit } = require('@/app/api/_utils/rateLimit');
+    const clientsHead = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockResolvedValue({ count: 0, error: null }),
+    };
+    const distinct = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      not: jest.fn().mockReturnThis(),
+      gte: jest.fn().mockReturnThis(),
+      lte: jest.fn().mockResolvedValue({ data: [], error: null }),
+    };
+    mockUserSupabase = {
+      from: jest.fn((table: string) => {
+        if (table === 'clients') return clientsHead;
+        if (table === 'sales_history') return distinct;
+        throw new Error(`unexpected table ${table}`);
+      }),
+      rpc: jest.fn().mockResolvedValue({
+        data: [{ total_spend: null, purchase_count: null, most_recent: null }],
+        error: null,
+      }),
+    };
+
+    await GET(new NextRequest('http://localhost/api/clients/analytics'));
+
+    expect(applyScopedRateLimit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        orgId: 'test-org',
+        userId: 'test-user',
+        method: 'GET',
+        routeKey: 'clients:analytics',
+      })
+    );
+  });
+
+  it('returns 429 and does not query when limited', async () => {
+    const { applyScopedRateLimit } = require('@/app/api/_utils/rateLimit');
+    (applyScopedRateLimit as jest.Mock).mockResolvedValueOnce({
+      limited: true,
+    });
+    mockUserSupabase = {
+      from: jest.fn(),
+      rpc: jest.fn(),
+    };
+
+    const res = await GET(
+      new NextRequest('http://localhost/api/clients/analytics')
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(429);
+    expect(json.error).toBe('Too many requests');
+    expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
   });
 });

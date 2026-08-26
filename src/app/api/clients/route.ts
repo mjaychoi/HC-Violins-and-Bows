@@ -37,7 +37,12 @@ import {
   createRequestHash,
 } from '@/app/api/_utils/createIdempotency';
 import { assertClientsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
-import { searchRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
+import {
+  applyScopedRateLimit,
+  extractClientIp,
+  RATE_LIMIT_ROUTE_KEYS,
+  searchRateLimit,
+} from '@/app/api/_utils/rateLimit';
 import { writeAuditLog } from '@/utils/auditLog';
 import {
   buildClientsListPayload,
@@ -123,7 +128,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const { limited } = await applyRateLimit(searchRateLimit, auth.user.id);
+      const { limited } = await applyScopedRateLimit(searchRateLimit, {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'GET',
+        routeKey: RATE_LIMIT_ROUTE_KEYS.clientsList,
+        ip: extractClientIp(request.headers),
+      });
       if (limited) {
         return {
           payload: { error: 'Too many requests', success: false },

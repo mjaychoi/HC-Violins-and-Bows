@@ -26,7 +26,12 @@ import {
   createRequestHash,
 } from '@/app/api/_utils/createIdempotency';
 import { assertClientConnectionsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
-import { authRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
+import {
+  applyScopedRateLimit,
+  authRateLimit,
+  extractClientIp,
+  RATE_LIMIT_ROUTE_KEYS,
+} from '@/app/api/_utils/rateLimit';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
@@ -483,7 +488,13 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const { limited } = await applyRateLimit(authRateLimit, auth.user.id);
+      const { limited } = await applyScopedRateLimit(authRateLimit, {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'POST',
+        routeKey: RATE_LIMIT_ROUTE_KEYS.connectionsCreate,
+        ip: extractClientIp(request.headers),
+      });
       if (limited) {
         return {
           payload: { error: 'Too many requests' },

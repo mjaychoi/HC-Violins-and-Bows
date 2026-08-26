@@ -189,6 +189,8 @@ AWS_ACCESS_KEY_ID=your-access-key-id
 AWS_SECRET_ACCESS_KEY=your-secret-access-key
 NEXT_PUBLIC_APP_URL=https://your-domain.vercel.app
 NODE_ENV=production
+UPSTASH_REDIS_REST_URL=https://your-upstash-instance.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your_upstash_rest_token
 ```
 
 **Preview:**
@@ -223,6 +225,47 @@ NODE_ENV=development
 
 ⚠️ **중요:** Supabase Service Role Key는 **절대** 클라이언트 사이드에 노출되면 안 됩니다!
 ⚠️ **중요:** 계측기(`src/instrumentation.ts`)가 부팅 시 스토리지 구성을 검증합니다. `development`/`test` 외 환경에서는 `STORAGE_TYPE=s3`와 S3 버킷/리전 설정이 없으면 서버가 시작되지 않습니다.
+
+### Rate limiting
+
+Application rate limiting is **not** a substitute for CDN/WAF controls. It
+protects expensive and sensitive API operations across multiple serverless
+instances using a single distributed backend.
+
+| Policy      | Limit  | Typical operations                       |
+| ----------- | ------ | ---------------------------------------- |
+| auth        | 5/min  | authentication-style sensitive writes    |
+| export      | 3/min  | PDF generation / bulk sales export       |
+| search      | 30/min | list / search / filter / analytics reads |
+| mutation    | 15/min | normal writes                            |
+| upload      | 8/min  | file / image upload                      |
+| destructive | 4/min  | destructive cleanup / delete             |
+
+- **Production backend:** Upstash Redis (`UPSTASH_REDIS_REST_URL`,
+  `UPSTASH_REDIS_REST_TOKEN`). This is the only production rate-limit store.
+- **Distribution:** Limits are shared across app instances. Process-local
+  Maps or in-memory counters are not authoritative.
+- **Authenticated application keys:** `orgId : userId : method : routeKey`.
+  Route keys are stable policy buckets (`sales:export`, `clients:list`,
+  `invoices:pdf`, …) and do not include record IDs or query strings.
+- **IP fallback:** Used only when organization context is missing. The first
+  `x-forwarded-for` hop is used; later hops are ignored.
+- **Sales export:** `GET /api/sales?export=true` uses `export` (3/min) after
+  admin authorization. `all=true` is a separate UI fetch-all (capped at 1000
+  rows) and does **not** share the export bucket.
+- **Missing production Upstash config:** fail-closed (requests are limited)
+  unless an operator sets `RATE_LIMITING_DISABLED=true`.
+- **Emergency disable:** `RATE_LIMITING_DISABLED=true` is an explicit
+  production opt-out. Do not set this on production CI merely to pass tests.
+  Existing critical E2E/staging may keep its current safe test override.
+- **Runtime Redis/Upstash exception:** fail-open (the request is allowed)
+  and a sanitized error is logged. This is an availability limitation, not
+  silent disablement from missing env.
+- **429 body:** `{ error: "Too many requests", success: false }` for
+  apiHandler routes. Invoice PDF keeps its existing error envelope.
+- **Retry-After:** Invoice PDF sets the header when the limiter returns a
+  reset time. Other apiHandler 429s do not, because the shared response
+  helper has no header field — deferred to avoid an API framework refactor.
 
 #### 빌드 설정 확인
 

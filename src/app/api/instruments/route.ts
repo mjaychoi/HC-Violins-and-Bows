@@ -33,7 +33,12 @@ import { Instrument } from '@/types';
 import type { Database, TablesInsert } from '@/types/database';
 import { logInfo, logError } from '@/utils/logger';
 import { getStorage } from '@/utils/storage';
-import { searchRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
+import {
+  applyScopedRateLimit,
+  extractClientIp,
+  RATE_LIMIT_ROUTE_KEYS,
+  searchRateLimit,
+} from '@/app/api/_utils/rateLimit';
 import { writeAuditLog } from '@/utils/auditLog';
 
 const MAX_SEARCH_LEN = 100;
@@ -390,7 +395,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
 
         const orgId = getRequiredOrgId(auth);
 
-        const { limited } = await applyRateLimit(searchRateLimit, auth.user.id);
+        const { limited } = await applyScopedRateLimit(searchRateLimit, {
+          orgId: auth.orgId,
+          userId: auth.user.id,
+          method: 'GET',
+          routeKey: RATE_LIMIT_ROUTE_KEYS.instrumentsList,
+          ip: extractClientIp(request.headers),
+        });
         if (limited) {
           return {
             payload: { error: 'Too many requests', success: false },

@@ -17,8 +17,17 @@ jest.mock('@upstash/ratelimit', () => {
   return { Ratelimit: MockRatelimit };
 });
 
+jest.mock('@/utils/logger', () => ({
+  logError: jest.fn(),
+  logWarn: jest.fn(),
+  logInfo: jest.fn(),
+  logDebug: jest.fn(),
+  logApiRequest: jest.fn(),
+}));
+
 import { applyRateLimit } from '../rateLimit';
 import type { Ratelimit } from '@upstash/ratelimit';
+import { logError } from '@/utils/logger';
 
 // ── F8: safe import without env vars ─────────────────────────────────────────
 
@@ -274,5 +283,232 @@ describe('production fail-closed enforcement', () => {
     expect(mod.authRateLimit).not.toBeNull();
     expect(mod.exportRateLimit).not.toBeNull();
     expect(mod.searchRateLimit).not.toBeNull();
+  });
+});
+
+describe('RATE_LIMIT_POLICIES', () => {
+  it('preserves the established per-minute limits', () => {
+    const { RATE_LIMIT_POLICIES } =
+      require('../rateLimit') as typeof import('../rateLimit');
+    expect(RATE_LIMIT_POLICIES).toEqual({
+      auth: { limit: 5, window: '1m' },
+      export: { limit: 3, window: '1m' },
+      search: { limit: 30, window: '1m' },
+      mutation: { limit: 15, window: '1m' },
+      upload: { limit: 8, window: '1m' },
+      destructive: { limit: 4, window: '1m' },
+    });
+  });
+});
+
+describe('buildRateLimitKey stability', () => {
+  const { buildRateLimitKey } =
+    require('../rateLimit') as typeof import('../rateLimit');
+
+  const base = {
+    orgId: 'org-a',
+    userId: 'user-1',
+    method: 'GET',
+    routeKey: 'sales:export',
+  };
+
+  it('returns the same key for the same org + user + method + route', () => {
+    expect(buildRateLimitKey(base)).toBe(buildRateLimitKey({ ...base }));
+    expect(buildRateLimitKey(base)).toBe('org-a:user-1:GET:sales:export');
+  });
+
+  it('changes the key when the organization changes', () => {
+    expect(buildRateLimitKey({ ...base, orgId: 'org-b' })).toBe(
+      'org-b:user-1:GET:sales:export'
+    );
+  });
+
+  it('changes the key when the user changes', () => {
+    expect(buildRateLimitKey({ ...base, userId: 'user-2' })).toBe(
+      'org-a:user-2:GET:sales:export'
+    );
+  });
+
+  it('changes the key when the method changes', () => {
+    expect(buildRateLimitKey({ ...base, method: 'POST' })).toBe(
+      'org-a:user-1:POST:sales:export'
+    );
+  });
+
+  it('changes the key when the routeKey changes', () => {
+    expect(buildRateLimitKey({ ...base, routeKey: 'clients:list' })).toBe(
+      'org-a:user-1:GET:clients:list'
+    );
+  });
+
+  it('uses the IP fallback when organization context is absent', () => {
+    expect(
+      buildRateLimitKey({
+        orgId: null,
+        userId: 'user-1',
+        method: 'GET',
+        routeKey: 'sales:export',
+        ip: '203.0.113.10',
+      })
+    ).toBe('ip:203.0.113.10:GET:sales:export');
+  });
+
+  it('does not incorporate arbitrary query strings into the key', () => {
+    const key = buildRateLimitKey({
+      ...base,
+      routeKey: 'clients:list',
+    });
+    expect(key).toBe('org-a:user-1:GET:clients:list');
+    expect(key).not.toContain('page=');
+    expect(key).not.toContain('search=');
+  });
+
+  it('keeps dynamic invoice IDs in a single PDF policy bucket', () => {
+    const first = buildRateLimitKey({
+      ...base,
+      routeKey: 'invoices:pdf',
+    });
+    const second = buildRateLimitKey({
+      ...base,
+      routeKey: 'invoices:pdf',
+    });
+    expect(first).toBe(second);
+    expect(first).toBe('org-a:user-1:GET:invoices:pdf');
+    expect(first).not.toMatch(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+    );
+  });
+});
+
+describe('extractClientIp', () => {
+  const { extractClientIp } =
+    require('../rateLimit') as typeof import('../rateLimit');
+
+  it('uses only the first x-forwarded-for hop', () => {
+    const headers = {
+      get: (name: string) =>
+        name === 'x-forwarded-for'
+          ? '203.0.113.10, 198.51.100.1, 192.0.2.1'
+          : null,
+    };
+    expect(extractClientIp(headers)).toBe('203.0.113.10');
+  });
+
+  it('returns undefined when the header is absent', () => {
+    expect(extractClientIp({ get: () => null })).toBeUndefined();
+  });
+});
+
+describe('distributed limiter contract (mocked Upstash)', () => {
+  it('two callers with the same scoped key consume the same logical bucket', async () => {
+    const { applyScopedRateLimit } =
+      require('../rateLimit') as typeof import('../rateLimit');
+    const mockLimiter = {
+      limit: jest.fn().mockResolvedValue({ success: true }),
+    } as unknown as Ratelimit;
+
+    const scope = {
+      orgId: 'org-a',
+      userId: 'user-1',
+      method: 'GET',
+      routeKey: 'sales:export',
+    };
+
+    await applyScopedRateLimit(mockLimiter, scope);
+    await applyScopedRateLimit(mockLimiter, { ...scope });
+
+    expect(mockLimiter.limit).toHaveBeenNthCalledWith(
+      1,
+      'org-a:user-1:GET:sales:export'
+    );
+    expect(mockLimiter.limit).toHaveBeenNthCalledWith(
+      2,
+      'org-a:user-1:GET:sales:export'
+    );
+  });
+
+  it('different route keys do not share a bucket', async () => {
+    const { applyScopedRateLimit } =
+      require('../rateLimit') as typeof import('../rateLimit');
+    const mockLimiter = {
+      limit: jest.fn().mockResolvedValue({ success: true }),
+    } as unknown as Ratelimit;
+
+    await applyScopedRateLimit(mockLimiter, {
+      orgId: 'org-a',
+      userId: 'user-1',
+      method: 'GET',
+      routeKey: 'sales:export',
+    });
+    await applyScopedRateLimit(mockLimiter, {
+      orgId: 'org-a',
+      userId: 'user-1',
+      method: 'GET',
+      routeKey: 'clients:list',
+    });
+
+    expect(mockLimiter.limit).toHaveBeenNthCalledWith(
+      1,
+      'org-a:user-1:GET:sales:export'
+    );
+    expect(mockLimiter.limit).toHaveBeenNthCalledWith(
+      2,
+      'org-a:user-1:GET:clients:list'
+    );
+  });
+
+  it('does not log Redis keys, org IDs, user IDs, or Upstash payloads', async () => {
+    const { logWarn: warn } = require('@/utils/logger') as {
+      logWarn: jest.Mock;
+    };
+    const { applyScopedRateLimit } =
+      require('../rateLimit') as typeof import('../rateLimit');
+    warn.mockClear();
+    const mockLimiter = {
+      limit: jest.fn().mockResolvedValue({
+        success: false,
+        remaining: 0,
+        reset: Date.now() + 30_000,
+      }),
+    } as unknown as Ratelimit;
+
+    await applyScopedRateLimit(mockLimiter, {
+      orgId: 'org-secret',
+      userId: 'user-secret',
+      method: 'GET',
+      routeKey: 'sales:export',
+    });
+
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).not.toContain('org-secret');
+    expect(logged).not.toContain('user-secret');
+    expect(logged).not.toContain('org-secret:user-secret:GET:sales:export');
+    expect(logged).toContain('sales:export');
+    expect(logged).not.toContain('UPSTASH');
+  });
+
+  it('sanitizes limiter exception logs and does not include secrets', async () => {
+    (logError as jest.Mock).mockClear();
+    const mockLimiter = {
+      limit: jest
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'Redis failed https://example.upstash.io/?token=super-secret Bearer abc.def'
+          )
+        ),
+    } as unknown as Ratelimit;
+
+    await applyRateLimit(
+      mockLimiter,
+      'org-secret:user-secret:GET:sales:export'
+    );
+
+    const logged = JSON.stringify((logError as jest.Mock).mock.calls);
+    expect(logged).not.toContain('super-secret');
+    expect(logged).not.toContain('https://example.upstash.io');
+    expect(logged).not.toContain('Bearer abc.def');
+    expect(logged).toContain('[redacted-url]');
+    expect(logged).not.toContain('org-secret:user-secret');
   });
 });
