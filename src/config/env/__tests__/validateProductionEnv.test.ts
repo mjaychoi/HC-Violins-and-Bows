@@ -270,4 +270,13 @@ describe('env.template catalog drift', () => {
       expect(template).toContain(key);
     }
   });
+
+  it('does not require inactive email-delivery secrets for production', () => {
+    expect(PRODUCTION_REQUIRED_KEYS).not.toContain('RESEND_API_KEY');
+    expect(PRODUCTION_REQUIRED_KEYS).not.toContain('SEND_NOTIFICATIONS_SECRET');
+    expect(validateProductionEnv(validProductionEnv())).toEqual({
+      ok: true,
+      warnings: [],
+    });
+  });
 });

@@ -834,11 +834,21 @@ describe.skip('Vertical Slice QA Tests', () => {
       expect(res.status).toBe(200);
     });
 
-    test('[P0] PASS 1 — User updates notification settings (POST 200)', async () => {
+    test('[P0] PASS 1 — User cannot enable unsupported notification delivery (POST 409)', async () => {
       const db = makeSupabase({ data: { user_id: USER_ID }, error: null });
       mockAuthCtx = memberCtx(db);
       const res = await notifPOST(
         mkReq('/api/notification-settings', { email_notifications: true })
+      );
+      expect(res.status).toBe(409);
+      expect(db.from).not.toHaveBeenCalled();
+    });
+
+    test('[P0] PASS 1 — User can persist disabled notification preferences (POST 200)', async () => {
+      const db = makeSupabase({ data: { user_id: USER_ID }, error: null });
+      mockAuthCtx = memberCtx(db);
+      const res = await notifPOST(
+        mkReq('/api/notification-settings', { email_notifications: false })
       );
       expect(res.status).toBe(200);
     });

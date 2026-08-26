@@ -299,6 +299,7 @@ export const ENV_KEY_CATALOG = [
     production: 'optional',
     secret: false,
   },
+  // Inactive/unsupported email delivery. Not required for production.
   {
     key: 'RESEND_API_KEY',
     visibility: 'server',
