@@ -2,6 +2,36 @@ name: Hosted Staging Integration
 
 on:
   workflow_dispatch:
+    inputs:
+      migration_rehearsal_mode:
+        description: 'Hosted staging migration rehearsal. off = existing validation-only path. inspect = read-only pending-set. apply = mutate after SHA/count/digest/yes confirmation.'
+        required: true
+        type: choice
+        options:
+          - off
+          - inspect
+          - apply
+        default: off
+      confirmed_sha:
+        description: 'Apply only: reviewed commit SHA (must equal the checked-out SHA)'
+        required: false
+        type: string
+      confirmed_pending_migration_count:
+        description: 'Apply only: reviewed pending migration count from a fresh inspect'
+        required: false
+        type: string
+      confirmed_pending_migration_digest:
+        description: 'Apply only: reviewed pending-set SHA-256 digest from a fresh inspect'
+        required: false
+        type: string
+      staging_mutation_confirmed:
+        description: 'Apply only: literal yes required before any staging database mutation'
+        required: true
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+        default: 'no'
   pull_request:
     paths:
       - 'scripts/staging/**'
@@ -55,7 +85,9 @@ jobs:
     if: >-
       ${{ needs.static-validation.result == 'success' &&
           github.event_name == 'workflow_dispatch' &&
-          github.repository == 'mjaychoi/HC-Violins-and-Bows' }}
+          github.repository == 'mjaychoi/HC-Violins-and-Bows' &&
+          github.event.inputs.migration_rehearsal_mode != 'inspect' &&
+          github.event.inputs.migration_rehearsal_mode != 'apply' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: hosted-staging
@@ -159,12 +191,402 @@ jobs:
           echo "$body" | jq -e '.checks.database == "ok"' >/dev/null
           echo "$body" | jq -e '.checks.schema == "ok"' >/dev/null
 
-  postdeploy-synthetic:
-    needs: hosted-db-validation
+  migration-rehearsal:
+    needs: static-validation
     if: >-
-      ${{ needs.hosted-db-validation.result == 'success' &&
+      ${{ needs.static-validation.result == 'success' &&
           github.event_name == 'workflow_dispatch' &&
-          github.repository == 'mjaychoi/HC-Violins-and-Bows' }}
+          github.repository == 'mjaychoi/HC-Violins-and-Bows' &&
+          (github.event.inputs.migration_rehearsal_mode == 'inspect' ||
+           github.event.inputs.migration_rehearsal_mode == 'apply') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: hosted-staging
+    outputs:
+      migration_apply_executed: ${{ steps.apply.outputs.executed || 'false' }}
+      classification: ${{ steps.evidence.outputs.classification }}
+    env:
+      STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+      PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Record checked-out SHA
+        id: sha
+        run: |
+          actual_sha="$(git rev-parse HEAD)"
+          echo "Checked out SHA: $actual_sha"
+          echo "sha=$actual_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Require hosted-staging secrets
+        id: require_secrets
+        run: |
+          missing=0
+          for name in \
+            STAGING_SUPABASE_PROJECT_REF \
+            STAGING_SUPABASE_URL \
+            STAGING_SUPABASE_ANON_KEY \
+            STAGING_SUPABASE_SERVICE_ROLE_KEY \
+            STAGING_DATABASE_URL \
+            STAGING_APP_BASE_URL
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required hosted-staging value mapped to ${name}."
+              missing=1
+            fi
+          done
+          if [ -z "${PRODUCTION_SUPABASE_PROJECT_REF:-}" ]; then
+            echo "Missing PRODUCTION_SUPABASE_PROJECT_REF."
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "BLOCKED_MISSING_ENV"
+            exit 1
+          fi
+
+      - name: Deny production project unconditionally
+        run: |
+          if [ "$STAGING_SUPABASE_PROJECT_REF" = "$PRODUCTION_SUPABASE_PROJECT_REF" ]; then
+            echo "Production project ref is not allowed for hosted staging rehearsal."
+            exit 1
+          fi
+          case "$STAGING_SUPABASE_URL" in
+            *"$PRODUCTION_SUPABASE_PROJECT_REF"*)
+              echo "Production Supabase URL detected."
+              exit 1
+              ;;
+          esac
+          case "$STAGING_DATABASE_URL" in
+            *"$PRODUCTION_SUPABASE_PROJECT_REF"*)
+              echo "Production DATABASE_URL detected."
+              exit 1
+              ;;
+          esac
+
+      - run: npm ci
+
+      - name: Staging environment guard (hosted rehearsal, no local fallback)
+        id: rehearsal_guard
+        run: npx tsx scripts/staging/env-guard-cli.ts --hosted-rehearsal
+
+      - name: Require STAGING_DATABASE_URL before any probe
+        run: npx tsx scripts/staging/assert-rehearsal-gates.ts staging-db-url
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Record Supabase CLI capabilities
+        id: cli
+        run: |
+          echo "--- supabase --version ---"
+          version_line="$(supabase --version)"
+          echo "$version_line"
+          echo "version=$version_line" >> "$GITHUB_OUTPUT"
+          echo "--- supabase db push --help (capability check only; not invoked) ---"
+          help_output="$(supabase db push --help 2>&1 || true)"
+          echo "$help_output"
+          for flag in --db-url --include-all --yes; do
+            if echo "$help_output" | grep -q -- "$flag"; then
+              echo "capability: $flag available"
+            else
+              echo "capability MISSING: $flag not found in 'supabase db push --help' output"
+              exit 1
+            fi
+          done
+
+      - name: Verify migration inventory
+        run: npm run check:migrations
+
+      - name: Read-only connectivity probe (SELECT 1)
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: npx tsx scripts/production/db-probe.ts probe
+
+      - name: Migration-history read (before mutation)
+        id: history
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          npx tsx scripts/production/db-probe.ts history | tee history.json
+          node -e "
+            const r = JSON.parse(require('fs').readFileSync('history.json', 'utf8'));
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`pending=\${r.pendingMigrationCount}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`remote=\${r.remoteUniqueVersionCount}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`local=\${r.localVersionCount}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`digest=\${r.pendingDigest}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`first=\${r.firstPendingVersion || ''}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`last=\${r.lastPendingVersion || ''}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`remote_only=\${r.remoteOnlyVersionCount}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`sale_price_pending=\${r.salePriceMigrationPending}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`sale_lifecycle_pending=\${r.saleLifecycleMigrationPending}\n\`);
+          "
+          rm -f history.json
+
+      - name: Apply confirmation gates (recomputed at runtime)
+        id: apply_gates
+        if: github.event.inputs.migration_rehearsal_mode == 'apply'
+        env:
+          CONFIRMED_SHA: ${{ github.event.inputs.confirmed_sha }}
+          ACTUAL_SHA: ${{ steps.sha.outputs.sha }}
+          CONFIRMED_PENDING_COUNT: ${{ github.event.inputs.confirmed_pending_migration_count }}
+          ACTUAL_PENDING_COUNT: ${{ steps.history.outputs.pending }}
+          CONFIRMED_PENDING_DIGEST: ${{ github.event.inputs.confirmed_pending_migration_digest }}
+          ACTUAL_PENDING_DIGEST: ${{ steps.history.outputs.digest }}
+          STAGING_MUTATION_CONFIRMED: ${{ github.event.inputs.staging_mutation_confirmed }}
+          REMOTE_ONLY_COUNT: ${{ steps.history.outputs.remote_only }}
+        run: |
+          npx tsx scripts/staging/assert-rehearsal-gates.ts apply | tee apply-gates.json
+          eligible="$(node -e "console.log(String(JSON.parse(require('fs').readFileSync('apply-gates.json','utf8')).eligible))")"
+          classification="$(node -e "const r=JSON.parse(require('fs').readFileSync('apply-gates.json','utf8')); console.log(r.classification || '')")"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          echo "classification=$classification" >> "$GITHUB_OUTPUT"
+          rm -f apply-gates.json
+
+      - name: Sale-price pre-deploy audit (conditional, read-only, blocking)
+        id: sale_price_audit
+        if: steps.history.outputs.sale_price_pending == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: npx tsx scripts/production/run-predeploy-audit.ts scripts/supabase/sale_price_predeploy_audit.sql 9
+
+      - name: Sale-price pre-deploy audit — not applicable
+        if: steps.history.outcome == 'success' && steps.history.outputs.sale_price_pending != 'true'
+        run: echo "Migration 20260804010000 is not in the pending set; sale-price pre-deploy audit NOT_APPLICABLE."
+
+      - name: Sale-lifecycle pre-deploy audit (conditional, read-only, blocking)
+        id: sale_lifecycle_audit
+        if: steps.history.outputs.sale_lifecycle_pending == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: npx tsx scripts/production/run-predeploy-audit.ts scripts/supabase/sale_lifecycle_predeploy_audit.sql 10
+
+      - name: Sale-lifecycle pre-deploy audit — not applicable
+        if: steps.history.outcome == 'success' && steps.history.outputs.sale_lifecycle_pending != 'true'
+        run: echo "Migration 20260804020000 is not in the pending set; sale-lifecycle pre-deploy audit NOT_APPLICABLE."
+
+      - name: Apply Supabase migrations to hosted staging
+        id: apply
+        if: >-
+          github.event.inputs.migration_rehearsal_mode == 'apply' &&
+          steps.apply_gates.outputs.eligible == 'true'
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          if [ -z "$STAGING_DATABASE_URL" ]; then
+            echo "STAGING_DATABASE_URL is required; refusing mutation."
+            exit 1
+          fi
+          supabase db push --db-url "$STAGING_DATABASE_URL" --include-all --yes
+          echo "executed=true" >> "$GITHUB_OUTPUT"
+          echo "result=success" >> "$GITHUB_OUTPUT"
+
+      - name: Post-deploy catalog postflight (authoritative, blocking)
+        id: postflight
+        if: steps.apply.outputs.executed == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          set +e
+          npx tsx scripts/production/postflight-catalog.ts | tee postflight.json
+          tsx_status="${PIPESTATUS[0]}"
+          set -e
+          passed="$(node -e "console.log(JSON.parse(require('fs').readFileSync('postflight.json','utf8')).passed)" 2>/dev/null || echo false)"
+          rm -f postflight.json
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
+          if [ "$tsx_status" != "0" ]; then
+            echo "Postflight catalog check failed (exit $tsx_status)."
+            exit 1
+          fi
+          if [ "$passed" != "true" ]; then
+            echo "Postflight catalog check did not report passed=true."
+            exit 1
+          fi
+
+      - name: Exact staging migration-set verification
+        id: verify_set
+        if: steps.apply.outputs.executed == 'true'
+        run: npx tsx scripts/staging/verify-migration-set.ts
+
+      - name: Hosted SQL audits
+        id: sql_audits
+        if: steps.apply.outputs.executed == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: bash scripts/staging/run-pr58-audits.sh
+
+      - name: Liveness
+        id: health
+        if: steps.apply.outputs.executed == 'true'
+        run: |
+          if [ -z "${STAGING_APP_BASE_URL:-}" ]; then
+            echo "STAGING_APP_BASE_URL missing; cannot collect app-health evidence."
+            exit 1
+          fi
+          body="$(curl -fsS "${STAGING_APP_BASE_URL%/}/api/health")"
+          echo "$body" | jq -e '.status == "ok"' >/dev/null
+
+      - name: Wait for readiness
+        id: wait_ready
+        if: steps.apply.outputs.executed == 'true'
+        env:
+          POSTDEPLOY_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+        run: npm run wait:ready
+
+      - name: Readiness
+        id: ready
+        if: steps.apply.outputs.executed == 'true'
+        run: |
+          body="$(curl -fsS --max-time 10 "${STAGING_APP_BASE_URL%/}/api/ready")"
+          echo "$body" | jq -e '.status == "ready"' >/dev/null
+          echo "$body" | jq -e '.checks.configuration == "ok"' >/dev/null
+          echo "$body" | jq -e '.checks.database == "ok"' >/dev/null
+          echo "$body" | jq -e '.checks.schema == "ok"' >/dev/null
+
+      - name: Migration-history read (after mutation)
+        id: history_after
+        if: steps.apply.outputs.executed == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          npx tsx scripts/production/db-probe.ts history | tee history-after.json
+          node -e "
+            const r = JSON.parse(require('fs').readFileSync('history-after.json', 'utf8'));
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`pending=\${r.pendingMigrationCount}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`remote=\${r.remoteUniqueVersionCount}\n\`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, \`remote_only=\${r.remoteOnlyVersionCount}\n\`);
+          "
+          rm -f history-after.json
+
+      - name: Write rehearsal evidence
+        id: evidence
+        if: always()
+        env:
+          REHEARSAL_SHA: ${{ steps.sha.outputs.sha }}
+          REHEARSAL_CLI_VERSION: ${{ steps.cli.outputs.version }}
+          REHEARSAL_MODE: ${{ github.event.inputs.migration_rehearsal_mode }}
+          REHEARSAL_LOCAL_COUNT: ${{ steps.history.outputs.local }}
+          REHEARSAL_REMOTE_BEFORE: ${{ steps.history.outputs.remote }}
+          REHEARSAL_PENDING_BEFORE: ${{ steps.history.outputs.pending }}
+          REHEARSAL_PENDING_DIGEST: ${{ steps.history.outputs.digest }}
+          REHEARSAL_FIRST_PENDING: ${{ steps.history.outputs.first }}
+          REHEARSAL_LAST_PENDING: ${{ steps.history.outputs.last }}
+          REHEARSAL_GUARD_OUTCOME: ${{ steps.rehearsal_guard.outcome }}
+          REHEARSAL_HISTORY_OUTCOME: ${{ steps.history.outcome }}
+          REHEARSAL_SALE_PRICE_PENDING: ${{ steps.history.outputs.sale_price_pending }}
+          REHEARSAL_SALE_PRICE_AUDIT_OUTCOME: ${{ steps.sale_price_audit.outcome }}
+          REHEARSAL_SALE_LIFECYCLE_PENDING: ${{ steps.history.outputs.sale_lifecycle_pending }}
+          REHEARSAL_SALE_LIFECYCLE_AUDIT_OUTCOME: ${{ steps.sale_lifecycle_audit.outcome }}
+          REHEARSAL_APPLY_EXECUTED: ${{ steps.apply.outputs.executed || 'false' }}
+          REHEARSAL_REMOTE_AFTER: ${{ steps.history_after.outputs.remote }}
+          REHEARSAL_PENDING_AFTER: ${{ steps.history_after.outputs.pending }}
+          REHEARSAL_POSTFLIGHT: ${{ steps.postflight.outcome || 'not_run' }}
+          REHEARSAL_MIGRATION_SET: ${{ steps.verify_set.outcome || 'not_run' }}
+          REHEARSAL_SQL_AUDITS: ${{ steps.sql_audits.outcome || 'not_run' }}
+          REHEARSAL_HEALTH: ${{ steps.health.outcome || 'not_run' }}
+          REHEARSAL_READINESS: ${{ steps.ready.outcome || 'not_run' }}
+          REHEARSAL_SYNTHETIC: not_run
+        run: |
+          mode="${{ github.event.inputs.migration_rehearsal_mode }}"
+          apply_result="not_run"
+          if [ "${{ steps.apply.outputs.executed }}" = "true" ]; then
+            apply_result="success"
+          elif [ "$mode" = "apply" ] && [ "${{ steps.apply.outcome }}" = "failure" ]; then
+            apply_result="failure"
+          fi
+
+          classification="FAILED_PREFLIGHT"
+          if [ "${{ steps.require_secrets.outcome }}" = "failure" ]; then
+            classification="BLOCKED_MISSING_ENV"
+          elif [ "${{ steps.rehearsal_guard.outcome }}" = "failure" ]; then
+            classification="BLOCKED_SAFETY_GUARD"
+          elif [ "${{ steps.history.outcome }}" = "failure" ] || [ "${{ steps.apply_gates.outcome }}" = "failure" ]; then
+            classification="FAILED_PREFLIGHT"
+          elif [ "${{ steps.apply.outcome }}" = "failure" ]; then
+            classification="FAILED_MIGRATION_APPLY"
+          elif [ "${{ steps.postflight.outcome }}" = "failure" ] || [ "${{ steps.verify_set.outcome }}" = "failure" ] || [ "${{ steps.sql_audits.outcome }}" = "failure" ] || [ "${{ steps.health.outcome }}" = "failure" ] || [ "${{ steps.ready.outcome }}" = "failure" ] || [ "${{ steps.history_after.outcome }}" = "failure" ]; then
+            classification="FAILED_POSTFLIGHT"
+          elif [ "$mode" = "inspect" ]; then
+            if [ "${{ steps.history.outputs.pending }}" = "0" ]; then
+              classification="NO_PENDING_MIGRATIONS"
+            else
+              classification="INSPECT_ONLY"
+            fi
+          elif [ "$mode" = "apply" ] && [ "${{ steps.apply_gates.outputs.classification }}" = "NO_PENDING_MIGRATIONS" ]; then
+            classification="NO_PENDING_MIGRATIONS"
+          elif [ "${{ steps.apply.outputs.executed }}" = "true" ] && [ "${{ steps.postflight.outputs.passed }}" = "true" ] && [ "${{ steps.verify_set.outcome }}" = "success" ] && [ "${{ steps.sql_audits.outcome }}" = "success" ] && [ "${{ steps.health.outcome }}" = "success" ] && [ "${{ steps.ready.outcome }}" = "success" ]; then
+            classification="REHEARSAL_EXECUTED_PASS"
+          fi
+
+          export REHEARSAL_FINAL_CLASSIFICATION="$classification"
+          export REHEARSAL_APPLY_RESULT="$apply_result"
+          npx tsx scripts/staging/write-rehearsal-evidence.ts staging-migration-rehearsal.json
+          echo "classification=$classification" >> "$GITHUB_OUTPUT"
+
+      - name: Upload rehearsal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-migration-rehearsal
+          path: staging-migration-rehearsal.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Rehearsal summary
+        if: always()
+        run: |
+          {
+            echo "### Hosted staging migration rehearsal"
+            echo "1. SHA rehearsed: \`${{ steps.sha.outputs.sha }}\`"
+            echo "2. Target positively identified as non-production hosted staging: ${{ steps.evidence.outputs.target_identified }}"
+            echo "3. Supabase CLI: \`${{ steps.cli.outputs.version }}\`"
+            echo "4. Pending before mutation: ${{ steps.history.outputs.pending }} (digest \`${{ steps.history.outputs.digest }}\`; first \`${{ steps.history.outputs.first }}\`; last \`${{ steps.history.outputs.last }}\`)"
+            echo "5. Sale-price audit: ${{ steps.evidence.outputs.sale_price_audit }} (NOT_APPLICABLE = migration confirmed not pending; NOT_EVALUATED = history/audit never reached). Sale-lifecycle audit: ${{ steps.evidence.outputs.sale_lifecycle_audit }}."
+            echo "6. \`supabase db push\` executed: ${{ steps.apply.outputs.executed || 'false' }} (result ${{ steps.apply.outcome || 'not_run' }})"
+            echo "7. Authoritative catalog postflight: ${{ steps.postflight.outputs.passed == 'true' && 'PASS' || steps.postflight.outcome || 'not_run' }}"
+            echo "8. Exact migration-set verification: ${{ steps.verify_set.outcome || 'not_run' }}"
+            echo "9. Hosted SQL audits: ${{ steps.sql_audits.outcome || 'not_run' }}"
+            echo "10. Health / readiness: ${{ steps.health.outcome || 'not_run' }} / ${{ steps.ready.outcome || 'not_run' }}"
+            echo "11. Synthetic: deferred to postdeploy-synthetic job when apply executed; otherwise not_run"
+            echo "12. Production database touched: NO"
+            echo ""
+            echo "Final classification: \`${{ steps.evidence.outputs.classification }}\`"
+            echo ""
+            echo "This is a hosted non-production pending-migration rehearsal / staging upgrade-path rehearsal."
+            echo "It is not a production clone rehearsal unless separate baseline provenance exists."
+            echo ""
+            echo "Production database touched: NO"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  postdeploy-synthetic:
+    needs: [hosted-db-validation, migration-rehearsal]
+    if: >-
+      ${{ always() &&
+          github.event_name == 'workflow_dispatch' &&
+          github.repository == 'mjaychoi/HC-Violins-and-Bows' &&
+          (
+            (needs.hosted-db-validation.result == 'success' &&
+             github.event.inputs.migration_rehearsal_mode != 'inspect' &&
+             github.event.inputs.migration_rehearsal_mode != 'apply') ||
+            (needs.migration-rehearsal.result == 'success' &&
+             github.event.inputs.migration_rehearsal_mode == 'apply' &&
+             needs.migration-rehearsal.outputs.migration_apply_executed == 'true')
+          ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: hosted-staging
@@ -188,6 +610,15 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Classify synthetic credentials
+        run: |
+          if [ -z "${SYNTHETIC_EMAIL:-}" ] || [ -z "${SYNTHETIC_PASSWORD:-}" ]; then
+            echo "Synthetic credentials are not configured on hosted-staging."
+            echo "This is not a synthetic pass."
+            echo "SYNTHETIC_NOT_CONFIGURED"
+            exit 1
+          fi
 
       - name: Staging environment guard
         env:

@@ -84,8 +84,9 @@ release blocker.
 
 - Vercel Preview: existing failure remains unresolved (`VERCEL_PREVIEW_UNRESOLVED`). Changing `installCommand` to `npm ci` is a deterministic-install fix only; it is not a Preview repair.
 - Hosted post-deploy synthetic has not completed because required staging environment configuration was unavailable.
-- Full production-like migration rehearsal is out of scope for this gate set (follow-on staging rehearsal).
-- Restore drill / production operational proof is separate.
+- Hosted staging migration **inspect/apply contract** exists (`hosted-staging-integration.yml`). That is not `HOSTED_EVIDENCE_COMPLETE` until a non-production hosted apply with pending count > 0 actually succeeds.
+- Production `production-db-deploy.yml` has never been run. Production `DATABASE_URL` remains documented as operationally stale.
+- Restore drill / production PITR is `PRODUCTION_RESTORE_DRILL_NOT_PROVEN`. A local dump/restore is not equivalent.
 
 Do not treat a green Security Scan job as “Snyk passed” when Snyk was skipped.
 

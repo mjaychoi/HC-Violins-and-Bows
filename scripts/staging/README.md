@@ -20,12 +20,13 @@ Reusable guard and automation for **non-production** Supabase staging validation
 
 Workflow: `.github/workflows/hosted-staging-integration.yml`
 
-| Job                    | Trigger                                                | Secrets                                                   | Purpose                                                                             |
-| ---------------------- | ------------------------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `static-validation`    | `pull_request` + `workflow_dispatch`                   | none                                                      | Guard unit tests, migration inventory lint, shell script syntax                     |
-| `hosted-db-validation` | `workflow_dispatch` only                               | 6× `STAGING_*` below                                      | Guard CLI, migration set, SQL audits, `/api/health` liveness, wait for `/api/ready` |
-| `postdeploy-synthetic` | `workflow_dispatch` after hosted-db-validation         | 6× `STAGING_*` + `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` | Cookie-authenticated staging client CRUD                                            |
-| `auth-matrix`          | `workflow_dispatch` when `vars.AUTH_MATRIX_READY=true` | same 6× `STAGING_*`                                       | Runtime fixture bootstrap + cookie-backed matrix (follow-up harness)                |
+| Job                    | Trigger                                                            | Secrets                                                   | Purpose                                                                             |
+| ---------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `static-validation`    | `pull_request` + `workflow_dispatch`                               | none                                                      | Guard unit tests, migration inventory lint, shell script syntax                     |
+| `hosted-db-validation` | `workflow_dispatch` and `migration_rehearsal_mode=off`             | 6× `STAGING_*` below                                      | Guard CLI, migration set, SQL audits, `/api/health` liveness, wait for `/api/ready` |
+| `migration-rehearsal`  | `workflow_dispatch` `inspect` or `apply`                           | same 6× `STAGING_*`                                       | Two-phase hosted pending-migration inspect / apply against non-production staging   |
+| `postdeploy-synthetic` | `workflow_dispatch` after hosted-db-validation or successful apply | 6× `STAGING_*` + `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` | Cookie-authenticated staging client CRUD                                            |
+| `auth-matrix`          | `workflow_dispatch` when `vars.AUTH_MATRIX_READY=true`             | same 6× `STAGING_*`                                       | Runtime fixture bootstrap + cookie-backed matrix (follow-up harness)                |
 
 ### Required GitHub variable (identifier, not a secret)
 
@@ -48,6 +49,30 @@ Register these secrets on the `hosted-staging` GitHub Environment. The original 
 | `SYNTHETIC_PASSWORD`                | Dedicated staging synthetic admin password (post-deploy job only)          |
 
 Do **not** store expiring JWTs or synthetic fixture UUIDs as GitHub secrets. The auth-matrix job mints sessions and seeds fixtures at workflow runtime.
+
+## Hosted staging migration rehearsal
+
+`migration_rehearsal_mode` on `workflow_dispatch`:
+
+- `off` — keep the validation-only hosted path (already-applied migration set).
+- `inspect` — read-only pending-set reconciliation. No `db push`.
+- `apply` — mutation only after `confirmed_sha`,
+  `confirmed_pending_migration_count`, `confirmed_pending_migration_digest`,
+  and `staging_mutation_confirmed=yes` match runtime recomputation.
+
+The rehearsal uses the same pinned Supabase CLI and
+`supabase db push --db-url "$STAGING_DATABASE_URL" --include-all --yes`
+command as production. It never uses the `production` Environment, never
+reads production `DATABASE_URL`, and never resets the hosted staging database.
+
+Truthful classifications:
+
+`REHEARSAL_EXECUTED_PASS`, `INSPECT_ONLY`, `NO_PENDING_MIGRATIONS`,
+`BLOCKED_MISSING_ENV`, `BLOCKED_SAFETY_GUARD`, `FAILED_PREFLIGHT`,
+`FAILED_MIGRATION_APPLY`, `FAILED_POSTFLIGHT`.
+
+Zero pending migrations is `NO_PENDING_MIGRATIONS`, not a completed
+mutation rehearsal. Evidence artifact: `staging-migration-rehearsal.json`.
 
 Enable the auth-matrix job after the cookie-backed harness is on the branch by setting repository variable:
 
