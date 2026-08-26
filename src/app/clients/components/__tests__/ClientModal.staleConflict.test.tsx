@@ -19,7 +19,8 @@ const mockClient: Client = {
   updated_at: '2024-01-01T00:00:00Z',
 };
 
-const onSave = jest.fn(async (_data: Partial<Client>) => {
+const onSave = jest.fn(async (data: Partial<Client>) => {
+  void data;
   /* parent keeps the modal open and preserves the local draft */
 });
 

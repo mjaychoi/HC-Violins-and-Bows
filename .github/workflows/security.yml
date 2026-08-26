@@ -30,22 +30,96 @@ jobs:
         run: npm ci
 
       # Production dependency: blocking. Dev-tooling CVEs must not fail every PR.
+      # Do not add continue-on-error. Capture the real exit code, then fail the
+      # step with that code so GitHub failure semantics stay authoritative.
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+        id: prod_audit
+        run: |
+          set +e
+          npm audit --omit=dev --audit-level=high
+          code=$?
+          result="$(node scripts/ci/classify-security-exit.cjs prod "$code")"
+          echo "result=${result}" >> "$GITHUB_OUTPUT"
+          echo "Production npm audit classified as ${result} (exit ${code})"
+          exit "${code}"
 
-      # Full dependency tree: visible but temporarily non-blocking while
-      # Jest/ESLint transitive baselines are cleaned up in a follow-up PR.
+      # Full dependency tree: advisory while Jest/ESLint transitive baselines
+      # remain. continue-on-error keeps the job going after the real exit code
+      # is captured and classified. Do not rewrite the exit as 0.
       - name: Audit full dependency tree
-        continue-on-error: true
-        run: npm audit --audit-level=high
-
-      # Always execute Snyk, even if an earlier audit fails.
-      # Pin to snyk/actions v1.0.0 full commit SHA (not floating @master).
-      - name: Run Snyk to check for vulnerabilities
+        id: full_audit
         if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          npm audit --audit-level=high
+          code=$?
+          result="$(node scripts/ci/classify-security-exit.cjs full "$code")"
+          echo "result=${result}" >> "$GITHUB_OUTPUT"
+          echo "Full npm audit classified as ${result} (exit ${code})"
+          exit "${code}"
+
+      - name: Check Snyk token
+        id: snyk_token
+        if: always()
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            result="$(node scripts/ci/classify-security-exit.cjs snyk --no-token)"
+            echo "result=${result}" >> "$GITHUB_OUTPUT"
+            echo "Snyk classified as ${result}"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Pin to snyk/actions v1.0.0 full commit SHA (not floating @master).
+      # Optional supplemental scan: missing token is SKIPPED, not PASS.
+      - name: Run Snyk to check for vulnerabilities
+        id: snyk
+        if: ${{ always() && steps.snyk_token.outputs.present == 'true' }}
         uses: snyk/actions/node@9adf32b1121593767fc3c057af55b55db032dc04
         continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high
+
+      - name: Classify Snyk result
+        id: snyk_class
+        if: always()
+        run: |
+          if [ "${{ steps.snyk_token.outputs.present }}" != "true" ]; then
+            result="${{ steps.snyk_token.outputs.result }}"
+          else
+            result="$(node scripts/ci/classify-security-exit.cjs snyk --outcome "${{ steps.snyk.outcome }}")"
+          fi
+          echo "result=${result}" >> "$GITHUB_OUTPUT"
+          echo "Snyk classified as ${result}"
+
+      - name: Write security scan summary
+        if: always()
+        env:
+          PROD_RESULT: ${{ steps.prod_audit.outputs.result }}
+          FULL_RESULT: ${{ steps.full_audit.outputs.result }}
+          SNYK_RESULT: ${{ steps.snyk_class.outputs.result }}
+        run: |
+          prod="${PROD_RESULT:-UNKNOWN}"
+          full="${FULL_RESULT:-UNKNOWN}"
+          snyk="${SNYK_RESULT:-UNKNOWN}"
+          {
+            echo "## Security scan results"
+            echo
+            echo "| Check | Policy | Result |"
+            echo "| --- | --- | --- |"
+            echo "| Production npm audit | blocking | ${prod} |"
+            echo "| Full npm audit | advisory | ${full} |"
+            echo "| Snyk | supplemental | ${snyk} |"
+            echo
+            echo "A green Security Scan job does not mean Snyk passed when Snyk is SKIPPED_NO_TOKEN."
+            echo "Advisory full-audit findings are ADVISORY_FINDINGS, not PASS."
+            echo "Possible full-audit results: PASS, ADVISORY_FINDINGS, TOOL_ERROR."
+            echo "Possible Snyk results: PASS, FINDINGS, SKIPPED_NO_TOKEN, TOOL_ERROR."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Security summary: production=${prod} full=${full} snyk=${snyk}"
