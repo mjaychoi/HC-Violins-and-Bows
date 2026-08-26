@@ -5,7 +5,14 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { STAGING_REHEARSAL_CLASSIFICATIONS } from './rehearsal-gates';
+import {
+  STAGING_REHEARSAL_CLASSIFICATIONS,
+  classifyPredeployAudit,
+  classifyTargetVerification,
+  productionTargetRejectedFromVerification,
+  summarizeTargetIdentification,
+  targetClassificationFromVerification,
+} from './rehearsal-gates';
 
 const FORBIDDEN_SUBSTRINGS = [
   'postgres://',
@@ -31,6 +38,14 @@ function assertSecretSafe(value: string, label: string): void {
   }
 }
 
+function appendGithubOutput(name: string, value: string): void {
+  const outputFile = process.env.GITHUB_OUTPUT;
+  if (!outputFile) {
+    return;
+  }
+  fs.appendFileSync(outputFile, `${name}=${value}\n`);
+}
+
 function main(): void {
   const outputPath = path.resolve(
     process.argv[2] ?? 'staging-migration-rehearsal.json'
@@ -47,12 +62,29 @@ function main(): void {
     );
   }
 
+  const targetVerification = classifyTargetVerification(
+    env('REHEARSAL_GUARD_OUTCOME') || undefined
+  );
+  const salePriceAudit = classifyPredeployAudit({
+    historyOutcome: env('REHEARSAL_HISTORY_OUTCOME') || undefined,
+    migrationPending: env('REHEARSAL_SALE_PRICE_PENDING') || undefined,
+    auditOutcome: env('REHEARSAL_SALE_PRICE_AUDIT_OUTCOME') || undefined,
+  });
+  const saleLifecycleAudit = classifyPredeployAudit({
+    historyOutcome: env('REHEARSAL_HISTORY_OUTCOME') || undefined,
+    migrationPending: env('REHEARSAL_SALE_LIFECYCLE_PENDING') || undefined,
+    auditOutcome: env('REHEARSAL_SALE_LIFECYCLE_AUDIT_OUTCOME') || undefined,
+  });
+
   const evidence = {
     repositorySha: env('REHEARSAL_SHA'),
     workflowRunId: env('GITHUB_RUN_ID'),
     recordedAtUtc: new Date().toISOString(),
-    targetClassification: 'hosted-staging',
-    productionTargetRejected: true,
+    targetClassification:
+      targetClassificationFromVerification(targetVerification),
+    targetVerification,
+    productionTargetRejected:
+      productionTargetRejectedFromVerification(targetVerification),
     productionDatabaseTouched: 'NO',
     supabaseCliVersion: env('REHEARSAL_CLI_VERSION'),
     rehearsalMode: env('REHEARSAL_MODE'),
@@ -63,8 +95,8 @@ function main(): void {
     firstPendingVersion: env('REHEARSAL_FIRST_PENDING') || null,
     lastPendingVersion: env('REHEARSAL_LAST_PENDING') || null,
     predeployAudits: {
-      salePrice: env('REHEARSAL_SALE_PRICE_AUDIT'),
-      saleLifecycle: env('REHEARSAL_SALE_LIFECYCLE_AUDIT'),
+      salePrice: salePriceAudit,
+      saleLifecycle: saleLifecycleAudit,
     },
     migrationApplyExecuted: env('REHEARSAL_APPLY_EXECUTED') === 'true',
     migrationApplyResult: env('REHEARSAL_APPLY_RESULT') || 'not_run',
@@ -84,6 +116,13 @@ function main(): void {
   assertSecretSafe(serialized, 'evidence document');
   fs.writeFileSync(outputPath, serialized, 'utf8');
   process.stdout.write(serialized);
+
+  appendGithubOutput(
+    'target_identified',
+    summarizeTargetIdentification(targetVerification)
+  );
+  appendGithubOutput('sale_price_audit', salePriceAudit);
+  appendGithubOutput('sale_lifecycle_audit', saleLifecycleAudit);
 }
 
 try {

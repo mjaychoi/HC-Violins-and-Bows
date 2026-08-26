@@ -142,3 +142,76 @@ export function classifyInspectResult(pendingCount: number): {
 export function isDbPushEligible(pendingCount: number): boolean {
   return pendingCount > 0;
 }
+
+export const TARGET_VERIFICATIONS = ['PASS', 'NOT_RUN', 'FAILED'] as const;
+export type TargetVerification = (typeof TARGET_VERIFICATIONS)[number];
+
+export const PREDEPLOY_AUDIT_RESULTS = [
+  'SUCCESS',
+  'FAILURE',
+  'NOT_APPLICABLE',
+  'NOT_EVALUATED',
+] as const;
+export type PredeployAuditResult = (typeof PREDEPLOY_AUDIT_RESULTS)[number];
+
+export function classifyTargetVerification(
+  guardOutcome: string | undefined | null
+): TargetVerification {
+  if (guardOutcome === 'success') {
+    return 'PASS';
+  }
+  if (guardOutcome === 'failure') {
+    return 'FAILED';
+  }
+  return 'NOT_RUN';
+}
+
+export function targetClassificationFromVerification(
+  verification: TargetVerification
+): 'hosted-staging' | 'unverified' {
+  return verification === 'PASS' ? 'hosted-staging' : 'unverified';
+}
+
+export function productionTargetRejectedFromVerification(
+  verification: TargetVerification
+): true | null {
+  return verification === 'PASS' ? true : null;
+}
+
+export function summarizeTargetIdentification(
+  verification: TargetVerification
+): 'YES' | 'NOT VERIFIED' | 'FAILED' {
+  if (verification === 'PASS') {
+    return 'YES';
+  }
+  if (verification === 'FAILED') {
+    return 'FAILED';
+  }
+  return 'NOT VERIFIED';
+}
+
+export function classifyPredeployAudit(input: {
+  historyOutcome?: string | null;
+  migrationPending?: string | null;
+  auditOutcome?: string | null;
+}): PredeployAuditResult {
+  if (input.historyOutcome !== 'success') {
+    return 'NOT_EVALUATED';
+  }
+
+  if (input.migrationPending === 'true') {
+    if (input.auditOutcome === 'success') {
+      return 'SUCCESS';
+    }
+    if (input.auditOutcome === 'failure') {
+      return 'FAILURE';
+    }
+    return 'NOT_EVALUATED';
+  }
+
+  if (input.migrationPending === 'false') {
+    return 'NOT_APPLICABLE';
+  }
+
+  return 'NOT_EVALUATED';
+}

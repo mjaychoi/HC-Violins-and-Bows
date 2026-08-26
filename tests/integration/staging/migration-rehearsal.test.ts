@@ -11,6 +11,10 @@ import {
   isDbPushEligible,
   classifyInspectResult,
   assertStagingDatabaseUrlPresent,
+  classifyTargetVerification,
+  classifyPredeployAudit,
+  productionTargetRejectedFromVerification,
+  targetClassificationFromVerification,
 } from '../../../scripts/staging/rehearsal-gates';
 import { assertHostedStagingWorkflowContract } from '../../../scripts/staging/assert-no-hardcoded-project-refs';
 
@@ -208,6 +212,32 @@ describe('hosted rehearsal apply confirmation', () => {
   });
 });
 
+describe('hosted rehearsal evidence truthfulness', () => {
+  it('does not claim production was rejected when env is missing', () => {
+    const verification = classifyTargetVerification('skipped');
+    expect(verification).toBe('NOT_RUN');
+    expect(productionTargetRejectedFromVerification(verification)).not.toBe(
+      true
+    );
+    expect(targetClassificationFromVerification(verification)).toBe(
+      'unverified'
+    );
+  });
+
+  it('marks predeploy audits NOT_EVALUATED when history did not run', () => {
+    expect(
+      classifyPredeployAudit({
+        historyOutcome: 'skipped',
+        migrationPending: '',
+        auditOutcome: 'skipped',
+      })
+    ).toBe('NOT_EVALUATED');
+    expect(classifyPredeployAudit({ historyOutcome: undefined })).toBe(
+      'NOT_EVALUATED'
+    );
+  });
+});
+
 describe('hosted staging migration rehearsal workflow contract', () => {
   const workflowPath = path.join(
     process.cwd(),
@@ -291,7 +321,13 @@ describe('hosted staging migration rehearsal workflow contract', () => {
     expect(hostedJob).toContain('/api/ready');
   });
 
-  it('does not treat skipped sale-price audit as a pass', () => {
-    expect(rehearsalJob).toMatch(/skipped = migration not pending/);
+  it('does not treat unevaluated predeploy audits as not-pending skips', () => {
+    expect(rehearsalJob).toMatch(
+      /history\.outcome == 'success' && steps\.history\.outputs\.sale_price_pending != 'true'/
+    );
+    expect(rehearsalJob).toMatch(
+      /NOT_EVALUATED = history\/audit never reached/
+    );
+    expect(rehearsalJob).not.toMatch(/skipped = migration not pending/);
   });
 });
