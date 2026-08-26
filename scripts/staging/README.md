@@ -33,7 +33,7 @@ Workflow: `.github/workflows/hosted-staging-integration.yml`
 | --------------------------------- | ----------------------------------------------------------------------- |
 | `PRODUCTION_SUPABASE_PROJECT_REF` | Production Supabase project ref used to fail closed on staging/prod mix |
 
-Register these secrets on the `hosted-staging` GitHub Environment. The original six `STAGING_*` secrets remain required for hosted DB validation. `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` are required for the post-deploy synthetic job.
+Register these secrets on the `hosted-staging` GitHub Environment. The original six `STAGING_*` values remain required for hosted DB validation. `STAGING_SUPABASE_PROJECT_REF` is an identifier and is read from repository/environment `vars` (same pattern as `PRODUCTION_SUPABASE_PROJECT_REF`). `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` are required for the post-deploy synthetic job.
 
 | Variable                            | Purpose                                                                    |
 | ----------------------------------- | -------------------------------------------------------------------------- |

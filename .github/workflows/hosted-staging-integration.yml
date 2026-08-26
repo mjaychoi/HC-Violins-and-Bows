@@ -60,7 +60,7 @@ jobs:
     timeout-minutes: 60
     environment: hosted-staging
     env:
-      STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
       STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
       STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
       STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
@@ -169,7 +169,7 @@ jobs:
     timeout-minutes: 15
     environment: hosted-staging
     env:
-      STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
       STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
       STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
       STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
@@ -211,7 +211,7 @@ jobs:
     timeout-minutes: 45
     environment: hosted-staging
     env:
-      STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
       STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
       STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
       STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
@@ -222,7 +222,6 @@ jobs:
       AUTH_MATRIX_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
       AUTH_MATRIX_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
       AUTH_MATRIX_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
-      AUTH_MATRIX_RUNTIME_MANIFEST: ${{ runner.temp }}/hc-auth-matrix-runtime.json
     steps:
       - uses: actions/checkout@v4
 
@@ -245,8 +244,12 @@ jobs:
         run: npx tsx scripts/staging/env-guard-cli.ts
 
       - name: Bootstrap synthetic fixtures and run matrix
+        env:
+          AUTH_MATRIX_RUNTIME_MANIFEST: ${{ runner.temp }}/hc-auth-matrix-runtime.json
         run: npx tsx scripts/auth-matrix/run-hosted-matrix.ts
 
       - name: Cleanup synthetic fixtures
         if: always()
+        env:
+          AUTH_MATRIX_RUNTIME_MANIFEST: ${{ runner.temp }}/hc-auth-matrix-runtime.json
         run: npx tsx scripts/auth-matrix/cleanup-fixtures.ts
