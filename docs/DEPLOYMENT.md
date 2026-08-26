@@ -174,6 +174,10 @@ Branch name pattern: main
 
 #### 환경 변수 설정
 
+Authoritative production contract: `env.template` and `npm run check:env`
+(invoked by `npm run deploy:build`). Do not treat the lists below as a
+substitute for that validator.
+
 Settings > Environment Variables에서 다음 추가:
 
 **Production:**
