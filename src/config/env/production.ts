@@ -178,6 +178,7 @@ export function validateProductionEnv(env: EnvMap): EnvValidationResult {
 /**
  * Development and test workflows must not require live production credentials.
  */
-export function validateNonProductionEnv(_env: EnvMap): EnvValidationResult {
+export function validateNonProductionEnv(env: EnvMap): EnvValidationResult {
+  void env;
   return { ok: true, warnings: [] };
 }

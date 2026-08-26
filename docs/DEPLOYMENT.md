@@ -5,13 +5,14 @@
 ## 📋 목차
 
 1. [사전 준비 사항](#사전-준비-사항)
-2. [배포 전 체크리스트](#배포-전-체크리스트)
-3. [환경 설정](#환경-설정)
-4. [Notification delivery status](#notification-delivery-status)
-5. [배포 프로세스](#배포-프로세스)
-6. [배포 후 검증](#배포-후-검증)
-7. [모니터링 및 알림](#모니터링-및-알림)
-8. [문제 해결](#문제-해결)
+2. [Release gate matrix](#release-gate-matrix)
+3. [배포 전 체크리스트](#배포-전-체크리스트)
+4. [환경 설정](#환경-설정)
+5. [Notification delivery status](#notification-delivery-status)
+6. [배포 프로세스](#배포-프로세스)
+7. [배포 후 검증](#배포-후-검증)
+8. [모니터링 및 알림](#모니터링-및-알림)
+9. [문제 해결](#문제-해결)
 
 ---
 
@@ -23,9 +24,70 @@
 - ✅ RLS 보안 정책 적용
 - ✅ 번들 최적화 및 캐싱 전략
 - ✅ 보안 헤더 설정
-- ✅ 의존성 보안 스캔 (0 vulnerabilities)
-- ✅ Lint/Type/Test 통과
+- ✅ Lint/Type/Test 통과 (authoritative lint is zero-warning)
 - ✅ CI/CD 파이프라인 구성
+- ✅ Production-dependency high-severity `npm audit` is blocking in `security.yml`
+
+---
+
+## Release gate matrix
+
+This is the current **repository-owned** release contract. Advisory checks are
+not release blockers. Hosted staging/production proof that has not run is not
+claimed here.
+
+A local `npm run lint && npm test && npm run build` loop is a **repository
+release check**. It is not a production-release certification: hosted DB,
+staging synthetics, restore drills, and Preview health are separate.
+
+### AUTOMATED / REQUIRED
+
+GitHub PR CI (`ci.yml`, `code-quality.yml`, `security.yml`) plus the
+repo-controlled Vercel install/build contract:
+
+- `npm ci` (GitHub CI jobs and `vercel.json` `installCommand`)
+- migration file guard (`npm run check:migrations`)
+- zero-warning lint (`npm run lint` → `eslint . --max-warnings=0`)
+- type-check (`npm run type-check`)
+- Jest tests (`npm run test -- --ci --coverage` in CI)
+- `next build`
+- middleware manifest/routing verification
+- production-build Chromium critical E2E (`npm run test:e2e:critical`)
+- production dependency high-severity audit:
+  `npm audit --omit=dev --audit-level=high` (blocking; no `continue-on-error`)
+- production environment validator in `deploy:build`:
+  `check:env` → `schema:ready` → `build`
+
+Node 20.x and `packageManager` `npm@11.7.0` remain the install toolchain.
+
+### ADVISORY / SUPPLEMENTAL
+
+These run in `security.yml` and are classified in the Actions job summary.
+They must not be described as PASS when they skipped or only found advisory
+issues.
+
+| Check                               | Policy       | Visible results                                                       |
+| ----------------------------------- | ------------ | --------------------------------------------------------------------- |
+| Full `npm audit --audit-level=high` | advisory     | `PASS` / `ADVISORY_FINDINGS` / `TOOL_ERROR`                           |
+| Snyk (`SNYK_TOKEN` optional)        | supplemental | `PASS` / `FINDINGS_OR_TOOL_ERROR` / `SKIPPED_NO_TOKEN` / `TOOL_ERROR` |
+
+A missing `SNYK_TOKEN` is `SKIPPED_NO_TOKEN`. That is not a successful Snyk
+scan. Ordinary PR CI does not require a paid Snyk account. A Snyk GitHub
+step `failure` is `FINDINGS_OR_TOOL_ERROR`: `snyk/actions/node` does not
+expose the CLI exit code, so vulnerability findings (exit 1) cannot be
+separated from scan/tool failure (exit 2 or 3).
+
+SonarCloud in `code-quality.yml` remains `continue-on-error` and is not a
+release blocker.
+
+### OPERATIONAL / NOT YET PROVEN
+
+- Vercel Preview: existing failure remains unresolved (`VERCEL_PREVIEW_UNRESOLVED`). Changing `installCommand` to `npm ci` is a deterministic-install fix only; it is not a Preview repair.
+- Hosted post-deploy synthetic has not completed because required staging environment configuration was unavailable.
+- Full production-like migration rehearsal is out of scope for this gate set (follow-on staging rehearsal).
+- Restore drill / production operational proof is separate.
+
+Do not treat a green Security Scan job as “Snyk passed” when Snyk was skipped.
 
 ---
 
@@ -73,17 +135,16 @@
 - [x] 보안 헤더 적용: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`
   - `next.config.ts`와 `vercel.json`에 보안 헤더 설정 완료
   - CSP는 동적 콘텐츠와 충돌로 제외
-- [x] 의존성 스캔: `npm audit`, GitHub Advanced Security/CodeQL 활성화
-  - CI 워크플로(`security.yml`)에 npm audit 및 Snyk 스캔 설정
-  - npm audit: 0 vulnerabilities
+- [x] 의존성 스캔: blocking production `npm audit --omit=dev --audit-level=high`; full tree audit and Snyk are advisory/supplemental (see [Release gate matrix](#release-gate-matrix))
+  - Do not treat advisory full-audit findings or a missing `SNYK_TOKEN` as a clean Snyk PASS
 - [ ] 쿠키/세션 보안: `Secure`, `HttpOnly`, `SameSite` 속성 및 CSRF 고려 (Supabase 인증 사용 중)
 
 ### 5. 테스트/품질 게이트
 
-- [x] Lint/Format: ESLint/Prettier 일관 적용, CI에서 강제
+- [x] Lint/Format: ESLint zero-warning (`--max-warnings=0`) and Prettier check in CI
 - [x] 타입체크: `tsc --noEmit` CI 통과
 - [x] 단위/통합 테스트: Jest `--ci` 그린 상태 유지 (713 tests passed)
-- [ ] E2E 스모크: Playwright 핵심 시나리오(목록/상세/생성/수정/검색) 통과 및 재시도 설정
+- [x] E2E (required in GitHub CI): Chromium critical-path suite against the production standalone artifact. Broader browser matrix is not a PR blocker.
 
 ### 6. 로깅/관찰성
 
@@ -95,9 +156,9 @@
 
 - [x] GitHub Actions 활성화: `.github/workflows/*` 파이프라인에서 아래 수행
   - [x] Install: `npm ci`
-  - [x] Lint/Type: `eslint .`, `tsc --noEmit`
+  - [x] Lint/Type: `eslint . --max-warnings=0`, `tsc --noEmit`
   - [x] Test: `jest --ci`
-  - [x] E2E(optional): `npx playwright install --with-deps && npx playwright test`
+  - [x] E2E: Chromium critical suite (`npm run test:e2e:critical`) is required in GitHub CI
 - [ ] 시크릿 등록: `SUPABASE_*`, `SENTRY_AUTH_TOKEN` 등 GitHub 환경 시크릿 저장
 - [ ] 브랜치 보호: `main` 보호 규칙, 필수 리뷰/상태 체크 강제
 
@@ -281,11 +342,15 @@ Settings > General:
 
 ```
 Framework Preset: Next.js
-Build Command: npm run build
+Build Command: npm run deploy:build
 Output Directory: .next
 Install Command: npm ci
 Development Command: npm run dev
 Node.js Version: 20.x
+
+Repository `vercel.json` is the source of truth for install/build commands.
+A failing Vercel Preview must not be treated as fixed by the install-command
+alignment alone.
 ```
 
 ### 3. Supabase 데이터베이스 설정

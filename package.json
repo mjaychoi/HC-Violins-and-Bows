@@ -12,7 +12,7 @@
     "build": "next build",
     "build:analyze": "ANALYZE=1 next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "test": "NODE_OPTIONS='--max-old-space-size=4096' jest",
     "test:watch": "jest --watch",

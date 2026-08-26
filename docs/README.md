@@ -10,7 +10,7 @@
 
 ## 배포와 데이터베이스
 
-- [프로덕션 배포 가이드](./DEPLOYMENT.md) — 환경 설정, 배포, 배포 후 확인 (`/api/health` vs `/api/ready` vs post-deploy synthetic), 분산 rate limiting. Email notification delivery is unsupported in the current release.
+- [프로덕션 배포 가이드](./DEPLOYMENT.md) — 환경 설정, 배포, 배포 후 확인 (`/api/health` vs `/api/ready` vs post-deploy synthetic), 분산 rate limiting, release gate matrix (required vs advisory vs unverified). Email notification delivery is unsupported in the current release.
 - [프로덕션 마이그레이션 워크플로](./PRODUCTION_MIGRATION_WORKFLOW.md) — CI/프로덕션 가드가 따르는 마이그레이션 절차
 - [마이그레이션 가이드](./migrations/README.md) — 로컬 스키마 확인과 마이그레이션 실행
 - [데모 데이터 시드](./seed-demo-data.md) — `scripts/README.md`에서 참조하는 샘플 데이터

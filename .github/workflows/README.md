@@ -12,7 +12,7 @@
    - Node 20.x 환경 설정
    - `npm ci`로 의존성 설치
    - Type check (`npm run type-check`)
-   - Lint (`npm run lint`)
+   - Lint (`npm run lint`, zero-warning: `eslint . --max-warnings=0`)
    - 단위 테스트 (`npm run test -- --ci --coverage`)
    - Codecov로 커버리지 업로드
 
@@ -54,12 +54,14 @@ Git-integrated Vercel production promotion is **not** gated by `/api/ready` or t
 
 ## 2. Security Scan (`.github/workflows/security.yml`)
 
-보안 스캔:
+보안 스캔. Results are classified in the Actions job summary. Do not treat a
+green job as “Snyk passed” when Snyk was skipped.
 
 ### Jobs
 
-- npm audit 실행
-- Snyk 취약점 스캔
+- Production npm audit (`npm audit --omit=dev --audit-level=high`): **blocking**
+- Full npm audit (`npm audit --audit-level=high`): **advisory** (`PASS` / `ADVISORY_FINDINGS` / `TOOL_ERROR`)
+- Snyk (`--severity-threshold=high`): **optional supplemental** (`PASS` / `FINDINGS_OR_TOOL_ERROR` / `SKIPPED_NO_TOKEN` / `TOOL_ERROR`)
 
 ### 트리거
 
@@ -68,7 +70,8 @@ Git-integrated Vercel production promotion is **not** gated by `/api/ready` or t
 
 ### 필요 시크릿
 
-- `SNYK_TOKEN`: Snyk 토큰 (선택)
+- `SNYK_TOKEN`: Snyk 토큰 (선택). Absent token ⇒ `SKIPPED_NO_TOKEN`, not PASS.
+  Ordinary PR CI does not require this secret.
 
 ## 3. Code Quality (`.github/workflows/code-quality.yml`)
 
@@ -172,8 +175,12 @@ Repository variable (identifier, not a credential):
 ### Security 검증
 
 ```bash
-npm audit --audit-level=moderate
+npm audit --omit=dev --audit-level=high
+npm audit --audit-level=high
 ```
+
+The production command is the blocking gate. The full-tree command is
+advisory; high findings there are `ADVISORY_FINDINGS`, not a repository PASS.
 
 ### Code Quality 검증
 
