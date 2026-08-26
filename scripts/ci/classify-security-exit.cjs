@@ -24,13 +24,16 @@ function classifyFullAudit(exitCode) {
 
 function classifySnyk({ tokenPresent, ran, exitCode, githubOutcome }) {
   if (!tokenPresent) return 'SKIPPED_NO_TOKEN';
+  // snyk/actions/node is a Docker action and does not expose the Snyk CLI
+  // exit code. CLI 1 (findings) vs 2/3 (tool/project failure) therefore
+  // cannot be distinguished from GitHub step outcome alone.
   if (typeof exitCode === 'number') {
     if (exitCode === 0) return 'PASS';
-    if (exitCode === 1) return 'FINDINGS';
+    if (exitCode === 1) return 'FINDINGS_OR_TOOL_ERROR';
     return 'TOOL_ERROR';
   }
   if (githubOutcome === 'success') return 'PASS';
-  if (githubOutcome === 'failure') return 'FINDINGS';
+  if (githubOutcome === 'failure') return 'FINDINGS_OR_TOOL_ERROR';
   if (ran === false) return 'TOOL_ERROR';
   return 'TOOL_ERROR';
 }

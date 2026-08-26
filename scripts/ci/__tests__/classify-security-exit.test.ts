@@ -45,21 +45,28 @@ describe('classify-security-exit', () => {
     expect(parseArgs(['snyk', '--no-token'])).not.toBe('PASS');
   });
 
-  it('classifies a successful Snyk scan as PASS and findings as FINDINGS', () => {
+  it('does not claim FINDINGS from a GitHub failure outcome', () => {
     expect(classifySnyk({ tokenPresent: true, githubOutcome: 'success' })).toBe(
       'PASS'
     );
     expect(classifySnyk({ tokenPresent: true, githubOutcome: 'failure' })).toBe(
-      'FINDINGS'
+      'FINDINGS_OR_TOOL_ERROR'
     );
     expect(classifySnyk({ tokenPresent: true, exitCode: 0 })).toBe('PASS');
-    expect(classifySnyk({ tokenPresent: true, exitCode: 1 })).toBe('FINDINGS');
+    expect(classifySnyk({ tokenPresent: true, exitCode: 1 })).toBe(
+      'FINDINGS_OR_TOOL_ERROR'
+    );
+    expect(classifySnyk({ tokenPresent: true, exitCode: 2 })).toBe(
+      'TOOL_ERROR'
+    );
     expect(classifySnyk({ tokenPresent: true, ran: false })).toBe('TOOL_ERROR');
     expect(
       classifySnyk({ tokenPresent: true, githubOutcome: 'cancelled' })
     ).toBe('TOOL_ERROR');
     expect(parseArgs(['snyk', '--outcome', 'success'])).toBe('PASS');
-    expect(parseArgs(['snyk', '--outcome', 'failure'])).toBe('FINDINGS');
+    expect(parseArgs(['snyk', '--outcome', 'failure'])).toBe(
+      'FINDINGS_OR_TOOL_ERROR'
+    );
   });
 
   it('CLI stdout is only the classification label', () => {

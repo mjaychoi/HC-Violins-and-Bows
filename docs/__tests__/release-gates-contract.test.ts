@@ -82,6 +82,7 @@ describe('release gate contracts', () => {
     expect(fullStep).toMatch(/continue-on-error:\s*true/);
     expect(security).toContain('ADVISORY_FINDINGS');
     expect(security).toContain('SKIPPED_NO_TOKEN');
+    expect(security).toContain('FINDINGS_OR_TOOL_ERROR');
     expect(security).toContain('snyk --no-token');
     expect(security).not.toContain('|| true');
   });
@@ -100,6 +101,7 @@ describe('release gate contracts', () => {
     expect(deployment).toMatch(/OPERATIONAL \/ NOT YET PROVEN/i);
     expect(deployment).toMatch(/zero-warning lint/i);
     expect(deployment).toMatch(/SKIPPED_NO_TOKEN/);
+    expect(deployment).toMatch(/FINDINGS_OR_TOOL_ERROR/);
     expect(deployment).toMatch(/VERCEL_PREVIEW_UNRESOLVED|Vercel Preview/);
     expect(deployment).not.toMatch(/production release certified/i);
   });

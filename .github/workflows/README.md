@@ -61,7 +61,7 @@ green job as “Snyk passed” when Snyk was skipped.
 
 - Production npm audit (`npm audit --omit=dev --audit-level=high`): **blocking**
 - Full npm audit (`npm audit --audit-level=high`): **advisory** (`PASS` / `ADVISORY_FINDINGS` / `TOOL_ERROR`)
-- Snyk (`--severity-threshold=high`): **optional supplemental** (`PASS` / `FINDINGS` / `SKIPPED_NO_TOKEN` / `TOOL_ERROR`)
+- Snyk (`--severity-threshold=high`): **optional supplemental** (`PASS` / `FINDINGS_OR_TOOL_ERROR` / `SKIPPED_NO_TOKEN` / `TOOL_ERROR`)
 
 ### 트리거
 

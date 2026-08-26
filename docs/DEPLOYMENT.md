@@ -66,13 +66,16 @@ These run in `security.yml` and are classified in the Actions job summary.
 They must not be described as PASS when they skipped or only found advisory
 issues.
 
-| Check                               | Policy       | Visible results                                         |
-| ----------------------------------- | ------------ | ------------------------------------------------------- |
-| Full `npm audit --audit-level=high` | advisory     | `PASS` / `ADVISORY_FINDINGS` / `TOOL_ERROR`             |
-| Snyk (`SNYK_TOKEN` optional)        | supplemental | `PASS` / `FINDINGS` / `SKIPPED_NO_TOKEN` / `TOOL_ERROR` |
+| Check                               | Policy       | Visible results                                                       |
+| ----------------------------------- | ------------ | --------------------------------------------------------------------- |
+| Full `npm audit --audit-level=high` | advisory     | `PASS` / `ADVISORY_FINDINGS` / `TOOL_ERROR`                           |
+| Snyk (`SNYK_TOKEN` optional)        | supplemental | `PASS` / `FINDINGS_OR_TOOL_ERROR` / `SKIPPED_NO_TOKEN` / `TOOL_ERROR` |
 
 A missing `SNYK_TOKEN` is `SKIPPED_NO_TOKEN`. That is not a successful Snyk
-scan. Ordinary PR CI does not require a paid Snyk account.
+scan. Ordinary PR CI does not require a paid Snyk account. A Snyk GitHub
+step `failure` is `FINDINGS_OR_TOOL_ERROR`: `snyk/actions/node` does not
+expose the CLI exit code, so vulnerability findings (exit 1) cannot be
+separated from scan/tool failure (exit 2 or 3).
 
 SonarCloud in `code-quality.yml` remains `continue-on-error` and is not a
 release blocker.
