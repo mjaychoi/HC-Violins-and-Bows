@@ -1,5 +1,11 @@
 # 데이터베이스 마이그레이션 가이드
 
+**Not the production deployment path.** Normal production rollout uses
+`.github/workflows/production-db-deploy.yml` only. See
+[PRODUCTION_MIGRATION_WORKFLOW.md](../PRODUCTION_MIGRATION_WORKFLOW.md) and
+[DEPLOYMENT.md](../DEPLOYMENT.md). Do not use SQL Editor, cherry-picked
+files, or `scripts/supabase/apply-migrations.sh` for production.
+
 ## 📋 목차
 
 1. [빠른 시작](#빠른-시작)
@@ -130,7 +136,7 @@ supabase db push
 
 ## 📚 관련 문서
 
-- [마이그레이션 파일](./migrations/) - 모든 마이그레이션 SQL 파일
+- [마이그레이션 파일](../../supabase/migrations/) - 모든 마이그레이션 SQL 파일
 - [스키마 확인 스크립트](../../scripts/check-schema.ts) - 스키마 확인 스크립트
 - [마이그레이션 스크립트](../../scripts/migrate-subtype.ts) - 자동 마이그레이션 스크립트
 
