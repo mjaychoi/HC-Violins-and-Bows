@@ -105,4 +105,13 @@ describe('release gate contracts', () => {
     expect(deployment).toMatch(/VERCEL_PREVIEW_UNRESOLVED|Vercel Preview/);
     expect(deployment).not.toMatch(/production release certified/i);
   });
+
+  it('points production migrations at the guarded workflow, not legacy helpers', () => {
+    expect(deployment).toMatch(/production-db-deploy\.yml/);
+    expect(deployment).toMatch(/not authoritative/i);
+    expect(deployment).not.toMatch(/713 tests/);
+    expect(deployment).not.toMatch(/CSP는 동적 콘텐츠와 충돌로 제외/);
+    expect(deployment).not.toMatch(/인증된 사용자 모든 작업 허용/);
+    expect(deployment).not.toMatch(/main` 브랜치에 push하면 자동으로/);
+  });
 });

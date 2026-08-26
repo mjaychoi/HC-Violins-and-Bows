@@ -1,56 +1,93 @@
-# 🚀 프로덕션 배포 가이드
+# Production deployment guide
 
-이 문서는 HC Violins and Bows 앱을 프로덕션 환경에 배포하기 위한 완전한 가이드와 체크리스트를 제공합니다.
+This document is the operator-facing launch guide. Detailed production
+migration mechanics live in
+[PRODUCTION_MIGRATION_WORKFLOW.md](./PRODUCTION_MIGRATION_WORKFLOW.md).
 
-## 📋 목차
-
-1. [사전 준비 사항](#사전-준비-사항)
-2. [Release gate matrix](#release-gate-matrix)
-3. [배포 전 체크리스트](#배포-전-체크리스트)
-4. [환경 설정](#환경-설정)
-5. [Notification delivery status](#notification-delivery-status)
-6. [배포 프로세스](#배포-프로세스)
-7. [배포 후 검증](#배포-후-검증)
-8. [모니터링 및 알림](#모니터링-및-알림)
-9. [문제 해결](#문제-해결)
-
----
-
-## ✅ 사전 준비 사항
-
-다음 항목들이 이미 완료되었습니다:
-
-- ✅ Node 20.x 버전 고정
-- ✅ RLS 보안 정책 적용
-- ✅ 번들 최적화 및 캐싱 전략
-- ✅ 보안 헤더 설정
-- ✅ Lint/Type/Test 통과 (authoritative lint is zero-warning)
-- ✅ CI/CD 파이프라인 구성
-- ✅ Production-dependency high-severity `npm audit` is blocking in `security.yml`
-
----
-
-## Release gate matrix
-
-This is the current **repository-owned** release contract. Advisory checks are
-not release blockers. Hosted staging/production proof that has not run is not
-claimed here.
+If this file conflicts with `package.json`, `vercel.json`,
+`.github/workflows/*`, `env.template`, or `npm run check:env`, those sources
+win. Do not bypass the guarded production migration workflow to preserve
+older tutorial steps.
 
 A local `npm run lint && npm test && npm run build` loop is a **repository
 release check**. It is not a production-release certification: hosted DB,
 staging synthetics, restore drills, and Preview health are separate.
 
+---
+
+## How the launch path is split
+
+| Phase                             | What it is                                   | Mutates production DB? |
+| --------------------------------- | -------------------------------------------- | ---------------------- |
+| 1. Repository CI / release checks | `ci.yml`, `security.yml`, `code-quality.yml` | No                     |
+| 2. Hosted staging rehearsal       | `hosted-staging-integration.yml`             | No (staging only)      |
+| 3. Production database migration  | `production-db-deploy.yml`                   | Yes, only after gates  |
+| 4. Vercel application deployment  | Platform Git / dashboard integration         | No                     |
+| 5. Post-deploy validation         | `/api/health`, `/api/ready`, smoke           | No                     |
+| 6. Optional operational hardening | monitoring, domain, SEO, analytics           | No                     |
+
+Merging to `main` does **not** apply production migrations. Application CI
+does **not** run `supabase db push` and does not read production
+`DATABASE_URL`.
+
+Preferred order:
+
+```text
+hosted staging validation / rehearsal
+  → production DB preflight / review
+  → production DB migration (guarded workflow)
+  → authoritative DB postflight
+  → production application deploy / build
+  → health / readiness / smoke validation
+```
+
+---
+
+## Current operational prerequisites
+
+These statements remain true unless a later, recorded operator run proves
+otherwise. Workflow source existing, local/disposable Postgres tests, a
+staging workflow definition, and green PR CI are **not** production DB proof.
+
+- `production-db-deploy.yml` has never been run.
+- Production `DATABASE_URL` remains documented as operationally stale.
+  Dispatching the deploy workflow before that credential is repaired is
+  expected to fail closed at identity validation or the connectivity probe.
+- Production restore / PITR drill is `PRODUCTION_RESTORE_DRILL_NOT_PROVEN`.
+  A local `pg_dump` / restore is not equivalent.
+- Vercel Preview: existing failure remains unresolved
+  (`VERCEL_PREVIEW_UNRESOLVED`). Changing `installCommand` to `npm ci` is a
+  deterministic-install fix only; it is not a Preview repair. Repository CI
+  success is not Preview success.
+- Hosted staging inspect/apply **contract** exists. That is not
+  `HOSTED_EVIDENCE_COMPLETE` until a non-production hosted apply with
+  pending count > 0 actually succeeds. Staging secrets remaining unavailable
+  means hosted apply has not been proven.
+- Hosted post-deploy synthetic has not completed because required staging
+  environment configuration was unavailable.
+
+Do not treat a green Security Scan job as “Snyk passed” when Snyk was skipped.
+
+---
+
+## Release gate matrix
+
+This is the current **repository-owned** release contract. Advisory checks
+are not release blockers. Hosted staging/production proof that has not run
+is not claimed here.
+
 ### AUTOMATED / REQUIRED
 
-GitHub PR CI (`ci.yml`, `code-quality.yml`, `security.yml`) plus the
-repo-controlled Vercel install/build contract:
+GitHub PR CI (`.github/workflows/ci.yml`, `code-quality.yml`,
+`security.yml`) plus the repo-controlled Vercel install/build contract:
 
 - `npm ci` (GitHub CI jobs and `vercel.json` `installCommand`)
 - migration file guard (`npm run check:migrations`)
 - zero-warning lint (`npm run lint` → `eslint . --max-warnings=0`)
 - type-check (`npm run type-check`)
 - Jest tests (`npm run test -- --ci --coverage` in CI)
-- `next build`
+- `next build` (CI `Build` job uses `npm run build`; Vercel production
+  deploy uses `npm run deploy:build`)
 - middleware manifest/routing verification
 - production-build Chromium critical E2E (`npm run test:e2e:critical`)
 - production dependency high-severity audit:
@@ -80,353 +117,306 @@ separated from scan/tool failure (exit 2 or 3).
 SonarCloud in `code-quality.yml` remains `continue-on-error` and is not a
 release blocker.
 
-### OPERATIONAL / NOT YET PROVEN
+### OPERATIONAL / REQUIRES ENVIRONMENT
 
-- Vercel Preview: existing failure remains unresolved (`VERCEL_PREVIEW_UNRESOLVED`). Changing `installCommand` to `npm ci` is a deterministic-install fix only; it is not a Preview repair.
-- Hosted post-deploy synthetic has not completed because required staging environment configuration was unavailable.
-- Hosted staging migration **inspect/apply contract** exists (`hosted-staging-integration.yml`). That is not `HOSTED_EVIDENCE_COMPLETE` until a non-production hosted apply with pending count > 0 actually succeeds.
-- Production `production-db-deploy.yml` has never been run. Production `DATABASE_URL` remains documented as operationally stale.
-- Restore drill / production PITR is `PRODUCTION_RESTORE_DRILL_NOT_PROVEN`. A local dump/restore is not equivalent.
+These require live credentials, GitHub Environments, and operator action.
+They are **OPERATIONAL / NOT YET PROVEN** until actually executed and
+recorded (see [Current operational prerequisites](#current-operational-prerequisites)):
 
-Do not treat a green Security Scan job as “Snyk passed” when Snyk was skipped.
-
----
-
-## 📋 배포 전 체크리스트
-
-### 1. 환경/런타임
-
-- [x] Node 버전 고정: `.nvmrc=20`, CI Node 20 고정, `package.json`의 `engines.node=20.x`, `vercel.json` 함수 런타임 20 지정
-- [ ] 환경 변수 분리: Production/Preview/Development 별로 Vercel Project Env에 설정
-  - [ ] `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (클라이언트용)
-  - [ ] 서버 작업용 서비스 롤 키는 서버 사이드에서만 사용(노출 금지)
-- [x] 비밀/시크릿 검증: 레포 내 시크릿 패턴(Private Key, SUPABASE\_\*, DATABASE_URL 등) 스캔 — 유출 흔적 없음
-
-### 2. 데이터/Supabase
-
-- [x] RLS(Row Level Security) 활성화 및 최소권한 정책 적용
-  - `database-schema.sql`에 모든 테이블에 대한 RLS 정책 적용 완료
-  - 인증된 사용자 모든 작업 허용 정책 설정 (`auth.role() = 'authenticated'`)
-  - 스토리지 버킷(`instrument-images`) 업로드/조회/삭제 정책 설정
-- [ ] 마이그레이션 적용: 모든 `*.sql` (예: `migration-add-subtype.sql`, `migration-maintenance-tasks.sql`)을 Prod DB에 적용/검증
-  - 방법 1: Supabase 대시보드에서 수동 실행
-  - 방법 2: 스크립트 실행 (`scripts/supabase/apply-migrations.sh`)
-  - [ ] 배포 순서 확인: invoice settings API/client 변경 배포 전에 `supabase/migrations/20260508182551_add_invoice_settings_fields.sql` 적용
-  - [ ] 배포 순서 확인: instrument image metadata, client connection ordering, client number API/client 변경 배포 전에 `supabase/migrations/20260508194653_harden_high_risk_schema_columns.sql` 적용
-- [ ] 롤백 전략 준비: 각 마이그레이션에 대한 롤백 스크립트/절차 문서화
-- [ ] 인덱스/성능 점검: 느린 쿼리 점검 및 필요한 인덱스 추가
-- [ ] 스토리지/버킷 권한 검증: 퍼블릭/프라이빗 구분, URL 접근 통제
-
-### 3. 앱 품질/성능
-
-- [x] 번들 분석: 불필요한 대형 의존성 제거, 다이나믹 임포트/코드 스플리팅 적용
-  - `next.config.ts`에 `experimental.optimizePackageImports` 적용
-  - `date-fns`, `react-window` 최적화 설정 완료
-  - 코드 레벨에서 `next/dynamic` 도입
-  - 번들 분석기 준비: `ANALYZE=1 next build`
-- [x] 캐싱 전략: 정적 자산 장기 캐시, 이미지 최적화(`next/image`)
-  - `next.config.ts`에서 정적 파일 `Cache-Control: max-age=31536000, immutable` 헤더 설정
-  - `vercel.json`에도 동일 헤더 반영
-  - 이미지: AVIF/WEBP 포맷 허용 및 최소 TTL 설정
-- [ ] 접근성(A11y): 키보드 탐색/ARIA 라벨 테스트 통과
-- [ ] SEO: `robots.txt`, `sitemap.xml`, 메타/OG 태그 구성
-
-### 4. 보안/헤더
-
-- [x] 보안 헤더 적용: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`
-  - `next.config.ts`와 `vercel.json`에 보안 헤더 설정 완료
-  - CSP는 동적 콘텐츠와 충돌로 제외
-- [x] 의존성 스캔: blocking production `npm audit --omit=dev --audit-level=high`; full tree audit and Snyk are advisory/supplemental (see [Release gate matrix](#release-gate-matrix))
-  - Do not treat advisory full-audit findings or a missing `SNYK_TOKEN` as a clean Snyk PASS
-- [ ] 쿠키/세션 보안: `Secure`, `HttpOnly`, `SameSite` 속성 및 CSRF 고려 (Supabase 인증 사용 중)
-
-### 5. 테스트/품질 게이트
-
-- [x] Lint/Format: ESLint zero-warning (`--max-warnings=0`) and Prettier check in CI
-- [x] 타입체크: `tsc --noEmit` CI 통과
-- [x] 단위/통합 테스트: Jest `--ci` 그린 상태 유지 (713 tests passed)
-- [x] E2E (required in GitHub CI): Chromium critical-path suite against the production standalone artifact. Broader browser matrix is not a PR blocker.
-
-### 6. 로깅/관찰성
-
-- [ ] 오류 모니터링: Sentry(또는 동등) DSN 설정 및 릴리스/소스맵 업로드
-- [ ] 로그 구조화: `src/utils/logger.ts` JSON 구조, PII 필터링
-- [ ] 알림/헬스체크: Sentry Alert Rule, Uptime 모니터(Healthchecks/UptimeRobot) 구성
-
-### 7. CI/CD
-
-- [x] GitHub Actions 활성화: `.github/workflows/*` 파이프라인에서 아래 수행
-  - [x] Install: `npm ci`
-  - [x] Lint/Type: `eslint . --max-warnings=0`, `tsc --noEmit`
-  - [x] Test: `jest --ci`
-  - [x] E2E: Chromium critical suite (`npm run test:e2e:critical`) is required in GitHub CI
-- [ ] 시크릿 등록: `SUPABASE_*`, `SENTRY_AUTH_TOKEN` 등 GitHub 환경 시크릿 저장
-- [ ] 브랜치 보호: `main` 보호 규칙, 필수 리뷰/상태 체크 강제
-
-### 8. Vercel 설정
-
-- [ ] 커스텀 도메인 연결 및 HTTPS 확인
-- [ ] 리다이렉트/리라이팅 규칙(`vercel.json`) 검증
-- [ ] Edge/Region 선택 및 함수 타임아웃 확인
-- [ ] 프리뷰 배포 접근 제한(팀 전용) 필요 시 설정
-- [ ] Vercel Analytics 또는 GA4 연동
-
-### 9. 운영 준비물
-
-- [ ] 런북: 배포/롤백, 마이그레이션 절차, 장애 대응 문서
-- [ ] 백업: DB 자동 백업/보존 기간 설정, 복구 리허설 1회 이상
-- [ ] 버전/릴리스: 태깅, `CHANGELOG.md` 규칙 수립
+- hosted staging migration rehearsal (`inspect` / `apply`)
+- hosted post-deploy synthetic
+- production DB migration (`production-db-deploy.yml`)
+- production backup / PITR (operator process; not performed by the workflow)
+- Vercel deployment health (Preview and Production)
 
 ---
 
-## 환경 설정
+## A. Repository gates
 
-### 1. GitHub 환경 설정
+Expected mostly complete on a green PR against `main`.
 
-#### GitHub Secrets 등록
-
-레포지토리 Settings > Secrets and variables > Actions에서 다음 추가:
+Local reproduction of repository checks (does not certify production):
 
 ```bash
-# 필수 (Vercel 배포용)
-VERCEL_TOKEN=your_vercel_token
-ORG_ID=your_vercel_org_id
-PROJECT_ID=your_vercel_project_id
-
-# 선택 (보안/모니터링용)
-SNYK_TOKEN=your_snyk_token
-SONAR_TOKEN=your_sonarcloud_token
-SENTRY_AUTH_TOKEN=your_sentry_token
+npm ci
+npm run check:migrations
+npm run lint
+npm run type-check
+npm run test -- --ci --coverage
+npm run build
 ```
 
-**Vercel 토큰 발급 방법:**
+Critical Playwright E2E is blocking in GitHub CI
+(`npm run test:e2e:critical`). Jest is blocking in CI. Exact historical
+test counts are not documented here; they drift.
 
-1. Vercel Dashboard > Settings > Tokens
-2. "Create Token" 클릭
-3. 이름 입력 및 "Full Account" 선택
-4. 생성된 토큰 복사
+CI install uses `npm ci`. Do not treat `npm install` as the CI or Vercel
+install command.
 
-**Org ID & Project ID 찾기:**
+---
 
-1. Vercel Dashboard > Settings > General
-2. Team ID 및 Project Settings에서 확인
+## B. Hosted staging
 
-#### 브랜치 보호 규칙 설정
+Authoritative sources:
+`.github/workflows/hosted-staging-integration.yml` and
+[scripts/staging/README.md](../scripts/staging/README.md).
 
-Settings > Branches > Add rule for `main`:
+`workflow_dispatch` only for hosted DB work. The workflow uses the
+`hosted-staging` GitHub Environment. It never uses the `production`
+Environment and never reads production `DATABASE_URL`.
 
-```
-Branch name pattern: main
-☑ Require pull request reviews before merging
-☑ Require status checks to pass before merging
-  ☑ Test & Lint
-  ☑ Build
-  ☑ E2E Tests
-☑ Require conversation resolution before merging
-☑ Include administrators
-```
+### Modes
 
-### 2. Vercel 프로젝트 설정
+| Mode      | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `off`     | Existing validation path for an already-converged staging database: staging guard, exact migration-set verification, SQL audits, `/api/health`, `/api/ready`, optional synthetic. Not a migration mutation rehearsal. No `supabase db push`.                                                                                                                                                                                |
+| `inspect` | Read-only. Computes current pending migration state (SHA, pending count, pending-set digest). No `db push`. Use the outputs as reviewed inputs for apply.                                                                                                                                                                                                                                                                   |
+| `apply`   | Only after inspect/review. Recomputes state at runtime. Requires exact matching SHA, pending count, and pending digest, plus `staging_mutation_confirmed=yes`. Uses `STAGING_DATABASE_URL` only. Runs the same pinned migration engine as production (`supabase/setup-cli` `2.111.0`, `supabase db push --db-url "$STAGING_DATABASE_URL" --include-all --yes`). Performs authoritative catalog postflight after a mutation. |
 
-#### 프로젝트 연결
+Operator flow: inspect first, review SHA / pending count / digest, then
+apply with those exact values. Do not one-click mutate.
 
-1. Vercel Dashboard > "Add New" > "Project"
-2. GitHub 레포지토리 선택
-3. Framework: Next.js
-4. Root Directory: `./` (기본값)
+Zero pending migrations is `NO_PENDING_MIGRATIONS` and is not a completed
+mutation rehearsal. Do not claim `HOSTED_EVIDENCE_COMPLETE` from `mode=off`
+or from inspect-only.
 
-#### 환경 변수 설정
+### Hosted staging checklist
+
+- [ ] `hosted-staging` Environment vars/secrets configured (see staging README)
+- [ ] `inspect` when pending state is unknown
+- [ ] `apply` only if pending count > 0 and reviewed inputs match
+- [ ] catalog postflight on apply
+- [ ] migration-set equality (`mode=off` or post-apply)
+- [ ] SQL audits (`mode=off` and post-apply)
+- [ ] `GET /api/health`
+- [ ] `GET /api/ready`
+- [ ] synthetic (`npm run test:synthetic:postdeploy`) when credentials exist
+
+---
+
+## C. Production platform configuration
+
+### Environment contract
 
 Authoritative production contract: `env.template` and `npm run check:env`
-(invoked by `npm run deploy:build`). Do not treat the lists below as a
-substitute for that validator.
+(invoked by `npm run deploy:build`). Do not treat any hand-written list as
+a substitute for that validator. Do not invent extra required keys.
 
-Settings > Environment Variables에서 다음 추가:
+Production **required** names (see `src/config/env/keys.ts` /
+`env.template`):
 
-**Production:**
+- Supabase (public): `NEXT_PUBLIC_SUPABASE_URL`,
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Application URL: `NEXT_PUBLIC_APP_URL` (https, not localhost)
+- Supabase (server): `SUPABASE_SERVICE_ROLE_KEY`
+- Object storage: `STORAGE_TYPE=s3`, `S3_BUCKET_NAME`, `S3_REGION`,
+  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+- Upstash Redis: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
+- Server-only: `ORPHAN_CLEANUP_SECRET`
 
-```
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-STORAGE_TYPE=s3
-S3_BUCKET_NAME=your-s3-bucket
-S3_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-access-key-id
-AWS_SECRET_ACCESS_KEY=your-secret-access-key
-NEXT_PUBLIC_APP_URL=https://your-domain.vercel.app
-NODE_ENV=production
-UPSTASH_REDIS_REST_URL=https://your-upstash-instance.upstash.io
-UPSTASH_REDIS_REST_TOKEN=your_upstash_rest_token
-```
+Optional / not launch-blocking for the app validator:
 
-`RESEND_API_KEY` and `SEND_NOTIFICATIONS_SECRET` are **not** production
-requirements. Email notification delivery is unsupported in this release.
+- `DATABASE_URL` is optional for `check:env`. It is **required** for
+  production DB workflows, on the GitHub `production` Environment, not as
+  a Vercel build secret unless you choose to set it there.
+- Sentry, analytics, and custom branding keys are optional.
+- `RESEND_API_KEY` and `SEND_NOTIFICATIONS_SECRET` are **not** production
+  requirements. Email notification delivery is unsupported in this release.
 
-**Preview:**
+If `SUPABASE_URL` / `SUPABASE_ANON_KEY` are set, they must match the
+corresponding `NEXT_PUBLIC_*` values.
 
-```
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-STORAGE_TYPE=s3
-S3_BUCKET_NAME=your-s3-bucket
-S3_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-access-key-id
-AWS_SECRET_ACCESS_KEY=your-secret-access-key
-NEXT_PUBLIC_APP_URL=https://your-preview.vercel.app
-NODE_ENV=preview
-```
+Service role keys must never be exposed to the client (`NEXT_PUBLIC_`
+prefix is forbidden for secrets).
 
-**Development:**
+Set Production / Preview / Development values in the Vercel project env
+UI. Use placeholders only in git. Preview should use non-production data
+stores when possible; do not copy a stale production `DATABASE_URL` into
+Preview.
 
-```
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-STORAGE_TYPE=s3
-S3_BUCKET_NAME=your-s3-bucket
-S3_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-access-key-id
-AWS_SECRET_ACCESS_KEY=your-secret-access-key
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NODE_ENV=development
-```
+### Storage
 
-⚠️ **중요:** Supabase Service Role Key는 **절대** 클라이언트 사이드에 노출되면 안 됩니다!
-⚠️ **중요:** 계측기(`src/instrumentation.ts`)가 부팅 시 스토리지 구성을 검증합니다. `development`/`test` 외 환경에서는 `STORAGE_TYPE=s3`와 S3 버킷/리전 설정이 없으면 서버가 시작되지 않습니다.
+Instrument images and certificates are stored in durable object storage
+(S3 or compatible). Production and Preview require `STORAGE_TYPE=s3`.
+`STORAGE_TYPE=local` is development/test only.
 
-### Rate limiting
+Do not configure public Supabase `instrument-images` buckets for those
+assets. Supabase Storage remains invoice images (`invoices` bucket) only,
+managed by versioned migrations. Do not reopen public `instrument-images`
+policies.
 
-Application rate limiting is **not** a substitute for CDN/WAF controls. It
-protects expensive and sensitive API operations across multiple serverless
-instances using a single distributed backend.
+Optional storage keys (`AWS_ENDPOINT_URL`, `S3_ADDRESSING_STYLE`,
+`KMS_KEY_ID`, `UPLOAD_MAX_FILE_SIZE_MB`) are documented in `env.template`.
 
-| Policy      | Limit  | Typical operations                       |
-| ----------- | ------ | ---------------------------------------- |
-| auth        | 5/min  | authentication-style sensitive writes    |
-| export      | 3/min  | PDF generation / bulk sales export       |
-| search      | 30/min | list / search / filter / analytics reads |
-| mutation    | 15/min | normal writes                            |
-| upload      | 8/min  | file / image upload                      |
-| destructive | 4/min  | destructive cleanup / delete             |
+Boot-time instrumentation refuses to start outside `development`/`test`
+without S3 configuration.
 
-- **Production backend:** Upstash Redis (`UPSTASH_REDIS_REST_URL`,
-  `UPSTASH_REDIS_REST_TOKEN`). This is the only production rate-limit store.
-- **Distribution:** Limits are shared across app instances. Process-local
-  Maps or in-memory counters are not authoritative.
-- **Authenticated application keys:** `orgId : userId : method : routeKey`.
-  Route keys are stable policy buckets (`sales:export`, `clients:list`,
-  `invoices:pdf`, …) and do not include record IDs or query strings.
-- **IP fallback:** Used only when organization context is missing. The first
-  `x-forwarded-for` hop is used; later hops are ignored.
-- **Sales export:** `GET /api/sales?export=true` uses `export` (3/min) after
-  admin authorization. `all=true` is a separate UI fetch-all (capped at 1000
-  rows) and does **not** share the export bucket.
-- **Missing production Upstash config:** fail-closed (requests are limited)
-  unless an operator sets `RATE_LIMITING_DISABLED=true`.
-- **Emergency disable:** `RATE_LIMITING_DISABLED=true` is an explicit
-  production opt-out. Do not set this on production CI merely to pass tests.
-  Existing critical E2E/staging may keep its current safe test override.
-- **Runtime Redis/Upstash exception:** fail-open (the request is allowed)
-  and a sanitized error is logged. This is an availability limitation, not
-  silent disablement from missing env.
-- **429 body:** `{ error: "Too many requests", success: false }` for
-  apiHandler routes. Invoice PDF keeps its existing error envelope.
-- **Retry-After:** Invoice PDF sets the header when the limiter returns a
-  reset time. Other apiHandler 429s do not, because the shared response
-  helper has no header field — deferred to avoid an API framework refactor.
+### GitHub `production` Environment (operator UI — unverified here)
 
-#### 빌드 설정 확인
+None of these can be created from repository code. Leave unchecked until
+an operator confirms them in GitHub:
 
-Settings > General:
+- [ ] Required reviewer on the `production` Environment
+- [ ] Deployment branch restricted to `main`
+- [ ] Environment-scoped `DATABASE_URL` (fresh, valid session-pooler URL)
+- [ ] `EXPECTED_SUPABASE_PROJECT_REF` configured
+- [ ] `SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL` /
+      `SUPABASE_SERVICE_ROLE_KEY` for the diagnostic `schema:ready` step
+- [ ] Deployment history retention left enabled
 
-```
-Framework Preset: Next.js
-Build Command: npm run deploy:build
-Output Directory: .next
-Install Command: npm ci
-Development Command: npm run dev
-Node.js Version: 20.x
+### `main` branch protection (operator UI — unverified here)
 
-Repository `vercel.json` is the source of truth for install/build commands.
-A failing Vercel Preview must not be treated as fixed by the install-command
-alignment alone.
-```
+GitHub → Settings → Branches or Rulesets, targeting `main`:
 
-### 3. Supabase 데이터베이스 설정
+- [ ] Require a pull request before merging
+- [ ] Require status checks to pass (verify live names on a PR; commonly
+      `Test & Lint`, `Build`, `E2E Tests`, `Security Scan`,
+      `Code Quality Check`)
+- [ ] Require conversation resolution before merging
+- [ ] Do not allow force pushes
+- [ ] Do not allow deletion of `main`
 
-#### 마이그레이션 적용
+This repository’s workflows do not themselves enable those rules.
 
-1. Supabase Dashboard > SQL Editor
-2. 다음 파일 순서대로 실행:
-   - `database-schema.sql` (RLS 정책 포함)
-   - `migration-add-subtype.sql` (subtype 컬럼 추가)
-   - `migration-maintenance-tasks.sql` (캘린더 기능용)
+---
 
-**또는 CLI 사용:**
+## D. Production DB release
 
-```bash
-# 설정
-export DATABASE_URL="postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres"
+**Authoritative path:**
+`.github/workflows/production-db-deploy.yml`
+(`workflow_dispatch` only, `main` only, `production` Environment).
 
-# 마이그레이션 실행
-bash scripts/supabase/apply-migrations.sh
-```
+Details, identity rules, digest format, and conditional audits:
+[PRODUCTION_MIGRATION_WORKFLOW.md](./PRODUCTION_MIGRATION_WORKFLOW.md).
 
-자세한 내용은 [데이터베이스 마이그레이션 가이드](./DATABASE_MIGRATION.md)를 참조하세요.
+Read-only companion (never mutates, never runs `supabase db push`):
+`.github/workflows/production-db-reconcile.yml`.
 
-#### Media storage 설정
+### Operator sequence
 
-Instrument 이미지와 certificate는 더 이상 애플리케이션 로컬 디스크나 Supabase `instrument-images` 버킷에 저장하지 않습니다. 프로덕션/프리뷰에서는 외부 durable object storage가 필수입니다.
+1. Production GitHub Environment configuration exists (reviewers, branch
+   restriction, secrets/variables).
+2. Fresh, valid production `DATABASE_URL` (session pooler identity; see
+   the workflow document). Stale credentials will fail closed.
+3. `EXPECTED_SUPABASE_PROJECT_REF` is configured on that Environment.
+4. Backup / PITR status is reviewed in Supabase (operator process).
+5. An approved maintenance / change window exists.
+6. Read-only production migration history / reconciliation
+   (`production-db-reconcile.yml` or an equivalent read-only history
+   probe). Do **not** use `production-db-deploy.yml` as a dry run.
+7. Review and record:
+   - checked-out SHA on `main`
+   - pending migration count
+   - pending-set digest
+8. Dispatch `production-db-deploy.yml` with those reviewed values.
+9. The workflow guard verifies:
+   - `refs/heads/main`
+   - SHA match
+   - pending count match
+   - pending digest match
+   - `backup_pitr_confirmed=yes`
+   - `maintenance_window_approved=yes`
+   - production endpoint identity
+10. Conditional read-only migration-specific predeploy audits (only when
+    those versions are pending).
+11. Pinned Supabase CLI (`2.111.0`) runs:
+    `supabase db push --db-url "$DATABASE_URL" --include-all --yes`
+12. Authoritative catalog postflight (blocking).
+13. Diagnostic `npm run schema:ready` (non-authoritative; does not solely
+    decide convergence).
+14. Review the Actions job summary (apply vs postflight vs diagnostic vs
+    whether a production mutation occurred).
 
-1. S3 버킷(또는 호환 object storage) 생성
-2. 다음 환경 변수를 Vercel Project Env에 설정:
+`backup_pitr_confirmed=yes` is an **operator acknowledgement**. The
+workflow does not create or verify a recovery point.
 
-```bash
-STORAGE_TYPE=s3
-S3_BUCKET_NAME=your-s3-bucket
-S3_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-access-key-id
-AWS_SECRET_ACCESS_KEY=your-secret-access-key
-```
+### Do not use for normal production rollout
 
-3. 필요 시 추가 옵션 설정:
+These must not be presented as supported production deployment paths:
 
-```bash
-AWS_ENDPOINT_URL=https://your-s3-endpoint
-S3_ADDRESSING_STYLE=virtual-hosted-style
-KMS_KEY_ID=your-kms-key-id
-UPLOAD_MAX_FILE_SIZE_MB=100
-```
+- Supabase SQL Editor as the production migrator
+- `scripts/supabase/apply-migrations.sh`
+- Hand-ordered individual files (`database-schema.sql`,
+  `migration-add-subtype.sql`, `migration-maintenance-tasks.sql`, or any
+  cherry-picked `supabase/migrations/*.sql`)
+- Root-level `migration-*.sql` procedures
+- `npm run migrate:*` helpers
+- Merging to `main` as an implied auto-apply
 
-4. Supabase Storage는 invoice 이미지(`invoices` bucket) 전용으로만 유지합니다. 해당 버킷과 RLS 정책은 버전드 migration(`supabase/migrations/00000000000002_rls_policies.sql`, `00000000000053_storage_buckets.sql`)로 관리하고, 수동으로 `instrument-images` 공개 정책을 다시 열지 마세요.
+Manual SQL Editor execution is not the normal production migration path.
+Do not manually cherry-pick individual migration files into production.
+Do not use legacy migration helper scripts for normal production
+rollout. Production migration state must be reconciled through the
+guarded workflow.
 
-### 4. 커스텀 도메인 (선택)
+Those scripts may still exist for development, recovery, or history.
+They are **not authoritative** for normal production deployment.
 
-1. Vercel > Project > Settings > Domains
-2. "Add Domain" 클릭
-3. 도메인 입력 후 DNS 설정 안내 따르기
-4. HTTPS 자동 설정됨
+[docs/migrations/README.md](./migrations/README.md) is a local/schema
+reference. It is not the production deploy runbook.
 
-### 5. 모니터링 설정 (선택)
+---
 
-#### Sentry 통합
+## E. Application launch
 
-1. Sentry 계정 생성 및 프로젝트 생성
-2. Environment Variables 추가:
-   ```
-   SENTRY_DSN=your_sentry_dsn
-   SENTRY_ORG=your_org
-   SENTRY_PROJECT=your_project
-   ```
-3. GitHub Secret 추가: `SENTRY_AUTH_TOKEN`
+### What this repository proves about Vercel
 
-#### Vercel Analytics
+`vercel.json`:
 
-1. Vercel > Project > Analytics
-2. "Enable Analytics" 활성화
-3. Web Vitals 추적 시작
+- Install command: `npm ci`
+- Build command: `npm run deploy:build`
+- Production deploy build contract: `check:env` → `schema:ready` → `build`
+- Output directory: `.next`
+- Dev command: `npm run dev`
+
+GitHub Actions CI (`ci.yml`) validates the application. It is **not** a
+Vercel deploy workflow. There is no repository workflow that runs
+`vercel --prod` or uses `VERCEL_TOKEN` to promote production.
+
+If Vercel deploys on git events, that trigger is **platform-side Git
+integration** (Vercel project settings), not something this repository’s
+Actions files guarantee. Do not document “`main` push automatically
+deploys to Vercel” as a repository-owned fact.
+
+Optional CLI deploy (`vercel --prod`) is a dashboard/CLI operator action,
+not CI.
+
+Preview remains `VERCEL_PREVIEW_UNRESOLVED`. Do not treat Preview as
+fixed by `npm ci`.
+
+### After a production application deployment
+
+| Endpoint / command                  | Meaning                                                                                                                   | Expected consumer                                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `GET /api/health`                   | Process liveness only. HTTP 200 while the process can serve HTTP. Does not probe DB, schema, or third-party integrations. | Cheap uptime pings                                                                |
+| `GET /api/ready`                    | Runtime configuration + database reachability + schema compatibility. HTTP 200 only when ready; otherwise HTTP 503.       | Release validation                                                                |
+| `npm run wait:ready`                | Bounded poll of `/api/ready`                                                                                              | Post-deploy CI                                                                    |
+| `npm run test:synthetic:postdeploy` | Cookie-authenticated staging client create/read/delete                                                                    | Staging only; see [scripts/postdeploy/README.md](../scripts/postdeploy/README.md) |
+
+Do not treat liveness 200 as release-ready.
+
+Production smoke (operator):
+
+- [ ] Login
+- [ ] Admin vs member behavior
+- [ ] Critical CRUD / business workflows
+- [ ] Upload / storage (S3) smoke
+
+---
+
+## F. Operational follow-up
+
+Optional relative to DB migration safety. Do not treat SEO or analytics
+as equivalent to a guarded production migration.
+
+- [ ] Runtime / platform log access
+- [ ] Error monitoring (Sentry or equivalent) — optional credentials; not
+      a `check:env` requirement
+- [ ] External uptime monitoring and alerting
+- [ ] Restore drill (`PRODUCTION_RESTORE_DRILL_NOT_PROVEN` until done)
+- [ ] Custom domain
+- [ ] Analytics
+- [ ] Accessibility / SEO as appropriate
 
 ---
 
@@ -438,228 +428,81 @@ Email notification delivery is not supported in the current release.
 - Resend and the `send-notifications` Edge Function are not a production dependency. Do not deploy that function, configure pg_cron for it, or require `RESEND_API_KEY` / `SEND_NOTIFICATIONS_SECRET` for launch.
 - Enabling email delivery requires a separate production-readiness project. There is no promised release date.
 
-Making notifications a supported feature later would need at least: environment-based feature enablement, Edge Function deployment automation, `SEND_NOTIFICATIONS_SECRET` provisioning, a Resend verified sender/domain, cron scheduling, timezone semantics, actual `notification_time` handling, idempotency / duplicate-send prevention, retries, bounce/complaint handling, delivery observability, a staging real-email receipt test, and production rollout/rollback.
+---
+
+## Security notes (concise)
+
+### HTTP headers and CSP
+
+`next.config.ts` emits security headers, including
+`Content-Security-Policy`. `vercel.json` also sets frame/content-type/
+referrer/permissions headers (not a substitute for the Next CSP).
+
+CSP is present. The current policy still permits inline script/style
+behavior required by the application (`script-src 'self' 'unsafe-inline'`,
+`style-src 'self' 'unsafe-inline'`). This is not a strict nonce/hash CSP.
+Stricter nonce/hash hardening remains a separate improvement.
+
+### Database authorization
+
+Do not describe RLS as “authenticated users can perform all operations.”
+
+Current schema uses organization scoping, admin/member distinctions, and
+DB-level financial confidentiality (RLS and RPC-based authorization). See
+versioned migrations under `supabase/migrations/` and, for the financial
+boundary, `tests/integration/migrations/enforce_financial_confidentiality_db_boundary.integration.test.ts`.
+This guide does not restate the full security architecture.
 
 ---
 
-## 🚀 배포 프로세스
+## Rate limiting
 
-### 자동 배포 (GitHub Actions)
+Application rate limiting is **not** a substitute for CDN/WAF controls.
 
-`main` 브랜치에 push하면 자동으로:
-
-1. ✅ Lint/Type 체크
-2. ✅ 테스트 실행 (713 tests)
-3. ✅ 빌드 검증
-4. ✅ E2E 테스트
-5. ✅ Vercel 프로덕션 배포
-
-**포함 워크플로:**
-
-- `ci.yml` - 메인 CI/CD 파이프라인
-- `code-quality.yml` - 코드 품질 검사
-- `security.yml` - 보안 스캔 (주간 실행)
-
-### 수동 배포 (CLI)
-
-```bash
-# Vercel CLI 설치
-npm i -g vercel
-
-# 로그인
-vercel login
-
-# 프로덕션 배포
-vercel --prod
-```
+Production backend: Upstash Redis (`UPSTASH_REDIS_REST_URL`,
+`UPSTASH_REDIS_REST_TOKEN`). Missing production Upstash config fails
+closed unless an operator sets the emergency override documented in
+`env.template`. `RATE_LIMITING_DISABLED=true` is not an ordinary
+production setting.
 
 ---
 
-## 🔍 배포 후 검증
+## Monitoring
 
-### Health / readiness / synthetic
+### Required for first safe launch
 
-| Endpoint/command                    | Meaning                                                                                                                                                                                                        | Expected consumer                                  |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `GET /api/health`                   | Process liveness only. HTTP 200 while the process can serve HTTP. Does not probe DB, schema, or third-party integrations.                                                                                      | Container/platform supervision, cheap uptime pings |
-| `GET /api/ready`                    | Runtime configuration + database reachability + schema compatibility. HTTP 200 only when ready; otherwise HTTP 503. Public; uses the existing 30s schema readiness cache (see `scripts/postdeploy/README.md`). | Deployment traffic / release validation            |
-| `npm run wait:ready`                | Bounded poll of `/api/ready` until ready or deadline                                                                                                                                                           | Post-deploy CI                                     |
-| `npm run test:synthetic:postdeploy` | Cookie-authenticated staging client create/read/delete                                                                                                                                                         | Staging/post-deploy release check                  |
+- Access to runtime / platform logs (Vercel, GitHub Actions)
+- Health / readiness visibility (`/api/health`, `/api/ready`)
+- Database backup state understood (operator; not automated by
+  `backup_pitr_confirmed`)
 
-**Compatibility:** `/api/health` previously returned HTTP 503 (and optional diagnostics) when catalog/schema checks failed. Those checks now live on `/api/ready`. Do not treat liveness 200 as release-ready.
+### Recommended
 
-There is no Docker HEALTHCHECK in this repository. Vercel Git production promotion is not blocked by the synthetic; the strongest current hook is `hosted-staging-integration.yml` (`workflow_dispatch`, `hosted-staging` environment).
+- Sentry or equivalent
+- External uptime monitoring
+- Alerting
+- Analytics
 
-Required synthetic environment variable **names** (values are secrets; never commit them):
-
-- `POSTDEPLOY_BASE_URL` or `STAGING_APP_BASE_URL`
-- `STAGING_SUPABASE_PROJECT_REF`
-- `PRODUCTION_SUPABASE_PROJECT_REF`
-- `STAGING_SUPABASE_URL` / `STAGING_SUPABASE_ANON_KEY`
-- `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` (fallbacks: `E2E_TEST_EMAIL` / `E2E_TEST_PASSWORD`)
-
-Exit `0` only if allowlist, credentials, readiness, auth, authenticated read, create, read-after-write, and cleanup all succeed. Cleanup failure is a failure and prints the non-secret synthetic client id.
-
-See `scripts/postdeploy/README.md`.
-
-### 1. 기본 기능 확인
-
-✅ 로그인/인증  
-✅ Clients CRUD  
-✅ Instruments CRUD  
-✅ Dashboard 로딩  
-✅ 검색/필터  
-✅ 정렬  
-✅ Calendar 기능
-
-### 2. 보안 헤더 확인
-
-```bash
-curl -I https://your-domain.vercel.app | grep -i "x-frame-options\|x-content-type-options\|referrer-policy"
-```
-
-예상 출력:
-
-```
-X-Frame-Options: DENY
-X-Content-Type-Options: nosniff
-Referrer-Policy: strict-origin-when-cross-origin
-```
-
-### 3. 성능 확인
-
-```bash
-# Lighthouse 테스트
-npx lighthouse https://your-domain.vercel.app --view
-
-# 또는 브라우저 DevTools > Lighthouse
-```
-
-목표 점수:
-
-- Performance: 90+
-- Accessibility: 95+
-- Best Practices: 95+
-- SEO: 90+
+Do not make optional third-party monitoring credentials look like build
+requirements.
 
 ---
 
-## 📊 모니터링 및 알림
+## Rollback
 
-### 체크리스트
+Application: use the Vercel dashboard (or CLI) to promote a previous
+deployment. This repository does not define a GitHub Actions rollback job.
 
-- [ ] Vercel Analytics 활성화
-- [ ] Error Tracking (Sentry) 확인
-- [ ] Performance Monitoring 설정
-- [ ] Uptime Monitoring (UptimeRobot)
-- [ ] 로그 수집 확인
-
-### 알림 설정
-
-- [ ] 빌드 실패 알림 (GitHub)
-- [ ] 에러 알림 (Sentry)
-- [ ] 다운타임 알림 (Uptime)
-- [ ] 보안 취약점 알림 (Snyk)
+Database: restore from Supabase backup / PITR. There is no in-repo
+automated production DB rollback. `PRODUCTION_RESTORE_DRILL_NOT_PROVEN`.
 
 ---
 
-## 🔄 롤백 절차
+## Related documents
 
-### 즉시 롤백 (Vercel)
-
-```bash
-# 이전 배포로 롤백
-vercel rollback --prod
-```
-
-### 데이터베이스 롤백
-
-```bash
-# Supabase Dashboard > Database > Backups
-# 또는 SQL로 수동 복구
-```
-
----
-
-## 🆘 문제 해결
-
-### 빌드 실패
-
-```bash
-# 로컬 재현
-npm ci
-npm run build
-
-# 캐시 클리어
-rm -rf .next node_modules
-npm ci && npm run build
-```
-
-### 환경 변수 누락
-
-Vercel Dashboard > Settings > Environment Variables 확인
-
-### 데이터베이스 연결 실패
-
-Supabase Dashboard > Settings > API에서 URL/Key 확인
-
-### CI 실패
-
-GitHub Actions > Failed Workflow > View logs
-
----
-
-## 📝 핵심 사항
-
-1. **Environment Variables**: Production/Preview/Development 분리 필수
-2. **서비스 롤 키**: 서버 사이드 전용 (절대 클라이언트 노출 금지)
-3. **RLS 정책**: 모든 테이블에 적용 확인
-4. **보안 헤더**: CSP는 동적 콘텐츠와 충돌로 제외
-5. **자동 배포**: `main` 브랜치 push 시 트리거
-6. **브랜치 보호**: 필수 리뷰 + 상태 체크 통과
-
----
-
-## 🚀 빠른 시작
-
-```bash
-# CI 품질 게이트(로컬 재현)
-npm ci
-npm run lint
-npm run type-check
-npm test -- --ci
-
-# E2E(옵션)
-npx playwright install --with-deps
-npx playwright test
-
-# Vercel 환경 변수 설정(대시보드에서 수동 등록 권장)
-# NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY 등
-```
-
----
-
-## 🛡️ Batch B — maintenance history & reserved references (20260728140000)
-
-`supabase/migrations/20260728140000_preserve_maintenance_history_and_enforce_reserved_references.sql`
-
-**Rollout gate (hosted apply):**
-
-- Merging to `main` may auto-apply migrations through CI — confirm the target database/environment explicitly before merge.
-- Run aggregate-only hosted audit first (`scripts/supabase/reference_integrity_preflight_audit.sql`). Every `mismatch_count` must be **0**.
-- Operator approval is required in the PR (target environment, Supabase project ref, merge auto-applies yes/no, audit counts, `Migration apply approval: approved`).
-- No automatic remediation of bad rows — operator-led investigation only if any count is non-zero.
-- After apply: verify FK delete actions (`RESTRICT` / `SET NULL`) and trigger existence; run focused reservation/maintenance smoke tests.
-- Rollback does **not** mean deleting historical maintenance rows.
-
----
-
-## 📚 관련 문서
-
-- [데이터베이스 마이그레이션 가이드](./DATABASE_MIGRATION.md)
-- [캘린더 설정 가이드](./CALENDAR_SETUP_GUIDE.md)
-- [프로젝트 README](../README.md)
-
----
-
-**배포 준비 완료! 🎉**
+- [Production migration workflow](./PRODUCTION_MIGRATION_WORKFLOW.md)
+- [Hosted staging](../scripts/staging/README.md)
+- [Post-deploy synthetic](../scripts/postdeploy/README.md)
+- [Local migration reference](./migrations/README.md) (not production)
+- [env.template](../env.template)
+- [Project README](../README.md)

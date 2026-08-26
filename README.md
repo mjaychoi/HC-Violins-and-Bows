@@ -118,7 +118,7 @@ This project uses Husky and lint-staged for pre-commit hooks:
    - Tests, linting, type checking
    - Build verification
    - E2E tests
-   - Auto-deploy to Vercel
+   - Does **not** deploy to Vercel and does **not** mutate production DB
 
 2. **Security Scan** (`.github/workflows/security.yml`)
    - Weekly security scans
@@ -130,17 +130,12 @@ This project uses Husky and lint-staged for pre-commit hooks:
    - SonarCloud integration
    - Type checking
 
-### Required Secrets
+### Optional / environment-specific secrets
 
-Add these secrets to your GitHub repository:
-
-```
-VERCEL_TOKEN=your_vercel_token
-ORG_ID=your_vercel_org_id
-PROJECT_ID=your_vercel_project_id
-SNYK_TOKEN=your_snyk_token (optional)
-SONAR_TOKEN=your_sonarcloud_token (optional)
-```
+GitHub CI does not deploy to Vercel. `SNYK_TOKEN` and `SONAR_TOKEN` are
+optional advisory scans. Production DB credentials belong on the
+`production` GitHub Environment, not as a substitute for Vercel app env.
+See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md).
 
 ## 🧪 Testing
 
@@ -172,20 +167,16 @@ The project maintains high test coverage with:
 
 ## 📦 Deployment
 
-### Vercel (Recommended)
+### Vercel
 
-1. Connect your GitHub repository to Vercel
-2. Set environment variables in Vercel dashboard
-3. Deploy automatically via GitHub Actions
+Application hosting is configured in the Vercel project (install `npm ci`,
+build `npm run deploy:build`). Git-based deploys, if enabled, are
+platform-side — not a GitHub Actions job in this repository.
 
-### Manual Deployment
+Production database migrations are a separate guarded workflow. See:
 
-```bash
-npm run build
-npm run start
-```
-
-자세한 배포 가이드는 [프로덕션 배포 가이드](./docs/DEPLOYMENT.md)를 참조하세요.
+- [프로덕션 배포 가이드](./docs/DEPLOYMENT.md)
+- [프로덕션 마이그레이션 워크플로](./docs/PRODUCTION_MIGRATION_WORKFLOW.md)
 
 ## 🏗️ Project Structure
 

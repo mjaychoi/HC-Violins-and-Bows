@@ -31,9 +31,10 @@
 
 Firefox/WebKit/모바일 프로젝트는 PR blocking 경로에 포함하지 않습니다. 로컬 또는 필요 시 `npm run test:e2e:all-browsers`로 전체 매트릭스를 실행하세요. 이 저장소에는 별도 nightly E2E 워크플로가 없으며, 이 변경에서 스케줄 아키텍처를 추가하지 않습니다.
 
-4. **deploy**: Vercel 배포
-   - `main` 브랜치에서만 실행
-   - Vercel 프로덕션 환경으로 배포
+This workflow does **not** deploy to Vercel and does **not** run production
+migrations. Vercel install/build commands live in `vercel.json`. Production
+DB deploy is `.github/workflows/production-db-deploy.yml`. Operator guide:
+`docs/DEPLOYMENT.md`.
 
 ### 트리거
 
@@ -41,14 +42,12 @@ Firefox/WebKit/모바일 프로젝트는 PR blocking 경로에 포함하지 않�
 
 ### 필요 시크릿
 
-- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`: production-db workflows only
 - `STAGING_SUPABASE_URL`, `STAGING_SUPABASE_ANON_KEY`, `STAGING_SUPABASE_SERVICE_ROLE_KEY`: E2E Tests job용 테스트/스테이징 Supabase
 - `STAGING_SUPABASE_PROJECT_REF` (repository variable): E2E Tests가 해당 스테이징 project ref만 사용하도록 allowlist
-- `VERCEL_TOKEN`: Vercel 토큰
-- `ORG_ID`: Vercel Org ID
-- `PROJECT_ID`: Vercel Project ID
 
-배포 job은 Vercel 시크릿 3개가 모두 설정된 경우에만 실행됩니다.
+`ci.yml` does not consume `VERCEL_TOKEN` / `ORG_ID` / `PROJECT_ID`. Those
+are not required for repository CI. Production DB secrets belong on the
+`production` Environment (`production-db-deploy.yml`).
 
 Git-integrated Vercel production promotion is **not** gated by `/api/ready` or the post-deploy synthetic. The strongest current deployment validation hook is `.github/workflows/hosted-staging-integration.yml` (`workflow_dispatch` + `hosted-staging`): wait for `/api/ready`, then `npm run test:synthetic:postdeploy`. `migration_rehearsal_mode=off` preserves that validation-only path. `inspect` / `apply` add a two-phase hosted pending-migration rehearsal against non-production staging only. That job is a staging release check, not an automatic production blocker.
 
@@ -96,21 +95,13 @@ green job as “Snyk passed” when Snyk was skipped.
 
 ### 1. GitHub Secrets 추가
 
-레포지토리 Settings > Secrets and variables > Actions에서 다음 시크릿을 추가하세요:
-
-```bash
-VERCEL_TOKEN=your_token_here
-ORG_ID=your_org_id_here
-PROJECT_ID=your_project_id_here
-```
+E2E/staging secrets are listed above. Do not add production `DATABASE_URL`
+as a repository-level secret for CI.
 
 ### 2. Vercel 프로젝트 연결
 
-Vercel 대시보드에서:
-
-1. 프로젝트 설정
-2. Git 연결
-3. 자동 배포 활성화
+Vercel dashboard Git integration (if enabled) is platform-side. It is not
+implemented by `ci.yml`. Install/build: `npm ci` / `npm run deploy:build`.
 
 ### 3. 브랜치 보호 규칙
 
@@ -205,6 +196,6 @@ npm run type-check
 
 ### 배포 실패
 
-- Vercel 토큰 확인
-- 환경 변수 확인
-- Vercel 프로젝트 설정 확인
+Vercel failures are diagnosed in the Vercel project (env, Git integration,
+build logs). GitHub CI green does not imply Preview/Production health
+(`VERCEL_PREVIEW_UNRESOLVED` may still apply). See `docs/DEPLOYMENT.md`.
