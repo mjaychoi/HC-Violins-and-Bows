@@ -33,6 +33,9 @@ export const DEFAULT_SCAN_TARGETS = [
   'scripts/auth-matrix/hosted-cleanup.ts',
   'scripts/auth-matrix/runtime-manifest.ts',
   'tests/integration/auth-matrix/env-guard.ts',
+  'scripts/postdeploy/allowlist.ts',
+  'scripts/postdeploy/run-synthetic.ts',
+  'scripts/postdeploy/run-wait-for-ready.ts',
 ] as const;
 
 export type HardcodedProjectRefFinding = {
@@ -311,6 +314,7 @@ export function assertHostedStagingWorkflowContract(
     );
     const auditsIdx = job.indexOf('scripts/staging/run-pr58-audits.sh');
     const healthIdx = job.indexOf('/api/health');
+    const readyIdx = job.indexOf('/api/ready');
     if (guardIdx < 0) {
       violations.push({
         code: 'hosted_guard_order',
@@ -321,6 +325,7 @@ export function assertHostedStagingWorkflowContract(
         ['verify-migration-set', migrationSetIdx],
         ['run-pr58-audits', auditsIdx],
         ['health', healthIdx],
+        ['ready', readyIdx],
       ] as const) {
         if (idx >= 0 && idx < guardIdx) {
           violations.push({

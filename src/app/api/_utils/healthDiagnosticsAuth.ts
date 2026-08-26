@@ -1,9 +1,9 @@
 import type { NextRequest } from 'next/server';
 
 /**
- * Detailed migration/RLS diagnostics require HEALTH_CHECK_SECRET.
+ * Detailed readiness diagnostics require HEALTH_CHECK_SECRET.
  * Without a secret, diagnostics stay available outside production so local/CI
- * keep working; production returns liveness-only payloads.
+ * keep working; production `/api/ready` returns high-level check names only.
  *
  * Auth contract: `Authorization: Bearer <exact-secret>`
  * - Secret is trimmed once from env configuration only.

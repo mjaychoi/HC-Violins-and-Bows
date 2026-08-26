@@ -348,6 +348,31 @@ vercel --prod
 
 ## 🔍 배포 후 검증
 
+### Health / readiness / synthetic
+
+| Endpoint/command                    | Meaning                                                                                                                                                                                                        | Expected consumer                                  |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `GET /api/health`                   | Process liveness only. HTTP 200 while the process can serve HTTP. Does not probe DB, schema, or third-party integrations.                                                                                      | Container/platform supervision, cheap uptime pings |
+| `GET /api/ready`                    | Runtime configuration + database reachability + schema compatibility. HTTP 200 only when ready; otherwise HTTP 503. Public; uses the existing 30s schema readiness cache (see `scripts/postdeploy/README.md`). | Deployment traffic / release validation            |
+| `npm run wait:ready`                | Bounded poll of `/api/ready` until ready or deadline                                                                                                                                                           | Post-deploy CI                                     |
+| `npm run test:synthetic:postdeploy` | Cookie-authenticated staging client create/read/delete                                                                                                                                                         | Staging/post-deploy release check                  |
+
+**Compatibility:** `/api/health` previously returned HTTP 503 (and optional diagnostics) when catalog/schema checks failed. Those checks now live on `/api/ready`. Do not treat liveness 200 as release-ready.
+
+There is no Docker HEALTHCHECK in this repository. Vercel Git production promotion is not blocked by the synthetic; the strongest current hook is `hosted-staging-integration.yml` (`workflow_dispatch`, `hosted-staging` environment).
+
+Required synthetic environment variable **names** (values are secrets; never commit them):
+
+- `POSTDEPLOY_BASE_URL` or `STAGING_APP_BASE_URL`
+- `STAGING_SUPABASE_PROJECT_REF`
+- `PRODUCTION_SUPABASE_PROJECT_REF`
+- `STAGING_SUPABASE_URL` / `STAGING_SUPABASE_ANON_KEY`
+- `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` (fallbacks: `E2E_TEST_EMAIL` / `E2E_TEST_PASSWORD`)
+
+Exit `0` only if allowlist, credentials, readiness, auth, authenticated read, create, read-after-write, and cleanup all succeed. Cleanup failure is a failure and prints the non-secret synthetic client id.
+
+See `scripts/postdeploy/README.md`.
+
 ### 1. 기본 기능 확인
 
 ✅ 로그인/인증  

@@ -50,6 +50,8 @@ Firefox/WebKit/모바일 프로젝트는 PR blocking 경로에 포함하지 않�
 
 배포 job은 Vercel 시크릿 3개가 모두 설정된 경우에만 실행됩니다.
 
+Git-integrated Vercel production promotion is **not** gated by `/api/ready` or the post-deploy synthetic. The strongest current deployment validation hook is `.github/workflows/hosted-staging-integration.yml` (`workflow_dispatch` + `hosted-staging`): wait for `/api/ready`, then `npm run test:synthetic:postdeploy`. That job is a staging release check, not an automatic production blocker.
+
 ## 2. Security Scan (`.github/workflows/security.yml`)
 
 보안 스캔:
@@ -126,6 +128,8 @@ npm ci
 npm run type-check
 npm run lint
 npm run test -- --ci --coverage
+npm run test:readiness
+npm run test:synthetic
 npm run build
 npm run test:e2e:install:chromium
 npm run test:e2e:critical

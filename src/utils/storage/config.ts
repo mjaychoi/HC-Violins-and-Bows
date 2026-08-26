@@ -64,34 +64,33 @@ export function isLocalStoragePermittedRuntime(
 /**
  * Get storage configuration from environment variables
  */
-export function getStorageConfig(): StorageConfig {
-  const runtime = getStorageRuntimeEnvironment(process.env.NODE_ENV);
+export function getStorageConfig(
+  env: NodeJS.ProcessEnv = process.env
+): StorageConfig {
+  const runtime = getStorageRuntimeEnvironment(env.NODE_ENV);
   const defaultStorageType: StorageConfig['storageType'] =
     runtime === 'development' || runtime === 'test' ? 'local' : 's3';
   const storageType = normalizeStorageType(
-    process.env.STORAGE_TYPE,
+    env.STORAGE_TYPE,
     defaultStorageType
   );
-  const maxMb = Number.parseInt(
-    process.env.UPLOAD_MAX_FILE_SIZE_MB ?? '10',
-    10
-  );
+  const maxMb = Number.parseInt(env.UPLOAD_MAX_FILE_SIZE_MB ?? '10', 10);
   const safeMaxMb = Number.isFinite(maxMb) && maxMb > 0 ? maxMb : 10;
 
   return {
     storageType,
-    s3Bucket: process.env.S3_BUCKET_NAME,
-    s3Region: process.env.S3_REGION,
-    awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    awsEndpointUrl: process.env.AWS_ENDPOINT_URL,
-    s3AddressingStyle: process.env.S3_ADDRESSING_STYLE as
+    s3Bucket: env.S3_BUCKET_NAME,
+    s3Region: env.S3_REGION,
+    awsAccessKeyId: env.AWS_ACCESS_KEY_ID,
+    awsSecretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+    awsEndpointUrl: env.AWS_ENDPOINT_URL,
+    s3AddressingStyle: env.S3_ADDRESSING_STYLE as
       | 'virtual-hosted-style'
       | 'path-style'
       | undefined,
-    kmsKeyId: process.env.KMS_KEY_ID,
-    storageBasePrefix: process.env.STORAGE_BASE_PREFIX,
-    localRoot: process.env.STORAGE_LOCAL_ROOT,
+    kmsKeyId: env.KMS_KEY_ID,
+    storageBasePrefix: env.STORAGE_BASE_PREFIX,
+    localRoot: env.STORAGE_LOCAL_ROOT,
     // Default to 10MB
     maxFileSizeBytes: safeMaxMb * 1024 * 1024,
   };
