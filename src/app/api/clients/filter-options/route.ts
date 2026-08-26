@@ -4,7 +4,12 @@ import { withAuthRoute } from '@/app/api/_utils/withAuthRoute';
 import type { AuthContext } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { assertClientsSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
-import { searchRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
+import {
+  applyScopedRateLimit,
+  extractClientIp,
+  RATE_LIMIT_ROUTE_KEYS,
+  searchRateLimit,
+} from '@/app/api/_utils/rateLimit';
 
 /**
  * Distinct filter facet values for the /clients filter panel.
@@ -26,7 +31,13 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         };
       }
 
-      const { limited } = await applyRateLimit(searchRateLimit, auth.user.id);
+      const { limited } = await applyScopedRateLimit(searchRateLimit, {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        method: 'GET',
+        routeKey: RATE_LIMIT_ROUTE_KEYS.clientsFilterOptions,
+        ip: extractClientIp(request.headers),
+      });
       if (limited) {
         return {
           payload: { error: 'Too many requests', success: false },

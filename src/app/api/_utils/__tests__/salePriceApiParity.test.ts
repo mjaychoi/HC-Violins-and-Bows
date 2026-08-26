@@ -19,6 +19,10 @@ jest.mock('@/app/api/_utils/rateLimit', () => ({
   mutationRateLimit: null,
   applyRateLimit: jest.fn().mockResolvedValue({ limited: false }),
   applyScopedRateLimit: jest.fn().mockResolvedValue({ limited: false }),
+  extractClientIp: jest.fn(),
+  RATE_LIMIT_ROUTE_KEYS: {
+    salesExport: 'sales:export',
+  },
   tooManyRequestsApiResult: () => ({
     payload: { error: 'Too many requests', success: false },
     status: 429,

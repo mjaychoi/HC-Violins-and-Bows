@@ -33,7 +33,12 @@ import {
   withRequestIdHeader,
 } from '@/app/api/_utils/requestContext';
 import { todayLocalYMD } from '@/utils/dateParsing';
-import { exportRateLimit, applyRateLimit } from '@/app/api/_utils/rateLimit';
+import {
+  applyScopedRateLimit,
+  exportRateLimit,
+  extractClientIp,
+  RATE_LIMIT_ROUTE_KEYS,
+} from '@/app/api/_utils/rateLimit';
 import { INVOICE_PDF_SELECT } from './invoicePdfQuery';
 
 export const runtime = 'nodejs';
@@ -294,30 +299,6 @@ async function generateInvoicePdfResponse(
   const routePath = `/api/invoices/${id}/pdf`;
 
   try {
-    const { limited } = await applyRateLimit(exportRateLimit, auth.user.id);
-    if (limited) {
-      const duration = Math.round(nowMs() - startTime);
-      logApiRequest('GET', routePath, 429, duration, 'InvoicesAPI', {
-        invoiceId: id,
-        requestId,
-        error: true,
-        errorCode: 'RATE_LIMIT_EXCEEDED',
-      });
-      return withRequestIdHeader(
-        createApiErrorResponse(
-          {
-            message: 'Too many requests',
-            error_code: 'RATE_LIMIT_EXCEEDED',
-            retryable: true,
-          },
-          429
-        ),
-        requestId
-      );
-    }
-
-    const inline = new URL(req.url).searchParams.get('inline') === 'true';
-
     const orgContextError = requireOrgContext(auth);
     if (orgContextError) {
       const duration = Math.round(nowMs() - startTime);
@@ -365,6 +346,40 @@ async function generateInvoicePdfResponse(
         requestId
       );
     }
+
+    const rateLimit = await applyScopedRateLimit(exportRateLimit, {
+      orgId: auth.orgId,
+      userId: auth.user.id,
+      method: 'GET',
+      routeKey: RATE_LIMIT_ROUTE_KEYS.invoicesPdf,
+      ip: extractClientIp(req.headers),
+    });
+    if (rateLimit.limited) {
+      const duration = Math.round(nowMs() - startTime);
+      logApiRequest('GET', routePath, 429, duration, 'InvoicesAPI', {
+        invoiceId: id,
+        requestId,
+        error: true,
+        errorCode: 'RATE_LIMIT_EXCEEDED',
+      });
+      const limitedResponse = createApiErrorResponse(
+        {
+          message: 'Too many requests',
+          error_code: 'RATE_LIMIT_EXCEEDED',
+          retryable: true,
+        },
+        429
+      );
+      if (rateLimit.retryAfterSeconds) {
+        limitedResponse.headers.set(
+          'Retry-After',
+          String(rateLimit.retryAfterSeconds)
+        );
+      }
+      return withRequestIdHeader(limitedResponse, requestId);
+    }
+
+    const inline = new URL(req.url).searchParams.get('inline') === 'true';
 
     if (!validateUUID(id)) {
       const duration = Math.round(nowMs() - startTime);
