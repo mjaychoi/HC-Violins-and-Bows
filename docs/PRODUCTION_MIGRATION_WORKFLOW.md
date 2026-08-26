@@ -11,6 +11,34 @@ sometimes referred to elsewhere as "B7" remains unresolved — neither is
 addressed by this document; both require separate, explicit, out-of-band
 authorization before `production-db-deploy.yml` is ever dispatched.
 
+## Evidence status (truthful)
+
+Already proven:
+
+- Local / disposable migration rehearsals (isolated embedded Postgres in CI)
+- Migration-specific integration tests
+- Production workflow safety contracts (SHA / pending count / digest / identity)
+
+New in this repository, but **not** the same as a completed hosted mutation:
+
+- Hosted staging inspect / apply rehearsal contract
+  (`.github/workflows/hosted-staging-integration.yml`
+  `migration_rehearsal_mode=inspect|apply`)
+
+Still **not** proven unless actually executed and recorded:
+
+- Hosted staging migration mutation (`HOSTED_EVIDENCE_COMPLETE`)
+- Production migration execution (`production-db-deploy.yml` has never been run)
+- Production backup / PITR recovery
+- Production restore drill (`PRODUCTION_RESTORE_DRILL_NOT_PROVEN`)
+- Production deployment success
+
+A green PR or a `NO_PENDING_MIGRATIONS` inspect is not a hosted migration
+rehearsal. `REHEARSAL_EXECUTED_PASS` requires a non-production hosted apply
+with pending count > 0, `supabase db push` success, and blocking postflight.
+
+A local `pg_dump` / restore is not equivalent to Supabase production PITR.
+
 ## `.github/workflows/ci.yml` (and `code-quality.yml`, `security.yml`)
 
 Runs automatically on every pull request and on every push to `main`/`develop`.
@@ -91,6 +119,33 @@ schema:ready` runs separately as a **non-authoritative diagnostic**. The
 false }` at the workflow level means at most one production migration run
 executes at a time, and a second dispatch queues behind it rather than
 canceling the one in progress.
+
+### Hosted staging inspect / apply rehearsal
+
+The hosted staging workflow (`.github/workflows/hosted-staging-integration.yml`)
+is the **non-production** rehearsal surface. It uses the `hosted-staging`
+GitHub Environment only — never `production`.
+
+`migration_rehearsal_mode`:
+
+| Mode            | Behavior                                                                                                                                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `off` (default) | Existing validation-only path: staging guard, exact migration-set verification of an already-applied set, SQL audits, `/api/health`, `/api/ready`, optional synthetic. No `supabase db push`.                    |
+| `inspect`       | Read-only: hosted identity guard (no local fallback), pinned Supabase CLI 2.111.0, exact local-vs-remote reconciliation, pending count / digest, conditional pre-deploy audits. Zero mutations.                  |
+| `apply`         | Mutates **only** after SHA + pending count + pending digest + `staging_mutation_confirmed=yes` match values recomputed at runtime. Then `supabase db push --db-url "$STAGING_DATABASE_URL" --include-all --yes`. |
+
+Apply consumes `STAGING_DATABASE_URL` only. Production `DATABASE_URL` is never
+read. Zero pending migrations is classified `NO_PENDING_MIGRATIONS` and does
+not count as a mutation rehearsal. The existing hosted staging database is
+not reset.
+
+This is a hosted non-production pending-migration / upgrade-path rehearsal.
+It is not a production clone rehearsal unless separate baseline provenance
+exists. Hosted staging verifying an already-applied set (`mode=off`) is not
+a mutation rehearsal.
+
+Operator flow: inspect first, review SHA / pending count / digest, then apply
+with those exact values. Do not one-click mutate.
 
 ### Exact version-set reconciliation (not count arithmetic)
 

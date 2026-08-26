@@ -23,6 +23,9 @@ export const DEFAULT_SCAN_TARGETS = [
   '.github/workflows/hosted-staging-integration.yml',
   'scripts/staging/env-guard.ts',
   'scripts/staging/env-guard-cli.ts',
+  'scripts/staging/rehearsal-gates.ts',
+  'scripts/staging/assert-rehearsal-gates.ts',
+  'scripts/staging/write-rehearsal-evidence.ts',
   'scripts/auth-matrix/seed-fixtures.ts',
   'scripts/auth-matrix/cleanup-fixtures.ts',
   'scripts/auth-matrix/run-hosted-matrix.ts',
@@ -351,9 +354,24 @@ export function assertHostedStagingWorkflowContract(
     });
   }
 
-  // No production deploy / database mutation path beyond staging secrets.
+  if (/\benvironment:\s*production\b/.test(workflowSource)) {
+    violations.push({
+      code: 'production_environment',
+      message:
+        'Hosted staging workflow must not use the production GitHub Environment.',
+    });
+  }
+
+  if (/secrets\.DATABASE_URL/.test(workflowSource)) {
+    violations.push({
+      code: 'production_database_url',
+      message:
+        'Hosted staging workflow must not read secrets.DATABASE_URL; use STAGING_DATABASE_URL only.',
+    });
+  }
+
   if (
-    /production[_-]deploy|deploy[_-]production|supabase\s+db\s+push|db\s+push\s+--linked/i.test(
+    /production[_-]deploy|deploy[_-]production|db\s+push\s+--linked/i.test(
       workflowSource
     )
   ) {
@@ -362,6 +380,28 @@ export function assertHostedStagingWorkflowContract(
       message:
         'Workflow must not contain a production database or deploy path.',
     });
+  }
+
+  if (/supabase\s+db\s+reset|DROP\s+SCHEMA|TRUNCATE\s+/i.test(workflowSource)) {
+    violations.push({
+      code: 'destructive_reset',
+      message:
+        'Hosted staging workflow must not reset, drop, or truncate the staging database.',
+    });
+  }
+
+  const pushLines = workflowSource
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => /^supabase\s+db\s+push\b/.test(line));
+  for (const line of pushLines) {
+    if (!line.includes('$STAGING_DATABASE_URL')) {
+      violations.push({
+        code: 'staging_db_push_url',
+        message:
+          'supabase db push in this workflow must use --db-url "$STAGING_DATABASE_URL".',
+      });
+    }
   }
 
   // pull_request must not run hosted jobs (hosted jobs gated on workflow_dispatch).

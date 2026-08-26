@@ -539,3 +539,72 @@ export function loadStagingEnvironmentFromProcessEnv(
     }
   );
 }
+
+/**
+ * Hosted staging migration rehearsal must never fall back to local Postgres
+ * or to `DATABASE_URL` / public-key aliases. Inspect and apply both use this
+ * loader so a missing `STAGING_DATABASE_URL` fails closed before mutation.
+ */
+export function assertHostedRehearsalTargetNotLocal(
+  environment: StagingEnvironment
+): void {
+  const urlRef = extractProjectRefFromSupabaseUrl(environment.supabaseUrl);
+  const dbRef = extractProjectRefFromDatabaseUrl(environment.databaseUrl);
+
+  if (urlRef === 'local' || dbRef === 'local') {
+    fail(
+      'Local fallback is not allowed for hosted staging migration rehearsal.'
+    );
+  }
+
+  let appHost: string;
+  try {
+    appHost = new URL(environment.appBaseUrl).hostname.toLowerCase();
+  } catch {
+    fail('Application base URL is invalid.');
+  }
+
+  if (
+    appHost === 'localhost' ||
+    appHost === '127.0.0.1' ||
+    appHost.endsWith('.local')
+  ) {
+    fail(
+      'Local application URL is not allowed for hosted staging migration rehearsal.'
+    );
+  }
+}
+
+export function loadHostedStagingRehearsalEnvironmentFromProcessEnv(
+  env: EnvMap = process.env
+): StagingEnvironment {
+  const stagingDatabaseUrl = env.STAGING_DATABASE_URL?.trim();
+  if (!stagingDatabaseUrl) {
+    fail(
+      'STAGING_DATABASE_URL is required for hosted staging migration rehearsal (no DATABASE_URL fallback).'
+    );
+  }
+
+  const staging = assertStagingEnvironment(
+    {
+      approvedProjectRef:
+        env.STAGING_SUPABASE_PROJECT_REF ?? env.STAGING_PROJECT_REF,
+      productionProjectRef: env[PRODUCTION_SUPABASE_PROJECT_REF_ENV],
+      supabaseUrl: env.STAGING_SUPABASE_URL,
+      publicSupabaseUrl:
+        env.STAGING_SUPABASE_URL && env.NEXT_PUBLIC_SUPABASE_URL
+          ? env.NEXT_PUBLIC_SUPABASE_URL
+          : undefined,
+      supabaseAnonKey: env.STAGING_SUPABASE_ANON_KEY,
+      serviceRoleKey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
+      databaseUrl: stagingDatabaseUrl,
+      appBaseUrl: env.STAGING_APP_BASE_URL,
+    },
+    {
+      requireProductionProjectRef: true,
+    }
+  );
+
+  assertHostedRehearsalTargetNotLocal(staging);
+  return staging;
+}
