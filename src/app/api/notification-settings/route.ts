@@ -6,7 +6,14 @@ import { requireOrgContext } from '@/app/api/_utils/withAuthRoute';
 import { apiHandler } from '@/app/api/_utils/apiHandler';
 import { errorHandler } from '@/utils/errorHandler';
 
+// Current release: email notification delivery is unsupported.
+// Do not convert this into an environment-enabled production flag.
 const NOTIFICATION_DELIVERY_SUPPORTED = false;
+
+const NOTIFICATION_DELIVERY_UNSUPPORTED_CODE =
+  'NOTIFICATION_DELIVERY_UNSUPPORTED';
+const NOTIFICATION_DELIVERY_UNSUPPORTED_ERROR =
+  'Email notification delivery is not supported in this release';
 
 const DEFAULT_NOTIFICATION_TIME = '09:00';
 const DEFAULT_DAYS_BEFORE_DUE = [3, 1] as const;
@@ -235,6 +242,28 @@ function getStoredNotificationBooleans(input: NotificationSettingsInput) {
   };
 }
 
+function requestedDeliveryEnable(input: NotificationSettingsInput): boolean {
+  return input.email_notifications === true || input.enabled === true;
+}
+
+function notificationDeliveryMetadata() {
+  return {
+    notificationDeliverySupported: NOTIFICATION_DELIVERY_SUPPORTED,
+  };
+}
+
+function unsupportedDeliveryEnableResult() {
+  return {
+    payload: {
+      error: NOTIFICATION_DELIVERY_UNSUPPORTED_ERROR,
+      error_code: NOTIFICATION_DELIVERY_UNSUPPORTED_CODE,
+      success: false,
+    },
+    status: 409,
+    metadata: notificationDeliveryMetadata(),
+  };
+}
+
 async function getHandler(request: NextRequest, auth: AuthContext) {
   return apiHandler(
     request,
@@ -273,10 +302,11 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
               buildDefaultNotificationSettings(auth)
             ),
             success: true,
+            metadata: notificationDeliveryMetadata(),
           },
           metadata: {
             usedDefaultSettings: true,
-            notificationDeliverySupported: NOTIFICATION_DELIVERY_SUPPORTED,
+            ...notificationDeliveryMetadata(),
             scope: { enforced: true, orgId: auth.orgId, userId: auth.user.id },
           },
         };
@@ -286,9 +316,10 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
         payload: {
           data: toEffectiveNotificationSettings(data),
           success: true,
+          metadata: notificationDeliveryMetadata(),
         },
         metadata: {
-          notificationDeliverySupported: NOTIFICATION_DELIVERY_SUPPORTED,
+          ...notificationDeliveryMetadata(),
           scope: { enforced: true, orgId: auth.orgId, userId: auth.user.id },
         },
       };
@@ -333,6 +364,11 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
       }
 
       const input = parsed.value;
+
+      if (!NOTIFICATION_DELIVERY_SUPPORTED && requestedDeliveryEnable(input)) {
+        return unsupportedDeliveryEnableResult();
+      }
+
       const storedBooleans = getStoredNotificationBooleans(input);
 
       const upsertData = {
@@ -365,9 +401,10 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         payload: {
           data: toEffectiveNotificationSettings(data),
           success: true,
+          metadata: notificationDeliveryMetadata(),
         },
         metadata: {
-          notificationDeliverySupported: NOTIFICATION_DELIVERY_SUPPORTED,
+          ...notificationDeliveryMetadata(),
           scope: { enforced: true, orgId: auth.orgId, userId: auth.user.id },
         },
       };

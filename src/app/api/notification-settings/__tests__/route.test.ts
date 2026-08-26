@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { GET, POST } from '../route';
+
 let mockUserSupabase: any;
+let mockOrgId: string | null = 'test-org';
 
 jest.mock('@/app/api/_utils/withSentryRoute', () => ({
   withSentryRoute: (fn: unknown) => fn,
@@ -14,7 +16,7 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
         return handler(req, {
           user: { id: 'test-user-id' },
           accessToken: 'test-token',
-          orgId: 'test-org',
+          orgId: mockOrgId,
           clientId: 'test-client',
           role: 'admin',
           userSupabase: mockUserSupabase,
@@ -25,16 +27,40 @@ jest.mock('@/app/api/_utils/withAuthRoute', () => {
   };
 });
 
+const SECRET_LEAK_PATTERNS = [
+  'RESEND_API_KEY',
+  'SEND_NOTIFICATIONS_SECRET',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'x-send-notifications-secret',
+  're_',
+];
+
+function assertUnsupportedDeliveryMetadata(json: {
+  metadata?: { notificationDeliverySupported?: boolean };
+}) {
+  expect(json.metadata).toEqual({
+    notificationDeliverySupported: false,
+  });
+}
+
+function assertNoSecretOrConfigLeak(json: unknown) {
+  const serialized = JSON.stringify(json);
+  for (const pattern of SECRET_LEAK_PATTERNS) {
+    expect(serialized).not.toContain(pattern);
+  }
+}
+
 describe('/api/notification-settings', () => {
-  const mockUserId = 'test-user-id'; // matches TEST_USER.id from withAuthRoute mock
+  const mockUserId = 'test-user-id';
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockOrgId = 'test-org';
     mockUserSupabase = { from: jest.fn() };
   });
 
   describe('GET', () => {
-    it('should return existing notification settings', async () => {
+    it('should return existing notification settings with effective delivery disabled', async () => {
       const mockSettings = {
         id: '123e4567-e89b-12d3-a456-426614174001',
         org_id: 'test-org',
@@ -68,11 +94,16 @@ describe('/api/notification-settings', () => {
       const json = await response.json();
 
       expect(response.status).toBe(200);
+      expect(json.success).toBe(true);
       expect(json.data).toEqual({
         ...mockSettings,
         email_notifications: false,
         enabled: false,
       });
+      assertUnsupportedDeliveryMetadata(json);
+      expect(mockUserSupabase.from).toHaveBeenCalledWith(
+        'notification_settings'
+      );
       expect(mockQuery.eq).toHaveBeenCalledWith('user_id', mockUserId);
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
@@ -107,9 +138,10 @@ describe('/api/notification-settings', () => {
       expect(json.data.last_notification_sent_at).toBeNull();
       expect(json.data.created_at).toBeDefined();
       expect(json.data.updated_at).toBeDefined();
+      assertUnsupportedDeliveryMetadata(json);
     });
 
-    it('should not expose enabled notifications when delivery is unsupported', async () => {
+    it('should not expose enabled notifications when stored values are true', async () => {
       const mockSettings = {
         id: '123e4567-e89b-12d3-a456-426614174001',
         org_id: 'test-org',
@@ -147,6 +179,25 @@ describe('/api/notification-settings', () => {
       expect(json.data.days_before_due).toEqual([5, 3, 1]);
       expect(json.data.email_notifications).toBe(false);
       expect(json.data.enabled).toBe(false);
+      assertUnsupportedDeliveryMetadata(json);
+    });
+
+    it('should return 403 when organization context is missing', async () => {
+      mockOrgId = null;
+      mockUserSupabase = {
+        from: jest.fn(),
+      } as any;
+
+      const request = new NextRequest(
+        'http://localhost/api/notification-settings'
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.success).toBe(false);
+      expect(json.error).toBe('Organization context required');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it('should return 500 when database error occurs (non-PGRST116)', async () => {
@@ -171,7 +222,7 @@ describe('/api/notification-settings', () => {
 
       expect(response.status).toBe(500);
       expect(json.message).toBeDefined();
-      // createSafeErrorResponse sanitizes error messages
+      assertNoSecretOrConfigLeak(json);
     });
   });
 
@@ -219,6 +270,7 @@ describe('/api/notification-settings', () => {
 
       expect(response.status).toBe(200);
       expect(json.data).toEqual(mockCreatedSettings);
+      assertUnsupportedDeliveryMetadata(json);
       expect(mockUpsertQuery.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           org_id: 'test-org',
@@ -232,7 +284,7 @@ describe('/api/notification-settings', () => {
       );
     });
 
-    it('should update existing notification settings', async () => {
+    it('should update existing notification settings while keeping delivery disabled', async () => {
       const updatedSettings = {
         email_notifications: false,
         notification_time: '14:30',
@@ -278,6 +330,7 @@ describe('/api/notification-settings', () => {
       expect(json.data.notification_time).toBe('14:30');
       expect(json.data.days_before_due).toEqual([7, 3]);
       expect(json.data.enabled).toBe(false);
+      assertUnsupportedDeliveryMetadata(json);
       expect(mockUpsertQuery.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           org_id: 'test-org',
@@ -296,10 +349,10 @@ describe('/api/notification-settings', () => {
         id: '123e4567-e89b-12d3-a456-426614174001',
         org_id: 'test-org',
         user_id: mockUserId,
-        email_notifications: false, // default
+        email_notifications: false,
         notification_time: '12:00',
-        days_before_due: [3, 1], // default
-        enabled: false, // default
+        days_before_due: [3, 1],
+        enabled: false,
         last_notification_sent_at: null,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
@@ -333,6 +386,7 @@ describe('/api/notification-settings', () => {
       expect(json.data.notification_time).toBe('12:00');
       expect(json.data.days_before_due).toEqual([3, 1]);
       expect(json.data.enabled).toBe(false);
+      assertUnsupportedDeliveryMetadata(json);
       expect(mockUpsertQuery.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           org_id: 'test-org',
@@ -345,7 +399,40 @@ describe('/api/notification-settings', () => {
       );
     });
 
-    it.skip('should reject enabling notifications while delivery is unsupported', async () => {
+    it.each([
+      { email_notifications: true },
+      { enabled: true },
+      { email_notifications: true, enabled: true },
+    ])(
+      'should reject enabling delivery with 409 and not mutate settings (%j)',
+      async body => {
+        mockUserSupabase = {
+          from: jest.fn(),
+        } as any;
+
+        const request = new NextRequest(
+          'http://localhost/api/notification-settings',
+          {
+            method: 'POST',
+            body: JSON.stringify(body),
+          }
+        );
+        const response = await POST(request);
+        const json = await response.json();
+
+        expect(response.status).toBe(409);
+        expect(json.success).toBe(false);
+        expect(json.error).toBe(
+          'Email notification delivery is not supported in this release'
+        );
+        expect(json.error_code).toBe('NOTIFICATION_DELIVERY_UNSUPPORTED');
+        expect(json.retryable).toBe(false);
+        expect(mockUserSupabase.from).not.toHaveBeenCalled();
+        assertNoSecretOrConfigLeak(json);
+      }
+    );
+
+    it('should return 400 for invalid JSON', async () => {
       mockUserSupabase = {
         from: jest.fn(),
       } as any;
@@ -354,27 +441,22 @@ describe('/api/notification-settings', () => {
         'http://localhost/api/notification-settings',
         {
           method: 'POST',
-          body: JSON.stringify({
-            email_notifications: true,
-            enabled: true,
-          }),
+          body: 'not-json',
+          headers: { 'Content-Type': 'application/json' },
         }
       );
       const response = await POST(request);
       const json = await response.json();
 
-      expect(response.status).toBe(503);
-      expect(json.message).toBe(
-        'Email notifications are currently unavailable because recipient scoping is not implemented.'
-      );
-      expect(json.error_code).toBe('NOTIFICATION_DELIVERY_UNAVAILABLE');
-      expect(json.retryable).toBe(false);
+      expect(response.status).toBe(400);
+      expect(json.success).toBe(false);
+      expect(json.error).toBe('Invalid JSON body');
       expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it('should return 400 for invalid notification_time format', async () => {
       const invalidSettings = {
-        notification_time: '25:00', // Invalid: hour > 23
+        notification_time: '25:00',
       };
 
       mockUserSupabase = {
@@ -398,7 +480,7 @@ describe('/api/notification-settings', () => {
 
     it('should return 400 for invalid notification_time format (minutes)', async () => {
       const invalidSettings = {
-        notification_time: '12:60', // Invalid: minutes >= 60
+        notification_time: '12:60',
       };
 
       mockUserSupabase = {
@@ -443,6 +525,26 @@ describe('/api/notification-settings', () => {
       expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
+    it('should return 400 when email_notifications is not a boolean', async () => {
+      mockUserSupabase = {
+        from: jest.fn(),
+      } as any;
+
+      const request = new NextRequest(
+        'http://localhost/api/notification-settings',
+        {
+          method: 'POST',
+          body: JSON.stringify({ email_notifications: 'yes' }),
+        }
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error).toBe('email_notifications must be a boolean');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should accept valid notification_time formats', async () => {
       const validTimeFormats = ['00:00', '09:00', '12:30', '23:59'];
 
@@ -482,9 +584,33 @@ describe('/api/notification-settings', () => {
           }
         );
         const response = await POST(request);
+        const json = await response.json();
 
         expect(response.status).toBe(200);
+        assertUnsupportedDeliveryMetadata(json);
       }
+    });
+
+    it('should return 403 when organization context is missing', async () => {
+      mockOrgId = null;
+      mockUserSupabase = {
+        from: jest.fn(),
+      } as any;
+
+      const request = new NextRequest(
+        'http://localhost/api/notification-settings',
+        {
+          method: 'POST',
+          body: JSON.stringify({ email_notifications: false }),
+        }
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(json.success).toBe(false);
+      expect(json.error).toBe('Organization context required');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
     });
 
     it('should return 500 when upsert fails', async () => {
@@ -520,7 +646,7 @@ describe('/api/notification-settings', () => {
 
       expect(response.status).toBe(500);
       expect(json.message).toBeDefined();
-      // createSafeErrorResponse sanitizes error messages
+      assertNoSecretOrConfigLeak(json);
     });
   });
 });

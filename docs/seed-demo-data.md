@@ -146,6 +146,8 @@ delete arbitrary org data.
 - `/calendar` shows overdue, today, tomorrow, dense-day, and future tasks.
 - Invoice settings page loads demo settings unless existing non-demo settings
   were preserved.
-- Notification settings page loads for the demo user.
+- There is no user-facing notification settings page in the current release.
+  Demo seed may still write a disabled `notification_settings` row for the demo
+  user. Email notification delivery remains unsupported.
 - Pagination, filtering, sorting, and update/delete flows still work on major
   pages.

@@ -7,10 +7,11 @@
 1. [사전 준비 사항](#사전-준비-사항)
 2. [배포 전 체크리스트](#배포-전-체크리스트)
 3. [환경 설정](#환경-설정)
-4. [배포 프로세스](#배포-프로세스)
-5. [배포 후 검증](#배포-후-검증)
-6. [모니터링 및 알림](#모니터링-및-알림)
-7. [문제 해결](#문제-해결)
+4. [Notification delivery status](#notification-delivery-status)
+5. [배포 프로세스](#배포-프로세스)
+6. [배포 후 검증](#배포-후-검증)
+7. [모니터링 및 알림](#모니터링-및-알림)
+8. [문제 해결](#문제-해결)
 
 ---
 
@@ -197,6 +198,9 @@ UPSTASH_REDIS_REST_URL=https://your-upstash-instance.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your_upstash_rest_token
 ```
 
+`RESEND_API_KEY` and `SEND_NOTIFICATIONS_SECRET` are **not** production
+requirements. Email notification delivery is unsupported in this release.
+
 **Preview:**
 
 ```
@@ -357,6 +361,18 @@ UPLOAD_MAX_FILE_SIZE_MB=100
 1. Vercel > Project > Analytics
 2. "Enable Analytics" 활성화
 3. Web Vitals 추적 시작
+
+---
+
+## Notification delivery status
+
+Email notification delivery is not supported in the current release.
+
+- Notification settings cannot enable email delivery. `GET /api/notification-settings` reports `notificationDeliverySupported: false` and effective `email_notifications` / `enabled` values of `false`. `POST` requests that try to enable delivery return HTTP 409 (`NOTIFICATION_DELIVERY_UNSUPPORTED`).
+- Resend and the `send-notifications` Edge Function are not a production dependency. Do not deploy that function, configure pg_cron for it, or require `RESEND_API_KEY` / `SEND_NOTIFICATIONS_SECRET` for launch.
+- Enabling email delivery requires a separate production-readiness project. There is no promised release date.
+
+Making notifications a supported feature later would need at least: environment-based feature enablement, Edge Function deployment automation, `SEND_NOTIFICATIONS_SECRET` provisioning, a Resend verified sender/domain, cron scheduling, timezone semantics, actual `notification_time` handling, idempotency / duplicate-send prevention, retries, bounce/complaint handling, delivery observability, a staging real-email receipt test, and production rollout/rollback.
 
 ---
 
