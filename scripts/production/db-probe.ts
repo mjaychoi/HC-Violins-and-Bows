@@ -34,6 +34,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Client } from 'pg';
+import { createDatabaseClientConfig } from './database-client-config';
 import {
   describeDatabaseUrlSafely,
   describeProductionEndpointForLog,
@@ -61,7 +62,7 @@ async function withClient<T>(
   databaseUrl: string,
   fn: (client: Client) => Promise<T>
 ): Promise<T> {
-  const client = new Client({ connectionString: databaseUrl });
+  const client = new Client(createDatabaseClientConfig(databaseUrl));
   await client.connect();
   try {
     return await fn(client);

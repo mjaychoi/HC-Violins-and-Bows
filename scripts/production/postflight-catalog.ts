@@ -32,6 +32,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Client } from 'pg';
+import { createDatabaseClientConfig } from './database-client-config';
 import {
   describeDatabaseUrlSafely,
   parseLocalMigrationFilenames,
@@ -112,7 +113,7 @@ async function main() {
   );
 
   const localMigrations = readLocalMigrations();
-  const client = new Client({ connectionString: databaseUrl as string });
+  const client = new Client(createDatabaseClientConfig(databaseUrl as string));
   await client.connect();
 
   let result: PostflightResult;

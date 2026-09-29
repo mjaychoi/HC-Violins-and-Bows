@@ -13,6 +13,8 @@ import {
   evaluateApplyEligibility,
   isDbPushEligible,
   classifyInspectResult,
+  classifyRehearsalFinal,
+  type RehearsalClassificationInput,
   assertStagingDatabaseUrlPresent,
   classifyTargetVerification,
   classifyPredeployAudit,
@@ -363,16 +365,159 @@ describe('hosted rehearsal apply confirmation', () => {
       expect(result.classification).toBe('NO_PENDING_MIGRATIONS');
     }
     expect(isDbPushEligible(0)).toBe(false);
-    expect(classifyInspectResult(0).classification).toBe(
-      'NO_PENDING_MIGRATIONS'
-    );
+    expect(
+      classifyInspectResult({
+        probeOutcome: 'success',
+        historyOutcome: 'success',
+        pendingCount: 0,
+      }).classification
+    ).toBe('NO_PENDING_MIGRATIONS');
   });
 
   it('allows apply when pending is positive and confirmations match', () => {
     const result = evaluateApplyEligibility(matchingConfirm);
     expect(result).toEqual({ eligible: true, pendingCount: 2 });
     expect(isDbPushEligible(2)).toBe(true);
-    expect(classifyInspectResult(2).classification).toBe('INSPECT_ONLY');
+    expect(
+      classifyInspectResult({
+        probeOutcome: 'success',
+        historyOutcome: 'success',
+        pendingCount: 2,
+      }).classification
+    ).toBe('INSPECT_ONLY');
+  });
+});
+
+function rehearsalClassification(
+  overrides: Partial<RehearsalClassificationInput> = {}
+): RehearsalClassificationInput {
+  return {
+    mode: 'inspect',
+    requireSecretsOutcome: 'success',
+    rehearsalGuardOutcome: 'success',
+    probeOutcome: 'success',
+    historyOutcome: 'success',
+    pendingCount: '2',
+    applyGatesOutcome: 'skipped',
+    applyGatesClassification: '',
+    applyOutcome: 'skipped',
+    applyExecuted: false,
+    postflightOutcome: 'skipped',
+    postflightPassed: false,
+    verifySetOutcome: 'skipped',
+    sqlAuditsOutcome: 'skipped',
+    historyAfterOutcome: 'skipped',
+    httpFailure: false,
+    httpRequiredAndIncomplete: false,
+    ...overrides,
+  };
+}
+
+describe('hosted rehearsal connectivity classification', () => {
+  it('does not classify a failed probe as INSPECT_ONLY when history was skipped', () => {
+    expect(
+      classifyRehearsalFinal(
+        rehearsalClassification({
+          probeOutcome: 'failure',
+          historyOutcome: 'skipped',
+          pendingCount: '',
+        })
+      )
+    ).toBe('FAILED_PREFLIGHT');
+    expect(
+      classifyInspectResult({
+        probeOutcome: 'failure',
+        historyOutcome: 'skipped',
+        pendingCount: null,
+      }).classification
+    ).toBe('FAILED_PREFLIGHT');
+  });
+
+  it('does not treat a stale zero pending count as NO_PENDING_MIGRATIONS after probe failure', () => {
+    expect(
+      classifyRehearsalFinal(
+        rehearsalClassification({
+          probeOutcome: 'failure',
+          historyOutcome: 'skipped',
+          pendingCount: '0',
+        })
+      )
+    ).toBe('FAILED_PREFLIGHT');
+  });
+
+  it('does not classify history failure as INSPECT_ONLY or NO_PENDING_MIGRATIONS', () => {
+    expect(
+      classifyRehearsalFinal(
+        rehearsalClassification({
+          historyOutcome: 'failure',
+          pendingCount: '',
+        })
+      )
+    ).toBe('FAILED_PREFLIGHT');
+    expect(
+      classifyRehearsalFinal(
+        rehearsalClassification({
+          historyOutcome: 'failure',
+          pendingCount: '0',
+        })
+      )
+    ).toBe('FAILED_PREFLIGHT');
+    expect(
+      classifyInspectResult({
+        probeOutcome: 'success',
+        historyOutcome: 'failure',
+        pendingCount: 0,
+      }).classification
+    ).toBe('FAILED_PREFLIGHT');
+  });
+
+  it('classifies a successful history read of zero pending migrations as NO_PENDING_MIGRATIONS', () => {
+    expect(
+      classifyRehearsalFinal(
+        rehearsalClassification({
+          pendingCount: '0',
+        })
+      )
+    ).toBe('NO_PENDING_MIGRATIONS');
+  });
+
+  it('classifies a successful history read with pending migrations as INSPECT_ONLY', () => {
+    expect(classifyRehearsalFinal(rehearsalClassification())).toBe(
+      'INSPECT_ONLY'
+    );
+  });
+
+  it('keeps inspect on a read-only classification', () => {
+    expect(classifyRehearsalFinal(rehearsalClassification())).toBe(
+      'INSPECT_ONLY'
+    );
+    expect(classifyRehearsalFinal(rehearsalClassification())).not.toBe(
+      'REHEARSAL_EXECUTED_PASS'
+    );
+    expect(isDbPushEligible(0)).toBe(false);
+  });
+
+  it('keeps a missing secret and a failed guard on their blocked classifications', () => {
+    expect(
+      classifyRehearsalFinal(
+        rehearsalClassification({
+          requireSecretsOutcome: 'failure',
+          probeOutcome: 'skipped',
+          historyOutcome: 'skipped',
+          pendingCount: '',
+        })
+      )
+    ).toBe('BLOCKED_MISSING_ENV');
+    expect(
+      classifyRehearsalFinal(
+        rehearsalClassification({
+          rehearsalGuardOutcome: 'failure',
+          probeOutcome: 'skipped',
+          historyOutcome: 'skipped',
+          pendingCount: '',
+        })
+      )
+    ).toBe('BLOCKED_SAFETY_GUARD');
   });
 });
 
@@ -495,6 +640,7 @@ describe('hosted staging migration rehearsal workflow contract', () => {
       secretsStep.indexOf('\n          do')
     );
     expect(secretList).toContain('STAGING_DATABASE_URL');
+    expect(secretList).toContain('STAGING_DATABASE_CA_CERT');
     expect(secretList).toContain('STAGING_SUPABASE_PROJECT_REF');
     expect(secretList).toContain('STAGING_SUPABASE_URL');
     expect(secretList).toContain('STAGING_SUPABASE_SERVICE_ROLE_KEY');
@@ -590,14 +736,28 @@ describe('hosted staging migration rehearsal workflow contract', () => {
   });
 
   it('does not classify a missing app URL as a database environment failure', () => {
-    const classification = rehearsalJob!.slice(
-      rehearsalJob!.indexOf('classification="FAILED_PREFLIGHT"'),
-      rehearsalJob!.indexOf('export REHEARSAL_FINAL_CLASSIFICATION')
+    expect(rehearsalJob).toContain(
+      'scripts/staging/assert-rehearsal-gates.ts classify'
     );
-    expect(classification).toMatch(
-      /steps\.require_secrets\.outcome[\s\S]{0,120}BLOCKED_MISSING_ENV/
-    );
-    expect(classification).not.toMatch(
+    expect(rehearsalJob).not.toContain('classification="INSPECT_ONLY"');
+    expect(
+      classifyRehearsalFinal(
+        rehearsalClassification({
+          pendingCount: '2',
+        })
+      )
+    ).toBe('INSPECT_ONLY');
+    expect(
+      classifyRehearsalFinal(
+        rehearsalClassification({
+          requireSecretsOutcome: 'failure',
+          probeOutcome: 'skipped',
+          historyOutcome: 'skipped',
+          pendingCount: '',
+        })
+      )
+    ).toBe('BLOCKED_MISSING_ENV');
+    expect(rehearsalJob).not.toMatch(
       /app_url\.outputs\.present[\s\S]{0,200}BLOCKED_MISSING_ENV/
     );
     expect(rehearsalJob).not.toContain('app_http_satisfied');
@@ -607,18 +767,37 @@ describe('hosted staging migration rehearsal workflow contract', () => {
     expect(rehearsalJob).toContain(
       "REHEARSAL_READINESS: ${{ steps.ready.outcome || 'not_run' }}"
     );
-    const lines = classification.split('\n');
-    const passIdx = lines.findIndex(line =>
-      line.includes('REHEARSAL_EXECUTED_PASS')
+    expect(rehearsalJob).toContain('REHEARSAL_HTTP_FAILURE="$http_failure"');
+    expect(rehearsalJob).toContain(
+      'REHEARSAL_HTTP_REQUIRED_INCOMPLETE="$http_required_and_incomplete"'
     );
-    const passGuard = lines
-      .slice(Math.max(0, passIdx - 1), passIdx + 1)
-      .join('\n');
-    expect(passGuard).toContain('"$http_failure" != "true"');
-    expect(passGuard).toContain('"$http_required_and_incomplete" != "true"');
     expect(rehearsalJob).toContain(
       '[ "${{ steps.app_url.outputs.present }}" = "true" ] && [ "${{ steps.health.outcome }}" = "success" ] && [ "${{ steps.ready.outcome }}" = "success" ]'
     );
+  });
+
+  it('keeps inspect from running the mutation command and keeps TLS verification enabled', () => {
+    const applyStep = rehearsalJob!.slice(
+      rehearsalJob!.indexOf(
+        '- name: Apply Supabase migrations to hosted staging'
+      ),
+      rehearsalJob!.indexOf('- name: Post-deploy catalog postflight')
+    );
+    expect(applyStep).toContain(
+      "github.event.inputs.migration_rehearsal_mode == 'apply'"
+    );
+    expect(applyStep).toContain("steps.apply_gates.outputs.eligible == 'true'");
+    expect(applyStep).toContain(
+      'supabase db push --db-url "$STAGING_DATABASE_URL" --include-all --yes'
+    );
+    expect(applyStep).not.toContain("migration_rehearsal_mode == 'inspect'");
+    expect(rehearsalJob).toContain('scripts/staging/install-database-ca.sh');
+    expect(rehearsalJob).toContain('id: probe');
+    expect(rehearsalJob).not.toContain('NODE_TLS_REJECT_UNAUTHORIZED');
+    expect(rehearsalJob).not.toContain('rejectUnauthorized: false');
+    expect(rehearsalJob).not.toContain('sslmode=no-verify');
+    expect(productionWorkflow).not.toContain('DATABASE_CA_CERT_REQUIRED');
+    expect(productionWorkflow).not.toContain('STAGING_DATABASE_CA_CERT');
   });
 
   it('does not let auth-matrix run or pass during database bootstrap', () => {

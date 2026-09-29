@@ -127,16 +127,139 @@ export function evaluateApplyEligibility(
   return { eligible: true, pendingCount };
 }
 
-export function classifyInspectResult(pendingCount: number): {
+export type InspectClassificationInput = {
+  probeOutcome: string;
+  historyOutcome: string;
+  /**
+   * Pending count from a successful history read. Null when history did not
+   * produce a count, including when the probe failed and history was skipped.
+   */
+  pendingCount: number | null;
+};
+
+/**
+ * Inspect classifications require a successful connectivity probe and a
+ * successful migration-history read.
+ *
+ * `INSPECT_ONLY` is only for a positive pending count after that read.
+ * `NO_PENDING_MIGRATIONS` is only for a pending count of exactly zero after
+ * that read. Probe or history failure is `FAILED_PREFLIGHT` even if a stale
+ * pending count of zero is present.
+ */
+export function classifyInspectResult(input: InspectClassificationInput): {
   classification: Extract<
     StagingRehearsalClassification,
-    'INSPECT_ONLY' | 'NO_PENDING_MIGRATIONS'
+    'INSPECT_ONLY' | 'NO_PENDING_MIGRATIONS' | 'FAILED_PREFLIGHT'
   >;
 } {
-  if (pendingCount === 0) {
+  if (
+    input.probeOutcome !== 'success' ||
+    input.historyOutcome !== 'success' ||
+    input.pendingCount === null ||
+    !Number.isInteger(input.pendingCount) ||
+    input.pendingCount < 0
+  ) {
+    return { classification: 'FAILED_PREFLIGHT' };
+  }
+  if (input.pendingCount === 0) {
     return { classification: 'NO_PENDING_MIGRATIONS' };
   }
   return { classification: 'INSPECT_ONLY' };
+}
+
+export type RehearsalClassificationInput = {
+  mode: string;
+  requireSecretsOutcome: string;
+  rehearsalGuardOutcome: string;
+  probeOutcome: string;
+  historyOutcome: string;
+  pendingCount: string;
+  applyGatesOutcome: string;
+  applyGatesClassification: string;
+  applyOutcome: string;
+  applyExecuted: boolean;
+  postflightOutcome: string;
+  postflightPassed: boolean;
+  verifySetOutcome: string;
+  sqlAuditsOutcome: string;
+  historyAfterOutcome: string;
+  httpFailure: boolean;
+  httpRequiredAndIncomplete: boolean;
+};
+
+function pendingCountFromWorkflow(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!/^[0-9]+$/.test(trimmed)) {
+    return null;
+  }
+  return Number.parseInt(trimmed, 10);
+}
+
+/**
+ * Final hosted-staging rehearsal classification.
+ *
+ * A failed or skipped connectivity probe never becomes `INSPECT_ONLY`.
+ * History must have succeeded before `INSPECT_ONLY` or
+ * `NO_PENDING_MIGRATIONS`. Missing database secrets and a failed staging
+ * guard stay on their existing blocked classifications.
+ */
+export function classifyRehearsalFinal(
+  input: RehearsalClassificationInput
+): StagingRehearsalClassification {
+  if (input.requireSecretsOutcome === 'failure') {
+    return 'BLOCKED_MISSING_ENV';
+  }
+  if (input.rehearsalGuardOutcome === 'failure') {
+    return 'BLOCKED_SAFETY_GUARD';
+  }
+  if (input.probeOutcome !== 'success' || input.historyOutcome !== 'success') {
+    return 'FAILED_PREFLIGHT';
+  }
+  if (input.applyGatesOutcome === 'failure') {
+    return 'FAILED_PREFLIGHT';
+  }
+  if (input.applyOutcome === 'failure') {
+    return 'FAILED_MIGRATION_APPLY';
+  }
+  if (
+    input.postflightOutcome === 'failure' ||
+    input.verifySetOutcome === 'failure' ||
+    input.sqlAuditsOutcome === 'failure' ||
+    input.historyAfterOutcome === 'failure' ||
+    input.httpFailure ||
+    input.httpRequiredAndIncomplete
+  ) {
+    return 'FAILED_POSTFLIGHT';
+  }
+
+  if (input.mode === 'inspect') {
+    return classifyInspectResult({
+      probeOutcome: input.probeOutcome,
+      historyOutcome: input.historyOutcome,
+      pendingCount: pendingCountFromWorkflow(input.pendingCount),
+    }).classification;
+  }
+
+  if (
+    input.mode === 'apply' &&
+    input.applyGatesOutcome === 'success' &&
+    input.applyGatesClassification === 'NO_PENDING_MIGRATIONS'
+  ) {
+    return 'NO_PENDING_MIGRATIONS';
+  }
+
+  if (
+    input.applyExecuted &&
+    input.postflightPassed &&
+    input.verifySetOutcome === 'success' &&
+    input.sqlAuditsOutcome === 'success' &&
+    !input.httpFailure &&
+    !input.httpRequiredAndIncomplete
+  ) {
+    return 'REHEARSAL_EXECUTED_PASS';
+  }
+
+  return 'FAILED_PREFLIGHT';
 }
 
 export function isDbPushEligible(pendingCount: number): boolean {
