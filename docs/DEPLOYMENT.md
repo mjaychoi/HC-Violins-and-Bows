@@ -176,6 +176,13 @@ Environment and never reads production `DATABASE_URL`.
 Operator flow: inspect first, review SHA / pending count / digest, then
 apply with those exact values. Do not one-click mutate.
 
+Inspect and apply can finish before `STAGING_APP_BASE_URL` exists. That
+green result is database bootstrap. Health, readiness, synthetic, and the
+auth matrix are deployed-app checks. `mode=off` fails when the app URL is
+missing. Apply runs those HTTP checks only when the URL is already set, and
+skips `postdeploy-synthetic` when it is not. `REHEARSAL_EXECUTED_PASS` does
+not by itself mean the deployed app was accepted.
+
 Zero pending migrations is `NO_PENDING_MIGRATIONS` and is not a completed
 mutation rehearsal. Do not claim `HOSTED_EVIDENCE_COMPLETE` from `mode=off`
 or from inspect-only.

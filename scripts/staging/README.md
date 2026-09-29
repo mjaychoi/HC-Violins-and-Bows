@@ -20,13 +20,13 @@ Reusable guard and automation for **non-production** Supabase staging validation
 
 Workflow: `.github/workflows/hosted-staging-integration.yml`
 
-| Job                    | Trigger                                                            | Secrets                                                   | Purpose                                                                             |
-| ---------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `static-validation`    | `pull_request` + `workflow_dispatch`                               | none                                                      | Guard unit tests, migration inventory lint, shell script syntax                     |
-| `hosted-db-validation` | `workflow_dispatch` and `migration_rehearsal_mode=off`             | 6× `STAGING_*` below                                      | Guard CLI, migration set, SQL audits, `/api/health` liveness, wait for `/api/ready` |
-| `migration-rehearsal`  | `workflow_dispatch` `inspect` or `apply`                           | same 6× `STAGING_*`                                       | Two-phase hosted pending-migration inspect / apply against non-production staging   |
-| `postdeploy-synthetic` | `workflow_dispatch` after hosted-db-validation or successful apply | 6× `STAGING_*` + `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` | Cookie-authenticated staging client CRUD                                            |
-| `auth-matrix`          | `workflow_dispatch` when `vars.AUTH_MATRIX_READY=true`             | same 6× `STAGING_*`                                       | Runtime fixture bootstrap + cookie-backed matrix (follow-up harness)                |
+| Job                    | Trigger                                                                                                     | Secrets                                                   | Purpose                                                                                           |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `static-validation`    | `pull_request` + `workflow_dispatch`                                                                        | none                                                      | Guard unit tests, migration inventory lint, shell script syntax                                   |
+| `hosted-db-validation` | `workflow_dispatch` and `migration_rehearsal_mode=off`                                                      | 6× `STAGING_*` below                                      | Guard CLI, migration set, SQL audits, `/api/health` liveness, wait for `/api/ready`               |
+| `migration-rehearsal`  | `workflow_dispatch` `inspect` or `apply`                                                                    | DB `STAGING_*` except `STAGING_APP_BASE_URL`              | Two-phase hosted pending-migration inspect / apply against non-production staging                 |
+| `postdeploy-synthetic` | `workflow_dispatch` after hosted-db-validation, or after apply only when `STAGING_APP_BASE_URL` was present | 6× `STAGING_*` + `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` | Cookie-authenticated staging client CRUD. Skipped, not failed, when apply ran without an app URL. |
+| `auth-matrix`          | `workflow_dispatch` when `vars.AUTH_MATRIX_READY=true`                                                      | same 6× `STAGING_*`                                       | Runtime fixture bootstrap + cookie-backed matrix (follow-up harness)                              |
 
 ### Required GitHub variable (identifier, not a secret)
 
@@ -34,19 +34,19 @@ Workflow: `.github/workflows/hosted-staging-integration.yml`
 | --------------------------------- | ----------------------------------------------------------------------- |
 | `PRODUCTION_SUPABASE_PROJECT_REF` | Production Supabase project ref used to fail closed on staging/prod mix |
 
-Register these secrets on the `hosted-staging` GitHub Environment. The original six `STAGING_*` values remain required for hosted DB validation. `STAGING_SUPABASE_PROJECT_REF` is an identifier and is read from repository/environment `vars` (same pattern as `PRODUCTION_SUPABASE_PROJECT_REF`). `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` are required for the post-deploy synthetic job.
+Register these secrets on the `hosted-staging` GitHub Environment. Hosted DB validation, the auth matrix, and the post-deploy synthetic still require all six `STAGING_*` values, including `STAGING_APP_BASE_URL`. Migration rehearsal does not: database inspect and apply can run before a staging deployment URL exists. `STAGING_SUPABASE_PROJECT_REF` is an identifier and is read from repository/environment `vars` (same pattern as `PRODUCTION_SUPABASE_PROJECT_REF`). `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` are required for the post-deploy synthetic job.
 
-| Variable                            | Purpose                                                                    |
-| ----------------------------------- | -------------------------------------------------------------------------- |
-| `STAGING_SUPABASE_PROJECT_REF`      | Allowlisted hosted staging project ref (primary)                           |
-| `STAGING_PROJECT_REF`               | Optional alias for the same ref (local/CI guard only; not a GitHub secret) |
-| `STAGING_SUPABASE_URL`              | Staging Supabase HTTPS URL                                                 |
-| `STAGING_SUPABASE_ANON_KEY`         | Staging anon key                                                           |
-| `STAGING_SUPABASE_SERVICE_ROLE_KEY` | Staging service role (fixture bootstrap only)                              |
-| `STAGING_DATABASE_URL`              | Staging Postgres connection string (pooler-compatible)                     |
-| `STAGING_APP_BASE_URL`              | Staging or localhost app base URL (non-production)                         |
-| `SYNTHETIC_EMAIL`                   | Dedicated staging synthetic admin email (post-deploy job only)             |
-| `SYNTHETIC_PASSWORD`                | Dedicated staging synthetic admin password (post-deploy job only)          |
+| Variable                            | Purpose                                                                                                                                                                   |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STAGING_SUPABASE_PROJECT_REF`      | Allowlisted hosted staging project ref (primary)                                                                                                                          |
+| `STAGING_PROJECT_REF`               | Optional alias for the same ref (local/CI guard only; not a GitHub secret)                                                                                                |
+| `STAGING_SUPABASE_URL`              | Staging Supabase HTTPS URL                                                                                                                                                |
+| `STAGING_SUPABASE_ANON_KEY`         | Staging anon key                                                                                                                                                          |
+| `STAGING_SUPABASE_SERVICE_ROLE_KEY` | Staging service role (fixture bootstrap only)                                                                                                                             |
+| `STAGING_DATABASE_URL`              | Staging Postgres connection string (pooler-compatible)                                                                                                                    |
+| `STAGING_APP_BASE_URL`              | Deployed staging app base URL. Required for `/api/health`, `/api/ready`, auth matrix, and post-deploy synthetic. Not required for migration-rehearsal database bootstrap. |
+| `SYNTHETIC_EMAIL`                   | Dedicated staging synthetic admin email (post-deploy job only)                                                                                                            |
+| `SYNTHETIC_PASSWORD`                | Dedicated staging synthetic admin password (post-deploy job only)                                                                                                         |
 
 Do **not** store expiring JWTs or synthetic fixture UUIDs as GitHub secrets. The auth-matrix job mints sessions and seeds fixtures at workflow runtime.
 
@@ -71,8 +71,33 @@ Truthful classifications:
 `BLOCKED_MISSING_ENV`, `BLOCKED_SAFETY_GUARD`, `FAILED_PREFLIGHT`,
 `FAILED_MIGRATION_APPLY`, `FAILED_POSTFLIGHT`.
 
+`REHEARSAL_EXECUTED_PASS` means the hosted database apply, catalog
+postflight, migration-set check, and SQL audits passed. It does not mean
+health, readiness, synthetic, or auth-matrix acceptance.
+
+`BLOCKED_MISSING_ENV` means a required database or production-identity value
+was missing. A missing `STAGING_APP_BASE_URL` during inspect or apply is not
+this classification.
+
+Evidence artifact: `staging-migration-rehearsal.json`.
+
+| Field                                                                                 | Proves                                                                                                    |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `finalClassification=REHEARSAL_EXECUTED_PASS`                                         | Database bootstrap completed                                                                              |
+| `deployedAppValidation=not_run` with `health` / `readiness` of `skipped` or `not_run` | Deployed app was not checked. This is not a health pass                                                   |
+| `deployedAppValidation=passed`                                                        | `/api/health` and `/api/ready` both succeeded                                                             |
+| `deployedAppValidation=failed`                                                        | A required health or readiness check failed                                                               |
+| `postdeploy-synthetic` job success                                                    | Synthetic acceptance. The rehearsal artifact leaves `synthetic` as `not_run` because that job is separate |
+| `auth-matrix` job success                                                             | Auth-matrix acceptance. It runs only after `hosted-db-validation` succeeds                                |
+
+`mode=off` is deployed-app validation: missing `STAGING_APP_BASE_URL` fails
+`hosted-db-validation`. Inspect and apply are database bootstrap: when the
+URL is absent, health, readiness, and `postdeploy-synthetic` are skipped.
+When the URL is present, apply requires health and readiness, and a
+successful apply still runs `postdeploy-synthetic`.
+
 Zero pending migrations is `NO_PENDING_MIGRATIONS`, not a completed
-mutation rehearsal. Evidence artifact: `staging-migration-rehearsal.json`.
+mutation rehearsal.
 
 Enable the auth-matrix job after the cookie-backed harness is on the branch by setting repository variable:
 
@@ -96,14 +121,14 @@ npm run test:synthetic:postdeploy
 
 ## Prerequisites (outside this scaffold)
 
-| Gate                         | Depends on                                                                                               |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
-| SQL audit step               | PR #58 audit SQL files merged (or branch checked out at audited head)                                    |
-| `/api/health` 200 (liveness) | Process is up. Not a schema/DB gate.                                                                     |
-| `/api/ready` 200             | Runtime config + DB + schema are ready for traffic.                                                      |
-| Post-deploy synthetic        | `npm run test:synthetic:postdeploy` against `STAGING_APP_BASE_URL`                                       |
-| Auth matrix job              | Cookie-backed harness + opt-in `vars.AUTH_MATRIX_READY=true` (leave disabled until authorized)           |
-| Hosted DB dispatch           | Repo admin creates `hosted-staging` Environment + 6 secrets + `PRODUCTION_SUPABASE_PROJECT_REF` variable |
+| Gate                         | Depends on                                                                                                                                                                                   |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL audit step               | PR #58 audit SQL files merged (or branch checked out at audited head)                                                                                                                        |
+| `/api/health` 200 (liveness) | Process is up. Not a schema/DB gate.                                                                                                                                                         |
+| `/api/ready` 200             | Runtime config + DB + schema are ready for traffic.                                                                                                                                          |
+| Post-deploy synthetic        | `npm run test:synthetic:postdeploy` against `STAGING_APP_BASE_URL`                                                                                                                           |
+| Auth matrix job              | Cookie-backed harness + opt-in `vars.AUTH_MATRIX_READY=true` (leave disabled until authorized)                                                                                               |
+| Hosted DB dispatch           | Repo admin creates `hosted-staging` Environment + database `STAGING_*` values + `PRODUCTION_SUPABASE_PROJECT_REF`. `STAGING_APP_BASE_URL` is required only after a staging deployment exists |
 
 ## Auth matrix
 

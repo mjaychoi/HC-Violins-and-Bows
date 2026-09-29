@@ -36,6 +36,10 @@ Still **not** proven unless actually executed and recorded:
 A green PR or a `NO_PENDING_MIGRATIONS` inspect is not a hosted migration
 rehearsal. `REHEARSAL_EXECUTED_PASS` requires a non-production hosted apply
 with pending count > 0, `supabase db push` success, and blocking postflight.
+That classification is database bootstrap only. Evidence field
+`deployedAppValidation` is `not_run`, `passed`, or `failed`. Skipped health
+or readiness is not a pass. Synthetic and auth-matrix acceptance are
+separate jobs.
 
 A local `pg_dump` / restore is not equivalent to Supabase production PITR.
 
