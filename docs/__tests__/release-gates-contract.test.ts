@@ -50,13 +50,18 @@ describe('release gate contracts', () => {
     }
   });
 
-  it('keeps GitHub CI and Vercel on lockfile installs and Node 20 / npm 11.7.0', () => {
+  it('keeps GitHub CI and Vercel on lockfile installs and Node 24 / npm 11.7.0', () => {
     expect(pkg.packageManager).toBe('npm@11.7.0');
-    expect(pkg.engines.node).toBe('20.x');
+    expect(pkg.engines.node).toBe('24.x');
     expect(vercel.installCommand).toBe('npm ci');
+    expect(deployment).toMatch(/Node 24\.x/);
+    expect(deployment).toMatch(/npm@11\.7\.0/);
+    expect(deployment).not.toMatch(/Node 20\.x/);
     for (const workflow of [ci, codeQuality, security]) {
       expect(workflow).toMatch(/npm ci/);
       expect(workflow).not.toMatch(/^\s+run:\s+npm install\s*$/m);
+      expect(workflow).toMatch(/node-version:\s*(?:\[)?'?24\.x'?\]?/);
+      expect(workflow).not.toMatch(/node-version:\s*(?:\[)?'?20/);
     }
   });
 
