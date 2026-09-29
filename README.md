@@ -28,7 +28,7 @@ A modern, full-stack inventory management system for violin and bow dealers, bui
 
 ## 📋 Prerequisites
 
-- Node.js 20.x (specified in `.nvmrc` and `package.json`)
+- Node.js 24.x (specified in `.nvmrc` and `package.json`)
 - npm or yarn
 - Supabase account
 

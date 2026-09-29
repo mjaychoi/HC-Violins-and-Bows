@@ -55,7 +55,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.x'
           cache: npm
 
       - run: npm ci
@@ -104,7 +104,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.x'
           cache: npm
 
       - name: Require hosted-staging secrets
@@ -218,7 +218,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.x'
           cache: npm
 
       - name: Record checked-out SHA
@@ -606,7 +606,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.x'
           cache: npm
 
       - run: npm ci
@@ -658,7 +658,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.x'
           cache: npm
 
       - run: npm ci

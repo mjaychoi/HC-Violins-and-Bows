@@ -9,7 +9,7 @@
 ### Jobs
 
 1. **test**: 테스트 및 코드 품질 검사
-   - Node 20.x 환경 설정
+   - Node 24.x 환경 설정
    - `npm ci`로 의존성 설치
    - Type check (`npm run type-check`)
    - Lint (`npm run lint`, zero-warning: `eslint . --max-warnings=0`)
@@ -185,7 +185,7 @@ npm run type-check
 
 ### 빌드 실패
 
-- Node 버전 확인 (20.x)
+- Node 버전 확인 (24.x)
 - 의존성 충돌 확인: `rm -rf node_modules package-lock.json && npm install`
 - 캐시 클리어: GitHub Actions에서 `Actions` 탭 > `Clear caches`
 

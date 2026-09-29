@@ -95,7 +95,7 @@ GitHub PR CI (`.github/workflows/ci.yml`, `code-quality.yml`,
 - production environment validator in `deploy:build`:
   `check:env` → `schema:ready` → `build`
 
-Node 20.x and `packageManager` `npm@11.7.0` remain the install toolchain.
+Node 24.x and `packageManager` `npm@11.7.0` remain the install toolchain.
 
 ### ADVISORY / SUPPLEMENTAL
 
