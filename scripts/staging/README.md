@@ -23,8 +23,8 @@ Workflow: `.github/workflows/hosted-staging-integration.yml`
 | Job                    | Trigger                                                                                                     | Secrets                                                   | Purpose                                                                                           |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `static-validation`    | `pull_request` + `workflow_dispatch`                                                                        | none                                                      | Guard unit tests, migration inventory lint, shell script syntax                                   |
-| `hosted-db-validation` | `workflow_dispatch` and `migration_rehearsal_mode=off`                                                      | 6× `STAGING_*` below                                      | Guard CLI, migration set, SQL audits, `/api/health` liveness, wait for `/api/ready`               |
-| `migration-rehearsal`  | `workflow_dispatch` `inspect` or `apply`                                                                    | DB `STAGING_*` except `STAGING_APP_BASE_URL`              | Two-phase hosted pending-migration inspect / apply against non-production staging                 |
+| `hosted-db-validation` | `workflow_dispatch` and `migration_rehearsal_mode=off`                                                      | `STAGING_*` below, including `STAGING_DATABASE_CA_CERT`   | Guard CLI, migration set, SQL audits, `/api/health` liveness, wait for `/api/ready`               |
+| `migration-rehearsal`  | `workflow_dispatch` `inspect` or `apply`                                                                    | DB `STAGING_*` except `STAGING_APP_BASE_URL`, plus the CA | Two-phase hosted pending-migration inspect / apply against non-production staging                 |
 | `postdeploy-synthetic` | `workflow_dispatch` after hosted-db-validation, or after apply only when `STAGING_APP_BASE_URL` was present | 6× `STAGING_*` + `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` | Cookie-authenticated staging client CRUD. Skipped, not failed, when apply ran without an app URL. |
 | `auth-matrix`          | `workflow_dispatch` when `vars.AUTH_MATRIX_READY=true`                                                      | same 6× `STAGING_*`                                       | Runtime fixture bootstrap + cookie-backed matrix (follow-up harness)                              |
 
@@ -34,7 +34,7 @@ Workflow: `.github/workflows/hosted-staging-integration.yml`
 | --------------------------------- | ----------------------------------------------------------------------- |
 | `PRODUCTION_SUPABASE_PROJECT_REF` | Production Supabase project ref used to fail closed on staging/prod mix |
 
-Register these secrets on the `hosted-staging` GitHub Environment. Hosted DB validation, the auth matrix, and the post-deploy synthetic still require all six `STAGING_*` values, including `STAGING_APP_BASE_URL`. Migration rehearsal does not: database inspect and apply can run before a staging deployment URL exists. `STAGING_SUPABASE_PROJECT_REF` is an identifier and is read from repository/environment `vars` (same pattern as `PRODUCTION_SUPABASE_PROJECT_REF`). `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` are required for the post-deploy synthetic job.
+Register these secrets on the `hosted-staging` GitHub Environment. Jobs that open a Postgres connection (`hosted-db-validation` and `migration-rehearsal`) also require `STAGING_DATABASE_CA_CERT`. Hosted DB validation, the auth matrix, and the post-deploy synthetic still require `STAGING_APP_BASE_URL`. Migration rehearsal does not: database inspect and apply can run before a staging deployment URL exists. `STAGING_SUPABASE_PROJECT_REF` is an identifier and is read from repository/environment `vars` (same pattern as `PRODUCTION_SUPABASE_PROJECT_REF`). `SYNTHETIC_EMAIL` / `SYNTHETIC_PASSWORD` are required for the post-deploy synthetic job.
 
 | Variable                            | Purpose                                                                                                                                                                   |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -44,6 +44,7 @@ Register these secrets on the `hosted-staging` GitHub Environment. Hosted DB val
 | `STAGING_SUPABASE_ANON_KEY`         | Staging anon key                                                                                                                                                          |
 | `STAGING_SUPABASE_SERVICE_ROLE_KEY` | Staging service role (fixture bootstrap only)                                                                                                                             |
 | `STAGING_DATABASE_URL`              | Staging Postgres connection string (pooler-compatible)                                                                                                                    |
+| `STAGING_DATABASE_CA_CERT`          | Staging Supabase database CA PEM. Required for certificate verification. Trust material; do not print it.                                                                 |
 | `STAGING_APP_BASE_URL`              | Deployed staging app base URL. Required for `/api/health`, `/api/ready`, auth matrix, and post-deploy synthetic. Not required for migration-rehearsal database bootstrap. |
 | `SYNTHETIC_EMAIL`                   | Dedicated staging synthetic admin email (post-deploy job only)                                                                                                            |
 | `SYNTHETIC_PASSWORD`                | Dedicated staging synthetic admin password (post-deploy job only)                                                                                                         |
@@ -70,6 +71,13 @@ Truthful classifications:
 `REHEARSAL_EXECUTED_PASS`, `INSPECT_ONLY`, `NO_PENDING_MIGRATIONS`,
 `BLOCKED_MISSING_ENV`, `BLOCKED_SAFETY_GUARD`, `FAILED_PREFLIGHT`,
 `FAILED_MIGRATION_APPLY`, `FAILED_POSTFLIGHT`.
+
+`INSPECT_ONLY` is recorded only after the connectivity probe and the
+migration-history read both succeed and the pending count is greater than
+zero. A failed or skipped probe, or a failed or skipped history read, is
+`FAILED_PREFLIGHT` even when the pending count is empty or zero.
+`NO_PENDING_MIGRATIONS` requires that same successful history read with a
+pending count of exactly zero.
 
 `REHEARSAL_EXECUTED_PASS` means the hosted database apply, catalog
 postflight, migration-set check, and SQL audits passed. It does not mean

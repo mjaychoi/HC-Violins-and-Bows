@@ -43,6 +43,7 @@ import { execFileSync } from 'child_process';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { Client } from 'pg';
+import { createDatabaseClientConfig } from './database-client-config';
 import {
   describeDatabaseUrlSafely,
   parseLocalMigrationFilenames,
@@ -153,7 +154,7 @@ export async function assertReadOnlyTransactionActive(
 export async function readRemoteVersionsReadOnly(
   databaseUrl: string
 ): Promise<string[]> {
-  const client = new Client({ connectionString: databaseUrl });
+  const client = new Client(createDatabaseClientConfig(databaseUrl));
   await client.connect();
   try {
     await assertReadOnlyTransactionActive(client);

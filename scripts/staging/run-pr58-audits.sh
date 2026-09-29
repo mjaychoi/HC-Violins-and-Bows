@@ -11,6 +11,18 @@ fi
 
 DB_URL="${STAGING_DATABASE_URL:-$DATABASE_URL}"
 
+if [[ "${DATABASE_CA_CERT_REQUIRED:-}" == "true" && -z "${DATABASE_CA_CERT_PATH:-}" ]]; then
+  echo "DATABASE_CA_CERT_PATH is required for hosted PostgreSQL certificate verification." >&2
+  exit 1
+fi
+
+# libpq sslmode=require does not verify the server certificate. When the
+# hosted CA is present, rewrite only the TLS parameters to verify-full.
+# Do not print DB_URL.
+if [[ -n "${DATABASE_CA_CERT_PATH:-}" ]]; then
+  DB_URL="$(DATABASE_URL="$DB_URL" npx tsx scripts/production/format-libpq-verify-full-url.ts)"
+fi
+
 if [[ -n "${STAGING_SUPABASE_PROJECT_REF:-}" ]]; then
   npx tsx scripts/staging/env-guard-cli.ts >/dev/null
 fi

@@ -75,6 +75,7 @@ jobs:
       - name: Lint staging shell scripts
         run: |
           bash -n scripts/staging/run-pr58-audits.sh
+          bash -n scripts/staging/install-database-ca.sh
           bash -n scripts/auth-matrix/reset-environment.sh
 
       - name: Assert workflow configuration contract (no real ref values)
@@ -108,6 +109,8 @@ jobs:
           cache: npm
 
       - name: Require hosted-staging secrets
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
         run: |
           missing=0
           for name in \
@@ -116,6 +119,7 @@ jobs:
             STAGING_SUPABASE_ANON_KEY \
             STAGING_SUPABASE_SERVICE_ROLE_KEY \
             STAGING_DATABASE_URL \
+            STAGING_DATABASE_CA_CERT \
             STAGING_APP_BASE_URL
           do
             if [ -z "${!name:-}" ]; then
@@ -124,7 +128,7 @@ jobs:
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "Configure all six STAGING_* secrets on the hosted-staging environment."
+            echo "Configure the required STAGING_* secrets on the hosted-staging environment."
             exit 1
           fi
 
@@ -162,6 +166,11 @@ jobs:
 
       - name: Verify migration inventory
         run: npm run check:migrations
+
+      - name: Install staging database CA
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+        run: bash scripts/staging/install-database-ca.sh
 
       - name: Verify applied migration set
         run: npx tsx scripts/staging/verify-migration-set.ts
@@ -231,6 +240,8 @@ jobs:
 
       - name: Require hosted-staging database secrets
         id: require_secrets
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
         run: |
           # Database bootstrap only. STAGING_APP_BASE_URL is required later,
           # only by steps and jobs that call the deployed application.
@@ -240,7 +251,8 @@ jobs:
             STAGING_SUPABASE_URL \
             STAGING_SUPABASE_ANON_KEY \
             STAGING_SUPABASE_SERVICE_ROLE_KEY \
-            STAGING_DATABASE_URL
+            STAGING_DATABASE_URL \
+            STAGING_DATABASE_CA_CERT
           do
             if [ -z "${!name:-}" ]; then
               echo "Missing required hosted-staging database value mapped to ${name}."
@@ -321,7 +333,13 @@ jobs:
       - name: Verify migration inventory
         run: npm run check:migrations
 
+      - name: Install staging database CA
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+        run: bash scripts/staging/install-database-ca.sh
+
       - name: Read-only connectivity probe (SELECT 1)
+        id: probe
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: npx tsx scripts/production/db-probe.ts probe
@@ -401,6 +419,14 @@ jobs:
             echo "STAGING_DATABASE_URL is required; refusing mutation."
             exit 1
           fi
+          if [ -z "${DATABASE_CA_CERT_PATH:-}" ]; then
+            echo "DATABASE_CA_CERT_PATH is required before hosted staging mutation."
+            exit 1
+          fi
+          # libpq sslmode=require does not verify the CA. Rewrite TLS
+          # parameters only; the push command itself stays the same.
+          # Do not print the connection string.
+          STAGING_DATABASE_URL="$(DATABASE_URL="$STAGING_DATABASE_URL" npx tsx scripts/production/format-libpq-verify-full-url.ts)"
           supabase db push --db-url "$STAGING_DATABASE_URL" --include-all --yes
           echo "executed=true" >> "$GITHUB_OUTPUT"
           echo "result=success" >> "$GITHUB_OUTPUT"
@@ -498,16 +524,23 @@ jobs:
           REHEARSAL_PENDING_DIGEST: ${{ steps.history.outputs.digest }}
           REHEARSAL_FIRST_PENDING: ${{ steps.history.outputs.first }}
           REHEARSAL_LAST_PENDING: ${{ steps.history.outputs.last }}
+          REHEARSAL_REQUIRE_SECRETS_OUTCOME: ${{ steps.require_secrets.outcome }}
           REHEARSAL_GUARD_OUTCOME: ${{ steps.rehearsal_guard.outcome }}
+          REHEARSAL_PROBE_OUTCOME: ${{ steps.probe.outcome }}
           REHEARSAL_HISTORY_OUTCOME: ${{ steps.history.outcome }}
           REHEARSAL_SALE_PRICE_PENDING: ${{ steps.history.outputs.sale_price_pending }}
           REHEARSAL_SALE_PRICE_AUDIT_OUTCOME: ${{ steps.sale_price_audit.outcome }}
           REHEARSAL_SALE_LIFECYCLE_PENDING: ${{ steps.history.outputs.sale_lifecycle_pending }}
           REHEARSAL_SALE_LIFECYCLE_AUDIT_OUTCOME: ${{ steps.sale_lifecycle_audit.outcome }}
+          REHEARSAL_APPLY_GATES_OUTCOME: ${{ steps.apply_gates.outcome }}
+          REHEARSAL_APPLY_GATES_CLASSIFICATION: ${{ steps.apply_gates.outputs.classification }}
+          REHEARSAL_APPLY_OUTCOME: ${{ steps.apply.outcome }}
           REHEARSAL_APPLY_EXECUTED: ${{ steps.apply.outputs.executed || 'false' }}
           REHEARSAL_REMOTE_AFTER: ${{ steps.history_after.outputs.remote }}
           REHEARSAL_PENDING_AFTER: ${{ steps.history_after.outputs.pending }}
           REHEARSAL_POSTFLIGHT: ${{ steps.postflight.outcome || 'not_run' }}
+          REHEARSAL_POSTFLIGHT_PASSED: ${{ steps.postflight.outputs.passed || 'false' }}
+          REHEARSAL_HISTORY_AFTER_OUTCOME: ${{ steps.history_after.outcome }}
           REHEARSAL_MIGRATION_SET: ${{ steps.verify_set.outcome || 'not_run' }}
           REHEARSAL_SQL_AUDITS: ${{ steps.sql_audits.outcome || 'not_run' }}
           REHEARSAL_HEALTH: ${{ steps.health.outcome || 'not_run' }}
@@ -539,27 +572,15 @@ jobs:
             http_required_and_incomplete=true
           fi
 
-          classification="FAILED_PREFLIGHT"
-          if [ "${{ steps.require_secrets.outcome }}" = "failure" ]; then
-            classification="BLOCKED_MISSING_ENV"
-          elif [ "${{ steps.rehearsal_guard.outcome }}" = "failure" ]; then
-            classification="BLOCKED_SAFETY_GUARD"
-          elif [ "${{ steps.history.outcome }}" = "failure" ] || [ "${{ steps.apply_gates.outcome }}" = "failure" ]; then
+          export REHEARSAL_HTTP_FAILURE="$http_failure"
+          export REHEARSAL_HTTP_REQUIRED_INCOMPLETE="$http_required_and_incomplete"
+          set +e
+          classification="$(npx tsx scripts/staging/assert-rehearsal-gates.ts classify)"
+          classify_status=$?
+          set -e
+          if [ "$classify_status" -ne 0 ] || [ -z "$classification" ]; then
+            echo "Could not classify rehearsal outcome; recording FAILED_PREFLIGHT."
             classification="FAILED_PREFLIGHT"
-          elif [ "${{ steps.apply.outcome }}" = "failure" ]; then
-            classification="FAILED_MIGRATION_APPLY"
-          elif [ "${{ steps.postflight.outcome }}" = "failure" ] || [ "${{ steps.verify_set.outcome }}" = "failure" ] || [ "${{ steps.sql_audits.outcome }}" = "failure" ] || [ "$http_failure" = "true" ] || [ "$http_required_and_incomplete" = "true" ] || [ "${{ steps.history_after.outcome }}" = "failure" ]; then
-            classification="FAILED_POSTFLIGHT"
-          elif [ "$mode" = "inspect" ]; then
-            if [ "${{ steps.history.outputs.pending }}" = "0" ]; then
-              classification="NO_PENDING_MIGRATIONS"
-            else
-              classification="INSPECT_ONLY"
-            fi
-          elif [ "$mode" = "apply" ] && [ "${{ steps.apply_gates.outputs.classification }}" = "NO_PENDING_MIGRATIONS" ]; then
-            classification="NO_PENDING_MIGRATIONS"
-          elif [ "${{ steps.apply.outputs.executed }}" = "true" ] && [ "${{ steps.postflight.outputs.passed }}" = "true" ] && [ "${{ steps.verify_set.outcome }}" = "success" ] && [ "${{ steps.sql_audits.outcome }}" = "success" ] && [ "$http_failure" != "true" ] && [ "$http_required_and_incomplete" != "true" ]; then
-            classification="REHEARSAL_EXECUTED_PASS"
           fi
 
           export REHEARSAL_FINAL_CLASSIFICATION="$classification"

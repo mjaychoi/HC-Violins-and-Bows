@@ -38,6 +38,7 @@
  */
 import fs from 'fs';
 import { Client } from 'pg';
+import { createDatabaseClientConfig } from './database-client-config';
 import {
   describeDatabaseUrlSafely,
   splitSqlStatements,
@@ -94,7 +95,7 @@ async function main() {
     `Running pre-deploy audit: ${sqlFile} (${statements.length} statements, read-only transaction).`
   );
 
-  const client = new Client({ connectionString: databaseUrl as string });
+  const client = new Client(createDatabaseClientConfig(databaseUrl as string));
   await client.connect();
 
   let result: AuditResult;

@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { Client } from 'pg';
+import { createDatabaseClientConfig } from '../production/database-client-config';
 
 const repoRoot = process.cwd();
 const migrationsDir = path.join(repoRoot, 'supabase', 'migrations');
@@ -43,7 +44,7 @@ function listExpectedMigrations(): Array<{
 }
 
 async function listAppliedMigrations(databaseUrl: string): Promise<string[]> {
-  const client = new Client({ connectionString: databaseUrl });
+  const client = new Client(createDatabaseClientConfig(databaseUrl));
   await client.connect();
   try {
     const result = await client.query<{ version: string }>(

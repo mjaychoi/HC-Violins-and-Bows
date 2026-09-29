@@ -5,11 +5,43 @@
  * Usage:
  *   tsx scripts/staging/assert-rehearsal-gates.ts staging-db-url
  *   tsx scripts/staging/assert-rehearsal-gates.ts apply
+ *   tsx scripts/staging/assert-rehearsal-gates.ts classify
  */
 import {
   assertStagingDatabaseUrlPresent,
+  classifyRehearsalFinal,
   evaluateApplyEligibility,
 } from './rehearsal-gates';
+
+function envOrEmpty(name: string): string {
+  return process.env[name]?.trim() ?? '';
+}
+
+function classifyFromEnv(): void {
+  const classification = classifyRehearsalFinal({
+    mode: envOrEmpty('REHEARSAL_MODE'),
+    requireSecretsOutcome: envOrEmpty('REHEARSAL_REQUIRE_SECRETS_OUTCOME'),
+    rehearsalGuardOutcome: envOrEmpty('REHEARSAL_GUARD_OUTCOME'),
+    probeOutcome: envOrEmpty('REHEARSAL_PROBE_OUTCOME'),
+    historyOutcome: envOrEmpty('REHEARSAL_HISTORY_OUTCOME'),
+    pendingCount: envOrEmpty('REHEARSAL_PENDING_BEFORE'),
+    applyGatesOutcome: envOrEmpty('REHEARSAL_APPLY_GATES_OUTCOME'),
+    applyGatesClassification: envOrEmpty(
+      'REHEARSAL_APPLY_GATES_CLASSIFICATION'
+    ),
+    applyOutcome: envOrEmpty('REHEARSAL_APPLY_OUTCOME'),
+    applyExecuted: envOrEmpty('REHEARSAL_APPLY_EXECUTED') === 'true',
+    postflightOutcome: envOrEmpty('REHEARSAL_POSTFLIGHT'),
+    postflightPassed: envOrEmpty('REHEARSAL_POSTFLIGHT_PASSED') === 'true',
+    verifySetOutcome: envOrEmpty('REHEARSAL_MIGRATION_SET'),
+    sqlAuditsOutcome: envOrEmpty('REHEARSAL_SQL_AUDITS'),
+    historyAfterOutcome: envOrEmpty('REHEARSAL_HISTORY_AFTER_OUTCOME'),
+    httpFailure: envOrEmpty('REHEARSAL_HTTP_FAILURE') === 'true',
+    httpRequiredAndIncomplete:
+      envOrEmpty('REHEARSAL_HTTP_REQUIRED_INCOMPLETE') === 'true',
+  });
+  process.stdout.write(`${classification}\n`);
+}
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -21,6 +53,11 @@ function requireEnv(name: string): string {
 
 function main(): void {
   const mode = process.argv[2];
+
+  if (mode === 'classify') {
+    classifyFromEnv();
+    return;
+  }
 
   if (mode === 'staging-db-url') {
     assertStagingDatabaseUrlPresent(process.env.STAGING_DATABASE_URL);
@@ -50,7 +87,7 @@ function main(): void {
   }
 
   throw new Error(
-    `Unknown mode "${mode}". Expected one of: staging-db-url, apply.`
+    `Unknown mode "${mode}". Expected one of: staging-db-url, apply, classify.`
   );
 }
 
