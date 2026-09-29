@@ -205,6 +205,7 @@ jobs:
     outputs:
       migration_apply_executed: ${{ steps.apply.outputs.executed || 'false' }}
       classification: ${{ steps.evidence.outputs.classification }}
+      app_url_present: ${{ steps.app_url.outputs.present || 'false' }}
     env:
       STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
       STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
@@ -228,20 +229,21 @@ jobs:
           echo "Checked out SHA: $actual_sha"
           echo "sha=$actual_sha" >> "$GITHUB_OUTPUT"
 
-      - name: Require hosted-staging secrets
+      - name: Require hosted-staging database secrets
         id: require_secrets
         run: |
+          # Database bootstrap only. STAGING_APP_BASE_URL is required later,
+          # only by steps and jobs that call the deployed application.
           missing=0
           for name in \
             STAGING_SUPABASE_PROJECT_REF \
             STAGING_SUPABASE_URL \
             STAGING_SUPABASE_ANON_KEY \
             STAGING_SUPABASE_SERVICE_ROLE_KEY \
-            STAGING_DATABASE_URL \
-            STAGING_APP_BASE_URL
+            STAGING_DATABASE_URL
           do
             if [ -z "${!name:-}" ]; then
-              echo "Missing required hosted-staging value mapped to ${name}."
+              echo "Missing required hosted-staging database value mapped to ${name}."
               missing=1
             fi
           done
@@ -272,6 +274,16 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: Record deployed app URL presence
+        id: app_url
+        run: |
+          if [ -n "${STAGING_APP_BASE_URL:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "STAGING_APP_BASE_URL is unset. Database bootstrap continues. Deployed-app HTTP checks stay deferred."
+          fi
 
       - run: npm ci
 
@@ -429,7 +441,7 @@ jobs:
 
       - name: Liveness
         id: health
-        if: steps.apply.outputs.executed == 'true'
+        if: steps.apply.outputs.executed == 'true' && steps.app_url.outputs.present == 'true'
         run: |
           if [ -z "${STAGING_APP_BASE_URL:-}" ]; then
             echo "STAGING_APP_BASE_URL missing; cannot collect app-health evidence."
@@ -440,7 +452,7 @@ jobs:
 
       - name: Wait for readiness
         id: wait_ready
-        if: steps.apply.outputs.executed == 'true'
+        if: steps.apply.outputs.executed == 'true' && steps.app_url.outputs.present == 'true'
         env:
           POSTDEPLOY_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
@@ -449,7 +461,7 @@ jobs:
 
       - name: Readiness
         id: ready
-        if: steps.apply.outputs.executed == 'true'
+        if: steps.apply.outputs.executed == 'true' && steps.app_url.outputs.present == 'true'
         run: |
           body="$(curl -fsS --max-time 10 "${STAGING_APP_BASE_URL%/}/api/ready")"
           echo "$body" | jq -e '.status == "ready"' >/dev/null
@@ -500,6 +512,8 @@ jobs:
           REHEARSAL_SQL_AUDITS: ${{ steps.sql_audits.outcome || 'not_run' }}
           REHEARSAL_HEALTH: ${{ steps.health.outcome || 'not_run' }}
           REHEARSAL_READINESS: ${{ steps.ready.outcome || 'not_run' }}
+          REHEARSAL_READINESS_WAIT: ${{ steps.wait_ready.outcome || 'not_run' }}
+          REHEARSAL_APP_URL_PRESENT: ${{ steps.app_url.outputs.present || 'false' }}
           REHEARSAL_SYNTHETIC: not_run
         run: |
           mode="${{ github.event.inputs.migration_rehearsal_mode }}"
@@ -508,6 +522,21 @@ jobs:
             apply_result="success"
           elif [ "$mode" = "apply" ] && [ "${{ steps.apply.outcome }}" = "failure" ]; then
             apply_result="failure"
+          fi
+
+          # Skipped health/readiness is not a pass. Absence of the app URL
+          # leaves HTTP out of scope so database bootstrap can still pass.
+          http_failure=false
+          if [ "${{ steps.health.outcome }}" = "failure" ] || [ "${{ steps.wait_ready.outcome }}" = "failure" ] || [ "${{ steps.ready.outcome }}" = "failure" ]; then
+            http_failure=true
+          fi
+          http_passed=false
+          if [ "${{ steps.app_url.outputs.present }}" = "true" ] && [ "${{ steps.health.outcome }}" = "success" ] && [ "${{ steps.ready.outcome }}" = "success" ]; then
+            http_passed=true
+          fi
+          http_required_and_incomplete=false
+          if [ "${{ steps.apply.outputs.executed }}" = "true" ] && [ "${{ steps.app_url.outputs.present }}" = "true" ] && [ "$http_passed" != "true" ]; then
+            http_required_and_incomplete=true
           fi
 
           classification="FAILED_PREFLIGHT"
@@ -519,7 +548,7 @@ jobs:
             classification="FAILED_PREFLIGHT"
           elif [ "${{ steps.apply.outcome }}" = "failure" ]; then
             classification="FAILED_MIGRATION_APPLY"
-          elif [ "${{ steps.postflight.outcome }}" = "failure" ] || [ "${{ steps.verify_set.outcome }}" = "failure" ] || [ "${{ steps.sql_audits.outcome }}" = "failure" ] || [ "${{ steps.health.outcome }}" = "failure" ] || [ "${{ steps.ready.outcome }}" = "failure" ] || [ "${{ steps.history_after.outcome }}" = "failure" ]; then
+          elif [ "${{ steps.postflight.outcome }}" = "failure" ] || [ "${{ steps.verify_set.outcome }}" = "failure" ] || [ "${{ steps.sql_audits.outcome }}" = "failure" ] || [ "$http_failure" = "true" ] || [ "$http_required_and_incomplete" = "true" ] || [ "${{ steps.history_after.outcome }}" = "failure" ]; then
             classification="FAILED_POSTFLIGHT"
           elif [ "$mode" = "inspect" ]; then
             if [ "${{ steps.history.outputs.pending }}" = "0" ]; then
@@ -529,7 +558,7 @@ jobs:
             fi
           elif [ "$mode" = "apply" ] && [ "${{ steps.apply_gates.outputs.classification }}" = "NO_PENDING_MIGRATIONS" ]; then
             classification="NO_PENDING_MIGRATIONS"
-          elif [ "${{ steps.apply.outputs.executed }}" = "true" ] && [ "${{ steps.postflight.outputs.passed }}" = "true" ] && [ "${{ steps.verify_set.outcome }}" = "success" ] && [ "${{ steps.sql_audits.outcome }}" = "success" ] && [ "${{ steps.health.outcome }}" = "success" ] && [ "${{ steps.ready.outcome }}" = "success" ]; then
+          elif [ "${{ steps.apply.outputs.executed }}" = "true" ] && [ "${{ steps.postflight.outputs.passed }}" = "true" ] && [ "${{ steps.verify_set.outcome }}" = "success" ] && [ "${{ steps.sql_audits.outcome }}" = "success" ] && [ "$http_failure" != "true" ] && [ "$http_required_and_incomplete" != "true" ]; then
             classification="REHEARSAL_EXECUTED_PASS"
           fi
 
@@ -561,11 +590,15 @@ jobs:
             echo "7. Authoritative catalog postflight: ${{ steps.postflight.outputs.passed == 'true' && 'PASS' || steps.postflight.outcome || 'not_run' }}"
             echo "8. Exact migration-set verification: ${{ steps.verify_set.outcome || 'not_run' }}"
             echo "9. Hosted SQL audits: ${{ steps.sql_audits.outcome || 'not_run' }}"
-            echo "10. Health / readiness: ${{ steps.health.outcome || 'not_run' }} / ${{ steps.ready.outcome || 'not_run' }}"
-            echo "11. Synthetic: deferred to postdeploy-synthetic job when apply executed; otherwise not_run"
+            echo "10. Health / readiness outcomes: ${{ steps.health.outcome || 'not_run' }} / ${{ steps.ready.outcome || 'not_run' }} (deployed app URL present: ${{ steps.app_url.outputs.present || 'false' }})"
+            echo "11. Synthetic: separate postdeploy-synthetic job. After apply it runs only when the deployed app URL was present; otherwise that job is skipped and is not a pass."
             echo "12. Production database touched: NO"
             echo ""
             echo "Final classification: \`${{ steps.evidence.outputs.classification }}\`"
+            echo "Deployed-app validation: \`${{ steps.evidence.outputs.deployed_app_validation }}\` (not_run, passed, or failed). A skipped health or readiness outcome is not passed."
+            echo ""
+            echo "REHEARSAL_EXECUTED_PASS means the hosted database apply, catalog postflight, migration-set check, and SQL audits passed."
+            echo "It does not mean health, readiness, synthetic, or auth-matrix acceptance."
             echo ""
             echo "This is a hosted non-production pending-migration rehearsal / staging upgrade-path rehearsal."
             echo "It is not a production clone rehearsal unless separate baseline provenance exists."
@@ -573,6 +606,10 @@ jobs:
             echo "Production database touched: NO"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Deployed-app job. mode=off still runs after hosted-db-validation, which
+  # already fails when STAGING_APP_BASE_URL is missing. After apply, skip
+  # when that URL was absent so a database-only bootstrap stays green.
+  # A present URL stays required; the job fails closed if the value is empty.
   postdeploy-synthetic:
     needs: [hosted-db-validation, migration-rehearsal]
     if: >-
@@ -585,7 +622,8 @@ jobs:
              github.event.inputs.migration_rehearsal_mode != 'apply') ||
             (needs.migration-rehearsal.result == 'success' &&
              github.event.inputs.migration_rehearsal_mode == 'apply' &&
-             needs.migration-rehearsal.outputs.migration_apply_executed == 'true')
+             needs.migration-rehearsal.outputs.migration_apply_executed == 'true' &&
+             needs.migration-rehearsal.outputs.app_url_present == 'true')
           ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -603,6 +641,13 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Require deployed application URL
+        run: |
+          if [ -z "${STAGING_APP_BASE_URL:-}" ]; then
+            echo "STAGING_APP_BASE_URL is required before HTTP checks against the deployed staging application."
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -655,6 +700,13 @@ jobs:
       AUTH_MATRIX_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Require deployed application URL
+        run: |
+          if [ -z "${STAGING_APP_BASE_URL:-}" ]; then
+            echo "STAGING_APP_BASE_URL is required before HTTP checks against the deployed staging application."
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:

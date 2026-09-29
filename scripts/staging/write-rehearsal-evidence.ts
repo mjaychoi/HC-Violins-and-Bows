@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   STAGING_REHEARSAL_CLASSIFICATIONS,
+  classifyDeployedAppValidation,
   classifyPredeployAudit,
   classifyTargetVerification,
   productionTargetRejectedFromVerification,
@@ -76,6 +77,15 @@ function main(): void {
     auditOutcome: env('REHEARSAL_SALE_LIFECYCLE_AUDIT_OUTCOME') || undefined,
   });
 
+  const health = env('REHEARSAL_HEALTH') || 'not_run';
+  const readiness = env('REHEARSAL_READINESS') || 'not_run';
+  const deployedAppValidation = classifyDeployedAppValidation({
+    appUrlPresent: env('REHEARSAL_APP_URL_PRESENT') === 'true',
+    health,
+    readiness,
+    readinessWait: env('REHEARSAL_READINESS_WAIT') || 'not_run',
+  });
+
   const evidence = {
     repositorySha: env('REHEARSAL_SHA'),
     workflowRunId: env('GITHUB_RUN_ID'),
@@ -106,8 +116,9 @@ function main(): void {
     stagingMigrationSetVerification:
       env('REHEARSAL_MIGRATION_SET') || 'not_run',
     hostedSqlAudits: env('REHEARSAL_SQL_AUDITS') || 'not_run',
-    health: env('REHEARSAL_HEALTH') || 'not_run',
-    readiness: env('REHEARSAL_READINESS') || 'not_run',
+    health,
+    readiness,
+    deployedAppValidation,
     synthetic: env('REHEARSAL_SYNTHETIC') || 'not_run',
     finalClassification: classification,
   };
@@ -123,6 +134,7 @@ function main(): void {
   );
   appendGithubOutput('sale_price_audit', salePriceAudit);
   appendGithubOutput('sale_lifecycle_audit', saleLifecycleAudit);
+  appendGithubOutput('deployed_app_validation', deployedAppValidation);
 }
 
 try {

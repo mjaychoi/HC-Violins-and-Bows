@@ -314,9 +314,18 @@ function assertAppBaseUrlAllowed(
 
 export function assertStagingEnvironment(
   input: StagingGuardInput,
-  options: { requireProductionProjectRef?: boolean } = {}
+  options: {
+    requireProductionProjectRef?: boolean;
+    /**
+     * Deployed-app validation requires an application URL. Hosted migration
+     * rehearsal sets this false so database bootstrap can run before a
+     * staging deployment exists. A URL that is present is still validated.
+     */
+    requireAppBaseUrl?: boolean;
+  } = {}
 ): StagingEnvironment {
   const requireProduction = options.requireProductionProjectRef ?? true;
+  const requireAppBaseUrl = options.requireAppBaseUrl ?? true;
 
   const productionProjectRef = resolveProductionProjectRef({
     value: input.productionProjectRef,
@@ -364,7 +373,7 @@ export function assertStagingEnvironment(
     !supabaseAnonKey ||
     !serviceRoleKey ||
     !databaseUrl ||
-    !appBaseUrl
+    (requireAppBaseUrl && !appBaseUrl)
   ) {
     fail(
       'Required staging identity is incomplete. Set approved project ref, Supabase URL, anon key, service role key, DATABASE_URL, app base URL, and production project ref.'
@@ -379,7 +388,9 @@ export function assertStagingEnvironment(
 
   assertNoStaticProductionHostPatterns(supabaseUrl, 'Supabase URL');
   assertNoStaticProductionHostPatterns(databaseUrl, 'DATABASE_URL');
-  assertNoStaticProductionHostPatterns(appBaseUrl, 'Application base URL');
+  if (appBaseUrl) {
+    assertNoStaticProductionHostPatterns(appBaseUrl, 'Application base URL');
+  }
 
   assertValueExcludesProductionRef(
     supabaseUrl,
@@ -473,7 +484,13 @@ export function assertStagingEnvironment(
     assertApprovedRef(serviceRoleRef, approvedProjectRef, 'Service role key');
   }
 
-  assertAppBaseUrlAllowed(appBaseUrl, approvedProjectRef, productionProjectRef);
+  if (appBaseUrl) {
+    assertAppBaseUrlAllowed(
+      appBaseUrl,
+      approvedProjectRef,
+      productionProjectRef
+    );
+  }
 
   return {
     environment: 'staging',
@@ -483,7 +500,7 @@ export function assertStagingEnvironment(
     supabaseAnonKey,
     serviceRoleKey,
     databaseUrl,
-    appBaseUrl,
+    appBaseUrl: appBaseUrl ?? '',
   };
 }
 
@@ -544,6 +561,8 @@ export function loadStagingEnvironmentFromProcessEnv(
  * Hosted staging migration rehearsal must never fall back to local Postgres
  * or to `DATABASE_URL` / public-key aliases. Inspect and apply both use this
  * loader so a missing `STAGING_DATABASE_URL` fails closed before mutation.
+ * `STAGING_APP_BASE_URL` is not required here; deployed-app HTTP checks
+ * require it separately. A URL that is present is still validated.
  */
 export function assertHostedRehearsalTargetNotLocal(
   environment: StagingEnvironment
@@ -555,6 +574,12 @@ export function assertHostedRehearsalTargetNotLocal(
     fail(
       'Local fallback is not allowed for hosted staging migration rehearsal.'
     );
+  }
+
+  // Absent during database bootstrap, before a staging deployment exists.
+  // A URL that is already set is still rejected when it is local.
+  if (!environment.appBaseUrl.trim()) {
+    return;
   }
 
   let appHost: string;
@@ -602,6 +627,7 @@ export function loadHostedStagingRehearsalEnvironmentFromProcessEnv(
     },
     {
       requireProductionProjectRef: true,
+      requireAppBaseUrl: false,
     }
   );
 

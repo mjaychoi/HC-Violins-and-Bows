@@ -190,6 +190,49 @@ export function summarizeTargetIdentification(
   return 'NOT VERIFIED';
 }
 
+export const DEPLOYED_APP_VALIDATION_STATUSES = [
+  'not_run',
+  'passed',
+  'failed',
+] as const;
+export type DeployedAppValidationStatus =
+  (typeof DEPLOYED_APP_VALIDATION_STATUSES)[number];
+
+/**
+ * Deployed-app HTTP evidence. Skipped or missing health/readiness is `not_run`,
+ * never `passed`. A database rehearsal can succeed while this stays `not_run`.
+ */
+export function classifyDeployedAppValidation(input: {
+  appUrlPresent: boolean;
+  health?: string | null;
+  readiness?: string | null;
+  readinessWait?: string | null;
+}): DeployedAppValidationStatus {
+  const health = input.health?.trim() || 'not_run';
+  const readiness = input.readiness?.trim() || 'not_run';
+  const readinessWait = input.readinessWait?.trim() || 'not_run';
+
+  if (
+    health === 'failure' ||
+    readiness === 'failure' ||
+    readinessWait === 'failure'
+  ) {
+    return 'failed';
+  }
+
+  // No deployed URL means the HTTP checks were out of scope. A copied
+  // "success" outcome must not upgrade that into a pass.
+  if (!input.appUrlPresent) {
+    return 'not_run';
+  }
+
+  if (health === 'success' && readiness === 'success') {
+    return 'passed';
+  }
+
+  return 'not_run';
+}
+
 export function classifyPredeployAudit(input: {
   historyOutcome?: string | null;
   migrationPending?: string | null;
