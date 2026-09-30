@@ -249,6 +249,9 @@ async function salesAdminOrgA(
       state: 'hidden',
       timeout: 15000,
     });
+    await session.page.getByText('Export KeepA', { exact: true }).waitFor({
+      timeout: 20000,
+    });
     const button = await exportButton(session.page);
     if (await button.isDisabled()) {
       throw new Error('Admin sales export control stayed disabled.');
