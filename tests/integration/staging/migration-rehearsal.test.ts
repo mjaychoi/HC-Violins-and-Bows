@@ -22,7 +22,10 @@ import {
   productionTargetRejectedFromVerification,
   targetClassificationFromVerification,
 } from '../../../scripts/staging/rehearsal-gates';
-import { assertHostedStagingWorkflowContract } from '../../../scripts/staging/assert-no-hardcoded-project-refs';
+import {
+  assertHostedStagingWorkflowContract,
+  scanSourceForHardcodedProjectRefs,
+} from '../../../scripts/staging/assert-no-hardcoded-project-refs';
 
 const stagingRef = 'stagingexample1234';
 const productionRef = 'prodrefexample9999';
@@ -809,6 +812,7 @@ describe('hosted staging migration rehearsal workflow contract', () => {
     );
     expect(jobIf).toContain("needs.hosted-db-validation.result == 'success'");
     expect(jobIf).toContain("vars.AUTH_MATRIX_READY == 'true'");
+    expect(jobIf).not.toContain('SYNTHETIC_READY');
     expect(jobIf).not.toContain('always()');
     expect(jobIf).not.toContain('app_url_present');
     expect(authJob).toContain('exit 1');
@@ -831,6 +835,80 @@ describe('hosted staging migration rehearsal workflow contract', () => {
     );
     expect(syntheticJob).toContain('npm run test:synthetic:postdeploy');
     expect(syntheticJob).toContain('npm run wait:ready');
+  });
+
+  it('makes postdeploy synthetic opt-in without marking a skip as pass', () => {
+    const syntheticJob = workflow.match(
+      /postdeploy-synthetic:[\s\S]*?(?=\n  auth-matrix:)/
+    )?.[0];
+    expect(syntheticJob).toBeTruthy();
+    const jobIf = syntheticJob!.slice(
+      syntheticJob!.indexOf('if:'),
+      syntheticJob!.indexOf('runs-on:')
+    );
+    expect(jobIf).toContain("vars.SYNTHETIC_READY == 'true'");
+    expect(jobIf).toContain('always()');
+    expect(jobIf).toContain("github.event_name == 'workflow_dispatch'");
+    expect(jobIf).toContain("needs.hosted-db-validation.result == 'success'");
+    expect(jobIf).toContain(
+      "needs.migration-rehearsal.outputs.migration_apply_executed == 'true'"
+    );
+    expect(jobIf).toContain(
+      "needs.migration-rehearsal.outputs.app_url_present == 'true'"
+    );
+    expect(jobIf).not.toMatch(/continue-on-error|SYNTHETIC_NOT_CONFIGURED/);
+
+    const hostedIf = hostedJob!.slice(
+      hostedJob!.indexOf('if:'),
+      hostedJob!.indexOf('runs-on:')
+    );
+    const rehearsalIf = rehearsalJob!.slice(
+      rehearsalJob!.indexOf('if:'),
+      rehearsalJob!.indexOf('runs-on:')
+    );
+    expect(hostedIf).not.toContain('SYNTHETIC_READY');
+    expect(rehearsalIf).not.toContain('SYNTHETIC_READY');
+
+    const authJob = workflow.match(/auth-matrix:[\s\S]*$/)?.[0];
+    const authIf = authJob!.slice(
+      authJob!.indexOf('if:'),
+      authJob!.indexOf('runs-on:')
+    );
+    expect(authIf).not.toContain('SYNTHETIC_READY');
+    expect(authIf).toContain("vars.AUTH_MATRIX_READY == 'true'");
+
+    const credentialStep = syntheticJob!.slice(
+      syntheticJob!.indexOf('- name: Classify synthetic credentials'),
+      syntheticJob!.indexOf('- name: Staging environment guard')
+    );
+    expect(credentialStep).not.toMatch(/\n\s*if:/);
+    expect(credentialStep).not.toContain('continue-on-error');
+    expect(credentialStep).toContain('SYNTHETIC_EMAIL');
+    expect(credentialStep).toContain('SYNTHETIC_PASSWORD');
+    expect(credentialStep).toContain('This is not a synthetic pass.');
+    expect(credentialStep).toContain('SYNTHETIC_NOT_CONFIGURED');
+    expect(credentialStep).toContain('exit 1');
+    expect(syntheticJob).toContain(
+      'SYNTHETIC_EMAIL: ${{ secrets.SYNTHETIC_EMAIL }}'
+    );
+    expect(syntheticJob).toContain(
+      'SYNTHETIC_PASSWORD: ${{ secrets.SYNTHETIC_PASSWORD }}'
+    );
+
+    expect(rehearsalJob).toContain('REHEARSAL_SYNTHETIC: not_run');
+    expect(rehearsalJob).toContain('is not a pass');
+    expect(rehearsalJob).not.toMatch(
+      /REHEARSAL_SYNTHETIC:\s*(success|PASS|passed)/
+    );
+
+    expect(syntheticJob).not.toMatch(/secrets\.PRODUCTION_/);
+    expect(syntheticJob).not.toMatch(/\benvironment:\s*production\b/);
+    expect(syntheticJob).toContain(
+      'PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}'
+    );
+    expect(
+      scanSourceForHardcodedProjectRefs(syntheticJob!, 'postdeploy-synthetic')
+    ).toEqual([]);
   });
 
   it('leaves production deploy guards unchanged', () => {

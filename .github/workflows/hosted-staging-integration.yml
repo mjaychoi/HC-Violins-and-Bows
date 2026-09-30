@@ -614,7 +614,7 @@ jobs:
             echo "8. Exact migration-set verification: ${{ steps.verify_set.outcome || 'not_run' }}"
             echo "9. Hosted SQL audits: ${{ steps.sql_audits.outcome || 'not_run' }}"
             echo "10. Health / readiness outcomes: ${{ steps.health.outcome || 'not_run' }} / ${{ steps.ready.outcome || 'not_run' }} (deployed app URL present: ${{ steps.app_url.outputs.present || 'false' }})"
-            echo "11. Synthetic: separate postdeploy-synthetic job. After apply it runs only when the deployed app URL was present; otherwise that job is skipped and is not a pass."
+            echo "11. Synthetic: separate postdeploy-synthetic job. It runs only when vars.SYNTHETIC_READY is exactly true, and after apply only when the deployed app URL was present. Otherwise that job is skipped and is not a pass."
             echo "12. Production database touched: NO"
             echo ""
             echo "Final classification: \`${{ steps.evidence.outputs.classification }}\`"
@@ -633,12 +633,16 @@ jobs:
   # already fails when STAGING_APP_BASE_URL is missing. After apply, skip
   # when that URL was absent so a database-only bootstrap stays green.
   # A present URL stays required; the job fails closed if the value is empty.
+  # vars.SYNTHETIC_READY must be exactly 'true'. Any other value, including
+  # unset, skips this job. A skip is not a synthetic pass. When the job
+  # runs, missing SYNTHETIC_EMAIL / SYNTHETIC_PASSWORD still fail closed.
   postdeploy-synthetic:
     needs: [hosted-db-validation, migration-rehearsal]
     if: >-
       ${{ always() &&
           github.event_name == 'workflow_dispatch' &&
           github.repository == 'mjaychoi/HC-Violins-and-Bows' &&
+          vars.SYNTHETIC_READY == 'true' &&
           (
             (needs.hosted-db-validation.result == 'success' &&
              github.event.inputs.migration_rehearsal_mode != 'inspect' &&
