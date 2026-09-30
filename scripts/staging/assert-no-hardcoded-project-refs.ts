@@ -34,6 +34,7 @@ export const DEFAULT_SCAN_TARGETS = [
   'scripts/staging/db-postflight-gates.ts',
   'scripts/staging/assert-db-postflight-gates.ts',
   'scripts/staging/run-pr58-audits.sh',
+  'scripts/staging/run-pr58-postflight-audits.sh',
   'scripts/staging/env-guard.ts',
   'scripts/staging/env-guard-cli.ts',
   'scripts/staging/rehearsal-gates.ts',

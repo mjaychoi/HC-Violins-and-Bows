@@ -76,6 +76,7 @@ jobs:
       - name: Lint staging shell scripts
         run: |
           bash -n scripts/staging/run-pr58-audits.sh
+          bash -n scripts/staging/run-pr58-postflight-audits.sh
           bash -n scripts/staging/install-database-ca.sh
           bash -n scripts/auth-matrix/reset-environment.sh
 

@@ -127,7 +127,8 @@ describe('hosted staging database postflight workflow contract', () => {
     const equalityIdx = workflow.indexOf('assert-reset-migration-equality.ts');
     const catalogIdx = workflow.indexOf('postflight-catalog.ts');
     const objectsIdx = workflow.indexOf('verify-reset-objects.ts');
-    const auditsIdx = workflow.indexOf('run-pr58-audits.sh');
+    const auditsIdx = workflow.indexOf('run-pr58-postflight-audits.sh');
+    expect(workflow).not.toContain('run-pr58-audits.sh');
     expect(workflow.indexOf('ref: main')).toBeGreaterThan(-1);
     expect(guardIdx).toBeGreaterThan(workflow.indexOf('ref: main'));
     expect(caIdx).toBeGreaterThan(guardIdx);

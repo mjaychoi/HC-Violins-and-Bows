@@ -1,9 +1,9 @@
 name: Hosted Staging Database Postflight
 
-# Manual read-only check of the disposable hosted staging database.
-# Verifies identity, certificates, migration equality, catalog, platform
-# objects, Vault infrastructure, and SQL audits. Does not recreate the
-# database or apply migrations.
+# Manual non-destructive, non-persistent check of the disposable hosted
+# staging database. Regression SQL may change temporary fixtures only
+# inside a transaction that ends in ROLLBACK. Persistent backfill SQL is
+# not executed. Does not recreate the database or apply migrations.
 #
 # Final classification is exactly one of:
 # DB_POSTFLIGHT_PASS, DB_POSTFLIGHT_FAILED, BLOCKED_SAFETY_GUARD
@@ -141,7 +141,7 @@ jobs:
 
       - name: Hosted SQL audits
         id: sql_audits
-        run: bash scripts/staging/run-pr58-audits.sh
+        run: bash scripts/staging/run-pr58-postflight-audits.sh
 
       - name: Classify database postflight
         id: evidence
@@ -183,6 +183,8 @@ jobs:
             echo "Checked-out SHA: \`${{ steps.sha.outputs.sha }}\`"
             echo "Final classification: \`${{ steps.evidence.outputs.classification }}\`"
             echo ""
-            echo "This job does not recreate the hosted staging database and does not apply migrations."
+            echo "This job is a non-destructive, non-persistent database postflight."
+            echo "It does not recreate the hosted staging database and does not apply migrations."
+            echo "Persistent backfill SQL is not executed."
             echo "Production database touched: NO"
           } >> "$GITHUB_STEP_SUMMARY"
