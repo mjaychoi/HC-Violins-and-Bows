@@ -6,10 +6,13 @@
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
+import type { EnvMap } from './env-guard';
 import {
+  isPreflightBlockReason,
   isResetClassification,
   parseOptionalCount,
   POST_RESET_ACCEPTANCE_RECREATION,
+  type PreflightBlockReason,
 } from './reset-gates';
 
 const FORBIDDEN_SUBSTRINGS = [
@@ -23,19 +26,22 @@ const FORBIDDEN_SUBSTRINGS = [
   'BEGIN CERTIFICATE',
 ];
 
-function env(name: string): string {
-  return process.env[name]?.trim() ?? '';
+function envValue(env: EnvMap, name: string): string {
+  return env[name]?.trim() ?? '';
 }
 
-function assertSecretSafe(value: string): void {
-  const lower = value.toLowerCase();
-  for (const needle of FORBIDDEN_SUBSTRINGS) {
-    if (lower.includes(needle.toLowerCase())) {
-      throw new Error(
-        'Refusing to write reset evidence because it looks like a secret.'
-      );
-    }
+function parseTriState(raw: string): boolean | null {
+  if (raw === 'true') {
+    return true;
   }
+  if (raw === 'false') {
+    return false;
+  }
+  return null;
+}
+
+function parsePreflightCause(raw: string): PreflightBlockReason | null {
+  return isPreflightBlockReason(raw) ? raw : null;
 }
 
 function outcomeLabel(
@@ -51,8 +57,8 @@ function outcomeLabel(
   return 'not_run';
 }
 
-function main(): void {
-  const classification = env('RESET_FINAL_CLASSIFICATION');
+export function buildResetEvidence(env: EnvMap) {
+  const classification = envValue(env, 'RESET_FINAL_CLASSIFICATION');
   if (!isResetClassification(classification)) {
     throw new Error(
       `Unknown reset classification "${classification || '(empty)'}".`
@@ -60,42 +66,79 @@ function main(): void {
   }
 
   const postflightPassed =
-    env('RESET_POSTFLIGHT_PASSED') === 'true'
+    envValue(env, 'RESET_POSTFLIGHT_PASSED') === 'true'
       ? true
-      : env('RESET_POSTFLIGHT_OUTCOME') === 'failure'
+      : envValue(env, 'RESET_POSTFLIGHT_OUTCOME') === 'failure'
         ? false
         : null;
   const catalogPostflight =
-    outcomeLabel(env('RESET_POSTFLIGHT_OUTCOME'), postflightPassed) ===
-      'pass' && outcomeLabel(env('RESET_OBJECTS_OUTCOME')) === 'pass'
+    outcomeLabel(
+      envValue(env, 'RESET_POSTFLIGHT_OUTCOME'),
+      postflightPassed
+    ) === 'pass' &&
+    outcomeLabel(envValue(env, 'RESET_OBJECTS_OUTCOME')) === 'pass'
       ? 'pass'
-      : outcomeLabel(env('RESET_POSTFLIGHT_OUTCOME'), postflightPassed) ===
-            'fail' || outcomeLabel(env('RESET_OBJECTS_OUTCOME')) === 'fail'
+      : outcomeLabel(
+            envValue(env, 'RESET_POSTFLIGHT_OUTCOME'),
+            postflightPassed
+          ) === 'fail' ||
+          outcomeLabel(envValue(env, 'RESET_OBJECTS_OUTCOME')) === 'fail'
         ? 'fail'
         : 'not_run';
 
-  const evidence = {
-    checkedOutSha: env('RESET_CHECKED_OUT_SHA'),
-    targetVerified: env('RESET_TARGET_VERIFIED') === 'true',
-    productionRejected: env('RESET_PRODUCTION_REJECTED') === 'true',
-    explicitConfirmation: env('RESET_EXPLICIT_CONFIRMATION') === 'true',
-    tlsVerified: env('RESET_TLS_VERIFIED') === 'true',
+  return {
+    checkedOutSha: envValue(env, 'RESET_CHECKED_OUT_SHA'),
+    targetVerified: envValue(env, 'RESET_TARGET_VERIFIED') === 'true',
+    productionRejected: envValue(env, 'RESET_PRODUCTION_REJECTED') === 'true',
+    explicitConfirmation:
+      envValue(env, 'RESET_EXPLICIT_CONFIRMATION') === 'true',
+    clientConnectionVerified:
+      envValue(env, 'RESET_CLIENT_CONNECTION_VERIFIED') === 'true',
+    select1Passed: envValue(env, 'RESET_SELECT1_PASSED') === 'true',
+    clientTlsVerificationConfigured:
+      envValue(env, 'RESET_CLIENT_TLS_VERIFICATION_CONFIGURED') === 'true',
+    backendPgStatSsl: parseTriState(envValue(env, 'RESET_BACKEND_PG_STAT_SSL')),
+    clientTransportEncrypted: parseTriState(
+      envValue(env, 'RESET_CLIENT_TRANSPORT_ENCRYPTED')
+    ),
+    clientTransportAuthorized: parseTriState(
+      envValue(env, 'RESET_CLIENT_TRANSPORT_AUTHORIZED')
+    ),
+    preflightCause: parsePreflightCause(envValue(env, 'RESET_PREFLIGHT_CAUSE')),
+    tlsVerified: envValue(env, 'RESET_TLS_VERIFIED') === 'true',
     preResetRemoteMigrationCount: parseOptionalCount(
-      env('RESET_PRE_REMOTE_COUNT')
+      envValue(env, 'RESET_PRE_REMOTE_COUNT')
     ),
-    resetExecuted: env('RESET_EXECUTED') === 'true',
-    localMigrationCount: parseOptionalCount(env('RESET_LOCAL_COUNT')),
+    resetExecuted: envValue(env, 'RESET_EXECUTED') === 'true',
+    localMigrationCount: parseOptionalCount(envValue(env, 'RESET_LOCAL_COUNT')),
     remoteMigrationCountAfter: parseOptionalCount(
-      env('RESET_REMOTE_COUNT_AFTER')
+      envValue(env, 'RESET_REMOTE_COUNT_AFTER')
     ),
-    remoteOnlyAfter: parseOptionalCount(env('RESET_REMOTE_ONLY_AFTER')),
-    localOnlyAfter: parseOptionalCount(env('RESET_LOCAL_ONLY_AFTER')),
+    remoteOnlyAfter: parseOptionalCount(
+      envValue(env, 'RESET_REMOTE_ONLY_AFTER')
+    ),
+    localOnlyAfter: parseOptionalCount(envValue(env, 'RESET_LOCAL_ONLY_AFTER')),
     catalogPostflight,
-    sqlAudits: outcomeLabel(env('RESET_SQL_AUDITS_OUTCOME')),
+    sqlAudits: outcomeLabel(envValue(env, 'RESET_SQL_AUDITS_OUTCOME')),
     finalClassification: classification,
     acceptanceRecreationRequired: POST_RESET_ACCEPTANCE_RECREATION,
     githubVercelTargetsChanged: false,
   };
+}
+
+function assertSecretSafe(value: string): void {
+  const lower = value.toLowerCase();
+  for (const needle of FORBIDDEN_SUBSTRINGS) {
+    if (lower.includes(needle.toLowerCase())) {
+      throw new Error(
+        'Refusing to write reset evidence because it looks like a secret.'
+      );
+    }
+  }
+}
+
+function main(): void {
+  const evidence = buildResetEvidence(process.env);
 
   const serialized = `${JSON.stringify(evidence, null, 2)}\n`;
   assertSecretSafe(serialized);
