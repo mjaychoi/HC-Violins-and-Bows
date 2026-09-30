@@ -1,7 +1,9 @@
 #!/usr/bin/env tsx
 /**
  * Post-reset catalog check for objects the canonical migrations must
- * recreate. Read-only. Does not patch the database. Stdout is one JSON
+ * recreate, plus Vault infrastructure the orphan-cleanup job needs later.
+ * Read-only. Does not patch the database, read Vault secret values, or
+ * require app_base_url / orphan_cleanup_secret rows. Stdout is one JSON
  * document; connection strings are never printed.
  */
 import { pathToFileURL } from 'url';
@@ -44,7 +46,26 @@ const REQUIRED_POLICIES = [
   'hc_v_invoice_images_delete',
 ] as const;
 
-const REQUIRED_EXTENSIONS = ['pgcrypto', 'pg_cron', 'pg_net'] as const;
+export const REQUIRED_EXTENSIONS = [
+  'pgcrypto',
+  'pg_cron',
+  'pg_net',
+  'supabase_vault',
+] as const;
+
+/**
+ * Catalog lookup only. Does not read vault.decrypted_secrets, secret names,
+ * or secret values. app_base_url and orphan_cleanup_secret are recreated
+ * after reset and must not be required here.
+ */
+export const VAULT_DECRYPTED_SECRETS_LOOKUP_SQL = `SELECT c.relkind::text AS relkind
+     FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'vault'
+      AND c.relname = 'decrypted_secrets'`;
+
+const VAULT_EXTENSION_NAME = 'supabase_vault';
+const VAULT_RELATION_KINDS = new Set(['r', 'v', 'm', 'f', 'p']);
 
 const REQUIRED_RUNTIME_CONTRACTS = [
   'api_create_idempotency_exists',
@@ -65,7 +86,46 @@ export type ResetObjectReport = {
   missingGrants: string[];
   failedRuntimeContracts: string[];
   missingExtensions: string[];
+  vaultInfrastructureAvailable: boolean;
+  missingVaultInfrastructure: string[];
 };
+
+export type VaultInfrastructureAssessment = {
+  available: boolean;
+  missing: string[];
+};
+
+export function assessVaultInfrastructure(input: {
+  installedExtensions: readonly string[];
+  decryptedSecretsRelkind: string | null;
+}): VaultInfrastructureAssessment {
+  const missing: string[] = [];
+  if (!input.installedExtensions.includes(VAULT_EXTENSION_NAME)) {
+    missing.push('supabase_vault extension');
+  }
+  if (
+    input.decryptedSecretsRelkind === null ||
+    !VAULT_RELATION_KINDS.has(input.decryptedSecretsRelkind)
+  ) {
+    missing.push('vault.decrypted_secrets');
+  }
+  return { available: missing.length === 0, missing };
+}
+
+export function applyVaultInfrastructure(
+  report: Omit<
+    ResetObjectReport,
+    'vaultInfrastructureAvailable' | 'missingVaultInfrastructure' | 'passed'
+  > & { passed: boolean },
+  vault: VaultInfrastructureAssessment
+): ResetObjectReport {
+  return {
+    ...report,
+    vaultInfrastructureAvailable: vault.available,
+    missingVaultInfrastructure: [...vault.missing],
+    passed: report.passed && vault.available,
+  };
+}
 
 function missingFrom<T extends string>(
   required: readonly T[],
@@ -182,6 +242,19 @@ async function main(): Promise<void> {
           WHERE extname = ANY($1::text[])`,
         [REQUIRED_EXTENSIONS]
       );
+      const presentExtensions = extensions.rows.map(row => row.extname);
+
+      const vaultRelation = await client.query<{ relkind: string }>(
+        VAULT_DECRYPTED_SECRETS_LOOKUP_SQL
+      );
+      const vault = assessVaultInfrastructure({
+        installedExtensions: presentExtensions,
+        decryptedSecretsRelkind:
+          vaultRelation.rows.find(row => VAULT_RELATION_KINDS.has(row.relkind))
+            ?.relkind ??
+          vaultRelation.rows[0]?.relkind ??
+          null,
+      });
 
       const missingBuckets = missingFrom(REQUIRED_BUCKETS, presentBuckets);
       const missingFunctions = missingFrom(
@@ -194,34 +267,52 @@ async function main(): Promise<void> {
       );
       const missingExtensions = missingFrom(
         REQUIRED_EXTENSIONS,
-        new Set(extensions.rows.map(row => row.extname))
+        new Set(presentExtensions)
       );
 
-      return {
-        passed:
-          missingBuckets.length === 0 &&
-          orphanCleanupCron &&
-          missingFunctions.length === 0 &&
-          missingPolicies.length === 0 &&
-          missingGrants.length === 0 &&
-          failedRuntimeContracts.length === 0 &&
-          missingExtensions.length === 0,
-        missingBuckets,
-        orphanCleanupCron,
-        missingFunctions,
-        missingPolicies,
-        missingGrants,
-        failedRuntimeContracts,
-        missingExtensions,
-      };
+      return applyVaultInfrastructure(
+        {
+          passed:
+            missingBuckets.length === 0 &&
+            orphanCleanupCron &&
+            missingFunctions.length === 0 &&
+            missingPolicies.length === 0 &&
+            missingGrants.length === 0 &&
+            failedRuntimeContracts.length === 0 &&
+            missingExtensions.length === 0,
+          missingBuckets,
+          orphanCleanupCron,
+          missingFunctions,
+          missingPolicies,
+          missingGrants,
+          failedRuntimeContracts,
+          missingExtensions,
+        },
+        vault
+      );
     }
   );
 
   process.stdout.write(`${JSON.stringify(report)}\n`);
   if (!report.passed) {
-    console.error(
-      'RESET_FAILED_POSTFLIGHT: canonical platform objects were not recreated.'
-    );
+    if (!report.vaultInfrastructureAvailable) {
+      console.error(
+        'RESET_FAILED_POSTFLIGHT: Vault infrastructure is unavailable.'
+      );
+    }
+    const platformObjectsMissing =
+      report.missingBuckets.length > 0 ||
+      !report.orphanCleanupCron ||
+      report.missingFunctions.length > 0 ||
+      report.missingPolicies.length > 0 ||
+      report.missingGrants.length > 0 ||
+      report.failedRuntimeContracts.length > 0 ||
+      report.missingExtensions.some(name => name !== VAULT_EXTENSION_NAME);
+    if (platformObjectsMissing || report.vaultInfrastructureAvailable) {
+      console.error(
+        'RESET_FAILED_POSTFLIGHT: canonical platform objects were not recreated.'
+      );
+    }
     process.exit(1);
   }
   console.error('Post-reset platform object check passed.');
