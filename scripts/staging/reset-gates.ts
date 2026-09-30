@@ -8,6 +8,9 @@
  */
 import fs from 'fs';
 import path from 'path';
+import tls from 'tls';
+import type { ConnectionOptions } from 'tls';
+import type { ClientConfig } from 'pg';
 import {
   assertValidProjectRefFormat,
   extractProjectRefFromDatabaseUrl,
@@ -38,13 +41,27 @@ export const POST_RESET_ACCEPTANCE_RECREATION = [
 
 const MIGRATION_FILENAME = /^(\d{14})_[a-z0-9_]+\.sql$/;
 
+export const PREFLIGHT_BLOCK_REASONS = [
+  'BLOCKED_CONNECTIVITY',
+  'BLOCKED_TLS_CONFIGURATION',
+  'BLOCKED_SELECT1',
+] as const;
+
+export type PreflightBlockReason = (typeof PREFLIGHT_BLOCK_REASONS)[number];
+
 export class ResetGateError extends Error {
   readonly classification: ResetClassification;
+  readonly preflightCause: PreflightBlockReason | null;
 
-  constructor(classification: ResetClassification, message: string) {
+  constructor(
+    classification: ResetClassification,
+    message: string,
+    preflightCause: PreflightBlockReason | null = null
+  ) {
     super(message);
     this.name = 'ResetGateError';
     this.classification = classification;
+    this.preflightCause = preflightCause;
   }
 }
 
@@ -256,16 +273,118 @@ export function prepareStagingDbReset(env: EnvMap): PreparedStagingDbReset {
   };
 }
 
-export function assertPreflightProbeSignals(input: {
-  selectOk: unknown;
-  ssl: unknown;
-}): void {
-  if (input.selectOk !== 1 || input.ssl !== true) {
+export type PreflightProbeSignals = {
+  clientConnectionVerified: boolean;
+  select1Passed: boolean;
+  clientTlsVerificationConfigured: boolean;
+  /**
+   * Optional `pg_stat_ssl.ssl` observation for the Postgres backend.
+   * Through a Supabase pooler this is not the runner's TLS session.
+   * It must not set `tlsVerified`.
+   */
+  backendPgStatSsl: boolean | null;
+};
+
+export type PreflightProbeDecision = PreflightProbeSignals & {
+  /** Client-side verification only. Independent of `backendPgStatSsl`. */
+  tlsVerified: boolean;
+  preflightCause: PreflightBlockReason | null;
+};
+
+const PREFLIGHT_BLOCK_MESSAGES: Record<PreflightBlockReason, string> = {
+  BLOCKED_CONNECTIVITY:
+    'BLOCKED_CONNECTIVITY: Pre-reset client connection or read-only transaction failed.',
+  BLOCKED_TLS_CONFIGURATION:
+    'BLOCKED_TLS_CONFIGURATION: Pre-reset client TLS verification is not configured. A trusted CA, rejectUnauthorized, and hostname verification are required.',
+  BLOCKED_SELECT1: 'BLOCKED_SELECT1: Pre-reset SELECT 1 failed.',
+};
+
+export function preflightBlockMessage(cause: PreflightBlockReason): string {
+  return PREFLIGHT_BLOCK_MESSAGES[cause];
+}
+
+export function isPreflightBlockReason(
+  value: string
+): value is PreflightBlockReason {
+  return (PREFLIGHT_BLOCK_REASONS as readonly string[]).includes(value);
+}
+
+function trustedCaLoaded(ca: ConnectionOptions['ca']): boolean {
+  if (typeof ca === 'string' || Buffer.isBuffer(ca)) {
+    return ca.includes('-----BEGIN CERTIFICATE-----');
+  }
+  if (Array.isArray(ca)) {
+    return ca.some(entry => trustedCaLoaded(entry));
+  }
+  return false;
+}
+
+/**
+ * True only when the Node client config is the verified staging TLS path:
+ * CA required, a PEM CA loaded, `rejectUnauthorized: true`, and
+ * `tls.checkServerIdentity`. A boolean `ssl: true` or a disabled
+ * verification flag is not enough.
+ */
+export function isClientTlsVerificationConfigured(
+  env: EnvMap,
+  config: ClientConfig
+): boolean {
+  if (env.DATABASE_CA_CERT_REQUIRED !== 'true') {
+    return false;
+  }
+  const ssl = config.ssl;
+  if (!ssl || typeof ssl !== 'object') {
+    return false;
+  }
+  return (
+    trustedCaLoaded(ssl.ca) &&
+    ssl.rejectUnauthorized === true &&
+    ssl.checkServerIdentity === tls.checkServerIdentity
+  );
+}
+
+/**
+ * Runner-side TLS proof for a Supabase pooler connection.
+ *
+ * `pg_stat_ssl` describes the Postgres backend session. That session is
+ * not the GitHub runner → pooler TLS connection, so `backendPgStatSsl`
+ * is ignored here. `tlsVerified` is true only when the client TLS config
+ * is verified, the client connected, and `SELECT 1` returned 1.
+ */
+export function evaluatePreflightProbeSignals(
+  input: PreflightProbeSignals
+): PreflightProbeDecision {
+  let preflightCause: PreflightBlockReason | null = null;
+  if (!input.clientTlsVerificationConfigured) {
+    preflightCause = 'BLOCKED_TLS_CONFIGURATION';
+  } else if (!input.clientConnectionVerified) {
+    preflightCause = 'BLOCKED_CONNECTIVITY';
+  } else if (!input.select1Passed) {
+    preflightCause = 'BLOCKED_SELECT1';
+  }
+
+  return {
+    clientConnectionVerified: input.clientConnectionVerified,
+    select1Passed: input.select1Passed,
+    clientTlsVerificationConfigured: input.clientTlsVerificationConfigured,
+    backendPgStatSsl: input.backendPgStatSsl,
+    tlsVerified: preflightCause === null,
+    preflightCause,
+  };
+}
+
+export function assertPreflightProbeSignals(
+  input: PreflightProbeSignals
+): PreflightProbeDecision {
+  const decision = evaluatePreflightProbeSignals(input);
+  if (decision.preflightCause) {
     throw new ResetGateError(
       'BLOCKED_SAFETY_GUARD',
-      'Pre-reset connectivity or TLS verification failed. SELECT 1 and ssl=true are required.'
+      preflightBlockMessage(decision.preflightCause),
+      decision.preflightCause
     );
   }
+  return decision;
 }
 
 export type CanonicalMigrationInventory = {

@@ -3,23 +3,36 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as tls from 'tls';
+import type { Client, ClientConfig } from 'pg';
+import { createDatabaseClientConfig } from '../../../scripts/production/database-client-config';
 import {
   PRODUCTION_SUPABASE_PROJECT_REF_ENV,
   type EnvMap,
 } from '../../../scripts/staging/env-guard';
 import {
+  emitPreflightReport,
+  readClientTransportVerification,
+  runStagingResetPreflight,
+  type PreflightReport,
+} from '../../../scripts/staging/reset-preflight-probe';
+import {
   assertExactMigrationEquality,
   assertPreflightProbeSignals,
+  assertVerifyFullDatabaseUrl,
   buildStagingDbResetArgs,
   classifyResetOutcome,
   compareCanonicalMigrationSets,
+  evaluatePreflightProbeSignals,
   evaluateResetDispatchGates,
+  isClientTlsVerificationConfigured,
   prepareStagingDbReset,
   readCheckedOutCanonicalMigrations,
   ResetGateError,
   type ResetOutcomeInput,
 } from '../../../scripts/staging/reset-gates';
 import { executeStagingDbReset } from '../../../scripts/staging/run-staging-db-reset';
+import { buildResetEvidence } from '../../../scripts/staging/write-reset-evidence';
 
 const stagingRef = 'stagingexample1234';
 const productionRef = 'prodrefexample9999';
@@ -341,10 +354,7 @@ describe('post-reset migration equality', () => {
     expect(inventory.migrationCount).toBeGreaterThan(0);
   });
 
-  it('treats a failed connectivity signal as a safety block', () => {
-    expect(() =>
-      assertPreflightProbeSignals({ selectOk: 1, ssl: false })
-    ).toThrow(/TLS/);
+  it('keeps a failed preflight from counting as an executed reset', () => {
     expect(
       classifyResetOutcome(
         passingOutcome({
@@ -355,6 +365,430 @@ describe('post-reset migration equality', () => {
         })
       )
     ).toBe('BLOCKED_SAFETY_GUARD');
+    expect(
+      classifyResetOutcome(
+        passingOutcome({
+          tlsVerified: false,
+          resetExecuted: true,
+        })
+      )
+    ).toBe('BLOCKED_SAFETY_GUARD');
+  });
+});
+
+describe('pre-reset client TLS preflight', () => {
+  const poolerUrl = `postgresql://postgres.${stagingRef}:password@aws-0-us-east-1.pooler.supabase.com:6543/postgres`;
+  let caPath = '';
+  let previousCaPath: string | undefined;
+  let previousCaRequired: string | undefined;
+
+  beforeAll(() => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'staging-preflight-ca-'));
+    caPath = path.join(dir, 'ca.crt');
+    fs.writeFileSync(caPath, PEM, { mode: 0o600 });
+  });
+
+  beforeEach(() => {
+    previousCaPath = process.env.DATABASE_CA_CERT_PATH;
+    previousCaRequired = process.env.DATABASE_CA_CERT_REQUIRED;
+    process.env.DATABASE_CA_CERT_PATH = caPath;
+    process.env.DATABASE_CA_CERT_REQUIRED = 'true';
+  });
+
+  afterEach(() => {
+    if (previousCaPath === undefined) {
+      delete process.env.DATABASE_CA_CERT_PATH;
+    } else {
+      process.env.DATABASE_CA_CERT_PATH = previousCaPath;
+    }
+    if (previousCaRequired === undefined) {
+      delete process.env.DATABASE_CA_CERT_REQUIRED;
+    } else {
+      process.env.DATABASE_CA_CERT_REQUIRED = previousCaRequired;
+    }
+  });
+
+  function verifiedEnv(): EnvMap {
+    return {
+      DATABASE_CA_CERT_PATH: caPath,
+      DATABASE_CA_CERT_REQUIRED: 'true',
+    };
+  }
+
+  function session(options: {
+    selectOk?: unknown;
+    selectThrows?: boolean;
+    ssl?: boolean | 'absent' | 'throw';
+    migrations?: number | 'throw';
+    transport?: { encrypted: boolean; authorized: boolean } | null;
+  }) {
+    let connected = 0;
+    const withClient = async <T>(
+      _databaseUrl: string,
+      fn: (client: Client) => Promise<T>
+    ): Promise<T> => {
+      connected += 1;
+      const client = {
+        query: async (sql: string) => {
+          if (sql === 'SELECT 1 AS ok') {
+            if (options.selectThrows) {
+              throw new Error('select failed');
+            }
+            return { rows: [{ ok: options.selectOk ?? 1 }] };
+          }
+          if (sql.includes('pg_stat_ssl')) {
+            if (options.ssl === 'throw') {
+              throw new Error('pg_stat_ssl unavailable');
+            }
+            if (options.ssl === 'absent') {
+              return { rows: [] };
+            }
+            return { rows: [{ ssl: options.ssl ?? false }] };
+          }
+          if (sql.includes('schema_migrations')) {
+            if (options.migrations === 'throw') {
+              throw new Error('schema_migrations unavailable');
+            }
+            return {
+              rows: Array.from(
+                { length: options.migrations ?? 0 },
+                (_unused, index) => ({ version: String(index) })
+              ),
+            };
+          }
+          throw new Error('unexpected preflight query');
+        },
+        connection:
+          options.transport === null
+            ? undefined
+            : {
+                stream: options.transport ?? {
+                  encrypted: true,
+                  authorized: true,
+                },
+              },
+      };
+      return fn(client as unknown as Client);
+    };
+    return { connected: () => connected, withClient };
+  }
+
+  it('passes a verified client connection and SELECT 1 when pg_stat_ssl is false', async () => {
+    const fake = session({ ssl: false, migrations: 2 });
+    const report = await runStagingResetPreflight(verifiedEnv(), poolerUrl, {
+      withClient: fake.withClient,
+    });
+
+    expect(report).toMatchObject({
+      clientConnectionVerified: true,
+      select1Passed: true,
+      clientTlsVerificationConfigured: true,
+      backendPgStatSsl: false,
+      clientTransportEncrypted: true,
+      clientTransportAuthorized: true,
+      tlsVerified: true,
+      preflightCause: null,
+      preResetRemoteMigrationCount: 2,
+    });
+    expect(assertPreflightProbeSignals(report).tlsVerified).toBe(true);
+    expect(fake.connected()).toBe(1);
+  });
+
+  it('passes when pg_stat_ssl is absent and does not require the pg socket internal', async () => {
+    const fake = session({ ssl: 'absent', transport: null });
+    const report = await runStagingResetPreflight(verifiedEnv(), poolerUrl, {
+      withClient: fake.withClient,
+    });
+
+    expect(report.backendPgStatSsl).toBeNull();
+    expect(report.clientTransportEncrypted).toBeNull();
+    expect(report.clientTransportAuthorized).toBeNull();
+    expect(report.tlsVerified).toBe(true);
+    expect(report.preflightCause).toBeNull();
+    expect(readClientTransportVerification({} as Client)).toEqual({
+      encrypted: null,
+      authorized: null,
+    });
+  });
+
+  it('records transport booleans without letting them replace the TLS config gate', () => {
+    expect(
+      readClientTransportVerification({
+        connection: { stream: { encrypted: true, authorized: true } },
+      } as unknown as Client)
+    ).toEqual({ encrypted: true, authorized: true });
+    expect(
+      evaluatePreflightProbeSignals({
+        clientConnectionVerified: false,
+        select1Passed: false,
+        clientTlsVerificationConfigured: false,
+        backendPgStatSsl: true,
+      })
+    ).toMatchObject({
+      tlsVerified: false,
+      preflightCause: 'BLOCKED_TLS_CONFIGURATION',
+    });
+  });
+
+  it('blocks reset when client.connect fails', async () => {
+    let connected = 0;
+    await expect(
+      runStagingResetPreflight(verifiedEnv(), poolerUrl, {
+        withClient: async () => {
+          connected += 1;
+          throw new Error('connect ECONNREFUSED');
+        },
+      })
+    ).rejects.toMatchObject({
+      classification: 'BLOCKED_SAFETY_GUARD',
+      preflightCause: 'BLOCKED_CONNECTIVITY',
+      evidence: {
+        clientConnectionVerified: false,
+        select1Passed: false,
+        clientTlsVerificationConfigured: true,
+        tlsVerified: false,
+        preflightCause: 'BLOCKED_CONNECTIVITY',
+      },
+    });
+    expect(connected).toBe(1);
+    expect(
+      classifyResetOutcome(
+        passingOutcome({
+          probeOutcome: 'failure',
+          tlsVerified: false,
+          resetExecuted: false,
+          resetCommandOutcome: 'skipped',
+        })
+      )
+    ).toBe('BLOCKED_SAFETY_GUARD');
+  });
+
+  it('blocks reset when SELECT 1 fails', async () => {
+    const wrongValue = session({ selectOk: 0, ssl: true });
+    await expect(
+      runStagingResetPreflight(verifiedEnv(), poolerUrl, {
+        withClient: wrongValue.withClient,
+      })
+    ).rejects.toMatchObject({
+      preflightCause: 'BLOCKED_SELECT1',
+      evidence: {
+        clientConnectionVerified: true,
+        select1Passed: false,
+        backendPgStatSsl: null,
+        tlsVerified: false,
+      },
+    });
+
+    const thrown = session({ selectThrows: true, ssl: true });
+    await expect(
+      runStagingResetPreflight(verifiedEnv(), poolerUrl, {
+        withClient: thrown.withClient,
+      })
+    ).rejects.toMatchObject({ preflightCause: 'BLOCKED_SELECT1' });
+  });
+
+  it('blocks reset when the trusted CA is missing and does not connect', async () => {
+    delete process.env.DATABASE_CA_CERT_PATH;
+    let connected = 0;
+    await expect(
+      runStagingResetPreflight(
+        { DATABASE_CA_CERT_REQUIRED: 'true' },
+        poolerUrl,
+        {
+          withClient: async () => {
+            connected += 1;
+            throw new Error('should not connect');
+          },
+        }
+      )
+    ).rejects.toMatchObject({
+      preflightCause: 'BLOCKED_TLS_CONFIGURATION',
+      evidence: {
+        clientConnectionVerified: false,
+        clientTlsVerificationConfigured: false,
+        tlsVerified: false,
+      },
+    });
+    expect(connected).toBe(0);
+    expect(() => createDatabaseClientConfig(poolerUrl)).toThrow(
+      /DATABASE_CA_CERT_PATH is required/
+    );
+  });
+
+  it('refuses to disable TLS verification even if pg_stat_ssl would be true', async () => {
+    const weakened: ClientConfig = {
+      connectionString: poolerUrl,
+      ssl: {
+        ca: PEM,
+        rejectUnauthorized: false,
+        checkServerIdentity: tls.checkServerIdentity,
+      },
+    };
+    let connected = 0;
+    await expect(
+      runStagingResetPreflight(verifiedEnv(), poolerUrl, {
+        createConfig: () => weakened,
+        withClient: async () => {
+          connected += 1;
+          throw new Error('should not connect');
+        },
+      })
+    ).rejects.toMatchObject({ preflightCause: 'BLOCKED_TLS_CONFIGURATION' });
+    expect(connected).toBe(0);
+    expect(isClientTlsVerificationConfigured(verifiedEnv(), weakened)).toBe(
+      false
+    );
+    expect(
+      isClientTlsVerificationConfigured(verifiedEnv(), {
+        connectionString: poolerUrl,
+        ssl: {
+          ca: PEM,
+          rejectUnauthorized: true,
+        },
+      })
+    ).toBe(false);
+    expect(
+      isClientTlsVerificationConfigured(
+        { DATABASE_CA_CERT_REQUIRED: 'false' },
+        createDatabaseClientConfig(poolerUrl)
+      )
+    ).toBe(false);
+    expect(() =>
+      assertVerifyFullDatabaseUrl(`${poolerUrl}?sslmode=disable`)
+    ).toThrow(/verify-full/);
+    expect(() =>
+      assertVerifyFullDatabaseUrl(
+        `${poolerUrl}?sslmode=no-verify&sslrootcert=${caPath}`
+      )
+    ).toThrow(/verify-full/);
+    expect(() =>
+      assertPreflightProbeSignals({
+        clientConnectionVerified: true,
+        select1Passed: true,
+        clientTlsVerificationConfigured: false,
+        backendPgStatSsl: true,
+      })
+    ).toThrow(/BLOCKED_TLS_CONFIGURATION/);
+  });
+
+  it('does not let pg_stat_ssl independently set tlsVerified', () => {
+    const decision = evaluatePreflightProbeSignals({
+      clientConnectionVerified: true,
+      select1Passed: true,
+      clientTlsVerificationConfigured: true,
+      backendPgStatSsl: false,
+    });
+    expect(decision.tlsVerified).toBe(true);
+
+    const backendOnly = evaluatePreflightProbeSignals({
+      clientConnectionVerified: false,
+      select1Passed: false,
+      clientTlsVerificationConfigured: false,
+      backendPgStatSsl: true,
+    });
+    expect(backendOnly.tlsVerified).toBe(false);
+    expect(backendOnly.preflightCause).toBe('BLOCKED_TLS_CONFIGURATION');
+    expect(JSON.stringify(backendOnly)).not.toMatch(/tlsVerified":true/);
+  });
+
+  it('records the specific preflight cause without secrets', () => {
+    const evidence = buildResetEvidence({
+      RESET_FINAL_CLASSIFICATION: 'BLOCKED_SAFETY_GUARD',
+      RESET_TARGET_VERIFIED: 'true',
+      RESET_PRODUCTION_REJECTED: 'true',
+      RESET_EXPLICIT_CONFIRMATION: 'true',
+      RESET_CLIENT_CONNECTION_VERIFIED: 'true',
+      RESET_SELECT1_PASSED: 'false',
+      RESET_CLIENT_TLS_VERIFICATION_CONFIGURED: 'true',
+      RESET_BACKEND_PG_STAT_SSL: 'false',
+      RESET_PREFLIGHT_CAUSE: 'BLOCKED_SELECT1',
+      RESET_TLS_VERIFIED: 'false',
+      RESET_EXECUTED: 'false',
+    });
+    expect(evidence).toMatchObject({
+      clientConnectionVerified: true,
+      select1Passed: false,
+      clientTlsVerificationConfigured: true,
+      backendPgStatSsl: false,
+      preflightCause: 'BLOCKED_SELECT1',
+      tlsVerified: false,
+      resetExecuted: false,
+      finalClassification: 'BLOCKED_SAFETY_GUARD',
+    });
+
+    const passedDespiteBackendSsl = buildResetEvidence({
+      RESET_FINAL_CLASSIFICATION: 'RESET_EXECUTED_PASS',
+      RESET_CLIENT_CONNECTION_VERIFIED: 'true',
+      RESET_SELECT1_PASSED: 'true',
+      RESET_CLIENT_TLS_VERIFICATION_CONFIGURED: 'true',
+      RESET_BACKEND_PG_STAT_SSL: 'false',
+      RESET_TLS_VERIFIED: 'true',
+      RESET_EXECUTED: 'true',
+      RESET_POSTFLIGHT_OUTCOME: 'success',
+      RESET_POSTFLIGHT_PASSED: 'true',
+      RESET_OBJECTS_OUTCOME: 'success',
+      RESET_SQL_AUDITS_OUTCOME: 'success',
+    });
+    expect(passedDespiteBackendSsl.tlsVerified).toBe(true);
+    expect(passedDespiteBackendSsl.backendPgStatSsl).toBe(false);
+    expect(passedDespiteBackendSsl.preflightCause).toBeNull();
+    expect(JSON.stringify(evidence)).not.toContain('postgresql://');
+    expect(JSON.stringify(evidence)).not.toContain('BEGIN CERTIFICATE');
+    expect(JSON.stringify(evidence)).not.toContain(PEM);
+  });
+
+  it('emits distinct preflight outputs that still gate reset on client TLS', () => {
+    const outputPath = path.join(
+      os.tmpdir(),
+      `preflight-output-${process.pid}.txt`
+    );
+    fs.writeFileSync(outputPath, '');
+    const previousOutput = process.env.GITHUB_OUTPUT;
+    process.env.GITHUB_OUTPUT = outputPath;
+    const logged: string[] = [];
+    const stdout = jest
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(chunk => {
+        logged.push(String(chunk));
+        return true;
+      });
+    const report: PreflightReport = {
+      clientConnectionVerified: false,
+      select1Passed: false,
+      clientTlsVerificationConfigured: false,
+      backendPgStatSsl: true,
+      clientTransportEncrypted: null,
+      clientTransportAuthorized: null,
+      tlsVerified: false,
+      preflightCause: 'BLOCKED_TLS_CONFIGURATION',
+      preResetRemoteMigrationCount: null,
+    };
+    try {
+      emitPreflightReport(report);
+    } finally {
+      stdout.mockRestore();
+      if (previousOutput === undefined) {
+        delete process.env.GITHUB_OUTPUT;
+      } else {
+        process.env.GITHUB_OUTPUT = previousOutput;
+      }
+    }
+
+    const output = fs.readFileSync(outputPath, 'utf8');
+    expect(output).toContain('tls_verified=false');
+    expect(output).toContain('client_connection_verified=false');
+    expect(output).toContain('select1_passed=false');
+    expect(output).toContain('client_tls_verification_configured=false');
+    expect(output).toContain('backend_pg_stat_ssl=true');
+    expect(output).toContain('preflight_cause=BLOCKED_TLS_CONFIGURATION');
+    expect(output).not.toContain('postgresql://');
+    expect(output).not.toContain('BEGIN CERTIFICATE');
+    const stdoutText = logged.join('');
+    expect(stdoutText).toContain('"backendPgStatSsl":true');
+    expect(stdoutText).toContain('"tlsVerified":false');
+    expect(stdoutText).toContain(
+      '"preflightCause":"BLOCKED_TLS_CONFIGURATION"'
+    );
   });
 });
 
@@ -435,6 +869,18 @@ describe('hosted staging reset workflow contract', () => {
       "steps.guard.outputs.target_verified == 'true'"
     );
     expect(resetStep).toContain("steps.probe.outputs.tls_verified == 'true'");
+    expect(workflow).toContain(
+      'steps.probe.outputs.client_connection_verified'
+    );
+    expect(workflow).toContain('steps.probe.outputs.select1_passed');
+    expect(workflow).toContain(
+      'steps.probe.outputs.client_tls_verification_configured'
+    );
+    expect(workflow).toContain('steps.probe.outputs.backend_pg_stat_ssl');
+    expect(workflow).toContain('steps.probe.outputs.preflight_cause');
+    expect(preflight).toContain('isClientTlsVerificationConfigured');
+    expect(preflight).toContain('backendPgStatSsl');
+    expect(preflight).not.toContain('ssl=true are required');
     expect(workflow).toContain('verify-migration-set.ts');
     expect(workflow).toContain('postflight-catalog.ts');
     expect(workflow).toContain('verify-reset-objects.ts');

@@ -207,6 +207,13 @@ jobs:
           RESET_EXPLICIT_CONFIRMATION: ${{ steps.confirm.outputs.explicit_confirmation }}
           RESET_PROBE_OUTCOME: ${{ steps.probe.outcome }}
           RESET_TLS_VERIFIED: ${{ steps.probe.outputs.tls_verified }}
+          RESET_CLIENT_CONNECTION_VERIFIED: ${{ steps.probe.outputs.client_connection_verified }}
+          RESET_SELECT1_PASSED: ${{ steps.probe.outputs.select1_passed }}
+          RESET_CLIENT_TLS_VERIFICATION_CONFIGURED: ${{ steps.probe.outputs.client_tls_verification_configured }}
+          RESET_BACKEND_PG_STAT_SSL: ${{ steps.probe.outputs.backend_pg_stat_ssl }}
+          RESET_CLIENT_TRANSPORT_ENCRYPTED: ${{ steps.probe.outputs.client_transport_encrypted }}
+          RESET_CLIENT_TRANSPORT_AUTHORIZED: ${{ steps.probe.outputs.client_transport_authorized }}
+          RESET_PREFLIGHT_CAUSE: ${{ steps.probe.outputs.preflight_cause }}
           RESET_PRE_REMOTE_COUNT: ${{ steps.probe.outputs.pre_reset_remote_migration_count }}
           RESET_EXECUTED: ${{ steps.reset.outputs.executed }}
           RESET_COMMAND_OUTCOME: ${{ steps.reset.outcome }}
@@ -256,6 +263,7 @@ jobs:
             echo "Canonical migrations: ${{ steps.inventory.outputs.count }} (\`${{ steps.inventory.outputs.first }}\` .. \`${{ steps.inventory.outputs.last }}\`)"
             echo "Supabase CLI: \`${{ steps.cli.outputs.version }}\`"
             echo "Reset executed: ${{ steps.reset.outputs.executed || 'false' }}"
+            echo "Preflight cause: \`${{ steps.probe.outputs.preflight_cause }}\`"
             echo "Final classification: \`${{ steps.evidence.outputs.classification }}\`"
             echo ""
             echo "Production database touched: NO"
