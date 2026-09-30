@@ -234,5 +234,12 @@ describe('export workflow gate', () => {
     expect(runner).not.toContain('db push');
     expect(runner).not.toContain('db reset');
     expect(runner).toContain('CURRENT_IMPLEMENTATION_NO_EXPORT_AUDIT');
+    const browser = readFileSync(
+      join(root, 'scripts/export-e2e/browser.ts'),
+      'utf8'
+    );
+    expect(browser).toContain('Search items by maker, type, serial...');
+    expect(browser).toContain("getByRole('link'");
+    expect(browser).not.toContain("getByLabel('Search items')");
   });
 });

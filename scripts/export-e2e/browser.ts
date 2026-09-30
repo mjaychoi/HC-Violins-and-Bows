@@ -78,6 +78,14 @@ async function exportButton(page: Page) {
   return page.getByRole('button', { name: 'Export CSV' });
 }
 
+function itemSearch(page: Page) {
+  return page.getByPlaceholder('Search items by maker, type, serial...');
+}
+
+function salesInstrumentLink(page: Page, maker: string) {
+  return page.getByRole('link', { name: maker, exact: true });
+}
+
 async function readDownload(
   page: Page
 ): Promise<{ filename: string; text: string }> {
@@ -126,7 +134,6 @@ async function itemAdmin(
     '/dashboard'
   );
   try {
-    await session.page.getByLabel('Search items').waitFor({ timeout: 45000 });
     await session.page.getByText(input.markers.keepSerial).waitFor({
       timeout: 45000,
     });
@@ -136,9 +143,7 @@ async function itemAdmin(
     if (await session.page.getByText(input.markers.orgBSerial).count()) {
       throw new Error('Org A dashboard rendered an Org B item.');
     }
-    await session.page
-      .getByLabel('Search items')
-      .fill(input.markers.searchToken);
+    await itemSearch(session.page).fill(input.markers.searchToken);
     await session.page.getByText(input.markers.dropSerial).waitFor({
       state: 'hidden',
       timeout: 15000,
@@ -231,25 +236,19 @@ async function salesAdminOrgA(
     '/sales'
   );
   try {
-    await session.page
-      .getByText(input.markers.keepMaker, { exact: true })
-      .waitFor({
-        timeout: 45000,
-      });
+    await salesInstrumentLink(session.page, input.markers.keepMaker).waitFor({
+      timeout: 45000,
+    });
     if (
-      await session.page
-        .getByText(input.markers.orgBMaker, { exact: true })
-        .count()
+      await salesInstrumentLink(session.page, input.markers.orgBMaker).count()
     ) {
       throw new Error('Org A sales page rendered an Org B sale.');
     }
     await applySalesDateFilter(session.page);
-    await session.page
-      .getByText(input.markers.dropMaker, { exact: true })
-      .waitFor({
-        state: 'hidden',
-        timeout: 15000,
-      });
+    await salesInstrumentLink(session.page, input.markers.dropMaker).waitFor({
+      state: 'hidden',
+      timeout: 15000,
+    });
     const button = await exportButton(session.page);
     if (await button.isDisabled()) {
       throw new Error('Admin sales export control stayed disabled.');
@@ -296,15 +295,11 @@ async function salesAdminOrgB(
     '/sales'
   );
   try {
-    await session.page
-      .getByText(input.markers.orgBMaker, { exact: true })
-      .waitFor({
-        timeout: 45000,
-      });
+    await salesInstrumentLink(session.page, input.markers.orgBMaker).waitFor({
+      timeout: 45000,
+    });
     if (
-      await session.page
-        .getByText(input.markers.keepMaker, { exact: true })
-        .count()
+      await salesInstrumentLink(session.page, input.markers.keepMaker).count()
     ) {
       throw new Error('Org B sales page rendered an Org A sale.');
     }
@@ -351,11 +346,9 @@ async function salesMember(
     '/sales'
   );
   try {
-    await session.page
-      .getByText(input.markers.keepMaker, { exact: true })
-      .waitFor({
-        timeout: 45000,
-      });
+    await salesInstrumentLink(session.page, input.markers.keepMaker).waitFor({
+      timeout: 45000,
+    });
     const button = await exportButton(session.page);
     if ((await button.count()) === 0) {
       return { id, ok: true, detail: 'sales export control is absent' };
