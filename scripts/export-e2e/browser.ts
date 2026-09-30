@@ -43,7 +43,8 @@ async function openSession(
   browser: Browser,
   appBaseUrl: string,
   actor: HostedActor,
-  path: string
+  path: string,
+  options?: { requireClientsPayloadIncludes?: string }
 ): Promise<{ page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext({
     acceptDownloads: true,
@@ -60,11 +61,33 @@ async function openSession(
     }))
   );
   const page = await context.newPage();
+  const clientsResponse = options?.requireClientsPayloadIncludes
+    ? page.waitForResponse(
+        response =>
+          response.url().includes('/api/clients') &&
+          response.request().method() === 'GET',
+        { timeout: 45000 }
+      )
+    : null;
   await page.goto(`${origin}${path}`, { waitUntil: 'domcontentloaded' });
   if (page.url().includes('/login') || page.url().includes('/onboarding')) {
     throw new Error(
       `Synthetic ${actor.label} session did not reach ${path}. Landed on ${new URL(page.url()).pathname}.`
     );
+  }
+  if (clientsResponse && options?.requireClientsPayloadIncludes) {
+    const response = await clientsResponse;
+    if (!response.ok()) {
+      throw new Error(
+        `Synthetic ${actor.label} clients request returned HTTP ${response.status()}.`
+      );
+    }
+    const payload = JSON.stringify(await response.json());
+    if (!payload.includes(options.requireClientsPayloadIncludes)) {
+      throw new Error(
+        'Sales client list did not include the synthetic client name.'
+      );
+    }
   }
   return {
     page,
@@ -233,7 +256,8 @@ async function salesAdminOrgA(
     browser,
     input.appBaseUrl,
     input.orgAAdmin,
-    '/sales'
+    '/sales',
+    { requireClientsPayloadIncludes: 'KeepA' }
   );
   try {
     await salesInstrumentLink(session.page, input.markers.keepMaker).waitFor({
