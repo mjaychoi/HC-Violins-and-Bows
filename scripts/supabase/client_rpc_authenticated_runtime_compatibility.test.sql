@@ -51,9 +51,26 @@ BEGIN
       'authenticated requires client_instruments SELECT and INSERT';
   END IF;
 
-  IF NOT has_table_privilege('authenticated', 'public.instruments', 'SELECT')
-    OR NOT has_table_privilege('authenticated', 'public.instruments', 'UPDATE') THEN
-    RAISE EXCEPTION 'authenticated requires instruments SELECT and UPDATE';
+  -- 20260814160000 revoked table-level SELECT and re-granted only the
+  -- non-financial columns. UPDATE remains table-level. The invoker RPC
+  -- reads id, org_id, and status, and must not read cost columns.
+  IF NOT has_table_privilege('authenticated', 'public.instruments', 'UPDATE') THEN
+    RAISE EXCEPTION 'authenticated requires instruments UPDATE';
+  END IF;
+
+  IF has_table_privilege('authenticated', 'public.instruments', 'SELECT') THEN
+    RAISE EXCEPTION 'authenticated must not have table-level instruments SELECT';
+  END IF;
+
+  IF NOT has_column_privilege('authenticated', 'public.instruments', 'id', 'SELECT')
+    OR NOT has_column_privilege('authenticated', 'public.instruments', 'org_id', 'SELECT')
+    OR NOT has_column_privilege('authenticated', 'public.instruments', 'status', 'SELECT') THEN
+    RAISE EXCEPTION 'authenticated requires instruments safe-column SELECT';
+  END IF;
+
+  IF has_column_privilege('authenticated', 'public.instruments', 'cost_price', 'SELECT')
+    OR has_column_privilege('authenticated', 'public.instruments', 'consignment_price', 'SELECT') THEN
+    RAISE EXCEPTION 'authenticated must not select instrument financial columns';
   END IF;
 
   FOREACH v_table IN ARRAY ARRAY[

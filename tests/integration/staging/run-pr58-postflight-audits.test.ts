@@ -232,4 +232,63 @@ describe('postflight audit runner safety gates', () => {
     expect(`${result.stdout}\n${result.stderr}`).not.toContain(passwordMarker);
     expect(fs.existsSync(logPath)).toBe(false);
   });
+
+  it('attempts every audit once and fails closed when one audit fails', () => {
+    const failingAudit = 'scripts/supabase/reference_integrity.test.sql';
+    const failureMarker =
+      'duplicate key value violates unique constraint "client_instruments_unique_interested_booked_per_pair"';
+    const psqlPath = path.join(binDir, 'psql');
+    fs.writeFileSync(
+      psqlPath,
+      `#!/bin/sh
+printf '%s\\n' "$@" >> ${JSON.stringify(logPath)}
+printf '\\n---\\n' >> ${JSON.stringify(logPath)}
+for arg in "$@"; do
+  case "$arg" in
+    ${failingAudit})
+      echo ${JSON.stringify(failureMarker)} >&2
+      exit 1
+      ;;
+  esac
+done
+exit 0
+`
+    );
+    fs.chmodSync(psqlPath, 0o755);
+
+    const result = runPostflight(
+      hostedIdentity({
+        DATABASE_CA_CERT_PATH: caPath,
+        DATABASE_CA_CERT_REQUIRED: 'true',
+      })
+    );
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).not.toBe(0);
+    expect(output).toContain(failureMarker);
+    expect(output).toContain(`FAIL ${failingAudit}`);
+    expect(output).toContain(`First failure: ${failingAudit}`);
+    expect(output).not.toContain(
+      'All non-persistent staging postflight audits passed.'
+    );
+    expect(output).not.toContain(passwordMarker);
+    expect(output).not.toContain(certMarker);
+    expect(output).not.toContain('postgresql://');
+
+    const log = fs.readFileSync(logPath, 'utf8');
+    const invocations = log.split('\n---\n').filter(entry => entry.trim());
+    expect(invocations).toHaveLength(
+      ROLLBACK_REGRESSION.length + SELECT_ONLY.length
+    );
+    for (const file of [...ROLLBACK_REGRESSION, ...SELECT_ONLY]) {
+      const matches = invocations.filter(entry => entry.includes(file));
+      expect(matches).toHaveLength(1);
+      expect(output).toContain(
+        file === failingAudit ? `FAIL ${file}` : `PASS ${file}`
+      );
+    }
+    for (const file of PERSISTENT_MUTATION) {
+      expect(log).not.toContain(file);
+    }
+  });
 });
