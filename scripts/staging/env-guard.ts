@@ -507,15 +507,29 @@ export function assertStagingEnvironment(
 /**
  * Fail closed before seed/cleanup/mutation scripts touch a hosted project.
  * Requires PRODUCTION_SUPABASE_PROJECT_REF (explicit arg or env).
+ *
+ * A one-argument call resolves the ref from ambient env and fails closed when
+ * that variable is missing. An explicit second argument — including null,
+ * undefined, or an invalid ref — is used as-is. `resolveProductionProjectRef`
+ * treats a present `value` key as suppressing env lookup, so this wrapper must
+ * omit that key unless the caller supplied the argument.
  */
+export function assertUrlIsNotConfiguredProduction(url: string): string;
 export function assertUrlIsNotConfiguredProduction(
   url: string,
-  productionProjectRef?: string | null
+  productionProjectRef: string | null | undefined
+): string;
+export function assertUrlIsNotConfiguredProduction(
+  url: string,
+  ...explicitProductionProjectRef: [] | [string | null | undefined]
 ): string {
-  const resolved = resolveProductionProjectRef({
-    value: productionProjectRef,
-    required: true,
-  });
+  const resolved =
+    explicitProductionProjectRef.length === 0
+      ? resolveProductionProjectRef({ required: true })
+      : resolveProductionProjectRef({
+          value: explicitProductionProjectRef[0],
+          required: true,
+        });
 
   if (!resolved) {
     fail(

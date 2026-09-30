@@ -5,6 +5,7 @@ import * as path from 'path';
 import {
   PRODUCTION_SUPABASE_PROJECT_REF_ENV,
   assertStagingEnvironment,
+  assertUrlIsNotConfiguredProduction,
   extractProjectRefFromDatabaseUrl,
   extractProjectRefFromSupabaseUrl,
   loadStagingEnvironmentFromProcessEnv,
@@ -192,6 +193,29 @@ describe('staging env guard', () => {
     ).toThrow(new RegExp(PRODUCTION_SUPABASE_PROJECT_REF_ENV));
   });
 
+  it('resolveProductionProjectRef reads env only when value is omitted', () => {
+    expect(
+      resolveProductionProjectRef({
+        required: true,
+        env: {
+          [PRODUCTION_SUPABASE_PROJECT_REF_ENV]: productionRef,
+        },
+      })
+    ).toBe(productionRef);
+  });
+
+  it('resolveProductionProjectRef ignores env when value is explicitly present', () => {
+    expect(() =>
+      resolveProductionProjectRef({
+        value: undefined,
+        required: true,
+        env: {
+          [PRODUCTION_SUPABASE_PROJECT_REF_ENV]: productionRef,
+        },
+      })
+    ).toThrow(new RegExp(PRODUCTION_SUPABASE_PROJECT_REF_ENV));
+  });
+
   it('loadStagingEnvironmentFromProcessEnv cross-checks public URL', () => {
     expect(() =>
       loadStagingEnvironmentFromProcessEnv({
@@ -205,6 +229,78 @@ describe('staging env guard', () => {
         STAGING_APP_BASE_URL: baseStaging.appBaseUrl,
       })
     ).toThrow(/NEXT_PUBLIC_SUPABASE_URL/i);
+  });
+});
+
+describe('assertUrlIsNotConfiguredProduction production ref resolution', () => {
+  const stagingUrl = `https://${stagingRef}.supabase.co`;
+  const productionUrl = `https://${productionRef}.supabase.co`;
+  const ambientOnlyRef = 'ambientrefexample01';
+  let savedProductionRef: string | undefined;
+
+  beforeEach(() => {
+    savedProductionRef = process.env[PRODUCTION_SUPABASE_PROJECT_REF_ENV];
+  });
+
+  afterEach(() => {
+    if (savedProductionRef === undefined) {
+      delete process.env[PRODUCTION_SUPABASE_PROJECT_REF_ENV];
+    } else {
+      process.env[PRODUCTION_SUPABASE_PROJECT_REF_ENV] = savedProductionRef;
+    }
+  });
+
+  it('resolves an omitted production ref from ambient env for a staging URL', () => {
+    process.env[PRODUCTION_SUPABASE_PROJECT_REF_ENV] = productionRef;
+
+    expect(assertUrlIsNotConfiguredProduction(stagingUrl)).toBe(productionRef);
+  });
+
+  it('blocks a URL that contains the ambient production ref', () => {
+    process.env[PRODUCTION_SUPABASE_PROJECT_REF_ENV] = productionRef;
+
+    expect(() => assertUrlIsNotConfiguredProduction(productionUrl)).toThrow(
+      /Refusing to operate on production Supabase project/
+    );
+  });
+
+  it('fails closed when the ambient production ref is unset', () => {
+    delete process.env[PRODUCTION_SUPABASE_PROJECT_REF_ENV];
+
+    expect(() => assertUrlIsNotConfiguredProduction(stagingUrl)).toThrow(
+      new RegExp(PRODUCTION_SUPABASE_PROJECT_REF_ENV)
+    );
+  });
+
+  it('uses an explicit production ref for both allow and deny', () => {
+    process.env[PRODUCTION_SUPABASE_PROJECT_REF_ENV] = ambientOnlyRef;
+
+    expect(assertUrlIsNotConfiguredProduction(stagingUrl, productionRef)).toBe(
+      productionRef
+    );
+    expect(() =>
+      assertUrlIsNotConfiguredProduction(productionUrl, productionRef)
+    ).toThrow(/Refusing to operate on production Supabase project/);
+  });
+
+  it('fails closed on an explicit null or invalid ref without using ambient env', () => {
+    process.env[PRODUCTION_SUPABASE_PROJECT_REF_ENV] = productionRef;
+
+    expect(() => assertUrlIsNotConfiguredProduction(stagingUrl, null)).toThrow(
+      new RegExp(PRODUCTION_SUPABASE_PROJECT_REF_ENV)
+    );
+    expect(() =>
+      assertUrlIsNotConfiguredProduction(stagingUrl, undefined)
+    ).toThrow(new RegExp(PRODUCTION_SUPABASE_PROJECT_REF_ENV));
+    expect(() => assertUrlIsNotConfiguredProduction(stagingUrl, '')).toThrow(
+      /empty or whitespace-only/
+    );
+    expect(() => assertUrlIsNotConfiguredProduction(stagingUrl, '   ')).toThrow(
+      /empty or whitespace-only/
+    );
+    expect(() =>
+      assertUrlIsNotConfiguredProduction(stagingUrl, 'NOT_VALID!!!')
+    ).toThrow(/malformed|quote or newline/);
   });
 });
 
