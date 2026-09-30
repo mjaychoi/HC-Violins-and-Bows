@@ -49,7 +49,7 @@ export const DEFAULT_SCAN_TARGETS = [
   'scripts/auth-matrix/hosted-matrix.ts',
   'scripts/auth-matrix/hosted-cleanup.ts',
   'scripts/auth-matrix/runtime-manifest.ts',
-  'tests/integration/auth-matrix/env-guard.ts',
+  'scripts/auth-matrix/env-guard.ts',
   'scripts/postdeploy/allowlist.ts',
   'scripts/postdeploy/run-synthetic.ts',
   'scripts/postdeploy/run-wait-for-ready.ts',

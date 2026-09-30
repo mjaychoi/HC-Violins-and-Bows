@@ -4,7 +4,7 @@ import {
   assertNonProductionAuthMatrixEnv,
   isAuthMatrixEnabled,
   loadAuthMatrixEnvironment,
-} from './env-guard';
+} from '../../../scripts/auth-matrix/env-guard';
 import { PRODUCTION_SUPABASE_PROJECT_REF_ENV } from '../../../scripts/staging/env-guard';
 import {
   DEFAULT_SCAN_TARGETS,
@@ -81,12 +81,10 @@ describe('auth matrix env guard', () => {
 
   it('keeps auth-matrix guard helper free of hard-coded project refs', () => {
     const findings = scanFilesForHardcodedProjectRefs(process.cwd(), [
-      'tests/integration/auth-matrix/env-guard.ts',
+      'scripts/auth-matrix/env-guard.ts',
     ]);
     expect(findings).toEqual([]);
-    expect(DEFAULT_SCAN_TARGETS).toContain(
-      'tests/integration/auth-matrix/env-guard.ts'
-    );
+    expect(DEFAULT_SCAN_TARGETS).toContain('scripts/auth-matrix/env-guard.ts');
     expect(DEFAULT_SCAN_TARGETS).toContain(
       'scripts/auth-matrix/run-hosted-matrix.ts'
     );
