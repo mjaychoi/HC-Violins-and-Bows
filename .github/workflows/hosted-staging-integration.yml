@@ -40,6 +40,7 @@ on:
       - 'tests/integration/auth-matrix/**'
       - 'tests/integration/staging/**'
       - '.github/workflows/hosted-staging-integration.yml'
+      - '.github/workflows/hosted-staging-db-postflight.yml'
 
 concurrency:
   group: hosted-staging-integration-${{ github.event.pull_request.number || github.ref }}
@@ -75,6 +76,7 @@ jobs:
       - name: Lint staging shell scripts
         run: |
           bash -n scripts/staging/run-pr58-audits.sh
+          bash -n scripts/staging/run-pr58-postflight-audits.sh
           bash -n scripts/staging/install-database-ca.sh
           bash -n scripts/auth-matrix/reset-environment.sh
 

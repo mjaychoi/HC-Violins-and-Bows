@@ -1,0 +1,190 @@
+name: Hosted Staging Database Postflight
+
+# Manual non-destructive, non-persistent check of the disposable hosted
+# staging database. Regression SQL may change temporary fixtures only
+# inside a transaction that ends in ROLLBACK. Persistent backfill SQL is
+# not executed. Does not recreate the database or apply migrations.
+#
+# Final classification is exactly one of:
+# DB_POSTFLIGHT_PASS, DB_POSTFLIGHT_FAILED, BLOCKED_SAFETY_GUARD
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-staging-db-postflight
+  cancel-in-progress: false
+
+jobs:
+  db-postflight:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'mjaychoi/HC-Violins-and-Bows'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: hosted-staging
+    env:
+      STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Record checked-out SHA
+        id: sha
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "Checked out SHA: $actual_sha"
+          echo "sha=$actual_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Verify migration inventory
+        run: npm run check:migrations
+
+      - name: Require hosted-staging database configuration
+        id: require_config
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            STAGING_SUPABASE_PROJECT_REF \
+            STAGING_SUPABASE_URL \
+            STAGING_SUPABASE_ANON_KEY \
+            STAGING_SUPABASE_SERVICE_ROLE_KEY \
+            STAGING_DATABASE_URL \
+            STAGING_DATABASE_CA_CERT \
+            PRODUCTION_SUPABASE_PROJECT_REF
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required hosted-staging value mapped to ${name}."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "BLOCKED_SAFETY_GUARD"
+            exit 1
+          fi
+
+      - name: Deny production project unconditionally
+        id: deny_production
+        run: |
+          set -euo pipefail
+          if [ "$STAGING_SUPABASE_PROJECT_REF" = "$PRODUCTION_SUPABASE_PROJECT_REF" ]; then
+            echo "Production project ref is not allowed for hosted staging database postflight."
+            echo "BLOCKED_SAFETY_GUARD"
+            exit 1
+          fi
+          case "$STAGING_SUPABASE_URL" in
+            *"$PRODUCTION_SUPABASE_PROJECT_REF"*)
+              echo "Production Supabase URL detected."
+              echo "BLOCKED_SAFETY_GUARD"
+              exit 1
+              ;;
+          esac
+          case "$STAGING_DATABASE_URL" in
+            *"$PRODUCTION_SUPABASE_PROJECT_REF"*)
+              echo "Production database URL detected."
+              echo "BLOCKED_SAFETY_GUARD"
+              exit 1
+              ;;
+          esac
+
+      - name: Staging identity guard
+        id: guard
+        run: npx tsx scripts/staging/env-guard-cli.ts --hosted-rehearsal
+
+      - name: Install staging database CA
+        id: ca
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+        run: bash scripts/staging/install-database-ca.sh
+
+      - name: Require exact migration equality
+        id: equality
+        run: npx tsx scripts/staging/assert-reset-migration-equality.ts
+
+      - name: Catalog postflight
+        id: catalog
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          set +e
+          npx tsx scripts/production/postflight-catalog.ts | tee postflight.json
+          tsx_status="${PIPESTATUS[0]}"
+          set -e
+          passed="$(node -e "console.log(JSON.parse(require('fs').readFileSync('postflight.json','utf8')).passed)" 2>/dev/null || echo false)"
+          rm -f postflight.json
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
+          if [ "$tsx_status" != "0" ] || [ "$passed" != "true" ]; then
+            exit 1
+          fi
+
+      - name: Verify platform objects and Vault infrastructure
+        id: objects
+        run: npx tsx scripts/staging/verify-reset-objects.ts
+
+      - name: Hosted SQL audits
+        id: sql_audits
+        run: bash scripts/staging/run-pr58-postflight-audits.sh
+
+      - name: Classify database postflight
+        id: evidence
+        if: always()
+        env:
+          POSTFLIGHT_GUARD_OUTCOME: ${{ steps.guard.outcome }}
+          POSTFLIGHT_CA_OUTCOME: ${{ steps.ca.outcome }}
+          POSTFLIGHT_EQUALITY_OUTCOME: ${{ steps.equality.outcome }}
+          POSTFLIGHT_CATALOG_OUTCOME: ${{ steps.catalog.outcome }}
+          POSTFLIGHT_CATALOG_PASSED: ${{ steps.catalog.outputs.passed }}
+          POSTFLIGHT_OBJECTS_OUTCOME: ${{ steps.objects.outcome }}
+          POSTFLIGHT_SQL_AUDITS_OUTCOME: ${{ steps.sql_audits.outcome }}
+          POSTFLIGHT_REMOTE_ONLY: ${{ steps.equality.outputs.remote_only }}
+          POSTFLIGHT_LOCAL_ONLY: ${{ steps.equality.outputs.local_only }}
+          POSTFLIGHT_REMOTE_COUNT: ${{ steps.equality.outputs.remote_count }}
+          POSTFLIGHT_LOCAL_COUNT: ${{ steps.equality.outputs.local_count }}
+        run: |
+          set -euo pipefail
+          set +e
+          classification="$(npx tsx scripts/staging/assert-db-postflight-gates.ts classify)"
+          classify_status=$?
+          set -e
+          if [ "$classify_status" -ne 0 ] || [ -z "$classification" ]; then
+            echo "Could not classify database postflight."
+            classification="BLOCKED_SAFETY_GUARD"
+          fi
+          echo "classification=$classification" >> "$GITHUB_OUTPUT"
+          echo "Final classification: ${classification}"
+          if [ "$classification" != "DB_POSTFLIGHT_PASS" ]; then
+            echo "Hosted staging database postflight did not pass: ${classification}"
+            exit 1
+          fi
+
+      - name: Postflight summary
+        if: always()
+        run: |
+          {
+            echo "### Hosted staging database postflight"
+            echo "Checked-out SHA: \`${{ steps.sha.outputs.sha }}\`"
+            echo "Final classification: \`${{ steps.evidence.outputs.classification }}\`"
+            echo ""
+            echo "This job is a non-destructive, non-persistent database postflight."
+            echo "It does not recreate the hosted staging database and does not apply migrations."
+            echo "Persistent backfill SQL is not executed."
+            echo "Production database touched: NO"
+          } >> "$GITHUB_STEP_SUMMARY"

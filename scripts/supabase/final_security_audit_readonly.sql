@@ -1,0 +1,130 @@
+-- Select-only final security audit.
+-- Persistent parent-org backfill statements from final_security_audit.sql
+-- are omitted. This file does not change database rows.
+
+-- 1) Policies that still allow unrestricted access
+SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check
+FROM pg_policies
+WHERE (qual ILIKE '%true%' OR with_check ILIKE '%true%')
+ORDER BY schemaname, tablename, policyname;
+
+-- 2) Public tables without RLS enabled (PostgreSQL 17: pg_class.relrowsecurity / relforcerowsecurity)
+SELECT t.schemaname,
+       t.tablename,
+       c.relrowsecurity AS rowsecurity,
+       c.relforcerowsecurity AS forcerowsecurity
+FROM pg_tables AS t
+JOIN pg_class AS c ON c.relname = t.tablename
+JOIN pg_namespace AS n ON n.oid = c.relnamespace AND n.nspname = t.schemaname
+WHERE t.schemaname = 'public'
+  AND t.tablename NOT LIKE 'pg_%'
+  AND c.relrowsecurity = false
+ORDER BY t.tablename;
+
+-- 2b) Public tables with RLS enabled but not forced (distinct from relrowsecurity-only checks)
+SELECT t.tablename,
+       c.relrowsecurity AS rls_enabled,
+       c.relforcerowsecurity AS rls_forced
+FROM pg_tables AS t
+JOIN pg_class AS c ON c.relname = t.tablename
+JOIN pg_namespace AS n ON n.oid = c.relnamespace AND n.nspname = t.schemaname
+WHERE t.schemaname = 'public'
+  AND t.tablename NOT LIKE 'pg_%'
+  AND c.relrowsecurity = true
+  AND c.relforcerowsecurity = false
+ORDER BY t.tablename;
+
+-- 3) Public tables that do not reference auth.org_id() in any policy
+SELECT t.tablename
+FROM pg_tables AS t
+WHERE t.schemaname = 'public'
+  AND t.tablename NOT LIKE 'pg_%'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_policies AS p
+    WHERE p.schemaname = 'public'
+      AND p.tablename = t.tablename
+      AND (
+        coalesce(p.qual, '') ILIKE '%auth.org_id()%'
+        OR coalesce(p.with_check, '') ILIKE '%auth.org_id()%'
+      )
+  )
+ORDER BY t.tablename;
+
+-- 4) Tenant-owned rows missing org_id
+SELECT 'clients' AS table_name, COUNT(*) AS missing_org_id
+FROM public.clients
+WHERE org_id IS NULL
+UNION ALL
+SELECT 'instruments', COUNT(*)
+FROM public.instruments
+WHERE org_id IS NULL
+UNION ALL
+SELECT 'client_instruments', COUNT(*)
+FROM public.client_instruments
+WHERE org_id IS NULL
+UNION ALL
+SELECT 'maintenance_tasks', COUNT(*)
+FROM public.maintenance_tasks
+WHERE org_id IS NULL
+UNION ALL
+SELECT 'contact_logs', COUNT(*)
+FROM public.contact_logs
+WHERE org_id IS NULL
+UNION ALL
+SELECT 'sales_history', COUNT(*)
+FROM public.sales_history
+WHERE org_id IS NULL
+UNION ALL
+SELECT 'invoices', COUNT(*)
+FROM public.invoices
+WHERE org_id IS NULL
+UNION ALL
+SELECT 'invoice_items', COUNT(*)
+FROM public.invoice_items
+WHERE org_id IS NULL
+UNION ALL
+SELECT 'invoice_settings', COUNT(*)
+FROM public.invoice_settings
+WHERE org_id IS NULL
+ORDER BY table_name;
+
+-- 5) Orphan child rows whose parent org cannot be validated
+SELECT 'instrument_images' AS table_name, COUNT(*) AS orphan_rows
+FROM public.instrument_images AS ii
+LEFT JOIN public.instruments AS i ON i.id = ii.instrument_id
+WHERE i.id IS NULL
+UNION ALL
+SELECT 'instrument_certificates', COUNT(*)
+FROM public.instrument_certificates AS ic
+LEFT JOIN public.instruments AS i ON i.id = ic.instrument_id
+WHERE i.id IS NULL
+UNION ALL
+SELECT 'client_instruments', COUNT(*)
+FROM public.client_instruments AS ci
+LEFT JOIN public.clients AS c ON c.id = ci.client_id
+WHERE c.id IS NULL
+UNION ALL
+SELECT 'contact_logs', COUNT(*)
+FROM public.contact_logs AS cl
+LEFT JOIN public.clients AS c ON c.id = cl.client_id
+WHERE cl.client_id IS NOT NULL
+  AND c.id IS NULL
+UNION ALL
+SELECT 'maintenance_tasks', COUNT(*)
+FROM public.maintenance_tasks AS mt
+LEFT JOIN public.instruments AS i ON i.id = mt.instrument_id
+WHERE mt.instrument_id IS NOT NULL
+  AND i.id IS NULL
+UNION ALL
+SELECT 'sales_history', COUNT(*)
+FROM public.sales_history AS sh
+LEFT JOIN public.instruments AS i ON i.id = sh.instrument_id
+WHERE sh.instrument_id IS NOT NULL
+  AND i.id IS NULL
+UNION ALL
+SELECT 'invoice_items', COUNT(*)
+FROM public.invoice_items AS it
+LEFT JOIN public.invoices AS i ON i.id = it.invoice_id
+WHERE i.id IS NULL
+ORDER BY table_name;

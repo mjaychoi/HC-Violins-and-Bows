@@ -9,9 +9,10 @@ if [[ -z "${STAGING_DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-# Database-only. Hosted rehearsal checks staging identity and rejects
-# production and local targets. It does not require STAGING_APP_BASE_URL.
-# Deployed-app jobs still run the full guard before this script.
+# Non-destructive database postflight. Hosted rehearsal checks staging
+# identity and rejects production and local targets. It does not require
+# STAGING_APP_BASE_URL. Regression files may change rows only inside a
+# transaction that ends in ROLLBACK. Persistent backfill SQL is not run.
 npx tsx scripts/staging/env-guard-cli.ts --hosted-rehearsal >/dev/null
 
 DB_URL="$STAGING_DATABASE_URL"
@@ -33,10 +34,10 @@ AUDITS=(
   scripts/supabase/reference_integrity.test.sql
   scripts/supabase/reference_integrity_role_context.test.sql
   scripts/supabase/client_rpc_authenticated_runtime_compatibility.test.sql
-  scripts/supabase/final_security_audit.sql
+  scripts/supabase/final_security_audit_readonly.sql
   scripts/supabase/final_security_audit_pg17_guard.sql
   scripts/supabase/production_hardening_audit.sql
-  scripts/supabase/tenant_isolation_audit.sql
+  scripts/supabase/tenant_isolation_audit_readonly.sql
   scripts/supabase/release_validation_audit.sql
 )
 
@@ -45,4 +46,4 @@ for audit in "${AUDITS[@]}"; do
   psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$audit"
 done
 
-echo "All PR #58 audit suites passed."
+echo "All non-persistent staging postflight audits passed."
