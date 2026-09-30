@@ -63,16 +63,15 @@ export function assertItemAdminCsv(options: {
   if (keep.Type !== `'${options.markers.keepType}`) {
     fail('Item type cell was not formula-escaped.');
   }
-  if (keep.Certificate !== `'${options.markers.certificateName}`) {
-    fail('Item certificate cell was not formula-escaped.');
+  if (keep.Certificate !== 'Yes') {
+    fail(
+      `Item certificate cell was ${JSON.stringify(keep.Certificate)}. The dashboard list omits certificate_name, so a certified item exports as Yes.`
+    );
   }
   if (keep.Note !== options.markers.keepNote) {
     fail('Item note did not preserve quotes, commas, or the line break.');
   }
-  if (
-    !keep.Note.includes('바이올린') ||
-    !keep.Certificate.includes('바이올린')
-  ) {
+  if (!keep.Note.includes('바이올린')) {
     fail('Item CSV did not preserve Unicode.');
   }
   if (Number(keep.Year) !== 1721) {

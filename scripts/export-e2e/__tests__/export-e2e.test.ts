@@ -106,7 +106,6 @@ describe('export csv contract', () => {
       year: 1721,
       price: 4321.5,
       certificate: true,
-      certificate_name: markers.certificateName,
       note: markers.keepNote,
       status: 'Available',
       cost_price: EXPORT_E2E_ITEM_COST_PRICE,
@@ -115,6 +114,12 @@ describe('export csv contract', () => {
       reserved_connection_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     } as Instrument;
     const csv = generateItemCSV([item]);
+    const named = generateItemCSV([
+      { ...item, certificate_name: markers.certificateName },
+    ]);
+    expect(parseCsv(named).rows[0]?.Certificate).toBe(
+      `'${markers.certificateName}`
+    );
     expect(parseCsv(csv).headers).toEqual([...EXPECTED_ITEM_CSV_HEADERS]);
     expect(() =>
       assertItemAdminCsv({
