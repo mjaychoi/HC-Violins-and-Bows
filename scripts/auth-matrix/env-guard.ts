@@ -11,9 +11,9 @@ import {
   isHostedCiMode,
   resolveProductionProjectRef,
   valueContainsProjectRef,
-} from '../../../scripts/staging/env-guard';
+} from '../staging/env-guard';
 
-export { assertUrlIsNotConfiguredProduction } from '../../../scripts/staging/env-guard';
+export { assertUrlIsNotConfiguredProduction } from '../staging/env-guard';
 
 const PRODUCTION_HOST_PATTERNS = [
   /hc-violins-and-bows\.vercel\.app/i,

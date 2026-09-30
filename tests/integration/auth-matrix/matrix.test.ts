@@ -13,7 +13,7 @@ import {
   loadAuthMatrixJwtFixtures,
   type AuthMatrixEnvironment,
   type AuthMatrixJwtFixtures,
-} from './env-guard';
+} from '../../../scripts/auth-matrix/env-guard';
 
 const describeIfEnabled = isAuthMatrixEnabled() ? describe : describe.skip;
 

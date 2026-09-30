@@ -12,7 +12,7 @@ import {
 import { executeHostedCleanup } from '../hosted-cleanup';
 import { runHostedCookieAuthMatrix } from '../hosted-runner';
 import { parseRuntimeManifest } from '../runtime-manifest';
-import type { AuthMatrixEnvironment } from '../../../tests/integration/auth-matrix/env-guard';
+import type { AuthMatrixEnvironment } from '../env-guard';
 
 const env: AuthMatrixEnvironment = {
   supabaseUrl: 'https://stagingexample1234.supabase.co',

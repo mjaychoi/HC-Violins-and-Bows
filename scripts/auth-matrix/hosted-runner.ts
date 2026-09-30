@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { AuthMatrixEnvironment } from '../../tests/integration/auth-matrix/env-guard';
+import type { AuthMatrixEnvironment } from './env-guard';
 import {
   AUTH_MATRIX_ACTORS,
   actorDisplayLabel,

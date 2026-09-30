@@ -5,7 +5,7 @@ import {
   PRODUCTION_SUPABASE_PROJECT_REF_ENV,
   assertUrlIsNotConfiguredProduction,
 } from '../staging/env-guard';
-import { assertNonProductionAuthMatrixEnv } from '../../tests/integration/auth-matrix/env-guard';
+import { assertNonProductionAuthMatrixEnv } from './env-guard';
 import { runHostedCookieAuthMatrix } from './hosted-runner';
 import { resolveRuntimeManifestPath } from './runtime-manifest';
 
