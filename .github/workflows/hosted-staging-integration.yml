@@ -32,10 +32,23 @@ on:
           - 'no'
           - 'yes'
         default: 'no'
+      export_e2e_only:
+        description: 'yes runs only the hosted export E2E. no keeps the existing validation path. Does not reset, migrate, or enable synthetic ready.'
+        required: true
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+        default: 'no'
+      export_e2e_product_sha:
+        description: 'Export E2E only: full 40-character lowercase Git SHA of the product under test. Required when export_e2e_only is yes. Records the SHA under test. It does not prove the deployed alias serves that SHA.'
+        required: false
+        type: string
   pull_request:
     paths:
       - 'scripts/staging/**'
       - 'scripts/auth-matrix/**'
+      - 'scripts/export-e2e/**'
       - 'scripts/postdeploy/**'
       - 'tests/integration/auth-matrix/**'
       - 'tests/integration/staging/**'
@@ -70,6 +83,9 @@ jobs:
       - name: Auth matrix harness unit tests
         run: npm test -- --runInBand scripts/auth-matrix/__tests__
 
+      - name: Export E2E harness unit tests
+        run: npm test -- --runInBand scripts/export-e2e/__tests__
+
       - name: Verify migration inventory (local filenames only)
         run: npm run check:migrations
 
@@ -90,7 +106,8 @@ jobs:
           github.event_name == 'workflow_dispatch' &&
           github.repository == 'mjaychoi/HC-Violins-and-Bows' &&
           github.event.inputs.migration_rehearsal_mode != 'inspect' &&
-          github.event.inputs.migration_rehearsal_mode != 'apply' }}
+          github.event.inputs.migration_rehearsal_mode != 'apply' &&
+          github.event.inputs.export_e2e_only != 'yes' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: hosted-staging
@@ -763,3 +780,63 @@ jobs:
         env:
           AUTH_MATRIX_RUNTIME_MANIFEST: ${{ runner.temp }}/hc-auth-matrix-runtime.json
         run: npx tsx scripts/auth-matrix/cleanup-fixtures.ts
+
+  export-e2e:
+    needs: static-validation
+    if: >-
+      ${{ needs.static-validation.result == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          github.repository == 'mjaychoi/HC-Violins-and-Bows' &&
+          github.event.inputs.export_e2e_only == 'yes' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: hosted-staging
+    env:
+      STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+      PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+      EXPORT_E2E_PRODUCT_SHA: ${{ github.event.inputs.export_e2e_product_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require product SHA under test
+        run: |
+          if ! printf '%s' "${EXPORT_E2E_PRODUCT_SHA:-}" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "export_e2e_only requires export_e2e_product_sha as a full 40-character lowercase hexadecimal Git SHA."
+            exit 1
+          fi
+
+      - name: Require deployed application URL
+        run: |
+          if [ -z "${STAGING_APP_BASE_URL:-}" ]; then
+            echo "STAGING_APP_BASE_URL is required before hosted export E2E."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium for the real browser download path
+        run: npx playwright install --with-deps chromium
+
+      - name: Staging environment guard
+        run: npx tsx scripts/staging/env-guard-cli.ts
+
+      - name: Run hosted export E2E
+        env:
+          EXPORT_E2E_RUNTIME_MANIFEST: ${{ runner.temp }}/hc-export-e2e-runtime.json
+        run: npx tsx scripts/export-e2e/run-hosted-export-e2e.ts
+
+      - name: Cleanup export E2E fixtures
+        if: always()
+        env:
+          EXPORT_E2E_RUNTIME_MANIFEST: ${{ runner.temp }}/hc-export-e2e-runtime.json
+        run: npx tsx scripts/export-e2e/cleanup-fixtures.ts
