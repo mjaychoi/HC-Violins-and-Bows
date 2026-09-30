@@ -4,12 +4,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-if [[ -z "${DATABASE_URL:-}" && -z "${STAGING_DATABASE_URL:-}" ]]; then
-  echo "DATABASE_URL or STAGING_DATABASE_URL is required." >&2
+if [[ -z "${STAGING_DATABASE_URL:-}" ]]; then
+  echo "STAGING_DATABASE_URL is required." >&2
   exit 1
 fi
 
-DB_URL="${STAGING_DATABASE_URL:-$DATABASE_URL}"
+# Database-only. Hosted rehearsal checks staging identity and rejects
+# production and local targets. It does not require STAGING_APP_BASE_URL.
+# Deployed-app jobs still run the full guard before this script.
+npx tsx scripts/staging/env-guard-cli.ts --hosted-rehearsal >/dev/null
+
+DB_URL="$STAGING_DATABASE_URL"
 
 if [[ "${DATABASE_CA_CERT_REQUIRED:-}" == "true" && -z "${DATABASE_CA_CERT_PATH:-}" ]]; then
   echo "DATABASE_CA_CERT_PATH is required for hosted PostgreSQL certificate verification." >&2
@@ -21,10 +26,6 @@ fi
 # Do not print DB_URL.
 if [[ -n "${DATABASE_CA_CERT_PATH:-}" ]]; then
   DB_URL="$(DATABASE_URL="$DB_URL" npx tsx scripts/production/format-libpq-verify-full-url.ts)"
-fi
-
-if [[ -n "${STAGING_SUPABASE_PROJECT_REF:-}" ]]; then
-  npx tsx scripts/staging/env-guard-cli.ts >/dev/null
 fi
 
 AUDITS=(
