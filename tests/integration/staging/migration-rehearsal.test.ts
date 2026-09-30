@@ -907,10 +907,7 @@ describe('hosted staging migration rehearsal workflow contract', () => {
       'PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}'
     );
     expect(
-      scanSourceForHardcodedProjectRefs(
-        syntheticJob!,
-        'postdeploy-synthetic'
-      )
+      scanSourceForHardcodedProjectRefs(syntheticJob!, 'postdeploy-synthetic')
     ).toEqual([]);
   });
 
