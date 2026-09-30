@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 import { generateItemCSV } from '../../../src/app/dashboard/utils/itemCsvExport';
@@ -28,6 +28,7 @@ import {
 } from '../constants';
 import { parseCsv } from '../csv';
 import { assertExportE2EEnvironment } from '../env-guard';
+import { readProductShaUnderTest } from '../product-sha';
 import { classifyExportRun } from '../report';
 
 const root = join(__dirname, '../../..');
@@ -218,6 +219,7 @@ describe('export workflow gate', () => {
 
   it('runs export E2E only when explicitly requested and skips database mutation jobs', () => {
     expect(workflow).toContain('export_e2e_only:');
+    expect(workflow).toContain('export_e2e_product_sha:');
     expect(workflow).toContain("default: 'no'");
     expect(workflow).toContain('export-e2e:');
     expect(workflow).toContain('scripts/export-e2e/run-hosted-export-e2e.ts');
@@ -225,6 +227,10 @@ describe('export workflow gate', () => {
     expect(workflow).toContain("github.event.inputs.export_e2e_only != 'yes'");
     const exportJob = workflow.slice(workflow.indexOf('export-e2e:'));
     expect(exportJob).toContain("github.event.inputs.export_e2e_only == 'yes'");
+    expect(exportJob).toContain(
+      'EXPORT_E2E_PRODUCT_SHA: ${{ github.event.inputs.export_e2e_product_sha }}'
+    );
+    expect(exportJob).toContain('Require product SHA under test');
     expect(exportJob).not.toContain('supabase db push');
     expect(exportJob).not.toContain('db reset');
     expect(exportJob).not.toContain('SYNTHETIC_READY');
@@ -239,6 +245,8 @@ describe('export workflow gate', () => {
     expect(runner).not.toContain('db push');
     expect(runner).not.toContain('db reset');
     expect(runner).toContain('CURRENT_IMPLEMENTATION_NO_EXPORT_AUDIT');
+    expect(runner).toContain('product_sha_under_test: productShaUnderTest');
+    expect(runner).not.toContain('verified_product_sha');
     const browser = readFileSync(
       join(root, 'scripts/export-e2e/browser.ts'),
       'utf8'
@@ -246,5 +254,67 @@ describe('export workflow gate', () => {
     expect(browser).toContain('Search items by maker, type, serial...');
     expect(browser).toContain("getByRole('link'");
     expect(browser).not.toContain("getByLabel('Search items')");
+  });
+});
+
+describe('export product SHA under test', () => {
+  const validSha = '0123456789abcdef0123456789abcdef01234567';
+  const acceptedProductSha = [
+    '9b124eb9',
+    'd60a7015df9949ebbb2ce77709b8f342',
+  ].join('');
+
+  it('requires a 40-character lowercase SHA in export-only mode', () => {
+    expect(readProductShaUnderTest(validSha)).toBe(validSha);
+    expect(readProductShaUnderTest(`  ${validSha}  `)).toBe(validSha);
+  });
+
+  it('fails closed when the SHA is missing', () => {
+    expect(() => readProductShaUnderTest(undefined)).toThrow(
+      /EXPORT_E2E_PRODUCT_SHA/
+    );
+    expect(() => readProductShaUnderTest('')).toThrow(/EXPORT_E2E_PRODUCT_SHA/);
+    expect(() => readProductShaUnderTest('   ')).toThrow(
+      /EXPORT_E2E_PRODUCT_SHA/
+    );
+  });
+
+  it('fails closed when the SHA is malformed or short', () => {
+    expect(() => readProductShaUnderTest(validSha.slice(0, 39))).toThrow(
+      /40-character lowercase/
+    );
+    expect(() => readProductShaUnderTest(`${validSha}a`)).toThrow(
+      /40-character lowercase/
+    );
+    expect(() => readProductShaUnderTest(validSha.toUpperCase())).toThrow(
+      /40-character lowercase/
+    );
+    expect(() => readProductShaUnderTest(`g${validSha.slice(1)}`)).toThrow(
+      /40-character lowercase/
+    );
+  });
+
+  it('reports the supplied SHA and does not hard-code a product commit', () => {
+    const harnessDir = join(root, 'scripts/export-e2e');
+    const harnessFiles = readdirSync(harnessDir, { recursive: true })
+      .map(entry => join(harnessDir, String(entry)))
+      .filter(file => file.endsWith('.ts') && !file.includes('/__tests__/'));
+    const workflow = readFileSync(
+      join(root, '.github/workflows/hosted-staging-integration.yml'),
+      'utf8'
+    );
+    const runner = readFileSync(
+      join(harnessDir, 'run-hosted-export-e2e.ts'),
+      'utf8'
+    );
+    expect(runner.indexOf('readProductShaUnderTest(')).toBeLessThan(
+      runner.indexOf('loadExportE2EEnvironment()')
+    );
+    expect(runner).toContain('product_sha_under_test: productShaUnderTest');
+    for (const file of harnessFiles) {
+      expect(readFileSync(file, 'utf8')).not.toContain(acceptedProductSha);
+    }
+    expect(workflow).not.toContain(acceptedProductSha);
+    expect(readProductShaUnderTest(validSha)).toBe(validSha);
   });
 });

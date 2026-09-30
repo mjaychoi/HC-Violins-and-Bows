@@ -16,10 +16,9 @@ import { runBrowserExportCases } from './browser';
 import type { ExportCaseResult } from './constants';
 import { loadExportE2EEnvironment } from './env-guard';
 import { bootstrapExportFixtures } from './fixtures';
+import { readProductShaUnderTest } from './product-sha';
 import { classifyExportRun, redactSecrets } from './report';
 import { countExportResiduals, residualTotal } from './residuals';
-
-const VERIFIED_PRODUCT_SHA = '9b124eb9d60a7015df9949ebbb2ce77709b8f342';
 
 type AuditObservation = {
   expectation: 'CURRENT_IMPLEMENTATION_NO_EXPORT_AUDIT';
@@ -89,6 +88,9 @@ async function observeAudit(
 }
 
 async function main(): Promise<void> {
+  const productShaUnderTest = readProductShaUnderTest(
+    process.env.EXPORT_E2E_PRODUCT_SHA
+  );
   const env = loadExportE2EEnvironment();
   const admin = createClient(env.supabaseUrl, env.serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -215,7 +217,7 @@ async function main(): Promise<void> {
     classification: failure
       ? 'EXPORT_STAGING_E2E_FAIL'
       : classified.classification,
-    verified_product_sha: VERIFIED_PRODUCT_SHA,
+    product_sha_under_test: productShaUnderTest,
     harness_sha: process.env.GITHUB_SHA ?? 'local',
     staging_app_host: new URL(env.appBaseUrl).host,
     staging_project_ref: env.stagingProjectRef,

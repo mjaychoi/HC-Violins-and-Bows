@@ -40,6 +40,10 @@ on:
           - 'no'
           - 'yes'
         default: 'no'
+      export_e2e_product_sha:
+        description: 'Export E2E only: full 40-character lowercase Git SHA of the product under test. Required when export_e2e_only is yes. Records the SHA under test. It does not prove the deployed alias serves that SHA.'
+        required: false
+        type: string
   pull_request:
     paths:
       - 'scripts/staging/**'
@@ -795,8 +799,16 @@ jobs:
       STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
       STAGING_APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
       PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+      EXPORT_E2E_PRODUCT_SHA: ${{ github.event.inputs.export_e2e_product_sha }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Require product SHA under test
+        run: |
+          if ! printf '%s' "${EXPORT_E2E_PRODUCT_SHA:-}" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "export_e2e_only requires export_e2e_product_sha as a full 40-character lowercase hexadecimal Git SHA."
+            exit 1
+          fi
 
       - name: Require deployed application URL
         run: |
