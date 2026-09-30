@@ -41,9 +41,28 @@ AUDITS=(
   scripts/supabase/release_validation_audit.sql
 )
 
+# Each audit is a separate psql process with ON_ERROR_STOP. A failure is
+# recorded and the remaining files still run. Failed audits are not retried.
+# Do not print DB_URL or credentials.
+failed=0
+first_failure=""
 for audit in "${AUDITS[@]}"; do
   echo "Running ${audit}..."
-  psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$audit"
+  if psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$audit"; then
+    echo "PASS ${audit}"
+  else
+    status=$?
+    echo "FAIL ${audit} (exit ${status})" >&2
+    if [[ -z "${first_failure}" ]]; then
+      first_failure="${audit}"
+    fi
+    failed=1
+  fi
 done
+
+if [[ "${failed}" -ne 0 ]]; then
+  echo "One or more non-persistent staging postflight audits failed. First failure: ${first_failure}" >&2
+  exit 1
+fi
 
 echo "All non-persistent staging postflight audits passed."

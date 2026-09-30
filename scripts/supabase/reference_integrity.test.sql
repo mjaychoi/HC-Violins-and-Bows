@@ -17,6 +17,10 @@ DECLARE
   v_instrument_a UUID := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee5';
   v_instrument_b UUID := 'ffffffff-ffff-4fff-8fff-fffffffffff6';
   v_instrument_clean UUID := '10101010-1010-4101-8101-010101010101';
+  -- Dedicated successful-retarget target. v_instrument_clean already has an
+  -- Interested row for client A, so retargeting v_connection_a onto it would
+  -- violate client_instruments_unique_interested_booked_per_pair.
+  v_instrument_retarget UUID := '15151515-1515-4151-8151-151515151515';
   v_connection_a UUID := '12121212-1212-4121-8121-121212121212';
   v_connection_b UUID := '13131313-1313-4131-8131-131313131313';
   v_connection_other_inst UUID := '14141414-1414-4141-8141-141414141414';
@@ -84,7 +88,8 @@ BEGIN
   INSERT INTO public.instruments (id, org_id, type, serial_number, status) VALUES
     (v_instrument_a, v_org_a, 'Violin', 'RI-A-001', 'Available'),
     (v_instrument_b, v_org_b, 'Violin', 'RI-B-001', 'Available'),
-    (v_instrument_clean, v_org_a, 'Violin', 'RI-A-CLEAN', 'Available');
+    (v_instrument_clean, v_org_a, 'Violin', 'RI-A-CLEAN', 'Available'),
+    (v_instrument_retarget, v_org_a, 'Violin', 'RI-A-RETARGET', 'Available');
 
   INSERT INTO public.client_instruments (
     id, org_id, client_id, instrument_id, relationship_type
@@ -305,12 +310,12 @@ BEGIN
   WHERE id = v_instrument_a;
 
   UPDATE public.client_instruments
-  SET instrument_id = v_instrument_clean
+  SET instrument_id = v_instrument_retarget
   WHERE id = v_connection_a;
 
   IF (
     SELECT instrument_id FROM public.client_instruments WHERE id = v_connection_a
-  ) IS DISTINCT FROM v_instrument_clean THEN
+  ) IS DISTINCT FROM v_instrument_retarget THEN
     RAISE EXCEPTION 'connection retarget should succeed after pointer cleared';
   END IF;
 
