@@ -21,6 +21,15 @@ export const PROJECT_REF_SHAPE = /^[a-z0-9]{10,32}$/;
  */
 export const DEFAULT_SCAN_TARGETS = [
   '.github/workflows/hosted-staging-integration.yml',
+  '.github/workflows/hosted-staging-db-reset.yml',
+  'scripts/staging/reset-gates.ts',
+  'scripts/staging/assert-reset-gates.ts',
+  'scripts/staging/reset-db-read.ts',
+  'scripts/staging/reset-preflight-probe.ts',
+  'scripts/staging/assert-reset-migration-equality.ts',
+  'scripts/staging/verify-reset-objects.ts',
+  'scripts/staging/run-staging-db-reset.ts',
+  'scripts/staging/write-reset-evidence.ts',
   'scripts/staging/env-guard.ts',
   'scripts/staging/env-guard-cli.ts',
   'scripts/staging/rehearsal-gates.ts',

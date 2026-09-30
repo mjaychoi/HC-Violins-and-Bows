@@ -1,0 +1,271 @@
+name: Hosted Staging Database Reset
+
+# Manually destroys and recreates the disposable hosted staging database
+# from the canonical migrations on main. The only trigger is manual dispatch.
+on:
+  workflow_dispatch:
+    inputs:
+      reset_staging_confirmed:
+        description: 'Literal yes required before any staging database reset'
+        required: true
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+        default: 'no'
+      expected_staging_project_ref:
+        description: 'Must equal the configured STAGING_SUPABASE_PROJECT_REF variable'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-staging-db-reset
+  cancel-in-progress: false
+
+jobs:
+  reset-staging-database:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'mjaychoi/HC-Violins-and-Bows'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: hosted-staging
+    env:
+      RESET_STAGING_CONFIRMED: ${{ github.event.inputs.reset_staging_confirmed }}
+      EXPECTED_STAGING_PROJECT_REF: ${{ github.event.inputs.expected_staging_project_ref }}
+      STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Record checked-out SHA
+        id: sha
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "Checked out SHA: $actual_sha"
+          echo "sha=$actual_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Record canonical migration inventory
+        id: inventory
+        run: npx tsx scripts/staging/assert-reset-gates.ts inventory
+
+      - name: Verify migration inventory
+        run: npm run check:migrations
+
+      - name: Require hosted-staging reset configuration
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            STAGING_SUPABASE_PROJECT_REF \
+            STAGING_SUPABASE_URL \
+            STAGING_SUPABASE_ANON_KEY \
+            STAGING_SUPABASE_SERVICE_ROLE_KEY \
+            STAGING_DATABASE_URL \
+            STAGING_DATABASE_CA_CERT \
+            PRODUCTION_SUPABASE_PROJECT_REF
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required hosted-staging value mapped to ${name}."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "BLOCKED_SAFETY_GUARD"
+            exit 1
+          fi
+
+      - name: Require explicit staging reset confirmation
+        id: confirm
+        run: npx tsx scripts/staging/assert-reset-gates.ts confirm
+
+      - name: Destructive staging identity guard
+        id: guard
+        if: success() && steps.confirm.outputs.eligible == 'true'
+        run: npx tsx scripts/staging/assert-reset-gates.ts guard
+
+      - name: Setup Supabase CLI
+        if: success() && steps.confirm.outputs.eligible == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Verify pinned reset command flags
+        id: cli
+        if: success() && steps.confirm.outputs.eligible == 'true'
+        run: |
+          set -euo pipefail
+          version_line="$(supabase --version)"
+          echo "$version_line"
+          echo "version=$version_line" >> "$GITHUB_OUTPUT"
+          echo "$version_line" | grep -q '2.111.0'
+          reset_help="$(supabase db reset --help 2>&1 || true)"
+          printf '%s\n' "$reset_help"
+          for flag in --db-url --no-seed; do
+            if ! printf '%s\n' "$reset_help" | grep -q -- "$flag"; then
+              echo "Pinned Supabase CLI is missing db reset ${flag}."
+              exit 1
+            fi
+          done
+          global_help="$(supabase --help 2>&1 || true)"
+          if ! printf '%s\n' "$reset_help" "$global_help" | grep -q -- '--yes'; then
+            echo "Pinned Supabase CLI is missing --yes. Remote reset would prompt and must not run."
+            exit 1
+          fi
+
+      - name: Install staging database CA
+        if: success() && steps.confirm.outputs.eligible == 'true'
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+        run: bash scripts/staging/install-database-ca.sh
+
+      - name: Pre-reset safety probe
+        id: probe
+        if: success() && steps.confirm.outputs.eligible == 'true'
+        run: npx tsx scripts/staging/reset-preflight-probe.ts
+
+      # Pinned CLI 2.111.0 remote reset, built only after the gates above:
+      # supabase db reset --db-url <verified STAGING_DATABASE_URL> --no-seed --yes
+      # --db-url is mutually exclusive with the linked and local selectors.
+      # --yes only skips the CLI prompt; it is not the operator confirmation.
+      - name: Reset hosted staging database
+        id: reset
+        if: >-
+          success() &&
+          steps.confirm.outputs.eligible == 'true' &&
+          steps.guard.outputs.target_verified == 'true' &&
+          steps.probe.outputs.tls_verified == 'true'
+        run: npx tsx scripts/staging/run-staging-db-reset.ts
+
+      - name: Require exact post-reset migration equality
+        id: equality
+        if: steps.reset.outputs.executed == 'true'
+        run: npx tsx scripts/staging/assert-reset-migration-equality.ts
+
+      - name: Exact staging migration-set verification
+        id: verify_set
+        if: steps.reset.outputs.executed == 'true'
+        run: npx tsx scripts/staging/verify-migration-set.ts
+
+      - name: Post-deploy catalog postflight (authoritative, blocking)
+        id: postflight
+        if: steps.reset.outputs.executed == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          set +e
+          npx tsx scripts/production/postflight-catalog.ts | tee postflight.json
+          tsx_status="${PIPESTATUS[0]}"
+          set -e
+          passed="$(node -e "console.log(JSON.parse(require('fs').readFileSync('postflight.json','utf8')).passed)" 2>/dev/null || echo false)"
+          rm -f postflight.json
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
+          if [ "$tsx_status" != "0" ] || [ "$passed" != "true" ]; then
+            echo "RESET_FAILED_POSTFLIGHT"
+            exit 1
+          fi
+
+      - name: Verify recreated platform objects
+        id: objects
+        if: steps.reset.outputs.executed == 'true'
+        run: npx tsx scripts/staging/verify-reset-objects.ts
+
+      - name: Hosted SQL audits
+        id: sql_audits
+        if: steps.reset.outputs.executed == 'true'
+        run: bash scripts/staging/run-pr58-audits.sh
+
+      - name: Write reset evidence
+        id: evidence
+        if: always()
+        env:
+          RESET_CHECKED_OUT_SHA: ${{ steps.sha.outputs.sha }}
+          RESET_CONFIRM_CLASSIFICATION: ${{ steps.confirm.outputs.classification }}
+          RESET_GUARD_OUTCOME: ${{ steps.guard.outcome }}
+          RESET_GUARD_CLASSIFICATION: ${{ steps.guard.outputs.classification }}
+          RESET_TARGET_VERIFIED: ${{ steps.guard.outputs.target_verified }}
+          RESET_PRODUCTION_REJECTED: ${{ steps.guard.outputs.production_rejected }}
+          RESET_EXPLICIT_CONFIRMATION: ${{ steps.confirm.outputs.explicit_confirmation }}
+          RESET_PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          RESET_TLS_VERIFIED: ${{ steps.probe.outputs.tls_verified }}
+          RESET_PRE_REMOTE_COUNT: ${{ steps.probe.outputs.pre_reset_remote_migration_count }}
+          RESET_EXECUTED: ${{ steps.reset.outputs.executed }}
+          RESET_COMMAND_OUTCOME: ${{ steps.reset.outcome }}
+          RESET_EQUALITY_OUTCOME: ${{ steps.equality.outcome }}
+          RESET_REMOTE_ONLY_AFTER: ${{ steps.equality.outputs.remote_only }}
+          RESET_LOCAL_ONLY_AFTER: ${{ steps.equality.outputs.local_only }}
+          RESET_REMOTE_COUNT_AFTER: ${{ steps.equality.outputs.remote_count }}
+          RESET_LOCAL_COUNT: ${{ steps.inventory.outputs.count }}
+          RESET_VERIFY_SET_OUTCOME: ${{ steps.verify_set.outcome }}
+          RESET_POSTFLIGHT_OUTCOME: ${{ steps.postflight.outcome }}
+          RESET_POSTFLIGHT_PASSED: ${{ steps.postflight.outputs.passed }}
+          RESET_OBJECTS_OUTCOME: ${{ steps.objects.outcome }}
+          RESET_SQL_AUDITS_OUTCOME: ${{ steps.sql_audits.outcome }}
+        run: |
+          set -euo pipefail
+          set +e
+          classification="$(npx tsx scripts/staging/assert-reset-gates.ts classify)"
+          classify_status=$?
+          set -e
+          if [ "$classify_status" -ne 0 ] || [ -z "$classification" ]; then
+            echo "Could not classify reset outcome."
+            classification="BLOCKED_SAFETY_GUARD"
+          fi
+          export RESET_FINAL_CLASSIFICATION="$classification"
+          npx tsx scripts/staging/write-reset-evidence.ts staging-db-reset.json
+          echo "classification=$classification" >> "$GITHUB_OUTPUT"
+          if [ "$classification" != "RESET_EXECUTED_PASS" ]; then
+            echo "Staging database reset did not pass: ${classification}"
+            exit 1
+          fi
+
+      - name: Upload reset evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-db-reset
+          path: staging-db-reset.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Reset summary
+        if: always()
+        run: |
+          {
+            echo "### Hosted staging database reset"
+            echo "Checked-out SHA: \`${{ steps.sha.outputs.sha }}\`"
+            echo "Canonical migrations: ${{ steps.inventory.outputs.count }} (\`${{ steps.inventory.outputs.first }}\` .. \`${{ steps.inventory.outputs.last }}\`)"
+            echo "Supabase CLI: \`${{ steps.cli.outputs.version }}\`"
+            echo "Reset executed: ${{ steps.reset.outputs.executed || 'false' }}"
+            echo "Final classification: \`${{ steps.evidence.outputs.classification }}\`"
+            echo ""
+            echo "Production database touched: NO"
+            echo "GitHub staging project ref, Supabase URL, anon key, service-role key, database URL, CA, and the Vercel Supabase target were not modified."
+            echo ""
+            echo "Remote reset does not restore previous staging business data, Auth users, identities, sessions, refresh tokens, instruments, sales, audit log, or idempotency keys."
+            echo ""
+            echo "After RESET_EXECUTED_PASS, recreate these acceptance dependencies separately. Do not put secret values in the workflow log:"
+            echo "- synthetic admin account"
+            echo "- auth-matrix admin/member fixtures"
+            echo "- \`app_base_url\` Vault secret"
+            echo "- \`orphan_cleanup_secret\` Vault secret"
+          } >> "$GITHUB_STEP_SUMMARY"
