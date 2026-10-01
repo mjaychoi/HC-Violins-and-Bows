@@ -9,7 +9,6 @@ coverage
 .DS_Store
 *.min.js
 *.min.css
-public
 tests
 *.test.ts
 *.test.tsx
