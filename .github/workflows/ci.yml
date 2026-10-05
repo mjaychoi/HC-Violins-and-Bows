@@ -74,6 +74,15 @@ jobs:
         # within this step and never leaves the runner.
         run: npm run test:connection-relationship-uniqueness-migration
 
+      - name: Invoice update CAS idempotency migration tests (isolated local Postgres)
+        run: npm run test:invoice-update-cas-idempotency-migration
+
+      - name: Financial confidentiality DB boundary migration tests (isolated local Postgres)
+        run: npm run test:financial-confidentiality-migration
+
+      - name: Instrument create ACL migration tests (isolated local Postgres)
+        run: npm run test:instrument-create-acl-migration
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
