@@ -197,5 +197,8 @@ npm run type-check
 ### 배포 실패
 
 Vercel failures are diagnosed in the Vercel project (env, Git integration,
-build logs). GitHub CI green does not imply Preview/Production health
-(`VERCEL_PREVIEW_UNRESOLVED` may still apply). See `docs/DEPLOYMENT.md`.
+build logs). GitHub CI green does not imply Preview/Production health. As of
+`main` `2886c5e`, `hc-violins-staging` deploys successfully while
+`hc-violins-and-bows` fails with an unconfirmed root cause, because its
+build logs are not readable from the Vercel scope available here. See
+`docs/DEPLOYMENT.md`.
