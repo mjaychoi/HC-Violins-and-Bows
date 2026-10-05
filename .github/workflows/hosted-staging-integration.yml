@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       migration_rehearsal_mode:
-        description: 'Hosted staging migration rehearsal. off = existing validation-only path. inspect = read-only pending-set. apply = mutate after SHA/count/digest/yes confirmation.'
+        description: 'Hosted staging migration rehearsal. off = existing validation-only path. inspect = read-only pending-set. apply = mutate after SHA/count/digest/yes confirmation. Ignored when export_e2e_only is yes (export-only takes precedence and skips all migration jobs).'
         required: true
         type: choice
         options:
@@ -225,6 +225,7 @@ jobs:
       ${{ needs.static-validation.result == 'success' &&
           github.event_name == 'workflow_dispatch' &&
           github.repository == 'mjaychoi/HC-Violins-and-Bows' &&
+          github.event.inputs.export_e2e_only != 'yes' &&
           (github.event.inputs.migration_rehearsal_mode == 'inspect' ||
            github.event.inputs.migration_rehearsal_mode == 'apply') }}
     runs-on: ubuntu-latest
