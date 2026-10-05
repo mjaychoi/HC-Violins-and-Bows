@@ -15,6 +15,31 @@ staging synthetics, restore drills, and Preview health are separate.
 
 ---
 
+## Status at a glance (`main` `2886c5e`, 2026-10-05)
+
+| Area                                                                    | State                                |
+| ----------------------------------------------------------------------- | ------------------------------------ |
+| Repository CI on `main`                                                 | green (all five checks)              |
+| Hosted staging integration (`mode=off`, export acceptance, auth matrix) | green on recorded runs               |
+| Vercel `hc-violins-staging`                                             | deploying successfully               |
+| Vercel `hc-violins-and-bows` (production project)                       | **failing — root cause unconfirmed** |
+| Production DB migration                                                 | never run                            |
+| Production restore / PITR drill                                         | never performed                      |
+
+The single unresolved deployment blocker is the `hc-violins-and-bows`
+Vercel project check. Its build logs are not accessible from the Vercel
+scope available here, so its root cause is **unknown** and must not be
+asserted. Details:
+[Current Vercel project status](#current-vercel-project-status).
+
+Already merged and no longer blockers: the Node 24 pin (PR #130), hosted
+staging database reset tooling (PR #133), staging reset TLS/CA handling
+(PR #134), hosted staging export acceptance (PR #140), export-only workflow
+routing (PR #144), removal of the broad immutable cache header (PR #145),
+and CI wiring for the embedded-Postgres migration suites (PR #146).
+
+---
+
 ## How the launch path is split
 
 | Phase                             | What it is                                   | Mutates production DB? |
@@ -45,26 +70,59 @@ hosted staging validation / rehearsal
 
 ## Current operational prerequisites
 
-These statements remain true unless a later, recorded operator run proves
-otherwise. Workflow source existing, local/disposable Postgres tests, a
-staging workflow definition, and green PR CI are **not** production DB proof.
+Status as of `main` `2886c5e` (2026-10-05). These statements remain true
+unless a later, recorded operator run proves otherwise. Workflow source
+existing, local/disposable Postgres tests, a staging workflow definition,
+and green PR CI are **not** production DB proof.
 
+### Proven by a recorded run
+
+- Repository CI on `main` `2886c5e`: `Test & Lint (24.x)`, `Build`,
+  `E2E Tests`, `Security Scan`, `Code Quality Check` all succeed.
+- Hosted staging environment configuration exists and works. The
+  `hosted-staging` Environment secrets/variables, the staging CA, and
+  `STAGING_APP_BASE_URL` are configured. Staging secrets are no longer an
+  open blocker.
+- Hosted staging `mode=off` validation (run `36759665107`,
+  2026-09-30): staging guard, migration-inventory and applied-migration-set
+  equality, hosted SQL audits, `/api/health`, and `/api/ready` all passed
+  against the hosted staging database and the deployed staging app.
+- Hosted staging auth matrix passed in that same run.
+- Hosted staging export acceptance (`export_e2e_only=yes`) has passed
+  repeatedly, including `workflow_dispatch` runs on 2026-09-30 and
+  2026-10-05 and PR runs through 2026-10-05.
+- Hosted Staging Database Postflight succeeded on 2026-09-30.
+- Vercel `hc-violins-staging` project: deployments succeed, including on
+  `main` `2886c5e`.
+
+### Not proven, still open
+
+- Vercel `hc-violins-and-bows` project (production project) fails on every
+  recorded recent deployment, Preview and Production alike, including
+  `main` `2886c5e`. **Root cause is unconfirmed**: the build logs for that
+  project are not reachable from the Vercel scope available here. See
+  [What this repository proves about Vercel](#what-this-repository-proves-about-vercel).
 - `production-db-deploy.yml` has never been run.
+  `production-db-reconcile.yml` has never been run either.
 - Production `DATABASE_URL` remains documented as operationally stale.
   Dispatching the deploy workflow before that credential is repaired is
   expected to fail closed at identity validation or the connectivity probe.
 - Production restore / PITR drill is `PRODUCTION_RESTORE_DRILL_NOT_PROVEN`.
   A local `pg_dump` / restore is not equivalent.
-- Vercel Preview: existing failure remains unresolved
-  (`VERCEL_PREVIEW_UNRESOLVED`). Changing `installCommand` to `npm ci` is a
-  deterministic-install fix only; it is not a Preview repair. Repository CI
-  success is not Preview success.
-- Hosted staging inspect/apply **contract** exists. That is not
-  `HOSTED_EVIDENCE_COMPLETE` until a non-production hosted apply with
-  pending count > 0 actually succeeds. Staging secrets remaining unavailable
-  means hosted apply has not been proven.
-- Hosted post-deploy synthetic has not completed because required staging
-  environment configuration was unavailable.
+- Hosted staging inspect/apply **contract** exists, and the job routing for
+  it is covered by tests. That is still not `HOSTED_EVIDENCE_COMPLETE`: no
+  `migration-rehearsal` job has yet concluded successfully, so a
+  non-production hosted apply with pending count > 0 has not been recorded.
+  The job has run; across the workflow's last 100 runs it was non-skipped
+  six times and failed every time, most recently 2026-09-29. The gap is the
+  absence of a successfully completed rehearsal, not missing secrets.
+- `Hosted Staging Database Reset` has been dispatched twice (2026-09-30) and
+  failed both times at the preflight guard. PR #134 changed how that
+  preflight judges client TLS; the reset has not been re-dispatched since.
+- Hosted post-deploy synthetic has not completed. Since PR #139 the
+  `postdeploy-synthetic` job is explicitly opt-in: it runs only when the
+  `SYNTHETIC_READY` variable is exactly `true`, and is skipped otherwise. A
+  skip is not a pass. Its one non-skipped run (2026-09-30) failed.
 
 Do not treat a green Security Scan job as “Snyk passed” when Snyk was skipped.
 
@@ -121,13 +179,21 @@ release blocker.
 
 These require live credentials, GitHub Environments, and operator action.
 They are **OPERATIONAL / NOT YET PROVEN** until actually executed and
-recorded (see [Current operational prerequisites](#current-operational-prerequisites)):
+recorded. Current per-item state is tracked in
+[Current operational prerequisites](#current-operational-prerequisites):
 
-- hosted staging migration rehearsal (`inspect` / `apply`)
-- hosted post-deploy synthetic
-- production DB migration (`production-db-deploy.yml`)
-- production backup / PITR (operator process; not performed by the workflow)
-- Vercel deployment health (Preview and Production)
+| Gate                                                                                         | State                                                    |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| hosted staging `mode=off` validation (migration-set equality, SQL audits, health, readiness) | recorded pass (2026-09-30)                               |
+| hosted staging auth matrix                                                                   | recorded pass (2026-09-30)                               |
+| hosted staging export acceptance (`export_e2e_only=yes`)                                     | recorded pass, repeatedly, through 2026-10-05            |
+| hosted staging migration rehearsal (`inspect` / `apply`)                                     | NOT YET PROVEN — no successful `migration-rehearsal` run |
+| hosted post-deploy synthetic                                                                 | NOT YET PROVEN — opt-in, skipped or failed               |
+| hosted staging database reset                                                                | NOT YET PROVEN — two dispatches blocked at preflight     |
+| production DB migration (`production-db-deploy.yml`)                                         | NOT YET PROVEN — never run                               |
+| production backup / PITR (operator process; not performed by the workflow)                   | NOT YET PROVEN                                           |
+| Vercel `hc-violins-staging` deployment health                                                | recorded pass on `main` `2886c5e`                        |
+| Vercel `hc-violins-and-bows` deployment health                                               | FAILING; root cause unconfirmed                          |
 
 ---
 
@@ -187,16 +253,44 @@ Zero pending migrations is `NO_PENDING_MIGRATIONS` and is not a completed
 mutation rehearsal. Do not claim `HOSTED_EVIDENCE_COMPLETE` from `mode=off`
 or from inspect-only.
 
+`export_e2e_only=yes` runs static validation and the export E2E harness
+only. It skips `migration-rehearsal`, `hosted-db-validation`, `auth-matrix`,
+and `postdeploy-synthetic` (PR #140 added the mode, PR #144 fixed the
+routing so rehearsal no longer leaks into export-only runs). A green
+export-only run is export acceptance, not database or deployed-app
+validation.
+
+### Recorded staging results
+
+The `hosted-staging` Environment is configured and the workflow runs green
+on the paths that have been exercised:
+
+- `mode=off` (run `36759665107`, 2026-09-30, `9b124eb`): staging guard,
+  migration inventory, applied-migration-set equality, hosted SQL audits,
+  `/api/health`, `/api/ready` — all passed. `auth-matrix` passed in the same
+  run.
+- `export_e2e_only=yes`: passing on dispatch and on pull requests, most
+  recently 2026-10-05.
+
+Still outstanding on this workflow: no `migration-rehearsal` job has
+concluded successfully, so `HOSTED_EVIDENCE_COMPLETE` is not claimed. That
+gap is now the absence of a successfully completed migration rehearsal, not
+missing credentials. The job has been attempted and has failed, not left
+un-run.
+
 ### Hosted staging checklist
 
-- [ ] `hosted-staging` Environment vars/secrets configured (see staging README)
+Checked items were observed in a recorded run; see
+[Recorded staging results](#recorded-staging-results).
+
+- [x] `hosted-staging` Environment vars/secrets configured (see staging README)
 - [ ] `inspect` when pending state is unknown
 - [ ] `apply` only if pending count > 0 and reviewed inputs match
 - [ ] catalog postflight on apply
-- [ ] migration-set equality (`mode=off` or post-apply)
-- [ ] SQL audits (`mode=off` and post-apply)
-- [ ] `GET /api/health`
-- [ ] `GET /api/ready`
+- [x] migration-set equality (`mode=off` or post-apply)
+- [x] SQL audits (`mode=off` and post-apply)
+- [x] `GET /api/health`
+- [x] `GET /api/ready`
 - [ ] synthetic (`npm run test:synthetic:postdeploy`) when credentials exist
 
 ---
@@ -388,8 +482,54 @@ deploys to Vercel” as a repository-owned fact.
 Optional CLI deploy (`vercel --prod`) is a dashboard/CLI operator action,
 not CI.
 
-Preview remains `VERCEL_PREVIEW_UNRESOLVED`. Do not treat Preview as
-fixed by `npm ci`.
+### Current Vercel project status
+
+Two Vercel projects report commit statuses on this repository. They are in
+different states and must not be described together.
+
+| GitHub check                   | Project    | State on `main` `2886c5e` |
+| ------------------------------ | ---------- | ------------------------- |
+| `Vercel – hc-violins-staging`  | staging    | success                   |
+| `Vercel – hc-violins-and-bows` | production | failure                   |
+
+`hc-violins-staging` has been deploying successfully, including on
+`main` `2886c5e` and on recent pull request commits.
+
+`hc-violins-and-bows` is **the one unresolved deployment blocker.** Its
+deployments fail on every recent recorded commit, Preview and Production
+alike, so this is a project-level failure and not a Production-only one.
+The failing deployment on `main` `2886c5e` is
+`dpl_H3vfQMq3NQNqzwm16JLaaLqqXbFc`.
+
+**Root cause: unknown.** The project lives in the
+`mjs-projects-f42949e0` team, which the investigating environment cannot
+reach, so `vercel inspect --logs` on that deployment fails and the first
+failing step has not been observed. Until a log is produced, record the
+cause as unconfirmed.
+
+Do not write down a cause that no log supports. In particular:
+
+- A `schema:ready` / Supabase-environment-variable failure is a
+  **hypothesis only** (see issue #42). It is untested. Both projects build
+  from the same repository `vercel.json`, so the same
+  `check:env` → `schema:ready` → `build` contract passes in the staging
+  project; that neither confirms nor rules out the hypothesis for the
+  production project, whose environment variables and project settings are
+  not visible here.
+- Repository CI success is not Vercel success, for Vercel Preview or for
+  Production. All five GitHub checks pass on `main` `2886c5e`.
+- `installCommand: npm ci` is a deterministic-install contract, not a fix
+  for this failure.
+- The Node 24 pin (PR #130), the staging TLS/CA work (PRs #133, #134), the
+  export-only workflow routing fix (PR #144), and the immutable-cache
+  header removal (PR #145) are all merged. None of them is the current
+  blocker, and none of them has been shown to address it.
+
+**Required operator action:** someone with access to the
+`mjs-projects-f42949e0` team and the `hc-violins-and-bows` project must run
+`npx vercel inspect dpl_H3vfQMq3NQNqzwm16JLaaLqqXbFc --logs` (or open the
+dashboard build log) and report the first failing step. Tracked in
+[issue #42](https://github.com/mjaychoi/HC-Violins-and-Bows/issues/42).
 
 ### After a production application deployment
 
