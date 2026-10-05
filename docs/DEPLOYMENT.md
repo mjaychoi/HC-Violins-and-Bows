@@ -113,7 +113,9 @@ and green PR CI are **not** production DB proof.
   it is covered by tests. That is still not `HOSTED_EVIDENCE_COMPLETE`: no
   `migration-rehearsal` job has yet concluded successfully, so a
   non-production hosted apply with pending count > 0 has not been recorded.
-  The reason is no longer missing secrets.
+  The job has run; across the workflow's last 100 runs it was non-skipped
+  six times and failed every time, most recently 2026-09-29. The gap is the
+  absence of a successfully completed rehearsal, not missing secrets.
 - `Hosted Staging Database Reset` has been dispatched twice (2026-09-30) and
   failed both times at the preflight guard. PR #134 changed how that
   preflight judges client TLS; the reset has not been re-dispatched since.
@@ -272,7 +274,9 @@ on the paths that have been exercised:
 
 Still outstanding on this workflow: no `migration-rehearsal` job has
 concluded successfully, so `HOSTED_EVIDENCE_COMPLETE` is not claimed. That
-gap is now an un-run rehearsal, not missing credentials.
+gap is now the absence of a successfully completed migration rehearsal, not
+missing credentials. The job has been attempted and has failed, not left
+un-run.
 
 ### Hosted staging checklist
 
