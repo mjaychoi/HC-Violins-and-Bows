@@ -143,6 +143,31 @@ jobs:
           EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
         run: npx tsx scripts/production/db-probe.ts validate-only
 
+      # The first run of this workflow failed here with "self-signed
+      # certificate in certificate chain". Production's DATABASE_URL carries
+      # sslmode=require, which node-postgres treats as verify-full against
+      # Node's built-in CA store, and Supabase's database CA is not in that
+      # store. There is no production-specific CA secret in this repository,
+      # only STAGING_DATABASE_CA_CERT — which holds the Supabase root CA, the
+      # same trust anchor that signs the production endpoint's certificate.
+      #
+      # Supplying it here makes the connection verify-full against that CA
+      # with certificate and hostname verification left fully ON (see
+      # createDatabaseClientConfig in
+      # scripts/production/database-client-config.ts). This is strictly
+      # STRONGER than the attempt that just failed and deliberately does NOT
+      # disable verification: if the staging secret turns out to be
+      # project-scoped rather than the shared root, this connection fails
+      # closed and the audit reports that instead of trusting anything blindly.
+      #
+      # Note for #42/#88 triage: production-db-reconcile.yml has the same gap
+      # and would fail the same way, which is consistent with it never having
+      # been dispatched successfully.
+      - name: Install Supabase root CA for certificate verification
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+        run: bash scripts/staging/install-database-ca.sh
+
       - name: Audit production information_schema (read-only)
         env:
           AUDIT_LABEL: production
