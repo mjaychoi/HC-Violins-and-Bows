@@ -181,7 +181,6 @@ export type Database = {
           instrument_id: string | null;
           is_primary: boolean | null;
           mime_type: string | null;
-          org_id: string | null;
           original_name: string | null;
           size: number | null;
           storage_path: string;
@@ -194,7 +193,6 @@ export type Database = {
           instrument_id?: string | null;
           is_primary?: boolean | null;
           mime_type?: string | null;
-          org_id?: string | null;
           original_name?: string | null;
           size?: number | null;
           storage_path: string;
@@ -207,7 +205,6 @@ export type Database = {
           instrument_id?: string | null;
           is_primary?: boolean | null;
           mime_type?: string | null;
-          org_id?: string | null;
           original_name?: string | null;
           size?: number | null;
           storage_path?: string;
@@ -257,7 +254,6 @@ export type Database = {
           image_url: string;
           instrument_id: string | null;
           mime_type: string;
-          org_id: string | null;
           storage_key: string | null;
         };
         Insert: {
@@ -269,7 +265,6 @@ export type Database = {
           image_url: string;
           instrument_id?: string | null;
           mime_type: string;
-          org_id?: string | null;
           storage_key?: string | null;
         };
         Update: {
@@ -281,7 +276,6 @@ export type Database = {
           image_url?: string;
           instrument_id?: string | null;
           mime_type?: string;
-          org_id?: string | null;
           storage_key?: string | null;
         };
         Relationships: [
