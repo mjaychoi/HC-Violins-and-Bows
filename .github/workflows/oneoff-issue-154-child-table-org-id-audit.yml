@@ -1,0 +1,162 @@
+name: One-off Issue 154 Child-Table org_id Audit
+
+# DISPOSABLE, READ-ONLY schema audit for issue #154. This workflow and its
+# script are intended to run on this branch's pull request and then be
+# discarded — the pull request is closed, never merged, so neither file ever
+# reaches main.
+#
+# Purpose: determine whether public.instrument_images and
+# public.instrument_certificates actually have an `org_id` column in hosted
+# staging and hosted production. The repository's migrations never create
+# one, yet the generated src/types/database.ts declared one on both tables
+# until PR #153 (bdf16bd) removed it.
+#
+# Trigger: `pull_request`, not `workflow_dispatch`. A workflow_dispatch
+# workflow is only dispatchable once it exists on the default branch, and
+# this one is deliberately never merged, so dispatch is unavailable to it.
+# The `paths` filter keeps it from firing on any pull request other than the
+# one that introduces these two files. Same-repository pull requests receive
+# secrets, which is what makes this viable.
+#
+# This workflow can never mutate either database:
+#   - it never installs the Supabase CLI and never runs any `supabase`
+#     command (in particular never `supabase db push`, and never
+#     `supabase migration list --linked`, which has been observed
+#     attempting `ALTER ROLE ...` against production despite being framed
+#     as read-only);
+#   - the only SQL it issues is ONE SELECT against information_schema,
+#     pinned in the script and validated against a mutating-keyword
+#     denylist before any connection opens;
+#   - that SELECT runs inside `BEGIN READ ONLY` whose effect is verified at
+#     the Postgres session level (`SHOW transaction_read_only` must return
+#     exactly `on`), under a `SET LOCAL statement_timeout`, and the
+#     transaction always ends in `ROLLBACK`, never `COMMIT`;
+#   - it runs no DDL, no DML, and no migrations.
+#
+# Production runs only after the staging audit has succeeded (`needs`), so a
+# broken query or misconfigured secret is caught against staging first.
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/oneoff-issue-154-child-table-org-id-audit.yml'
+      - 'scripts/oneoff/issue-154-child-table-org-id-audit.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oneoff-issue-154-schema-audit
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Staging schema audit (read-only)
+    runs-on: ubuntu-latest
+    environment: hosted-staging
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Require staging audit configuration
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in STAGING_DATABASE_URL STAGING_DATABASE_CA_CERT STAGING_SUPABASE_PROJECT_REF; do
+            if [ -z "${!name:-}" ]; then
+              echo "$name is not configured."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Refusing to audit staging without complete configuration."
+            exit 1
+          fi
+          echo "Staging audit configuration present (values not printed)."
+
+      - name: Install staging database CA
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+        run: bash scripts/staging/install-database-ca.sh
+
+      - name: Audit staging information_schema (read-only)
+        env:
+          AUDIT_LABEL: staging
+          AUDIT_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          EXPECTED_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+        run: npx tsx scripts/oneoff/issue-154-child-table-org-id-audit.ts
+
+  production:
+    name: Production schema audit (read-only)
+    needs: staging
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Stop if the expected production project ref is not configured
+        env:
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: |
+          if [ -z "$EXPECTED_SUPABASE_PROJECT_REF" ]; then
+            echo "EXPECTED_SUPABASE_PROJECT_REF is not configured on the production Environment. Refusing to read production without a protected expected project reference."
+            exit 1
+          fi
+          echo "EXPECTED_SUPABASE_PROJECT_REF is configured."
+
+      - name: Validate DATABASE_URL identity and structure (secret-safe)
+        # Reuses the repository's authoritative production-identity guard
+        # (validateProductionEndpoint in scripts/production/db-deploy-guards.ts)
+        # through the existing db-probe.ts validate-only entrypoint, rather
+        # than duplicating that check here. validate-only performs no
+        # database connection.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: npx tsx scripts/production/db-probe.ts validate-only
+
+      - name: Audit production information_schema (read-only)
+        env:
+          AUDIT_LABEL: production
+          AUDIT_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EXPECTED_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: npx tsx scripts/oneoff/issue-154-child-table-org-id-audit.ts
+
+      - name: Audit scope note
+        if: always()
+        run: |
+          {
+            echo "### One-off issue #154 schema audit"
+            echo ""
+            echo "Read-only. One SELECT against \`information_schema\` per environment, inside a verified \`BEGIN READ ONLY\` transaction that always rolls back. No DDL, no DML, no migrations, no Supabase CLI."
+            echo ""
+            echo "This workflow is disposable and must not be merged to main."
+          } >> "$GITHUB_STEP_SUMMARY"
