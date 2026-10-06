@@ -1,0 +1,159 @@
+name: One-off Issue 154 Production Recheck After Resume
+
+# DISPOSABLE, READ-ONLY. Lives only on a throwaway branch whose pull request
+# is closed unmerged. Re-runs the issue #154 audit after the production
+# Supabase project was resumed from Paused.
+#
+# Never installs or runs the Supabase CLI, never runs migrations, DDL or DML.
+# The only SQL is one information_schema SELECT inside a BEGIN READ ONLY
+# transaction verified via SHOW transaction_read_only = on, under
+# SET LOCAL statement_timeout, always ending in ROLLBACK.
+# TLS verification is never disabled.
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/oneoff-issue-154-production-recheck.yml'
+      - 'scripts/oneoff/issue-154-child-table-org-id-audit.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oneoff-issue-154-production-recheck
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Staging schema audit (read-only)
+    runs-on: ubuntu-latest
+    environment: hosted-staging
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Require staging audit configuration
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in STAGING_DATABASE_URL STAGING_DATABASE_CA_CERT STAGING_SUPABASE_PROJECT_REF; do
+            if [ -z "${!name:-}" ]; then
+              echo "$name is not configured."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Refusing to audit staging without complete configuration."
+            exit 1
+          fi
+          echo "Staging audit configuration present (values not printed)."
+
+      - name: Install staging database CA
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+        run: bash scripts/staging/install-database-ca.sh
+
+      - name: Audit staging information_schema (read-only)
+        env:
+          AUDIT_LABEL: staging
+          AUDIT_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          EXPECTED_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+        run: npx tsx scripts/oneoff/issue-154-child-table-org-id-audit.ts
+
+  production:
+    name: Production recheck after resume (read-only)
+    needs: staging
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compare configured production project refs (non-secret variables)
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          want=dmilmlhquttcozxlpfxw
+          echo "PRODUCTION_SUPABASE_PROJECT_REF=$PRODUCTION_SUPABASE_PROJECT_REF"
+          echo "EXPECTED_SUPABASE_PROJECT_REF=$EXPECTED_SUPABASE_PROJECT_REF"
+          if [ "$PRODUCTION_SUPABASE_PROJECT_REF" != "$want" ] || [ "$EXPECTED_SUPABASE_PROJECT_REF" != "$want" ]; then
+            echo "IDENTITY_MISMATCH: configured refs do not both equal $want. Stopping."
+            exit 1
+          fi
+
+      - name: Validate DATABASE_URL identity and structure (secret-safe, no connection)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          npx tsx scripts/production/db-probe.ts validate-only
+          echo "IDENTITY_VALID"
+
+      # 3A: exactly as production-db-reconcile.yml / production-db-deploy.yml
+      # connect today: DATABASE_URL only, no CA supplied. Allowed to fail;
+      # its outcome is the finding.
+      - name: Attempt A - current production configuration as-is (no explicit CA)
+        id: no_ca
+        continue-on-error: true
+        env:
+          AUDIT_LABEL: production-no-explicit-ca
+          AUDIT_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EXPECTED_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: npx tsx scripts/oneoff/issue-154-child-table-org-id-audit.ts
+
+      # 4: same URL, same target, Supabase root CA from the already-verified
+      # STAGING_DATABASE_CA_CERT; certificate + hostname verification ON.
+      - name: Install Supabase root CA for certificate verification
+        env:
+          STAGING_DATABASE_CA_CERT: ${{ secrets.STAGING_DATABASE_CA_CERT }}
+        run: bash scripts/staging/install-database-ca.sh
+
+      - name: Attempt B - verified CA supplied, then information_schema audit
+        id: with_ca
+        env:
+          AUDIT_LABEL: production
+          AUDIT_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EXPECTED_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+        run: npx tsx scripts/oneoff/issue-154-child-table-org-id-audit.ts
+
+      - name: Outcome summary
+        if: always()
+        run: |
+          {
+            echo "### Issue #154 production recheck after resume"
+            echo ""
+            echo "- Attempt A (no explicit CA): ${{ steps.no_ca.outcome }}"
+            echo "- Attempt B (verified CA): ${{ steps.with_ca.outcome }}"
+            echo ""
+            echo "Read-only. Disposable workflow; must not be merged."
+          } >> "$GITHUB_STEP_SUMMARY"
