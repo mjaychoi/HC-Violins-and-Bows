@@ -55,3 +55,7 @@ supabase/.branches/
 
 # auth-matrix runtime cleanup manifest (never commit)
 hc-auth-matrix-runtime.json
+
+# parallel agent runner runtime output (logs, per-task results)
+tools/parallel-agents/results/
+__pycache__/
