@@ -1779,22 +1779,125 @@ describe('/api/instruments', () => {
   describe('DELETE', () => {
     const INSTRUMENT_ID = '123e4567-e89b-12d3-a456-426614174000';
 
+    /**
+     * Real column sets, transcribed from the source of truth
+     * (supabase/migrations/00000000000000_initial_schema.sql sections 9 and 10,
+     * plus the additive columns in 20260508194653_harden_high_risk_schema_columns.sql).
+     *
+     * Neither child table has an `org_id` column. The previous mock used a
+     * blanket `eq: jest.fn().mockReturnThis()`, so `.eq('org_id', orgId)` was
+     * indistinguishable from a real filter and the DELETE suite passed against
+     * a query PostgREST rejects outright (issue #152). These maps let the mock
+     * reject unknown columns the way PostgREST does, with a 42703.
+     */
+    const TABLE_COLUMNS: Record<string, string[]> = {
+      instrument_images: [
+        'id',
+        'instrument_id',
+        'image_url',
+        'storage_key',
+        'file_name',
+        'file_size',
+        'mime_type',
+        'display_order',
+        'created_at',
+      ],
+      instrument_certificates: [
+        'id',
+        'instrument_id',
+        'storage_path',
+        'original_name',
+        'mime_type',
+        'size',
+        'created_by',
+        'is_primary',
+        'version',
+        'created_at',
+      ],
+      instruments: ['id', 'org_id'],
+    };
+
+    function undefinedColumnError(table: string, column: string) {
+      return {
+        code: '42703',
+        message: `column ${table}.${column} does not exist`,
+        details: null,
+        hint: null,
+      };
+    }
+
     function makeDeleteFromMock({
       imageKeys = [] as string[],
       certPaths = [] as string[],
       deleteCount = 1,
       deleteError = null as any,
     } = {}) {
-      const selectChain = (data: any[]) => ({
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        then: (resolve: any) =>
-          Promise.resolve({ data, error: null }).then(resolve),
-      });
+      // Records every (table, column) filter the handler applies, so tests can
+      // assert the tenant scope is established the way we intend.
+      const filters: Array<{ table: string; column: string; value: unknown }> =
+        [];
+      const selects: Array<{ table: string; columns: string }> = [];
 
-      const deleteChain = {
-        delete: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
+      const selectChain = (table: string, data: any[]) => {
+        let selectString = '';
+        let columnError: any = null;
+
+        const chain: any = {
+          select: jest.fn((cols: string) => {
+            selectString = cols ?? '';
+            selects.push({ table, columns: selectString });
+            return chain;
+          }),
+          eq: jest.fn((column: string, value: unknown) => {
+            filters.push({ table, column, value });
+
+            if (column.includes('.')) {
+              // Embedded filter, e.g. `instruments.org_id`. Valid only when the
+              // select actually embeds that relation, and only for a column
+              // that exists on the embedded table.
+              const [relation, relationColumn] = column.split('.');
+              const embedded =
+                selectString.includes(`${relation}!inner(`) ||
+                selectString.includes(`${relation}(`);
+
+              if (!embedded) {
+                columnError ??= {
+                  code: 'PGRST100',
+                  message: `could not find embedded resource '${relation}' in the select clause`,
+                  details: null,
+                  hint: null,
+                };
+              } else if (
+                !TABLE_COLUMNS[relation]?.includes(relationColumn ?? '')
+              ) {
+                columnError ??= undefinedColumnError(
+                  relation,
+                  relationColumn ?? ''
+                );
+              }
+            } else if (!TABLE_COLUMNS[table]?.includes(column)) {
+              columnError ??= undefinedColumnError(table, column);
+            }
+
+            return chain;
+          }),
+          then: (resolve: any) =>
+            Promise.resolve(
+              columnError
+                ? { data: null, error: columnError }
+                : { data, error: null }
+            ).then(resolve),
+        };
+
+        return chain;
+      };
+
+      const deleteChain: any = {
+        delete: jest.fn(() => deleteChain),
+        eq: jest.fn((column: string, value: unknown) => {
+          filters.push({ table: 'instruments', column, value });
+          return deleteChain;
+        }),
         then: (resolve: any) =>
           Promise.resolve({ error: deleteError, count: deleteCount }).then(
             resolve
@@ -1806,12 +1909,18 @@ describe('/api/instruments', () => {
         then: (resolve: any) => Promise.resolve({ error: null }).then(resolve),
       };
 
-      return jest.fn().mockImplementation((table: string) => {
+      const from = jest.fn().mockImplementation((table: string) => {
         if (table === 'instrument_images') {
-          return selectChain(imageKeys.map(k => ({ storage_key: k })));
+          return selectChain(
+            'instrument_images',
+            imageKeys.map(k => ({ storage_key: k }))
+          );
         }
         if (table === 'instrument_certificates') {
-          return selectChain(certPaths.map(p => ({ storage_path: p })));
+          return selectChain(
+            'instrument_certificates',
+            certPaths.map(p => ({ storage_path: p }))
+          );
         }
         if (table === 'orphaned_storage_objects') {
           return insertChain;
@@ -1821,6 +1930,33 @@ describe('/api/instruments', () => {
         }
         return {};
       });
+
+      // Exposed for tenant-scope assertions.
+      (from as any).filters = filters;
+      (from as any).selects = selects;
+
+      return from;
+    }
+
+    function selectFor(fromMock: any, table: string): string {
+      const match = (
+        (fromMock.selects ?? []) as Array<{
+          table: string;
+          columns: string;
+        }>
+      ).find(sel => sel.table === table);
+
+      return match?.columns ?? '';
+    }
+
+    function filtersFor(fromMock: any, table: string) {
+      return (
+        (fromMock.filters ?? []) as Array<{
+          table: string;
+          column: string;
+          value: unknown;
+        }>
+      ).filter(f => f.table === table);
     }
 
     it('returns 200 and deletes instrument with no storage files', async () => {
@@ -2088,6 +2224,167 @@ describe('/api/instruments', () => {
       expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalledWith(
         expect.objectContaining({ code: '57014' }),
         'Delete instrument'
+      );
+      expect(mockStorage.deleteFile).not.toHaveBeenCalled();
+      expect(mockWriteAuditLog).not.toHaveBeenCalled();
+    });
+
+    // ── Issue #152 regression coverage ────────────────────────────────────
+    // DELETE /api/instruments used to prefetch storage keys with
+    // `.eq('org_id', orgId)` on both child tables. Neither table has that
+    // column, so PostgREST returned 42703 and the handler threw before
+    // reaching the instrument delete — a permanent 500.
+
+    it('deletes successfully when both image and certificate rows exist', async () => {
+      const fromMock = makeDeleteFromMock({
+        imageKeys: ['org/img1.jpg'],
+        certPaths: ['org/cert1.pdf'],
+      });
+      mockUserSupabase.from = fromMock;
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(mockErrorHandler.handleSupabaseError).not.toHaveBeenCalled();
+      expect(mockStorage.deleteFile).toHaveBeenCalledWith('org/img1.jpg');
+      expect(mockStorage.deleteFile).toHaveBeenCalledWith('org/cert1.pdf');
+      expect(mockWriteAuditLog).toHaveBeenCalled();
+    });
+
+    it.each(['instrument_images', 'instrument_certificates'])(
+      'never filters %s by a direct org_id column',
+      async table => {
+        const fromMock = makeDeleteFromMock({
+          imageKeys: ['org/img1.jpg'],
+          certPaths: ['org/cert1.pdf'],
+        });
+        mockUserSupabase.from = fromMock;
+
+        const request = new NextRequest(
+          `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+        );
+        const response = await DELETE(request);
+
+        expect(response.status).toBe(200);
+
+        const columns = filtersFor(fromMock, table).map(f => f.column);
+
+        // `org_id` does not exist on either child table; `instruments.org_id`
+        // (the embedded parent filter) is the correct form and is asserted below.
+        expect(columns).not.toContain('org_id');
+        expect(columns).toContain('instrument_id');
+      }
+    );
+
+    it.each(['instrument_images', 'instrument_certificates'])(
+      'scopes the %s prefetch to the caller org through the parent instrument',
+      async table => {
+        const fromMock = makeDeleteFromMock({
+          imageKeys: ['org/img1.jpg'],
+          certPaths: ['org/cert1.pdf'],
+        });
+        mockUserSupabase.from = fromMock;
+
+        const request = new NextRequest(
+          `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+        );
+        const response = await DELETE(request);
+
+        expect(response.status).toBe(200);
+
+        const applied = filtersFor(fromMock, table);
+
+        expect(applied).toEqual(
+          expect.arrayContaining([
+            { table, column: 'instrument_id', value: INSTRUMENT_ID },
+            { table, column: 'instruments.org_id', value: 'test-org' },
+          ])
+        );
+      }
+    );
+
+    it.each([
+      ['instrument_images', 'storage_key'],
+      ['instrument_certificates', 'storage_path'],
+    ])(
+      'embeds instruments!inner(org_id) on the %s prefetch select',
+      async (table, storageColumn) => {
+        const fromMock = makeDeleteFromMock({
+          imageKeys: ['org/img1.jpg'],
+          certPaths: ['org/cert1.pdf'],
+        });
+        mockUserSupabase.from = fromMock;
+
+        const request = new NextRequest(
+          `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+        );
+        await DELETE(request);
+
+        // The !inner embed is what turns the filter asserted above into a real
+        // tenant boundary: a cross-org instrument_id inner-joins to nothing and
+        // the prefetch returns no rows.
+        const selectString = selectFor(fromMock, table);
+
+        expect(selectString).toContain('instruments!inner(org_id)');
+        expect(selectString).toContain(storageColumn);
+      }
+    );
+
+    it('still scopes the instrument delete itself by id and org_id', async () => {
+      const fromMock = makeDeleteFromMock();
+      mockUserSupabase.from = fromMock;
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+
+      expect(response.status).toBe(200);
+      expect(filtersFor(fromMock, 'instruments')).toEqual(
+        expect.arrayContaining([
+          { table: 'instruments', column: 'id', value: INSTRUMENT_ID },
+          { table: 'instruments', column: 'org_id', value: 'test-org' },
+        ])
+      );
+    });
+
+    it('surfaces a 500 if a child prefetch ever filters a nonexistent column again', async () => {
+      // Meta-test for the mock harness itself: proves the schema-aware mock
+      // actually rejects an invalid column, so the assertions above are not
+      // vacuous. This is exactly what the pre-#152 mock could not detect.
+      mockErrorHandler.handleSupabaseError = jest.fn().mockReturnValue({
+        code: 'DATABASE_ERROR',
+        message: 'Database operation failed',
+      });
+
+      const fromMock = makeDeleteFromMock();
+      mockUserSupabase.from = jest.fn().mockImplementation((table: string) => {
+        const chain = fromMock(table);
+        if (table === 'instrument_images') {
+          // Reintroduce the bug at the mock layer.
+          chain.select('storage_key');
+          chain.eq('org_id', 'test-org');
+        }
+        return chain;
+      });
+
+      const request = new NextRequest(
+        `http://localhost/api/instruments?id=${INSTRUMENT_ID}`
+      );
+      const response = await DELETE(request);
+
+      expect(response.status).toBe(500);
+      expect(mockErrorHandler.handleSupabaseError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: '42703',
+          message: 'column instrument_images.org_id does not exist',
+        }),
+        'Fetch instrument images for delete'
       );
       expect(mockStorage.deleteFile).not.toHaveBeenCalled();
       expect(mockWriteAuditLog).not.toHaveBeenCalled();

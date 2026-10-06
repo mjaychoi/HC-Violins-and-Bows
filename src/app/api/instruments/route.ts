@@ -882,18 +882,23 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
 
       const orgId = getRequiredOrgId(auth);
 
-      // Fetch storage keys before deletion so we can clean up physical files
+      // Fetch storage keys before deletion so we can clean up physical files.
+      // Neither child table has a direct org_id column: tenancy flows through
+      // instrument_id -> instruments.org_id. Scope each prefetch with an
+      // instruments!inner(org_id) embed, matching the sibling image and
+      // certificate routes, so a cross-org instrument_id yields zero rows
+      // at the application layer as well as under RLS.
       const [imagesResult, certificatesResult] = await Promise.all([
         auth.userSupabase
           .from('instrument_images')
-          .select('storage_key')
+          .select('storage_key, instruments!inner(org_id)')
           .eq('instrument_id', id)
-          .eq('org_id', orgId),
+          .eq('instruments.org_id', orgId),
         auth.userSupabase
           .from('instrument_certificates')
-          .select('storage_path')
+          .select('storage_path, instruments!inner(org_id)')
           .eq('instrument_id', id)
-          .eq('org_id', orgId),
+          .eq('instruments.org_id', orgId),
       ]);
 
       if (imagesResult.error) {

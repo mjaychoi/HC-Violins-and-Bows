@@ -207,6 +207,75 @@ test.describe('Critical path', () => {
       }
     );
 
+    // Regression coverage for issue #152: DELETE /api/instruments returned 500
+    // on every call (it prefetched storage keys filtering a nonexistent
+    // instrument_images.org_id / instrument_certificates.org_id column), and no
+    // critical-path test ever asserted an instrument delete. The sale/invoice
+    // test below does register an instrument cleanup path, but cleanup()
+    // swallows failures, so the 500 stayed invisible. This test asserts the
+    // delete explicitly and only ever removes the instrument it created.
+    test(
+      'creates and deletes an instrument',
+      {
+        tag: '@critical',
+      },
+      async ({ page }) => {
+        await page.goto('/dashboard', {
+          waitUntil: 'domcontentloaded',
+          timeout: 20000,
+        });
+        await waitForPageLoad(page, 15000, { skipNetworkIdle: true });
+        await assertCookieBackedAuth(page);
+
+        const suffix = uniqueSuffix();
+        const createdJson = await expectOkJson(
+          await page.request.post('/api/instruments', {
+            data: {
+              type: 'Violin',
+              maker: `Delete Path ${suffix}`,
+              year: 2026,
+              price: 1200,
+              status: 'Available',
+              ownership: 'owned',
+              note: suffix,
+            },
+          })
+        );
+        const instrumentId = createdJson.data.id as string;
+        expect(instrumentId).toBeTruthy();
+        const cleanupPaths = [`/api/instruments?id=${instrumentId}`];
+
+        try {
+          // The instrument exists before the delete.
+          expect(
+            (
+              await page.request.get(`/api/instruments?id=${instrumentId}`)
+            ).status()
+          ).toBe(200);
+
+          const deleteResponse = await page.request.delete(
+            `/api/instruments?id=${instrumentId}`
+          );
+          const deleteBody = await deleteResponse.text();
+
+          // Before the fix this was a 500 with
+          // "column instrument_images.org_id does not exist".
+          expect(deleteResponse.status(), deleteBody).toBe(200);
+          expect(JSON.parse(deleteBody).success).toBe(true);
+          cleanupPaths.length = 0;
+
+          // And it is actually gone, not merely error-free.
+          expect(
+            (
+              await page.request.get(`/api/instruments?id=${instrumentId}`)
+            ).status()
+          ).toBe(404);
+        } finally {
+          await cleanup(page, cleanupPaths);
+        }
+      }
+    );
+
     test(
       'creates a sale and invoice, then updates and opens the invoice',
       {
