@@ -1,4 +1,4 @@
-import { expect, test, type APIResponse, type Page } from '@playwright/test';
+import type { APIResponse, Page } from '@playwright/test';
 import * as fs from 'fs';
 
 import {
@@ -6,6 +6,9 @@ import {
   MEMBER_AUTH_STATE_PATH,
   getE2EAdminIdentity,
 } from './e2e-identities';
+// Fails any test whose page hits a same-origin /api 5xx or a pageerror,
+// even when the test body never asserts that background request.
+import { expect, test } from './critical-test';
 import {
   assertCookieBackedAuth,
   waitForPageLoad,

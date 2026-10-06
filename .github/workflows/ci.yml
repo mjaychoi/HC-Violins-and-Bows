@@ -210,6 +210,13 @@ jobs:
       - name: Install Playwright Chromium
         run: npm run test:e2e:install:chromium
 
+      - name: Critical E2E runtime guard self-test (offline, route-mocked)
+        # Proves the guard installed on every @critical test fails on a
+        # same-origin /api 5xx or pageerror and ignores expected 4xx and
+        # cross-origin failures. Uses only Playwright route fulfillment; no
+        # web server, staging, or production endpoint is contacted.
+        run: npm run test:e2e:runtime-guard
+
       - name: Build production application
         run: npm run build
 

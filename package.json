@@ -21,6 +21,7 @@
     "test:e2e:full": "playwright test --project=chromium",
     "test:e2e:all-browsers": "playwright test",
     "test:e2e:critical": "node scripts/assert-critical-e2e-selected.cjs && PLAYWRIGHT_SUITE=critical PLAYWRIGHT_WEB_SERVER=production playwright test",
+    "test:e2e:runtime-guard": "playwright test --config playwright.runtime-guard.config.ts",
     "test:e2e:critical:dev": "node scripts/assert-critical-e2e-selected.cjs && PLAYWRIGHT_SUITE=critical PLAYWRIGHT_WEB_SERVER=dev playwright test",
     "test:e2e:install": "playwright install --with-deps",
     "test:e2e:install:chromium": "playwright install --with-deps chromium",
