@@ -58,10 +58,38 @@ const MAX_ALL_RESULTS = 1000;
  */
 const CONNECTION_CLIENT_COLUMNS = 'id, first_name, last_name, email, tags';
 const CONNECTION_INSTRUMENT_COLUMNS = 'id, maker, type, year, price';
+/**
+ * Foreign key that defines "the instrument this connection is about":
+ * `client_instruments.instrument_id -> instruments.id` (many-to-one).
+ *
+ * This hint is required, not cosmetic. `instruments` is reachable from
+ * `client_instruments` by two distinct foreign keys:
+ *
+ *   1. `client_instruments_instrument_id_fkey`
+ *        client_instruments(instrument_id) -> instruments(id)   [many-to-one]
+ *   2. `instruments_reserved_connection_id_fkey`
+ *        instruments(reserved_connection_id) -> client_instruments(id)
+ *                                                              [one-to-many]
+ *
+ * (2) was added by migration
+ * `20260728140000_preserve_maintenance_history_and_enforce_reserved_references`
+ * so that a reservation can point back at the connection that caused it.
+ * From that migration onward an unqualified `instruments(...)` embed is
+ * ambiguous and PostgREST rejects the whole request with PGRST201, making
+ * every `/api/connections` read fail with HTTP 500.
+ *
+ * (1) is the correct relationship here: a connection row describes one
+ * instrument, and every consumer of this select reads `instrument` as a
+ * single object (see `ConnectionDetailRow` / `mapConnectionDetailRow`).
+ * The reverse path (2) would instead embed "instruments currently reserved
+ * *by* this connection" as an array - a different question, and the wrong
+ * shape for this payload.
+ */
+const CONNECTION_INSTRUMENT_FK = 'client_instruments_instrument_id_fkey';
 const CONNECTION_DETAIL_SELECT = `
   *,
   client:clients(${CONNECTION_CLIENT_COLUMNS}),
-  instrument:instruments(${CONNECTION_INSTRUMENT_COLUMNS})
+  instrument:instruments!${CONNECTION_INSTRUMENT_FK}(${CONNECTION_INSTRUMENT_COLUMNS})
 `;
 
 type ConnectionDisplayOrderUpdate = {

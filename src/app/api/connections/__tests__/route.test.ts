@@ -110,6 +110,221 @@ describe('/api/connections', () => {
     jest.restoreAllMocks();
   });
 
+  /**
+   * Regression: PostgREST relationship ambiguity on the instrument embed.
+   *
+   * `instruments` is reachable from `client_instruments` by two foreign keys:
+   *
+   *   client_instruments_instrument_id_fkey
+   *     client_instruments(instrument_id) -> instruments(id)   [many-to-one]
+   *   instruments_reserved_connection_id_fkey
+   *     instruments(reserved_connection_id) -> client_instruments(id)
+   *                                                            [one-to-many]
+   *
+   * The second was introduced by migration 20260728140000. From that point an
+   * unqualified `instrument:instruments(...)` embed made PostgREST reject the
+   * request (PGRST201, "Could not embed because more than one relationship was
+   * found"), so every `/api/connections` read returned HTTP 500 while the
+   * critical-path E2E suite - which never asserts on connection data - stayed
+   * green.
+   *
+   * These tests pin the FK-qualified selector on every handler that reads a
+   * connection, and pin the *direction*: the many-to-one instrument_id path,
+   * not the reverse reserved_connection_id path, which would embed an array of
+   * "instruments reserved by this connection" instead of the single instrument
+   * the connection is about.
+   *
+   * Limitation: these are query-builder assertions against a mocked Supabase
+   * client, so they prove the request this route *sends*. They cannot prove
+   * PostgREST's response, because this repo has no local PostgREST fixture for
+   * the API-route suite. The 500-is-not-swallowed test below covers the other
+   * half: if the ambiguity ever returns, it surfaces as an error rather than an
+   * empty success.
+   */
+  describe('PostgREST instrument relationship disambiguation', () => {
+    const INTENDED_FK = 'client_instruments_instrument_id_fkey';
+    const REVERSE_FK = 'instruments_reserved_connection_id_fkey';
+
+    /** Matches an `instruments` embed that carries no `!fk` disambiguation. */
+    const UNQUALIFIED_INSTRUMENTS_EMBED = /instruments\s*\(/;
+
+    const assertDisambiguatedSelect = (selectArg: string) => {
+      // The intended relationship is named explicitly...
+      expect(selectArg).toContain(`instrument:instruments!${INTENDED_FK}(`);
+      // ...the reverse relationship is never used...
+      expect(selectArg).not.toContain(REVERSE_FK);
+      // ...and no bare `instruments(` embed survives anywhere in the select,
+      // which is the exact shape PostgREST rejects with PGRST201.
+      expect(selectArg).not.toMatch(UNQUALIFIED_INSTRUMENTS_EMBED);
+    };
+
+    const readyQuery = (result: unknown) => ({
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      order: jest.fn().mockReturnThis(),
+      range: jest.fn().mockResolvedValue(result),
+      single: jest.fn().mockResolvedValue(result),
+    });
+
+    it('qualifies the instrument embed on the collection GET', async () => {
+      const mockQuery = readyQuery({
+        data: [mockConnection],
+        error: null,
+        count: 1,
+      });
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
+
+      const response = await GET(
+        new NextRequest('http://localhost/api/connections')
+      );
+
+      expect(response.status).toBe(200);
+      assertDisambiguatedSelect(mockQuery.select.mock.calls[0][0] as string);
+    });
+
+    it('qualifies the instrument embed on the create response fetch', async () => {
+      const mockQuery = readyQuery({ data: mockConnection, error: null });
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest
+          .fn()
+          .mockResolvedValue({ data: mockConnection.id, error: null }),
+      };
+
+      const response = await POST(
+        new NextRequest('http://localhost/api/connections', {
+          method: 'POST',
+          body: JSON.stringify({
+            client_id: mockConnection.client_id,
+            instrument_id: mockConnection.instrument_id,
+            relationship_type: 'Interested',
+          }),
+        })
+      );
+
+      expect(response.status).toBe(201);
+      assertDisambiguatedSelect(mockQuery.select.mock.calls[0][0] as string);
+    });
+
+    it('qualifies the instrument embed on the update response fetch', async () => {
+      const mockQuery = readyQuery({ data: mockConnection, error: null });
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest
+          .fn()
+          .mockResolvedValue({ data: mockConnection.id, error: null }),
+      };
+
+      const response = await PATCH(
+        new NextRequest('http://localhost/api/connections', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            id: mockConnection.id,
+            display_order: 1,
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      assertDisambiguatedSelect(mockQuery.select.mock.calls[0][0] as string);
+    });
+
+    it('qualifies the instrument embed on the reorder response fetch', async () => {
+      const mockQuery: any = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        in: jest.fn().mockReturnThis(),
+        order: jest.fn().mockResolvedValue({
+          data: [mockConnection],
+          error: null,
+        }),
+      };
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+        rpc: jest.fn().mockResolvedValue({ data: null, error: null }),
+      };
+
+      const response = await PUT(
+        new NextRequest('http://localhost/api/connections', {
+          method: 'PUT',
+          body: JSON.stringify({
+            orders: [{ id: mockConnection.id, display_order: 1 }],
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      assertDisambiguatedSelect(mockQuery.select.mock.calls[0][0] as string);
+    });
+
+    it('every handler reads connections through one shared, FK-qualified select', async () => {
+      // Guards the fix against partial reintroduction: a future handler that
+      // builds its own select would drift from the disambiguated constant.
+      const collectionQuery = readyQuery({
+        data: [mockConnection],
+        error: null,
+        count: 1,
+      });
+      mockUserSupabase = { from: jest.fn().mockReturnValue(collectionQuery) };
+      await GET(new NextRequest('http://localhost/api/connections'));
+      const collectionSelect = collectionQuery.select.mock
+        .calls[0][0] as string;
+
+      const byIdQuery = readyQuery({ data: mockConnection, error: null });
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(byIdQuery),
+        rpc: jest
+          .fn()
+          .mockResolvedValue({ data: mockConnection.id, error: null }),
+      };
+      await POST(
+        new NextRequest('http://localhost/api/connections', {
+          method: 'POST',
+          body: JSON.stringify({
+            client_id: mockConnection.client_id,
+            instrument_id: mockConnection.instrument_id,
+            relationship_type: 'Interested',
+          }),
+        })
+      );
+      const byIdSelect = byIdQuery.select.mock.calls[0][0] as string;
+
+      // The mutation response fetch and the collection read must be the same
+      // string, i.e. literally the shared CONNECTION_DETAIL_SELECT constant.
+      expect(byIdSelect).toBe(collectionSelect);
+      assertDisambiguatedSelect(collectionSelect);
+    });
+
+    it('surfaces a PostgREST ambiguity error instead of degrading to an empty success', async () => {
+      // If the ambiguity is ever reintroduced, it must stay loud. Masking it as
+      // 200 + [] would hide a total outage of the connections list, which is
+      // precisely how this bug survived in CI.
+      const ambiguityError = {
+        code: 'PGRST201',
+        message:
+          "Could not embed because more than one relationship was found for 'client_instruments' and 'instruments'",
+        details:
+          'cardinality: one-to-many; relationship: instruments_reserved_connection_id_fkey; cardinality: many-to-one; relationship: client_instruments_instrument_id_fkey',
+        hint: null,
+      };
+      const mockQuery = readyQuery({
+        data: null,
+        error: ambiguityError,
+        count: null,
+      });
+      mockUserSupabase = { from: jest.fn().mockReturnValue(mockQuery) };
+
+      const response = await GET(
+        new NextRequest('http://localhost/api/connections')
+      );
+      const json = await response.json();
+
+      expect(response.status).toBeGreaterThanOrEqual(500);
+      expect(json.data).toBeUndefined();
+      expect(json.error).toBeDefined();
+    });
+  });
+
   describe('GET', () => {
     it('should return connections', async () => {
       const mockQuery = {
@@ -137,7 +352,7 @@ describe('/api/connections', () => {
         'client:clients(id, first_name, last_name, email, tags)'
       );
       expect(selectArg).toContain(
-        'instrument:instruments(id, maker, type, year, price)'
+        'instrument:instruments!client_instruments_instrument_id_fkey(id, maker, type, year, price)'
       );
       expect(mockQuery.select).toHaveBeenCalledWith(selectArg, {
         count: 'exact',
@@ -170,6 +385,9 @@ describe('/api/connections', () => {
       // No wildcard projection on either embedded resource.
       expect(selectArg).not.toContain('client:clients(*)');
       expect(selectArg).not.toContain('instrument:instruments(*)');
+      expect(selectArg).not.toContain(
+        'instrument:instruments!client_instruments_instrument_id_fkey(*)'
+      );
 
       // Fields the shipped /connections UI never reads must not be
       // requested from the database at all - private notes, contact
@@ -178,7 +396,9 @@ describe('/api/connections', () => {
       const clientProjection =
         selectArg.match(/client:clients\(([^)]*)\)/)?.[1] ?? '';
       const instrumentProjection =
-        selectArg.match(/instrument:instruments\(([^)]*)\)/)?.[1] ?? '';
+        selectArg.match(
+          /instrument:instruments(?:![A-Za-z0-9_]+)?\(([^)]*)\)/
+        )?.[1] ?? '';
 
       for (const excludedClientField of [
         'note',
@@ -786,7 +1006,7 @@ describe('/api/connections', () => {
         'client:clients(id, first_name, last_name, email, tags)'
       );
       expect(postSelectArg).toContain(
-        'instrument:instruments(id, maker, type, year, price)'
+        'instrument:instruments!client_instruments_instrument_id_fkey(id, maker, type, year, price)'
       );
     });
 
@@ -1129,7 +1349,7 @@ describe('/api/connections', () => {
         'client:clients(id, first_name, last_name, email, tags)'
       );
       expect(patchSelectArg).toContain(
-        'instrument:instruments(id, maker, type, year, price)'
+        'instrument:instruments!client_instruments_instrument_id_fkey(id, maker, type, year, price)'
       );
     });
 
@@ -1461,7 +1681,7 @@ describe('/api/connections', () => {
         'client:clients(id, first_name, last_name, email, tags)'
       );
       expect(reorderSelectArg).toContain(
-        'instrument:instruments(id, maker, type, year, price)'
+        'instrument:instruments!client_instruments_instrument_id_fkey(id, maker, type, year, price)'
       );
     });
 
