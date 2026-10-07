@@ -163,6 +163,23 @@ Repository variable (identifier, not a credential):
 
 시크릿이 비어 있으면 job은 성공으로 skip하지 않고 실패합니다.
 
+### Staging storage E2E (S3, optional until provisioned)
+
+Operator handoff: [`docs/ops/staging-storage-e2e.md`](../../docs/ops/staging-storage-e2e.md).
+Until provisioned, the job keeps the inert `e2e-ci-placeholder` bucket and no
+storage credentials. Names (repository level):
+
+- variables: `E2E_STAGING_STORAGE_ENABLED` (`true` / `false` / unset),
+  `E2E_STAGING_S3_BUCKET_NAME`, `E2E_STAGING_S3_REGION`,
+  `PRODUCTION_S3_BUCKET_NAME` (deny target)
+- secrets: `E2E_STAGING_AWS_ACCESS_KEY_ID`, `E2E_STAGING_AWS_SECRET_ACCESS_KEY`
+
+`Configure staging storage E2E (fail-closed)` fails on partial or
+non-staging configuration; when enabled it exports the validated bucket,
+credentials, and `STORAGE_E2E_KEY_PREFIX=e2e/<scopeKey>`, and a cleanup step
+deletes exactly `e2e/<scopeKey>/`. Never map the legacy repo `S3_*` /
+`STORAGE_TYPE` secrets into the E2E job.
+
 ### Run-scoped E2E identities (`E2E_RUN_SCOPE`)
 
 Hosted critical E2E runs share one staging Supabase project, so each run gets
@@ -186,7 +203,8 @@ its own users, organization, and data:
     `tests/e2e/cross-tenant.critical.spec.ts` as "the other tenant";
   - `app_metadata` `{ org_id, role, e2e_managed: true, e2e_run_scope: <scopeKey> }`
     (`org_id` is the secondary org for the secondary admin);
-  - (future storage E2E) object keys under `e2e/<scopeKey>/`.
+  - storage E2E object keys under `e2e/<scopeKey>/` (S3 instrument images /
+    certificates; see the staging storage section above).
 - **Fail-closed:** with `CI=true`, or `PLAYWRIGHT_SUITE=critical` plus
   `STAGING_SUPABASE_PROJECT_REF`, a missing `E2E_RUN_SCOPE` stops global setup.
   There is no fallback to the shared identities.

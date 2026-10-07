@@ -153,9 +153,22 @@ jobs:
       PLAYWRIGHT_SKIP_BUILD: 'true'
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
       RATE_LIMITING_DISABLED: 'true'
+      # Inert placeholder storage (no bucket access, no credentials). The
+      # "Configure staging storage E2E" step replaces it only after every
+      # staging-only check passes; see docs/ops/staging-storage-e2e.md.
       STORAGE_TYPE: s3
       S3_BUCKET_NAME: e2e-ci-placeholder
       S3_REGION: us-east-1
+      # Staging storage E2E raw inputs (operator-provisioned, all empty until
+      # then). The app never reads these names; tests/e2e/staging-storage.ts
+      # validates them and fails closed on partial or non-staging config.
+      # Never map the legacy repo S3_* secrets into this job.
+      E2E_STAGING_STORAGE_ENABLED: ${{ vars.E2E_STAGING_STORAGE_ENABLED }}
+      E2E_STAGING_S3_BUCKET_NAME: ${{ vars.E2E_STAGING_S3_BUCKET_NAME }}
+      E2E_STAGING_S3_REGION: ${{ vars.E2E_STAGING_S3_REGION }}
+      E2E_STAGING_AWS_ACCESS_KEY_ID: ${{ secrets.E2E_STAGING_AWS_ACCESS_KEY_ID }}
+      E2E_STAGING_AWS_SECRET_ACCESS_KEY: ${{ secrets.E2E_STAGING_AWS_SECRET_ACCESS_KEY }}
+      PRODUCTION_S3_BUCKET_NAME: ${{ vars.PRODUCTION_S3_BUCKET_NAME }}
       # Dedicated test/staging project only. Do not reuse the production
       # NEXT_PUBLIC_SUPABASE_* / SUPABASE_SERVICE_ROLE_KEY repo secrets —
       # production-db-deploy.yml still consumes those.
@@ -216,6 +229,17 @@ jobs:
         id: staging_allowlist
         run: npx tsx scripts/assert-e2e-staging-project-allowlist.ts
 
+      - name: Configure staging storage E2E (fail-closed)
+        # disabled (default): keeps the placeholder above, exports nothing
+        # but the mode. enabled: exports the validated staging bucket, its
+        # dedicated credentials, and STORAGE_E2E_KEY_PREFIX=e2e/<scopeKey>.
+        # Partial or non-staging config fails here.
+        id: staging_storage
+        run: npx tsx tests/e2e/configure-staging-storage-e2e.ts
+
+      - name: Verify effective staging storage env
+        run: npx tsx tests/e2e/configure-staging-storage-e2e.ts --verify
+
       - name: Assert critical suite is non-empty
         run: node scripts/assert-critical-e2e-selected.cjs
 
@@ -242,6 +266,13 @@ jobs:
         # staging allowlist, and is a verified no-op when nothing is left.
         if: always() && steps.staging_allowlist.outcome == 'success'
         run: npx tsx tests/e2e/cleanup-run-scoped-e2e.ts
+
+      - name: Clean up run-scoped staging storage objects (safety net)
+        # Deletes only objects under e2e/<scopeKey>/ in the validated staging
+        # bucket and verifies none remain. The bucket's e2e/ lifecycle rule
+        # is the backstop for a run that never gets here.
+        if: always() && steps.staging_storage.outputs.mode == 'enabled'
+        run: npx tsx tests/e2e/cleanup-staging-storage-e2e.ts
 
       - name: Upload E2E test results
         uses: actions/upload-artifact@v4

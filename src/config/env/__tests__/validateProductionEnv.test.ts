@@ -156,6 +156,23 @@ describe('validateProductionEnv', () => {
     expect(issueKeys(env)).toContain('STORAGE_TYPE');
   });
 
+  it('rejects the CI-only STORAGE_E2E_KEY_PREFIX for any deployment', () => {
+    const env = validProductionEnv({
+      STORAGE_E2E_KEY_PREFIX: 'e2e/0a1b2c3d4e5f',
+    });
+    expect(issueKeys(env)).toEqual(['STORAGE_E2E_KEY_PREFIX']);
+    expect(JSON.stringify(validateProductionEnv(env))).not.toContain(
+      '0a1b2c3d4e5f'
+    );
+  });
+
+  it('does not flag STORAGE_E2E_KEY_PREFIX when it is unset or empty', () => {
+    expect(issueKeys(validProductionEnv())).toEqual([]);
+    expect(
+      issueKeys(validProductionEnv({ STORAGE_E2E_KEY_PREFIX: '' }))
+    ).toEqual([]);
+  });
+
   it('does not require optional Sentry, health secret, or DATABASE_URL', () => {
     const env = validProductionEnv();
     delete env.NEXT_PUBLIC_SENTRY_DSN;
