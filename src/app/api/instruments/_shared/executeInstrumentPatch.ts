@@ -379,6 +379,38 @@ function toRpcPatchJson(data: Partial<Instrument>): Record<string, unknown> {
   return out;
 }
 
+function instrumentNotFoundResult(): ApiHandlerResult {
+  return {
+    payload: { error: 'Instrument not found', success: false },
+    status: 404,
+  };
+}
+
+async function readOrgInstrumentForPatch<T>(
+  auth: AuthContext,
+  orgId: string,
+  instrumentId: string,
+  columns: string,
+  context: string
+): Promise<{ ok: true; row: T } | { ok: false; result: ApiHandlerResult }> {
+  const { data, error } = await auth.userSupabase
+    .from('instruments')
+    .select(columns)
+    .eq('id', instrumentId)
+    .eq('org_id', orgId)
+    .maybeSingle();
+
+  if (error) {
+    throw errorHandler.handleSupabaseError(error, context);
+  }
+
+  if (!data) {
+    return { ok: false, result: instrumentNotFoundResult() };
+  }
+
+  return { ok: true, row: data as T };
+}
+
 async function assertResultingInstrumentIdentity(
   auth: AuthContext,
   orgId: string,
@@ -393,16 +425,16 @@ async function assertResultingInstrumentIdentity(
     return null;
   }
 
-  const { data: current, error } = await auth.userSupabase
-    .from('instruments')
-    .select('maker, type')
-    .eq('id', instrumentId)
-    .eq('org_id', orgId)
-    .single();
+  const loaded = await readOrgInstrumentForPatch<{
+    maker: string | null;
+    type: string | null;
+  }>(auth, orgId, instrumentId, 'maker, type', 'Fetch instrument identity');
 
-  if (error || !current) {
-    throw errorHandler.handleSupabaseError(error, 'Fetch instrument identity');
+  if (!loaded.ok) {
+    return loaded.result;
   }
+
+  const current = loaded.row;
 
   const resultingMaker = Object.prototype.hasOwnProperty.call(updates, 'maker')
     ? (updates.maker ?? null)
@@ -540,21 +572,24 @@ export async function executeInstrumentPatch(
       Object.prototype.hasOwnProperty.call(updates, 'status') ||
       Object.prototype.hasOwnProperty.call(updates, 'reserved_reason')
     ) {
-      const { data: current, error: fetchError } = await auth.userSupabase
-        .from('instruments')
-        .select(
-          'status, reserved_reason, reserved_by_user_id, reserved_connection_id'
-        )
-        .eq('id', instrumentId)
-        .eq('org_id', orgId)
-        .single();
+      const loaded = await readOrgInstrumentForPatch<{
+        status: string | null;
+        reserved_reason: string | null;
+        reserved_by_user_id: string | null;
+        reserved_connection_id: string | null;
+      }>(
+        auth,
+        orgId,
+        instrumentId,
+        'status, reserved_reason, reserved_by_user_id, reserved_connection_id',
+        'Fetch current status'
+      );
 
-      if (fetchError || !current) {
-        throw errorHandler.handleSupabaseError(
-          fetchError,
-          'Fetch current status'
-        );
+      if (!loaded.ok) {
+        return loaded.result;
       }
+
+      const current = loaded.row;
 
       const reservedUpdateResult = buildReservedStateUpdate(
         (current.status ?? 'Available') as Instrument['status'],
@@ -683,22 +718,24 @@ export async function executeInstrumentPatch(
   let validatedUpdates = validationResult.data;
 
   if (validatedUpdates.status !== undefined) {
-    const { data: currentInstrument, error: currentInstrumentError } =
-      await auth.userSupabase
-        .from('instruments')
-        .select(
-          'status, reserved_reason, reserved_by_user_id, reserved_connection_id'
-        )
-        .eq('id', instrumentId)
-        .eq('org_id', orgId)
-        .single();
+    const loaded = await readOrgInstrumentForPatch<{
+      status: string | null;
+      reserved_reason: string | null;
+      reserved_by_user_id: string | null;
+      reserved_connection_id: string | null;
+    }>(
+      auth,
+      orgId,
+      instrumentId,
+      'status, reserved_reason, reserved_by_user_id, reserved_connection_id',
+      'Fetch instrument state'
+    );
 
-    if (currentInstrumentError || !currentInstrument) {
-      throw errorHandler.handleSupabaseError(
-        currentInstrumentError,
-        'Fetch instrument state'
-      );
+    if (!loaded.ok) {
+      return loaded.result;
     }
+
+    const currentInstrument = loaded.row;
 
     if (
       currentInstrument.status === 'Sold' &&
@@ -762,22 +799,24 @@ export async function executeInstrumentPatch(
   } else if (
     Object.prototype.hasOwnProperty.call(validatedUpdates, 'reserved_reason')
   ) {
-    const { data: currentInstrument, error: currentInstrumentError } =
-      await auth.userSupabase
-        .from('instruments')
-        .select(
-          'status, reserved_reason, reserved_by_user_id, reserved_connection_id'
-        )
-        .eq('id', instrumentId)
-        .eq('org_id', orgId)
-        .single();
+    const loaded = await readOrgInstrumentForPatch<{
+      status: string | null;
+      reserved_reason: string | null;
+      reserved_by_user_id: string | null;
+      reserved_connection_id: string | null;
+    }>(
+      auth,
+      orgId,
+      instrumentId,
+      'status, reserved_reason, reserved_by_user_id, reserved_connection_id',
+      'Fetch instrument state'
+    );
 
-    if (currentInstrumentError || !currentInstrument) {
-      throw errorHandler.handleSupabaseError(
-        currentInstrumentError,
-        'Fetch instrument state'
-      );
+    if (!loaded.ok) {
+      return loaded.result;
     }
+
+    const currentInstrument = loaded.row;
 
     const reservedStateResult = buildReservedStateUpdate(
       (currentInstrument.status ?? 'Available') as Instrument['status'],

@@ -85,6 +85,14 @@ const VALID_TASK_TYPES = new Set([
   'restoration',
 ]);
 
+function taskNotFoundResult(taskId: string) {
+  return {
+    payload: { error: 'Task not found', success: false },
+    status: 404,
+    metadata: { taskId },
+  };
+}
+
 function toMaintenanceTaskInsertRow(
   input: Omit<MaintenanceTask, 'id' | 'created_at' | 'updated_at'> & {
     org_id: string;
@@ -385,13 +393,17 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
           .select('*', { count: 'exact' })
           .eq('id', id)
           .eq('org_id', auth.orgId!)
-          .single();
+          .maybeSingle();
 
         if (error) {
           throw errorHandler.handleSupabaseError(
             error,
             'Fetch maintenance task by ID'
           );
+        }
+
+        if (!data) {
+          return taskNotFoundResult(id);
         }
 
         const singleValidation = safeValidate(data, validateMaintenanceTask);
@@ -978,13 +990,17 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
             .select('status')
             .eq('id', id)
             .eq('org_id', auth.orgId!)
-            .single();
+            .maybeSingle();
 
-        if (currentTaskError || !currentTask) {
+        if (currentTaskError) {
           throw errorHandler.handleSupabaseError(
             currentTaskError,
             'Fetch maintenance task status'
           );
+        }
+
+        if (!currentTask) {
+          return taskNotFoundResult(id);
         }
 
         const transitionError = validateMaintenanceTaskStatusTransition(
@@ -1026,11 +1042,7 @@ async function patchHandler(request: NextRequest, auth: AuthContext) {
           .maybeSingle();
 
         if (!existingTask) {
-          return {
-            payload: { error: 'Task not found', success: false },
-            status: 404,
-            metadata: { taskId: id },
-          };
+          return taskNotFoundResult(id);
         }
 
         return {
@@ -1149,11 +1161,7 @@ async function deleteHandler(request: NextRequest, auth: AuthContext) {
       }
 
       if (!count || count === 0) {
-        return {
-          payload: { error: 'Task not found', success: false },
-          status: 404,
-          metadata: { taskId: id },
-        };
+        return taskNotFoundResult(id);
       }
 
       return {

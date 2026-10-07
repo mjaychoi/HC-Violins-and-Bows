@@ -116,7 +116,7 @@ function mockCurrentInstrumentState(
   auth.userSupabase.from.mockReturnValue({
     select: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
-    single: jest.fn().mockResolvedValue({
+    maybeSingle: jest.fn().mockResolvedValue({
       data: instrumentStateRow(status),
       error: null,
     }),
