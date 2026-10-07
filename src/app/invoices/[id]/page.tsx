@@ -159,13 +159,36 @@ export default function InvoiceDetailPage() {
   const handleUpdate = useCallback(
     async (data: InvoicePayload) => {
       if (!invoiceId) return;
+      const expectedUpdatedAt = invoice?.updated_at;
+      if (!expectedUpdatedAt) {
+        handleError(
+          new Error(
+            'Cannot update invoice without a current updated_at version'
+          ),
+          'Update invoice'
+        );
+        return;
+      }
+
       setSubmitting(true);
       try {
-        const response = await apiFetch(`/api/invoices/${invoiceId}`, {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(data),
-        });
+        const idempotencyKey =
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `invoice-update-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+        const response = await apiFetch(
+          `/api/invoices/${invoiceId}`,
+          {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              ...data,
+              updated_at: expectedUpdatedAt,
+            }),
+          },
+          { idempotencyKey }
+        );
 
         if (!response.ok) {
           throw await createApiResponseErrorFromResponse(
@@ -192,7 +215,7 @@ export default function InvoiceDetailPage() {
         setSubmitting(false);
       }
     },
-    [invoiceId, handleError, showSuccess]
+    [invoice?.updated_at, invoiceId, handleError, showSuccess]
   );
 
   const handleDelete = useCallback(async () => {
