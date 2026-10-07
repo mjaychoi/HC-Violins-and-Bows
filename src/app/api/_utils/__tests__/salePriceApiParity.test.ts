@@ -133,18 +133,20 @@ function makeInstrumentAuth() {
       error: null,
     });
 
+  const currentRow = {
+    data: {
+      status: 'Available',
+      reserved_reason: null,
+      reserved_by_user_id: null,
+      reserved_connection_id: null,
+    },
+    error: null,
+  };
   from.mockReturnValue({
     select: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
-    single: jest.fn().mockResolvedValue({
-      data: {
-        status: 'Available',
-        reserved_reason: null,
-        reserved_by_user_id: null,
-        reserved_connection_id: null,
-      },
-      error: null,
-    }),
+    maybeSingle: jest.fn().mockResolvedValue(currentRow),
+    single: jest.fn().mockResolvedValue(currentRow),
   });
 
   return {
