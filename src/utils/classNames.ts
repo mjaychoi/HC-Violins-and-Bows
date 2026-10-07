@@ -43,7 +43,7 @@ export const classNames = {
 
   // Table styles (통일된 테이블 스타일)
   tableWrapper: 'rounded-xl border border-gray-100 bg-white shadow-sm',
-  tableContainer: 'overflow-x-auto',
+  tableContainer: 'overflow-x-auto w-full min-w-0 max-w-full',
   table: 'min-w-full divide-y divide-gray-200',
   tableHeader:
     'sticky top-0 bg-white/80 backdrop-blur border-b border-gray-200',

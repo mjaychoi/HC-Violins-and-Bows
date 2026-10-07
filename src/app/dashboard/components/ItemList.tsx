@@ -1096,21 +1096,6 @@ const ItemList = memo(function ItemList({
           </div>
         )}
       </div>
-
-      {/* 모바일/데스크톱 공통 Pagination */}
-      {totalPages !== undefined && totalPages > 1 && (
-        <div className="md:hidden border-t border-gray-200 px-4 pt-4">
-          <Pagination
-            currentPage={currentPage || 1}
-            totalPages={totalPages}
-            onPageChange={onPageChange || (() => {})}
-            loading={loading}
-            totalCount={totalCount}
-            pageSize={pageSize}
-            itemLabel={itemLabel}
-          />
-        </div>
-      )}
     </>
   );
 });
