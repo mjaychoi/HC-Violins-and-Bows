@@ -237,7 +237,7 @@ describe('ci.yml E2E job wiring', () => {
 
   it('runs scope-bound cleanup as an always() safety net', () => {
     expect(e2eJob).toMatch(
-      /if: always\(\) && steps\.staging_allowlist\.outcome == 'success'\s+run: npx tsx scripts\/e2e\/cleanup-run-scoped-e2e\.ts/
+      /if: always\(\) && steps\.staging_allowlist\.outcome == 'success'\s+run: npx tsx tests\/e2e\/cleanup-run-scoped-e2e\.ts/
     );
   });
 

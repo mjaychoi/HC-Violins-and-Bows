@@ -3,8 +3,11 @@
  * organization, data, and auth users (derived from E2E_RUN_SCOPE), then
  * verifies nothing remains. Idempotent — after Playwright's globalTeardown it
  * finds nothing and exits 0. Never logs keys, passwords, or sessions.
+ *
+ * Lives under tests/ (not scripts/) because .vercelignore drops tests/: a
+ * scripts/ file importing tests/ breaks the Vercel `next build` type-check.
  */
-import { cleanupCurrentRunScope } from '../../tests/e2e/run-scoped-fixtures';
+import { cleanupCurrentRunScope } from './run-scoped-fixtures';
 
 async function main(): Promise<void> {
   const summary = await cleanupCurrentRunScope();

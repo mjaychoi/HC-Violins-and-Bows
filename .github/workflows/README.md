@@ -189,7 +189,7 @@ its own users, organization, and data:
   behaviour unchanged. Setting it locally requires the staging allowlist env
   (setup and cleanup both run `assertE2EStagingProjectAllowlist`).
 - **Cleanup is scope-bound.** Playwright `globalTeardown`, plus an
-  `if: always()` CI step (`scripts/e2e/cleanup-run-scoped-e2e.ts`) for a
+  `if: always()` CI step (`tests/e2e/cleanup-run-scoped-e2e.ts`) for a
   globalSetup that failed part-way. Cleanup deletes only the derived org id
   (children cascade; the FK-less `api_create_idempotency` is deleted by
   `org_id`) and the two derived users. It runs only after every ownership
