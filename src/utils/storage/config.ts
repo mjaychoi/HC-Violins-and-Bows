@@ -5,6 +5,8 @@
 
 import 'server-only';
 
+import { parseStorageE2EKeyPrefix } from './e2eKeyPrefix';
+
 export interface StorageConfig {
   storageType: 'local' | 's3';
   // S3 Configuration
@@ -16,6 +18,11 @@ export interface StorageConfig {
   s3AddressingStyle?: 'virtual-hosted-style' | 'path-style';
   kmsKeyId?: string;
   storageBasePrefix?: string;
+  /**
+   * CI-only run-scoped namespace (`e2e/<scopeKey>`) for staging storage E2E.
+   * Present only when STORAGE_E2E_KEY_PREFIX is set; see ./e2eKeyPrefix.ts.
+   */
+  e2eKeyPrefix?: string;
   localRoot?: string;
   // File size limits
   maxFileSizeBytes: number;
@@ -74,6 +81,7 @@ export function getStorageConfig(
     env.STORAGE_TYPE,
     defaultStorageType
   );
+  const e2eKeyPrefix = parseStorageE2EKeyPrefix(env);
   const maxMb = Number.parseInt(env.UPLOAD_MAX_FILE_SIZE_MB ?? '10', 10);
   const safeMaxMb = Number.isFinite(maxMb) && maxMb > 0 ? maxMb : 10;
 
@@ -91,6 +99,8 @@ export function getStorageConfig(
     kmsKeyId: env.KMS_KEY_ID,
     storageBasePrefix: env.STORAGE_BASE_PREFIX,
     localRoot: env.STORAGE_LOCAL_ROOT,
+    // Added only when set, so the unset config object is unchanged.
+    ...(e2eKeyPrefix ? { e2eKeyPrefix } : {}),
     // Default to 10MB
     maxFileSizeBytes: safeMaxMb * 1024 * 1024,
   };
@@ -101,6 +111,14 @@ export function validateStorageRuntimeConfig(
   nodeEnv: string | undefined = process.env.NODE_ENV
 ): StorageConfig {
   const runtime = getStorageRuntimeEnvironment(nodeEnv);
+
+  // Only S3Storage enforces the E2E namespace. Refuse rather than silently
+  // ignore it with local/memory storage, in every runtime.
+  if (config.e2eKeyPrefix && config.storageType !== 's3') {
+    throw new Error(
+      'STORAGE_E2E_KEY_PREFIX requires STORAGE_TYPE=s3 (the E2E key namespace is enforced only by S3 storage).'
+    );
+  }
 
   if (runtime === 'development' || runtime === 'test') {
     return config;

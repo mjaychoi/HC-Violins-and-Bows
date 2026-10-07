@@ -12,6 +12,7 @@ import {
   RATE_LIMITING_DISABLED_KEY,
 } from './keys';
 import type { EnvIssue, EnvMap, EnvValidationResult } from './issues';
+import { STORAGE_E2E_KEY_PREFIX_ENV } from '../../utils/storage/e2eKeyPrefix';
 import {
   productionEnvSchema,
   readTrimmed,
@@ -163,6 +164,16 @@ export function validateProductionEnv(env: EnvMap): EnvValidationResult {
       issues,
       'S3_ADDRESSING_STYLE',
       'S3_ADDRESSING_STYLE must be "virtual-hosted-style" or "path-style".'
+    );
+  }
+
+  // CI-only staging storage E2E namespace. Never valid for a deployment
+  // (check:env / deploy:build run for every Vercel build).
+  if (readTrimmed(env, STORAGE_E2E_KEY_PREFIX_ENV)) {
+    addIssue(
+      issues,
+      STORAGE_E2E_KEY_PREFIX_ENV,
+      `${STORAGE_E2E_KEY_PREFIX_ENV} is a CI-only staging E2E setting and must not be set for a deployment.`
     );
   }
 

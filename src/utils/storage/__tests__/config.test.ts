@@ -187,4 +187,69 @@ describe('storage config', () => {
       );
     });
   });
+
+  describe('STORAGE_E2E_KEY_PREFIX (CI-only staging storage E2E)', () => {
+    const PREFIX = 'e2e/0a1b2c3d4e5f';
+
+    it('leaves the config object without an e2eKeyPrefix key when unset', () => {
+      process.env.STORAGE_TYPE = 's3';
+      process.env.S3_BUCKET_NAME = 'test-bucket';
+      process.env.S3_REGION = 'us-east-1';
+      delete process.env.STORAGE_E2E_KEY_PREFIX;
+
+      const config = getStorageConfig();
+
+      expect(Object.prototype.hasOwnProperty.call(config, 'e2eKeyPrefix')).toBe(
+        false
+      );
+    });
+
+    it('exposes a valid prefix', () => {
+      process.env.STORAGE_TYPE = 's3';
+      process.env.STORAGE_E2E_KEY_PREFIX = PREFIX;
+
+      expect(getStorageConfig().e2eKeyPrefix).toBe(PREFIX);
+    });
+
+    it('fails closed on a malformed prefix', () => {
+      process.env.STORAGE_TYPE = 's3';
+      process.env.STORAGE_E2E_KEY_PREFIX = 'e2e/';
+
+      expect(() => getStorageConfig()).toThrow(/malformed/);
+    });
+
+    it('fails closed on a Vercel production runtime', () => {
+      setNodeEnv('production');
+      process.env.STORAGE_TYPE = 's3';
+      process.env.S3_BUCKET_NAME = 'test-bucket';
+      process.env.S3_REGION = 'us-east-1';
+      process.env.VERCEL_ENV = 'production';
+      process.env.STORAGE_E2E_KEY_PREFIX = PREFIX;
+
+      expect(() => validateStorageRuntimeConfig()).toThrow(/production/);
+    });
+
+    it('refuses the prefix with non-S3 storage in every runtime', () => {
+      for (const nodeEnv of ['development', 'test', 'production']) {
+        setNodeEnv(nodeEnv);
+        process.env.STORAGE_TYPE = 'local';
+        process.env.STORAGE_E2E_KEY_PREFIX = PREFIX;
+
+        expect(() => validateStorageRuntimeConfig()).toThrow(
+          /requires STORAGE_TYPE=s3/
+        );
+      }
+    });
+
+    it('accepts the prefix with S3 storage in a non-Vercel production build (CI E2E server)', () => {
+      setNodeEnv('production');
+      delete process.env.VERCEL_ENV;
+      process.env.STORAGE_TYPE = 's3';
+      process.env.S3_BUCKET_NAME = 'hc-violins-staging-e2e';
+      process.env.S3_REGION = 'us-west-1';
+      process.env.STORAGE_E2E_KEY_PREFIX = PREFIX;
+
+      expect(validateStorageRuntimeConfig().e2eKeyPrefix).toBe(PREFIX);
+    });
+  });
 });

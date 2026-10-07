@@ -10,6 +10,7 @@ import 'server-only';
 
 import { logInfo, logError, logWarn } from '../logger';
 import { getStorageConfig } from './config';
+import { applyE2EKeyPrefix, assertKeyInE2ENamespace } from './e2eKeyPrefix';
 import type { Storage } from './types';
 import { createHash, randomUUID } from 'crypto';
 import type {
@@ -254,7 +255,10 @@ export class S3Storage implements Storage {
     const fileName = ext ? `${fileId}.${ext}` : fileId;
     const basePrefix = this.config.storageBasePrefix || 'uploads';
     const safePrefix = (prefix || basePrefix).replace(/^\/+|\/+$/g, '');
-    return `${safePrefix}/${fileName}`;
+    return applyE2EKeyPrefix(
+      this.config.e2eKeyPrefix,
+      `${safePrefix}/${fileName}`
+    );
   }
 
   getFileUrl(fileKey: string, _expiresIn: number = 3600): string {
@@ -269,9 +273,12 @@ export class S3Storage implements Storage {
 
   async saveFile(
     fileContent: Buffer | Uint8Array,
-    fileKey: string,
+    requestedKey: string,
     contentType: string
   ): Promise<string> {
+    // Identity unless STORAGE_E2E_KEY_PREFIX is set (CI staging E2E only).
+    const fileKey = applyE2EKeyPrefix(this.config.e2eKeyPrefix, requestedKey);
+
     await this.ensureInitialized();
 
     const fileHash = calculateFileHash(fileContent);
@@ -310,6 +317,7 @@ export class S3Storage implements Storage {
   }
 
   async downloadFile(fileKey: string): Promise<Buffer> {
+    assertKeyInE2ENamespace(this.config.e2eKeyPrefix, fileKey);
     await this.ensureInitialized();
 
     try {
@@ -344,6 +352,7 @@ export class S3Storage implements Storage {
   }
 
   async deleteFile(fileKey: string): Promise<boolean> {
+    assertKeyInE2ENamespace(this.config.e2eKeyPrefix, fileKey);
     await this.ensureInitialized();
 
     try {
@@ -367,6 +376,7 @@ export class S3Storage implements Storage {
   }
 
   async fileExists(fileKey: string): Promise<boolean> {
+    assertKeyInE2ENamespace(this.config.e2eKeyPrefix, fileKey);
     await this.ensureInitialized();
 
     try {
@@ -398,6 +408,7 @@ export class S3Storage implements Storage {
     contentType: string,
     expires: number = 3600
   ): Promise<string> {
+    assertKeyInE2ENamespace(this.config.e2eKeyPrefix, key);
     await this.ensureInitialized();
 
     const command = new this.sdk!.PutObjectCommand({
@@ -412,6 +423,7 @@ export class S3Storage implements Storage {
   }
 
   async presignGet(key: string, expires: number = 3600): Promise<string> {
+    assertKeyInE2ENamespace(this.config.e2eKeyPrefix, key);
     await this.ensureInitialized();
 
     const command = new this.sdk!.GetObjectCommand({
@@ -430,6 +442,7 @@ export class S3Storage implements Storage {
     maxMb: number = 10,
     expires: number = 900
   ): Promise<Record<string, unknown>> {
+    assertKeyInE2ENamespace(this.config.e2eKeyPrefix, key);
     await this.ensureInitialized();
 
     const maxBytes =

@@ -10,7 +10,15 @@
  */
 
 export type EnvVisibility = 'public' | 'server';
-export type ProductionRequirement = 'required' | 'optional' | 'emergency';
+/**
+ * `forbidden`: must never be set for a deployment; validateProductionEnv
+ * rejects it (CI-only test settings).
+ */
+export type ProductionRequirement =
+  | 'required'
+  | 'optional'
+  | 'emergency'
+  | 'forbidden';
 
 export type EnvKeySpec = {
   readonly key: string;
@@ -201,6 +209,12 @@ export const ENV_KEY_CATALOG = [
     key: 'STORAGE_BASE_PREFIX',
     visibility: 'server',
     production: 'optional',
+    secret: false,
+  },
+  {
+    key: 'STORAGE_E2E_KEY_PREFIX',
+    visibility: 'server',
+    production: 'forbidden',
     secret: false,
   },
   {

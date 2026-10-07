@@ -352,6 +352,10 @@ Optional storage keys (`AWS_ENDPOINT_URL`, `S3_ADDRESSING_STYLE`,
 Boot-time instrumentation refuses to start outside `development`/`test`
 without S3 configuration.
 
+`STORAGE_E2E_KEY_PREFIX` is a CI-only hosted staging E2E setting and is
+rejected by `check:env` / `deploy:build` for every deployment. See
+[ops/staging-storage-e2e.md](./ops/staging-storage-e2e.md).
+
 ### GitHub `production` Environment (operator UI — unverified here)
 
 None of these can be created from repository code. Leave unchecked until

@@ -14,6 +14,7 @@
 - [프로덕션 마이그레이션 워크플로](./PRODUCTION_MIGRATION_WORKFLOW.md) — CI/프로덕션 가드와 hosted staging inspect/apply rehearsal 계약
 - [마이그레이션 가이드](./migrations/README.md) — 로컬 스키마 확인과 마이그레이션 실행
 - [데모 데이터 시드](./seed-demo-data.md) — `scripts/README.md`에서 참조하는 샘플 데이터
+- [Staging storage E2E operator handoff](./ops/staging-storage-e2e.md) — run-scoped `e2e/<scopeKey>/` S3 namespace, staging-only guard, cleanup, AWS/GitHub setup
 
 ## 문서 구조
 
@@ -25,6 +26,8 @@ docs/
 ├── DEPLOYMENT.md                      # 프로덕션 배포
 ├── PRODUCTION_MIGRATION_WORKFLOW.md   # 프로덕션 마이그레이션 워크플로
 ├── seed-demo-data.md                  # 데모 데이터
+├── ops/
+│   └── staging-storage-e2e.md         # staging storage E2E operator handoff (+ policy JSON)
 └── migrations/
     └── README.md                      # 마이그레이션 가이드
 ```

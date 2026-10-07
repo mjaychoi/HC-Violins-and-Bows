@@ -1,0 +1,17 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-e2e-run-objects",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "e2e/"
+      },
+      "Expiration": {
+        "Days": 1
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
+    }
+  ]
+}
