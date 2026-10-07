@@ -229,6 +229,35 @@ async function createSecondaryInstrument(
   return created.json.data.id as string;
 }
 
+type SecondaryConnection = {
+  id: string;
+  client_id: string;
+  instrument_id: string;
+  relationship_type: string;
+  notes: string | null;
+  display_order: number;
+};
+
+async function createSecondaryConnection(
+  secondary: APIRequestContext,
+  input: { clientId: string; instrumentId: string; notes: string }
+): Promise<SecondaryConnection> {
+  const created = await expectStatus(
+    await secondary.post('/api/connections', {
+      headers: { 'Idempotency-Key': `e2e-xt-connection-${uniqueSuffix()}` },
+      data: {
+        client_id: input.clientId,
+        instrument_id: input.instrumentId,
+        relationship_type: 'Interested',
+        notes: input.notes,
+      },
+    }),
+    201,
+    'secondary admin creates a connection'
+  );
+  return created.json.data as SecondaryConnection;
+}
+
 async function deleteAsSecondary(
   secondary: APIRequestContext,
   path: string
@@ -720,6 +749,114 @@ test.describe('Cross-tenant isolation', () => {
             'primary admin lists invoices after the injection attempt'
           );
           expect(primaryAfterInjection.json.data).toEqual([]);
+        });
+      } finally {
+        await secondaryContext.close();
+      }
+    }
+  );
+
+  test(
+    'primary admin cannot reorder a secondary-org connection',
+    {
+      tag: '@critical',
+    },
+    async ({ page, browser, baseURL }) => {
+      await openPrimaryDashboard(page);
+      const secondaryContext = await browser.newContext({
+        baseURL,
+        storageState: await secondaryAdminState(baseURL),
+      });
+      const secondary = secondaryContext.request;
+      const primary = page.request;
+
+      try {
+        await withCleanup(async register => {
+          const suffix = uniqueSuffix();
+          const client = await createSecondaryClient(secondary, suffix);
+          register('client', () =>
+            deleteAsSecondary(secondary, `/api/clients?id=${client.id}`)
+          );
+          const instrumentId = await createSecondaryInstrument(
+            secondary,
+            suffix
+          );
+          register('instrument', () =>
+            deleteAsSecondary(secondary, `/api/instruments?id=${instrumentId}`)
+          );
+          const connection = await createSecondaryConnection(secondary, {
+            clientId: client.id,
+            instrumentId,
+            notes: suffix,
+          });
+          // Registered last so cleanup deletes the connection before the
+          // instrument and client it references.
+          register('connection', () =>
+            deleteAsSecondary(secondary, `/api/connections?id=${connection.id}`)
+          );
+
+          const listPath = `/api/connections?client_id=${client.id}&orderBy=display_order&ascending=true`;
+          const readAsSecondary = async () => {
+            const list = await expectStatus(
+              await secondary.get(listPath),
+              200,
+              'secondary admin re-reads its connection'
+            );
+            const row = (list.json.data as SecondaryConnection[]).find(
+              candidate => candidate.id === connection.id
+            );
+            expect(
+              row,
+              'secondary connection missing from its own list'
+            ).toBeTruthy();
+            return row as SecondaryConnection;
+          };
+
+          await expectListedFor(
+            secondary,
+            listPath,
+            connection.id,
+            'secondary admin lists its connection'
+          );
+          const original = await readAsSecondary();
+          expect(original.notes).toBe(suffix);
+          expect(original.client_id).toBe(client.id);
+          expect(original.instrument_id).toBe(instrumentId);
+          expect(original.relationship_type).toBe('Interested');
+          expect(typeof original.display_order).toBe('number');
+
+          const missingId = randomUUID();
+          const nextOrder = original.display_order === 50 ? 51 : 50;
+
+          // reorder_connections_atomic raises
+          // "Connection not found in organization: <id>" for both a foreign
+          // org row and a missing id. PUT maps that prefix to one public 409.
+          await expectTenantSafeDenial({
+            label: 'PUT /api/connections reorder',
+            status: 409,
+            error: 'Connection not found',
+            secret: suffix,
+            foreign: () =>
+              primary.put('/api/connections', {
+                data: {
+                  orders: [{ id: connection.id, display_order: nextOrder }],
+                },
+              }),
+            nonexistent: () =>
+              primary.put('/api/connections', {
+                data: {
+                  orders: [{ id: missingId, display_order: nextOrder }],
+                },
+              }),
+          });
+
+          const after = await readAsSecondary();
+          expect(after.id).toBe(connection.id);
+          expect(after.display_order).toBe(original.display_order);
+          expect(after.notes).toBe(original.notes);
+          expect(after.relationship_type).toBe(original.relationship_type);
+          expect(after.client_id).toBe(original.client_id);
+          expect(after.instrument_id).toBe(original.instrument_id);
         });
       } finally {
         await secondaryContext.close();
