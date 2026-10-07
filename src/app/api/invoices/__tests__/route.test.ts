@@ -744,6 +744,74 @@ describe('/api/invoices POST', () => {
     expect(json.error).toBe('Admin role required');
   });
 
+  it('returns 400 when an item instrument_id is not in the caller organization', async () => {
+    const { safeValidate } = require('@/utils/typeGuards');
+    safeValidate.mockImplementationOnce(() => ({
+      success: true,
+      data: {
+        client_id: '123e4567-e89b-12d3-a456-426614174001',
+        invoice_date: '2026-04-03',
+        due_date: '2026-04-10',
+        subtotal: 100,
+        tax: 0,
+        total: 100,
+        status: 'draft',
+        currency: 'USD',
+        items: [
+          {
+            instrument_id: '123e4567-e89b-12d3-a456-426614174099',
+            description: 'Violin',
+            qty: 1,
+            rate: 100,
+            amount: 100,
+            image_url: null,
+            display_order: 0,
+          },
+        ],
+      },
+    }));
+
+    const instrumentQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      in: jest.fn().mockResolvedValue({ data: [], error: null }),
+    };
+    mockUserSupabase = {
+      rpc: jest.fn(),
+      from: createFromMock({ instruments: instrumentQuery }),
+    };
+
+    const { POST } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'cross-org-instrument-key' },
+      body: JSON.stringify({
+        client_id: '123e4567-e89b-12d3-a456-426614174001',
+        invoice_date: '2026-04-03',
+        subtotal: 100,
+        total: 100,
+        items: [
+          {
+            instrument_id: '123e4567-e89b-12d3-a456-426614174099',
+            description: 'Violin',
+            qty: 1,
+            rate: 100,
+            amount: 100,
+          },
+        ],
+      }),
+    });
+
+    const response = await POST(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json.error).toBe(
+      'One or more invoice item instruments were not found in organization'
+    );
+    expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+  });
+
   it('returns 400 when client_id is not in the caller organization', async () => {
     mockUserSupabase = {
       rpc: jest.fn(),

@@ -418,12 +418,34 @@ async function generateInvoicePdfResponse(
 
     if (invoiceError || !invoice) {
       const duration = Math.round(nowMs() - startTime);
+      const status = getPostgrestStatus(invoiceError);
+
+      // Org-scoped `.single()` is PGRST116 for both a foreign id and a
+      // missing id. Match GET /api/invoices/[id] rather than a sanitized
+      // 500/Access-denied envelope, and do not treat expected denial as
+      // an application exception.
+      if (status === 404 || (!invoiceError && !invoice)) {
+        logApiRequest('GET', routePath, 404, duration, 'InvoicesAPI', {
+          invoiceId: id,
+          requestId,
+          error: true,
+          errorCode: 'PGRST116',
+        });
+
+        return withRequestIdHeader(
+          NextResponse.json(
+            { error: 'Invoice not found', success: false },
+            { status: 404 }
+          ),
+          requestId
+        );
+      }
+
       const appError = errorHandler.handleSupabaseError(
         invoiceError || new Error('Invoice not found'),
         'Fetch invoice for PDF'
       );
       const logInfo = createLogErrorInfo(appError);
-      const status = getPostgrestStatus(invoiceError);
 
       logApiRequest('GET', routePath, status, duration, 'InvoicesAPI', {
         invoiceId: id,
