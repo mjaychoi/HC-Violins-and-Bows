@@ -329,5 +329,9 @@ describe('GET /api/invoices/:id/pdf instrument ACL', () => {
     expect(response.status).toBe(404);
     expect(query.eq).toHaveBeenCalledWith('org_id', ORG_ID);
     expect(response.headers.get('Content-Type')).not.toBe('application/pdf');
+    await expect(response.json()).resolves.toEqual({
+      error: 'Invoice not found',
+      success: false,
+    });
   });
 });
