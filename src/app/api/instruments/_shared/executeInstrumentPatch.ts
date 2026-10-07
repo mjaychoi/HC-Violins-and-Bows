@@ -525,6 +525,12 @@ export async function executeInstrumentPatch(
   delete updates.id;
   delete updates.updated_at;
   delete updates.sale_transition;
+  // Reservation identity is server-derived (`buildReservedStateUpdate`).
+  // Clients must not write another org's user/connection UUID onto an
+  // instrument they otherwise own — that is a reference-boundary leak
+  // and a user-existence oracle against auth.users.
+  delete updates.reserved_by_user_id;
+  delete updates.reserved_connection_id;
 
   const saleTransitionResult = parseSaleTransition(
     hasSaleTransition,
