@@ -139,10 +139,10 @@ jobs:
   e2e-tests:
     name: E2E Tests
 
-    # Critical E2E runs share staging Supabase admin/member identities.
-    # Concurrent runs can invalidate each other's sessions during
-    # deterministic auth seeding or global sign-out. Serialize only this
-    # hosted E2E job while leaving Test & Lint and Build parallel.
+    # Each run now gets its own staging users and organization from
+    # E2E_RUN_SCOPE (see below). This mutex stays until a concurrent hosted
+    # run proves that isolation; removing it is a separate change. Test &
+    # Lint and Build stay parallel.
     concurrency:
       group: hc-hosted-staging-critical-e2e
       cancel-in-progress: false
@@ -169,9 +169,13 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
       STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
       PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
-      E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
+      # Run-scoped identities: global setup derives this run's admin, member,
+      # and organization from E2E_RUN_SCOPE (unique per run and per rerun
+      # attempt) and fails closed without it. Emails are derived, so the
+      # shared E2E_TEST_EMAIL / E2E_TEST_MEMBER_EMAIL are not used here;
+      # E2E_TEST_ORG_ID is passed only as a deny target for cleanup.
+      E2E_RUN_SCOPE: ${{ github.run_id }}-${{ github.run_attempt }}-critical
       E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
-      E2E_TEST_MEMBER_EMAIL: ${{ secrets.E2E_TEST_MEMBER_EMAIL }}
       E2E_TEST_MEMBER_PASSWORD: ${{ secrets.E2E_TEST_MEMBER_PASSWORD }}
       E2E_TEST_ORG_ID: ${{ secrets.E2E_TEST_ORG_ID }}
 
@@ -197,7 +201,8 @@ jobs:
           for name in \
             NEXT_PUBLIC_SUPABASE_URL \
             NEXT_PUBLIC_SUPABASE_ANON_KEY \
-            SUPABASE_SERVICE_ROLE_KEY
+            SUPABASE_SERVICE_ROLE_KEY \
+            E2E_RUN_SCOPE
           do
             if [ -z "${!name}" ]; then
               missing+=("$name")
@@ -211,6 +216,7 @@ jobs:
           echo "Required E2E environment variables are present."
 
       - name: Require staging project allowlist
+        id: staging_allowlist
         run: npx tsx scripts/assert-e2e-staging-project-allowlist.ts
 
       - name: Assert critical suite is non-empty
@@ -231,6 +237,14 @@ jobs:
 
       - name: Run critical-path E2E tests
         run: npm run test:e2e:critical
+
+      - name: Clean up run-scoped E2E identities (safety net)
+        # Playwright globalTeardown already cleans up after the suite; this
+        # also covers a globalSetup that failed part-way or a crashed run.
+        # Deletes only this run's derived org and users, re-checks the
+        # staging allowlist, and is a verified no-op when nothing is left.
+        if: always() && steps.staging_allowlist.outcome == 'success'
+        run: npx tsx scripts/e2e/cleanup-run-scoped-e2e.ts
 
       - name: Upload E2E test results
         uses: actions/upload-artifact@v4
