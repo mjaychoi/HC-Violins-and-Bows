@@ -672,6 +672,16 @@ export async function executeInstrumentPatch(
 
       const msg = String(rpcError.message ?? '');
 
+      if (msg.includes('Client not found in organization')) {
+        return {
+          payload: {
+            error: 'Client not found in organization',
+            success: false,
+          },
+          status: 400,
+        };
+      }
+
       if (msg.includes('instrument_concurrency_conflict')) {
         logInfo('instrument_sale_transition_conflict', input.apiPath, {
           instrumentId,

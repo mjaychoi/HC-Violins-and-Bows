@@ -898,6 +898,16 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
           };
         }
 
+        if (errorMessage.includes('Client not found in organization')) {
+          return {
+            payload: {
+              error: 'Client not found in organization',
+              success: false,
+            },
+            status: 400,
+          };
+        }
+
         if (
           errorMessage.includes('already sold') ||
           errorMessage.includes('completed sale record') ||
