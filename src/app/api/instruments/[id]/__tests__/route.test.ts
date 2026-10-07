@@ -132,7 +132,7 @@ describe('/api/instruments/[id]', () => {
     const stateQuery = {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
-      single: jest.fn().mockResolvedValue({
+      maybeSingle: jest.fn().mockResolvedValue({
         data: {
           status: 'Reserved',
           reserved_reason: 'Current hold',
@@ -201,9 +201,9 @@ describe('/api/instruments/[id]', () => {
     const stateQuery = {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
-      single: jest.fn().mockResolvedValue({
+      maybeSingle: jest.fn().mockResolvedValue({
         data: null,
-        error: { message: 'Instrument not found' },
+        error: null,
       }),
     };
 
@@ -211,7 +211,7 @@ describe('/api/instruments/[id]', () => {
       update: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
-      single: jest.fn(),
+      maybeSingle: jest.fn(),
     };
 
     let instrumentCallCount = 0;
@@ -242,9 +242,54 @@ describe('/api/instruments/[id]', () => {
     });
     const json = await response.json();
 
-    expect(response.status).toBe(500);
-    expect(json.message).toBe('Server error occurred. Please try again later.');
+    expect(response.status).toBe(404);
+    expect(json.error).toBe('Instrument not found');
+    expect(json.message).toBe('Instrument not found');
     expect(stateQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+    expect(updateQuery.update).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when a maker patch cannot see the instrument', async () => {
+    const stateQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: null,
+        error: null,
+      }),
+    };
+    const updateQuery = {
+      update: jest.fn(),
+    };
+
+    mockUserSupabase = {
+      from: jest.fn((table: string) => {
+        if (table !== 'instruments') {
+          throw new Error(`Unexpected table: ${table}`);
+        }
+        return stateQuery;
+      }),
+    };
+
+    const request = new NextRequest(
+      `http://localhost/api/instruments/${instrumentId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          maker: 'Stradivari',
+          updated_at: updatedAt,
+        }),
+      }
+    );
+
+    const response = await PATCH(request, {
+      params: Promise.resolve({ id: instrumentId }),
+    });
+    const json = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(json.error).toBe('Instrument not found');
+    expect(json.message).toBe('Instrument not found');
     expect(updateQuery.update).not.toHaveBeenCalled();
   });
 });
