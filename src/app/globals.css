@@ -27,8 +27,15 @@ body {
 
 /* Custom calendar styles */
 .calendar-container {
-  height: 100%;
-  min-height: 700px;
+  height: auto;
+  min-height: 0;
+}
+
+@media (min-width: 768px) {
+  .calendar-container {
+    height: 100%;
+    min-height: 700px;
+  }
 }
 
 /* React Big Calendar event styles - professional card design */
@@ -156,13 +163,25 @@ body {
 .calendar-container .rbc-month-row {
   flex: 1;
   display: flex;
-  min-height: 180px;
+  min-height: 72px;
+}
+
+@media (min-width: 768px) {
+  .calendar-container .rbc-month-row {
+    min-height: 180px;
+  }
 }
 
 .calendar-container .rbc-day-bg {
   flex: 1;
-  min-height: 180px;
+  min-height: 72px;
   padding-bottom: 4px;
+}
+
+@media (min-width: 768px) {
+  .calendar-container .rbc-day-bg {
+    min-height: 180px;
+  }
 }
 
 .calendar-container .rbc-date-cell {
@@ -174,8 +193,14 @@ body {
 
 .calendar-container .rbc-off-range-bg {
   flex: 1;
-  min-height: 180px;
+  min-height: 72px;
   padding-bottom: 4px;
+}
+
+@media (min-width: 768px) {
+  .calendar-container .rbc-off-range-bg {
+    min-height: 180px;
+  }
 }
 
 .calendar-container .rbc-day-slot {

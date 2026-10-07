@@ -689,178 +689,151 @@ const ClientList = memo(function ClientList({
     <div className={`${classNames.tableWrapper} relative`}>
       <div className={`${classNames.tableContainer} -mx-4 sm:mx-0`}>
         <div className="inline-block min-w-full align-middle">
-          <div className="overflow-hidden">
-            <table className={classNames.table}>
-              <thead className={classNames.tableHeader}>
-                <tr>
-                  <th className={`${classNames.tableHeaderCell} text-right`}>
-                    <span>Actions</span>
-                  </th>
-                  {CLIENT_LIST_COLUMNS.map(column => {
-                    if (!column.sortable) {
-                      return (
-                        <th
-                          key={column.field}
-                          scope="col"
-                          className={classNames.tableHeaderCell}
-                        >
-                          <span>{column.label}</span>
-                        </th>
-                      );
-                    }
-
-                    const arrow = getSortArrow(column.field);
-                    const ariaSort =
-                      arrow === '↑'
-                        ? 'ascending'
-                        : arrow === '↓'
-                          ? 'descending'
-                          : 'none';
+          <table className={classNames.table}>
+            <thead className={classNames.tableHeader}>
+              <tr>
+                <th className={`${classNames.tableHeaderCell} text-right`}>
+                  <span>Actions</span>
+                </th>
+                {CLIENT_LIST_COLUMNS.map(column => {
+                  if (!column.sortable) {
                     return (
                       <th
                         key={column.field}
                         scope="col"
-                        className={cn(
-                          classNames.tableHeaderCellSortable,
-                          'group'
-                        )}
-                        onClick={() => onColumnSort(column.field)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            onColumnSort(column.field);
-                          }
-                        }}
-                        tabIndex={0}
-                        role="columnheader"
-                        aria-sort={ariaSort}
-                        aria-label={`Sort by ${column.label.toLowerCase()}`}
+                        className={classNames.tableHeaderCell}
                       >
-                        <span className="inline-flex items-center gap-1">
-                          {column.label}
-                          <span
-                            className={`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 ${
-                              arrow !== '' ? 'opacity-100 text-gray-900' : ''
-                            }`}
-                          >
-                            <SortIcon arrow={arrow} />
-                          </span>
-                        </span>
+                        <span>{column.label}</span>
                       </th>
                     );
-                  })}
-                </tr>
-              </thead>
-              {/* ✅ FIXED: Removed virtualization - pagination handles large lists */}
-              <tbody className={classNames.tableBody}>
-                {clients.map(client => {
-                  const fullName =
-                    `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
-                    'N/A';
+                  }
 
-                  const isExpanded = expandedClientId === client.id;
-
-                  const isNewlyCreated = newlyCreatedClientId === client.id;
-                  const relatedInstruments =
-                    instrumentsByClient.get(client.id) || [];
-                  const primaryInstrument =
-                    relatedInstruments.find(ci => ci.instrument)?.instrument ||
-                    undefined;
-                  const isSelectedFromURL =
-                    selectedClientIdFromURL === client.id;
-
+                  const arrow = getSortArrow(column.field);
+                  const ariaSort =
+                    arrow === '↑'
+                      ? 'ascending'
+                      : arrow === '↓'
+                        ? 'descending'
+                        : 'none';
                   return (
-                    <Fragment key={client.id}>
-                      <tr
-                        data-client-id={client.id}
-                        onClick={() => {
-                          // ✅ FIXED: Only handle expand, not onClientClick (UX improvement)
-                          if (editingClient === client.id) return;
-                          setExpandedClientId(prev =>
-                            prev === client.id ? null : client.id
-                          );
-                        }}
-                        className={cn(
-                          classNames.tableRow,
-                          'cursor-pointer group',
-                          editingClient === client.id ? 'bg-blue-50' : '',
-                          'hover:bg-blue-50/30 transition-colors',
-                          isNewlyCreated && 'ring-2 ring-green-400 bg-green-50',
-                          isSelectedFromURL && 'ring-2 ring-blue-400 bg-blue-50'
-                        )}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            if (editingClient !== client.id) {
-                              setExpandedClientId(prev =>
-                                prev === client.id ? null : client.id
-                              );
-                            }
-                          }
-                        }}
-                        aria-label={`Toggle details for ${fullName}`}
-                        aria-expanded={isExpanded}
-                      >
-                        <td
-                          className={cn(
-                            classNames.tableCell,
-                            'text-left relative'
-                          )}
+                    <th
+                      key={column.field}
+                      scope="col"
+                      className={cn(
+                        classNames.tableHeaderCellSortable,
+                        'group'
+                      )}
+                      onClick={() => onColumnSort(column.field)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onColumnSort(column.field);
+                        }
+                      }}
+                      tabIndex={0}
+                      role="columnheader"
+                      aria-sort={ariaSort}
+                      aria-label={`Sort by ${column.label.toLowerCase()}`}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {column.label}
+                        <span
+                          className={`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 ${
+                            arrow !== '' ? 'opacity-100 text-gray-900' : ''
+                          }`}
                         >
-                          {editingClient === client.id ? (
-                            <div className="flex items-center justify-end gap-0.5 relative z-10">
-                              <button
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  saveEditing();
-                                }}
-                                disabled={isSaving}
-                                className="text-green-600 hover:text-green-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-green-50"
-                                title="Save changes"
-                                aria-label="Save changes"
-                              >
-                                {isSaving ? (
-                                  <svg
-                                    className="w-4 h-4 animate-spin"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth="2"
-                                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                                    />
-                                  </svg>
-                                ) : (
-                                  <svg
-                                    className="w-4 h-4"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth="2"
-                                      d="M5 13l4 4L19 7"
-                                    />
-                                  </svg>
-                                )}
-                              </button>
-                              <button
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  cancelEditing();
-                                }}
-                                disabled={isSaving}
-                                className="text-red-600 hover:text-red-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-red-50"
-                                title="Cancel editing"
-                                aria-label="Cancel editing"
-                              >
+                          <SortIcon arrow={arrow} />
+                        </span>
+                      </span>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            {/* ✅ FIXED: Removed virtualization - pagination handles large lists */}
+            <tbody className={classNames.tableBody}>
+              {clients.map(client => {
+                const fullName =
+                  `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+                  'N/A';
+
+                const isExpanded = expandedClientId === client.id;
+
+                const isNewlyCreated = newlyCreatedClientId === client.id;
+                const relatedInstruments =
+                  instrumentsByClient.get(client.id) || [];
+                const primaryInstrument =
+                  relatedInstruments.find(ci => ci.instrument)?.instrument ||
+                  undefined;
+                const isSelectedFromURL = selectedClientIdFromURL === client.id;
+
+                return (
+                  <Fragment key={client.id}>
+                    <tr
+                      data-client-id={client.id}
+                      onClick={() => {
+                        // ✅ FIXED: Only handle expand, not onClientClick (UX improvement)
+                        if (editingClient === client.id) return;
+                        setExpandedClientId(prev =>
+                          prev === client.id ? null : client.id
+                        );
+                      }}
+                      className={cn(
+                        classNames.tableRow,
+                        'cursor-pointer group',
+                        editingClient === client.id ? 'bg-blue-50' : '',
+                        'hover:bg-blue-50/30 transition-colors',
+                        isNewlyCreated && 'ring-2 ring-green-400 bg-green-50',
+                        isSelectedFromURL && 'ring-2 ring-blue-400 bg-blue-50'
+                      )}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          if (editingClient !== client.id) {
+                            setExpandedClientId(prev =>
+                              prev === client.id ? null : client.id
+                            );
+                          }
+                        }
+                      }}
+                      aria-label={`Toggle details for ${fullName}`}
+                      aria-expanded={isExpanded}
+                    >
+                      <td
+                        className={cn(
+                          classNames.tableCell,
+                          'text-left relative'
+                        )}
+                      >
+                        {editingClient === client.id ? (
+                          <div className="flex items-center justify-end gap-0.5 relative z-10">
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                saveEditing();
+                              }}
+                              disabled={isSaving}
+                              className="text-green-600 hover:text-green-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-green-50"
+                              title="Save changes"
+                              aria-label="Save changes"
+                            >
+                              {isSaving ? (
+                                <svg
+                                  className="w-4 h-4 animate-spin"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth="2"
+                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                  />
+                                </svg>
+                              ) : (
                                 <svg
                                   className="w-4 h-4"
                                   fill="none"
@@ -871,318 +844,328 @@ const ClientList = memo(function ClientList({
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                     strokeWidth="2"
-                                    d="M6 18L18 6M6 6l12 12"
+                                    d="M5 13l4 4L19 7"
                                   />
                                 </svg>
-                              </button>
-                            </div>
-                          ) : (
-                            <RowActions
-                              onEdit={() => _onClientClick(client)}
-                              onInlineEdit={() => startEditing(client)}
-                              onDelete={
-                                onDeleteClient
-                                  ? () => onDeleteClient(client)
-                                  : undefined
-                              }
-                            />
-                          )}
-                        </td>
-                        <td className={classNames.tableCell}>
-                          {editingClient === client.id ? (
-                            <div className="min-w-[200px] space-y-2">
-                              <div className="grid grid-cols-2 gap-2">
-                                <label
-                                  className="sr-only"
-                                  htmlFor={`client-${client.id}-first-name`}
-                                >
-                                  First Name
-                                </label>
-                                <input
-                                  id={`client-${client.id}-first-name`}
-                                  type="text"
-                                  value={editData.first_name ?? ''}
-                                  onChange={e =>
-                                    handleEditFieldChange(
-                                      'first_name',
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  onClick={e => e.stopPropagation()}
-                                  placeholder="First Name"
-                                />
-                                <label
-                                  className="sr-only"
-                                  htmlFor={`client-${client.id}-last-name`}
-                                >
-                                  Last Name
-                                </label>
-                                <input
-                                  id={`client-${client.id}-last-name`}
-                                  type="text"
-                                  value={editData.last_name ?? ''}
-                                  onChange={e =>
-                                    handleEditFieldChange(
-                                      'last_name',
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  onClick={e => e.stopPropagation()}
-                                  placeholder="Last Name"
-                                />
-                              </div>
-                              {editError && (
-                                <p
-                                  className="text-xs text-red-600"
-                                  role="alert"
-                                >
-                                  {editError}
-                                </p>
-                              )}
-                              <input
-                                id={`client-${client.id}-email`}
-                                type="email"
-                                value={editData.email || ''}
-                                onChange={e =>
-                                  handleEditFieldChange('email', e.target.value)
-                                }
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                onClick={e => e.stopPropagation()}
-                                placeholder="Email"
-                                aria-label="Email"
-                              />
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                setExpandedClientId(prev =>
-                                  prev === client.id ? null : client.id
-                                );
-                              }}
-                              className="w-full text-left min-w-[150px] focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm"
-                              aria-expanded={expandedClientId === client.id}
-                              aria-controls={`client-details-${client.id}`}
-                            >
-                              <div className="flex items-center">
-                                <div className="text-sm font-medium text-gray-900">
-                                  {fullName}
-                                </div>
-                              </div>
-                              {client.email && (
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {client.email}
-                                </div>
-                              )}
-                              {client.note && (
-                                <div className="text-xs text-gray-500 mt-1 line-clamp-2">
-                                  {client.note}
-                                </div>
                               )}
                             </button>
-                          )}
-                        </td>
-                        <td className={classNames.tableCell}>
-                          {editingClient === client.id ? (
-                            <div className="min-w-[150px]">
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                cancelEditing();
+                              }}
+                              disabled={isSaving}
+                              className="text-red-600 hover:text-red-700 disabled:opacity-50 transition-all duration-200 hover:scale-110 p-1.5 rounded-md hover:bg-red-50"
+                              title="Cancel editing"
+                              aria-label="Cancel editing"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M6 18L18 6M6 6l12 12"
+                                />
+                              </svg>
+                            </button>
+                          </div>
+                        ) : (
+                          <RowActions
+                            onEdit={() => _onClientClick(client)}
+                            onInlineEdit={() => startEditing(client)}
+                            onDelete={
+                              onDeleteClient
+                                ? () => onDeleteClient(client)
+                                : undefined
+                            }
+                          />
+                        )}
+                      </td>
+                      <td className={classNames.tableCell}>
+                        {editingClient === client.id ? (
+                          <div className="min-w-[200px] space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <label
+                                className="sr-only"
+                                htmlFor={`client-${client.id}-first-name`}
+                              >
+                                First Name
+                              </label>
                               <input
-                                id={`client-${client.id}-contact-number`}
-                                type="tel"
-                                value={editData.contact_number || ''}
+                                id={`client-${client.id}-first-name`}
+                                type="text"
+                                value={editData.first_name ?? ''}
                                 onChange={e =>
                                   handleEditFieldChange(
-                                    'contact_number',
+                                    'first_name',
                                     e.target.value
                                   )
                                 }
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 onClick={e => e.stopPropagation()}
-                                placeholder="Phone number"
-                                aria-label="Contact number"
+                                placeholder="First Name"
+                              />
+                              <label
+                                className="sr-only"
+                                htmlFor={`client-${client.id}-last-name`}
+                              >
+                                Last Name
+                              </label>
+                              <input
+                                id={`client-${client.id}-last-name`}
+                                type="text"
+                                value={editData.last_name ?? ''}
+                                onChange={e =>
+                                  handleEditFieldChange(
+                                    'last_name',
+                                    e.target.value
+                                  )
+                                }
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onClick={e => e.stopPropagation()}
+                                placeholder="Last Name"
                               />
                             </div>
-                          ) : (
-                            <div className="text-sm text-gray-900 min-w-[120px]">
-                              {client.contact_number ? (
-                                <span>{client.contact_number}</span>
-                              ) : (
-                                <span className="text-gray-400">
-                                  No contact
+                            {editError && (
+                              <p className="text-xs text-red-600" role="alert">
+                                {editError}
+                              </p>
+                            )}
+                            <input
+                              id={`client-${client.id}-email`}
+                              type="email"
+                              value={editData.email || ''}
+                              onChange={e =>
+                                handleEditFieldChange('email', e.target.value)
+                              }
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              onClick={e => e.stopPropagation()}
+                              placeholder="Email"
+                              aria-label="Email"
+                            />
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setExpandedClientId(prev =>
+                                prev === client.id ? null : client.id
+                              );
+                            }}
+                            className="w-full text-left min-w-[150px] focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm"
+                            aria-expanded={expandedClientId === client.id}
+                            aria-controls={`client-details-${client.id}`}
+                          >
+                            <div className="flex items-center">
+                              <div className="text-sm font-medium text-gray-900">
+                                {fullName}
+                              </div>
+                            </div>
+                            {client.email && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                {client.email}
+                              </div>
+                            )}
+                            {client.note && (
+                              <div className="text-xs text-gray-500 mt-1 line-clamp-2">
+                                {client.note}
+                              </div>
+                            )}
+                          </button>
+                        )}
+                      </td>
+                      <td className={classNames.tableCell}>
+                        {editingClient === client.id ? (
+                          <div className="min-w-[150px]">
+                            <input
+                              id={`client-${client.id}-contact-number`}
+                              type="tel"
+                              value={editData.contact_number || ''}
+                              onChange={e =>
+                                handleEditFieldChange(
+                                  'contact_number',
+                                  e.target.value
+                                )
+                              }
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              onClick={e => e.stopPropagation()}
+                              placeholder="Phone number"
+                              aria-label="Contact number"
+                            />
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-900 min-w-[120px]">
+                            {client.contact_number ? (
+                              <span>{client.contact_number}</span>
+                            ) : (
+                              <span className="text-gray-400">No contact</span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td
+                        className={cn(
+                          classNames.tableCell,
+                          inlineEditTags.editingId === client.id &&
+                            'ring-2 ring-blue-200 bg-blue-50',
+                          inlineEditTags.savedId === client.id &&
+                            'ring-2 ring-green-200 bg-green-50'
+                        )}
+                      >
+                        {editingClient === client.id ? (
+                          // 전체 편집 모드: 기존 ClientTagSelector 사용
+                          <div className="min-w-[150px]">
+                            <ClientTagSelector
+                              selectedTags={editData.tags || []}
+                              onChange={next =>
+                                handleEditFieldChange('tags', next as string[])
+                              }
+                              className="space-y-1.5"
+                              optionClassName="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
+                              checkboxClassName="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                              labelClassName="ml-2 text-xs font-medium"
+                              getLabelClassName={tag => getTagTextColor(tag)}
+                              stopPropagation
+                            />
+                          </div>
+                        ) : inlineEditTags.editingId === client.id ? (
+                          // 인라인 편집 모드: tags만 편집
+                          <div className="min-w-[150px] space-y-2">
+                            <ClientTagSelector
+                              selectedTags={
+                                (inlineEditTags.editData.tags as string[]) ||
+                                client.tags ||
+                                []
+                              }
+                              onChange={next =>
+                                inlineEditTags.updateField('tags', next)
+                              }
+                              className="space-y-1.5"
+                              optionClassName="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
+                              checkboxClassName="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                              labelClassName="ml-2 text-xs font-medium"
+                              getLabelClassName={tag => getTagTextColor(tag)}
+                              stopPropagation
+                            />
+                            <InlineEditActions
+                              isSaving={inlineEditTags.isSaving}
+                              onSave={inlineEditTags.saveEditing}
+                              onCancel={inlineEditTags.cancelEditing}
+                              className="justify-end"
+                            />
+                          </div>
+                        ) : (
+                          // 보기 모드: 편집 아이콘 버튼과 태그 표시
+                          <div className="flex items-start gap-2 min-w-[120px]">
+                            <div className="flex flex-wrap gap-1 flex-1">
+                              {sortTags([...(client.tags ?? [])]).map(tag => (
+                                <TagBadge key={tag} tag={tag} context="table" />
+                              ))}
+                              {(!client.tags || client.tags.length === 0) && (
+                                <span className="text-gray-400 text-xs">
+                                  No tags
                                 </span>
                               )}
                             </div>
-                          )}
-                        </td>
-                        <td
-                          className={cn(
-                            classNames.tableCell,
-                            inlineEditTags.editingId === client.id &&
-                              'ring-2 ring-blue-200 bg-blue-50',
-                            inlineEditTags.savedId === client.id &&
-                              'ring-2 ring-green-200 bg-green-50'
-                          )}
-                        >
-                          {editingClient === client.id ? (
-                            // 전체 편집 모드: 기존 ClientTagSelector 사용
-                            <div className="min-w-[150px]">
-                              <ClientTagSelector
-                                selectedTags={editData.tags || []}
-                                onChange={next =>
-                                  handleEditFieldChange(
-                                    'tags',
-                                    next as string[]
-                                  )
-                                }
-                                className="space-y-1.5"
-                                optionClassName="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
-                                checkboxClassName="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                                labelClassName="ml-2 text-xs font-medium"
-                                getLabelClassName={tag => getTagTextColor(tag)}
-                                stopPropagation
-                              />
-                            </div>
-                          ) : inlineEditTags.editingId === client.id ? (
-                            // 인라인 편집 모드: tags만 편집
-                            <div className="min-w-[150px] space-y-2">
-                              <ClientTagSelector
-                                selectedTags={
-                                  (inlineEditTags.editData.tags as string[]) ||
-                                  client.tags ||
-                                  []
-                                }
-                                onChange={next =>
-                                  inlineEditTags.updateField('tags', next)
-                                }
-                                className="space-y-1.5"
-                                optionClassName="flex items-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors duration-150"
-                                checkboxClassName="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                                labelClassName="ml-2 text-xs font-medium"
-                                getLabelClassName={tag => getTagTextColor(tag)}
-                                stopPropagation
-                              />
-                              <InlineEditActions
-                                isSaving={inlineEditTags.isSaving}
-                                onSave={inlineEditTags.saveEditing}
-                                onCancel={inlineEditTags.cancelEditing}
-                                className="justify-end"
-                              />
-                            </div>
-                          ) : (
-                            // 보기 모드: 편집 아이콘 버튼과 태그 표시
-                            <div className="flex items-start gap-2 min-w-[120px]">
-                              <div className="flex flex-wrap gap-1 flex-1">
-                                {sortTags([...(client.tags ?? [])]).map(tag => (
-                                  <TagBadge
-                                    key={tag}
-                                    tag={tag}
-                                    context="table"
-                                  />
-                                ))}
-                                {(!client.tags || client.tags.length === 0) && (
-                                  <span className="text-gray-400 text-xs">
-                                    No tags
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </td>
-                        <td
-                          className={cn(
-                            classNames.tableCell,
-                            inlineEditInterest.editingId === client.id &&
-                              'ring-2 ring-blue-200 bg-blue-50',
-                            inlineEditInterest.savedId === client.id &&
-                              'ring-2 ring-green-200 bg-green-50'
-                          )}
-                        >
-                          {editingClient === client.id ? (
-                            // 전체 편집 모드: 기존 InterestSelector 사용
-                            <div className="min-w-[120px]">
-                              <InterestSelector
-                                value={editData.interest || ''}
-                                onChange={value =>
-                                  handleEditFieldChange('interest', value)
-                                }
-                                selectClassName="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                placeholder="Select interest"
-                                stopPropagation
-                              />
-                            </div>
-                          ) : inlineEditInterest.editingId === client.id ? (
-                            // 인라인 편집 모드: interest만 편집
-                            <div className="min-w-[120px] space-y-2">
-                              <InlineSelectField
-                                isEditing={true}
-                                value={
-                                  (inlineEditInterest.editData
-                                    .interest as string) ||
-                                  client.interest ||
-                                  null
-                                }
-                                onChange={value =>
-                                  inlineEditInterest.updateField(
-                                    'interest',
-                                    value
-                                  )
-                                }
-                                options={INTEREST_LEVELS.map(level => ({
-                                  value: level,
-                                  label: level,
-                                }))}
-                                placeholder="Select interest"
-                                editingClassName="w-full"
-                                onEnter={inlineEditInterest.saveEditing}
-                                onEscape={inlineEditInterest.cancelEditing}
-                              />
-                              <InlineEditActions
-                                isSaving={inlineEditInterest.isSaving}
-                                onSave={inlineEditInterest.saveEditing}
-                                onCancel={inlineEditInterest.cancelEditing}
-                                className="justify-end"
-                              />
-                            </div>
-                          ) : (
-                            // 보기 모드: 편집 아이콘 버튼과 interest 표시
-                            <div className="flex items-center gap-2 min-w-[100px]">
-                              <div className="flex-1">
-                                {client.interest ? (
-                                  <InterestBadge
-                                    interest={client.interest}
-                                    context="table"
-                                  />
-                                ) : (
-                                  <span className="text-sm text-gray-400">
-                                    —
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </td>
-                        <td className={classNames.tableCell}>
-                          <div className="text-sm text-gray-400 font-mono">
-                            {client.client_number || '—'}
                           </div>
-                        </td>
-                      </tr>
-                      {/* ✅ Expanded row - only render when expanded */}
-                      {isExpanded && (
-                        <ClientExpandedRow
-                          client={client}
-                          relatedInstruments={relatedInstruments}
-                          instrument={primaryInstrument}
-                        />
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        )}
+                      </td>
+                      <td
+                        className={cn(
+                          classNames.tableCell,
+                          inlineEditInterest.editingId === client.id &&
+                            'ring-2 ring-blue-200 bg-blue-50',
+                          inlineEditInterest.savedId === client.id &&
+                            'ring-2 ring-green-200 bg-green-50'
+                        )}
+                      >
+                        {editingClient === client.id ? (
+                          // 전체 편집 모드: 기존 InterestSelector 사용
+                          <div className="min-w-[120px]">
+                            <InterestSelector
+                              value={editData.interest || ''}
+                              onChange={value =>
+                                handleEditFieldChange('interest', value)
+                              }
+                              selectClassName="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="Select interest"
+                              stopPropagation
+                            />
+                          </div>
+                        ) : inlineEditInterest.editingId === client.id ? (
+                          // 인라인 편집 모드: interest만 편집
+                          <div className="min-w-[120px] space-y-2">
+                            <InlineSelectField
+                              isEditing={true}
+                              value={
+                                (inlineEditInterest.editData
+                                  .interest as string) ||
+                                client.interest ||
+                                null
+                              }
+                              onChange={value =>
+                                inlineEditInterest.updateField(
+                                  'interest',
+                                  value
+                                )
+                              }
+                              options={INTEREST_LEVELS.map(level => ({
+                                value: level,
+                                label: level,
+                              }))}
+                              placeholder="Select interest"
+                              editingClassName="w-full"
+                              onEnter={inlineEditInterest.saveEditing}
+                              onEscape={inlineEditInterest.cancelEditing}
+                            />
+                            <InlineEditActions
+                              isSaving={inlineEditInterest.isSaving}
+                              onSave={inlineEditInterest.saveEditing}
+                              onCancel={inlineEditInterest.cancelEditing}
+                              className="justify-end"
+                            />
+                          </div>
+                        ) : (
+                          // 보기 모드: 편집 아이콘 버튼과 interest 표시
+                          <div className="flex items-center gap-2 min-w-[100px]">
+                            <div className="flex-1">
+                              {client.interest ? (
+                                <InterestBadge
+                                  interest={client.interest}
+                                  context="table"
+                                />
+                              ) : (
+                                <span className="text-sm text-gray-400">—</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                      <td className={classNames.tableCell}>
+                        <div className="text-sm text-gray-400 font-mono">
+                          {client.client_number || '—'}
+                        </div>
+                      </td>
+                    </tr>
+                    {/* ✅ Expanded row - only render when expanded */}
+                    {isExpanded && (
+                      <ClientExpandedRow
+                        client={client}
+                        relatedInstruments={relatedInstruments}
+                        instrument={primaryInstrument}
+                      />
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
       {/* Pagination */}

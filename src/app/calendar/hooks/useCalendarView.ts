@@ -1,12 +1,24 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
 /**
  * Top-level Calendar page surface: Month grid vs List.
  */
 export type CalendarViewMode = 'calendar' | 'list';
 
+const MOBILE_CALENDAR_QUERY = '(max-width: 767px)';
+
 export const useCalendarView = () => {
   const [view, setView] = useState<CalendarViewMode>('calendar');
+  const [hasInitializedMobileDefault, setHasInitializedMobileDefault] =
+    useState(false);
+
+  useEffect(() => {
+    if (hasInitializedMobileDefault) return;
+    setHasInitializedMobileDefault(true);
+    if (window.matchMedia?.(MOBILE_CALENDAR_QUERY)?.matches) {
+      setView('list');
+    }
+  }, [hasInitializedMobileDefault]);
 
   const setViewMode = useCallback((mode: CalendarViewMode) => {
     setView(mode);

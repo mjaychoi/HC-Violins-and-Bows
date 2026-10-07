@@ -125,7 +125,7 @@ export default function AppLayout({
         )}
 
         {/* Main Content */}
-        <div className="flex-1 overflow-auto pb-8">{children}</div>
+        <div className="flex-1 min-w-0 overflow-auto pb-8">{children}</div>
       </div>
     </div>
   );

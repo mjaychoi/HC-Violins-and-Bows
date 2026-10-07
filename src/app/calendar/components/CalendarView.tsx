@@ -296,13 +296,11 @@ export default function CalendarView({
     <>
       <DndProvider backend={HTML5Backend}>
         <div
-          className="w-full calendar-container"
+          className="w-full calendar-container md:min-h-[850px] md:h-[850px]"
           style={{
-            height: '850px', // Increased height to accommodate bottom row
-            minHeight: '850px',
             padding: '1rem',
-            paddingBottom: '3rem', // Increased padding to prevent bottom row cutoff
-            overflow: 'visible', // Allow content to overflow if needed
+            paddingBottom: '3rem',
+            overflow: 'visible',
           }}
         >
           <DragAndDropCalendar
@@ -311,7 +309,7 @@ export default function CalendarView({
               events,
               startAccessor: 'start',
               endAccessor: 'end',
-              style: { height: '100%', minHeight: '750px' },
+              style: { height: '100%', minHeight: '240px' },
               eventPropGetter: eventStyleGetter,
               onSelectEvent: (event: Event) => {
                 const r = event.resource as CalendarResource | undefined;
