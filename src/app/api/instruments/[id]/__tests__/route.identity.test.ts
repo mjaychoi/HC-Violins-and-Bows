@@ -60,7 +60,7 @@ describe('/api/instruments/[id] PATCH identity final-state', () => {
   let identityQuery: {
     select: jest.Mock;
     eq: jest.Mock;
-    single: jest.Mock;
+    maybeSingle: jest.Mock;
   };
   let updateQuery: {
     update: jest.Mock;
@@ -109,7 +109,7 @@ describe('/api/instruments/[id] PATCH identity final-state', () => {
     identityQuery = {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
-      single: jest.fn().mockImplementation(async () => ({
+      maybeSingle: jest.fn().mockImplementation(async () => ({
         data: { ...identityRow },
         error: null,
       })),
@@ -243,7 +243,7 @@ describe('/api/instruments/[id] PATCH identity final-state', () => {
     expect(response.status).toBe(200);
     expect(json.data.note).toBe('Shelf B');
     // Unrelated patches skip the identity select.
-    expect(identityQuery.single).not.toHaveBeenCalled();
+    expect(identityQuery.maybeSingle).not.toHaveBeenCalled();
     expect(updateQuery.update).toHaveBeenCalledWith(
       expect.objectContaining({ note: 'Shelf B' })
     );

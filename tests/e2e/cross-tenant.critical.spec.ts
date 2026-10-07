@@ -417,6 +417,53 @@ test.describe('Cross-tenant isolation', () => {
             'secondary admin finds its instrument by the same search'
           );
 
+          // Status and maker patches prefetch the org-scoped row before the
+          // CAS update. A missing or foreign id is the same 404 as note-only.
+          await expectTenantSafeDenial({
+            label: 'PATCH /api/instruments (status)',
+            status: 404,
+            error: 'Instrument not found',
+            secret: suffix,
+            foreign: () =>
+              primary.patch('/api/instruments', {
+                data: {
+                  id: instrumentId,
+                  status: 'Maintenance',
+                  updated_at: original.updated_at,
+                },
+              }),
+            nonexistent: () =>
+              primary.patch('/api/instruments', {
+                data: {
+                  id: missingId,
+                  status: 'Maintenance',
+                  updated_at: original.updated_at,
+                },
+              }),
+          });
+          await expectTenantSafeDenial({
+            label: 'PATCH /api/instruments (maker)',
+            status: 404,
+            error: 'Instrument not found',
+            secret: suffix,
+            foreign: () =>
+              primary.patch('/api/instruments', {
+                data: {
+                  id: instrumentId,
+                  maker: `Hijacked ${suffix}`,
+                  updated_at: original.updated_at,
+                },
+              }),
+            nonexistent: () =>
+              primary.patch('/api/instruments', {
+                data: {
+                  id: missingId,
+                  maker: 'Nobody',
+                  updated_at: original.updated_at,
+                },
+              }),
+          });
+
           // Note-only patches take the CAS-update path, whose not-found
           // contract is 404 (executeInstrumentPatch.ts, update + exists
           // re-check). Both PATCH surfaces share that executor.
