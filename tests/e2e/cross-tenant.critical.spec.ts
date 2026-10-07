@@ -577,6 +577,178 @@ test.describe('Cross-tenant isolation', () => {
   );
 
   test(
+    'primary admin cannot read, list, update, or delete a secondary-org maintenance task',
+    {
+      tag: '@critical',
+    },
+    async ({ page, browser, baseURL }) => {
+      await openPrimaryDashboard(page);
+      const secondaryContext = await browser.newContext({
+        baseURL,
+        storageState: await secondaryAdminState(baseURL),
+      });
+      const secondary = secondaryContext.request;
+      const primary = page.request;
+
+      try {
+        await withCleanup(async register => {
+          const suffix = uniqueSuffix();
+          const today = todayIsoDate();
+          // maintenance_tasks.instrument_id is ON DELETE RESTRICT, so the
+          // task is registered after the instrument and deleted first.
+          const instrumentId = await createTenantInstrument(secondary, suffix);
+          register('secondary instrument', () =>
+            deleteAsOwner(secondary, `/api/instruments?id=${instrumentId}`)
+          );
+          const created = await expectStatus(
+            await secondary.post('/api/maintenance-tasks', {
+              headers: { 'Idempotency-Key': `e2e-xt-task-${suffix}` },
+              data: {
+                instrument_id: instrumentId,
+                client_id: null,
+                task_type: 'repair',
+                title: `Tenant B task ${suffix}`,
+                description: `tenant b maintenance ${suffix}`,
+                status: 'pending',
+                received_date: today,
+                due_date: null,
+                personal_due_date: null,
+                scheduled_date: today,
+                completed_date: null,
+                priority: 'medium',
+                estimated_hours: null,
+                actual_hours: null,
+                cost: null,
+                notes: suffix,
+              },
+            }),
+            201,
+            'secondary admin creates a maintenance task'
+          );
+          const taskId = created.json.data.id as string;
+          register('secondary maintenance task', () =>
+            deleteAsOwner(secondary, `/api/maintenance-tasks?id=${taskId}`)
+          );
+
+          const readAsSecondary = async () =>
+            (
+              await expectStatus(
+                await secondary.get(`/api/maintenance-tasks?id=${taskId}`),
+                200,
+                'secondary admin re-reads its maintenance task'
+              )
+            ).json.data as {
+              id: string;
+              title: string;
+              status: string;
+              notes: string;
+              updated_at: string;
+            };
+          const original = await readAsSecondary();
+          expect(original.notes).toBe(suffix);
+          expect(original.status).toBe('pending');
+          const expectSecondaryUnchanged = async (label: string) => {
+            expect(await readAsSecondary(), label).toEqual(original);
+          };
+          const missingId = randomUUID();
+
+          await expectTenantSafeDenial({
+            label: 'GET /api/maintenance-tasks?id',
+            status: 404,
+            error: 'Task not found',
+            secret: suffix,
+            foreign: () => primary.get(`/api/maintenance-tasks?id=${taskId}`),
+            nonexistent: () =>
+              primary.get(`/api/maintenance-tasks?id=${missingId}`),
+          });
+
+          const listPath = `/api/maintenance-tasks?instrument_id=${instrumentId}`;
+          const list = await expectStatus(
+            await primary.get(listPath),
+            200,
+            'primary admin lists tasks by the secondary instrument'
+          );
+          expect(list.json.data).toEqual([]);
+          expect(list.json.count).toBe(0);
+          expect(list.text).not.toContain(suffix);
+          await expectListedFor(
+            secondary,
+            listPath,
+            taskId,
+            'secondary admin lists its task by the same instrument filter'
+          );
+
+          // A status change pre-reads the org-scoped row for the transition
+          // check, so a foreign id stops there with the same 404.
+          await expectTenantSafeDenial({
+            label: 'PATCH /api/maintenance-tasks (status)',
+            status: 404,
+            error: 'Task not found',
+            secret: suffix,
+            foreign: () =>
+              primary.patch('/api/maintenance-tasks', {
+                data: {
+                  id: taskId,
+                  status: 'in_progress',
+                  expected_updated_at: original.updated_at,
+                },
+              }),
+            nonexistent: () =>
+              primary.patch('/api/maintenance-tasks', {
+                data: {
+                  id: missingId,
+                  status: 'in_progress',
+                  expected_updated_at: original.updated_at,
+                },
+              }),
+          });
+          await expectSecondaryUnchanged('after denied status PATCH');
+
+          // Any other field goes straight to the org-scoped CAS update; zero
+          // rows plus an org-scoped existence re-check is the same 404.
+          await expectTenantSafeDenial({
+            label: 'PATCH /api/maintenance-tasks (CAS)',
+            status: 404,
+            error: 'Task not found',
+            secret: suffix,
+            foreign: () =>
+              primary.patch('/api/maintenance-tasks', {
+                data: {
+                  id: taskId,
+                  title: `Hijacked ${suffix}`,
+                  expected_updated_at: original.updated_at,
+                },
+              }),
+            nonexistent: () =>
+              primary.patch('/api/maintenance-tasks', {
+                data: {
+                  id: missingId,
+                  title: 'Nobody',
+                  expected_updated_at: original.updated_at,
+                },
+              }),
+          });
+          await expectSecondaryUnchanged('after denied CAS PATCH');
+
+          await expectTenantSafeDenial({
+            label: 'DELETE /api/maintenance-tasks?id',
+            status: 404,
+            error: 'Task not found',
+            secret: suffix,
+            foreign: () =>
+              primary.delete(`/api/maintenance-tasks?id=${taskId}`),
+            nonexistent: () =>
+              primary.delete(`/api/maintenance-tasks?id=${missingId}`),
+          });
+          await expectSecondaryUnchanged('after denied DELETE');
+        });
+      } finally {
+        await secondaryContext.close();
+      }
+    }
+  );
+
+  test(
     'primary admin cannot read, list, update, delete, or bill against a secondary-org invoice',
     {
       tag: '@critical',
