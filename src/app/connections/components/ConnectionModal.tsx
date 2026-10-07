@@ -108,296 +108,296 @@ export default function ConnectionModal({
       className="mx-4 rounded-xl animate-in zoom-in-95 duration-200"
       padded={false}
     >
-        {/* Form - Scrollable */}
-        <form
-          onSubmit={handleSubmit}
-          className="flex-1 overflow-y-auto p-6 space-y-6"
-        >
-          {/* Client Selection */}
-          <div>
-            <label
-              htmlFor="connection-client-search"
-              className={classNames.formLabel}
+      {/* Form - Scrollable */}
+      <form
+        onSubmit={handleSubmit}
+        className="flex-1 overflow-y-auto p-6 space-y-6"
+      >
+        {/* Client Selection */}
+        <div>
+          <label
+            htmlFor="connection-client-search"
+            className={classNames.formLabel}
+          >
+            Select Client
+          </label>
+          <input
+            id="connection-client-search"
+            type="text"
+            placeholder="Search clients..."
+            value={clientSearchTerm}
+            onChange={e => onClientSearchChange(e.target.value)}
+            className={`${classNames.input} mb-2`}
+            aria-describedby={
+              clients.length === 0 ? 'connection-client-empty' : undefined
+            }
+          />
+          <div
+            role="listbox"
+            aria-label="Clients"
+            className="max-h-32 overflow-y-auto border border-gray-200 rounded-md"
+          >
+            {clients.map(client => {
+              const isSelected = selectedClient === client.id;
+              const label = `${formatClientName(client)}${client.email ? `, ${client.email}` : ''}`;
+              return (
+                <button
+                  key={client.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  aria-label={label}
+                  className={`w-full text-left p-3 border-b border-gray-100 last:border-b-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
+                    isSelected
+                      ? 'bg-blue-50 border-l-4 border-l-blue-500'
+                      : 'border-l-4 border-l-transparent hover:bg-gray-50'
+                  }`}
+                  onClick={() => onClientChange(client.id)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900">
+                        {formatClientName(client)}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {client.email}
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <svg
+                        className="w-5 h-5 text-blue-500 shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {clients.length === 0 && (
+            <p
+              id="connection-client-empty"
+              role="status"
+              className="text-sm text-gray-500 mt-1"
             >
-              Select Client
-            </label>
-            <input
-              id="connection-client-search"
-              type="text"
-              placeholder="Search clients..."
-              value={clientSearchTerm}
-              onChange={e => onClientSearchChange(e.target.value)}
-              className={`${classNames.input} mb-2`}
-              aria-describedby={
-                clients.length === 0 ? 'connection-client-empty' : undefined
-              }
-            />
-            <div
-              role="listbox"
-              aria-label="Clients"
-              className="max-h-32 overflow-y-auto border border-gray-200 rounded-md"
-            >
-              {clients.map(client => {
-                const isSelected = selectedClient === client.id;
-                const label = `${formatClientName(client)}${client.email ? `, ${client.email}` : ''}`;
-                return (
-                  <button
-                    key={client.id}
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    aria-label={label}
-                    className={`w-full text-left p-3 border-b border-gray-100 last:border-b-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
-                      isSelected
+              No clients match your search.
+            </p>
+          )}
+        </div>
+
+        {/* Instrument Selection */}
+        <div>
+          <label
+            htmlFor="connection-instrument-search"
+            className={classNames.formLabel}
+          >
+            Select Instrument
+          </label>
+          <input
+            id="connection-instrument-search"
+            type="text"
+            placeholder="Search instruments..."
+            value={instrumentSearchTerm}
+            onChange={e => onInstrumentSearchChange(e.target.value)}
+            className={`${classNames.input} mb-2`}
+            aria-describedby={
+              items.length === 0 ? 'connection-instrument-empty' : undefined
+            }
+          />
+          <div
+            role="listbox"
+            aria-label="Instruments"
+            className="max-h-32 overflow-y-auto border border-gray-200 rounded-md"
+          >
+            {items.map(item => {
+              const isSelected = selectedInstrument === item.id;
+              // Only Booked has DB-enforced status restrictions
+              // (assert_bookable_instrument_state); other relationship
+              // types accept any instrument status.
+              const isUnbookable =
+                relationshipType === 'Booked' &&
+                UNBOOKABLE_STATUSES.has(item.status);
+              const label = `${formatInstrumentName(item)}, Year: ${item.year ?? 'unknown'}${
+                item.status !== 'Available' ? `, Status: ${item.status}` : ''
+              }${isUnbookable ? ' (not available for Booked)' : ''}`;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  aria-disabled={isUnbookable}
+                  aria-label={label}
+                  disabled={isUnbookable}
+                  title={
+                    isUnbookable
+                      ? `This instrument is ${item.status} and can't be Booked.`
+                      : undefined
+                  }
+                  className={`w-full text-left p-3 border-b border-gray-100 last:border-b-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
+                    isUnbookable
+                      ? 'opacity-50 cursor-not-allowed border-l-4 border-l-transparent'
+                      : isSelected
                         ? 'bg-blue-50 border-l-4 border-l-blue-500'
                         : 'border-l-4 border-l-transparent hover:bg-gray-50'
-                    }`}
-                    onClick={() => onClientChange(client.id)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">
-                          {formatClientName(client)}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {client.email}
-                        </div>
+                  }`}
+                  onClick={() => {
+                    if (isUnbookable) return;
+                    onInstrumentChange(item.id);
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900">
+                        {formatInstrumentName(item)}
                       </div>
-                      {isSelected && (
-                        <svg
-                          className="w-5 h-5 text-blue-500 shrink-0"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          aria-hidden="true"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            {clients.length === 0 && (
-              <p
-                id="connection-client-empty"
-                role="status"
-                className="text-sm text-gray-500 mt-1"
-              >
-                No clients match your search.
-              </p>
-            )}
-          </div>
-
-          {/* Instrument Selection */}
-          <div>
-            <label
-              htmlFor="connection-instrument-search"
-              className={classNames.formLabel}
-            >
-              Select Instrument
-            </label>
-            <input
-              id="connection-instrument-search"
-              type="text"
-              placeholder="Search instruments..."
-              value={instrumentSearchTerm}
-              onChange={e => onInstrumentSearchChange(e.target.value)}
-              className={`${classNames.input} mb-2`}
-              aria-describedby={
-                items.length === 0 ? 'connection-instrument-empty' : undefined
-              }
-            />
-            <div
-              role="listbox"
-              aria-label="Instruments"
-              className="max-h-32 overflow-y-auto border border-gray-200 rounded-md"
-            >
-              {items.map(item => {
-                const isSelected = selectedInstrument === item.id;
-                // Only Booked has DB-enforced status restrictions
-                // (assert_bookable_instrument_state); other relationship
-                // types accept any instrument status.
-                const isUnbookable =
-                  relationshipType === 'Booked' &&
-                  UNBOOKABLE_STATUSES.has(item.status);
-                const label = `${formatInstrumentName(item)}, Year: ${item.year ?? 'unknown'}${
-                  item.status !== 'Available' ? `, Status: ${item.status}` : ''
-                }${isUnbookable ? ' (not available for Booked)' : ''}`;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    aria-disabled={isUnbookable}
-                    aria-label={label}
-                    disabled={isUnbookable}
-                    title={
-                      isUnbookable
-                        ? `This instrument is ${item.status} and can't be Booked.`
-                        : undefined
-                    }
-                    className={`w-full text-left p-3 border-b border-gray-100 last:border-b-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
-                      isUnbookable
-                        ? 'opacity-50 cursor-not-allowed border-l-4 border-l-transparent'
-                        : isSelected
-                          ? 'bg-blue-50 border-l-4 border-l-blue-500'
-                          : 'border-l-4 border-l-transparent hover:bg-gray-50'
-                    }`}
-                    onClick={() => {
-                      if (isUnbookable) return;
-                      onInstrumentChange(item.id);
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">
-                          {formatInstrumentName(item)}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          Year: {item.year}
-                          {item.status !== 'Available' && (
-                            <>
-                              {' '}
-                              &middot;{' '}
-                              <span
-                                className={
-                                  isUnbookable
-                                    ? 'text-red-600 font-medium'
-                                    : undefined
-                                }
-                              >
-                                {item.status}
-                              </span>
-                            </>
-                          )}
-                        </div>
+                      <div className="text-sm text-gray-500">
+                        Year: {item.year}
+                        {item.status !== 'Available' && (
+                          <>
+                            {' '}
+                            &middot;{' '}
+                            <span
+                              className={
+                                isUnbookable
+                                  ? 'text-red-600 font-medium'
+                                  : undefined
+                              }
+                            >
+                              {item.status}
+                            </span>
+                          </>
+                        )}
                       </div>
-                      {isSelected && (
-                        <svg
-                          className="w-5 h-5 text-blue-500 shrink-0"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          aria-hidden="true"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      )}
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-            {items.length === 0 && (
-              <p
-                id="connection-instrument-empty"
-                role="status"
-                className="text-sm text-gray-500 mt-1"
-              >
-                No instruments match your search.
-              </p>
-            )}
+                    {isSelected && (
+                      <svg
+                        className="w-5 h-5 text-blue-500 shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
-
-          {/* Relationship Type */}
-          <div>
-            <label
-              htmlFor="connection-relationship-type"
-              className={classNames.formLabel}
+          {items.length === 0 && (
+            <p
+              id="connection-instrument-empty"
+              role="status"
+              className="text-sm text-gray-500 mt-1"
             >
-              Relationship Type
-            </label>
-            <select
-              id="connection-relationship-type"
-              value={relationshipType}
-              onChange={e => {
-                const nextType = e.target
-                  .value as ClientInstrument['relationship_type'];
-                onRelationshipTypeChange(nextType);
-
-                // Switching to Booked can make the already-selected
-                // instrument invalid (assert_bookable_instrument_state
-                // rejects Sold/Maintenance) - clear it instead of leaving a
-                // selection that will fail on submit.
-                const selected = items.find(
-                  item => item.id === selectedInstrument
-                );
-                if (
-                  nextType === 'Booked' &&
-                  selected &&
-                  UNBOOKABLE_STATUSES.has(selected.status)
-                ) {
-                  onInstrumentChange('');
-                }
-              }}
-              className={classNames.input}
-            >
-              {EDITABLE_RELATIONSHIP_TYPES.map(type => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              Sold relationships are created through the sales workflow.
+              No instruments match your search.
             </p>
-            {isBookingUnavailable && (
-              <p className="text-xs text-red-600 mt-1" role="alert">
-                The selected instrument can&apos;t be Booked in its current
-                status. Choose a different instrument or relationship type.
-              </p>
-            )}
-          </div>
+          )}
+        </div>
 
-          {/* Notes */}
-          <div>
-            <label className={classNames.formLabel}>Notes (Optional)</label>
-            <textarea
-              value={connectionNotes}
-              onChange={e => onNotesChange(e.target.value)}
-              rows={3}
-              className={classNames.input}
-              placeholder="Add any notes about this connection..."
-            />
-          </div>
+        {/* Relationship Type */}
+        <div>
+          <label
+            htmlFor="connection-relationship-type"
+            className={classNames.formLabel}
+          >
+            Relationship Type
+          </label>
+          <select
+            id="connection-relationship-type"
+            value={relationshipType}
+            onChange={e => {
+              const nextType = e.target
+                .value as ClientInstrument['relationship_type'];
+              onRelationshipTypeChange(nextType);
 
-          {/* Submit Button */}
-          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={
-                !selectedClient ||
-                !selectedInstrument ||
-                submitting ||
-                isBookingUnavailable
+              // Switching to Booked can make the already-selected
+              // instrument invalid (assert_bookable_instrument_state
+              // rejects Sold/Maintenance) - clear it instead of leaving a
+              // selection that will fail on submit.
+              const selected = items.find(
+                item => item.id === selectedInstrument
+              );
+              if (
+                nextType === 'Booked' &&
+                selected &&
+                UNBOOKABLE_STATUSES.has(selected.status)
+              ) {
+                onInstrumentChange('');
               }
-              aria-busy={submitting}
-              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {submitting ? 'Creating...' : 'Create Connection'}
-            </button>
-          </div>
-        </form>
+            }}
+            className={classNames.input}
+          >
+            {EDITABLE_RELATIONSHIP_TYPES.map(type => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Sold relationships are created through the sales workflow.
+          </p>
+          {isBookingUnavailable && (
+            <p className="text-xs text-red-600 mt-1" role="alert">
+              The selected instrument can&apos;t be Booked in its current
+              status. Choose a different instrument or relationship type.
+            </p>
+          )}
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className={classNames.formLabel}>Notes (Optional)</label>
+          <textarea
+            value={connectionNotes}
+            onChange={e => onNotesChange(e.target.value)}
+            rows={3}
+            className={classNames.input}
+            placeholder="Add any notes about this connection..."
+          />
+        </div>
+
+        {/* Submit Button */}
+        <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={
+              !selectedClient ||
+              !selectedInstrument ||
+              submitting ||
+              isBookingUnavailable
+            }
+            aria-busy={submitting}
+            className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Creating...' : 'Create Connection'}
+          </button>
+        </div>
+      </form>
     </Modal>
   );
 }
