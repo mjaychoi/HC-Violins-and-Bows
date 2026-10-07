@@ -1,8 +1,15 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useCalendarView } from '../useCalendarView';
 import type { CalendarViewMode } from '../useCalendarView';
 
 describe('useCalendarView', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: jest.fn().mockReturnValue({ matches: false }),
+    });
+  });
+
   it('should initialize with calendar view by default', () => {
     const { result } = renderHook(() => useCalendarView());
 
@@ -96,5 +103,24 @@ describe('useCalendarView', () => {
     expect(typeof result.current.setView).toBe('function');
     expect(typeof result.current.setCalendarView).toBe('function');
     expect(typeof result.current.setListView).toBe('function');
+  });
+
+  it('defaults to the existing list view on mobile after hydration', async () => {
+    window.matchMedia = jest.fn().mockReturnValue({ matches: true });
+
+    const { result } = renderHook(() => useCalendarView());
+
+    await waitFor(() => expect(result.current.view).toBe('list'));
+  });
+
+  it('does not override an explicit mobile view choice', async () => {
+    window.matchMedia = jest.fn().mockReturnValue({ matches: true });
+    const { result, rerender } = renderHook(() => useCalendarView());
+    await waitFor(() => expect(result.current.view).toBe('list'));
+
+    act(() => result.current.setCalendarView());
+    rerender();
+
+    expect(result.current.view).toBe('calendar');
   });
 });

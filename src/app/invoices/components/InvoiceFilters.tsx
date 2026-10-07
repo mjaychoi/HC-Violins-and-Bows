@@ -72,8 +72,10 @@ export default function InvoiceFilters({
 
   return (
     <div className={`${filterToolbarClasses.container} mb-6`}>
-      <div className={filterToolbarClasses.leftSection}>
-        <div className="flex-1 min-w-[220px]">
+      <div
+        className={`${filterToolbarClasses.leftSection} w-full min-w-0 lg:flex-1`}
+      >
+        <div className="w-full min-w-0 flex-1 sm:min-w-[220px]">
           <Input
             type="text"
             aria-label="Search invoices"
@@ -83,7 +85,7 @@ export default function InvoiceFilters({
           />
         </div>
 
-        <div className="flex gap-2 items-center">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <Input
             type="date"
             aria-label="From date"
@@ -91,7 +93,7 @@ export default function InvoiceFilters({
             onChange={e => onFromDateChange(e.target.value)}
             max={toDate || undefined}
           />
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
             <Input
               type="date"
               aria-label="To date"
@@ -133,10 +135,10 @@ export default function InvoiceFilters({
           </div>
         </div>
 
-        <div className="min-w-[180px]">
+        <div className="w-full min-w-0 sm:w-auto sm:min-w-[180px]">
           <select
             {...statusSelectProps}
-            className={filterSelectClasses.select}
+            className={`${filterSelectClasses.select} w-full sm:w-auto`}
           />
         </div>
       </div>
