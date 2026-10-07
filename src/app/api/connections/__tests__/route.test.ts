@@ -981,21 +981,22 @@ describe('/api/connections', () => {
         }),
       });
       const response = await POST(request);
-      const { validateClientInstrument } = require('@/utils/typeGuards');
+      const json = await response.json();
 
       expect(response.status).toBe(201);
-      expect(validateClientInstrument).toHaveBeenCalledWith(
+      // The response carries the mapped (normalized) client embed. The embed
+      // is validated against its narrow allowlist shape, separately from the
+      // connection row (see route.detailValidation.test.ts).
+      expect(json.data.client).toEqual(
         expect.objectContaining({
-          client: expect.objectContaining({
-            first_name: 'Ada',
-            last_name: 'Lovelace',
-            email: 'ada@example.com',
-            tags: ['VIP'],
-            // Never selected from the DB for this response - normalized to
-            // null by the shared clients mapper, never the real value.
-            contact_number: null,
-            client_number: null,
-          }),
+          first_name: 'Ada',
+          last_name: 'Lovelace',
+          email: 'ada@example.com',
+          tags: ['VIP'],
+          // Never selected from the DB for this response - normalized to
+          // null by the shared clients mapper, never the real value.
+          contact_number: null,
+          client_number: null,
         })
       );
       // The by-ID fetch backing the POST response uses the same explicit
