@@ -997,6 +997,19 @@ async function putHandler(request: NextRequest, auth: AuthContext) {
       );
 
       if (reorderError) {
+        const reorderMessage =
+          typeof reorderError.message === 'string' ? reorderError.message : '';
+        // The RPC embeds the caller-supplied id. Drop it so a foreign id and
+        // a random id share one body, matching PATCH/DELETE not-found.
+        if (
+          reorderMessage.startsWith('Connection not found in organization:')
+        ) {
+          return {
+            payload: { error: 'Connection not found' },
+            status: 409,
+          };
+        }
+
         return {
           payload: {
             error: 'Failed to reorder connections',

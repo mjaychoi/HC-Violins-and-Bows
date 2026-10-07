@@ -1686,7 +1686,43 @@ describe('/api/connections', () => {
       );
     });
 
-    it('should return 500 and skip follow-up fetch when atomic reorder fails', async () => {
+    it('returns 409 when atomic reorder cannot see a connection', async () => {
+      const missingId = '123e4567-e89b-12d3-a456-426614174099';
+      const orders = [
+        { id: '123e4567-e89b-12d3-a456-426614174000', display_order: 0 },
+        { id: missingId, display_order: 1 },
+      ];
+
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: {
+          message: `Connection not found in organization: ${missingId}`,
+        },
+      });
+
+      mockUserSupabase = {
+        from: jest.fn(),
+        rpc: mockRpc,
+      };
+
+      const request = new NextRequest('http://localhost/api/connections', {
+        method: 'PUT',
+        body: JSON.stringify({ orders }),
+      });
+      const response = await PUT(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(json.error).toBe('Connection not found');
+      expect(json.message).toBe('Connection not found');
+      expect(json.error_code).toBeUndefined();
+      expect(mockRpc).toHaveBeenCalledWith('reorder_connections_atomic', {
+        p_orders: orders,
+      });
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
+    it('should return 500 and skip follow-up fetch when atomic reorder fails for an unrelated reason', async () => {
       const orders = [
         { id: '123e4567-e89b-12d3-a456-426614174000', display_order: 0 },
         { id: '123e4567-e89b-12d3-a456-426614174001', display_order: 1 },
@@ -1694,7 +1730,7 @@ describe('/api/connections', () => {
 
       const mockRpc = jest.fn().mockResolvedValue({
         data: null,
-        error: { message: 'Connection not found in organization' },
+        error: { message: 'deadlock detected' },
       });
 
       mockUserSupabase = {
