@@ -52,12 +52,13 @@ async function main(): Promise<void> {
     }
     shared[`sharedOrg${index}`] = { orgIdPrefix: orgId.slice(0, 8), counts };
   }
-  for (const [label, name] of [
-    ['legacyAdmin', 'E2E_TEST_EMAIL'],
-    ['legacyMember', 'E2E_TEST_MEMBER_EMAIL'],
+  // Same fallbacks as the legacy (pre-scope) getE2E*Identity defaults.
+  for (const [label, name, fallback] of [
+    ['legacyAdmin', 'E2E_TEST_EMAIL', 'test@test.com'],
+    ['legacyMember', 'E2E_TEST_MEMBER_EMAIL', 'e2e-member@test.com'],
   ] as const) {
-    const email = process.env[name]?.trim();
-    const user = email ? await store.findUserByEmail(email) : null;
+    const email = process.env[name]?.trim() || fallback;
+    const user = await store.findUserByEmail(email);
     const full = user as {
       id: string;
       updated_at?: string;
