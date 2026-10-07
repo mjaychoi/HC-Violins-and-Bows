@@ -241,9 +241,9 @@ describe('ci.yml E2E job wiring', () => {
     );
   });
 
-  it('keeps the hosted E2E mutex until concurrent isolation is proven', () => {
-    expect(e2eJob).toMatch(
-      /concurrency:\s+group: hc-hosted-staging-critical-e2e\s+cancel-in-progress: false/
-    );
+  it('runs hosted E2E without a mutex or a fake per-ref group', () => {
+    const jobHeader = e2eJob.slice(0, e2eJob.indexOf('\n    steps:'));
+    expect(jobHeader).not.toMatch(/^\s+concurrency:/m);
+    expect(ci).not.toMatch(/hc-hosted-staging-critical-e2e/);
   });
 });
