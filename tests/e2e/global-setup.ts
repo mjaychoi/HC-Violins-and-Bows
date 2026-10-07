@@ -19,8 +19,15 @@ import {
   MEMBER_AUTH_STATE_PATH,
   getE2EAdminIdentity,
   getE2EMemberIdentity,
+  getE2EOrgName,
   type E2EIdentity,
 } from './e2e-identities';
+import {
+  createSupabaseRunScopedE2EStore,
+  resolveRunScopedE2EContext,
+  seedRunScopedFixtures,
+  type RunScopedE2EContext,
+} from './run-scoped-fixtures';
 import { logInfo, logWarn } from '../../src/utils/logger';
 
 dotenv.config({ path: '.env.local' });
@@ -140,7 +147,36 @@ async function upsertAuthUser(
   });
 }
 
-async function ensureTestSeed(env: SupabaseEnv): Promise<void> {
+async function ensureRunScopedSeed(
+  env: SupabaseEnv,
+  context: RunScopedE2EContext | null
+): Promise<boolean> {
+  if (!context) return false;
+
+  if (!env.serviceRoleKey) {
+    throw new Error(
+      "Run-scoped E2E requires SUPABASE_SERVICE_ROLE_KEY to create this run's users and organization."
+    );
+  }
+
+  const admin = createClient(env.url, env.serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const summary = await seedRunScopedFixtures(
+    createSupabaseRunScopedE2EStore(admin),
+    context
+  );
+
+  logInfo('Run-scoped E2E fixtures ready', 'PlaywrightGlobalSetup', summary);
+  return true;
+}
+
+async function ensureTestSeed(
+  env: SupabaseEnv,
+  runScopedContext: RunScopedE2EContext | null
+): Promise<void> {
+  if (await ensureRunScopedSeed(env, runScopedContext)) return;
+
   const adminIdentity = getE2EAdminIdentity();
   const memberIdentity = getE2EMemberIdentity();
 
@@ -164,7 +200,7 @@ async function ensureTestSeed(env: SupabaseEnv): Promise<void> {
   const { error: orgError } = await admin.from('organizations').upsert(
     {
       id: adminIdentity.orgId,
-      name: process.env.E2E_TEST_ORG_NAME || 'HC Violins and Bows',
+      name: getE2EOrgName(),
     },
     { onConflict: 'id' }
   );
@@ -271,6 +307,9 @@ async function persistAuthenticatedState(options: {
 }
 
 async function globalSetup(config: FullConfig) {
+  // Throws in CI/hosted critical mode when E2E_RUN_SCOPE is missing, so a
+  // hosted run can never silently fall back to the shared identities.
+  const runScopedContext = resolveRunScopedE2EContext();
   const baseURL = getBaseURL(config);
   const env = getSupabaseEnv();
   const browser = await chromium.launch();
@@ -288,7 +327,7 @@ async function globalSetup(config: FullConfig) {
       }
     );
 
-    await ensureTestSeed(env);
+    await ensureTestSeed(env, runScopedContext);
 
     await persistAuthenticatedState({
       context: adminContext,

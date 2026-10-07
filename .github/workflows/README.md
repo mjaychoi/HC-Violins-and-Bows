@@ -157,11 +157,50 @@ Repository variable (identifier, not a credential):
 
 선택:
 
-- `E2E_TEST_EMAIL` / `E2E_TEST_PASSWORD` (기본값 `test@test.com` / `test123`)
-- `E2E_TEST_MEMBER_EMAIL` / `E2E_TEST_MEMBER_PASSWORD` (기본값 `e2e-member@test.com` / `test123`)
-- `E2E_TEST_ORG_ID`
+- `E2E_TEST_PASSWORD` / `E2E_TEST_MEMBER_PASSWORD` (기본값 `test123`) — run-scoped admin/member 비밀번호
+- `E2E_TEST_ORG_ID` — CI에서는 cleanup deny target으로만 사용 (run org가 이 값과 같으면 거부)
+- `E2E_TEST_EMAIL` / `E2E_TEST_MEMBER_EMAIL` — 로컬 legacy 모드 전용 (기본값 `test@test.com` / `e2e-member@test.com`). CI는 더 이상 매핑하지 않습니다.
 
 시크릿이 비어 있으면 job은 성공으로 skip하지 않고 실패합니다.
+
+### Run-scoped E2E identities (`E2E_RUN_SCOPE`)
+
+Hosted critical E2E runs share one staging Supabase project, so each run gets
+its own users, organization, and data:
+
+- CI sets `E2E_RUN_SCOPE=${{ github.run_id }}-${{ github.run_attempt }}-critical`
+  automatically — different per workflow run and per rerun attempt, stable
+  within the job. Never derive it from `github.sha`.
+- The raw scope is hashed to a 12-hex `scopeKey`; nothing else from it reaches
+  an email, org name, or database id. From the key, `tests/e2e/e2e-identities.ts`
+  derives:
+  - admin `hcve2e-<scopeKey>-admin@example.test`, member
+    `hcve2e-<scopeKey>-member@example.test` (RFC 6761 reserved domain: no mail
+    is ever delivered; users are created with `email_confirm: true`);
+  - org id: a deterministic UUIDv5 (`deriveE2EOrgId(scopeKey, slot)`, so a
+    future cross-tenant suite can add a `'secondary'` org), named
+    `HC Violins E2E <scopeKey>`;
+  - `app_metadata` `{ org_id, role, e2e_managed: true, e2e_run_scope: <scopeKey> }`;
+  - (future storage E2E) object keys under `e2e/<scopeKey>/`.
+- **Fail-closed:** with `CI=true`, or `PLAYWRIGHT_SUITE=critical` plus
+  `STAGING_SUPABASE_PROJECT_REF`, a missing `E2E_RUN_SCOPE` stops global setup.
+  There is no fallback to the shared identities.
+- **Local:** without `E2E_RUN_SCOPE`, local runs keep the old `E2E_TEST_*`
+  behaviour unchanged. Setting it locally requires the staging allowlist env
+  (setup and cleanup both run `assertE2EStagingProjectAllowlist`).
+- **Cleanup is scope-bound.** Playwright `globalTeardown`, plus an
+  `if: always()` CI step (`tests/e2e/cleanup-run-scoped-e2e.ts`) for a
+  globalSetup that failed part-way. Cleanup deletes only the derived org id
+  (children cascade; the FK-less `api_create_idempotency` is deleted by
+  `org_id`) and the two derived users. It runs only after every ownership
+  check passes: exact email, `e2e_managed`, matching `e2e_run_scope` / `org_id`
+  / `role`, org name, and the staging allowlist. It then verifies zero residual
+  rows across every `org_id` table, and calling it twice is a verified no-op.
+  It never deletes by pattern (no `e2e%`, no name prefix, no age), so one run
+  can't remove another active run's resources. Orphans left by a crashed
+  runner are a separate janitor task.
+- The `hc-hosted-staging-critical-e2e` concurrency mutex stays until a
+  concurrent hosted run proves this isolation.
 
 ### Security 검증
 

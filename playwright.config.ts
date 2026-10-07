@@ -22,6 +22,8 @@ export default defineConfig({
   testDir: './tests/e2e',
   /* Run global setup before all tests */
   globalSetup: require.resolve('./tests/e2e/global-setup.ts'),
+  /* Delete this run's scoped org/users (no-op without E2E_RUN_SCOPE) */
+  globalTeardown: require.resolve('./tests/e2e/global-teardown.ts'),
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
