@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom';
 import { render, screen, waitFor } from '@/test-utils/render';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import type { Invoice } from '@/types';
 import InvoiceDetailPage from '../page';
 import { apiFetch } from '@/utils/apiFetch';
@@ -61,7 +62,7 @@ jest.mock('next/dynamic', () => () => {
   return MockInvoiceModal;
 });
 jest.mock('@/components/layout', () => ({
-  AppLayout: ({ title, children }: { title: string; children: unknown }) => (
+  AppLayout: ({ title, children }: { title: string; children: ReactNode }) => (
     <div>
       <h1>{title}</h1>
       {children}
@@ -148,17 +149,33 @@ beforeEach(() => {
   } as never);
 });
 
+function putCalls() {
+  return mockApiFetch.mock.calls.filter(
+    call => (call[1] as RequestInit | undefined)?.method === 'PUT'
+  );
+}
+
 describe('invoice detail update contract', () => {
-  it('sends Idempotency-Key and CAS updated_at on PUT', async () => {
+  it('sends Idempotency-Key and CAS updated_at, then adopts the returned timestamp', async () => {
     const user = userEvent.setup();
+    const mockShowSuccess = jest.fn();
+    mockUseAppFeedback.mockReturnValue({
+      showSuccess: mockShowSuccess,
+      handleError: jest.fn(),
+    } as never);
+
     mockApiFetch.mockImplementation(async (input, init) => {
       const url = String(input);
       if (init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
         return jsonResponse({
           ...invoice,
           status: 'sent',
           notes: 'hosted-staging-qa notes',
-          updated_at: '2026-08-01T01:00:00Z',
+          updated_at:
+            body.updated_at === '2026-08-01T00:00:00Z'
+              ? '2026-08-01T01:00:00Z'
+              : '2026-08-01T02:00:00Z',
         });
       }
       if (url.includes('/api/invoices/inv-1')) {
@@ -169,30 +186,52 @@ describe('invoice detail update contract', () => {
 
     render(<InvoiceDetailPage />);
     await screen.findByText('INV0000001');
+    expect(screen.getByText('original')).toBeInTheDocument();
+
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: 'Save invoice' }));
 
     await waitFor(() => {
-      expect(
-        mockApiFetch.mock.calls.some(
-          call => (call[1] as RequestInit | undefined)?.method === 'PUT'
-        )
-      ).toBe(true);
+      expect(putCalls()).toHaveLength(1);
     });
 
-    const putCall = mockApiFetch.mock.calls.find(
-      call => (call[1] as RequestInit | undefined)?.method === 'PUT'
-    );
-    expect(putCall).toBeDefined();
-
-    const body = JSON.parse(String((putCall?.[1] as RequestInit).body));
-    expect(body.updated_at).toBe('2026-08-01T00:00:00Z');
-    expect(body.status).toBe('sent');
-    expect(putCall?.[2]).toEqual(
+    const firstPut = putCalls()[0];
+    expect(String(firstPut[0])).toBe('/api/invoices/inv-1');
+    const firstBody = JSON.parse(String((firstPut[1] as RequestInit).body));
+    expect(firstBody.updated_at).toBe('2026-08-01T00:00:00Z');
+    expect(firstBody.status).toBe('sent');
+    expect(firstPut[2]).toEqual(
       expect.objectContaining({
         idempotencyKey: expect.any(String),
       })
     );
-    expect(String(putCall?.[2]?.idempotencyKey).length).toBeGreaterThan(8);
+    const firstKey = String(firstPut[2]?.idempotencyKey);
+    expect(firstKey.length).toBeGreaterThan(8);
+
+    await waitFor(() => {
+      expect(screen.getByText('hosted-staging-qa notes')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Sent')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Save invoice' })
+    ).not.toBeInTheDocument();
+    expect(mockShowSuccess).toHaveBeenCalledWith('Invoice updated');
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Save invoice' }));
+
+    await waitFor(() => {
+      expect(putCalls()).toHaveLength(2);
+    });
+
+    const secondPut = putCalls()[1];
+    const secondBody = JSON.parse(String((secondPut[1] as RequestInit).body));
+    expect(secondBody.updated_at).toBe('2026-08-01T01:00:00Z');
+    expect(secondPut[2]).toEqual(
+      expect.objectContaining({
+        idempotencyKey: expect.any(String),
+      })
+    );
+    expect(String(secondPut[2]?.idempotencyKey)).not.toBe(firstKey);
   });
 });
