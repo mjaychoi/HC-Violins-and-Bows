@@ -106,8 +106,9 @@ function RowActions({
               ref={firstItemRef}
               role="menuitem"
               onClick={() => {
-                onEdit();
+                triggerRef.current?.focus();
                 setIsOpen(false);
+                onEdit();
               }}
               title={canManageInstruments ? undefined : 'Admin only'}
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"

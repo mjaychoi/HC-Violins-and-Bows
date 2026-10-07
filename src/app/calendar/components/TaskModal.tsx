@@ -13,9 +13,8 @@ import type {
 import { classNames } from '@/utils/classNames';
 import { Button, Input } from '@/components/common/inputs';
 import { todayLocalYMD } from '@/utils/dateParsing';
-import { useOutsideClose } from '@/hooks/useOutsideClose';
 import { modalStyles } from '@/components/common/modals/modalStyles';
-import { ModalHeader } from '@/components/common/modals/ModalHeader';
+import Modal from '@/components/common/modals/Modal';
 import ConfirmDialog from '@/components/common/modals/ConfirmDialog';
 import { getStatusLabel } from '@/utils/calendar';
 import { getAllowedMaintenanceTaskNextStatuses } from '@/utils/maintenanceTaskTransitions';
@@ -393,14 +392,7 @@ export default function TaskModal({
     setShowDiscardConfirm(false);
   };
 
-  // Close modal with ESC key and outside click
-  const modalRef = useRef<HTMLDivElement>(null);
-  useOutsideClose(modalRef, {
-    isOpen,
-    onClose: requestClose,
-  });
-
-  if (!isOpen) return null;
+  if (!isOpen && !showDiscardConfirm) return null;
 
   const taskTypes: TaskType[] = [
     'repair',
@@ -428,28 +420,18 @@ export default function TaskModal({
   const priorities: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];
 
   return (
-    <div
-      className={modalStyles.overlay}
-      onClick={e => {
-        if (e.target === e.currentTarget) {
-          requestClose();
-        }
-      }}
-    >
-      <div
-        ref={modalRef}
-        className={`${modalStyles.container} max-w-3xl`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="task-modal-title"
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={requestClose}
+        title={isEditing ? 'Edit Task' : 'Add New Task'}
+        titleId="task-modal-title"
+        icon="task"
+        size="2xl"
+        overlayClassName={modalStyles.overlay}
+        className="mx-4 rounded-xl animate-in zoom-in-95 duration-200"
+        padded={false}
       >
-        <ModalHeader
-          title={isEditing ? 'Edit Task' : 'Add New Task'}
-          icon="task"
-          onClose={requestClose}
-          titleId="task-modal-title"
-        />
-
         {/* Form - Scrollable */}
         <form onSubmit={handleSubmit} className={modalStyles.formBody}>
           {errors.length > 0 && (
@@ -754,7 +736,7 @@ export default function TaskModal({
             </Button>
           </div>
         </form>
-      </div>
+      </Modal>
 
       <ConfirmDialog
         isOpen={showDiscardConfirm}
@@ -765,6 +747,6 @@ export default function TaskModal({
         onConfirm={handleConfirmDiscard}
         onCancel={handleKeepEditing}
       />
-    </div>
+    </>
   );
 }

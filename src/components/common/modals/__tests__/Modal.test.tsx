@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Modal from '../Modal';
 import { useTouchGestures } from '@/hooks/useTouchGestures';
@@ -186,10 +186,11 @@ describe('Modal', () => {
 
     const modal = screen.getByRole('dialog');
     expect(modal).toHaveAttribute('aria-modal', 'true');
-    expect(modal).toHaveAttribute('aria-labelledby', 'modal-title');
-
-    const title = screen.getByText('Test Modal');
-    expect(title).toHaveAttribute('id', 'modal-title');
+    const labelledBy = modal.getAttribute('aria-labelledby');
+    expect(labelledBy).toBeTruthy();
+    expect(document.getElementById(labelledBy!)).toHaveTextContent(
+      'Test Modal'
+    );
   });
 
   it('should set up touch gestures when swipeToClose is true', () => {
@@ -233,17 +234,90 @@ describe('Modal', () => {
     );
   });
 
-  it('should focus first focusable element when modal opens', () => {
+  it('should move focus into the dialog when it opens', async () => {
     render(
       <Modal isOpen={true} onClose={mockOnClose} title="Test Modal">
-        <button>First Button</button>
-        <button>Second Button</button>
+        <input aria-label="Name" />
+        <button type="button">Save</button>
       </Modal>
     );
 
-    const firstButton = screen.getByText('First Button');
-    // Note: focus behavior is tested via useEffect, may not be immediately visible
-    // But we can verify the modal is rendered with focusable elements
-    expect(firstButton).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    const nameField = screen.getByLabelText('Name');
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    });
+    expect(nameField).toHaveFocus();
+  });
+
+  it('should trap Tab and Shift+Tab inside the dialog', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">Outside</button>
+        <Modal isOpen={true} onClose={mockOnClose} title="Test Modal">
+          <input aria-label="Name" />
+          <button type="button">Save</button>
+        </Modal>
+      </>
+    );
+
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    });
+
+    for (let i = 0; i < 8; i += 1) {
+      await user.tab();
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    }
+
+    for (let i = 0; i < 8; i += 1) {
+      await user.tab({ shift: true });
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    }
+  });
+
+  it('should restore focus to the previously focused element when closed', async () => {
+    const { rerender } = render(
+      <>
+        <button type="button">Open</button>
+        <Modal isOpen={false} onClose={mockOnClose} title="Test Modal">
+          <input aria-label="Name" />
+        </Modal>
+      </>
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Open' });
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+
+    rerender(
+      <>
+        <button type="button">Open</button>
+        <Modal isOpen={true} onClose={mockOnClose} title="Test Modal">
+          <input aria-label="Name" />
+        </Modal>
+      </>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(
+        true
+      );
+    });
+
+    rerender(
+      <>
+        <button type="button">Open</button>
+        <Modal isOpen={false} onClose={mockOnClose} title="Test Modal">
+          <input aria-label="Name" />
+        </Modal>
+      </>
+    );
+
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
+    });
   });
 });
