@@ -1,0 +1,109 @@
+# ONE-OFF, DISPOSABLE. Lives only on the never-merged proof PR. Runs two
+# run-scoped critical E2E slots concurrently against hosted staging, with NO
+# concurrency mutex, to prove per-run isolation before ci.yml's mutex is
+# removed. Delete with the PR.
+name: One-off parallel E2E isolation proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oneoff-parallel-e2e-isolation-proof.yml'
+      - 'tests/e2e/oneoff-parallel-proof-evidence.ts'
+
+permissions:
+  contents: read
+
+env:
+  NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+  SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+  SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+  STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+  PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+  E2E_TEST_ORG_ID: ${{ secrets.E2E_TEST_ORG_ID }}
+
+jobs:
+  snapshot-before:
+    name: Shared-resource snapshot (before)
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Read-only lookup of the legacy shared users' sign-in stamps; never printed.
+      E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
+      E2E_TEST_MEMBER_EMAIL: ${{ secrets.E2E_TEST_MEMBER_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+      - run: npm install --global npm@11.7.0
+      - run: npm ci
+      - run: npx tsx tests/e2e/oneoff-parallel-proof-evidence.ts snapshot
+
+  critical-slot:
+    name: Critical E2E slot ${{ matrix.slot }}
+    needs: snapshot-before
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Deliberately NO concurrency group: both slots must overlap.
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [a, b]
+    env:
+      PLAYWRIGHT_SUITE: critical
+      PLAYWRIGHT_WEB_SERVER: production
+      PLAYWRIGHT_SKIP_BUILD: 'true'
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+      RATE_LIMITING_DISABLED: 'true'
+      STORAGE_TYPE: s3
+      S3_BUCKET_NAME: e2e-ci-placeholder
+      S3_REGION: us-east-1
+      E2E_RUN_SCOPE: ${{ github.run_id }}-${{ github.run_attempt }}-critical-${{ matrix.slot }}
+      E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
+      E2E_TEST_MEMBER_PASSWORD: ${{ secrets.E2E_TEST_MEMBER_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+      - run: npm install --global npm@11.7.0
+      - run: npm ci
+      - name: Require staging project allowlist
+        id: staging_allowlist
+        run: npx tsx scripts/assert-e2e-staging-project-allowlist.ts
+      - run: node scripts/assert-critical-e2e-selected.cjs
+      - run: npm run test:e2e:install:chromium
+      - name: Critical E2E runtime guard self-test
+        run: npm run test:e2e:runtime-guard
+      - name: Build production application
+        run: npm run build
+      - name: Run critical-path E2E tests
+        run: npm run test:e2e:critical
+      - name: Clean up run-scoped E2E identities (safety net)
+        if: always() && steps.staging_allowlist.outcome == 'success'
+        run: npx tsx tests/e2e/cleanup-run-scoped-e2e.ts
+
+  verify-after:
+    name: Isolation + cleanup verification (after)
+    needs: critical-slot
+    if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
+      E2E_TEST_MEMBER_EMAIL: ${{ secrets.E2E_TEST_MEMBER_EMAIL }}
+      PROOF_SCOPE_BASE: ${{ github.run_id }}-${{ github.run_attempt }}-critical
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+      - run: npm install --global npm@11.7.0
+      - run: npm ci
+      - run: npx tsx tests/e2e/oneoff-parallel-proof-evidence.ts verify
