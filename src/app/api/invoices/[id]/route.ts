@@ -220,6 +220,29 @@ function assignIfProvided<T extends keyof CreateInvoiceInput>(
   }
 }
 
+/**
+ * update_invoice_atomic raises exactly this message (SQLSTATE P0001) when the
+ * invoice is not visible in the caller's org — identical for a foreign id and
+ * a nonexistent one (supabase/migrations/
+ * 20260814170000_update_invoice_atomic_idempotency_concurrency.sql).
+ */
+function isInvoiceNotFoundRpcError(error: unknown): boolean {
+  return (
+    isObject(error) &&
+    typeof error.message === 'string' &&
+    error.message.trim() === 'Invoice not found'
+  );
+}
+
+/** Same tenant-safe 404 GET and DELETE return for an invisible invoice. */
+function invoiceNotFoundResult(orgId: string) {
+  return {
+    payload: { error: 'Invoice not found', success: false },
+    status: 404,
+    metadata: { scope: { enforced: true, orgId } },
+  };
+}
+
 async function assertInvoiceItemInstrumentsBelongToOrg(
   auth: AuthContext,
   orgId: string,
@@ -542,7 +565,14 @@ async function updateInvoiceHandler(
           .eq('org_id', orgId)
           .single();
 
-      if (currentInvoiceError || !currentInvoice) {
+      if (
+        currentInvoiceError?.code === 'PGRST116' ||
+        (!currentInvoiceError && !currentInvoice)
+      ) {
+        return invoiceNotFoundResult(orgId);
+      }
+
+      if (currentInvoiceError) {
         throw errorHandler.handleSupabaseError(
           currentInvoiceError,
           'Fetch invoice financials'
@@ -696,6 +726,10 @@ async function updateInvoiceHandler(
       const invariantError = mapInvoiceDbError(updateError);
       if (invariantError) {
         return invariantError;
+      }
+
+      if (isInvoiceNotFoundRpcError(updateError)) {
+        return invoiceNotFoundResult(orgId);
       }
 
       throw errorHandler.handleSupabaseError(updateError, 'Update invoice');

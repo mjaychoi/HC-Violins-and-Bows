@@ -14,6 +14,8 @@ import {
   getE2EOrgName,
   getE2ERunScope,
   getE2ERunScopeKey,
+  getE2ESecondaryAdminIdentity,
+  getE2ESecondaryOrgId,
   isRunScopedE2E,
   normalizeE2ERunScope,
   requiresRunScopedE2E,
@@ -213,6 +215,52 @@ describe('mode selection', () => {
     });
     expect(getE2EOrgId(env)).not.toBe(localLegacyEnv.E2E_TEST_ORG_ID);
     expect(getE2EOrgName(env)).toBe(`HC Violins E2E ${key}`);
+  });
+});
+
+describe('secondary (cross-tenant) identity', () => {
+  it('is run-scoped: a distinct admin in a distinct org of the same scope', () => {
+    const env = { ...localLegacyEnv, CI: 'true', E2E_RUN_SCOPE: runA };
+    const key = normalizeE2ERunScope(runA);
+    const secondary = getE2ESecondaryAdminIdentity(env);
+
+    expect(secondary).toEqual({
+      email: `hcve2e-${key}-secondary-admin@example.test`,
+      password: 'local-admin-pw',
+      orgId: deriveE2EOrgId(key, 'secondary'),
+      role: 'admin',
+    });
+    expect(secondary.email).toMatch(EMAIL_RE);
+    expect(getE2ESecondaryOrgId(env)).toBe(secondary.orgId);
+    expect(secondary.orgId).toMatch(UUID_V5_RE);
+
+    const primary = [getE2EAdminIdentity(env), getE2EMemberIdentity(env)];
+    for (const identity of primary) {
+      expect(secondary.email).not.toBe(identity.email);
+      expect(secondary.orgId).not.toBe(identity.orgId);
+    }
+    expect(secondary.orgId).not.toBe(DEFAULT_E2E_ORG_ID);
+    expect(secondary.orgId).not.toBe(localLegacyEnv.E2E_TEST_ORG_ID);
+
+    const otherRun = getE2ESecondaryAdminIdentity({
+      ...env,
+      E2E_RUN_SCOPE: runB,
+    });
+    expect(otherRun.email).not.toBe(secondary.email);
+    expect(otherRun.orgId).not.toBe(secondary.orgId);
+  });
+
+  it('never falls back to a shared org or user in local legacy mode', () => {
+    expect(() => getE2ESecondaryAdminIdentity(localLegacyEnv)).toThrow(
+      /requires E2E_RUN_SCOPE/
+    );
+    expect(() => getE2ESecondaryOrgId({})).toThrow(/requires E2E_RUN_SCOPE/);
+  });
+
+  it('fails closed in CI without E2E_RUN_SCOPE', () => {
+    expect(() =>
+      getE2ESecondaryAdminIdentity({ ...localLegacyEnv, CI: 'true' })
+    ).toThrow(/E2E_RUN_SCOPE is required/);
   });
 });
 

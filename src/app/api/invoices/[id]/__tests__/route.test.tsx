@@ -1587,6 +1587,108 @@ describe('/api/invoices/[id]', () => {
       expect(json.error_code).toBe('IDEMPOTENCY_KEY_REUSED');
     });
 
+    // Cross-tenant / nonexistent invoice ids: update_invoice_atomic raises a
+    // bare 'Invoice not found' (P0001) when the row is not in the caller's
+    // org, and the financial pre-read uses .single() (PGRST116 on zero rows).
+    // Both used to surface as an unclassified 500; they must be the same
+    // tenant-safe 404 that GET and DELETE return.
+    function putInvoice(body: Record<string, unknown>, key: string) {
+      return new NextRequest(`http://localhost/api/invoices/${mockInvoiceId}`, {
+        method: 'PUT',
+        headers: {
+          'Idempotency-Key': key,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it('returns a tenant-safe 404 when the update RPC cannot see the invoice in the caller org', async () => {
+      const supabase = buildUpdateSupabase();
+      supabase.rpc.mockResolvedValueOnce({
+        data: null,
+        error: {
+          message: 'Invoice not found',
+          code: 'P0001',
+          details: null,
+          hint: null,
+        },
+      });
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(
+        putInvoice(
+          {
+            notes: 'cross-tenant edit',
+            updated_at: '2026-04-03T00:00:00.000Z',
+          },
+          'not-found-rpc-1'
+        ),
+        { params: Promise.resolve({ id: mockInvoiceId }) }
+      );
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.error).toBe('Invoice not found');
+      expect(json.data).toBeUndefined();
+      expect(supabase.rpc).toHaveBeenCalledTimes(1);
+      expect(supabase.updatedInvoiceQuery.single).not.toHaveBeenCalled();
+      expect(mockWriteAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('returns a tenant-safe 404 when the financial pre-read finds no invoice in the caller org', async () => {
+      const supabase = buildUpdateSupabase();
+      supabase.currentInvoiceQuery.single.mockResolvedValueOnce({
+        data: null,
+        error: {
+          code: 'PGRST116',
+          message: 'JSON object requested, multiple (or no) rows returned',
+          details: 'The result contains 0 rows',
+          hint: null,
+        },
+      });
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(
+        putInvoice(
+          { status: 'sent', updated_at: '2026-04-03T00:00:00.000Z' },
+          'not-found-preread-1'
+        ),
+        { params: Promise.resolve({ id: mockInvoiceId }) }
+      );
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.error).toBe('Invoice not found');
+      expect(supabase.rpc).not.toHaveBeenCalled();
+      expect(mockWriteAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('still treats other update RPC failures as server errors', async () => {
+      const supabase = buildUpdateSupabase();
+      supabase.rpc.mockResolvedValueOnce({
+        data: null,
+        error: {
+          message: 'Invoice not found or something else entirely',
+          code: 'P0001',
+        },
+      });
+      mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };
+
+      const updateHandler = await loadUpdateHandler();
+      const response = await updateHandler(
+        putInvoice(
+          { notes: 'x', updated_at: '2026-04-03T00:00:00.000Z' },
+          'other-rpc-error-1'
+        ),
+        { params: Promise.resolve({ id: mockInvoiceId }) }
+      );
+
+      expect(response.status).toBe(500);
+    });
+
     it('sends the Idempotency-Key and updated_at through to update_invoice_atomic_idempotent unchanged', async () => {
       const supabase = buildUpdateSupabase();
       mockUserSupabase = { rpc: supabase.rpc, from: supabase.from };

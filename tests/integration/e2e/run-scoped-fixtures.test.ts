@@ -3,13 +3,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { DEFAULT_E2E_ORG_ID, deriveE2EOrgId } from '../../e2e/e2e-identities';
+import {
+  DEFAULT_E2E_ORG_ID,
+  deriveE2EOrgId,
+  deriveE2EOrgName,
+  type E2EIdentity,
+} from '../../e2e/e2e-identities';
 import {
   ORG_SCOPED_TABLES,
   ORG_SCOPED_TABLES_WITHOUT_ORG_FK,
   cleanupRunScopedFixtures,
   resolveRunScopedE2EContext,
   seedRunScopedFixtures,
+  type RunScopedCleanupSummary,
   type RunScopedE2EContext,
   type RunScopedE2EStore,
   type RunScopedUser,
@@ -62,6 +68,7 @@ class FakeStore implements RunScopedE2EStore {
   users: Array<FakeUser> = [];
   ops: string[] = [];
   failCreateUserFor: string | null = null;
+  failInsertOrganizationFor: string | null = null;
   cascadeSkips = new Set<string>(ORG_SCOPED_TABLES_WITHOUT_ORG_FK);
   private nextId = 1;
 
@@ -77,6 +84,10 @@ class FakeStore implements RunScopedE2EStore {
     );
   }
 
+  userByEmail(email: string): FakeUser | undefined {
+    return this.users.find(u => u.email === email);
+  }
+
   async findOrganization(id: string) {
     this.ops.push(`findOrganization:${id}`);
     const name = this.orgs.get(id);
@@ -85,6 +96,9 @@ class FakeStore implements RunScopedE2EStore {
 
   async insertOrganization(row: { id: string; name: string }) {
     this.ops.push(`insertOrganization:${row.id}`);
+    if (this.failInsertOrganizationFor === row.id) {
+      throw new Error('simulated insertOrganization failure');
+    }
     if (this.orgs.has(row.id)) throw new Error('duplicate org');
     this.orgs.set(row.id, row.name);
   }
@@ -152,16 +166,58 @@ class FakeStore implements RunScopedE2EStore {
   }
 }
 
-function idsOf(store: FakeStore, context: RunScopedE2EContext) {
-  return {
-    orgId: context.orgId,
-    adminId: store.users.find(u => u.email === context.admin.email)?.id,
-    memberId: store.users.find(u => u.email === context.member.email)?.id,
-  };
+function allIdentities(context: RunScopedE2EContext): E2EIdentity[] {
+  return [context.admin, context.member, context.secondaryAdmin];
 }
 
+/** Every value that names one of `context`'s resources in a store op. */
+function resourceMarkers(
+  store: FakeStore,
+  context: RunScopedE2EContext
+): string[] {
+  const markers = [context.orgId, context.secondaryOrgId];
+  for (const identity of allIdentities(context)) {
+    markers.push(identity.email);
+    const user = store.userByEmail(identity.email);
+    if (user) markers.push(`:${user.id}`);
+  }
+  return markers;
+}
+
+function cleanupOrg(
+  summary: RunScopedCleanupSummary,
+  slot: 'primary' | 'secondary'
+) {
+  const org = summary.orgs.find(o => o.slot === slot);
+  if (!org) throw new Error(`missing ${slot} org in cleanup summary`);
+  return org;
+}
+
+describe('run-scoped context', () => {
+  it('derives a distinct secondary org and secondary admin from the same scope', () => {
+    const a = contextFor(envA);
+    expect(a.secondaryOrgId).toBe(deriveE2EOrgId(a.scopeKey, 'secondary'));
+    expect(a.secondaryOrgName).toBe(deriveE2EOrgName(a.scopeKey, 'secondary'));
+    expect(a.secondaryOrgId).not.toBe(a.orgId);
+    expect(a.secondaryOrgName).not.toBe(a.orgName);
+    expect(a.secondaryAdmin).toEqual({
+      email: `hcve2e-${a.scopeKey}-secondary-admin@example.test`,
+      password: envA.E2E_TEST_PASSWORD,
+      orgId: a.secondaryOrgId,
+      role: 'admin',
+    });
+    expect(new Set(allIdentities(a).map(identity => identity.email)).size).toBe(
+      3
+    );
+    for (const orgId of [a.orgId, a.secondaryOrgId]) {
+      expect(orgId).not.toBe(DEFAULT_E2E_ORG_ID);
+      expect(orgId).not.toBe(envA.E2E_TEST_ORG_ID);
+    }
+  });
+});
+
 describe('run-scoped setup isolation', () => {
-  it('gives scope A and scope B disjoint orgs, admins, and members', async () => {
+  it('gives scope A and scope B disjoint orgs and users, two orgs and three users each', async () => {
     const store = new FakeStore();
     const a = contextFor(envA);
     const b = contextFor(envB);
@@ -169,36 +225,43 @@ describe('run-scoped setup isolation', () => {
     const seededA = await seedRunScopedFixtures(store, a, envA);
     const seededB = await seedRunScopedFixtures(store, b, envB);
 
-    expect(seededA.orgCreated).toBe(true);
-    expect(seededB.orgCreated).toBe(true);
-    expect(seededA.users.map(u => u.created)).toEqual([true, true]);
+    expect(seededA.orgs).toEqual([
+      { slot: 'primary', orgId: a.orgId, created: true },
+      { slot: 'secondary', orgId: a.secondaryOrgId, created: true },
+    ]);
+    expect(seededB.orgs.map(o => o.created)).toEqual([true, true]);
+    expect(seededA.users.map(u => [u.label, u.role, u.created])).toEqual([
+      ['admin', 'admin', true],
+      ['member', 'member', true],
+      ['secondary-admin', 'admin', true],
+    ]);
 
     const isolationA = [
       a.scopeKey,
-      a.orgId,
       a.orgName,
-      a.admin.email,
-      a.member.email,
-      ...seededA.users.map(u => u.userId),
+      a.secondaryOrgName,
+      ...resourceMarkers(store, a),
     ];
     const isolationB = [
       b.scopeKey,
-      b.orgId,
       b.orgName,
-      b.admin.email,
-      b.member.email,
-      ...seededB.users.map(u => u.userId),
+      b.secondaryOrgName,
+      ...resourceMarkers(store, b),
     ];
     for (const value of isolationA) expect(isolationB).not.toContain(value);
-    expect(a.admin.email).not.toBe(a.member.email);
 
-    expect(store.orgs.size).toBe(2);
-    expect(store.users).toHaveLength(4);
+    expect(store.orgs.size).toBe(4);
+    expect(store.orgs.get(a.orgId)).toBe(a.orgName);
+    expect(store.orgs.get(a.secondaryOrgId)).toBe(a.secondaryOrgName);
+    expect(store.users).toHaveLength(6);
     for (const context of [a, b]) {
-      for (const identity of [context.admin, context.member]) {
-        const user = store.users.find(u => u.email === identity.email);
-        expect(user?.app_metadata).toEqual({
-          org_id: context.orgId,
+      for (const [identity, orgId] of [
+        [context.admin, context.orgId],
+        [context.member, context.orgId],
+        [context.secondaryAdmin, context.secondaryOrgId],
+      ] as const) {
+        expect(store.userByEmail(identity.email)?.app_metadata).toEqual({
+          org_id: orgId,
           role: identity.role,
           e2e_managed: true,
           e2e_run_scope: context.scopeKey,
@@ -213,12 +276,13 @@ describe('run-scoped setup isolation', () => {
     await seedRunScopedFixtures(store, a, envA);
     const again = await seedRunScopedFixtures(store, a, envA);
 
-    expect(again.orgCreated).toBe(false);
-    expect(again.users.map(u => u.created)).toEqual([false, false]);
-    expect(store.users).toHaveLength(2);
+    expect(again.orgs.map(o => o.created)).toEqual([false, false]);
+    expect(again.users.map(u => u.created)).toEqual([false, false, false]);
+    expect(store.orgs.size).toBe(2);
+    expect(store.users).toHaveLength(3);
   });
 
-  it('refuses to adopt a user with the derived email but foreign metadata', async () => {
+  it('refuses to adopt a user with the derived email but foreign metadata, before any write', async () => {
     const store = new FakeStore();
     const a = contextFor(envA);
     store.users.push({
@@ -228,9 +292,41 @@ describe('run-scoped setup isolation', () => {
     });
 
     await expect(seedRunScopedFixtures(store, a, envA)).rejects.toThrow(
-      /not marked e2e_managed/
+      /admin user is not marked e2e_managed/
     );
-    expect(store.mutations()).not.toContain('updateUser:foreign');
+    expect(store.mutations()).toEqual([]);
+  });
+
+  it('refuses a secondary admin that points at the primary org, before any write', async () => {
+    const store = new FakeStore();
+    const a = contextFor(envA);
+    store.users.push({
+      id: 'misfiled',
+      email: a.secondaryAdmin.email,
+      app_metadata: {
+        org_id: a.orgId,
+        role: 'admin',
+        e2e_managed: true,
+        e2e_run_scope: a.scopeKey,
+      },
+    });
+
+    await expect(seedRunScopedFixtures(store, a, envA)).rejects.toThrow(
+      /secondary-admin user belongs to a different organization/
+    );
+    expect(store.mutations()).toEqual([]);
+    expect(store.orgs.size).toBe(0);
+  });
+
+  it('refuses a secondary org id already used by a differently named org, before any write', async () => {
+    const store = new FakeStore();
+    const a = contextFor(envA);
+    store.orgs.set(a.secondaryOrgId, a.orgName);
+
+    await expect(seedRunScopedFixtures(store, a, envA)).rejects.toThrow(
+      /secondary organization with the run-scoped id has an unexpected name/
+    );
+    expect(store.mutations()).toEqual([]);
   });
 
   it('refuses setup against a non-allowlisted project before any write', async () => {
@@ -254,58 +350,86 @@ describe('run-scoped cleanup', () => {
     await seedRunScopedFixtures(store, a, envA);
     await seedRunScopedFixtures(store, b, envB);
     for (const context of [a, b]) {
-      store.addRows('clients', context.orgId, 2);
-      store.addRows('sales_history', context.orgId, 1);
-      store.addRows('sales_idempotency_keys', context.orgId, 1);
-      store.addRows('invoice_idempotency_keys', context.orgId, 1);
-      store.addRows('audit_log', context.orgId, 3);
-      store.addRows('api_create_idempotency', context.orgId, 1);
+      for (const orgId of [context.orgId, context.secondaryOrgId]) {
+        store.addRows('clients', orgId, 2);
+        store.addRows('sales_history', orgId, 1);
+        store.addRows('sales_idempotency_keys', orgId, 1);
+        store.addRows('invoice_idempotency_keys', orgId, 1);
+        store.addRows('audit_log', orgId, 3);
+        store.addRows('api_create_idempotency', orgId, 1);
+      }
     }
     return { store, a, b };
   }
 
-  it('removes all of A and touches nothing of B', async () => {
+  it('removes both of A’s orgs and all three users, and touches nothing of B', async () => {
     const { store, a, b } = await seededPair();
-    const aIds = idsOf(store, a);
-    const bIds = idsOf(store, b);
+    const aUser = (email: string) => store.userByEmail(email)?.id;
+    const aIds = {
+      admin: aUser(a.admin.email),
+      member: aUser(a.member.email),
+      secondary: aUser(a.secondaryAdmin.email),
+    };
+    const bMarkers = resourceMarkers(store, b);
     store.ops = [];
 
     const summary = await cleanupRunScopedFixtures(store, a, envA);
 
-    expect(summary.organizationFound).toBe(true);
-    expect(summary.authUsersDeleted).toEqual(['admin', 'member']);
-    expect(summary.rowsBefore).toMatchObject({
-      organizations: 1,
-      clients: 2,
-      api_create_idempotency: 1,
+    expect(summary.authUsersDeleted).toEqual([
+      'admin',
+      'member',
+      'secondary-admin',
+    ]);
+    for (const slot of ['primary', 'secondary'] as const) {
+      const org = cleanupOrg(summary, slot);
+      expect(org.orgId).toBe(slot === 'primary' ? a.orgId : a.secondaryOrgId);
+      expect(org.organizationFound).toBe(true);
+      expect(org.rowsBefore).toMatchObject({
+        organizations: 1,
+        clients: 2,
+        api_create_idempotency: 1,
+      });
+      expect(Object.values(org.residual).every(n => n === 0)).toBe(true);
+    }
+    expect(summary.authUsersResidual).toEqual({
+      admin: 0,
+      member: 0,
+      'secondary-admin': 0,
     });
     expect(summary.residualTotal).toBe(0);
 
     for (const op of store.ops) {
-      expect(op).not.toContain(b.orgId);
-      expect(op).not.toContain(b.admin.email);
-      expect(op).not.toContain(b.member.email);
-      expect(op).not.toContain(`:${bIds.adminId}`);
-      expect(op).not.toContain(`:${bIds.memberId}`);
+      for (const marker of bMarkers) expect(op).not.toContain(marker);
     }
     expect(store.mutations()).toEqual([
       `deleteRows:api_create_idempotency.org_id=${a.orgId}`,
       `deleteRows:organizations.id=${a.orgId}`,
-      `deleteUser:${aIds.adminId}`,
-      `deleteUser:${aIds.memberId}`,
+      `deleteRows:api_create_idempotency.org_id=${a.secondaryOrgId}`,
+      `deleteRows:organizations.id=${a.secondaryOrgId}`,
+      `deleteUser:${aIds.admin}`,
+      `deleteUser:${aIds.member}`,
+      `deleteUser:${aIds.secondary}`,
     ]);
 
-    expect(store.orgs.has(b.orgId)).toBe(true);
-    expect(store.users.map(u => u.email).sort()).toEqual(
-      [b.admin.email, b.member.email].sort()
+    expect([...store.orgs.keys()].sort()).toEqual(
+      [b.orgId, b.secondaryOrgId].sort()
     );
-    for (const table of ORG_SCOPED_TABLES) {
-      expect(await store.countRows(table, 'org_id', a.orgId)).toBe(0);
+    expect(store.users.map(u => u.email).sort()).toEqual(
+      allIdentities(b)
+        .map(identity => identity.email)
+        .sort()
+    );
+    for (const orgId of [a.orgId, a.secondaryOrgId]) {
+      for (const table of ORG_SCOPED_TABLES) {
+        expect(await store.countRows(table, 'org_id', orgId)).toBe(0);
+      }
     }
-    expect(await store.countRows('clients', 'org_id', b.orgId)).toBe(2);
-    expect(
-      await store.countRows('api_create_idempotency', 'org_id', b.orgId)
-    ).toBe(1);
+    for (const orgId of [b.orgId, b.secondaryOrgId]) {
+      expect(await store.countRows('clients', 'org_id', orgId)).toBe(2);
+      expect(
+        await store.countRows('api_create_idempotency', 'org_id', orgId)
+      ).toBe(1);
+    }
   });
 
   it('is idempotent: a second cleanup finds nothing and deletes no user', async () => {
@@ -315,15 +439,16 @@ describe('run-scoped cleanup', () => {
 
     const second = await cleanupRunScopedFixtures(store, a, envA);
 
-    expect(second.organizationFound).toBe(false);
+    expect(second.orgs.map(o => o.organizationFound)).toEqual([false, false]);
     expect(second.authUsersDeleted).toEqual([]);
     expect(second.residualTotal).toBe(0);
     expect(store.mutations()).toEqual([
       `deleteRows:api_create_idempotency.org_id=${a.orgId}`,
+      `deleteRows:api_create_idempotency.org_id=${a.secondaryOrgId}`,
     ]);
   });
 
-  it('cleans up a partial setup (org + admin created, member failed)', async () => {
+  it('cleans up a partial setup (both orgs + admin created, member failed)', async () => {
     const store = new FakeStore();
     const a = contextFor(envA);
     store.failCreateUserFor = a.member.email;
@@ -331,7 +456,7 @@ describe('run-scoped cleanup', () => {
     await expect(seedRunScopedFixtures(store, a, envA)).rejects.toThrow(
       /simulated createUser failure/
     );
-    expect(store.orgs.has(a.orgId)).toBe(true);
+    expect(store.orgs.size).toBe(2);
     expect(store.users).toHaveLength(1);
 
     const summary = await cleanupRunScopedFixtures(store, a, envA);
@@ -341,23 +466,86 @@ describe('run-scoped cleanup', () => {
     expect(store.users).toHaveLength(0);
   });
 
-  it('cleans up after a failed test body that left application rows behind', async () => {
+  it('cleans up a partial setup where the secondary org was never created', async () => {
+    const store = new FakeStore();
+    const a = contextFor(envA);
+    store.failInsertOrganizationFor = a.secondaryOrgId;
+
+    await expect(seedRunScopedFixtures(store, a, envA)).rejects.toThrow(
+      /simulated insertOrganization failure/
+    );
+    expect([...store.orgs.keys()]).toEqual([a.orgId]);
+    expect(store.users).toHaveLength(0);
+
+    const summary = await cleanupRunScopedFixtures(store, a, envA);
+    expect(cleanupOrg(summary, 'primary').organizationFound).toBe(true);
+    expect(cleanupOrg(summary, 'secondary').organizationFound).toBe(false);
+    expect(summary.authUsersDeleted).toEqual([]);
+    expect(summary.residualTotal).toBe(0);
+    expect(store.orgs.size).toBe(0);
+  });
+
+  it('cleans up a partial setup where only the secondary admin is missing', async () => {
+    const store = new FakeStore();
+    const a = contextFor(envA);
+    store.failCreateUserFor = a.secondaryAdmin.email;
+
+    await expect(seedRunScopedFixtures(store, a, envA)).rejects.toThrow(
+      /simulated createUser failure/
+    );
+    expect(store.users).toHaveLength(2);
+
+    const summary = await cleanupRunScopedFixtures(store, a, envA);
+    expect(summary.authUsersDeleted).toEqual(['admin', 'member']);
+    expect(summary.authUsersResidual['secondary-admin']).toBe(0);
+    expect(summary.residualTotal).toBe(0);
+    expect(store.orgs.size).toBe(0);
+    expect(store.users).toHaveLength(0);
+  });
+
+  it('cleans up after a failed test body that left rows in both orgs', async () => {
     const { store, a } = await seededPair();
     store.addRows('invoices', a.orgId, 1);
     store.addRows('invoice_items', a.orgId, 2);
     store.addRows('maintenance_tasks', a.orgId, 1);
+    store.addRows('invoices', a.secondaryOrgId, 1);
+    store.addRows('client_instruments', a.secondaryOrgId, 1);
+    store.addRows('api_create_idempotency', a.secondaryOrgId, 2);
 
     const summary = await cleanupRunScopedFixtures(store, a, envA);
-    expect(summary.rowsBefore.invoice_items).toBe(2);
+    expect(cleanupOrg(summary, 'primary').rowsBefore.invoice_items).toBe(2);
+    expect(cleanupOrg(summary, 'secondary').rowsBefore).toMatchObject({
+      invoices: 1,
+      client_instruments: 1,
+      api_create_idempotency: 3,
+    });
     expect(summary.residualTotal).toBe(0);
   });
 
-  it('fails loudly when something survives the cascade', async () => {
+  it('fails loudly when something survives the cascade in the secondary org', async () => {
     const { store, a } = await seededPair();
     store.cascadeSkips.add('clients');
+    store.rows.set(
+      'clients',
+      (store.rows.get('clients') ?? []).filter(row => row.org_id !== a.orgId)
+    );
 
     await expect(cleanupRunScopedFixtures(store, a, envA)).rejects.toThrow(
-      /left residual resources/
+      /left residual resources.*"slot":"secondary"/
+    );
+  });
+
+  it('fails loudly when an auth user survives deletion', async () => {
+    const { store, a } = await seededPair();
+    store.deleteUser = async (id: string) => {
+      store.ops.push(`deleteUser:${id}`);
+      if (id !== store.userByEmail(a.secondaryAdmin.email)?.id) {
+        store.users = store.users.filter(u => u.id !== id);
+      }
+    };
+
+    await expect(cleanupRunScopedFixtures(store, a, envA)).rejects.toThrow(
+      /left residual resources.*"secondary-admin":1/
     );
   });
 });
@@ -394,33 +582,65 @@ describe('run-scoped cleanup safety gates', () => {
     );
   });
 
-  it('refuses the default shared org', async () => {
+  it('refuses the default shared org in either slot', async () => {
     await expectRefusal(
       { ...contextFor(envA), orgId: DEFAULT_E2E_ORG_ID },
       envA,
-      /not the run-scoped org id/
+      /: org id is not the run-scoped org id/
+    );
+    await expectRefusal(
+      { ...contextFor(envA), secondaryOrgId: DEFAULT_E2E_ORG_ID },
+      envA,
+      /secondary org id is not the run-scoped org id/
     );
   });
 
-  it('refuses the configured shared E2E org', async () => {
+  it('refuses the configured shared E2E org in either slot', async () => {
     const context = contextFor(envA);
     await expectRefusal(
       context,
       { ...envA, E2E_TEST_ORG_ID: context.orgId.toUpperCase() },
-      /shared E2E organization/
+      /: org id is a shared E2E organization/
+    );
+    await expectRefusal(
+      context,
+      { ...envA, E2E_TEST_ORG_ID: context.secondaryOrgId },
+      /secondary org id is a shared E2E organization/
     );
   });
 
-  it('refuses an org id from a different scope', async () => {
+  it('refuses an org id from a different scope or slot', async () => {
+    const a = contextFor(envA);
+    const b = contextFor(envB);
     await expectRefusal(
-      { ...contextFor(envA), orgId: deriveE2EOrgId(contextFor(envB).scopeKey) },
+      { ...a, orgId: deriveE2EOrgId(b.scopeKey) },
       envA,
-      /not the run-scoped org id/
+      /: org id is not the run-scoped org id/
+    );
+    await expectRefusal(
+      { ...a, secondaryOrgId: b.secondaryOrgId },
+      envA,
+      /secondary org id is not the run-scoped org id/
+    );
+    await expectRefusal(
+      { ...a, secondaryOrgId: a.orgId },
+      envA,
+      /secondary org id is not the run-scoped org id/
+    );
+  });
+
+  it('refuses a secondary org name that is not the derived one', async () => {
+    const a = contextFor(envA);
+    await expectRefusal(
+      { ...a, secondaryOrgName: a.orgName },
+      envA,
+      /secondary org name is not the run-scoped org name/
     );
   });
 
   it('refuses an email without the run-scope marker', async () => {
     const context = contextFor(envA);
+    const b = contextFor(envB);
     await expectRefusal(
       { ...context, admin: { ...context.admin, email: 'qa@example.com' } },
       envA,
@@ -429,10 +649,50 @@ describe('run-scoped cleanup safety gates', () => {
     await expectRefusal(
       {
         ...context,
-        member: { ...context.member, email: contextFor(envB).member.email },
+        member: { ...context.member, email: b.member.email },
       },
       envA,
       /member email does not carry the run-scope marker/
+    );
+    await expectRefusal(
+      {
+        ...context,
+        secondaryAdmin: {
+          ...context.secondaryAdmin,
+          email: b.secondaryAdmin.email,
+        },
+      },
+      envA,
+      /secondary-admin email does not carry the run-scope marker/
+    );
+  });
+
+  it('refuses a secondary admin that collapses onto the primary admin', async () => {
+    const context = contextFor(envA);
+    await expectRefusal(
+      { ...context, secondaryAdmin: { ...context.admin } },
+      envA,
+      /secondary-admin email does not carry the run-scope marker/
+    );
+  });
+
+  it('refuses a secondary admin homed in the wrong org or with the wrong role', async () => {
+    const context = contextFor(envA);
+    await expectRefusal(
+      {
+        ...context,
+        secondaryAdmin: { ...context.secondaryAdmin, orgId: context.orgId },
+      },
+      envA,
+      /secondary-admin org id is not the run-scoped secondary org id/
+    );
+    await expectRefusal(
+      {
+        ...context,
+        secondaryAdmin: { ...context.secondaryAdmin, role: 'member' },
+      },
+      envA,
+      /secondary-admin role is not admin/
     );
   });
 
@@ -472,7 +732,7 @@ describe('run-scoped cleanup safety gates', () => {
   it('refuses when a user carries another run scope', async () => {
     const a = contextFor(envA);
     await expectRefusal(a, envA, /belongs to a different run scope/, store => {
-      const member = store.users.find(u => u.email === a.member.email);
+      const member = store.userByEmail(a.member.email);
       if (member)
         member.app_metadata = {
           ...member.app_metadata,
@@ -484,16 +744,90 @@ describe('run-scoped cleanup safety gates', () => {
   it('refuses when a user is not e2e_managed', async () => {
     const a = contextFor(envA);
     await expectRefusal(a, envA, /not marked e2e_managed/, store => {
-      const admin = store.users.find(u => u.email === a.admin.email);
+      const admin = store.userByEmail(a.admin.email);
       if (admin) admin.app_metadata = { org_id: a.orgId, role: 'admin' };
     });
   });
 
-  it('refuses when the org with the derived id is not ours', async () => {
+  it.each([
+    [
+      'is not e2e_managed',
+      /secondary-admin user is not marked e2e_managed/,
+      (meta: Record<string, unknown>) => ({ ...meta, e2e_managed: false }),
+    ],
+    [
+      'carries another run scope',
+      /secondary-admin user belongs to a different run scope/,
+      (meta: Record<string, unknown>) => ({
+        ...meta,
+        e2e_run_scope: contextFor(envB).scopeKey,
+      }),
+    ],
+    [
+      'is homed in the primary org',
+      /secondary-admin user belongs to a different organization/,
+      (meta: Record<string, unknown>) => ({
+        ...meta,
+        org_id: contextFor(envA).orgId,
+      }),
+    ],
+    [
+      'is homed in another run’s secondary org',
+      /secondary-admin user belongs to a different organization/,
+      (meta: Record<string, unknown>) => ({
+        ...meta,
+        org_id: contextFor(envB).secondaryOrgId,
+      }),
+    ],
+    [
+      'has a different role',
+      /secondary-admin user has a different role/,
+      (meta: Record<string, unknown>) => ({ ...meta, role: 'member' }),
+    ],
+  ])(
+    'refuses (before any delete) when the secondary admin %s',
+    async (_label, pattern, mutate) => {
+      const a = contextFor(envA);
+      await expectRefusal(a, envA, pattern, store => {
+        const user = store.userByEmail(a.secondaryAdmin.email);
+        if (!user) throw new Error('expected a seeded secondary admin');
+        user.app_metadata = mutate(user.app_metadata);
+      });
+    }
+  );
+
+  it('refuses a foreign secondary admin even when the rest of setup never ran', async () => {
+    const store = new FakeStore();
+    const a = contextFor(envA);
+    store.orgs.set(a.orgId, a.orgName);
+    store.users.push({
+      id: 'foreign-secondary',
+      email: a.secondaryAdmin.email,
+      app_metadata: { org_id: a.secondaryOrgId, role: 'admin' },
+    });
+    store.ops = [];
+
+    await expect(cleanupRunScopedFixtures(store, a, envA)).rejects.toThrow(
+      /secondary-admin user is not marked e2e_managed/
+    );
+    expect(store.mutations()).toEqual([]);
+    expect(store.orgs.has(a.orgId)).toBe(true);
+    expect(store.users).toHaveLength(1);
+  });
+
+  it('refuses when an org with a derived id is not ours', async () => {
     const a = contextFor(envA);
     await expectRefusal(a, envA, /unexpected name/, store => {
       store.orgs.set(a.orgId, 'HC Violins and Bows');
     });
+    await expectRefusal(
+      a,
+      envA,
+      /secondary organization with the run-scoped id has an unexpected name/,
+      store => {
+        store.orgs.set(a.secondaryOrgId, 'HC Violins and Bows');
+      }
+    );
   });
 });
 
