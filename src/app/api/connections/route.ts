@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { z } from 'zod';
 import type { Json } from '@/types/database';
 import { errorHandler } from '@/utils/errorHandler';
 import { withSentryRoute } from '@/app/api/_utils/withSentryRoute';
@@ -15,6 +16,7 @@ import {
   validatePartialClientInstrument,
   normalizeInstrument,
   safeValidate,
+  uuidSchema,
 } from '@/utils/typeGuards';
 import { validateSortColumn, validateUUID } from '@/utils/inputValidation';
 import type { ClientInstrument } from '@/types';
@@ -101,6 +103,69 @@ type ConnectionDetailRow = Record<string, unknown> & {
   client?: Record<string, unknown> | null;
   instrument?: Record<string, unknown> | null;
 };
+
+/**
+ * Validation for the embedded resources exactly as CONNECTION_DETAIL_SELECT
+ * returns them (after mapConnectionDetailRow). They are narrow projections,
+ * not full rows, so the full clientSchema/instrumentSchema inside
+ * clientInstrumentSchema cannot be applied to them: the instrument embed has
+ * no status/created_at/serial_number/etc., and validating it as a full
+ * Instrument made every POST/PATCH answer 500 after the write had already
+ * committed. Extra keys are kept, so the response shape is unchanged.
+ */
+const connectionEmbeddedClientSchema = z
+  .object({
+    id: uuidSchema,
+    first_name: z.string().nullable(),
+    last_name: z.string().nullable(),
+    email: z.string().nullable(),
+    tags: z.array(z.string()),
+  })
+  .passthrough();
+const connectionEmbeddedInstrumentSchema = z
+  .object({
+    id: uuidSchema,
+    maker: z.string().nullable(),
+    type: z.string().nullable(),
+    year: z.number().nullable(),
+    price: z.number().nullable(),
+  })
+  .passthrough();
+
+function validateEmbed(
+  schema: z.ZodTypeAny,
+  value: unknown,
+  label: 'client' | 'instrument'
+): unknown {
+  if (value === null || value === undefined) return value;
+  const result = schema.safeParse(value);
+  if (!result.success) {
+    throw new Error(
+      `Invalid ClientInstrument ${label} embed: ${result.error.issues
+        .map(issue => `${issue.path.join('.') || label}: ${issue.message}`)
+        .join(', ')}`
+    );
+  }
+  return result.data;
+}
+
+function validateConnectionDetailRow(row: unknown): ClientInstrument {
+  const mapped = mapConnectionDetailRow(row);
+  if (!isObject(mapped)) {
+    return validateClientInstrument(mapped);
+  }
+  const { client, instrument, ...connection } = mapped as ConnectionDetailRow;
+  const validated = validateClientInstrument(connection);
+  return {
+    ...validated,
+    client: validateEmbed(connectionEmbeddedClientSchema, client, 'client'),
+    instrument: validateEmbed(
+      connectionEmbeddedInstrumentSchema,
+      instrument,
+      'instrument'
+    ),
+  } as ClientInstrument;
+}
 
 function mapConnectionDetailRow(row: unknown): unknown {
   if (!row || typeof row !== 'object' || Array.isArray(row)) {
@@ -306,7 +371,7 @@ async function fetchConnectionById(auth: AuthContext, connectionId: string) {
     throw errorHandler.handleSupabaseError(error, 'Fetch connection');
   }
 
-  return validateClientInstrument(mapConnectionDetailRow(data));
+  return validateConnectionDetailRow(data);
 }
 
 async function getHandler(request: NextRequest, auth: AuthContext) {
