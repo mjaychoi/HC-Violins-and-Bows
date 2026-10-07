@@ -177,10 +177,15 @@ its own users, organization, and data:
   - admin `hcve2e-<scopeKey>-admin@example.test`, member
     `hcve2e-<scopeKey>-member@example.test` (RFC 6761 reserved domain: no mail
     is ever delivered; users are created with `email_confirm: true`);
-  - org id: a deterministic UUIDv5 (`deriveE2EOrgId(scopeKey, slot)`, so a
-    future cross-tenant suite can add a `'secondary'` org), named
+  - org id: a deterministic UUIDv5 (`deriveE2EOrgId(scopeKey, slot)`), named
     `HC Violins E2E <scopeKey>`;
-  - `app_metadata` `{ org_id, role, e2e_managed: true, e2e_run_scope: <scopeKey> }`;
+  - a second, cross-tenant org (`slot = 'secondary'`, named
+    `HC Violins E2E <scopeKey> secondary`) with its own admin
+    `hcve2e-<scopeKey>-secondary-admin@example.test`
+    (`getE2ESecondaryAdminIdentity()`), used by
+    `tests/e2e/cross-tenant.critical.spec.ts` as "the other tenant";
+  - `app_metadata` `{ org_id, role, e2e_managed: true, e2e_run_scope: <scopeKey> }`
+    (`org_id` is the secondary org for the secondary admin);
   - (future storage E2E) object keys under `e2e/<scopeKey>/`.
 - **Fail-closed:** with `CI=true`, or `PLAYWRIGHT_SUITE=critical` plus
   `STAGING_SUPABASE_PROJECT_REF`, a missing `E2E_RUN_SCOPE` stops global setup.
@@ -190,12 +195,14 @@ its own users, organization, and data:
   (setup and cleanup both run `assertE2EStagingProjectAllowlist`).
 - **Cleanup is scope-bound.** Playwright `globalTeardown`, plus an
   `if: always()` CI step (`tests/e2e/cleanup-run-scoped-e2e.ts`) for a
-  globalSetup that failed part-way. Cleanup deletes only the derived org id
-  (children cascade; the FK-less `api_create_idempotency` is deleted by
-  `org_id`) and the two derived users. It runs only after every ownership
-  check passes: exact email, `e2e_managed`, matching `e2e_run_scope` / `org_id`
-  / `role`, org name, and the staging allowlist. It then verifies zero residual
-  rows across every `org_id` table, and calling it twice is a verified no-op.
+  globalSetup that failed part-way. Cleanup deletes only the two derived org
+  ids (children cascade; the FK-less `api_create_idempotency` is deleted by
+  `org_id`) and the three derived users. It runs only after every ownership
+  check passes for both orgs and all three users: exact email, `e2e_managed`,
+  matching `e2e_run_scope` / `org_id` / `role`, org name, and the staging
+  allowlist. It then verifies zero residual rows across every `org_id` table
+  of both orgs and zero residual users, tolerates a partial setup (missing
+  org/user is skipped), and calling it twice is a verified no-op.
   It never deletes by pattern (no `e2e%`, no name prefix, no age), so one run
   can't remove another active run's resources. Orphans left by a crashed
   runner are a separate janitor task.

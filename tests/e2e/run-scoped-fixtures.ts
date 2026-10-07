@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { assertE2EStagingProjectAllowlist } from '../../scripts/assert-e2e-staging-project-allowlist';
 import {
   DEFAULT_E2E_ORG_ID,
+  E2E_SECONDARY_ORG_SLOT,
   assertE2ERunScopeKey,
   deriveE2EOrgId,
   deriveE2EOrgName,
@@ -11,9 +12,13 @@ import {
   getE2EAdminIdentity,
   getE2EMemberIdentity,
   getE2ERunScope,
+  getE2ESecondaryAdminIdentity,
   normalizeE2ERunScope,
   type E2EEnv,
   type E2EIdentity,
+  type E2EIdentityLabel,
+  type E2EOrgSlot,
+  type E2ERole,
 } from './e2e-identities';
 
 /**
@@ -49,13 +54,32 @@ export const ORG_SCOPED_TABLES_WITHOUT_ORG_FK = [
   'api_create_idempotency',
 ] as const;
 
+/**
+ * One E2E run owns two organizations, both derived from the same run scope:
+ * the primary org (admin + member) and a secondary org (secondary admin) that
+ * cross-tenant specs use as the "other tenant". Neither is ever shared with
+ * another run.
+ */
 export type RunScopedE2EContext = {
   scope: string;
   scopeKey: string;
   orgId: string;
   orgName: string;
+  secondaryOrgId: string;
+  secondaryOrgName: string;
   admin: E2EIdentity;
   member: E2EIdentity;
+  secondaryAdmin: E2EIdentity;
+};
+
+export type RunScopedOrg = { slot: E2EOrgSlot; id: string; name: string };
+
+/** A run-scoped auth user: its email label, home org slot, and role. */
+export type RunScopedManagedIdentity = {
+  label: E2EIdentityLabel;
+  slot: E2EOrgSlot;
+  role: E2ERole;
+  identity: E2EIdentity;
 };
 
 export type RunScopedUser = {
@@ -85,18 +109,26 @@ export interface RunScopedE2EStore {
 
 export type RunScopedSeedSummary = {
   scopeKey: string;
-  orgId: string;
-  orgCreated: boolean;
-  users: Array<{ role: E2EIdentity['role']; userId: string; created: boolean }>;
+  orgs: Array<{ slot: E2EOrgSlot; orgId: string; created: boolean }>;
+  users: Array<{
+    label: E2EIdentityLabel;
+    role: E2ERole;
+    userId: string;
+    created: boolean;
+  }>;
 };
 
 export type RunScopedCleanupSummary = {
   scopeKey: string;
-  orgId: string;
-  organizationFound: boolean;
-  authUsersDeleted: Array<E2EIdentity['role']>;
-  rowsBefore: Record<string, number>;
-  residual: Record<string, number>;
+  orgs: Array<{
+    slot: E2EOrgSlot;
+    orgId: string;
+    organizationFound: boolean;
+    rowsBefore: Record<string, number>;
+    residual: Record<string, number>;
+  }>;
+  authUsersDeleted: E2EIdentityLabel[];
+  authUsersResidual: Partial<Record<E2EIdentityLabel, number>>;
   residualTotal: number;
 };
 
@@ -113,18 +145,58 @@ export function resolveRunScopedE2EContext(
     scopeKey,
     orgId: deriveE2EOrgId(scopeKey),
     orgName: deriveE2EOrgName(scopeKey),
+    secondaryOrgId: deriveE2EOrgId(scopeKey, E2E_SECONDARY_ORG_SLOT),
+    secondaryOrgName: deriveE2EOrgName(scopeKey, E2E_SECONDARY_ORG_SLOT),
     admin: getE2EAdminIdentity(env),
     member: getE2EMemberIdentity(env),
+    secondaryAdmin: getE2ESecondaryAdminIdentity(env),
   };
+}
+
+/** Both run-scoped orgs, primary first. */
+export function runScopedOrgs(context: RunScopedE2EContext): RunScopedOrg[] {
+  return [
+    { slot: 'primary', id: context.orgId, name: context.orgName },
+    {
+      slot: E2E_SECONDARY_ORG_SLOT,
+      id: context.secondaryOrgId,
+      name: context.secondaryOrgName,
+    },
+  ];
+}
+
+/** Every run-scoped auth user, with the slot and role it must carry. */
+export function runScopedIdentities(
+  context: RunScopedE2EContext
+): RunScopedManagedIdentity[] {
+  return [
+    { label: 'admin', slot: 'primary', role: 'admin', identity: context.admin },
+    {
+      label: 'member',
+      slot: 'primary',
+      role: 'member',
+      identity: context.member,
+    },
+    {
+      label: 'secondary-admin',
+      slot: E2E_SECONDARY_ORG_SLOT,
+      role: 'admin',
+      identity: context.secondaryAdmin,
+    },
+  ];
+}
+
+function orgIdForSlot(context: RunScopedE2EContext, slot: E2EOrgSlot): string {
+  return slot === 'primary' ? context.orgId : context.secondaryOrgId;
 }
 
 export function runScopedAppMetadata(
   context: RunScopedE2EContext,
-  identity: E2EIdentity
+  managed: RunScopedManagedIdentity
 ): Record<string, unknown> {
   return {
-    org_id: context.orgId,
-    role: identity.role,
+    org_id: orgIdForSlot(context, managed.slot),
+    role: managed.role,
     e2e_managed: true,
     e2e_run_scope: context.scopeKey,
   };
@@ -132,6 +204,10 @@ export function runScopedAppMetadata(
 
 function refuse(reason: string): never {
   throw new Error(`Run-scoped E2E fixture access refused: ${reason}`);
+}
+
+function slotPrefix(slot: E2EOrgSlot): string {
+  return slot === 'primary' ? '' : `${slot} `;
 }
 
 /**
@@ -159,35 +235,45 @@ export function assertRunScopedFixtureAccessAllowed(
     refuse('scope key does not match E2E_RUN_SCOPE.');
   }
 
-  if (context.orgId !== deriveE2EOrgId(context.scopeKey)) {
-    refuse('org id is not the run-scoped org id.');
-  }
   const sharedOrgId = env.E2E_TEST_ORG_ID?.trim().toLowerCase();
-  if (
-    context.orgId === DEFAULT_E2E_ORG_ID ||
-    (sharedOrgId && context.orgId.toLowerCase() === sharedOrgId)
-  ) {
-    refuse('org id is a shared E2E organization.');
+  for (const org of runScopedOrgs(context)) {
+    const prefix = slotPrefix(org.slot);
+    if (org.id !== deriveE2EOrgId(context.scopeKey, org.slot)) {
+      refuse(`${prefix}org id is not the run-scoped org id.`);
+    }
+    if (
+      org.id === DEFAULT_E2E_ORG_ID ||
+      (sharedOrgId && org.id.toLowerCase() === sharedOrgId)
+    ) {
+      refuse(`${prefix}org id is a shared E2E organization.`);
+    }
+    if (org.name !== deriveE2EOrgName(context.scopeKey, org.slot)) {
+      refuse(`${prefix}org name is not the run-scoped org name.`);
+    }
   }
-  if (context.orgName !== deriveE2EOrgName(context.scopeKey)) {
-    refuse('org name is not the run-scoped org name.');
+  if (context.orgId === context.secondaryOrgId) {
+    refuse('primary and secondary orgs resolve to the same organization.');
   }
 
   const marker = e2eScopedEmailMarker(context.scopeKey);
-  for (const identity of [context.admin, context.member]) {
+  const managed = runScopedIdentities(context);
+  for (const { label, slot, role, identity } of managed) {
     if (
-      identity.email !==
-        deriveE2EScopedEmail(context.scopeKey, identity.role) ||
+      identity.email !== deriveE2EScopedEmail(context.scopeKey, label) ||
       !identity.email.startsWith(marker)
     ) {
-      refuse(`${identity.role} email does not carry the run-scope marker.`);
+      refuse(`${label} email does not carry the run-scope marker.`);
     }
-    if (identity.orgId !== context.orgId) {
-      refuse(`${identity.role} org id is not the run-scoped org id.`);
+    if (identity.orgId !== orgIdForSlot(context, slot)) {
+      refuse(`${label} org id is not the run-scoped ${slot} org id.`);
+    }
+    if (identity.role !== role) {
+      refuse(`${label} role is not ${role}.`);
     }
   }
-  if (context.admin.email === context.member.email) {
-    refuse('admin and member resolve to the same identity.');
+  const emails = new Set(managed.map(m => m.identity.email.toLowerCase()));
+  if (emails.size !== managed.length) {
+    refuse('run-scoped identities do not resolve to distinct users.');
   }
 
   if (!env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
@@ -205,43 +291,70 @@ export function assertRunScopedFixtureAccessAllowed(
 export function assertRunScopedUserOwnership(
   user: RunScopedUser,
   context: RunScopedE2EContext,
-  identity: E2EIdentity
+  managed: RunScopedManagedIdentity
 ): void {
+  const { label, slot, role, identity } = managed;
   const meta = (user.app_metadata ?? {}) as Record<string, unknown>;
   if ((user.email ?? '').toLowerCase() !== identity.email.toLowerCase()) {
-    refuse(`${identity.role} user email does not match the run-scoped email.`);
+    refuse(`${label} user email does not match the run-scoped email.`);
   }
   if (meta.e2e_managed !== true) {
-    refuse(`${identity.role} user is not marked e2e_managed.`);
+    refuse(`${label} user is not marked e2e_managed.`);
   }
   if (meta.e2e_run_scope !== context.scopeKey) {
-    refuse(`${identity.role} user belongs to a different run scope.`);
+    refuse(`${label} user belongs to a different run scope.`);
   }
-  if (meta.org_id !== context.orgId) {
-    refuse(`${identity.role} user belongs to a different organization.`);
+  if (meta.org_id !== orgIdForSlot(context, slot)) {
+    refuse(`${label} user belongs to a different organization.`);
   }
-  if (meta.role !== identity.role) {
-    refuse(`${identity.role} user has a different role.`);
+  if (meta.role !== role) {
+    refuse(`${label} user has a different role.`);
   }
 }
 
 async function findOwnedOrganization(
   store: RunScopedE2EStore,
-  context: RunScopedE2EContext
+  org: RunScopedOrg
 ): Promise<boolean> {
-  const org = await store.findOrganization(context.orgId);
-  if (!org) return false;
-  if (org.name !== context.orgName) {
-    refuse('organization with the run-scoped id has an unexpected name.');
+  const found = await store.findOrganization(org.id);
+  if (!found) return false;
+  if (found.name !== org.name) {
+    refuse(
+      `${slotPrefix(org.slot)}organization with the run-scoped id has an unexpected name.`
+    );
   }
   return true;
 }
 
 /**
- * Creates (or, for a rerun of the same scope, re-verifies) this run's org,
- * admin, and member. Never reads or writes another scope's resources:
- * lookups are by the exact derived org id and emails, and an existing user
- * is only updated after its run-scope metadata is verified.
+ * Looks up both orgs and all three users, verifying ownership of everything
+ * that already exists. Read-only: callers write only after this returns.
+ */
+async function findOwnedResources(
+  store: RunScopedE2EStore,
+  context: RunScopedE2EContext
+) {
+  const orgs: Array<{ org: RunScopedOrg; found: boolean }> = [];
+  for (const org of runScopedOrgs(context)) {
+    orgs.push({ org, found: await findOwnedOrganization(store, org) });
+  }
+  const users: Array<{
+    managed: RunScopedManagedIdentity;
+    user: RunScopedUser | null;
+  }> = [];
+  for (const managed of runScopedIdentities(context)) {
+    const user = await store.findUserByEmail(managed.identity.email);
+    if (user) assertRunScopedUserOwnership(user, context, managed);
+    users.push({ managed, user });
+  }
+  return { orgs, users };
+}
+
+/**
+ * Creates (or, for a rerun of the same scope, re-verifies) this run's two
+ * orgs and three users. Never reads or writes another scope's resources:
+ * lookups are by the exact derived org ids and emails, and every existing
+ * org/user is verified before the first write.
  */
 export async function seedRunScopedFixtures(
   store: RunScopedE2EStore,
@@ -250,39 +363,40 @@ export async function seedRunScopedFixtures(
 ): Promise<RunScopedSeedSummary> {
   assertRunScopedFixtureAccessAllowed(context, env, 'setup');
 
-  const orgExists = await findOwnedOrganization(store, context);
-  if (!orgExists) {
-    await store.insertOrganization({
-      id: context.orgId,
-      name: context.orgName,
-    });
+  const existing = await findOwnedResources(store, context);
+
+  const orgs: RunScopedSeedSummary['orgs'] = [];
+  for (const { org, found } of existing.orgs) {
+    if (!found) {
+      await store.insertOrganization({ id: org.id, name: org.name });
+    }
+    orgs.push({ slot: org.slot, orgId: org.id, created: !found });
   }
 
   const users: RunScopedSeedSummary['users'] = [];
-  for (const identity of [context.admin, context.member]) {
+  for (const { managed, user } of existing.users) {
     const attributes: RunScopedUserAttributes = {
-      email: identity.email,
-      password: identity.password,
+      email: managed.identity.email,
+      password: managed.identity.password,
       email_confirm: true,
-      app_metadata: runScopedAppMetadata(context, identity),
+      app_metadata: runScopedAppMetadata(context, managed),
     };
-    const existing = await store.findUserByEmail(identity.email);
-    if (existing) {
-      assertRunScopedUserOwnership(existing, context, identity);
-      await store.updateUser(existing.id, attributes);
-      users.push({ role: identity.role, userId: existing.id, created: false });
+    let userId: string;
+    if (user) {
+      await store.updateUser(user.id, attributes);
+      userId = user.id;
     } else {
-      const created = await store.createUser(attributes);
-      users.push({ role: identity.role, userId: created.id, created: true });
+      userId = (await store.createUser(attributes)).id;
     }
+    users.push({
+      label: managed.label,
+      role: managed.role,
+      userId,
+      created: !user,
+    });
   }
 
-  return {
-    scopeKey: context.scopeKey,
-    orgId: context.orgId,
-    orgCreated: !orgExists,
-    users,
-  };
+  return { scopeKey: context.scopeKey, orgs, users };
 }
 
 async function countRunScopedRows(
@@ -298,11 +412,17 @@ async function countRunScopedRows(
   return counts;
 }
 
+function sum(values: Iterable<number>): number {
+  let total = 0;
+  for (const value of values) total += value;
+  return total;
+}
+
 /**
- * Deletes exactly this run's org (children cascade), its FK-less
- * api_create_idempotency rows, and its two auth users, then proves nothing
+ * Deletes exactly this run's two orgs (children cascade), their FK-less
+ * api_create_idempotency rows, and the three auth users, then proves nothing
  * remains. Every ownership check runs before the first delete. Safe to call
- * repeatedly: a second call finds nothing and deletes nothing.
+ * repeatedly, and after a partial setup: whatever is missing is skipped.
  */
 export async function cleanupRunScopedFixtures(
   store: RunScopedE2EStore,
@@ -311,44 +431,53 @@ export async function cleanupRunScopedFixtures(
 ): Promise<RunScopedCleanupSummary> {
   assertRunScopedFixtureAccessAllowed(context, env, 'cleanup');
 
-  const organizationFound = await findOwnedOrganization(store, context);
-  const owned: Array<{ identity: E2EIdentity; userId: string }> = [];
-  for (const identity of [context.admin, context.member]) {
-    const user = await store.findUserByEmail(identity.email);
+  const existing = await findOwnedResources(store, context);
+
+  const rowsBefore = new Map<string, Record<string, number>>();
+  for (const { org } of existing.orgs) {
+    rowsBefore.set(org.id, await countRunScopedRows(store, org.id));
+  }
+
+  for (const { org, found } of existing.orgs) {
+    for (const table of ORG_SCOPED_TABLES_WITHOUT_ORG_FK) {
+      await store.deleteRows(table, 'org_id', org.id);
+    }
+    if (found) {
+      await store.deleteRows('organizations', 'id', org.id);
+    }
+  }
+  const authUsersDeleted: E2EIdentityLabel[] = [];
+  for (const { managed, user } of existing.users) {
     if (!user) continue;
-    assertRunScopedUserOwnership(user, context, identity);
-    owned.push({ identity, userId: user.id });
+    await store.deleteUser(user.id);
+    authUsersDeleted.push(managed.label);
   }
 
-  const rowsBefore = await countRunScopedRows(store, context.orgId);
-
-  for (const table of ORG_SCOPED_TABLES_WITHOUT_ORG_FK) {
-    await store.deleteRows(table, 'org_id', context.orgId);
+  const orgs: RunScopedCleanupSummary['orgs'] = [];
+  for (const { org, found } of existing.orgs) {
+    orgs.push({
+      slot: org.slot,
+      orgId: org.id,
+      organizationFound: found,
+      rowsBefore: rowsBefore.get(org.id) ?? {},
+      residual: await countRunScopedRows(store, org.id),
+    });
   }
-  if (organizationFound) {
-    await store.deleteRows('organizations', 'id', context.orgId);
-  }
-  for (const { userId } of owned) {
-    await store.deleteUser(userId);
-  }
-
-  const residual = await countRunScopedRows(store, context.orgId);
-  for (const identity of [context.admin, context.member]) {
-    residual[`auth.users:${identity.role}`] = (await store.findUserByEmail(
-      identity.email
-    ))
+  const authUsersResidual: RunScopedCleanupSummary['authUsersResidual'] = {};
+  for (const { label, identity } of runScopedIdentities(context)) {
+    authUsersResidual[label] = (await store.findUserByEmail(identity.email))
       ? 1
       : 0;
   }
-  const residualTotal = Object.values(residual).reduce((a, b) => a + b, 0);
+  const residualTotal =
+    sum(orgs.map(org => sum(Object.values(org.residual)))) +
+    sum(Object.values(authUsersResidual));
 
   const summary: RunScopedCleanupSummary = {
     scopeKey: context.scopeKey,
-    orgId: context.orgId,
-    organizationFound,
-    authUsersDeleted: owned.map(({ identity }) => identity.role),
-    rowsBefore,
-    residual,
+    orgs,
+    authUsersDeleted,
+    authUsersResidual,
     residualTotal,
   };
 

@@ -36,6 +36,19 @@ export type E2EEnv = Record<string, string | undefined>;
 
 export type E2ERole = 'admin' | 'member';
 
+/** Run-scoped org slots. 'secondary' is the cross-tenant counterpart org. */
+export type E2EOrgSlot = 'primary' | 'secondary';
+
+/**
+ * Every run-scoped identity, by email label. The label (not the role) is what
+ * makes each derived email distinct: the primary admin and the secondary
+ * admin share role 'admin' but live in different orgs.
+ */
+export type E2EIdentityLabel = 'admin' | 'member' | 'secondary-admin';
+
+export const E2E_SECONDARY_ORG_SLOT: E2EOrgSlot = 'secondary';
+export const E2E_SECONDARY_ADMIN_LABEL: E2EIdentityLabel = 'secondary-admin';
+
 export type E2EIdentity = {
   email: string;
   password: string;
@@ -200,5 +213,40 @@ export function getE2EMemberIdentity(env: E2EEnv = process.env): E2EIdentity {
     password: env.E2E_TEST_MEMBER_PASSWORD || 'test123',
     orgId: getE2EOrgId(env),
     role: 'member',
+  };
+}
+
+function requireRunScopeKeyFor(env: E2EEnv, purpose: string): string {
+  const scopeKey = getE2ERunScopeKey(env);
+  if (!scopeKey) {
+    throw new Error(
+      `${purpose} requires E2E_RUN_SCOPE: the secondary org only exists as a run-scoped fixture, never as a shared E2E_TEST_* org.`
+    );
+  }
+  return scopeKey;
+}
+
+/** The run-scoped secondary (cross-tenant) org id. Run-scoped mode only. */
+export function getE2ESecondaryOrgId(env: E2EEnv = process.env): string {
+  return deriveE2EOrgId(
+    requireRunScopeKeyFor(env, 'The secondary E2E org'),
+    E2E_SECONDARY_ORG_SLOT
+  );
+}
+
+/**
+ * Admin of the run-scoped secondary org, used by cross-tenant specs to own
+ * resources the primary admin must not reach. Same password secret as the
+ * primary admin; a distinct derived email and org. Run-scoped mode only.
+ */
+export function getE2ESecondaryAdminIdentity(
+  env: E2EEnv = process.env
+): E2EIdentity {
+  const scopeKey = requireRunScopeKeyFor(env, 'The secondary E2E admin');
+  return {
+    email: deriveE2EScopedEmail(scopeKey, E2E_SECONDARY_ADMIN_LABEL),
+    password: env.E2E_TEST_PASSWORD || 'test123',
+    orgId: deriveE2EOrgId(scopeKey, E2E_SECONDARY_ORG_SLOT),
+    role: 'admin',
   };
 }
