@@ -33,7 +33,11 @@ import {
   toFinancialSnapshot,
   validateInvoiceFinancials,
 } from './financialValidation';
-import { attachSignedUrlsToInvoice } from './imageUrls';
+import {
+  attachSignedUrlsToInvoice,
+  getInvoiceImageHydrationReason,
+  INVOICE_IMAGE_HYDRATION_REASONS,
+} from './imageUrls';
 import { claimInvoiceImageUploads } from './imageUploadTracking';
 import { assertInvoiceSchemaReadiness } from '@/app/api/_utils/schemaReadiness';
 import { writeAuditLog } from '@/utils/auditLog';
@@ -244,19 +248,41 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
-function shouldFailClosedOnInvoiceImageHydrationError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
+const INVOICE_LIST_UNAVAILABLE_MESSAGE =
+  'Invoices could not be loaded. Try again.';
 
-  const o = err as {
-    context?: { invoiceImageHydration?: boolean };
-    status?: number;
-    code?: string;
+function invoiceImageHydrationFailureResponse(err: unknown): {
+  payload: { error: string; success: false };
+  status: number;
+} {
+  const reason = getInvoiceImageHydrationReason(err);
+  const status =
+    err &&
+    typeof err === 'object' &&
+    typeof (err as { status?: unknown }).status === 'number'
+      ? (err as { status: number }).status
+      : 500;
+
+  if (
+    reason === INVOICE_IMAGE_HYDRATION_REASONS.crossTenant ||
+    reason === INVOICE_IMAGE_HYDRATION_REASONS.unresolvableReference
+  ) {
+    return {
+      payload: {
+        error: INVOICE_LIST_UNAVAILABLE_MESSAGE,
+        success: false,
+      },
+      status: status === 403 ? 403 : 404,
+    };
+  }
+
+  return {
+    payload: {
+      error: INVOICE_LIST_UNAVAILABLE_MESSAGE,
+      success: false,
+    },
+    status: 500,
   };
-
-  if (!o.context?.invoiceImageHydration) return false;
-  if (o.status === 404) return true;
-
-  return o.code === ErrorCodes.RECORD_NOT_FOUND;
 }
 
 function buildInvoiceMutationPayload(
@@ -578,25 +604,12 @@ async function getHandler(request: NextRequest, auth: AuthContext) {
                   auth.orgId!
                 );
               } catch (imageError) {
-                if (shouldFailClosedOnInvoiceImageHydrationError(imageError)) {
-                  logWarn(
-                    'invoices.image_hydration_failed_closed',
-                    `invoiceId=${invoice.id} err=${getErrorMessage(imageError)}`
-                  );
-
-                  return {
-                    payload: {
-                      error: getErrorMessage(imageError),
-                      success: false,
-                    },
-                    status: 404,
-                  };
-                }
-
                 logWarn(
-                  'invoices.image_hydration_skipped',
-                  `invoiceId=${invoice.id} err=${getErrorMessage(imageError)}`
+                  'invoices.image_hydration_failed_closed',
+                  `invoiceId=${invoice.id} reason=${getInvoiceImageHydrationReason(imageError) ?? 'unknown'}`
                 );
+
+                return invoiceImageHydrationFailureResponse(imageError);
               }
 
               validRows.push(invoice);

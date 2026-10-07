@@ -66,23 +66,55 @@ describe('invoice image URL hydration', () => {
     expect(signedUrl).toBe('https://signed.example.com/invoice-image.png');
   });
 
-  it('fails closed with 404 when the storage object is missing', async () => {
+  it('omits the signed URL when the optional storage object is missing', async () => {
     const supabase = createSupabaseMock({
       existsResult: { data: false, error: null },
     });
 
     await expect(
-      attachSignedUrlsToInvoiceItems(supabase, [
-        {
-          image_url: 'test-org/missing-image.png',
-          image_signed_url: null,
-        },
-      ])
+      attachSignedUrlsToInvoiceItems(
+        supabase,
+        [
+          {
+            image_url: 'test-org/missing-image.png',
+            image_signed_url: null,
+          },
+        ],
+        'test-org'
+      )
+    ).resolves.toEqual([
+      {
+        image_url: 'test-org/missing-image.png',
+        image_signed_url: null,
+      },
+    ]);
+
+    expect(supabase.createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('fails closed with 403 when the image path belongs to another org', async () => {
+    const supabase = createSupabaseMock();
+
+    await expect(
+      attachSignedUrlsToInvoiceItems(
+        supabase,
+        [
+          {
+            image_url: 'other-org/secret-image.png',
+            image_signed_url: null,
+          },
+        ],
+        'test-org'
+      )
     ).rejects.toMatchObject({
-      code: ErrorCodes.RECORD_NOT_FOUND,
-      status: 404,
+      code: ErrorCodes.FORBIDDEN,
+      status: 403,
+      context: {
+        invoiceImageHydrationReason: 'cross-tenant',
+      },
     });
 
+    expect(supabase.exists).not.toHaveBeenCalled();
     expect(supabase.createSignedUrl).not.toHaveBeenCalled();
   });
 

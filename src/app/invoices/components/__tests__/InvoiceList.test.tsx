@@ -57,6 +57,7 @@ const mockInvoice: Invoice = {
       rate: 50000,
       amount: 50000,
       image_url: 'https://example.com/image.jpg',
+      image_signed_url: 'https://example.com/image.jpg',
       display_order: 0,
       created_at: '2024-01-15T00:00:00Z',
     },
