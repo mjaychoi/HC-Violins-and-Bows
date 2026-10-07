@@ -6,10 +6,16 @@ jest.mock('next/link', () => {
   const MockLink = ({
     href,
     children,
+    ...props
   }: {
     href: string;
     children: React.ReactNode;
-  }) => <a href={href}>{children}</a>;
+    [key: string]: unknown;
+  }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  );
   MockLink.displayName = 'MockLink';
   return MockLink;
 });
@@ -22,6 +28,13 @@ describe('AppSidebar', () => {
       expect(screen.getByText('Inventory App')).toBeInTheDocument()
     );
     expect(screen.getByText('Clients')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Clients' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    expect(screen.getByRole('link', { name: 'Items' })).not.toHaveAttribute(
+      'aria-current'
+    );
   });
 
   it('shows Invoices navigation for an authorized admin', async () => {
