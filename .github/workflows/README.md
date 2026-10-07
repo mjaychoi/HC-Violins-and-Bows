@@ -199,8 +199,11 @@ its own users, organization, and data:
   It never deletes by pattern (no `e2e%`, no name prefix, no age), so one run
   can't remove another active run's resources. Orphans left by a crashed
   runner are a separate janitor task.
-- The `hc-hosted-staging-critical-e2e` concurrency mutex stays until a
-  concurrent hosted run proves this isolation.
+- Hosted E2E runs execute in parallel, with no concurrency mutex. Two
+  scoped critical runs were proven isolated while running concurrently on
+  staging. Any new hosted E2E resource must also be derived from the run
+  scope (`deriveE2EOrgId`, `deriveE2EScopedEmail`, `e2e/<scopeKey>/`); a
+  shared identity would bring back the cross-run races.
 
 ### Security 검증
 
