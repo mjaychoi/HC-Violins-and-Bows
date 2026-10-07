@@ -5,7 +5,9 @@ import {
   ADMIN_AUTH_STATE_PATH,
   MEMBER_AUTH_STATE_PATH,
   getE2EAdminIdentity,
+  getE2ELogoutAdminIdentity,
 } from './e2e-identities';
+import { freshSessionStorageState } from './fresh-session-state';
 // Fails any test whose page hits a same-origin /api 5xx or a pageerror,
 // even when the test body never asserts that background request.
 import { expect, test } from './critical-test';
@@ -51,6 +53,8 @@ async function cleanup(page: Page, paths: string[]) {
     await page.request.delete(requestPath).catch(() => undefined);
   }
 }
+
+const logoutAdminState = freshSessionStorageState(getE2ELogoutAdminIdentity());
 
 test.describe('Critical path', () => {
   test.describe('unauthenticated session', () => {
@@ -428,9 +432,14 @@ test.describe('Critical path', () => {
         }
       }
     );
+  });
 
-    // Must stay after admin API tests: default signOut() is global and
-    // revokes the shared admin storageState session.
+  test.describe('logout session ownership', () => {
+    test.use({
+      storageState: async ({ baseURL }, provide) =>
+        provide(await logoutAdminState(baseURL)),
+    });
+
     test(
       'persists the authenticated dashboard session and can log out',
       {

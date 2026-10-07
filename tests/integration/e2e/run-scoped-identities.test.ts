@@ -9,6 +9,7 @@ import {
   deriveE2EOrgName,
   deriveE2EScopedEmail,
   getE2EAdminIdentity,
+  getE2ELogoutAdminIdentity,
   getE2EMemberIdentity,
   getE2EOrgId,
   getE2EOrgName,
@@ -32,6 +33,7 @@ const runB = '18342905678-1-critical';
 const localLegacyEnv = {
   E2E_TEST_EMAIL: 'local-admin@test.local',
   E2E_TEST_PASSWORD: 'local-admin-pw',
+  E2E_TEST_LOGOUT_EMAIL: 'local-logout-admin@test.local',
   E2E_TEST_MEMBER_EMAIL: 'local-member@test.local',
   E2E_TEST_MEMBER_PASSWORD: 'local-member-pw',
   E2E_TEST_ORG_ID: '11111111-2222-4333-8444-555555555555',
@@ -156,11 +158,20 @@ describe('mode selection', () => {
       orgId: localLegacyEnv.E2E_TEST_ORG_ID,
       role: 'member',
     });
+    expect(getE2ELogoutAdminIdentity(localLegacyEnv)).toEqual({
+      email: 'local-logout-admin@test.local',
+      password: 'local-admin-pw',
+      orgId: localLegacyEnv.E2E_TEST_ORG_ID,
+      role: 'admin',
+    });
   });
 
   it('keeps the historical defaults locally with no env at all', () => {
     expect(getE2EAdminIdentity({}).email).toBe('test@test.com');
     expect(getE2EMemberIdentity({}).email).toBe('e2e-member@test.com');
+    expect(getE2ELogoutAdminIdentity({}).email).toBe(
+      'e2e-logout-admin@test.com'
+    );
     expect(getE2EOrgId({})).toBe(DEFAULT_E2E_ORG_ID);
     expect(getE2EOrgName({})).toBe('HC Violins and Bows');
   });
@@ -185,6 +196,7 @@ describe('mode selection', () => {
       () => getE2EOrgId(env),
       () => getE2EAdminIdentity(env),
       () => getE2EMemberIdentity(env),
+      () => getE2ELogoutAdminIdentity(env),
     ]) {
       expect(call).toThrow(/E2E_RUN_SCOPE is required/);
     }
@@ -198,6 +210,7 @@ describe('mode selection', () => {
     const key = normalizeE2ERunScope(runA);
     const admin = getE2EAdminIdentity(env);
     const member = getE2EMemberIdentity(env);
+    const logoutAdmin = getE2ELogoutAdminIdentity(env);
 
     expect(isRunScopedE2E(env)).toBe(true);
     expect(getE2ERunScopeKey(env)).toBe(key);
@@ -213,8 +226,35 @@ describe('mode selection', () => {
       orgId: deriveE2EOrgId(key),
       role: 'member',
     });
+    expect(logoutAdmin).toEqual({
+      email: `hcve2e-${key}-logout-admin@example.test`,
+      password: 'local-admin-pw',
+      orgId: admin.orgId,
+      role: 'admin',
+    });
+    expect(new Set([admin.email, member.email, logoutAdmin.email]).size).toBe(
+      3
+    );
     expect(getE2EOrgId(env)).not.toBe(localLegacyEnv.E2E_TEST_ORG_ID);
     expect(getE2EOrgName(env)).toBe(`HC Violins E2E ${key}`);
+  });
+});
+
+describe('logout admin identity', () => {
+  it('is deterministic, distinct, and belongs to the primary org as admin', () => {
+    const env = { ...localLegacyEnv, CI: 'true', E2E_RUN_SCOPE: runA };
+    const logoutAdmin = getE2ELogoutAdminIdentity(env);
+    const identities = [
+      getE2EAdminIdentity(env),
+      getE2EMemberIdentity(env),
+      logoutAdmin,
+      getE2ESecondaryAdminIdentity(env),
+    ];
+
+    expect(getE2ELogoutAdminIdentity(env)).toEqual(logoutAdmin);
+    expect(logoutAdmin.orgId).toBe(getE2EOrgId(env));
+    expect(logoutAdmin.role).toBe('admin');
+    expect(new Set(identities.map(identity => identity.email)).size).toBe(4);
   });
 });
 

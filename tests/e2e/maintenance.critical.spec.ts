@@ -26,8 +26,8 @@ import { assertCookieBackedAuth, waitForPageLoad } from './test-helpers';
  *   DELETE ?id=… → 200 { success: true }; again → 404 "Task not found"
  */
 
-// critical-path.spec.ts sorts first and ends with a global UI sign-out that
-// revokes the global-setup admin session, so this spec signs in its own.
+// This spec explicitly owns one fresh admin session instead of depending on
+// the persisted global-setup auth-state file.
 const adminState = freshSessionStorageState(getE2EAdminIdentity());
 
 type MaintenanceTaskRow = {

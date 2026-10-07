@@ -194,6 +194,8 @@ its own users, organization, and data:
   - admin `hcve2e-<scopeKey>-admin@example.test`, member
     `hcve2e-<scopeKey>-member@example.test` (RFC 6761 reserved domain: no mail
     is ever delivered; users are created with `email_confirm: true`);
+  - logout admin `hcve2e-<scopeKey>-logout-admin@example.test`, a dedicated
+    primary-org admin whose sessions the logout E2E may globally revoke;
   - org id: a deterministic UUIDv5 (`deriveE2EOrgId(scopeKey, slot)`), named
     `HC Violins E2E <scopeKey>`;
   - a second, cross-tenant org (`slot = 'secondary'`, named
@@ -215,8 +217,8 @@ its own users, organization, and data:
   `if: always()` CI step (`tests/e2e/cleanup-run-scoped-e2e.ts`) for a
   globalSetup that failed part-way. Cleanup deletes only the two derived org
   ids (children cascade; the FK-less `api_create_idempotency` is deleted by
-  `org_id`) and the three derived users. It runs only after every ownership
-  check passes for both orgs and all three users: exact email, `e2e_managed`,
+  `org_id`) and the four derived users. It runs only after every ownership
+  check passes for both orgs and all four users: exact email, `e2e_managed`,
   matching `e2e_run_scope` / `org_id` / `role`, org name, and the staging
   allowlist. It then verifies zero residual rows across every `org_id` table
   of both orgs and zero residual users, tolerates a partial setup (missing

@@ -18,6 +18,7 @@ import {
   ADMIN_AUTH_STATE_PATH,
   MEMBER_AUTH_STATE_PATH,
   getE2EAdminIdentity,
+  getE2ELogoutAdminIdentity,
   getE2EMemberIdentity,
   getE2EOrgName,
   type E2EIdentity,
@@ -179,6 +180,7 @@ async function ensureTestSeed(
 
   const adminIdentity = getE2EAdminIdentity();
   const memberIdentity = getE2EMemberIdentity();
+  const logoutAdminIdentity = getE2ELogoutAdminIdentity();
 
   if (!env.serviceRoleKey) {
     if (requiresDeterministicSeed()) {
@@ -211,6 +213,7 @@ async function ensureTestSeed(
 
   await upsertAuthUser(admin, adminIdentity);
   await upsertAuthUser(admin, memberIdentity);
+  await upsertAuthUser(admin, logoutAdminIdentity);
 }
 
 async function signIn(

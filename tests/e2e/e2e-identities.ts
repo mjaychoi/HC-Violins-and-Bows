@@ -44,9 +44,14 @@ export type E2EOrgSlot = 'primary' | 'secondary';
  * makes each derived email distinct: the primary admin and the secondary
  * admin share role 'admin' but live in different orgs.
  */
-export type E2EIdentityLabel = 'admin' | 'member' | 'secondary-admin';
+export type E2EIdentityLabel =
+  | 'admin'
+  | 'member'
+  | 'logout-admin'
+  | 'secondary-admin';
 
 export const E2E_SECONDARY_ORG_SLOT: E2EOrgSlot = 'secondary';
+export const E2E_LOGOUT_ADMIN_LABEL: E2EIdentityLabel = 'logout-admin';
 export const E2E_SECONDARY_ADMIN_LABEL: E2EIdentityLabel = 'secondary-admin';
 
 export type E2EIdentity = {
@@ -213,6 +218,24 @@ export function getE2EMemberIdentity(env: E2EEnv = process.env): E2EIdentity {
     password: env.E2E_TEST_MEMBER_PASSWORD || 'test123',
     orgId: getE2EOrgId(env),
     role: 'member',
+  };
+}
+
+/**
+ * Dedicated primary-org admin whose sessions may be globally revoked by the
+ * logout E2E without invalidating any other spec's admin session.
+ */
+export function getE2ELogoutAdminIdentity(
+  env: E2EEnv = process.env
+): E2EIdentity {
+  const scopeKey = getE2ERunScopeKey(env);
+  return {
+    email: scopeKey
+      ? deriveE2EScopedEmail(scopeKey, E2E_LOGOUT_ADMIN_LABEL)
+      : env.E2E_TEST_LOGOUT_EMAIL?.trim() || 'e2e-logout-admin@test.com',
+    password: env.E2E_TEST_PASSWORD || 'test123',
+    orgId: getE2EOrgId(env),
+    role: 'admin',
   };
 }
 
