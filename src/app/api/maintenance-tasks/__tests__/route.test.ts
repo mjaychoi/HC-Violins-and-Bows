@@ -190,9 +190,9 @@ describe('/api/maintenance-tasks', () => {
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        single: jest.fn(),
+        maybeSingle: jest.fn(),
       };
-      (mockQuery.single as jest.Mock).mockResolvedValue({
+      (mockQuery.maybeSingle as jest.Mock).mockResolvedValue({
         data: mockTask,
         error: null,
       });
@@ -209,6 +209,35 @@ describe('/api/maintenance-tasks', () => {
 
       expect(response.status).toBe(200);
       expect(json.data).toEqual(mockTask);
+      expect(mockQuery.eq).toHaveBeenCalledWith('org_id', TEST_ORG_ID);
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockTask.id);
+    });
+
+    it('returns 404 when the task id is missing or outside the org', async () => {
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: null,
+          error: null,
+        }),
+      };
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(mockQuery),
+      };
+
+      const request = new NextRequest(
+        `http://localhost/api/maintenance-tasks?id=${mockTask.id}`
+      );
+      const response = await GET(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.error).toBe('Task not found');
+      expect(json.message).toBe('Task not found');
+      expect(json.success).toBe(false);
+      expect(mockQuery.eq).toHaveBeenCalledWith('id', mockTask.id);
       expect(mockQuery.eq).toHaveBeenCalledWith('org_id', TEST_ORG_ID);
     });
 
@@ -914,7 +943,7 @@ describe('/api/maintenance-tasks', () => {
       const statusQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
+        maybeSingle: jest.fn().mockResolvedValue({
           data: { status: 'completed' },
           error: null,
         }),
@@ -1021,6 +1050,41 @@ describe('/api/maintenance-tasks', () => {
       expect(existsQuery.maybeSingle).toHaveBeenCalled();
     });
 
+    it('returns 404 when a status patch cannot see the task', async () => {
+      const statusQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: null,
+          error: null,
+        }),
+      };
+      const updateQuery = mockUpdateChain({ data: [], error: null });
+
+      mockUserSupabase = {
+        from: jest
+          .fn()
+          .mockReturnValueOnce(statusQuery)
+          .mockReturnValueOnce(updateQuery),
+      };
+
+      const request = patchRequest({
+        id: mockTask.id,
+        expected_updated_at: T0,
+        status: 'in_progress',
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.error).toBe('Task not found');
+      expect(json.message).toBe('Task not found');
+      expect(json.success).toBe(false);
+      expect(statusQuery.eq).toHaveBeenCalledWith('id', mockTask.id);
+      expect(statusQuery.eq).toHaveBeenCalledWith('org_id', TEST_ORG_ID);
+      expect(updateQuery.update).not.toHaveBeenCalled();
+    });
+
     it('returns 404 when a conditional update matches no visible task', async () => {
       const updateQuery = mockUpdateChain({ data: [], error: null });
       const existsQuery = mockExistsChain(null);
@@ -1049,7 +1113,7 @@ describe('/api/maintenance-tasks', () => {
       const statusQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
+        maybeSingle: jest.fn().mockResolvedValue({
           data: { status: 'in_progress' },
           error: null,
         }),
