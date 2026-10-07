@@ -63,7 +63,7 @@ describe('SuccessToasts', () => {
     );
 
     const wrapper = container.querySelector(
-      '.fixed.top-4.right-4.z-50.space-y-2'
+      '.fixed.bottom-4.right-4.z-40.space-y-2'
     );
     expect(wrapper).toBeInTheDocument();
   });
