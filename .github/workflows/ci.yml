@@ -179,11 +179,12 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
       STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
       PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
-      # Run-scoped identities: global setup derives this run's admin, member,
-      # and organization from E2E_RUN_SCOPE (unique per run and per rerun
-      # attempt) and fails closed without it. Emails are derived, so the
-      # shared E2E_TEST_EMAIL / E2E_TEST_MEMBER_EMAIL are not used here;
-      # E2E_TEST_ORG_ID is passed only as a deny target for cleanup.
+      # Run-scoped identities: global setup derives this run's primary admin,
+      # member, logout admin, secondary admin, and two organizations from
+      # E2E_RUN_SCOPE (unique per run and per rerun attempt) and fails closed
+      # without it. Emails are derived, so the shared E2E_TEST_EMAIL /
+      # E2E_TEST_MEMBER_EMAIL are not used here; E2E_TEST_ORG_ID is passed
+      # only as a deny target for cleanup.
       E2E_RUN_SCOPE: ${{ github.run_id }}-${{ github.run_attempt }}-critical
       E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
       E2E_TEST_MEMBER_PASSWORD: ${{ secrets.E2E_TEST_MEMBER_PASSWORD }}
