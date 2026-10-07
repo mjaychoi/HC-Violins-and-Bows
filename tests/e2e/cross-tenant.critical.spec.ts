@@ -842,6 +842,15 @@ test.describe('Cross-tenant isolation', () => {
             nonexistent: () => primary.get(`/api/invoices/${missingId}`),
           });
 
+          await expectTenantSafeDenial({
+            label: 'GET /api/invoices/[id]/pdf',
+            status: 404,
+            error: 'Invoice not found',
+            secret: suffix,
+            foreign: () => primary.get(`/api/invoices/${invoiceId}/pdf`),
+            nonexistent: () => primary.get(`/api/invoices/${missingId}/pdf`),
+          });
+
           const list = await expectStatus(
             await primary.get(`/api/invoices?client_id=${client.id}`),
             200,
@@ -935,6 +944,177 @@ test.describe('Cross-tenant isolation', () => {
             'primary admin lists invoices after the injection attempt'
           );
           expect(primaryAfterInjection.json.data).toEqual([]);
+
+          // Owned-draft reference injection: a valid primary client/instrument
+          // plus a foreign or random counterpart. Route-level 400, no write.
+          const primarySuffix = uniqueSuffix();
+          const primaryClient = await createTenantClient(
+            primary,
+            primarySuffix,
+            'primary'
+          );
+          register('primary client', () =>
+            deleteAsOwner(primary, `/api/clients?id=${primaryClient.id}`)
+          );
+          const primaryInstrumentId = await createTenantInstrument(
+            primary,
+            primarySuffix,
+            'primary'
+          );
+          register('primary instrument', () =>
+            deleteAsOwner(primary, `/api/instruments?id=${primaryInstrumentId}`)
+          );
+          const primaryInvoicePayload = (
+            clientId: string,
+            itemInstrument: string
+          ) => ({
+            ...invoicePayload(clientId, itemInstrument),
+            notes: primarySuffix,
+            items: [
+              {
+                instrument_id: itemInstrument,
+                description: `Tenant A violin ${primarySuffix}`,
+                qty: 1,
+                rate: 1500,
+                amount: 1500,
+                image_url: null,
+                display_order: 0,
+              },
+            ],
+          });
+          const primaryCreated = await expectStatus(
+            await primary.post('/api/invoices', {
+              headers: {
+                'Idempotency-Key': `e2e-xt-invoice-a-${primarySuffix}`,
+              },
+              data: primaryInvoicePayload(
+                primaryClient.id,
+                primaryInstrumentId
+              ),
+            }),
+            201,
+            'primary admin creates a draft invoice'
+          );
+          const primaryInvoiceId = primaryCreated.json.data.id as string;
+          register('primary invoice', () =>
+            deleteAsOwner(primary, `/api/invoices/${primaryInvoiceId}`)
+          );
+          const readPrimaryInvoice = async () =>
+            (
+              await expectStatus(
+                await primary.get(`/api/invoices/${primaryInvoiceId}`),
+                200,
+                'primary admin re-reads its invoice'
+              )
+            ).json.data as {
+              id: string;
+              client_id: string;
+              notes: string;
+              status: string;
+              updated_at: string;
+              items: Array<{ instrument_id: string | null }>;
+            };
+          const primaryOriginal = await readPrimaryInvoice();
+          expect(primaryOriginal.client_id).toBe(primaryClient.id);
+          expect(primaryOriginal.items.map(item => item.instrument_id)).toEqual(
+            [primaryInstrumentId]
+          );
+
+          await expectTenantSafeDenial({
+            label: 'POST /api/invoices with a secondary-org item instrument',
+            status: 400,
+            error:
+              'One or more invoice item instruments were not found in organization',
+            secret: suffix,
+            foreign: () =>
+              primary.post('/api/invoices', {
+                headers: {
+                  'Idempotency-Key': `e2e-xt-post-inst-a-${primarySuffix}`,
+                },
+                data: primaryInvoicePayload(primaryClient.id, instrumentId),
+              }),
+            nonexistent: () =>
+              primary.post('/api/invoices', {
+                headers: {
+                  'Idempotency-Key': `e2e-xt-post-inst-b-${primarySuffix}`,
+                },
+                data: primaryInvoicePayload(primaryClient.id, randomUUID()),
+              }),
+          });
+
+          await expectTenantSafeDenial({
+            label: 'PUT /api/invoices/[id] with a secondary-org client',
+            status: 400,
+            error: 'Client not found in organization',
+            secret: suffix,
+            foreign: () =>
+              primary.put(`/api/invoices/${primaryInvoiceId}`, {
+                headers: {
+                  'Idempotency-Key': `e2e-xt-put-client-a-${primarySuffix}`,
+                },
+                data: {
+                  client_id: client.id,
+                  updated_at: primaryOriginal.updated_at,
+                },
+              }),
+            nonexistent: () =>
+              primary.put(`/api/invoices/${primaryInvoiceId}`, {
+                headers: {
+                  'Idempotency-Key': `e2e-xt-put-client-b-${primarySuffix}`,
+                },
+                data: {
+                  client_id: randomUUID(),
+                  updated_at: primaryOriginal.updated_at,
+                },
+              }),
+          });
+
+          await expectTenantSafeDenial({
+            label:
+              'PUT /api/invoices/[id] with a secondary-org item instrument',
+            status: 400,
+            error:
+              'One or more invoice item instruments were not found in organization',
+            secret: suffix,
+            foreign: () =>
+              primary.put(`/api/invoices/${primaryInvoiceId}`, {
+                headers: {
+                  'Idempotency-Key': `e2e-xt-put-inst-a-${primarySuffix}`,
+                },
+                data: {
+                  items: primaryInvoicePayload(primaryClient.id, instrumentId)
+                    .items,
+                  updated_at: primaryOriginal.updated_at,
+                },
+              }),
+            nonexistent: () =>
+              primary.put(`/api/invoices/${primaryInvoiceId}`, {
+                headers: {
+                  'Idempotency-Key': `e2e-xt-put-inst-b-${primarySuffix}`,
+                },
+                data: {
+                  items: primaryInvoicePayload(primaryClient.id, randomUUID())
+                    .items,
+                  updated_at: primaryOriginal.updated_at,
+                },
+              }),
+          });
+
+          const primaryAfterRefs = await readPrimaryInvoice();
+          expect(
+            primaryAfterRefs,
+            'primary invoice after denied writes'
+          ).toEqual(primaryOriginal);
+          const primaryListAfterRefs = await expectStatus(
+            await primary.get(`/api/invoices?client_id=${primaryClient.id}`),
+            200,
+            'primary admin lists its invoices after denied writes'
+          );
+          expect(
+            (primaryListAfterRefs.json.data as Array<{ id: string }>).map(
+              row => row.id
+            )
+          ).toEqual([primaryInvoiceId]);
         });
       } finally {
         await secondaryContext.close();

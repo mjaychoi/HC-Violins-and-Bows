@@ -43,6 +43,7 @@ import {
   tooManyRequestsApiResult,
 } from '@/app/api/_utils/rateLimit';
 import { assertClientBelongsToOrg } from './clientScope';
+import { assertInvoiceItemInstrumentsBelongToOrg } from './instrumentScope';
 import { mapInvoiceDbError } from './rpcErrors';
 import {
   INVALID_INITIAL_INVOICE_STATUS,
@@ -760,6 +761,19 @@ async function postHandler(request: NextRequest, auth: AuthContext) {
         return {
           payload: { error: clientScope.error, success: false },
           status: clientScope.status,
+        };
+      }
+
+      const itemInstrumentScope = await assertInvoiceItemInstrumentsBelongToOrg(
+        auth,
+        orgId,
+        items
+      );
+
+      if (!itemInstrumentScope.ok) {
+        return {
+          payload: { error: itemInstrumentScope.error, success: false },
+          status: itemInstrumentScope.status,
         };
       }
 

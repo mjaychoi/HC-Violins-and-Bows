@@ -36,6 +36,7 @@ import {
   tooManyRequestsApiResult,
 } from '@/app/api/_utils/rateLimit';
 import { assertClientBelongsToOrg } from '../clientScope';
+import { assertInvoiceItemInstrumentsBelongToOrg } from '../instrumentScope';
 import { mapInvoiceDbError } from '../rpcErrors';
 import { createRequestHash } from '@/app/api/_utils/createIdempotency';
 import {
@@ -241,64 +242,6 @@ function invoiceNotFoundResult(orgId: string) {
     status: 404,
     metadata: { scope: { enforced: true, orgId } },
   };
-}
-
-async function assertInvoiceItemInstrumentsBelongToOrg(
-  auth: AuthContext,
-  orgId: string,
-  items: CreateInvoiceInput['items'] | null | undefined
-): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  if (!items || items.length === 0) {
-    return { ok: true };
-  }
-
-  const instrumentIds = Array.from(
-    new Set(
-      items
-        .map(item => item.instrument_id)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0)
-    )
-  );
-
-  if (instrumentIds.length === 0) {
-    return { ok: true };
-  }
-
-  const invalidIds = instrumentIds.filter(id => !validateUUID(id));
-  if (invalidIds.length > 0) {
-    return {
-      ok: false,
-      error: 'Invoice items contain invalid instrument_id values',
-      status: 400,
-    };
-  }
-
-  const { data, error } = await auth.userSupabase
-    .from('instruments')
-    .select('id')
-    .eq('org_id', orgId)
-    .in('id', instrumentIds);
-
-  if (error) {
-    throw errorHandler.handleSupabaseError(
-      error,
-      'Validate invoice item instruments'
-    );
-  }
-
-  const foundIds = new Set((data ?? []).map(row => row.id));
-  const missingIds = instrumentIds.filter(id => !foundIds.has(id));
-
-  if (missingIds.length > 0) {
-    return {
-      ok: false,
-      error:
-        'One or more invoice item instruments were not found in organization',
-      status: 400,
-    };
-  }
-
-  return { ok: true };
 }
 
 /**
