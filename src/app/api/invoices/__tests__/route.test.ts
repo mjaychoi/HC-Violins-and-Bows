@@ -106,8 +106,9 @@ jest.mock('../imageUrls', () => ({
   },
   getInvoiceImageHydrationReason: (err: unknown) => {
     if (!err || typeof err !== 'object') return null;
-    const reason = (err as { context?: { invoiceImageHydrationReason?: unknown } })
-      .context?.invoiceImageHydrationReason;
+    const reason = (
+      err as { context?: { invoiceImageHydrationReason?: unknown } }
+    ).context?.invoiceImageHydrationReason;
     return typeof reason === 'string' ? reason : null;
   },
 }));
