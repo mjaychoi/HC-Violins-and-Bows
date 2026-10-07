@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Client, Instrument, ClientInstrument } from '@/types';
 import {
@@ -9,7 +9,7 @@ import {
   formatClientContact,
   formatRelationshipInstrumentLabel,
 } from '../utils';
-import { useOutsideClose } from '@/hooks/useOutsideClose';
+import Modal from '@/components/common/modals/Modal';
 import ClientTagSelector from './ClientTagSelector';
 import InterestSelector from './InterestSelector';
 import { ClientRelationshipType, ClientViewFormData } from '../types';
@@ -85,29 +85,6 @@ export default function ClientModal({
   onUpdateViewFormData,
 }: ClientModalProps) {
   const { canManageClients, canManageConnections } = usePermissions();
-  // Close modal with ESC key and outside click
-  const modalRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  useOutsideClose(modalRef, {
-    isOpen,
-    onClose,
-  });
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
-
-    const focusable = modalRef.current?.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    const first = focusable?.[0];
-    first?.focus();
-
-    return () => {
-      previousFocusRef.current?.focus?.();
-    };
-  }, [isOpen]);
 
   const filteredInstrumentRelationships = useMemo(
     () =>
@@ -155,20 +132,20 @@ export default function ClientModal({
     await onSave(viewFormData);
   };
 
-  if (!isOpen || !client) return null;
+  if (!client) return null;
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="client-modal-title"
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEditing ? 'Edit Client' : 'Client Details'}
+      titleId="client-modal-title"
+      hideHeader
+      padded={false}
+      size="lg"
+      overlayClassName="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center"
+      className="rounded-lg"
     >
-      <div
-        ref={modalRef}
-        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col"
-        tabIndex={-1}
-      >
         {/* Header */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex justify-between items-center">
@@ -837,7 +814,6 @@ export default function ClientModal({
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

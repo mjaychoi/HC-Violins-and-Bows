@@ -6,14 +6,13 @@ import { useDashboardForm } from '../hooks/useDashboardForm';
 import { validateInstrumentData } from '../utils/dashboardUtils';
 import { classNames } from '@/utils/classNames';
 import { Button, Input } from '@/components/common/inputs';
-import { useOutsideClose } from '@/hooks/useOutsideClose';
 import {
   generateInstrumentSerialNumber,
   normalizeInstrumentSerial,
   validateInstrumentSerial,
 } from '@/utils/uniqueNumberGenerator';
 import { modalStyles } from '@/components/common/modals/modalStyles';
-import { ModalHeader } from '@/components/common/modals/ModalHeader';
+import Modal from '@/components/common/modals/Modal';
 import {
   INSTRUMENT_CONFLICT_MESSAGE,
   INSTRUMENT_RELOAD_LATEST_LABEL,
@@ -434,39 +433,19 @@ function ItemForm({
     }
   };
 
-  // Close modal with ESC key and outside click
-  // FIXED: Use only useOutsideClose to avoid double close handling
-  const modalRef = useRef<HTMLDivElement>(null);
-  useOutsideClose(modalRef, {
-    isOpen,
-    onClose,
-  });
-
-  if (!isOpen) return null;
-
   return (
-    <div
-      className={modalStyles.overlay}
-      onClick={e => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEditing ? 'Edit Item' : 'Add New Item'}
+      titleId="item-form-title"
+      icon="item"
+      size="lg"
+      overlayClassName={modalStyles.overlay}
+      className="mx-4 rounded-xl animate-in zoom-in-95 duration-200"
+      padded={false}
     >
-      <div
-        ref={modalRef}
-        className={modalStyles.container}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="item-form-title"
-      >
-        <ModalHeader
-          title={isEditing ? 'Edit Item' : 'Add New Item'}
-          icon="item"
-          onClose={onClose}
-          titleId="item-form-title"
-        />
-        <div className={modalStyles.body}>
+      <div className={modalStyles.body}>
           {/* UX: Success message with action buttons */}
           {success && !isEditing && (
             <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -849,8 +828,7 @@ function ItemForm({
             </div>
           </form>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

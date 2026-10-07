@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Instrument, InstrumentImage } from '@/types';
-import { useOutsideClose } from '@/hooks/useOutsideClose';
+import Modal from '@/components/common/modals/Modal';
 import OptimizedImage from '@/components/common/OptimizedImage';
 import {
   formatInstrumentPrice,
@@ -57,7 +57,6 @@ export default function InstrumentModal({
 }: InstrumentModalProps) {
   const { canUploadInstrumentMedia, canViewInstrumentFinancialData } =
     usePermissions();
-  const modalRef = useRef<HTMLDivElement>(null);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
   const certificateFileInputRef = useRef<HTMLInputElement>(null);
   const replaceCertificateFileInputRef = useRef<HTMLInputElement>(null);
@@ -84,11 +83,6 @@ export default function InstrumentModal({
   // Request ID counters to handle concurrent requests
   const imageReqIdRef = useRef(0);
   const certificateReqIdRef = useRef(0);
-
-  useOutsideClose(modalRef, {
-    isOpen,
-    onClose,
-  });
 
   const fetchImages = useCallback(
     async (instrumentId: string) => {
@@ -358,23 +352,23 @@ export default function InstrumentModal({
     setSelectedImageIndex(prev => (prev < images.length - 1 ? prev + 1 : 0));
   };
 
-  if (!isOpen || !instrument) return null;
+  if (!instrument) return null;
 
   const selectedImage = images[selectedImageIndex];
   const hasImageContent = imageState === 'success' && images.length > 0;
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="instrument-modal-title"
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Instrument Details"
+      titleId="instrument-modal-title"
+      hideHeader
+      padded={false}
+      size="xl"
+      overlayClassName="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4"
+      className="rounded-lg"
     >
-      <div
-        ref={modalRef}
-        className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col"
-        tabIndex={-1}
-      >
         {/* Header */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex justify-between items-center">
@@ -811,7 +805,6 @@ export default function InstrumentModal({
             Close
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

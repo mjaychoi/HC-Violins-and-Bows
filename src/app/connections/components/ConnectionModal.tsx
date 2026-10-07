@@ -7,6 +7,8 @@ import {
 } from '../utils/connectionUtils';
 import { classNames } from '@/utils/classNames';
 import { EDITABLE_RELATIONSHIP_TYPES } from '../utils/connectionGrouping';
+import Modal from '@/components/common/modals/Modal';
+import { modalStyles } from '@/components/common/modals/modalStyles';
 
 interface ConnectionModalProps {
   isOpen: boolean;
@@ -94,72 +96,18 @@ export default function ConnectionModal({
   // Use clients and items directly from parent - no duplicate filtering
   // Parent passes filteredClients and filteredItems which are already filtered
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 bg-gray-900 bg-opacity-20 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200"
-      onClick={e => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Create New Connection"
+      titleId="connection-modal-title"
+      icon="connection"
+      size="lg"
+      overlayClassName={modalStyles.overlay}
+      className="mx-4 rounded-xl animate-in zoom-in-95 duration-200"
+      padded={false}
     >
-      <div
-        className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="connection-modal-title"
-      >
-        {/* Header */}
-        <div className="shrink-0 p-6 border-b border-gray-100 bg-blue-50">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <svg
-                  className="w-6 h-6 text-blue-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-                  />
-                </svg>
-              </div>
-              <h3
-                id="connection-modal-title"
-                className="text-xl font-semibold text-gray-900"
-              >
-                Create New Connection
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-white rounded-lg transition-colors duration-200"
-              aria-label="Close modal"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-
         {/* Form - Scrollable */}
         <form
           onSubmit={handleSubmit}
@@ -450,7 +398,6 @@ export default function ConnectionModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }
