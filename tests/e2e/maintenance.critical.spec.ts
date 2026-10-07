@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import type { APIResponse, Page } from '@playwright/test';
 
 import { getE2EAdminIdentity } from './e2e-identities';
@@ -18,7 +19,7 @@ import { assertCookieBackedAuth, waitForPageLoad } from './test-helpers';
  *
  * Contract relied on:
  *   POST   → 201 { data, success }            (admin; full create schema)
- *   GET    ?id=… → 200 { data, success }
+ *   GET    ?id=… → 200 { data, success }; missing or deleted id → 404 "Task not found"
  *   GET    ?instrument_id= | search= | start_date&end_date → { data[], count }
  *   PATCH  { id, expected_updated_at, …fields } → 200 { data, success };
  *          a stale expected_updated_at → 409 MAINTENANCE_TASK_STALE_VERSION
@@ -318,6 +319,18 @@ test.describe('Maintenance tasks', () => {
           404
         );
         expect(secondDelete.error).toBe('Task not found');
+
+        const deletedGet = await expectStatusJson(
+          await page.request.get(`/api/maintenance-tasks?id=${created.id}`),
+          404
+        );
+        expect(deletedGet.error).toBe('Task not found');
+
+        const randomGet = await expectStatusJson(
+          await page.request.get(`/api/maintenance-tasks?id=${randomUUID()}`),
+          404
+        );
+        expect(randomGet.error).toBe('Task not found');
       } finally {
         // Route-level cleanup of this test's own rows only. Failures are
         // recorded as soft assertion errors: they fail the test without

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 import * as fs from 'fs';
 
@@ -487,6 +488,79 @@ test.describe('Connections critical', () => {
         const remainingIds = dashboardAfterDelete.data.map(row => row.id);
         expect(remainingIds).not.toContain(connA.id);
         expect(remainingIds).toContain(connB.id);
+      });
+    }
+  );
+
+  test(
+    'a mixed reorder rolls back when a later id is missing',
+    {
+      tag: '@critical',
+    },
+    async ({ page }) => {
+      const request = page.request;
+      const suffix = uniqueSuffix();
+      const steps: CleanupStep[] = [];
+
+      await withRouteCleanup(request, steps, async () => {
+        const client = await createClient(request, suffix, steps);
+        const instrumentA = await createInstrument(
+          request,
+          `Reorder A ${suffix}`,
+          steps
+        );
+        const instrumentB = await createInstrument(
+          request,
+          `Reorder B ${suffix}`,
+          steps
+        );
+        const connA = await createConnection(
+          request,
+          {
+            clientId: client.id,
+            instrumentId: instrumentA.id,
+            notes: `reorder A ${suffix}`,
+          },
+          steps
+        );
+        const connB = await createConnection(
+          request,
+          {
+            clientId: client.id,
+            instrumentId: instrumentB.id,
+            notes: `reorder B ${suffix}`,
+          },
+          steps
+        );
+
+        const before = await listByClient(
+          request,
+          client.id,
+          '&orderBy=display_order&ascending=true'
+        );
+        const orderA = findRow(before.data, connA.id).display_order;
+        const orderB = findRow(before.data, connB.id).display_order;
+
+        const rejected = await expectStatusJson<{ error: string }>(
+          await request.put('/api/connections', {
+            data: {
+              orders: [
+                { id: connA.id, display_order: 50 },
+                { id: randomUUID(), display_order: 51 },
+              ],
+            },
+          }),
+          409
+        );
+        expect(rejected.error).toBe('Connection not found');
+
+        const after = await listByClient(
+          request,
+          client.id,
+          '&orderBy=display_order&ascending=true'
+        );
+        expect(findRow(after.data, connA.id).display_order).toBe(orderA);
+        expect(findRow(after.data, connB.id).display_order).toBe(orderB);
       });
     }
   );

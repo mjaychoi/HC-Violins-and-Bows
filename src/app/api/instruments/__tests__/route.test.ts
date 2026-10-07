@@ -1536,6 +1536,98 @@ describe('/api/instruments', () => {
       );
     });
 
+    it.each([
+      ['status', { status: 'Maintenance' }],
+      ['reserved_reason', { reserved_reason: 'Hold' }],
+      ['maker', { maker: 'Stradivari' }],
+      ['type', { type: 'Viola' }],
+    ])(
+      'returns 404 when a %s patch cannot see the instrument',
+      async (_label, fields) => {
+        const stateQuery = {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data: null,
+            error: null,
+          }),
+          update: jest.fn(),
+        };
+
+        mockUserSupabase = {
+          from: jest.fn().mockReturnValue(stateQuery),
+          rpc: jest.fn(),
+        } as any;
+
+        const request = new NextRequest('http://localhost/api/instruments', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            id: mockInstrument.id,
+            updated_at: mockInstrument.updated_at,
+            ...fields,
+          }),
+        });
+        const response = await PATCH(request);
+        const json = await response.json();
+
+        expect(response.status).toBe(404);
+        expect(json.error).toBe('Instrument not found');
+        expect(json.message).toBe('Instrument not found');
+        expect(json.error_code).toBeUndefined();
+        expect(stateQuery.eq).toHaveBeenCalledWith('id', mockInstrument.id);
+        expect(stateQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
+        expect(stateQuery.update).not.toHaveBeenCalled();
+        expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
+      }
+    );
+
+    it('returns 404 when a sale_transition patch cannot see the instrument', async () => {
+      const stateQuery = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: null,
+          error: null,
+        }),
+      };
+      const rpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'instrument row not found for probe' },
+      });
+
+      mockUserSupabase = {
+        from: jest.fn().mockReturnValue(stateQuery),
+        rpc,
+      } as any;
+
+      const request = new NextRequest('http://localhost/api/instruments', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: mockInstrument.id,
+          updated_at: mockInstrument.updated_at,
+          status: 'Sold',
+          sale_transition: {
+            sale_price: 1500,
+            sale_date: '2026-04-02',
+            client_id: '123e4567-e89b-12d3-a456-426614174111',
+          },
+        }),
+      });
+      const response = await PATCH(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.error).toBe('Instrument not found');
+      expect(json.message).toBe('Instrument not found');
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(rpc).not.toHaveBeenCalledWith(
+        'update_instrument_sale_transition_atomic',
+        expect.objectContaining({
+          p_instrument_id: mockInstrument.id,
+        })
+      );
+    });
+
     it('returns 400 when updated_at is missing', async () => {
       const request = new NextRequest('http://localhost/api/instruments', {
         method: 'PATCH',
@@ -1620,7 +1712,7 @@ describe('/api/instruments', () => {
       const stateQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
+        maybeSingle: jest.fn().mockResolvedValue({
           data: {
             status: 'Available',
             reserved_reason: null,
@@ -1682,7 +1774,7 @@ describe('/api/instruments', () => {
       const stateQuery = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        single: jest.fn().mockResolvedValue({
+        maybeSingle: jest.fn().mockResolvedValue({
           data: {
             status: 'Sold',
             reserved_reason: null,
